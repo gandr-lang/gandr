@@ -1,0 +1,3661 @@
+//! Focusing: the translation `𝓕⟦M⟧c` of a core computation under a
+//! continuation into a command, and `𝓥⟦v⟧` of a core value into a producer.
+//!
+//! ```text
+//! 𝓥⟦x⟧            = x                       𝓥⟦thunk M⟧ = {force(α) ⇒ 𝓕⟦M⟧α}
+//! 𝓥⟦()⟧, 𝓥⟦(v, w)⟧, 𝓥⟦inj v⟧, 𝓥⟦lift v⟧    = the constructor over the images
+//! 𝓥⟦c_i(v̄)⟧        = ctor[i](𝓥⟦v̄⟧)            the datatype erased
+//! 𝓥⟦{l̄ = v̄}⟧       = record{l̄}(𝓥⟦v̄⟧)          the labels in canonical order
+//!
+//! 𝓕⟦return v⟧c    = ⟨𝓥⟦v⟧ |+ c⟩
+//! 𝓕⟦force v⟧c     = ⟨𝓥⟦v⟧ |+ force(c)⟩
+//! 𝓕⟦M v⟧c         = 𝓕⟦M⟧(apply(𝓥⟦v⟧; c))
+//! 𝓕⟦λ. M⟧c        = ⟨cocase {apply(x; α) ⇒ 𝓕⟦M⟧α} |− c⟩
+//! 𝓕⟦fix x. M⟧c    = ⟨fix{x; force(α) ⇒ 𝓕⟦M⟧α} |+ force(c)⟩
+//! 𝓕⟦x ← M; N⟧c    = 𝓕⟦M⟧(μ̃x. 𝓕⟦N⟧c)                       c a tail
+//!                 = ⟨μα. 𝓕⟦M⟧(μ̃x. 𝓕⟦N⟧α) |ε c⟩              otherwise
+//! 𝓕⟦case v {l, r}⟧c = ⟨𝓥⟦v⟧ |+ case {inl(x) ⇒ 𝓕⟦l⟧c, inr(x) ⇒ 𝓕⟦r⟧c}⟩   c a tail
+//!                 = ⟨μα. ⟨𝓥⟦v⟧ |+ case {… 𝓕⟦·⟧α …}⟩ |ε c⟩     otherwise
+//! 𝓕⟦case v [C] of {b̄}⟧c = ⟨𝓥⟦v⟧ |+ datacase(𝓥⟦thunk b̄⟧; c)⟩   the motive erased
+//! 𝓕⟦v.i⟧c, 𝓕⟦v.l⟧c = ⟨𝓥⟦v⟧ |+ select[i](c)⟩, ⟨𝓥⟦v⟧ |+ select[.l](c)⟩
+//! ```
+//!
+//! A tail is a covariable or `★`. A continuation that is not a tail is never
+//! placed under a binder: a bind or a case names it with a `μ`, at the
+//! polarity of what it observes. Every continuation passed under a binder is
+//! therefore a tail, every focused covariable is index `0`, and producer
+//! indices are the core's own, so the translation shifts nothing and mints no
+//! name. A core value is never a `μ`, so every argument of a focused frame
+//! and every field of a focused constructor is a value.
+//!
+//! Every walk here is a loop over an explicit task stack, so no term's depth
+//! reaches the call stack. A refused translation truncates the arena and the
+//! provenance table to the marks taken on entry.
+//!
+//! # Focusing names only what is not a tail
+//!
+//! Focusing translates a computation `M` under a continuation `c` into a
+//! command, `𝓕⟦M⟧c`, and a value `v` into a producer, `𝓥⟦v⟧`:
+//!
+//! ```text
+//! 𝓥⟦x⟧ = x        𝓥⟦thunk M⟧ = {force(α) ⇒ 𝓕⟦M⟧α}        𝓥⟦(v̄)⟧, 𝓥⟦inj_i v⟧, 𝓥⟦lift v⟧ = the constructor
+//! 𝓥⟦c_i(v̄)⟧ = ctor[i](𝓥⟦v̄⟧)        𝓥⟦{l̄ = v̄}⟧ = record{l̄}(𝓥⟦v̄⟧)
+//!
+//! 𝓕⟦return v⟧c        = ⟨𝓥⟦v⟧ |+ c⟩
+//! 𝓕⟦force v⟧c         = ⟨𝓥⟦v⟧ |+ force(c)⟩
+//! 𝓕⟦M v⟧c             = 𝓕⟦M⟧(apply(𝓥⟦v⟧; c))
+//! 𝓕⟦λ. M⟧c            = ⟨cocase {apply(x; α) ⇒ 𝓕⟦M⟧α} |− c⟩
+//! 𝓕⟦x ← M; N⟧c        = 𝓕⟦M⟧(μ̃x. 𝓕⟦N⟧c)                         c a tail
+//!                     = ⟨μα. 𝓕⟦M⟧(μ̃x. 𝓕⟦N⟧α) |ε c⟩                otherwise
+//! 𝓕⟦case v {b̄}⟧c     = ⟨𝓥⟦v⟧ |+ case {inj_i(x) ⇒ 𝓕⟦b_i⟧c, …}⟩       c a tail
+//!                     = ⟨μα. ⟨𝓥⟦v⟧ |+ case {… 𝓕⟦·⟧α …}⟩ |ε c⟩        otherwise
+//! 𝓕⟦case_D v {b̄}⟧c   = ⟨𝓥⟦v⟧ |+ datacase({force(α) ⇒ 𝓕⟦b_i⟧α}, …; c)⟩
+//! 𝓕⟦v.i⟧c             = ⟨𝓥⟦v⟧ |+ select[i](c)⟩
+//! 𝓕⟦v.l⟧c             = ⟨𝓥⟦v⟧ |+ select[.l](c)⟩
+//! 𝓕⟦fix x. M⟧c        = ⟨fix{x; force(α) ⇒ 𝓕⟦M⟧α} |+ force(c)⟩
+//! ```
+//!
+//! A tail is a covariable or `★`. A bind and a case open a producer binder, and
+//! a continuation that is not a tail — a frame, a `μ̃` — carries producers
+//! whose indices would have to shift under it; so such a continuation is named
+//! once with a `μ`, at the polarity of what it observes, and the binder sees
+//! only the tail `α0`. A nominal match opens no binder of its own: each branch
+//! is a thunk of the function over the fields the core writes, and the match's
+//! continuation `c` is carried once, beside the branches, so it is neither
+//! shifted nor named; a selection carries its continuation the same way.
+//! Every continuation that crosses a binder is then a tail, nothing is shifted
+//! or copied, every focused covariable is index `0`, and two focusings of one
+//! term build identical arenas. A core value is never a `μ`, so every frame
+//! argument and constructor field of an image is a value. `Provenance`
+//! records, for each command focusing creates, the core former it was created
+//! for. A refused translation truncates the arena and the provenance table to
+//! the marks it took on entry.
+//!
+//! Passing a continuation unchanged under a binder is sound for named
+//! covariables but not for indexed producer operands. Shifting its producers
+//! under every binder would copy a frame subtree at each crossing. Naming it
+//! once instead costs one extra cut and one bound mark for a non-tail bind or
+//! case. Revisit if measurement shows that cut costs more than a shift memoized
+//! per frame.
+//!
+//! Tuples, injections and sum cases are n-ary, as in the core: a tuple is one
+//! `Tuple(n)` head with `n` fields, so the empty tuple is the unit; an
+//! injection is `Injection(i)` for the summand `i`; and a case carries one arm
+//! per summand, in summand order, so a case of no arms is the empty sum's
+//! eliminator. The alternative was a binary IL with nested pairs and
+//! injections, which focusing could reach by re-associating the core's n-ary
+//! formers, at the cost of a readback that cannot tell `(a, (b, c))` from `(a,
+//! b, c)`. The pretty printer spells the binary heads `unit`, `pair`, `inl` and
+//! `inr`, and the others `tuple` and `inj[i]`. Revisit if a consumer of the IL
+//! needs a fixed set of heads.
+//!
+//! # Records carry their labels
+//!
+//! A record focuses to one `Record(labels)` head over its fields, the labels in
+//! the core's canonical order and each field under its own label. A tuple
+//! projection and a record projection focus to the positive cut of their
+//! subject against a selection, `select[i](c)` or `select[.l](c)`, which names
+//! the field and carries the projection's continuation beside it. The machine
+//! reads the field's place from the head the selection meets: component `i` of
+//! a `Tuple(n)`, or the field under `l` among a record's labels. A selection
+//! that meets a value without its field is stuck as an unmatched match is.
+//!
+//! The core record has width and depth subtyping: a record of more labels
+//! checks where one of fewer is expected, so a projection's static type fixes
+//! neither the width of the value it meets nor the place of its label. The
+//! alternatives each fixed a place at focusing time: elaborating a projection
+//! to a `split` of the arity and at the position its type states, which
+//! mis-splits a wider record that width subtyping admitted; a positional
+//! selection alone, which has no place to read for a label; and a destructor
+//! per label, which puts a string into the copyable destructor tag every frame
+//! carries. The record of no labels stays a record rather than the unit, so
+//! readback returns the record the core wrote.
+//!
+//! Revisit when the core record becomes an ordered telescope without width
+//! subtyping: its fields then have a static place, so a record focuses as
+//! `Tuple(n)` in its written order and a projection as the split at its place,
+//! and the labels leave the IL.
+//!
+//! # A quote passes as itself
+//!
+//! A quote of either sort focuses to a [`ProducerNode::Code`] holding the
+//! quote, imported into the IL arena's annotations beside the types folds and
+//! effect interfaces keep there. A run passes it to the function that takes a
+//! type argument and never inspects it; a returned code reads back by
+//! importing it into the core again. The machine lays it as a code object
+//! whose family names the quote in the lowered function's code table. A static
+//! lambda or a static application is a type-level computation no run
+//! performs: focusing refuses it with `FocusRefusal::Code` and restores its
+//! marks.
+//!
+//! # Native universe paths
+//!
+//! A path between types runs as the pair of its two maps, forward then
+//! backward, and a transport as its motive's action applied to that pair and
+//! the moved value; a flow runs as its translator, and a ride as its motive's
+//! action on it ([`crate::identity`] states both tables). The lowered fragment
+//! is `ua`, `here`, native reflexivity, `equiv`, native equivalences and
+//! products, `transport` along a native path, and `tr(P, p, x)` at a motive
+//! whose every part is the decode of its binder, a part that never reads it,
+//! a product, a sum or a list — the rows `core-nbe` and the kernel compute.
+//!
+//! **Certification.** The kernel admitted the program, a `ua` record's laws
+//! checked as its fields; the run computes the normaliser's transport rows on
+//! the same motive, and a transported first-order value reads back through the
+//! ordinary readback as the value conversion gives. Nothing about a path is
+//! erased that the kernel needs: its laws ride inside the record and nothing
+//! forces them.
+//!
+//! **What still refuses.** A transport whose motive has a part no row reads
+//! is refused as [`FocusRefusal::ElementTransport`] naming that part's
+//! [`MotiveHead`]: a function type, the path families `back`, `then` and
+//! `cong` transport in, a datatype over its binder; a telescope transport is
+//! refused as one. Funext, `ua` at a stated stratum, a session equivalence
+//! and a compound endpoint no run reads first — an effect's payload, a native
+//! operation's operand — are [`FocusRefusal::ElementPath`]. The in-memory
+//! bridge mode, higher fields and guarded List observations remain outside
+//! this IL.
+//!
+//! **Choice.** A motive's action built from the rows conversion computes,
+//! rather than a lowering of every motive: a row the machine ran that
+//! conversion does not compute would print a value no `checks` row can agree
+//! with. **Reversal.** A motive shape earns its lowering when the normaliser
+//! and the kernel compute its row.
+//!
+//! # A returned value runs before what reads it
+//!
+//! A returned value `⟨c⟩`, a transport or a derived path written where a value
+//! is read, is the computation that returns it, run first: the kernel reads
+//! `E[c]` as `c to x. E[x]`. `𝓡⟦v⟧k` computes a value holding one to `k`:
+//!
+//! ```text
+//! 𝓡⟦⟨c⟩⟧k      = 𝓕⟦c⟧k
+//! 𝓡⟦F(v̄)⟧k     = ⟨build_F |+ force(apply({force(α) ⇒ 𝓡⟦v_i⟧α}, …; k))⟩    F holding one
+//! 𝓡⟦v⟧k        = ⟨𝓥⟦v⟧ |+ k⟩                                          otherwise
+//! 𝓕⟦return v⟧k = 𝓡⟦v⟧k
+//! 𝓕⟦M v⟧k      = ⟨run |+ force(apply({force(α) ⇒ 𝓕⟦M⟧α}, {force(α) ⇒ 𝓡⟦v⟧α}; k))⟩
+//! ```
+//!
+//! The application row holds where `v` holds a returned value. `F` is a tuple,
+//! a constructor, a record, an injection or a list cell, and an ascription is
+//! the value it ascribes. `build_F` is `thunk(λp̄. x̄ ← force p̄; return F(x̄))`
+//! and `run` is `thunk(λf. λa. x ← force a; force f x)`, both closed
+//! ([`Combinator::Build`], [`Combinator::RunArgument`]) and applied to the
+//! parts rather than closing over them, so nothing is read under a binder it
+//! did not have. A field or a frame argument is never a `μ`, but a cut's
+//! producer may be: a scrutinee, a projection's subject or a forced value
+//! holding a returned value is the capture `μα. 𝓡⟦v⟧α`, run against the match
+//! it is cut against. A returned value at a definition's own root is its
+//! constant's `μ`.
+
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
+use core::fmt;
+
+use anodized::spec;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::Component;
+use gandr_kernel_term::Summand;
+use gandr_theory_cell_complexes::Polarity;
+
+use crate::boundary::NodeCount;
+use crate::boundary::ProducerArity;
+use crate::identity::Combinator;
+use crate::identity::Composite;
+use crate::identity::Direction;
+use crate::identity::MotiveHead;
+use crate::il::CommandArena;
+use crate::il::CommandId;
+use crate::il::ConstructorTag;
+use crate::il::ConsumerId;
+use crate::il::ConsumerNode;
+use crate::il::CopatternArm;
+use crate::il::CovariableIndex;
+use crate::il::DestructorTag;
+use crate::il::Independence;
+use crate::il::Introduces;
+use crate::il::MintRefusal;
+use crate::il::PatternArm;
+use crate::il::ProducerId;
+use crate::il::ProducerNode;
+use crate::il::Route;
+use crate::il::Selector;
+
+/// The source construct a focused command was created for: the un-sugaring
+/// view of a focused term.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum FocusOrigin
+{
+    /// An operation request with its inline interface.
+    Perform,
+    /// A deep handler with explicit return and operation clauses.
+    Handle,
+    /// An operation exercised through a capability.
+    Exercise,
+    /// A deep handler introducing the capability its subject exercises.
+    Scope,
+    /// A first-class stack resumption.
+    Resume,
+    /// A first-class stack abandoned.
+    Abandon,
+    /// A delimited answer context.
+    Reset,
+    /// A delimited continuation capture.
+    Shift,
+    /// A lazy product of computations.
+    With,
+    /// `return v`: the cut of the value against the continuation.
+    Return,
+    /// A pure native List fold.
+    ListFold,
+    /// `force v`: the cut of the thunk against a force frame.
+    Force,
+    /// `fix x. M`: the cut of the recursive thunk against a force frame.
+    Fixpoint,
+    /// `λ. M`: the cut of the copattern object against the continuation.
+    Lambda,
+    /// `case v {…}`: the cut of the scrutinee against the match, or the cut
+    /// naming the continuation the match's arms share.
+    Case,
+    /// `v.f`: the cut of a tuple or a record against the selection of one of
+    /// its fields.
+    Projection,
+    /// `x ← M; N`: the cut naming the continuation a bind passes under its
+    /// binder, or the cut of an independent bind's writer `μα.𝓕⟦M⟧α` against
+    /// its binder.
+    Bind,
+    /// A declaration's value, cut against `★`.
+    TopValue,
+    /// A memory form: a hold, an access or one of a view's eliminators.
+    Memory,
+    /// A world form: a hold, a leta or a migration.
+    World,
+    /// A session action: a send, a receive, a choice, an offer, a close or a
+    /// fork.
+    Session,
+}
+
+/// The provenance table of a focusing.
+///
+/// It holds the [`FocusOrigin`] of every command focusing created, in creation
+/// order, and the core action each session command was focused from.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Provenance
+{
+    /// Each created command with its origin, in increasing command address.
+    origins: Vec<(CommandId, FocusOrigin)>,
+    /// Each session command with the core action it was focused from, in
+    /// increasing command address.
+    sessions: Vec<(CommandId, ComputationId)>,
+}
+
+impl Provenance
+{
+    /// An empty table.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new() -> Self
+    {
+        Self::default()
+    }
+
+    /// The origin recorded for a command, or `None` when focusing did not
+    /// create it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Some(origin)` exactly when a translation recorded the
+    ///   command.
+    /// - provides: the per-command un-sugaring lookup.
+    /// - fails: `None` for a command no translation created.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and sparse increasing command tables, exact
+    ///   hits, an interior gap, the end and a truncated suffix distinguish
+    ///   wrong-key searches, wrong origins and stale entries. The predicate
+    ///   reads the one entry the increasing order places `command` at, found by
+    ///   a lower-bound partition rather than the body's equality search.
+    /// - witness: `focus::tests::provenance_lookup_distinguishes_unrecorded_commands`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret == self.origins
+        .get(self.origins.partition_point(|&(recorded, _)| recorded < command))
+        .filter(|&&(recorded, _)| recorded == command).map(|&(_, origin)| origin)
+    )]
+    pub fn origin(
+        &self,
+        command: CommandId,
+    ) -> Option<FocusOrigin>
+    {
+        self.origins
+            .binary_search_by_key(&command, |&(recorded, _)| recorded)
+            .ok()
+            .and_then(|offset| self.origins.get(offset))
+            .map(|&(_, origin)| origin)
+    }
+
+    /// Every recorded command with its origin, in creation order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn entries(&self) -> impl Iterator<Item = (CommandId, FocusOrigin)>
+    {
+        self.origins.iter().copied()
+    }
+
+    /// Every session command with the core action it was focused from, in
+    /// creation order: a run's fork names its source by it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn sessions(&self) -> impl Iterator<Item = (CommandId, ComputationId)>
+    {
+        self.sessions.iter().copied()
+    }
+
+    /// The number of recorded commands.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn len(&self) -> NodeCount
+    {
+        NodeCount::from(self.origins.len())
+    }
+
+    /// Record a command's origin.
+    ///
+    /// # Specification
+    /// - requires: `command` is above every command already recorded, which
+    ///   minting order guarantees.
+    /// - ensures: the table answers `origin` for `command`.
+    /// - provides: the one write of the table.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two increasing records with different origins are
+    ///   read independently; gap and truncation probes distinguish a skipped
+    ///   append, wrong key or overwritten origin.
+    /// - witness: `focus::tests::provenance_lookup_distinguishes_unrecorded_commands`
+    #[spec(
+        requires: self.origins.last().is_none_or(|&(previous, _)| previous < command),
+        ensures: self.origin(command) == Some(origin),
+    )]
+    fn record(
+        &mut self,
+        command: CommandId,
+        origin: FocusOrigin,
+    )
+    {
+        self.origins.push((command, origin));
+    }
+
+    /// Record the core action `source` a session command was focused from.
+    ///
+    /// # Specification
+    /// trivial.
+    fn record_session(
+        &mut self,
+        command: CommandId,
+        source: ComputationId,
+    )
+    {
+        self.sessions.push((command, source));
+    }
+
+    /// Truncate the table to an earlier length, the session commands past it
+    /// with it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn truncate_to(
+        &mut self,
+        length: NodeCount,
+    )
+    {
+        if let Some(&(first, _)) = self.origins.get(usize::from(length)) {
+            let kept = self
+                .sessions
+                .partition_point(|&(command, _)| command < first);
+            self.sessions.truncate(kept);
+        }
+        self.origins.truncate(usize::from(length));
+    }
+}
+
+/// The writers of the binds a caller judges independent.
+///
+/// Each writer is a core computation that the caller's checker types as a
+/// returner with the closed empty row, so it performs no operation. Focus
+/// focuses such a writer apart from its binder, as `⟨μα.𝓕⟦M⟧α |+ μ̃x.c⟩`, and
+/// marks the binder independent.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Writers(BTreeSet<ComputationId>);
+
+impl Writers
+{
+    /// No writer: every bind keeps its writer fused with its binder.
+    pub const NONE: Self = Self(BTreeSet::new());
+
+    /// Whether the binds of `writer` are independent.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn independence(
+        &self,
+        writer: ComputationId,
+    ) -> Independence
+    {
+        if self.0.contains(&writer) {
+            Independence::Independent
+        }
+        else {
+            Independence::Sequential
+        }
+    }
+}
+
+impl FromIterator<ComputationId> for Writers
+{
+    /// The writers `iter` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from_iter<Names>(iter: Names) -> Self
+    where
+        Names: IntoIterator<Item = ComputationId>,
+    {
+        Self(iter.into_iter().collect())
+    }
+}
+
+/// Why a translation was refused.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum FocusRefusal
+{
+    /// An element transport whose motive has a part no transport row reads,
+    /// named by that part's head, or a telescope transport: the machine runs
+    /// a transport only by the rows conversion computes.
+    ElementTransport(ComputationId, MotiveHead),
+    /// An identity introduction with no image — function extensionality,
+    /// `ua` at a stated stratum, a session equivalence — or a compound
+    /// endpoint. A path between types runs as its two maps and a flow as its
+    /// translator, so neither is refused.
+    ElementPath(ValueId),
+    /// A core value id names no node of the core arena.
+    DanglingValue(ValueId),
+    /// A core computation id names no node of the core arena.
+    DanglingComputation(ComputationId),
+    /// The command arena refused a node.
+    Mint(MintRefusal),
+    /// A static code: a type operator or a static application is a type-level
+    /// computation no run performs, so it has no producer to become.
+    Code(ValueId),
+    /// A hole or a mark in value position: an unfinished or ill-typed program
+    /// has no command-IL image, as it has no kernel one.
+    IncompleteValue(ValueId),
+    /// A hole or a mark in computation position.
+    IncompleteComputation(ComputationId),
+    /// A computation standing where a value is read, before the checker's
+    /// elaboration replaced it: only an elaborated body has a command-IL
+    /// image, as only one has a kernel image.
+    Unelaborated(ValueId),
+    /// An internal invariant broke: a finishing task found no result where
+    /// its own children should have left one. Unreachable while the
+    /// translation's own pushes are the only source of tasks; reported rather
+    /// than asserted.
+    TranslationInvariant,
+}
+
+impl fmt::Display for FocusRefusal
+{
+    /// Names the refused input.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::ElementTransport(_, head) => write!(
+                f,
+                "element transport along a motive the machine does not lower: {head}"
+            ),
+            Self::ElementPath(_) => f.write_str(
+                "an identity introduction or a compound endpoint has no command-IL producer",
+            ),
+            Self::DanglingValue(_) => f.write_str("a core value id names no node"),
+            Self::DanglingComputation(_) => f.write_str("a core computation id names no node"),
+            Self::Mint(refusal) => write!(f, "the command arena refused a node: {refusal}"),
+            Self::TranslationInvariant => f.write_str("the translation lost a result it pushed"),
+            Self::Code(_) => f.write_str("a static code has no producer in the command IL"),
+            Self::IncompleteValue(_) | Self::IncompleteComputation(_) => {
+                f.write_str("a hole or a mark has no image in the command IL")
+            },
+            Self::Unelaborated(_) => f.write_str(
+                "a computation standing as a value before elaboration has no command-IL producer",
+            ),
+        }
+    }
+}
+
+impl core::error::Error for FocusRefusal
+{
+}
+
+impl From<MintRefusal> for FocusRefusal
+{
+    /// Carries the arena's refusal in its own vocabulary.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(refusal: MintRefusal) -> Self
+    {
+        Self::Mint(refusal)
+    }
+}
+
+/// Focus a core computation against the terminal continuation `★`.
+///
+/// # Specification
+/// - requires: `computation` is a closed term of `core`, or one whose free
+///   variables the caller binds.
+/// - ensures: on success the command `𝓕⟦computation⟧★`, every command it
+///   created recorded in `provenance`; equal inputs mint identical nodes. A
+///   bind `x ← M; N` whose `M` `writers` holds focuses as `⟨μα.𝓕⟦M⟧α |+ μ̃x.c⟩`,
+///   its binder marked independent, and every other binder reads
+///   [`Independence::Sequential`].
+/// - provides: the entry of a computation into the IL.
+/// - fails: [`FocusRefusal`] at the first dangling core id, code or refused
+///   mint; `arena` and `provenance` are then exactly as they were on entry.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L2 — an independent decoder compares generated closed
+///   computations with their input, detecting wrong formers, child order and
+///   binder shifts within the bounded generator. L3 — hand-built former cases
+///   and exact refusal/rollback observations cover the directed residue;
+///   equal-input arena comparison observes deterministic minting only. Nested
+///   binds with one writer held separate a named writer and its mark from a
+///   fused bind, and a decoder reads both back to the same bind.
+/// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+/// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
+/// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+/// - witness: `focus::tests::a_refused_focusing_leaves_the_arena_at_its_mark`
+/// - witness: `focus::tests::a_quote_focuses_to_the_code_it_names`
+/// - witness: `focus::tests::a_static_code_is_refused_by_name`
+/// - witness: `focus::tests::focusing_mints_no_name`
+/// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
+/// - witness: `focus::tests::an_independent_bind_names_its_writer_and_marks_its_binder`
+#[inline]
+#[spec(
+    captures: [mark = arena.watermark(), recorded = provenance.len()],
+    ensures: |ret| match ret {
+        | Ok(id) => arena.command(id).is_some() && provenance.origin(id).is_some(),
+        | Err(_) => arena.watermark() == mark && provenance.len() == recorded,
+    },
+)]
+pub fn focus_computation(
+    core: &CoreArena,
+    computation: ComputationId,
+    arena: &mut CommandArena,
+    provenance: &mut Provenance,
+    writers: &Writers,
+) -> Result<CommandId, FocusRefusal>
+{
+    transactional(arena, provenance, |arena, provenance| {
+        with_combinators(
+            core,
+            (arena, provenance, writers),
+            (
+                |run: &mut Focusing<'_>| {
+                    let top = run.arena.mint_consumer(ConsumerNode::Top)?;
+                    run.tasks.push(Task::Computation {
+                        computation,
+                        continuation: top,
+                    });
+                    Ok(())
+                },
+                |run: Focusing<'_>| run.single_command(),
+            ),
+        )
+    })
+}
+
+/// Focus a core value into a producer.
+///
+/// # Specification
+/// - requires: as [`focus_computation`].
+/// - ensures: on success the producer `𝓥⟦value⟧`, which is never a `μ`.
+/// - provides: the entry of a value into the IL.
+/// - fails: as [`focus_computation`], with the same rollback.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the independent decoder compares generated values with
+///   their source, exposing wrong constructors and child order within the
+///   bounded generator. L3 — exact dangling-root rollback covers refusal.
+/// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+/// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
+#[inline]
+#[spec(
+    captures: [mark = arena.watermark(), recorded = provenance.len()],
+    ensures: |ret| match ret {
+        | Ok(id) => arena.producer(id).is_some_and(|node| !matches!(node, &ProducerNode::Mu { .. })),
+        | Err(_) => arena.watermark() == mark && provenance.len() == recorded,
+    },
+)]
+pub fn focus_value(
+    core: &CoreArena,
+    value: ValueId,
+    arena: &mut CommandArena,
+    provenance: &mut Provenance,
+    writers: &Writers,
+) -> Result<ProducerId, FocusRefusal>
+{
+    transactional(arena, provenance, |arena, provenance| {
+        with_combinators(
+            core,
+            (arena, provenance, writers),
+            (
+                |run: &mut Focusing<'_>| {
+                    run.tasks.push(Task::Value(value));
+                    Ok(())
+                },
+                |run: Focusing<'_>| run.single_producer(),
+            ),
+        )
+    })
+}
+
+/// Focus a declaration's body into the producer its constant unfolds to.
+///
+/// The producer is `𝓥⟦value⟧`, or for a value holding a returned value the
+/// capture `μα. 𝓡⟦value⟧α`, which a run unfolding the constant runs once for
+/// its answer. A computed value `⟨c⟩` is `μα. 𝓒⟦c⟧α`, and a former holding
+/// one is built from what its returned fields compute.
+///
+/// # Specification
+/// - requires: as [`focus_computation`].
+/// - ensures: on success a `μ` exactly when `value` holds a returned value, its
+///   body `value` returned against the `μ`'s covariable; otherwise
+///   [`focus_value`]'s producer.
+/// - provides: the entry a declaration's definition is focused from.
+/// - fails: as [`focus_computation`], with the same rollback.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a computed value focuses to a `μ` whose body runs the
+///   computation against that `μ`'s own covariable, a record holding one to a
+///   `μ` whose body builds the record from what the field computes, and a value
+///   holding none focuses to itself, no `μ`: a body run against another
+///   covariable, a `μ` dropped, or one added around the plain value renders
+///   otherwise.
+/// - witness: `focus::tests::a_computed_value_focuses_to_the_capture_that_runs_it`
+/// - witness: `focus::tests::a_record_holding_a_returned_field_focuses_to_the_capture_that_builds_it_5649`
+/// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
+#[inline]
+#[spec(
+    captures: [mark = arena.watermark(), recorded = provenance.len()],
+    ensures: |ret| match ret {
+        | Ok(id) => arena.producer(id).is_some_and(|node| matches!(node, &ProducerNode::Mu { .. })
+            || !matches!(core.value(value), Some(&(Value::Returned(_) | Value::Compose { .. })))),
+        | Err(_) => arena.watermark() == mark && provenance.len() == recorded,
+    },
+)]
+pub fn focus_definition(
+    core: &CoreArena,
+    value: ValueId,
+    arena: &mut CommandArena,
+    provenance: &mut Provenance,
+    writers: &Writers,
+) -> Result<ProducerId, FocusRefusal>
+{
+    transactional(arena, provenance, |arena, provenance| {
+        with_combinators(
+            core,
+            (arena, provenance, writers),
+            (
+                |run: &mut Focusing<'_>| run.subject(value),
+                |run: Focusing<'_>| run.single_producer(),
+            ),
+        )
+    })
+}
+
+/// Focus a declaration's value against `★`: the command `⟨𝓥⟦value⟧ |+ ★⟩`.
+///
+/// # Specification
+/// - requires: as [`focus_computation`].
+/// - ensures: on success the cut of `𝓥⟦value⟧` against `★`, recorded as
+///   [`FocusOrigin::TopValue`].
+/// - provides: the entry a declaration is run from.
+/// - fails: as [`focus_computation`], with the same rollback.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a literal declaration focuses to one positive cut against
+///   `★`, checked and recorded as a top value.
+/// - witness: `tests::focus_properties::top_level_value_focuses_against_top`
+/// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
+#[inline]
+#[spec(
+    captures: [mark = arena.watermark(), recorded = provenance.len()],
+    ensures: |ret| match ret {
+        | Ok(id) => provenance.origin(id) == Some(FocusOrigin::TopValue)
+            && arena.command(id).is_some_and(|node| matches!(node,
+                &crate::il::CommandNode::Cut { polarity: Polarity::Positive, consumer, .. }
+                    if arena.consumer(consumer) == Some(&ConsumerNode::Top))),
+        | Err(_) => arena.watermark() == mark && provenance.len() == recorded,
+    },
+)]
+pub fn focus_top_value(
+    core: &CoreArena,
+    value: ValueId,
+    arena: &mut CommandArena,
+    provenance: &mut Provenance,
+    writers: &Writers,
+) -> Result<CommandId, FocusRefusal>
+{
+    transactional(arena, provenance, |arena, provenance| {
+        with_combinators(
+            core,
+            (arena, provenance, writers),
+            (
+                |run: &mut Focusing<'_>| {
+                    let top = run.arena.mint_consumer(ConsumerNode::Top)?;
+                    run.tasks.push(Task::Cut {
+                        origin: FocusOrigin::TopValue,
+                        polarity: Polarity::Positive,
+                        consumer: top,
+                    });
+                    run.tasks.push(Task::Value(value));
+                    Ok(())
+                },
+                |run: Focusing<'_>| run.single_command(),
+            ),
+        )
+    })
+}
+
+/// Run a translation, truncating the arena and the provenance table to their
+/// entry marks if it is refused.
+///
+/// # Specification
+/// - requires: `build` only appends nodes and origins; earlier entries are
+///   neither removed nor rewritten.
+/// - ensures: `build`'s answer; on refusal, `arena` and `provenance` are
+///   exactly as on entry.
+/// - provides: the one rollback every entry point shares.
+/// - fails: `build`'s refusal, unchanged.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — partial builds and dangling roots through every entry
+///   point observe exact refusal payloads and retained earlier translations. A
+///   missing rollback or a rollback of one region only changes the
+///   arena/provenance observations.
+/// - witness: `focus::tests::a_refused_focusing_leaves_the_arena_at_its_mark`
+/// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
+#[spec(
+    captures: [mark = arena.watermark(), recorded = provenance.len()],
+    ensures: |ref ret| ret.is_ok() || (arena.watermark() == mark && provenance.len() == recorded),
+)]
+fn transactional<Answer, Build>(
+    arena: &mut CommandArena,
+    provenance: &mut Provenance,
+    build: Build,
+) -> Result<Answer, FocusRefusal>
+where
+    Build: FnOnce(&mut CommandArena, &mut Provenance) -> Result<Answer, FocusRefusal>,
+{
+    let arena_mark = arena.watermark();
+    let provenance_mark = provenance.len();
+    let answer = build(arena, provenance);
+    if answer.is_err() {
+        arena.truncate_to(arena_mark);
+        provenance.truncate_to(provenance_mark);
+    }
+    answer
+}
+
+/// Focus the work `seed` sets up, every identity combinator it meets focused
+/// once beforehand.
+///
+/// # Specification
+/// - requires: `seed` only mints and pushes tasks; `finish` reads the run's one
+///   result.
+/// - ensures: a first run over `core` records the combinators its flows, paths,
+///   rides and transports apply; when it met none its result is the answer.
+///   Otherwise the arena and provenance return to their marks, each wanted
+///   combinator is built closed in a scratch arena and focused by a run of its
+///   own, and a second run with those producers prepared gives the answer. A
+///   combinator's run marks no binder, because its writers would name nodes of
+///   the scratch arena, which `writers` does not name.
+/// - provides: closed combinators without a run nested in a run, and with no
+///   cost to a term that holds no identity.
+/// - fails: `seed`'s, a run's or `finish`'s refusal;
+///   [`FocusRefusal::TranslationInvariant`] when the second run still wants a
+///   combinator.
+/// - panics: none.
+/// - executable: none — the answer's type is the caller's, and what the runs
+///   minted is observed by the entry points' own specifications.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — rides, a function flow and transports run to the kernel
+///   rows' values, which the first run's placeholders would not compute.
+/// - witness: `tests::run::rides_run_by_the_motives_action`
+/// - witness: `tests::run::a_function_flow_runs_in_variance_order`
+/// - witness: `tests::run::transports_run_by_the_motives_action`
+fn with_combinators<Answer, Seed, Finish>(
+    core: &CoreArena,
+    (arena, provenance, writers): (&mut CommandArena, &mut Provenance, &Writers),
+    (seed, finish): (Seed, Finish),
+) -> Result<Answer, FocusRefusal>
+where
+    Seed: Fn(&mut Focusing<'_>) -> Result<(), FocusRefusal>,
+    Finish: Fn(Focusing<'_>) -> Result<Answer, FocusRefusal>,
+{
+    let arena_mark = arena.watermark();
+    let provenance_mark = provenance.len();
+    let wanted = {
+        let mut run = Focusing::new(core, (arena, provenance), writers);
+        seed(&mut run)?;
+        run.drive()?;
+        if run.wanted.is_empty() {
+            return finish(run);
+        }
+        core::mem::take(&mut run.wanted)
+    };
+    arena.truncate_to(arena_mark);
+    provenance.truncate_to(provenance_mark);
+    let mut prepared = BTreeMap::new();
+    let mut scratch = CoreArena::new();
+    let empty = scratch.watermark();
+    let none = Writers::NONE;
+    for combinator in wanted {
+        let mut cases = crate::identity::RunCases::new();
+        let root = crate::identity::build(core, combinator, (&mut scratch, &mut cases))?;
+        let mut closed = Focusing::new(&scratch, (arena, provenance), &none);
+        closed.run_cases = cases;
+        closed.tasks.push(Task::Value(root));
+        closed.drive()?;
+        if !closed.wanted.is_empty() {
+            return Err(FocusRefusal::TranslationInvariant);
+        }
+        let _replaced = prepared.insert(combinator, closed.single_producer()?);
+        scratch.truncate_to(empty);
+    }
+    let mut run = Focusing::new(core, (arena, provenance), writers);
+    run.prepared = prepared;
+    seed(&mut run)?;
+    run.drive()?;
+    if !run.wanted.is_empty() {
+        return Err(FocusRefusal::TranslationInvariant);
+    }
+    finish(run)
+}
+
+/// One unit of pending translation work.
+#[derive(Clone, Debug)]
+enum Task
+{
+    /// Assemble a literal stack after translating its operands and bind bodies.
+    Reify(ValueId),
+    /// Assemble an effect or control instruction after its children.
+    Control
+    {
+        /// The source node carrying interface and clause metadata.
+        source: ComputationId,
+        /// The caller's return point.
+        continuation: ConsumerId,
+    },
+    /// Assemble a native fold after its list and two branches.
+    ListFold
+    {
+        /// Portable element annotation.
+        element: gandr_core_term::ValueTypeId,
+        /// Portable result annotation.
+        result: gandr_core_term::ValueTypeId,
+        /// The caller's return point.
+        continuation: ConsumerId,
+    },
+    /// Complete a saturated native operation after translating its operands.
+    Primitive
+    {
+        /// The table's operation.
+        primitive: gandr_core_term::primitive::Primitive,
+        /// The source operand shape.
+        arguments: gandr_core_term::primitive::Arguments,
+        /// The caller's return point.
+        continuation: ConsumerId,
+    },
+    /// Complete a decomposition after translating its dialogue.
+    Decompose
+    {
+        /// The caller's return point.
+        continuation: ConsumerId,
+    },
+    /// Translate a value; leaves one producer.
+    Value(ValueId),
+    /// Translate a computation under a continuation; leaves one command.
+    Computation
+    {
+        /// The computation.
+        computation: ComputationId,
+        /// The continuation it returns to.
+        continuation: ConsumerId,
+    },
+    /// Pop this many producers and mint their tuple.
+    Tuple(ProducerArity),
+    /// Pop one producer per label and mint the record of those labels.
+    Record(alloc::sync::Arc<[gandr_core_term::FieldLabel]>),
+    /// Pop one producer per payload move and mint the recorded run of these
+    /// moves.
+    Recorded(alloc::sync::Arc<[gandr_core_term::session::RecordedMove<()>]>),
+    /// Pop one producer per payload move and mint the dialogue of these
+    /// moves.
+    Dialogue(alloc::sync::Arc<[gandr_core_term::session::DialogueMove<()>]>),
+    /// Pop head and tail producers and mint their native cell.
+    ListCons,
+    /// Pop one producer and mint its injection into this summand.
+    Injection(Summand),
+    /// Pop one producer and mint its lift.
+    Lift(Level),
+    /// Pop a datatype constructor's fields and mint it.
+    Native
+    {
+        /// The constructor's ordinal.
+        tag: gandr_kernel_term::ConstructorTag,
+        /// Its field count.
+        arity: ProducerArity,
+        /// The declaration of the family that declares the constructor.
+        family: gandr_kernel_term::ConstantIndex,
+    },
+    /// Pop one command and mint the thunk suspending it.
+    Thunk,
+    /// Pop one command and push the capture `μα. command`: the producer a cut
+    /// puts against its consumer where the value cut there holds a returned
+    /// value.
+    Capture,
+    /// Schedule the part `thunk(𝓡⟦value⟧)`: `value` computed to a fresh
+    /// return point and suspended.
+    Suspend(ValueId),
+    /// Pop one command and mint the recursive thunk suspending it.
+    Fixpoint(gandr_kernel_term::FixpointEvidence),
+    /// Pop one producer and mint its cut against `consumer`.
+    Cut
+    {
+        /// The construct the cut is created for.
+        origin: FocusOrigin,
+        /// The cut's polarity.
+        polarity: Polarity,
+        /// The consumer.
+        consumer: ConsumerId,
+    },
+    /// Pop `count` producers and mint their delivery to `consumer`.
+    Deliver
+    {
+        /// How many values are delivered.
+        count: ProducerArity,
+        /// The consumer.
+        consumer: ConsumerId,
+    },
+    /// Pop the argument's producer, mint `apply(argument; continuation)`, and
+    /// translate `head` under it.
+    Apply
+    {
+        /// The applied computation.
+        head: ComputationId,
+        /// The continuation the application returns to.
+        continuation: ConsumerId,
+    },
+    /// Pop the body's command and mint `⟨cocase {apply ⇒ body} |− c⟩`.
+    Lambda
+    {
+        /// The continuation the function is sent to.
+        continuation: ConsumerId,
+    },
+    /// Pop the bind's body, mint `μ̃x. body`, and translate `head` under it.
+    Bind
+    {
+        /// The bound computation.
+        head: ComputationId,
+    },
+    /// Pop the bind's body, mint `μ̃(x₁ … xₙ). body`, and translate `head`
+    /// under it.
+    BindAll
+    {
+        /// The bound computation.
+        head: ComputationId,
+        /// How many values it returns.
+        arity: ProducerArity,
+    },
+    /// Pop the scrutinee's producer and the arms' commands, one per summand,
+    /// and mint the cut of the scrutinee against the match.
+    Case
+    {
+        /// The number of arms.
+        branches: NodeCount,
+    },
+    /// Pop the scrutinee's producer and the body's command, and mint the cut
+    /// of the scrutinee against the match of one tuple pattern of this arity.
+    Split(ProducerArity),
+    /// Pop the scrutinee's producer and the arms' commands, one per complete
+    /// run, and mint the cut of the scrutinee against the match of each run's
+    /// moves.
+    RunCase(crate::identity::RunArms),
+    /// Pop the scrutinee's producer and the two branches' commands, and mint
+    /// the cut of the scrutinee against the match of the list's nil and cell.
+    ListCase,
+    /// Pop the branches' thunks and the scrutinee's producer, and mint the
+    /// cut of the scrutinee against the nominal match; at an indexed family,
+    /// the continuation first applies each branch to its equations.
+    DataCase
+    {
+        /// The number of branches.
+        branches: NodeCount,
+        /// Each constructor's field count, in tag order.
+        arities: alloc::boxed::Box<[gandr_kernel_term::FieldCount]>,
+        /// The equations each branch takes past its fields.
+        equations: gandr_kernel_term::EquationCount,
+        /// The continuation every branch returns to.
+        continuation: ConsumerId,
+    },
+    /// Pop one command and mint `⟨μα. command |polarity continuation⟩`.
+    Name
+    {
+        /// The construct the naming cut is created for.
+        origin: FocusOrigin,
+        /// The polarity of what the continuation observes.
+        polarity: Polarity,
+        /// The named continuation.
+        continuation: ConsumerId,
+    },
+    /// Pop the parts the combinator is applied to, the last one first, and
+    /// mint `⟨combinator |+ force(apply(first; … apply(last;
+    /// continuation)))⟩` over the closed combinator's producer.
+    Combinator
+    {
+        /// The closed program applied.
+        combinator: Combinator,
+        /// The continuation its answer is sent to.
+        continuation: ConsumerId,
+    },
+}
+
+/// Whether a value holds a returned value `⟨c⟩` a run reaches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Holding
+{
+    /// It is one, or a former with a field that holds one.
+    Returned,
+    /// It holds none, so it focuses as a value.
+    Plain,
+}
+
+/// Where a post-order walk stands at a former: about to queue its fields, or
+/// leaving it once they are decided.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Visit
+{
+    /// Queue the former's undecided fields, then leave it.
+    Enter,
+    /// Decide the former from its fields.
+    Leave,
+}
+
+/// The state of one translation.
+struct Focusing<'run>
+{
+    /// The core arena read from.
+    core: &'run CoreArena,
+    /// The command arena minted into.
+    arena: &'run mut CommandArena,
+    /// The provenance table recorded into.
+    provenance: &'run mut Provenance,
+    /// The pending work, the next task last.
+    tasks: Vec<Task>,
+    /// Translated producers awaiting their parent.
+    producers: Vec<ProducerId>,
+    /// Translated commands awaiting their parent.
+    commands: Vec<CommandId>,
+    /// The identity combinators focused before this run, by combinator.
+    prepared: BTreeMap<Combinator, ProducerId>,
+    /// The identity combinators this run met that were not prepared.
+    wanted: BTreeSet<Combinator>,
+    /// The run matches a combinator's build left, by the placeholder each
+    /// stands at.
+    run_cases: crate::identity::RunCases,
+    /// Whether each former met holds a returned value, decided once.
+    returning: BTreeMap<ValueId, Holding>,
+    /// The writers whose binds the run focuses apart and marks independent.
+    writers: &'run Writers,
+}
+
+impl<'run> Focusing<'run>
+{
+    /// A translation with no work.
+    ///
+    /// # Specification
+    /// trivial.
+    fn new(
+        core: &'run CoreArena,
+        (arena, provenance): (&'run mut CommandArena, &'run mut Provenance),
+        writers: &'run Writers,
+    ) -> Self
+    {
+        Self {
+            core,
+            arena,
+            provenance,
+            tasks: Vec::new(),
+            producers: Vec::new(),
+            commands: Vec::new(),
+            prepared: BTreeMap::new(),
+            wanted: BTreeSet::new(),
+            run_cases: crate::identity::RunCases::new(),
+            returning: BTreeMap::new(),
+            writers,
+        }
+    }
+
+    /// Run every pending task.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success the task stack is empty and each translated root
+    ///   left its one result.
+    /// - provides: the loop every translation drives; no task recurses.
+    /// - fails: the first refusal a task raises.
+    /// - panics: none.
+    /// - intension: one iteration per task; a value or computation node is
+    ///   translated by a constant number of tasks.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independent decoding of bounded generated terms
+    ///   observes former choice, child order and binder shifts. L3 — one case
+    ///   per former and exact refusal/rollback probes cover directed
+    ///   boundaries.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    #[spec(ensures: |ret| ret.is_err() || self.tasks.is_empty())]
+    fn drive(&mut self) -> Result<(), FocusRefusal>
+    {
+        while let Some(task) = self.tasks.pop() {
+            self.step(task)?;
+        }
+        Ok(())
+    }
+
+    /// Run one task.
+    ///
+    /// # Specification
+    /// - requires: a finishing task's children have left their results.
+    /// - ensures: the task's result, or its follow-up tasks, are pushed.
+    /// - provides: the translation table of the module documentation, one arm
+    ///   per row.
+    /// - fails: a dangling core id, a refused mint, or a missing result.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independent decoding of bounded generated terms
+    ///   observes former choice, child order and binder shifts. L3 — one case
+    ///   per former and exact refusal/rollback probes cover directed
+    ///   boundaries.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    #[spec(
+        requires: match &task {
+            | &Task::Reify(source) => self.core.value(source).is_none_or(|node| match *node {
+                Value::Reify(ref frames) => self.producers.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Apply(_))).count()
+                    && self.commands.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Bind(_))).count(),
+                Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Compose { .. } | Value::Fill { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Row(_) => true,
+            }),
+            | &Task::Control { source, .. } => self.core.computation(source).is_none_or(|node| match *node {
+                Computation::Perform { .. } | Computation::Abandon(_) => !self.producers.is_empty(),
+                Computation::Exercise { .. } => self.producers.len() >= 2,
+                Computation::Handle { ref clauses, .. } | Computation::Scope { ref clauses, .. } => self.commands.len() >= clauses.len().saturating_add(2),
+                Computation::Resume(..) => !self.producers.is_empty() && !self.commands.is_empty(),
+                Computation::Reset(_) | Computation::Shift(_) => !self.commands.is_empty(),
+                Computation::With(ref components) => self.commands.len() >= components.len(),
+                Computation::Primitive { .. } | Computation::Decompose(_) | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::LinearLambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::ReturnAll(_) | Computation::Bind(..) | Computation::BindAll { .. } | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => true,
+            }),
+            | &Task::Primitive { arguments, .. } => self.producers.len() >= arguments.len(),
+            | &Task::ListCons => self.producers.len() >= 2,
+            | &Task::Combinator { combinator, .. } => self.producers.len() >= usize::from(combinator.applied()),
+            | &Task::Decompose { .. } | &Task::Injection(_) | &Task::Lift(_) | &Task::Cut { .. } | &Task::Apply { .. } => !self.producers.is_empty(),
+            | &Task::Deliver { count, .. } => self.producers.len() >= usize::from(count),
+            | &Task::Thunk | &Task::Capture | &Task::Fixpoint(_) | &Task::Lambda { .. } | &Task::Bind { .. } | &Task::BindAll { .. } | &Task::Name { .. } => !self.commands.is_empty(),
+            | &Task::ListFold { .. } | &Task::ListCase => !self.producers.is_empty() && self.commands.len() >= 2,
+            | &Task::Case { branches } => !self.producers.is_empty() && self.commands.len() >= usize::from(branches),
+            | &Task::RunCase(ref arms) => !self.producers.is_empty() && self.commands.len() >= arms.len(),
+            | &Task::Split(_) => !self.producers.is_empty() && !self.commands.is_empty(),
+            | &Task::Tuple(arity) | &Task::Native { arity, .. } => self.producers.len() >= usize::from(arity),
+            | &Task::Record(ref labels) => self.producers.len() >= labels.len(),
+            | &Task::Recorded(ref moves) => self.producers.len() >= usize::from(ConstructorTag::Recorded(alloc::sync::Arc::clone(moves)).producer_arity()),
+            | &Task::Dialogue(ref turns) => self.producers.len() >= usize::from(ConstructorTag::Dialogue(alloc::sync::Arc::clone(turns)).producer_arity()),
+            | &Task::DataCase { branches, .. } => self.producers.len() > usize::from(branches),
+            | &Task::Value(_) | &Task::Suspend(_) | &Task::Computation { .. } => true,
+        },
+        ensures: |ret| ret.is_err() || (self.producers.last().is_none_or(|id| self.arena.producer(*id).is_some())
+            && self.commands.last().is_none_or(|id| self.arena.command(*id).is_some())),
+    )]
+    fn step(
+        &mut self,
+        task: Task,
+    ) -> Result<(), FocusRefusal>
+    {
+        match task {
+            Task::Reify(source) => self.complete_reify(source),
+            Task::Control {
+                source,
+                continuation,
+            } => self.complete_control(source, continuation),
+            Task::Primitive {
+                primitive,
+                arguments,
+                continuation,
+            } => {
+                use gandr_core_term::primitive::Arguments;
+                let arguments = match arguments {
+                    Arguments::Unary(_) => Arguments::Unary(self.pop_producer()?),
+                    Arguments::Binary(_) => {
+                        let second = self.pop_producer()?;
+                        Arguments::Binary([self.pop_producer()?, second])
+                    },
+                };
+                let producer = self.arena.mint_producer(ProducerNode::Primitive {
+                    primitive,
+                    arguments,
+                })?;
+                self.cut(
+                    FocusOrigin::Return,
+                    Polarity::Positive,
+                    producer,
+                    continuation,
+                )
+            },
+            Task::Decompose { continuation } => {
+                let dialogue = self.pop_producer()?;
+                let producer = self
+                    .arena
+                    .mint_producer(ProducerNode::Decompose(dialogue))?;
+                self.cut(
+                    FocusOrigin::Return,
+                    Polarity::Positive,
+                    producer,
+                    continuation,
+                )
+            },
+            Task::Deliver { count, consumer } => {
+                let start = self
+                    .producers
+                    .len()
+                    .checked_sub(usize::from(count))
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let producers = self.producers.drain(start ..).collect();
+                let command = self.arena.mint_command(crate::il::CommandNode::Deliver {
+                    producers,
+                    consumer,
+                })?;
+                self.provenance.record(command, FocusOrigin::Return);
+                self.commands.push(command);
+                Ok(())
+            },
+            Task::Value(value) => self.value(value),
+            Task::Computation {
+                computation,
+                continuation,
+            } => self.computation(computation, continuation),
+            Task::Tuple(arity) => {
+                let start = self
+                    .producers
+                    .len()
+                    .checked_sub(usize::from(arity))
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let components: alloc::vec::Vec<ProducerId> =
+                    self.producers.drain(start ..).collect();
+                self.constructor(ConstructorTag::Tuple(arity), &components)
+            },
+            Task::Record(labels) => {
+                let start = self
+                    .producers
+                    .len()
+                    .checked_sub(labels.len())
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let fields: Vec<ProducerId> = self.producers.drain(start ..).collect();
+                self.constructor(ConstructorTag::Record(labels), &fields)
+            },
+            Task::Recorded(moves) => {
+                let tag = ConstructorTag::Recorded(moves);
+                let start = self
+                    .producers
+                    .len()
+                    .checked_sub(usize::from(tag.producer_arity()))
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let payloads: Vec<ProducerId> = self.producers.drain(start ..).collect();
+                self.constructor(tag, &payloads)
+            },
+            Task::Dialogue(turns) => {
+                let tag = ConstructorTag::Dialogue(turns);
+                let start = self
+                    .producers
+                    .len()
+                    .checked_sub(usize::from(tag.producer_arity()))
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let payloads: Vec<ProducerId> = self.producers.drain(start ..).collect();
+                self.constructor(tag, &payloads)
+            },
+            Task::ListCons => {
+                let tail = self.pop_producer()?;
+                let head = self.pop_producer()?;
+                self.constructor(ConstructorTag::ListCons, &[head, tail])
+            },
+            Task::Injection(summand) => {
+                let body = self.pop_producer()?;
+                self.constructor(ConstructorTag::Injection(summand), &[body])
+            },
+            Task::Lift(level) => {
+                let body = self.pop_producer()?;
+                self.constructor(ConstructorTag::Lift(level), &[body])
+            },
+            Task::Native { tag, arity, family } => {
+                let start = self
+                    .producers
+                    .len()
+                    .checked_sub(usize::from(arity))
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let fields: Vec<ProducerId> = self.producers.drain(start ..).collect();
+                self.constructor(ConstructorTag::Data { tag, arity, family }, &fields)
+            },
+            Task::Thunk => {
+                let body = self.pop_command()?;
+                let thunk = self.arena.mint_producer(ProducerNode::Thunk { body })?;
+                self.producers.push(thunk);
+                Ok(())
+            },
+            Task::Capture => {
+                let body = self.pop_command()?;
+                let capture = self.arena.mint_producer(ProducerNode::Mu { body })?;
+                self.producers.push(capture);
+                Ok(())
+            },
+            Task::Suspend(value) => {
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::Thunk);
+                self.returning(value, return_point)
+            },
+            Task::Fixpoint(evidence) => {
+                let body = self.pop_command()?;
+                let thunk = self
+                    .arena
+                    .mint_producer(ProducerNode::Fixpoint { body, evidence })?;
+                self.producers.push(thunk);
+                Ok(())
+            },
+            Task::Cut {
+                origin,
+                polarity,
+                consumer,
+            } => {
+                let producer = self.pop_producer()?;
+                self.cut(origin, polarity, producer, consumer)
+            },
+            Task::ListFold {
+                element,
+                result,
+                continuation,
+            } => {
+                let list = self.pop_producer()?;
+                let on_cons = self.pop_command()?;
+                let on_nil = self.pop_command()?;
+                let consumer = self.arena.mint_consumer(ConsumerNode::ListFold {
+                    element,
+                    result,
+                    on_nil,
+                    on_cons,
+                    continuation,
+                })?;
+                self.cut(FocusOrigin::ListFold, Polarity::Positive, list, consumer)
+            },
+            Task::Apply { head, continuation } => {
+                let argument = self.pop_producer()?;
+                let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
+                    tag: DestructorTag::Apply,
+                    producers: alloc::boxed::Box::from([argument]),
+                    consumers: alloc::boxed::Box::from([continuation]),
+                })?;
+                self.tasks.push(Task::Computation {
+                    computation: head,
+                    continuation: frame,
+                });
+                Ok(())
+            },
+            Task::Combinator {
+                combinator,
+                continuation,
+            } => {
+                // The last part is the innermost argument.
+                let mut observer = continuation;
+                for _part in 0 .. usize::from(combinator.applied()) {
+                    let part = self.pop_producer()?;
+                    observer = self.arena.mint_consumer(ConsumerNode::Destructor {
+                        tag: DestructorTag::Apply,
+                        producers: alloc::boxed::Box::from([part]),
+                        consumers: alloc::boxed::Box::from([observer]),
+                    })?;
+                }
+                let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
+                    tag: DestructorTag::Force,
+                    producers: alloc::boxed::Box::from([]),
+                    consumers: alloc::boxed::Box::from([observer]),
+                })?;
+                let closed = self.combinator(combinator)?;
+                self.cut(FocusOrigin::Force, Polarity::Positive, closed, frame)
+            },
+            Task::Lambda { continuation } => {
+                let body = self.pop_command()?;
+                let object = self.arena.mint_producer(ProducerNode::Cocase {
+                    arms: alloc::boxed::Box::from([CopatternArm {
+                        destructor: DestructorTag::Apply,
+                        body,
+                    }]),
+                })?;
+                self.cut(
+                    FocusOrigin::Lambda,
+                    Polarity::Negative,
+                    object,
+                    continuation,
+                )
+            },
+            Task::Bind { head } => {
+                let body = self.pop_command()?;
+                let binder = self.arena.mint_consumer(ConsumerNode::MuTilde { body })?;
+                let continuation = match self.writers.independence(head) {
+                    Independence::Sequential => binder,
+                    Independence::Independent => {
+                        self.arena
+                            .mark_independent(binder)
+                            .map_err(|_fresh| FocusRefusal::TranslationInvariant)?;
+                        self.share_or_name(FocusOrigin::Bind, binder)?
+                    },
+                };
+                self.tasks.push(Task::Computation {
+                    computation: head,
+                    continuation,
+                });
+                Ok(())
+            },
+            Task::BindAll { head, arity } => {
+                let body = self.pop_command()?;
+                let continuation = self
+                    .arena
+                    .mint_consumer(ConsumerNode::MuTildeAll { arity, body })?;
+                self.tasks.push(Task::Computation {
+                    computation: head,
+                    continuation,
+                });
+                Ok(())
+            },
+            Task::Case { branches } => {
+                let scrutinee = self.pop_producer()?;
+                let start = self
+                    .commands
+                    .len()
+                    .checked_sub(usize::from(branches))
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let arms = self
+                    .commands
+                    .drain(start ..)
+                    .enumerate()
+                    .map(|(summand, body)| PatternArm {
+                        constructor: ConstructorTag::Injection(Summand::from(summand)),
+                        body,
+                    })
+                    .collect();
+                let matcher = self.arena.mint_consumer(ConsumerNode::Case { arms })?;
+                self.cut(FocusOrigin::Case, Polarity::Positive, scrutinee, matcher)
+            },
+            Task::RunCase(runs) => {
+                let scrutinee = self.pop_producer()?;
+                let start = self
+                    .commands
+                    .len()
+                    .checked_sub(runs.len())
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let arms = self
+                    .commands
+                    .drain(start ..)
+                    .zip(runs.iter())
+                    .map(|(body, &(ref moves, _))| PatternArm {
+                        constructor: ConstructorTag::Recorded(alloc::sync::Arc::clone(moves)),
+                        body,
+                    })
+                    .collect();
+                let matcher = self.arena.mint_consumer(ConsumerNode::Case { arms })?;
+                self.cut(FocusOrigin::Case, Polarity::Positive, scrutinee, matcher)
+            },
+            Task::Split(arity) => {
+                let body = self.pop_command()?;
+                let scrutinee = self.pop_producer()?;
+                let arms = alloc::boxed::Box::from([PatternArm {
+                    constructor: ConstructorTag::Tuple(arity),
+                    body,
+                }]);
+                let matcher = self.arena.mint_consumer(ConsumerNode::Case { arms })?;
+                self.cut(FocusOrigin::Case, Polarity::Positive, scrutinee, matcher)
+            },
+            Task::ListCase => {
+                let on_cons = self.pop_command()?;
+                let on_nil = self.pop_command()?;
+                let scrutinee = self.pop_producer()?;
+                let arms = alloc::boxed::Box::from([
+                    PatternArm {
+                        constructor: ConstructorTag::ListNil,
+                        body: on_nil,
+                    },
+                    PatternArm {
+                        constructor: ConstructorTag::ListCons,
+                        body: on_cons,
+                    },
+                ]);
+                let matcher = self.arena.mint_consumer(ConsumerNode::Case { arms })?;
+                self.cut(FocusOrigin::Case, Polarity::Positive, scrutinee, matcher)
+            },
+            Task::DataCase {
+                branches,
+                arities,
+                equations,
+                continuation,
+            } => {
+                let scrutinee = self.pop_producer()?;
+                let start = self
+                    .producers
+                    .len()
+                    .checked_sub(usize::from(branches))
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let thunks: alloc::boxed::Box<[ProducerId]> =
+                    self.producers.drain(start ..).collect();
+                // A branch at an indexed family takes one equation per index
+                // past its fields. Its index stands at the constructor's, so
+                // each is reflexivity, run as its two identity maps.
+                let mut then = continuation;
+                for _equation in 0 .. usize::from(equations) {
+                    let identity = self.combinator(Combinator::Identity)?;
+                    self.constructor(ConstructorTag::Tuple(ProducerArity::from(2_usize)), &[
+                        identity, identity,
+                    ])?;
+                    let reflexivity = self.pop_producer()?;
+                    then = self.arena.mint_consumer(ConsumerNode::Destructor {
+                        tag: DestructorTag::Apply,
+                        producers: alloc::boxed::Box::from([reflexivity]),
+                        consumers: alloc::boxed::Box::from([then]),
+                    })?;
+                }
+                let matcher = self.arena.mint_consumer(ConsumerNode::DataCase {
+                    branches: thunks,
+                    arities,
+                    then,
+                })?;
+                self.cut(FocusOrigin::Case, Polarity::Positive, scrutinee, matcher)
+            },
+            Task::Name {
+                origin,
+                polarity,
+                continuation,
+            } => {
+                let body = self.pop_command()?;
+                let capture = self.arena.mint_producer(ProducerNode::Mu { body })?;
+                self.cut(origin, polarity, capture, continuation)
+            },
+        }
+    }
+
+    /// Assemble a flat literal stack; each bind body owns its own return
+    /// binder.
+    ///
+    /// # Specification
+    /// - ensures: frame order and names are preserved, with no later frame
+    ///   entering an earlier bind frame's value scope.
+    /// - fails: missing child results, malformed source, or refused allocation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — mixed apply, bind and projection frames distinguish
+    ///   order and accidental scope nesting.
+    /// - witness: `tests::focus_properties::hand_built_control_cases_cover_every_former`
+    #[spec(ensures: |ret| ret.is_err() || self.producers.last().is_some_and(|id|
+        matches!((self.core.value(source), self.arena.producer(*id)), (Some(Value::Reify(source)), Some(ProducerNode::Reify(frames))) if source.len() == frames.len())))]
+    fn complete_reify(
+        &mut self,
+        source: ValueId,
+    ) -> Result<(), FocusRefusal>
+    {
+        let core = self.core;
+        let node = core
+            .value(source)
+            .ok_or(FocusRefusal::TranslationInvariant)?;
+        let Value::Reify(ref source) = *node
+        else {
+            return Err(FocusRefusal::TranslationInvariant);
+        };
+        let mut frames = Vec::with_capacity(source.len());
+        for frame in source.iter().rev() {
+            frames.push(match *frame {
+                gandr_core_term::control::StackFrame::Apply(_) => {
+                    gandr_core_term::control::StackFrame::Apply(self.pop_producer()?)
+                },
+                gandr_core_term::control::StackFrame::Bind(_) => {
+                    gandr_core_term::control::StackFrame::Bind(self.pop_command()?)
+                },
+                gandr_core_term::control::StackFrame::Project(side) => {
+                    gandr_core_term::control::StackFrame::Project(side)
+                },
+            });
+        }
+        frames.reverse();
+        let producer = self
+            .arena
+            .mint_producer(ProducerNode::Reify(frames.into()))?;
+        self.producers.push(producer);
+        Ok(())
+    }
+
+    /// Relocate an inline interface into the focused arena's annotation graph.
+    ///
+    /// # Specification
+    /// - ensures: operation names survive and every type edge belongs to the
+    ///   focused annotation arena, even when source handles contain free codes.
+    /// - fails: a dangling source annotation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — displaced target arenas and dependent payload types
+    ///   expose copied foreign handles and omitted signature edges.
+    /// - witness: `tests::focus_properties::hand_built_control_cases_cover_every_former`
+    #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|found|
+        found.name() == signature.name() && found.types().all(|id| self.arena.annotations().value_type(id).is_some())))]
+    fn signature(
+        &mut self,
+        signature: &gandr_core_term::effect::EffectSig,
+    ) -> Result<gandr_core_term::effect::EffectSig, FocusRefusal>
+    {
+        let mut annotations =
+            gandr_core_term::TypeImporter::new(self.core, self.arena.annotations_mut());
+        Ok(
+            signature.try_map_types(gandr_core_term::effect::TypeOrder::Forward, |id| {
+                annotations
+                    .value_type(id)
+                    .map_err(|gandr_core_term::ImportFault| MintRefusal::DanglingAnnotation(id))
+            })?,
+        )
+    }
+
+    /// Assemble control children and record the instruction's source origin.
+    ///
+    /// # Specification
+    /// - ensures: bodies retain their fresh return binder; operation clauses
+    ///   retain source order and bind payload then resumption.
+    /// - fails: missing child results, malformed source or refused allocation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independent unfocusing distinguishes missing
+    ///   children, swapped clauses, lost annotations and the two lazy
+    ///   projections.
+    /// - witness: `tests::focus_properties::hand_built_control_cases_cover_every_former`
+    #[spec(ensures: |ret| ret.is_err()
+        || self.commands.last().is_some_and(|id| self.arena.command(*id).is_some() && self.provenance.origin(*id).is_some()))]
+    fn complete_control(
+        &mut self,
+        source: ComputationId,
+        continuation: ConsumerId,
+    ) -> Result<(), FocusRefusal>
+    {
+        let core = self.core;
+        let node = core
+            .computation(source)
+            .ok_or(FocusRefusal::DanglingComputation(source))?;
+        let (node, origin) = match *node {
+            Computation::Perform {
+                ref signature,
+                ref operation,
+                ..
+            } => {
+                let signature = self.signature(signature)?;
+                let payload = self.pop_producer()?;
+                (
+                    crate::il::CommandNode::Perform {
+                        signature,
+                        operation: operation.clone(),
+                        route: Route::Nearest,
+                        payload,
+                        continuation,
+                    },
+                    FocusOrigin::Perform,
+                )
+            },
+            Computation::Hole(hole) => {
+                let signature = gandr_core_term::effect::EffectSig::new(
+                    gandr_core_term::effect::EffectName::from(crate::il::REACHED_HOLE),
+                    core::iter::empty(),
+                )
+                .map_err(|_conflict| FocusRefusal::TranslationInvariant)?;
+                let place = gandr_kernel_term::Magnitude::from_decimal_text(alloc::format!(
+                    "{}",
+                    u32::from(hole)
+                ))
+                .ok_or(FocusRefusal::TranslationInvariant)?;
+                let payload = self.arena.mint_producer(ProducerNode::Literal(
+                    gandr_kernel_term::Literal::Integer(gandr_kernel_term::IntegerLiteral::new(
+                        gandr_kernel_term::Sign::NonNegative,
+                        place,
+                    )),
+                ))?;
+                (
+                    crate::il::CommandNode::Perform {
+                        signature,
+                        operation: gandr_core_term::effect::OperationName::from(crate::il::REACHED),
+                        route: Route::Nearest,
+                        payload,
+                        continuation,
+                    },
+                    FocusOrigin::Perform,
+                )
+            },
+            Computation::Exercise {
+                ref signature,
+                ref operation,
+                ..
+            } => {
+                let signature = self.signature(signature)?;
+                let payload = self.pop_producer()?;
+                let capability = self.pop_producer()?;
+                (
+                    crate::il::CommandNode::Perform {
+                        signature,
+                        operation: operation.clone(),
+                        route: Route::Capability(capability),
+                        payload,
+                        continuation,
+                    },
+                    FocusOrigin::Exercise,
+                )
+            },
+            Computation::Handle {
+                ref signature,
+                ref clauses,
+                ..
+            }
+            | Computation::Scope {
+                ref signature,
+                ref clauses,
+                ..
+            } => {
+                let (introduces, origin) = match *node {
+                    Computation::Scope { .. } => (Introduces::Capability, FocusOrigin::Scope),
+                    Computation::Primitive { .. }
+                    | Computation::Decompose(_)
+                    | Computation::Transport(..)
+                    | Computation::PathTransport { .. }
+                    | Computation::Ride { .. }
+                    | Computation::TelescopeTransport { .. }
+                    | Computation::Lambda(_)
+                    | Computation::LinearLambda(_)
+                    | Computation::Fixpoint { .. }
+                    | Computation::Application(..)
+                    | Computation::Return(_)
+                    | Computation::ReturnAll(_)
+                    | Computation::Bind(..)
+                    | Computation::BindAll { .. }
+                    | Computation::Ascribe { .. }
+                    | Computation::Force(_)
+                    | Computation::Case { .. }
+                    | Computation::Split { .. }
+                    | Computation::DataCase { .. }
+                    | Computation::RecordProjection(..)
+                    | Computation::TupleProjection(..)
+                    | Computation::Hole(_)
+                    | Computation::Mark { .. }
+                    | Computation::ListFold { .. }
+                    | Computation::ListCase { .. }
+                    | Computation::Perform { .. }
+                    | Computation::Handle { .. }
+                    | Computation::Exercise { .. }
+                    | Computation::Resume(..)
+                    | Computation::Abandon(_)
+                    | Computation::Reset(_)
+                    | Computation::Shift(_)
+                    | Computation::With(..)
+                    | Computation::Project(..)
+                    | Computation::Session(_)
+                    | Computation::Memory(_)
+                    | Computation::World(_) => (Introduces::Nothing, FocusOrigin::Handle),
+                };
+                let signature = self.signature(signature)?;
+                let mut translated = Vec::with_capacity(clauses.len());
+                for clause in clauses.iter().rev() {
+                    translated.push(gandr_core_term::control::EffectClause {
+                        operation: clause.operation.clone(),
+                        body: self.pop_command()?,
+                    });
+                }
+                translated.reverse();
+                let on_return = self.pop_command()?;
+                let subject = self.pop_command()?;
+                (
+                    crate::il::CommandNode::Handle {
+                        signature,
+                        introduces,
+                        subject,
+                        on_return,
+                        clauses: translated.into(),
+                        continuation,
+                    },
+                    origin,
+                )
+            },
+            Computation::Resume(..) => {
+                let body = self.pop_command()?;
+                let stack = self.pop_producer()?;
+                (
+                    crate::il::CommandNode::Resume {
+                        stack,
+                        body,
+                        continuation,
+                    },
+                    FocusOrigin::Resume,
+                )
+            },
+            Computation::Abandon(_) => (
+                crate::il::CommandNode::Abandon {
+                    stack: self.pop_producer()?,
+                    continuation,
+                },
+                FocusOrigin::Abandon,
+            ),
+            Computation::Reset(_) => (
+                crate::il::CommandNode::Reset {
+                    body: self.pop_command()?,
+                    continuation,
+                },
+                FocusOrigin::Reset,
+            ),
+            Computation::Shift(_) => (
+                crate::il::CommandNode::Shift {
+                    body: self.pop_command()?,
+                    continuation,
+                },
+                FocusOrigin::Shift,
+            ),
+            Computation::Memory(ref form) => (
+                crate::il::CommandNode::Memory {
+                    form: form.try_map(
+                        gandr_core_term::session::ChildOrder::Reverse,
+                        self,
+                        |focus, _| focus.pop_producer(),
+                        |focus, _| focus.pop_command(),
+                    )?,
+                    continuation,
+                },
+                FocusOrigin::Memory,
+            ),
+            Computation::World(ref form) => (
+                crate::il::CommandNode::World {
+                    form: form.try_map(
+                        gandr_core_term::session::ChildOrder::Reverse,
+                        self,
+                        |focus, _| focus.pop_producer(),
+                        |focus, _| focus.pop_command(),
+                    )?,
+                    continuation,
+                },
+                FocusOrigin::World,
+            ),
+            Computation::With(ref components) => {
+                let start = self
+                    .commands
+                    .len()
+                    .checked_sub(components.len())
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let arms = self
+                    .commands
+                    .drain(start ..)
+                    .enumerate()
+                    .map(|(position, body)| CopatternArm {
+                        destructor: DestructorTag::Project(Component::from(position)),
+                        body,
+                    })
+                    .collect();
+                let producer = self.arena.mint_producer(ProducerNode::Cocase { arms })?;
+                return self.cut(
+                    FocusOrigin::With,
+                    Polarity::Negative,
+                    producer,
+                    continuation,
+                );
+            },
+            Computation::Primitive { .. }
+            | Computation::Decompose(_)
+            | Computation::Transport(..)
+            | Computation::PathTransport { .. }
+            | Computation::Ride { .. }
+            | Computation::TelescopeTransport { .. }
+            | Computation::Lambda(_)
+            | Computation::LinearLambda(_)
+            | Computation::Fixpoint { .. }
+            | Computation::Application(..)
+            | Computation::Return(_)
+            | Computation::ReturnAll(_)
+            | Computation::Bind(..)
+            | Computation::BindAll { .. }
+            | Computation::Ascribe { .. }
+            | Computation::Force(_)
+            | Computation::Case { .. }
+            | Computation::Split { .. }
+            | Computation::DataCase { .. }
+            | Computation::RecordProjection(..)
+            | Computation::TupleProjection(..)
+            | Computation::Mark { .. }
+            | Computation::ListFold { .. }
+            | Computation::ListCase { .. }
+            | Computation::Project(..) => return Err(FocusRefusal::TranslationInvariant),
+            Computation::Session(ref action) => (
+                crate::il::CommandNode::Session {
+                    action: action.try_map(
+                        gandr_core_term::session::ChildOrder::Reverse,
+                        self,
+                        |focus, _| focus.pop_producer(),
+                        |focus, _| focus.pop_command(),
+                        |focus, protocol| {
+                            gandr_core_term::TypeImporter::new(
+                                focus.core,
+                                focus.arena.annotations_mut(),
+                            )
+                            .value_type(protocol)
+                            .map_err(|gandr_core_term::ImportFault| {
+                                FocusRefusal::from(MintRefusal::DanglingAnnotation(protocol))
+                            })
+                        },
+                    )?,
+                    continuation,
+                },
+                FocusOrigin::Session,
+            ),
+        };
+        let command = self.arena.mint_command(node)?;
+        self.provenance.record(command, origin);
+        if origin == FocusOrigin::Session {
+            self.provenance.record_session(command, source);
+        }
+        self.commands.push(command);
+        Ok(())
+    }
+
+    /// Translate one value node, or schedule its children.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a leaf's producer is pushed; a composite's finishing task and
+    ///   its children's tasks are scheduled, children left to right; a path
+    ///   between types schedules the pair of its two maps and a flow its
+    ///   translator, as [`crate::identity`] tabulates.
+    /// - provides: the `𝓥` rows.
+    /// - fails: [`FocusRefusal::DanglingValue`], [`FocusRefusal::Code`] for a
+    ///   static lambda or a static application, [`FocusRefusal::ElementPath`]
+    ///   for funext, a stratum `ua`, a session equivalence or a compound
+    ///   endpoint, [`FocusRefusal::IncompleteValue`] for a hole or a mark,
+    ///   [`FocusRefusal::Unelaborated`] for an unelaborated computation in
+    ///   value position, or a refused mint.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independent decoding of bounded generated terms
+    ///   observes former choice, child order and binder shifts. L3 — one case
+    ///   per former and exact refusal/rollback probes cover directed
+    ///   boundaries.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    /// - witness: `focus::tests::a_record_focuses_to_its_labels_in_canonical_order`
+    /// - witness: `focus::tests::a_quote_focuses_to_the_code_it_names`
+    /// - witness: `focus::tests::a_static_code_is_refused_by_name`
+    /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
+    /// - witness: `focus::tests::a_hole_is_reached_and_a_mark_refused_by_name_1881`
+    /// - witness: `tests::run::native_paths_run_as_their_maps`
+    /// - witness: `tests::run::transports_run_by_the_motives_action`
+    #[spec(
+        captures: [work = self.tasks.len(), results = self.producers.len()],
+        ensures: |ret| match self.core.value(id) {
+            | None => ret == Err(FocusRefusal::DanglingValue(id)),
+            | Some(&Value::Quote(_) | &Value::QuoteComputation(_) | &Value::Row(_)) => ret.is_err() || self.producers.len() == results.saturating_add(1),
+            | Some(&Value::StaticLambda(_) | &Value::StaticApplication(..)) => ret == Err(FocusRefusal::Code(id)),
+            | Some(&Value::Hole(_) | &Value::Mark { .. }) => ret == Err(FocusRefusal::IncompleteValue(id)),
+            | Some(&Value::Nested(_) | &Value::Run(_) | &Value::RecordUpdate { .. } | &Value::Fill { .. }) => ret == Err(FocusRefusal::Unelaborated(id)),
+            | Some(_) => ret.is_err() || self.tasks.len() > work || self.producers.len() > results,
+        },
+    )]
+    fn value(
+        &mut self,
+        id: ValueId,
+    ) -> Result<(), FocusRefusal>
+    {
+        let node = self.core.value(id).ok_or(FocusRefusal::DanglingValue(id))?;
+        let leaf = match *node {
+            Value::Record(ref fields) => {
+                self.tasks
+                    .push(Task::Record(fields.keys().cloned().collect()));
+                for &field in fields.values().rev() {
+                    self.tasks.push(Task::Value(field));
+                }
+                return Ok(());
+            },
+            Value::Constructor {
+                family,
+                tag,
+                ref fields,
+                ..
+            } => {
+                self.tasks.push(Task::Native {
+                    tag,
+                    arity: ProducerArity::from(fields.len()),
+                    family,
+                });
+                for &field in fields.iter().rev() {
+                    self.tasks.push(Task::Value(field));
+                }
+                return Ok(());
+            },
+            Value::Reify(ref frames) => {
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::Reify(id));
+                for frame in frames.iter().rev() {
+                    match *frame {
+                        gandr_core_term::control::StackFrame::Apply(value) => {
+                            self.tasks.push(Task::Value(value));
+                        },
+                        gandr_core_term::control::StackFrame::Bind(body) => {
+                            self.tasks.push(Task::Computation {
+                                computation: body,
+                                continuation: return_point,
+                            });
+                        },
+                        gandr_core_term::control::StackFrame::Project(_) => {},
+                    }
+                }
+                return Ok(());
+            },
+            Value::ListNil => ProducerNode::Constructor {
+                tag: ConstructorTag::ListNil,
+                producers: alloc::boxed::Box::from([]),
+                consumers: alloc::boxed::Box::from([]),
+            },
+            Value::ListCons(head, tail) => {
+                self.tasks.push(Task::ListCons);
+                self.tasks.push(Task::Value(tail));
+                self.tasks.push(Task::Value(head));
+                return Ok(());
+            },
+            Value::Variable { zone, index } => ProducerNode::Variable { zone, index },
+            Value::Constant(constant) => ProducerNode::Constant(constant),
+            Value::Literal(ref literal) => ProducerNode::Literal(literal.clone()),
+            Value::Tuple(ref components) if components.is_empty() => ProducerNode::Constructor {
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
+                producers: alloc::boxed::Box::from([]),
+                consumers: alloc::boxed::Box::from([]),
+            },
+            Value::Tuple(ref components) => {
+                self.tasks
+                    .push(Task::Tuple(ProducerArity::from(components.len())));
+                for &component in components.iter().rev() {
+                    self.tasks.push(Task::Value(component));
+                }
+                return Ok(());
+            },
+            Value::Recorded(ref moves) => {
+                self.tasks.push(Task::Recorded(
+                    moves.iter().map(|movement| movement.carrying(())).collect(),
+                ));
+                for movement in moves.iter().rev() {
+                    if let gandr_core_term::session::RecordedMove::Sent(payload)
+                    | gandr_core_term::session::RecordedMove::Received(payload) = *movement
+                    {
+                        self.tasks.push(Task::Value(payload));
+                    }
+                }
+                return Ok(());
+            },
+            Value::Dialogue(ref turns) => {
+                self.tasks.push(Task::Dialogue(
+                    turns
+                        .iter()
+                        .map(|turn| gandr_core_term::session::DialogueMove {
+                            endpoint: turn.endpoint,
+                            movement: turn.movement.carrying(()),
+                        })
+                        .collect(),
+                ));
+                for turn in turns.iter().rev() {
+                    if let gandr_core_term::session::RecordedMove::Sent(payload)
+                    | gandr_core_term::session::RecordedMove::Received(payload) = turn.movement
+                    {
+                        self.tasks.push(Task::Value(payload));
+                    }
+                }
+                return Ok(());
+            },
+            Value::Web(ref pieces) => ProducerNode::Constructor {
+                tag: ConstructorTag::Web(alloc::sync::Arc::clone(pieces)),
+                producers: alloc::boxed::Box::from([]),
+                consumers: alloc::boxed::Box::from([]),
+            },
+            Value::Injection(summand, body) => {
+                self.tasks.push(Task::Injection(summand));
+                self.tasks.push(Task::Value(body));
+                return Ok(());
+            },
+            Value::Lift { ref target, body } => {
+                self.tasks.push(Task::Lift(target.clone()));
+                self.tasks.push(Task::Value(body));
+                return Ok(());
+            },
+            Value::Thunk(body) | Value::Primitive { body, .. } => {
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::Thunk);
+                self.tasks.push(Task::Computation {
+                    computation: body,
+                    continuation: return_point,
+                });
+                return Ok(());
+            },
+            // A code passes as itself, imported beside the command's other
+            // annotations, so a type argument reaches the function that takes
+            // it and a returned type reads back as the type it quotes; a row
+            // passes the same way.
+            Value::Quote(_) | Value::QuoteComputation(_) | Value::Row(_) => ProducerNode::Code(
+                gandr_core_term::TypeImporter::new(self.core, self.arena.annotations_mut())
+                    .value(id)
+                    .map_err(|gandr_core_term::ImportFault| FocusRefusal::DanglingValue(id))?,
+            ),
+            Value::StaticLambda(_) | Value::StaticApplication(..) => {
+                return Err(FocusRefusal::Code(id));
+            },
+            // A path between types runs as its two maps, forward then
+            // backward.
+            Value::Here(_) | Value::PathRefl(_) => {
+                let identity = self.combinator(Combinator::Identity)?;
+                return self.constructor(ConstructorTag::Tuple(ProducerArity::from(2_usize)), &[
+                    identity, identity,
+                ]);
+            },
+            Value::Equiv(forward, backward)
+            | Value::PathEquiv {
+                forward, backward, ..
+            } => {
+                self.tasks.push(Task::Tuple(ProducerArity::from(2_usize)));
+                self.tasks.push(Task::Value(backward));
+                self.tasks.push(Task::Value(forward));
+                return Ok(());
+            },
+            Value::Univalence(record, forward) => {
+                self.tasks.push(Task::Tuple(ProducerArity::from(2_usize)));
+                self.suspend(Combinator::Inverse, &[record])?;
+                self.tasks.push(Task::Value(forward));
+                return Ok(());
+            },
+            Value::PathProduct(first, second) => {
+                self.tasks.push(Task::Tuple(ProducerArity::from(2_usize)));
+                self.suspend(Combinator::Both(Direction::Backward), &[first, second])?;
+                self.suspend(Combinator::Both(Direction::Forward), &[first, second])?;
+                return Ok(());
+            },
+            // A flow runs as its translator.
+            Value::Forward(translator) => {
+                self.tasks.push(Task::Value(translator));
+                return Ok(());
+            },
+            // An ascription runs as the value it ascribes: its type is the
+            // checker's, and the translation reads none.
+            Value::Ascribe { value, .. } => {
+                self.tasks.push(Task::Value(value));
+                return Ok(());
+            },
+            Value::Stay(_)
+            | Value::SessionRelated {
+                relation: gandr_core_term::session::SessionRelation::Subtyping,
+                ..
+            } => {
+                let identity = self.combinator(Combinator::Identity)?;
+                self.producers.push(identity);
+                return Ok(());
+            },
+            Value::Then(first, second)
+            | Value::FunctionFlow(first, second)
+            | Value::FlowProduct(first, second) => {
+                let combinator = match *node {
+                    Value::Then(..) => Combinator::Compose,
+                    Value::FlowProduct(..) => Combinator::Pair,
+                    Value::Primitive { .. }
+                    | Value::PathRefl(_)
+                    | Value::PathProduct(..)
+                    | Value::PathEquiv { .. }
+                    | Value::Here(_)
+                    | Value::Univalence(..)
+                    | Value::Funext(..)
+                    | Value::Equiv(..)
+                    | Value::Ua { .. }
+                    | Value::Compose { .. }
+                    | Value::Fill { .. }
+                    | Value::SessionRelated { .. }
+                    | Value::Stay(_)
+                    | Value::Forward(_)
+                    | Value::FunctionFlow(..)
+                    | Value::Recorded(_)
+                    | Value::Dialogue(_)
+                    | Value::Web(_)
+                    | Value::Returned(_)
+                    | Value::Nested(_)
+                    | Value::Run(_)
+                    | Value::RecordUpdate { .. }
+                    | Value::Variable { .. }
+                    | Value::Constant(_)
+                    | Value::Literal(_)
+                    | Value::Tuple(_)
+                    | Value::Injection(..)
+                    | Value::ListNil
+                    | Value::ListCons(..)
+                    | Value::Thunk(_)
+                    | Value::Ascribe { .. }
+                    | Value::Lift { .. }
+                    | Value::Quote(_)
+                    | Value::QuoteComputation(_)
+                    | Value::StaticLambda(_)
+                    | Value::StaticApplication(..)
+                    | Value::Constructor { .. }
+                    | Value::Record(_)
+                    | Value::Hole(_)
+                    | Value::Mark { .. }
+                    | Value::Reify(_)
+                    | Value::Row(_) => Combinator::Wrap,
+                };
+                return self.suspend(combinator, &[first, second]);
+            },
+            Value::Funext(..)
+            | Value::Ua { .. }
+            | Value::SessionRelated { .. }
+            | Value::Returned(_)
+            | Value::Compose { .. } => {
+                return Err(FocusRefusal::ElementPath(id));
+            },
+            Value::Hole(_) | Value::Mark { .. } => {
+                return Err(FocusRefusal::IncompleteValue(id));
+            },
+            Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Fill { .. } => {
+                return Err(FocusRefusal::Unelaborated(id));
+            },
+        };
+        let producer = self.arena.mint_producer(leaf)?;
+        self.producers.push(producer);
+        Ok(())
+    }
+
+    /// Translate one computation node under a continuation, or schedule its
+    /// children.
+    ///
+    /// # Specification
+    /// - requires: `continuation` was minted for the binder depth `id` stands
+    ///   at.
+    /// - ensures: the `𝓕` row for the node's former is scheduled or minted; a
+    ///   continuation that is not a tail is placed under no binder; a ride or a
+    ///   transport applies its motive's action, as [`crate::identity`]
+    ///   tabulates; a value holding a returned value runs it first, as the
+    ///   module's `𝓡` rows state — returned, applied to through
+    ///   [`Combinator::RunArgument`], or captured where a match, a selection or
+    ///   a force reads it; a hole other than the placeholder of a run match a
+    ///   combinator's build left is scheduled as the perform of
+    ///   [`REACHED`](crate::il::REACHED) of
+    ///   [`REACHED_HOLE`](crate::il::REACHED_HOLE), its payload the hole's
+    ///   name.
+    /// - provides: the `𝓕` rows.
+    /// - fails: [`FocusRefusal::DanglingComputation`],
+    ///   [`FocusRefusal::IncompleteComputation`] for a mark,
+    ///   [`FocusRefusal::ElementTransport`] for a transport whose motive has a
+    ///   part no row reads, named by that part's head, and for a telescope
+    ///   transport, or a refused mint.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independent decoding of bounded generated terms
+    ///   observes former choice, child order and binder shifts. L3 — one case
+    ///   per former and exact refusal/rollback probes cover directed
+    ///   boundaries.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    /// - witness: `focus::tests::a_projection_selects_by_position_or_label`
+    /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
+    /// - witness: `focus::tests::a_hole_is_reached_and_a_mark_refused_by_name_1881`
+    /// - witness: `focus::tests::a_placement_focuses_to_its_session_action_4687`
+    /// - witness: `tests::run::a_returned_argument_runs_before_its_call_2129`
+    /// - witness: `tests::run::a_returned_field_or_scrutinee_runs_first_2140`
+    /// - witness: `tests::run::a_transport_no_row_reads_is_refused_by_its_head`
+    ///
+    /// # Cost
+    /// - allocation: the tasks of each former and the arities of a case task,
+    ///   growth within the task stack
+    #[spec(
+        captures: [work = self.tasks.len()],
+        ensures: |ret| match self.core.computation(id) {
+            | None => ret == Err(FocusRefusal::DanglingComputation(id)),
+            | Some(&Computation::Mark { .. }) => ret == Err(FocusRefusal::IncompleteComputation(id)),
+            | Some(_) => ret.is_err() || self.tasks.len() > work,
+        },
+    )]
+    fn computation(
+        &mut self,
+        id: ComputationId,
+        continuation: ConsumerId,
+    ) -> Result<(), FocusRefusal>
+    {
+        let node = self
+            .core
+            .computation(id)
+            .ok_or(FocusRefusal::DanglingComputation(id))?;
+        match *node {
+            Computation::RecordProjection(record, ref label) => {
+                self.select(record, Selector::Label(label.clone()), continuation)?;
+            },
+            Computation::TupleProjection(tuple, component) => {
+                self.select(tuple, Selector::Component(component), continuation)?;
+            },
+            Computation::Split {
+                scrutinee,
+                arity,
+                body,
+                ..
+            } => {
+                let inner = self.share_or_name(FocusOrigin::Case, continuation)?;
+                self.tasks
+                    .push(Task::Split(ProducerArity::from(usize::from(arity))));
+                self.subject(scrutinee)?;
+                self.tasks.push(Task::Computation {
+                    computation: body,
+                    continuation: inner,
+                });
+            },
+            // A list case is a match on the list's two constructors, the cell
+            // binding the head then the tail as the core binds them.
+            Computation::ListCase {
+                list,
+                on_nil,
+                on_cons,
+            } => {
+                let inner = self.share_or_name(FocusOrigin::Case, continuation)?;
+                self.tasks.push(Task::ListCase);
+                self.subject(list)?;
+                self.tasks.push(Task::Computation {
+                    computation: on_cons,
+                    continuation: inner,
+                });
+                self.tasks.push(Task::Computation {
+                    computation: on_nil,
+                    continuation: inner,
+                });
+            },
+            Computation::DataCase {
+                scrutinee,
+                ref branches,
+                ref arities,
+                equations,
+                ..
+            } => {
+                self.tasks.push(Task::DataCase {
+                    branches: NodeCount::from(branches.len()),
+                    arities: alloc::boxed::Box::from(&**arities),
+                    equations,
+                    continuation,
+                });
+                self.subject(scrutinee)?;
+                for &branch in branches.iter().rev() {
+                    let return_point = self.innermost_covariable()?;
+                    self.tasks.push(Task::Thunk);
+                    self.tasks.push(Task::Computation {
+                        computation: branch,
+                        continuation: return_point,
+                    });
+                }
+            },
+            Computation::Perform { payload, .. } => {
+                self.tasks.push(Task::Control {
+                    source: id,
+                    continuation,
+                });
+                self.tasks.push(Task::Value(payload));
+            },
+            Computation::Exercise {
+                capability,
+                payload,
+                ..
+            } => {
+                self.tasks.push(Task::Control {
+                    source: id,
+                    continuation,
+                });
+                self.tasks.push(Task::Value(payload));
+                self.tasks.push(Task::Value(capability));
+            },
+            Computation::Handle {
+                subject,
+                on_return,
+                ref clauses,
+                ..
+            }
+            | Computation::Scope {
+                subject,
+                on_return,
+                ref clauses,
+                ..
+            } => {
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::Control {
+                    source: id,
+                    continuation,
+                });
+                for clause in clauses.iter().rev() {
+                    self.tasks.push(Task::Computation {
+                        computation: clause.body,
+                        continuation: return_point,
+                    });
+                }
+                self.tasks.push(Task::Computation {
+                    computation: on_return,
+                    continuation: return_point,
+                });
+                self.tasks.push(Task::Computation {
+                    computation: subject,
+                    continuation: return_point,
+                });
+            },
+            Computation::Resume(stack, body) => {
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::Control {
+                    source: id,
+                    continuation,
+                });
+                self.tasks.push(Task::Computation {
+                    computation: body,
+                    continuation: return_point,
+                });
+                self.tasks.push(Task::Value(stack));
+            },
+            Computation::Abandon(stack) => {
+                self.tasks.push(Task::Control {
+                    source: id,
+                    continuation,
+                });
+                self.tasks.push(Task::Value(stack));
+            },
+            Computation::Reset(body) | Computation::Shift(body) => {
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::Control {
+                    source: id,
+                    continuation,
+                });
+                self.tasks.push(Task::Computation {
+                    computation: body,
+                    continuation: return_point,
+                });
+            },
+            Computation::Memory(ref form) => {
+                self.tasks.push(Task::Control {
+                    source: id,
+                    continuation,
+                });
+                for body in form.computations().rev() {
+                    let return_point = self.innermost_covariable()?;
+                    self.tasks.push(Task::Computation {
+                        computation: body,
+                        continuation: return_point,
+                    });
+                }
+                for value in form.values() {
+                    self.tasks.push(Task::Value(value));
+                }
+            },
+            Computation::With(ref components) => {
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::Control {
+                    source: id,
+                    continuation,
+                });
+                self.tasks.extend(
+                    components
+                        .iter()
+                        .rev()
+                        .map(|&computation| Task::Computation {
+                            computation,
+                            continuation: return_point,
+                        }),
+                );
+            },
+            Computation::Project(component, subject) => {
+                let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
+                    tag: DestructorTag::Project(component),
+                    producers: alloc::boxed::Box::from([]),
+                    consumers: alloc::boxed::Box::from([continuation]),
+                })?;
+                self.tasks.push(Task::Computation {
+                    computation: subject,
+                    continuation: frame,
+                });
+            },
+            // An ascription is the checker's: the sequent runs its body
+            // against the same continuation.
+            Computation::Ascribe { body, .. } => {
+                self.tasks.push(Task::Computation {
+                    computation: body,
+                    continuation,
+                });
+            },
+            Computation::ListFold {
+                element,
+                result,
+                list,
+                on_nil,
+                on_cons,
+            } => {
+                let mut annotations =
+                    gandr_core_term::TypeImporter::new(self.core, self.arena.annotations_mut());
+                let element =
+                    annotations
+                        .value_type(element)
+                        .map_err(|gandr_core_term::ImportFault| {
+                            MintRefusal::DanglingAnnotation(element)
+                        })?;
+                let result =
+                    annotations
+                        .value_type(result)
+                        .map_err(|gandr_core_term::ImportFault| {
+                            MintRefusal::DanglingAnnotation(result)
+                        })?;
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::ListFold {
+                    element,
+                    result,
+                    continuation,
+                });
+                self.subject(list)?;
+                self.tasks.push(Task::Computation {
+                    computation: on_cons,
+                    continuation: return_point,
+                });
+                self.tasks.push(Task::Computation {
+                    computation: on_nil,
+                    continuation: return_point,
+                });
+            },
+            Computation::Primitive {
+                primitive,
+                arguments,
+            } => {
+                self.tasks.push(Task::Primitive {
+                    primitive,
+                    arguments,
+                    continuation,
+                });
+                for argument in arguments.iter().rev() {
+                    self.tasks.push(Task::Value(*argument));
+                }
+            },
+            Computation::Decompose(dialogue) => {
+                self.tasks.push(Task::Decompose { continuation });
+                self.tasks.push(Task::Value(dialogue));
+            },
+            // A transport runs as its motive's action applied to the path's
+            // two maps and the moved value; along a native path the action
+            // is the forward map's.
+            Computation::Transport(path, value) => {
+                self.apply_combinator(Combinator::Forward, (path, value), continuation);
+            },
+            Computation::PathTransport {
+                motive,
+                path,
+                value,
+            } => {
+                // A value holding a returned value, `back(p)` or `p then q`
+                // among them, runs the computations that return them first:
+                // the kernel reads `E[c]` as `c to x. E[x]`.
+                let core = self.core;
+                let (held_path, held_value) = (
+                    self.holds_returned(path) == Holding::Returned,
+                    self.holds_returned(value) == Holding::Returned,
+                );
+                // Along a reflexivity the value stays, whatever the motive:
+                // the kernel's first transport row, read before the motive.
+                if let Some(&Value::Here(_)) = core.value(path) {
+                    return self.returning(value, continuation);
+                }
+                crate::identity::readable(core, motive).map_err(|unread| match unread {
+                    crate::identity::Unread::Head(head) => FocusRefusal::ElementTransport(id, head),
+                    crate::identity::Unread::Dangling => FocusRefusal::TranslationInvariant,
+                })?;
+                if !held_path && !held_value {
+                    self.apply_combinator(
+                        Combinator::Transport(motive),
+                        (path, value),
+                        continuation,
+                    );
+                    return Ok(());
+                }
+                self.tasks.push(Task::Combinator {
+                    combinator: Combinator::TransportFrom {
+                        motive,
+                        path: held_path,
+                        value: held_value,
+                    },
+                    continuation,
+                });
+                for (operand, held) in [(value, held_value), (path, held_path)] {
+                    self.tasks.push(if held {
+                        Task::Suspend(operand)
+                    }
+                    else {
+                        Task::Value(operand)
+                    });
+                }
+            },
+            Computation::TelescopeTransport { .. } => {
+                return Err(FocusRefusal::ElementTransport(id, MotiveHead::Telescope));
+            },
+            Computation::Hole(_) => {
+                let Some(case) = self.run_cases.get(&id)
+                else {
+                    // A hole no run case fills is reached as an operation of
+                    // the reached-hole interface, which no handler a source
+                    // writes can claim.
+                    self.tasks.push(Task::Control {
+                        source: id,
+                        continuation,
+                    });
+                    return Ok(());
+                };
+                let (scrutinee, runs) = (case.scrutinee, alloc::sync::Arc::clone(&case.arms));
+                let inner = self.share_or_name(FocusOrigin::Case, continuation)?;
+                self.tasks
+                    .push(Task::RunCase(alloc::sync::Arc::clone(&runs)));
+                self.subject(scrutinee)?;
+                for &(_, arm) in runs.iter().rev() {
+                    self.tasks.push(Task::Computation {
+                        computation: arm,
+                        continuation: inner,
+                    });
+                }
+            },
+            Computation::Mark { .. } => {
+                return Err(FocusRefusal::IncompleteComputation(id));
+            },
+            Computation::Session(ref action) => {
+                self.tasks.push(Task::Control {
+                    source: id,
+                    continuation,
+                });
+                for body in action.computations().rev() {
+                    let return_point = self.innermost_covariable()?;
+                    self.tasks.push(Task::Computation {
+                        computation: body,
+                        continuation: return_point,
+                    });
+                }
+                for value in action.values() {
+                    self.tasks.push(Task::Value(value));
+                }
+            },
+            Computation::World(ref form) => {
+                self.tasks.push(Task::Control {
+                    source: id,
+                    continuation,
+                });
+                for (body, _) in form.scoped() {
+                    let return_point = self.innermost_covariable()?;
+                    self.tasks.push(Task::Computation {
+                        computation: body,
+                        continuation: return_point,
+                    });
+                }
+                for value in form.values() {
+                    self.tasks.push(Task::Value(value));
+                }
+            },
+            Computation::Fixpoint { body, evidence } => {
+                let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
+                    tag: DestructorTag::Force,
+                    producers: alloc::boxed::Box::from([]),
+                    consumers: alloc::boxed::Box::from([continuation]),
+                })?;
+                self.tasks.push(Task::Cut {
+                    origin: FocusOrigin::Fixpoint,
+                    polarity: Polarity::Positive,
+                    consumer: frame,
+                });
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::Fixpoint(evidence));
+                self.tasks.push(Task::Computation {
+                    computation: body,
+                    continuation: return_point,
+                });
+            },
+            // A ride runs as its motive's action applied to the flow's
+            // translator and the ridden value.
+            Computation::Ride {
+                motive,
+                flow,
+                value,
+            } => {
+                self.apply_combinator(Combinator::Ride(motive), (flow, value), continuation);
+            },
+            // A value holding a returned value runs it first and returns what
+            // it builds; any other is cut against the continuation.
+            Computation::Return(value) => self.returning(value, continuation)?,
+            Computation::ReturnAll(ref values) => self.returning_all(values, continuation),
+            Computation::Force(value) => {
+                let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
+                    tag: DestructorTag::Force,
+                    producers: alloc::boxed::Box::from([]),
+                    consumers: alloc::boxed::Box::from([continuation]),
+                })?;
+                self.tasks.push(Task::Cut {
+                    origin: FocusOrigin::Force,
+                    polarity: Polarity::Positive,
+                    consumer: frame,
+                });
+                self.subject(value)?;
+            },
+            Computation::Application(head, argument) => {
+                // An argument holding a returned value, a transport or a
+                // derived path written as the call's argument or inside it,
+                // runs the computations that return them first: the kernel
+                // reads `E[c]` as `c to x. E[x]`. The call and the argument
+                // are each suspended and applied to a closed combinator, so
+                // neither is read under a binder it did not have.
+                if self.holds_returned(argument) == Holding::Returned {
+                    self.tasks.push(Task::Combinator {
+                        combinator: Combinator::RunArgument,
+                        continuation,
+                    });
+                    self.tasks.push(Task::Suspend(argument));
+                    self.suspended(head)?;
+                }
+                else {
+                    self.tasks.push(Task::Apply { head, continuation });
+                    self.tasks.push(Task::Value(argument));
+                }
+            },
+            // A linear lambda's supply is checked and erased: it runs as the
+            // lambda it reads as.
+            Computation::Lambda(body) | Computation::LinearLambda(body) => {
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::Lambda { continuation });
+                self.tasks.push(Task::Computation {
+                    computation: body,
+                    continuation: return_point,
+                });
+            },
+            Computation::Bind(head, body) => {
+                let inner = self.share_or_name(FocusOrigin::Bind, continuation)?;
+                self.tasks.push(Task::Bind { head });
+                self.tasks.push(Task::Computation {
+                    computation: body,
+                    continuation: inner,
+                });
+            },
+            Computation::BindAll { bound, arity, body } => {
+                let inner = self.share_or_name(FocusOrigin::Bind, continuation)?;
+                self.tasks.push(Task::BindAll {
+                    head: bound,
+                    arity: ProducerArity::from(usize::from(arity)),
+                });
+                self.tasks.push(Task::Computation {
+                    computation: body,
+                    continuation: inner,
+                });
+            },
+            Computation::Case {
+                scrutinee,
+                ref branches,
+            } => {
+                let inner = self.share_or_name(FocusOrigin::Case, continuation)?;
+                self.tasks.push(Task::Case {
+                    branches: NodeCount::from(branches.len()),
+                });
+                self.subject(scrutinee)?;
+                for &branch in branches.iter().rev() {
+                    self.tasks.push(Task::Computation {
+                        computation: branch,
+                        continuation: inner,
+                    });
+                }
+            },
+        }
+        Ok(())
+    }
+
+    /// Schedule `𝓕⟦v.f⟧c = ⟨𝓥⟦v⟧ |+ select[f](c)⟩`: the selection carries `c`
+    /// beside its field and opens no binder, so `c` is neither shifted nor
+    /// named.
+    ///
+    /// # Specification
+    /// - requires: `continuation` was minted for the projection's depth.
+    /// - ensures: the selection of `selector` returning to `continuation` is
+    ///   minted, and the positive cut of `subject`'s producer against it is
+    ///   scheduled, recorded as [`FocusOrigin::Projection`].
+    /// - provides: the image of a record projection and a tuple projection.
+    /// - fails: a refused mint.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a component and a label projection of a variable,
+    ///   each under a non-tail continuation, are observed at their exact
+    ///   selector, continuation, cut polarity and origin; a selection that
+    ///   named or shifted its continuation changes the consumer it returns to.
+    /// - witness: `focus::tests::a_projection_selects_by_position_or_label`
+    #[spec(
+        captures: [work = self.tasks.len()],
+        ensures: |ret| ret.is_err() || work.checked_add(1) < Some(self.tasks.len()),
+    )]
+    fn select(
+        &mut self,
+        subject: ValueId,
+        selector: Selector,
+        continuation: ConsumerId,
+    ) -> Result<(), FocusRefusal>
+    {
+        let select = self.arena.mint_consumer(ConsumerNode::Select {
+            selector,
+            then: continuation,
+        })?;
+        self.tasks.push(Task::Cut {
+            origin: FocusOrigin::Projection,
+            polarity: Polarity::Positive,
+            consumer: select,
+        });
+        self.subject(subject)?;
+        Ok(())
+    }
+
+    /// The continuation a binder's body is translated under: `continuation`
+    /// itself when it is a tail, otherwise the innermost covariable, with the
+    /// naming cut scheduled to run once the body's command is built.
+    ///
+    /// # Specification
+    /// - requires: `continuation` resolves.
+    /// - ensures: a tail is returned unchanged and nothing is scheduled; any
+    ///   other continuation is named by a [`Task::Name`] at the polarity of
+    ///   what it observes, and covariable `0` is returned.
+    /// - provides: the rule that keeps a continuation from being copied under a
+    ///   binder.
+    /// - fails: a dangling continuation, as
+    ///   [`FocusRefusal::TranslationInvariant`], or a refused mint.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independently decoded bind/case contexts distinguish
+    ///   copied continuations and shifted binders. L3 — named and tail
+    ///   continuations are observed at their exact consumer and scheduled cut.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `focus::tests::focusing_mints_no_name`
+    #[spec(
+        captures: [work = self.tasks.len()],
+        ensures: |ret| ret.is_err() || ret.is_ok_and(|id|
+            if matches!(self.arena.consumer(continuation), Some(&ConsumerNode::Top | &ConsumerNode::Covariable(_))) {
+                id == continuation && self.tasks.len() == work
+            } else {
+                self.arena.consumer(id) == Some(&ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
+                    && work.checked_add(1) == Some(self.tasks.len())
+                    && matches!(self.tasks.last(), Some(&Task::Name { origin: recorded, continuation: target, .. })
+                        if recorded == origin && target == continuation)
+            }),
+    )]
+    fn share_or_name(
+        &mut self,
+        origin: FocusOrigin,
+        continuation: ConsumerId,
+    ) -> Result<ConsumerId, FocusRefusal>
+    {
+        let polarity = match *self
+            .arena
+            .consumer(continuation)
+            .ok_or(FocusRefusal::TranslationInvariant)?
+        {
+            ConsumerNode::Covariable(_) | ConsumerNode::Top => return Ok(continuation),
+            ConsumerNode::Destructor { tag, .. } => tag.polarity(),
+            ConsumerNode::MuTilde { .. }
+            | ConsumerNode::MuTildeAll { .. }
+            | ConsumerNode::Case { .. }
+            | ConsumerNode::DataCase { .. }
+            | ConsumerNode::Select { .. }
+            | ConsumerNode::ListFold { .. } => Polarity::Positive,
+        };
+        self.tasks.push(Task::Name {
+            origin,
+            polarity,
+            continuation,
+        });
+        self.innermost_covariable()
+    }
+
+    /// Schedule `force(combinator) 𝓥⟦first⟧ 𝓥⟦second⟧` under `continuation`:
+    /// a ride or a transport, the motive's action applied to an identity's
+    /// image and the moved value.
+    ///
+    /// # Specification
+    /// - requires: `combinator` is applied to two parts.
+    /// - ensures: the combinator's application to `continuation` is scheduled
+    ///   over `first`'s and `second`'s producers, `first` translated first.
+    /// - provides: the `𝓕` row of a ride and of a transport.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — rides and transports run to the kernel rows' values;
+    ///   swapping the image and the moved value would not.
+    /// - witness: `tests::run::rides_run_by_the_motives_action`
+    /// - witness: `tests::run::transports_run_by_the_motives_action`
+    #[spec(
+        captures: work = self.tasks.len(),
+        ensures: work.checked_add(3) == Some(self.tasks.len())
+            && matches!(self.tasks.last(), Some(&Task::Value(scheduled)) if scheduled == first),
+    )]
+    fn apply_combinator(
+        &mut self,
+        combinator: Combinator,
+        (first, second): (ValueId, ValueId),
+        continuation: ConsumerId,
+    )
+    {
+        self.tasks.push(Task::Combinator {
+            combinator,
+            continuation,
+        });
+        self.tasks.push(Task::Value(second));
+        self.tasks.push(Task::Value(first));
+    }
+
+    /// Schedule `thunk(force(combinator) 𝓥⟦parts⟧…)`: an identity's image that
+    /// suspends a closed combinator applied to the identity's parts.
+    ///
+    /// # Specification
+    /// - requires: `parts` holds as many values as `combinator` is applied to.
+    /// - ensures: the thunk, the combinator's application to a fresh return
+    ///   point and each part's translation are scheduled, the first part
+    ///   translated first.
+    /// - provides: the image of a composite, a function flow, a flow product, a
+    ///   `ua`'s map back and each map of a native path product.
+    /// - fails: a refused mint of the return point.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a composite, a function flow, a flow product and a
+    ///   native path product run componentwise and in order, which a swapped or
+    ///   dropped part would not.
+    /// - witness: `tests::run::rides_run_by_the_motives_action`
+    /// - witness: `tests::run::a_function_flow_runs_in_variance_order`
+    /// - witness: `tests::run::native_paths_run_as_their_maps`
+    #[spec(
+        requires: parts.len() == usize::from(combinator.applied()),
+        captures: work = self.tasks.len(),
+        ensures: |ret| ret.is_err() || (work.checked_add(parts.len()).and_then(|grown| grown.checked_add(2)) == Some(self.tasks.len())
+            && matches!(self.tasks.get(work), Some(&Task::Thunk))),
+    )]
+    fn suspend(
+        &mut self,
+        combinator: Combinator,
+        parts: &[ValueId],
+    ) -> Result<(), FocusRefusal>
+    {
+        let return_point = self.innermost_covariable()?;
+        self.tasks.push(Task::Thunk);
+        self.tasks.push(Task::Combinator {
+            combinator,
+            continuation: return_point,
+        });
+        for &part in parts.iter().rev() {
+            self.tasks.push(Task::Value(part));
+        }
+        Ok(())
+    }
+
+    /// Schedule the suspension `thunk(𝓒⟦computation⟧)`, its body translated to
+    /// a fresh return point.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success the thunk and `computation`'s translation to the
+    ///   covariable `0` are scheduled, the translation first.
+    /// - provides: the call a returned argument runs before.
+    /// - fails: a refused mint of the return point.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call whose argument holds a returned transport runs
+    ///   to the value its bind spelling runs to, which a suspension scheduled
+    ///   at the wrong return point would not.
+    /// - witness: `tests::run::a_returned_argument_runs_before_its_call_2129`
+    #[spec(
+        captures: work = self.tasks.len(),
+        ensures: |ret| ret.is_err() || (work.checked_add(2) == Some(self.tasks.len())
+            && matches!(self.tasks.last(), Some(&Task::Computation { computation: scheduled, .. }) if scheduled == computation)),
+    )]
+    fn suspended(
+        &mut self,
+        computation: ComputationId,
+    ) -> Result<(), FocusRefusal>
+    {
+        let return_point = self.innermost_covariable()?;
+        self.tasks.push(Task::Thunk);
+        self.tasks.push(Task::Computation {
+            computation,
+            continuation: return_point,
+        });
+        Ok(())
+    }
+
+    /// Whether `value` holds a returned value `⟨c⟩` a run reaches: it is one,
+    /// or a [`Composite::Former`] has a field that holds one. Each former is
+    /// decided once per run.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Holding::Returned`] for a returned value;
+    ///   [`Holding::Plain`] for a dangling id and a leaf that is none; a
+    ///   former's answer is kept, so asking again about it, or about a former
+    ///   beneath it, reads no node.
+    /// - panics: none.
+    /// - intension: each node beneath a former is read once per run, however
+    ///   often a former above it is asked about.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a returned transport as a tuple's component, a
+    ///   constructor's field, a list cell's head and a scrutinee runs first,
+    ///   and every generated former holding none focuses as it did.
+    /// - witness: `tests::run::a_returned_field_or_scrutinee_runs_first_2140`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    #[spec(ensures: |ret| !matches!(self.core.value(value), Some(&(Value::Returned(_) | Value::Compose { .. }))) || ret == Holding::Returned)]
+    fn holds_returned(
+        &mut self,
+        value: ValueId,
+    ) -> Holding
+    {
+        let core = self.core;
+        let Some(node) = core.value(value)
+        else {
+            return Holding::Plain;
+        };
+        if matches!(*node, Value::Returned(_) | Value::Compose { .. }) {
+            return Holding::Returned;
+        }
+        if crate::identity::composite(node) == Composite::Leaf {
+            return Holding::Plain;
+        }
+        if let Some(&decided) = self.returning.get(&value) {
+            return decided;
+        }
+        // A field holds one when it is one or is a former decided to; every
+        // former is decided after the formers beneath it.
+        let held = |decided: &BTreeMap<ValueId, Holding>, field: ValueId| {
+            core.value(field).is_some_and(|node| {
+                matches!(*node, Value::Returned(_) | Value::Compose { .. })
+                    || decided.get(&field) == Some(&Holding::Returned)
+            })
+        };
+        let mut pending = alloc::vec![(value, Visit::Enter)];
+        while let Some((id, visit)) = pending.pop() {
+            let Some(node) = core.value(id)
+            else {
+                continue;
+            };
+            if self.returning.contains_key(&id) {
+                continue;
+            }
+            match visit {
+                Visit::Leave => {
+                    let mut holding = Holding::Plain;
+                    crate::identity::each_field(node, |field| {
+                        if held(&self.returning, field) {
+                            holding = Holding::Returned;
+                        }
+                    });
+                    let _decided = self.returning.insert(id, holding);
+                },
+                Visit::Enter => {
+                    pending.push((id, Visit::Leave));
+                    let decided = &self.returning;
+                    crate::identity::each_field(node, |field| {
+                        let former = core.value(field).is_some_and(|node| {
+                            crate::identity::composite(node) == Composite::Former
+                        });
+                        if former && !decided.contains_key(&field) {
+                            pending.push((field, Visit::Enter));
+                        }
+                    });
+                },
+            }
+        }
+        self.returning
+            .get(&value)
+            .copied()
+            .unwrap_or(Holding::Plain)
+    }
+
+    /// Schedule `𝓡⟦value⟧continuation`: run each returned value `value` holds,
+    /// in written order, then send `value`, built over what they return, to
+    /// `continuation`. `⟨c⟩` is `𝓒⟦c⟧continuation`; a former holding one
+    /// applies [`Combinator::Build`] to its fields, each the part
+    /// `thunk(𝓡⟦field⟧)`; an ascription is the value it ascribes; any other
+    /// value is the cut `⟨𝓥⟦value⟧ |+ continuation⟩`.
+    ///
+    /// # Specification
+    /// - requires: `continuation` was minted for the depth `value` stands at.
+    /// - ensures: on success the tasks leaving the one command that computes
+    ///   `value` to `continuation` are scheduled.
+    /// - provides: `return v`, a returned subject's capture, and every part a
+    ///   combinator runs.
+    /// - fails: [`FocusRefusal::DanglingValue`] for a dangling id.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a returned transport as a tuple's component, a
+    ///   constructor's field and a list cell's head runs to the value its bind
+    ///   spelling builds, and a former's other fields keep their places.
+    /// - witness: `tests::run::a_returned_field_or_scrutinee_runs_first_2140`
+    /// - witness: `tests::run::a_returned_argument_runs_before_its_call_2129`
+    #[spec(captures: work = self.tasks.len(), ensures: |ret| ret.is_err() || self.tasks.len() > work)]
+    fn returning(
+        &mut self,
+        value: ValueId,
+        continuation: ConsumerId,
+    ) -> Result<(), FocusRefusal>
+    {
+        let core = self.core;
+        let mut value = value;
+        while let Some(&Value::Ascribe {
+            value: ascribed, ..
+        }) = core.value(value)
+        {
+            value = ascribed;
+        }
+        let node = core
+            .value(value)
+            .ok_or(FocusRefusal::DanglingValue(value))?;
+        if let Value::Returned(computation)
+        | Value::Compose {
+            realised: computation,
+            ..
+        } = *node
+        {
+            self.tasks.push(Task::Computation {
+                computation,
+                continuation,
+            });
+            return Ok(());
+        }
+        if self.holds_returned(value) == Holding::Plain {
+            self.tasks.push(Task::Cut {
+                origin: FocusOrigin::Return,
+                polarity: Polarity::Positive,
+                consumer: continuation,
+            });
+            self.tasks.push(Task::Value(value));
+            return Ok(());
+        }
+        let mut fields = 0_usize;
+        crate::identity::each_field(node, |_field| fields = fields.saturating_add(1));
+        self.tasks.push(Task::Combinator {
+            combinator: Combinator::Build {
+                former: value,
+                fields: ProducerArity::from(fields),
+            },
+            continuation,
+        });
+        // The first field's part is translated first.
+        let ready = self.tasks.len();
+        let tasks = &mut self.tasks;
+        crate::identity::each_field(node, |field| tasks.push(Task::Suspend(field)));
+        if let Some(parts) = self.tasks.get_mut(ready ..) {
+            parts.reverse();
+        }
+        Ok(())
+    }
+
+    /// Schedule the return of several values to `continuation`: their
+    /// delivery `⟨𝓥⟦v₁⟧ … 𝓥⟦vₙ⟧ | continuation⟩` when none holds a returned
+    /// value; otherwise [`Combinator::Deliver`] applied to each value's part
+    /// `thunk(𝓡⟦vᵢ⟧)`, which runs them in written order and delivers what
+    /// they return.
+    ///
+    /// # Specification
+    /// - requires: `continuation` was minted for the depth the values stand at.
+    /// - ensures: the tasks leaving the one command that delivers the values to
+    ///   `continuation` are scheduled, the first value's translated first.
+    /// - provides: `return (v₁ … vₙ)`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a return of two values, one of them a returned
+    ///   transport, runs to the values the bind spelling binds, in written
+    ///   order.
+    /// - witness: `tests::run::a_many_value_return_delivers_its_values_in_order_4954`
+    #[spec(captures: work = self.tasks.len(), ensures: self.tasks.len() > work)]
+    fn returning_all(
+        &mut self,
+        values: &[ValueId],
+        continuation: ConsumerId,
+    )
+    {
+        let count = ProducerArity::from(values.len());
+        let mut plain = true;
+        for &value in values {
+            plain &= self.holds_returned(value) == Holding::Plain;
+        }
+        if plain {
+            self.tasks.push(Task::Deliver {
+                count,
+                consumer: continuation,
+            });
+            for &value in values.iter().rev() {
+                self.tasks.push(Task::Value(value));
+            }
+        }
+        else {
+            self.tasks.push(Task::Combinator {
+                combinator: Combinator::Deliver { fields: count },
+                continuation,
+            });
+            for &value in values.iter().rev() {
+                self.tasks.push(Task::Suspend(value));
+            }
+        }
+    }
+
+    /// Schedule the producer a cut puts against its consumer, or the producer
+    /// a constant unfolds to: for a value holding a returned value the capture
+    /// `μα. 𝓡⟦value⟧α`, which runs it against that consumer; for any other its
+    /// translation.
+    ///
+    /// # Specification
+    /// - requires: the task that pops the producer cuts it against a consumer
+    ///   and never places it as a field, which no `μ` may be, or the producer
+    ///   is the body of a definition.
+    /// - ensures: on success the tasks leaving one producer are scheduled.
+    /// - provides: the scrutinee of a case, a split, a list case, a fold, a
+    ///   nominal match and a run match, the subject of a projection, the value
+    ///   a force runs, and the body of a definition.
+    /// - fails: as [`Self::returning`], or a refused mint of the return point.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a case on a returned transport runs the transport,
+    ///   then the arm its answer selects; a projection of a tuple holding one
+    ///   selects from the built tuple.
+    /// - witness: `tests::run::a_returned_field_or_scrutinee_runs_first_2140`
+    #[spec(captures: work = self.tasks.len(), ensures: |ret| ret.is_err() || self.tasks.len() > work)]
+    fn subject(
+        &mut self,
+        value: ValueId,
+    ) -> Result<(), FocusRefusal>
+    {
+        if self.holds_returned(value) == Holding::Returned {
+            let return_point = self.innermost_covariable()?;
+            self.tasks.push(Task::Capture);
+            self.returning(value, return_point)
+        }
+        else {
+            self.tasks.push(Task::Value(value));
+            Ok(())
+        }
+    }
+
+    /// Mint the covariable `0`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success a new consumer names covariable `0`.
+    /// - provides: the return point of a newly opened covariable binder.
+    /// - fails: a refused consumer mint at the address ceiling.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// A consumer-family allocation refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every focused covariable is read at its exact index,
+    ///   exposing shifted binders. The shared address helper witnesses the
+    ///   ceiling; no full-sized consumer arena is allocated.
+    /// - witness: `focus::tests::focusing_mints_no_name`
+    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|id|
+        self.arena.consumer(id) == Some(&ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
+    ))]
+    fn innermost_covariable(&mut self) -> Result<ConsumerId, FocusRefusal>
+    {
+        Ok(self
+            .arena
+            .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))?)
+    }
+
+    /// The producer of a closed identity combinator this run applies.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the producer [`with_combinators`] focused for `combinator`
+    ///   before this run; for one it did not, `combinator` is recorded as
+    ///   wanted and a placeholder stands in, which the rerun replaces.
+    /// - provides: the closed programs an identity's image applies to its
+    ///   parts, without a nested run.
+    /// - fails: a refused mint.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a composite, a ride and a transport focused and run
+    ///   reach the values the kernel's rows compute, which a placeholder left
+    ///   in place would not.
+    /// - witness: `tests::run::rides_run_by_the_motives_action`
+    /// - witness: `tests::run::transports_run_by_the_motives_action`
+    #[spec(ensures: |ret| ret.is_err() || self.prepared.contains_key(&combinator) || self.wanted.contains(&combinator))]
+    fn combinator(
+        &mut self,
+        combinator: Combinator,
+    ) -> Result<ProducerId, FocusRefusal>
+    {
+        if let Some(&producer) = self.prepared.get(&combinator) {
+            return Ok(producer);
+        }
+        let _first = self.wanted.insert(combinator);
+        Ok(self.arena.mint_producer(ProducerNode::Constant(
+            gandr_kernel_term::ConstantIndex::from(0_usize),
+        ))?)
+    }
+
+    /// Mint a constructor over producer fields and push it.
+    ///
+    /// # Specification
+    /// - requires: `fields` has the head's arity.
+    /// - ensures: the constructor is pushed.
+    /// - provides: the one constructor mint of `𝓥`.
+    /// - fails: a refused mint.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — decoded generated values and one case per former
+    ///   observe constructor identity and ordered fields. Wrong tags, missing
+    ///   children and reversed pairs change the recovered source.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    #[spec(
+        requires: fields.len() == usize::from(tag.producer_arity()),
+        ensures: |ret| ret.is_err() || self.producers.last()
+            .and_then(|id| self.arena.producer(*id)).is_some_and(|node| matches!(*node,
+                ProducerNode::Constructor { ref producers, ref consumers, .. }
+                    if producers.as_ref() == fields && consumers.is_empty())),
+    )]
+    fn constructor(
+        &mut self,
+        tag: ConstructorTag,
+        fields: &[ProducerId],
+    ) -> Result<(), FocusRefusal>
+    {
+        let producer = self.arena.mint_producer(ProducerNode::Constructor {
+            tag,
+            producers: alloc::boxed::Box::from(fields),
+            consumers: alloc::boxed::Box::from([]),
+        })?;
+        self.producers.push(producer);
+        Ok(())
+    }
+
+    /// Mint a cut, record its origin, and push it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the cut is pushed and recorded with `origin`.
+    /// - provides: the one cut mint of `𝓕`, so every created command has an
+    ///   origin.
+    /// - fails: a refused mint.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independently decoded terms expose changed cut
+    ///   endpoints and polarity. L3 — the top-value entry observes its exact
+    ///   terminal continuation and origin.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::top_level_value_focuses_against_top`
+    #[spec(
+        captures: [results = self.commands.len()],
+        ensures: |ret| ret.is_err() || (results.checked_add(1) == Some(self.commands.len())
+            && self.commands.last().is_some_and(|id| self.provenance.origin(*id) == Some(origin)
+                && self.arena.command(*id) == Some(&crate::il::CommandNode::Cut { polarity, producer, consumer }))),
+    )]
+    fn cut(
+        &mut self,
+        origin: FocusOrigin,
+        polarity: Polarity,
+        producer: ProducerId,
+        consumer: ConsumerId,
+    ) -> Result<(), FocusRefusal>
+    {
+        let command = self.arena.mint_cut(polarity, producer, consumer)?;
+        self.provenance.record(command, origin);
+        self.commands.push(command);
+        Ok(())
+    }
+
+    /// Pop a translated producer.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the last producer is removed and returned; an empty stack is
+    ///   unchanged and refused.
+    /// - provides: the checked result pop used by finishing tasks.
+    /// - fails: [`FocusRefusal::TranslationInvariant`] on an empty stack.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The missing-result invariant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two distinct results are popped in reverse order,
+    ///   then exact underflow is observed. Wrong-end removal, stale results and
+    ///   silent underflow change the answer.
+    /// - witness: `focus::tests::result_stacks_enforce_singletons_and_lifo`
+    #[spec(
+        captures: [last = self.producers.last().copied(), length = self.producers.len()],
+        ensures: |ret| ret == last.ok_or(FocusRefusal::TranslationInvariant)
+            && self.producers.len() == length.saturating_sub(1),
+    )]
+    fn pop_producer(&mut self) -> Result<ProducerId, FocusRefusal>
+    {
+        self.producers
+            .pop()
+            .ok_or(FocusRefusal::TranslationInvariant)
+    }
+
+    /// Pop a translated command.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the last command is removed and returned; an empty stack is
+    ///   unchanged and refused.
+    /// - provides: the checked result pop used by finishing tasks.
+    /// - fails: [`FocusRefusal::TranslationInvariant`] on an empty stack.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The missing-result invariant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two distinct results are popped in reverse order,
+    ///   then exact underflow is observed. Wrong-end removal, stale results and
+    ///   silent underflow change the answer.
+    /// - witness: `focus::tests::result_stacks_enforce_singletons_and_lifo`
+    #[spec(
+        captures: [last = self.commands.last().copied(), length = self.commands.len()],
+        ensures: |ret| ret == last.ok_or(FocusRefusal::TranslationInvariant)
+            && self.commands.len() == length.saturating_sub(1),
+    )]
+    fn pop_command(&mut self) -> Result<CommandId, FocusRefusal>
+    {
+        self.commands
+            .pop()
+            .ok_or(FocusRefusal::TranslationInvariant)
+    }
+
+    /// The one command a computation's translation leaves.
+    ///
+    /// # Specification
+    /// - requires: the translation has been driven.
+    /// - ensures: the single command, with no producer left over.
+    /// - provides: the result of a computation entry point.
+    /// - fails: [`FocusRefusal::TranslationInvariant`] for any other shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the finite product of zero, one and two results on
+    ///   each stack distinguishes missing, surplus and wrong-kind results. The
+    ///   observer is the exact singleton or invariant refusal.
+    /// - witness: `focus::tests::result_stacks_enforce_singletons_and_lifo`
+    #[spec(
+        requires: self.tasks.is_empty(),
+        captures: [single = self.commands.len() == 1 && self.producers.is_empty(), last = self.commands.last().copied()],
+        ensures: |ret| ret == if single { last.ok_or(FocusRefusal::TranslationInvariant) }
+            else { Err(FocusRefusal::TranslationInvariant) },
+    )]
+    fn single_command(mut self) -> Result<CommandId, FocusRefusal>
+    {
+        let command = self.pop_command()?;
+        if self.commands.is_empty() && self.producers.is_empty() {
+            Ok(command)
+        }
+        else {
+            Err(FocusRefusal::TranslationInvariant)
+        }
+    }
+
+    /// The one producer a value's translation leaves.
+    ///
+    /// # Specification
+    /// - requires: the translation has been driven.
+    /// - ensures: the single producer, with no command left over.
+    /// - provides: the result of a value entry point.
+    /// - fails: [`FocusRefusal::TranslationInvariant`] for any other shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the finite product of zero, one and two results on
+    ///   each stack distinguishes missing, surplus and wrong-kind results. The
+    ///   observer is the exact singleton or invariant refusal.
+    /// - witness: `focus::tests::result_stacks_enforce_singletons_and_lifo`
+    #[spec(
+        requires: self.tasks.is_empty(),
+        captures: [single = self.producers.len() == 1 && self.commands.is_empty(), last = self.producers.last().copied()],
+        ensures: |ret| ret == if single { last.ok_or(FocusRefusal::TranslationInvariant) }
+            else { Err(FocusRefusal::TranslationInvariant) },
+    )]
+    fn single_producer(mut self) -> Result<ProducerId, FocusRefusal>
+    {
+        let producer = self.pop_producer()?;
+        if self.commands.is_empty() && self.producers.is_empty() {
+            Ok(producer)
+        }
+        else {
+            Err(FocusRefusal::TranslationInvariant)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

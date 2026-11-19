@@ -1,0 +1,33 @@
+// Vector programs as they should read, and what refuses each of them.
+//
+// A case on a vector binds each arm's index equation, prunes an arm whose ends
+// are apart, and solves an equation with a variable side. An equation between
+// two applications of one constructor splits into one equation for each field.
+// A binder of a recursion's stage moves along its equation and keeps its stage.
+// The model source `injective-index` holds `tail` and `zip`.
+//
+// The checker refuses each declaration below by the name its attribute
+// states. Each turns to `checks` as its rung lands, and the source then moves
+// to the model root.
+//
+// - owes: #3516 — an implicit under a constructor, for
+//   `firstOfPair`
+// - owes: #3517 — an implicit block on `def rec`, for `zip`
+// - see: #3481 — the spike that wrote these programs
+
+// The naturals the lengths count in.
+import "../../model/data/data-base.gandr";
+
+// The vectors and the vector two long.
+import "../../model/data/vectors.gandr";
+
+/// The first element, its element type and length implicit. `VNil` stands at
+/// zero, apart from `Succ(n)`, so the case leaves its arm out.
+def head[a : Type, n : Nat](v : Vec a (Succ n)) -> a =
+  match v where
+    | VCons(_, h, _) => h
+
+/// The head of the vector two long. The solver does not take apart the `Succ`
+/// that `n` stands under in `head`'s parameter.
+@[refuses("TypeMismatch")]
+def firstOfPair() -> Integer = head (pair ());

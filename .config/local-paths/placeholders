@@ -1,0 +1,4 @@
+# The names of a home directory that stand in the tree, one a line: a
+# placeholder that names no account of a host, as a test of the XDG
+# directories reads one.
+user

@@ -1,0 +1,4 @@
+{FIRST}{SIGNATURE}
+{DEFINITION}
+def omitted : () -> Integer ;
+def omitted = thunk {{ become first ? *{{}} }} ;
