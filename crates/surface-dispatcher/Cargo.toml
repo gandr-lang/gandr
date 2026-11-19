@@ -72,8 +72,10 @@ path = "benches/tokens.rs"
 # Lawvere quantale of the ordered-algebras crate, over exact dyadics. A
 # composition says whether the core checker keeps its goal memo through the
 # check-memo seam's activity. Each worker of the pool owns one ring of the
-# IO layer, which it opens at its first IO. A source of verdicts answers its
-# receipts in the shared pointer of the kernel-data crate.
+# IO layer, which it opens at its first IO.
+#
+# A source of verdicts answers its receipts in the shared pointer of the
+# kernel-data crate.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
