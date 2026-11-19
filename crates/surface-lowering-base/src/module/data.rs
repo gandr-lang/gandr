@@ -1647,6 +1647,45 @@ impl<'source> Collector<'_, 'source>
         Ok(generators)
     }
 
+    /// Read the one operand of a generator's side, `form` naming what an
+    /// extra operand is in. An attribute block after it stays unread, since
+    /// it stands before the next member.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the next operand, the cursor past it and before any attribute
+    ///   block that follows it.
+    /// - fails: no operand; a second operand that is no attribute block.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a mark before the second arm of a data type stands on
+    ///   that arm's constructor, and the arm before it keeps its type.
+    /// - witness: `gandr-surface-lowering::lower::thir::tests::an_attribute_before_a_constructor_arm_stands_on_it_8119`
+    fn side(
+        &self,
+        cursor: &mut Cursor<'_>,
+        form: FormName,
+    ) -> Result<Placed, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(Piece::Operand(first)) = cursor.peek()
+        else {
+            return one_in(form, cursor.operands());
+        };
+        let _side = cursor.read();
+        match cursor.peek() {
+            Maybe::Present(Piece::Operand(next))
+                if self.root_former(next) != Ok(Maybe::Present(Former::AttributeBlock)) =>
+            {
+                Err(extra_operand(form, next))
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => Ok(first),
+        }
+    }
+
     /// Read the signature a generator, or a data header's kind, writes after
     /// its colon, `form` naming what a misplaced tile is out of place in.
     ///
@@ -1683,7 +1722,7 @@ impl<'source> Collector<'_, 'source>
     {
         let Maybe::Present(open) = cursor.tile(TileName::PAREN_OPEN)
         else {
-            let side = one_in(form, cursor.operands())?;
+            let side = self.side(cursor, form)?;
             if let Maybe::Absent(_) = cursor.tile(TileName::GENERATOR) {
                 return Ok(Signature::Bare(side));
             }
@@ -1737,7 +1776,7 @@ impl<'source> Collector<'_, 'source>
             return Ok(Signature::Arrow {
                 entries,
                 grades,
-                result: one_in(form, cursor.operands())?,
+                result: self.side(cursor, form)?,
             });
         };
         let (outputs, graded) = self.entries(cursor, form)?;

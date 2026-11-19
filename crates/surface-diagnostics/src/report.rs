@@ -1745,8 +1745,8 @@ impl fmt::Display for MessageText<'_>
                 Maybe::Present(StagedName::Callee(path)) => match fault {
                     StagedFault::Unmapped { .. } => write!(
                         f,
-                        "a staged call names `{path}`, and the item mark states no constructor \
-                         for it"
+                        "a staged call names `{path}`, and no item mark of a constructor \
+                         states it"
                     ),
                     StagedFault::Bodied
                     | StagedFault::NoReader

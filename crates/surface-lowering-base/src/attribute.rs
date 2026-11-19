@@ -554,10 +554,9 @@ impl RegisteredAttribute
     /// staged THIR of a Rust function. The payload names the Rust file beside
     /// the source and the function's path inside that crate, both texts.
     pub const THIR: Self = Self("thir");
-    /// `item`: the data type it decorates stands for Rust items. Each text
-    /// of its payload is the path of a Rust item, a space, and the name of
-    /// the constructor that stands for that item, so a staged call of the
-    /// item is that constructor.
+    /// `item`: the constructor it stands on stands for a Rust item. The text
+    /// of its payload is the path of that item, so a staged call of the item
+    /// is that constructor.
     pub const ITEM: Self = Self("item");
     /// `traces`: the run of the declaration it decorates is recorded, and the
     /// payload states the web one channel's play decomposes to. It is the one
@@ -756,6 +755,26 @@ impl AttributePlaces
                 Maybe::Absent(placed::Absent::Taken)
             },
         }
+    }
+}
+
+impl fmt::Display for AttributePlaces
+{
+    /// Writes the places.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Declaration => "a declaration",
+            Self::Constructor => "a constructor",
+            Self::Both => "a declaration or a constructor",
+        })
     }
 }
 

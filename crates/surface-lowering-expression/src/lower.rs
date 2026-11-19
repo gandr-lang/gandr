@@ -19933,10 +19933,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - provides: the per-attribute half of the attribute pass.
     /// - fails: yields the retired-spelling refusal for the attribute `native`
     ///   and for a `builtin` mark whose payload is a bare word, the
-    ///   unknown-attribute refusal with its bounded suggestion, the duplicate
-    ///   refusal naming the first spelling for a name other than `traces`
-    ///   written again, the non-value-payload refusal, the missing-payload
-    ///   refusal, or the ill-typed-payload refusal.
+    ///   unknown-attribute refusal with its bounded suggestion, the
+    ///   misplaced-attribute refusal for a name at a place the registry does
+    ///   not let it stand, the duplicate refusal naming the first spelling for
+    ///   a name other than `traces` written again at one standing, the
+    ///   non-value-payload refusal, the missing-payload refusal, or the
+    ///   ill-typed-payload refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -19952,10 +19954,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a filed entry adds exactly one recognized name and
-    ///   keeps its schema, payload and span; duplicate, unknown and ill-typed
-    ///   attributes leave the per-declaration seen list unchanged.
+    ///   keeps its schema, payload and span; duplicate, unknown, misplaced and
+    ///   ill-typed attributes leave the per-declaration seen list unchanged.
     /// - witness: `gandr-surface-lowering::lower::tests::an_attribute_written_twice_for_one_name_is_refused`
     /// - witness: `gandr-surface-lowering::lower::tests::an_unknown_attribute_is_refused_with_its_suggestion`
+    /// - witness: `gandr-surface-lowering::lower::tests::an_attribute_at_another_place_is_refused_by_name_and_place_8119`
     /// - witness: `gandr-surface-lowering::lower::tests::a_payload_of_the_wrong_form_is_refused`
     /// - witness: `gandr-surface-lowering::lower::tests::a_form_payload_is_read_as_one_of_its_words`
     /// - witness: `gandr-surface-lowering::lower::tests::an_attribute_is_filed_under_its_declaration_key`

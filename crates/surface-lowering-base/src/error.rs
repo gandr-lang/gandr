@@ -569,8 +569,8 @@ pub enum StagedFault
     Outside(crate::unit::MarkIndex),
     /// The declared type is not `Expr` of `std.thir` at a data type.
     NotExpr,
-    /// A staged call names a path that no text of the item type's mark
-    /// states.
+    /// A staged call names a path that no item mark of a constructor of the
+    /// item type states.
     Unmapped
     {
         /// The mark whose body holds the call.
@@ -578,8 +578,8 @@ pub enum StagedFault
         /// The call's place in the body.
         node: gandr_runtime_rust_record::NodeIndex,
     },
-    /// A text of the item type's mark is no path and constructor, names no
-    /// constructor of the type, or states a path or a constructor again.
+    /// An item mark states an empty path, stands on a constructor with
+    /// fields, or states a path that another constructor's mark states.
     ItemMark,
 }
 
@@ -2783,11 +2783,11 @@ impl fmt::Display for LoweringRefusal<'_>
                     "the type of a staged signature is `Expr` of `std.thir` at an item type"
                 },
                 StagedFault::Unmapped { .. } => {
-                    "a staged call names a path that the item mark does not state"
+                    "a staged call names a path that no item mark states"
                 },
                 StagedFault::ItemMark => {
-                    "each text of an item mark is a Rust path and a constructor of the type, \
-                     each one time"
+                    "each item mark states a Rust path, on a constructor with no fields, \
+                     each path one time"
                 },
             }),
         }

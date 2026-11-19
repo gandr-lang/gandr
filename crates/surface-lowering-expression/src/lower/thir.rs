@@ -110,17 +110,20 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   of these faults: the signature has a body; no staged answer matches
     ///   the mark's two texts; no reader is installed; the reader read no body;
     ///   the body is outside the fragment; the type is no `Expr` of `std.thir`
-    ///   at a data type; a text of the item mark is no path and constructor of
-    ///   the item type, or repeats one; a call names a path that the item mark
-    ///   does not state.
+    ///   at a data type; an item mark of a constructor of the item type states
+    ///   an empty path, stands on a constructor with fields, or states the path
+    ///   of another constructor's mark; a call names a path that no item mark
+    ///   states.
     /// - panics: none.
     /// - executable: none — the minted values are the arena's, and a predicate
     ///   would fold each body again.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a staged body lowers to its constructors, and each
-    ///   fault takes its own refusal.
+    /// - hypothesis: L3 — a staged body lowers to its constructors, an item
+    ///   mark before an arm stands on that arm's constructor, and each fault
+    ///   takes its own refusal.
     /// - witness: `gandr-surface-lowering::lower::thir::tests::a_staged_body_lowers_to_its_constructors_8117`
+    /// - witness: `gandr-surface-lowering::lower::thir::tests::an_attribute_before_a_constructor_arm_stands_on_it_8119`
     /// - witness: `gandr-surface-lowering::lower::thir::tests::each_fault_of_a_thir_mark_is_refused_by_name_8117`
     ///
     /// # Cost

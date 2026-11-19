@@ -1,0 +1,5 @@
+@[refuses("MisplacedAttribute")]
+data Flag : Type where
+  @[deprecated]
+  | On : Flag
+  | Off : Flag

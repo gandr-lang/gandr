@@ -195,10 +195,10 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             StagedFault::Unread(_) => "make the crate build, and name a public function of it",
             StagedFault::Outside(_) => "write the function in the fragment of the calculus",
             StagedFault::NotExpr => "declare the signature at `Expr` of the item type",
-            StagedFault::Unmapped { .. } => "state the path and its constructor in the item mark",
-            StagedFault::ItemMark => {
-                "write each text as a Rust path, a space and a constructor, each one time"
+            StagedFault::Unmapped { .. } => {
+                "write the path in the item mark of the constructor that stands for it"
             },
+            StagedFault::ItemMark => "write each path one time, on a constructor with no fields",
         }),
         LoweringRefusal::UnresolvedDocLink { name, .. } => {
             format!("declare `{name}`, or link to a name this source declares")
@@ -1456,7 +1456,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 248] = [
+    const WORDED: [&str; 249] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1504,6 +1504,7 @@ mod tests
         "HeldCaptured",
         "HeldKept",
         "IllTypedPayload",
+        "MisplacedAttribute",
         "ModelAmbiguous",
         "NonCovariantMotive",
         "NotSynthesisable",
