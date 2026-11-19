@@ -83,7 +83,6 @@ use alloc::alloc::Global;
 use alloc::collections::BTreeSet;
 
 use anodized::spec;
-use gandr_kernel_data::Shared;
 use gandr_kernel_data::SmallVec;
 use gandr_kernel_data::ThinShared;
 use gandr_kernel_check_memo::CheckMemo;
@@ -1348,7 +1347,13 @@ impl SupportContext
         }
         let (reads, mut owed) = self.close_innermost();
         owed.sort_unstable_by_key(NodeSupport::names);
-        owed.dedup_by_key(|key| key.names());
+        let mut last = None;
+        owed.retain(|support| {
+            let names = Some(support.names());
+            let first = names != last;
+            last = names;
+            first
+        });
         Some((reads, Owed((!owed.is_empty()).then(|| owed.into()))))
     }
 
@@ -2115,6 +2120,9 @@ pub enum BinderUse
 #[cfg(test)]
 mod tests
 {
+    use alloc::alloc::Global;
+
+    use gandr_kernel_data::SmallVec;
     use gandr_kernel_check_memo::ContentAgreement;
     use gandr_kernel_check_memo::MemoKey as _;
     use gandr_kernel_strata::Level;
@@ -2495,7 +2503,7 @@ mod tests
         let gone = arena.value_unit();
         arena.truncate_to(floor);
         // The buffer holds an earlier goal's read, which gathering discards.
-        let mut buffer = alloc::vec![(at(5), unit)];
+        let mut buffer = SmallVec::<_, 0, Global>::from_iter([(at(5), unit)]);
         let mut read = |node| {
             super::read_binders(&context, arena.value_support(node), &mut buffer).map(<[_]>::to_vec)
         };

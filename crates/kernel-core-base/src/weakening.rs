@@ -31,12 +31,13 @@
 //!   reads, and never trusts it.
 
 use alloc::alloc::Global;
-use gandr_kernel_data::SmallVec;
 use core::sync::atomic::AtomicU32;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 
 use anodized::spec;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::ArenaLength;
 use gandr_kernel_term::ConstantIndex;
 
@@ -120,9 +121,8 @@ impl Support
     )
     {
         let length = usize::from(length);
-        if let Some(missing) = length.checked_sub(self.stamps.len()) {
-            self.stamps.reserve(missing);
-            self.stamps.resize_with(length, AtomicU32::default);
+        if length > self.stamps.len() {
+            self.stamps.resize_with(Count::from(length), AtomicU32::default);
         }
         self.last = match self.last.checked_add(1) {
             Some(next) if next <= LAST_CHECK => next,

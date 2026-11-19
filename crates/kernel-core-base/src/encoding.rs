@@ -1778,7 +1778,7 @@ impl<A: Allocator + Clone> TableLayer<A>
     /// # Specification
     /// trivial.
     #[inline]
-    const fn size(&self) -> LayerSize
+    fn size(&self) -> LayerSize
     {
         LayerSize(self.spans.len().saturating_add(self.count.0))
     }
@@ -2106,14 +2106,14 @@ impl<A: Allocator + Clone> PlacementColumn<A>
         if self.pages.len() <= number {
             let allocator = self.pages.allocator().clone();
             self.pages
-                .resize_with(number.saturating_add(1), || SmallVec::<_, 0, _>::new_in(allocator.clone()));
+                .resize_with(Count::from(number.saturating_add(1)), || SmallVec::<_, 0, _>::new_in(allocator.clone()));
         }
         let Some(page) = self.pages.get_mut(number)
         else {
             return Placement::Unplaced;
         };
         if page.is_empty() {
-            page.resize(PLACEMENT_PAGE_SLOTS, PlacementSlot::UNPLACED);
+            page.resize(Count::from(PLACEMENT_PAGE_SLOTS), PlacementSlot::UNPLACED);
         }
         page.get_mut(offset & PLACEMENT_SLOT_MASK)
             .map_or(Placement::Unplaced, |slot| {
@@ -4990,7 +4990,7 @@ impl<A: Allocator + Clone> ContentTable<A>
     )
     {
         let Some(newer) = (lower.saturating_add(1) < self.placed.layers.len())
-            .then(|| self.placed.layers.remove(lower.saturating_add(1)))
+            .then(|| self.placed.layers.remove(Count::from(lower.saturating_add(1))))
         else {
             return;
         };
@@ -7289,6 +7289,7 @@ mod tests
     use alloc::vec::Vec;
 
     use anodized::spec;
+    use gandr_kernel_data::SmallVec;
     use gandr_kernel_term::AnyNode;
     use gandr_kernel_term::ArenaWatermark;
     use gandr_kernel_term::BaseType;
@@ -7383,10 +7384,10 @@ mod tests
             out.put_word(EncodedWord(value));
             out.0
         };
-        assert_eq!(vec![0x00_u32], image_of(0));
-        assert_eq!(vec![0x7fff_ffff_u32], image_of(0x7fff_ffff));
-        assert_eq!(vec![0x8000_0000_u32, 0x01], image_of(0x8000_0000));
-        assert_eq!(vec![0xffff_ffff_u32, 0xffff_ffff, 0x03], image_of(u64::MAX));
+        assert_eq!(image_of(0), [0x00_u32]);
+        assert_eq!(image_of(0x7fff_ffff), [0x7fff_ffff_u32]);
+        assert_eq!(image_of(0x8000_0000), [0x8000_0000_u32, 0x01]);
+        assert_eq!(image_of(u64::MAX), [0xffff_ffff_u32, 0xffff_ffff, 0x03]);
     }
 
     #[test]
@@ -7399,11 +7400,11 @@ mod tests
             (String::from("abcde"), vec![0x05, 0x6463_6261, 0x0000_0065]),
         ];
         for (text, image) in cases {
-            let mut encoded = ContentEncoding(vec![0x7e]);
+            let mut encoded = ContentEncoding(SmallVec::<_, 0, Global>::from_iter([0x7e]));
             encoded.put_text(super::EncodedText(&text));
             let mut expected = vec![0x7e];
             expected.extend_from_slice(&image);
-            assert_eq!(encoded.0, expected);
+            assert_eq!(encoded.0, expected.as_slice());
         }
         let mut split_one = ContentEncoding::new_in(Global);
         split_one.put_text(super::EncodedText("a"));
@@ -7419,13 +7420,13 @@ mod tests
     {
         let cases = [(vec![], vec![0x00]), (vec![0xffff_ffff, 0x00], vec![0x02])];
         for (words, prefix) in cases {
-            let record = ContentEncoding(words);
-            let mut encoded = ContentEncoding(vec![0x7e]);
+            let record = ContentEncoding(words.into_iter().collect::<SmallVec<_, 0, Global>>());
+            let mut encoded = ContentEncoding(SmallVec::<_, 0, Global>::from_iter([0x7e]));
             encoded.put_record(&record);
             let mut expected = vec![0x7e];
             expected.extend_from_slice(&prefix);
             expected.extend_from_slice(&record.0);
-            assert_eq!(encoded.0, expected);
+            assert_eq!(encoded.0, expected.as_slice());
         }
     }
 
@@ -7449,14 +7450,14 @@ mod tests
             ),
         );
         assert_eq!(
-            ContentEncoding(vec![0x61]).digest(),
+            ContentEncoding(SmallVec::<_, 0, Global>::from_iter([0x61])).digest(),
             gandr_kernel_check_memo::ContentDigest::new(
                 gandr_kernel_check_memo::DigestWord::from(0xd228_cb69_6f1a_8caf_u64),
                 gandr_kernel_check_memo::DigestWord::from(0x7891_2b70_4e4a_8964_u64)
             ),
         );
         assert_eq!(
-            ContentEncoding(vec![0x6261]).digest(),
+            ContentEncoding(SmallVec::<_, 0, Global>::from_iter([0x6261])).digest(),
             gandr_kernel_check_memo::ContentDigest::new(
                 gandr_kernel_check_memo::DigestWord::from(0xd228_cb4b_6f1a_8caf_u64),
                 gandr_kernel_check_memo::DigestWord::from(0x7891_2b70_4e25_9f64_u64)
@@ -8158,7 +8159,7 @@ mod tests
             assert_eq!(record.as_ref(), &[0xff_u32, u32::from(family)]);
             assert_eq!(
                 content_digest(&arena, node),
-                ContentEncoding(vec![2_u32, 0xff, u32::from(family)]).digest()
+                ContentEncoding(SmallVec::<_, 0, Global>::from_iter([2_u32, 0xff, u32::from(family)])).digest()
             );
             key
         });
@@ -8278,7 +8279,7 @@ mod tests
     fn level_frames_are_canonical_and_include_each_component()
     {
         let image = |level: &super::Level| {
-            let mut record = ContentEncoding(vec![0x7e]);
+            let mut record = ContentEncoding(SmallVec::<_, 0, Global>::from_iter([0x7e]));
             super::put_level(&mut RecordSink::whole(&mut record), level);
             record
         };
@@ -9015,10 +9016,10 @@ mod tests
         );
         assert_eq!(
             widest.digest(),
-            ContentEncoding(widest.as_ref().to_vec()).digest(),
+            ContentEncoding(SmallVec::<_, 0, Global>::from_iter(widest.as_ref().iter().copied())).digest(),
             "a key's digest is the digest of its words as an encoding"
         );
-        let mut longer = widest.as_ref().to_vec();
+        let mut longer = SmallVec::<u32, 0, Global>::from_iter(widest.as_ref().iter().copied());
         longer.push(0_u32);
         assert_eq!(
             RewriteKey::from_encoding(&ContentEncoding(longer)),

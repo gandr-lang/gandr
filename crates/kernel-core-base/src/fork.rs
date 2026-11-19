@@ -25,8 +25,6 @@
 //!   kernel-reassessment-design item 11 — the independent obligations of one
 //!   check fork under one seam, and the serial check is the reference.
 
-use alloc::alloc::Global;
-use gandr_kernel_data::Shared;
 use core::fmt;
 use core::num::NonZeroUsize;
 
@@ -193,7 +191,14 @@ impl fmt::Debug for Forking<'_>
 /// trivial.
 #[derive(Clone, Default)]
 #[repr(transparent)]
-pub struct SharedFork(Option<Shared<dyn ObligationFork + Send, Global>>);
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        std_container,
+        reason = "the embedding program gives the fork as a handle, and the kernel allocates no such object, so no region of the kernel holds it"
+    )
+)]
+pub struct SharedFork(Option<alloc::sync::Arc<dyn ObligationFork + Send>>);
 
 impl SharedFork
 {
@@ -215,7 +220,7 @@ impl SharedFork
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn through(fork: Shared<dyn ObligationFork + Send, Global>) -> Self
+    pub fn through(fork: alloc::sync::Arc<dyn ObligationFork + Send>) -> Self
     {
         Self(Some(fork))
     }

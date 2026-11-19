@@ -3,8 +3,7 @@
 
 use alloc::alloc::Global;
 use alloc::string::String;
-use alloc::alloc::Global;
-use gandr_kernel_data::SmallVec;
+use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_check_memo::CheckMemo as _;

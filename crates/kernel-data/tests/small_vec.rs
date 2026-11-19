@@ -162,6 +162,8 @@ enum Operation
     ExtendFromSlice(Vec<u16>),
     /// Resize to the length, with clones of the item.
     Resize(usize, u16),
+    /// Resize to the length, with the items of a counter from the item.
+    ResizeWith(usize, u16),
     /// Replace the range, clamped to the length, with the items.
     ReplaceRange(usize, usize, Vec<u16>),
     /// Split at the index, if the index is at most the length.
@@ -200,6 +202,7 @@ fn operation() -> impl Strategy<Value = Operation>
         prop::collection::vec(any::<u16>(), 0_usize .. 12_usize)
             .prop_map(Operation::ExtendFromSlice),
         (0_usize .. 24_usize, 0_u16 .. 4_u16).prop_map(|(len, item)| Operation::Resize(len, item)),
+        (0_usize .. 24_usize, any::<u16>()).prop_map(|(len, item)| Operation::ResizeWith(len, item)),
         (
             0_usize .. 24_usize,
             0_usize .. 24_usize,
@@ -301,6 +304,18 @@ fn agree<const N: usize>(operations: &[Operation]) -> Result<(), TestCaseError>
             Operation::Resize(len, item) => {
                 small.resize(Count::from(len), item);
                 model.resize(len, item);
+            },
+            Operation::ResizeWith(len, item) => {
+                let mut next = item;
+                small.resize_with(Count::from(len), || {
+                    next = next.wrapping_add(1);
+                    next
+                });
+                let mut next = item;
+                model.resize_with(len, || {
+                    next = next.wrapping_add(1);
+                    next
+                });
             },
             Operation::ReplaceRange(start, end, ref items) => {
                 let (start, end) = (start.min(model.len()), end.min(model.len()));

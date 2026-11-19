@@ -1333,7 +1333,7 @@ pub struct Verdicts
     /// The signers believed.
     trusted: BTreeSet<KernelIdentity>,
     /// Where recorded verdicts are found.
-    source: Shared<dyn VerdictSource, Global>,
+    source: alloc::sync::Arc<dyn VerdictSource>,
     /// The receipts already verified, each with whether it attested.
     verified: BTreeMap<Receipt, Attestation>,
     /// The readings of the records a verified receipt attested, by key.
@@ -1359,7 +1359,7 @@ impl Default for Verdicts
     #[inline]
     fn default() -> Self
     {
-        Self::rechecking(Shared::new(NoVerdicts))
+        Self::rechecking(alloc::sync::Arc::new(NoVerdicts))
     }
 }
 
@@ -1409,7 +1409,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
-    fn rechecking(source: Shared<dyn VerdictSource, Global>) -> Self
+    fn rechecking(source: alloc::sync::Arc<dyn VerdictSource>) -> Self
     {
         Self {
             trusted: BTreeSet::new(),
@@ -1431,7 +1431,7 @@ impl Verdicts
     #[inline]
     pub fn under(
         policy: TrustPolicy,
-        source: Shared<dyn VerdictSource, Global>,
+        source: alloc::sync::Arc<dyn VerdictSource>,
         build: BuildIdentity,
     ) -> Self
     {
@@ -1457,7 +1457,7 @@ impl Verdicts
     {
         Self {
             trusted: self.trusted.clone(),
-            source: Shared::clone(&self.source),
+            source: alloc::sync::Arc::clone(&self.source),
             verified: self.verified.clone(),
             recalled: self.recalled.clone(),
             checked: SmallVec::<_, 0, Global>::new(),
@@ -1475,7 +1475,7 @@ impl Verdicts
     #[inline]
     pub fn reading(
         &mut self,
-        source: Shared<dyn VerdictSource, Global>,
+        source: alloc::sync::Arc<dyn VerdictSource>,
     )
     {
         self.source = source;

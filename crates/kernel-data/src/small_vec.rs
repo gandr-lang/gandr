@@ -1037,6 +1037,39 @@ where
         }
     }
 
+    /// Sets the length to `len`: drops the items past `len`, or adds the
+    /// items that `fill` makes, in order, past the last item until the length
+    /// is `len`.
+    ///
+    /// # Specification
+    /// - ensures: the length is `len`; the items before the old length stay,
+    ///   and each item past it is the next item that `fill` makes.
+    /// - panics: when `fill` or an item's drop panics, or the length passes
+    ///   `isize::MAX`; the allocator's refusal goes to its error handler.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the model test resizes with a counter to lengths
+    ///   below and past the length, in place and spilled, against
+    ///   `Vec::resize_with`.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    #[spec(ensures: self.count() == len)]
+    #[inline]
+    pub fn resize_with<F>(
+        &mut self,
+        len: Count,
+        fill: F,
+    ) where
+        F: FnMut() -> T,
+    {
+        let had = self.count().0;
+        if len.0 <= had {
+            self.truncate(len);
+        }
+        else {
+            self.extend(core::iter::repeat_with(fill).take(len.0.wrapping_sub(had)));
+        }
+    }
+
     /// Replaces the items of `range` with the items of `items`, in order, and
     /// drops the items of `range`.
     ///
