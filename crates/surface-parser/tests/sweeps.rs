@@ -436,7 +436,7 @@ fn recovers(portion: Portion) -> Result<(), Failure>
         }
         broken.extend(faults);
         let recorded = std::fs::read_to_string(record)?;
-        if recorded.lines().count() != 1 || !recorded.starts_with("W\t") {
+        if recorded.lines().take(2).count() != 1 || !recorded.starts_with("W\t") {
             stale.push(format!(
                 "{rel} has a record of another shape; {}",
                 rerecord(rel)
