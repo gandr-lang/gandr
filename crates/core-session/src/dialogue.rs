@@ -199,6 +199,10 @@ impl DialogueWeb
     /// - panics: none.
     /// - executable: none — the clause would build the same edges again.
     ///
+    /// # Cost
+    /// - allocation: the facings of each endpoint and the web's edges, growth
+    ///   within the turns and twice their count
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — one message decomposes to its send before the two
     ///   endpoints' tails side by side, and two sends queued before the first
@@ -292,6 +296,10 @@ impl DialogueWeb
     ///
     /// # Errors
     /// As above.
+    ///
+    /// # Cost
+    /// - allocation: the pieces, their pending factors and the shared pieces,
+    ///   growth within the nodes of the decomposition
     ///
     /// # Adequacy
     /// - hypothesis: L3 — one message decomposes to its send before the two
@@ -464,6 +472,10 @@ impl DialogueWeb
 ///
 /// # Errors
 /// As above.
+///
+/// # Cost
+/// - allocation: the moves of each endpoint and the run, growth within the
+///   dialogue's turns
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the seat and the operator's dialogue is admitted in two

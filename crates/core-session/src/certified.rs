@@ -323,6 +323,9 @@ fn binding(
 /// # Errors
 /// `TransportError` names the certificate, binding, monitor or move boundary.
 ///
+/// # Cost
+/// - allocation: the moves of the image, growth within the run's moves
+///
 /// # Adequacy
 /// - hypothesis: L1 the target monitor checks transported `SeatEnd` runs; L3
 ///   backward pause, removed offers, changed digests and wrong bindings
@@ -515,6 +518,9 @@ fn opened(answer: Result<crate::Completion, ReplayError>) -> Result<(), Transpor
 ///
 /// # Errors
 /// `Type` or `Move`.
+///
+/// # Cost
+/// - allocation: the moves of the image, growth within the run's moves
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`advance`] and [`advance_prefix`], which share it.

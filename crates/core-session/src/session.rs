@@ -194,6 +194,9 @@ impl Session
     /// # Errors
     /// Returns the corresponding [`TypeError`] with the offending node.
     ///
+    /// # Cost
+    /// - allocation: the visits pending, growth within twice the arena's nodes
+    ///
     /// # Adequacy
     /// - hypothesis: L3 exact refusals distinguish malformed edges, sibling
     ///   scope escape, structural cycles/sharing, and both unguarded heads.
@@ -275,6 +278,9 @@ impl Session
     /// - ensures: send/receive and select/offer swap; payload identities,
     ///   labels, continuations, recursion binding, and end are preserved.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the dual arena, growth within the arena's nodes
     ///
     /// # Adequacy
     /// - hypothesis: L2 explicit independent protocol duals and L3 all former

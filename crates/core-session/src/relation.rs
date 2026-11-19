@@ -277,6 +277,10 @@ enum Orientation
 /// - provides: `Unrelated` on missing labels or unequal equivalence widths.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the pairs of matched continuations, growth within the branches
+///   of the subset
+///
 /// # Adequacy
 /// - hypothesis: L3 nested choices distinguish width reversal from the separate
 ///   obligation to preserve direction inside matched continuations.
