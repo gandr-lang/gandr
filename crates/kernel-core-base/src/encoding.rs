@@ -2726,7 +2726,10 @@ impl<A: Allocator + Clone> ContentTable<A>
         // reads a constructor's call as one whose body it cannot read
         // (gandr-lang/quenchant#152).
         let held = id.0.checked_sub(self.base).map_or_else(
-            || layer_holding(&self.placed.layers, id).and_then(|layer| layer.name(id)),
+            || {
+                let layer = layer_holding(&self.placed.layers, id)?;
+                layer.name(id)
+            },
             |own| {
                 usize::try_from(own)
                     .ok()
