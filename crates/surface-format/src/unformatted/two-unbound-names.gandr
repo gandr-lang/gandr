@@ -1,0 +1,2 @@
+def a : Integer = x;
+def b : Integer = y;
