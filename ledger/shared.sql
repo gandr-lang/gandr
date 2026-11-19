@@ -32,6 +32,8 @@ INSERT INTO shared VALUES('crates/kernel-check-memo/src/overlay.rs','Frozen.filt
 INSERT INTO shared VALUES('crates/kernel-check-memo/src/overlay.rs','Frozen.memo','layered',NULL,'A frozen layer of the memo, which each fork shares and a compaction folds into the layer below, so a read walks the open layers.');
 INSERT INTO shared VALUES('crates/kernel-check-memo/src/overlay.rs','OverlaidMemo.point','read only',NULL,'The token of the fork point that the overlay holds open, which no write changes.');
 INSERT INTO shared VALUES('crates/kernel-core-base/src/encoding.rs','LayerView.layer','layered',NULL,'A layer of the content table''s placements, which each fork shares and a compaction absorbs into the layer below, so a read walks the open layers.');
+INSERT INTO shared VALUES('crates/kernel-core-base/src/env.rs','AdmittedDeclaration.references','read only',NULL,'The positions that an admitted declaration''s content names, which its admission writes once and the members of its block share.');
+INSERT INTO shared VALUES('crates/kernel-core-base/src/env.rs','AdmittedParts.references','read only',NULL,'The positions that an admitted declaration''s content names, which its admission writes once and the members of its block share.');
 INSERT INTO shared VALUES('crates/kernel-core-base/src/env.rs','Entries.log','chunked',NULL,'A write copies the log''s shell of a bound size, and its family, its maps and its presented table each hold a row of their own.');
 INSERT INTO shared VALUES('crates/kernel-core-base/src/env.rs','Entries.spares','grows with the module','#7406','Each spare support holds one stamp for each position of the module.');
 INSERT INTO shared VALUES('crates/kernel-core-base/src/env.rs','Entries.support','grows with the module','#7406','The support of the running check holds one stamp for each position of the module, which its reads write in place.');
@@ -42,7 +44,9 @@ INSERT INTO shared VALUES('crates/kernel-core-base/src/presented.rs','PresentedT
 INSERT INTO shared VALUES('crates/kernel-core-base/src/support.rs','Owed.0','read only',NULL,'The keys that a formation owes, which its record writes once.');
 INSERT INTO shared VALUES('crates/kernel-core-base/src/verdict.rs','Verdicts.source','read only',NULL,'The source of the recorded verdicts, which no write changes.');
 INSERT INTO shared VALUES('crates/kernel-core/src/environment.rs','Environment.commits','copied whole','#7404','A write while a handed-on state holds the commit log copies it whole, with its rows for each admitted position.');
+INSERT INTO shared VALUES('crates/kernel-core/src/environment.rs','Lone.references','read only',NULL,'The positions that a checked declaration''s content names, which its check writes once and its entry shares.');
 INSERT INTO shared VALUES('crates/kernel-core/src/environment.rs','Names.shared','copied whole','#4369','The first check of a handed-on environment copies the shared session''s content table and kept memo whole.');
+INSERT INTO shared VALUES('crates/kernel-core/src/environment.rs','Pending.references','read only',NULL,'The positions that a pending declaration''s content names, which its check writes once and its entry shares.');
 INSERT INTO shared VALUES('crates/kernel-term/src/arena.rs','Family.frozen','copied whole','#7405','A write or a freeze beside a clone copies the list of chunks whole, one pointer for each 64 nodes.');
 INSERT INTO shared VALUES('crates/kernel-term/src/arena.rs','Family.tail','chunked',NULL,'A write copies one segment of fewer than 64 nodes, and the tail keeps at most five segments.');
 INSERT INTO shared VALUES('crates/kernel-term/src/arena.rs','TermArena.unrelated','read only',NULL,'The empty dialogues that each unrelated node shares, which no write changes.');

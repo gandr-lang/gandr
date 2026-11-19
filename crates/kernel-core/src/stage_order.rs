@@ -135,11 +135,46 @@ enum Unjoined
 /// The stages one judgement minted, each with the stage it lies directly
 /// below.
 #[repr(transparent)]
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq)]
 pub struct StageOrder
 {
     /// Each stage's parent, indexed by [`StageId`].
     parents: Vec<Parent>,
+}
+
+impl Clone for StageOrder
+{
+    /// A copy of the order.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the copy's parents, growth within the order's stages
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self {
+            parents: self.parents.clone(),
+        }
+    }
+
+    /// Make the order equal to `source` in its own places, so a walk that
+    /// mints after another reuses them.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the order's parents, growth within the stages of `source`
+    #[inline]
+    fn clone_from(
+        &mut self,
+        source: &Self,
+    )
+    {
+        self.parents.clone_from(&source.parents);
+    }
 }
 
 impl StageOrder
