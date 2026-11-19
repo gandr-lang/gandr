@@ -1,0 +1,5 @@
+@[ deprecated(*{ note = "use two" }) ] def one = 1 ;
+def two = 2 ;
+def uses = one ;
+def add : Integer ;
+def add = two ;

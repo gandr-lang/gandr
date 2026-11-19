@@ -1,0 +1,5 @@
+/// `native`: its text names the row of the native table that a signature of
+/// `std` declares, and the row gives the value.
+@[refuses("NativeMark.OutsideStd")]
+@[native("string.append")]
+def append : (a : String, b : String) -> String;
