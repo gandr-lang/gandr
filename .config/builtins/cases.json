@@ -1,0 +1,77 @@
+[
+  {
+    "name": "an atom of the resolver is each text of its list, and a homed list names only its capitalized texts, not the module",
+    "input": [
+      "crates/surface-lowering-base/src/resolve.rs:472:const TYPE_ATOMS: [(&str, TypeAtom); 3_usize] = [",
+      "crates/surface-lowering-base/src/resolve.rs:473:    (\"Unit\", TypeAtom::Unit),",
+      "crates/surface-lowering-base/src/resolve.rs:474:    (",
+      "crates/surface-lowering-base/src/resolve.rs:475:        \"usize\",",
+      "crates/surface-lowering-base/src/resolve.rs:476:        TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::Usize),",
+      "crates/surface-lowering-base/src/resolve.rs:477:    ),",
+      "crates/surface-lowering-base/src/resolve.rs:478:];",
+      "crates/surface-lowering-base/src/resolve.rs:479:const TYPE_FORMERS: [(&str, TypeFormer); 1_usize] = [(\"+U\", TypeFormer::Thunk)];",
+      "crates/surface-lowering-base/src/resolve.rs:539:const HOMED_FORMERS: [(&str, &str, TypeFormer); 1_usize] = [",
+      "crates/surface-lowering-base/src/resolve.rs:540:    (\"std.list\", \"List\", TypeFormer::List),",
+      "crates/surface-lowering-base/src/resolve.rs:541:];",
+      "crates/surface-lowering-base/src/resolve.rs:600:    let name = \"Outside\";",
+      ""
+    ],
+    "output": "List\tcrates/surface-lowering-base/src/resolve.rs\nUnit\tcrates/surface-lowering-base/src/resolve.rs\nusize\tcrates/surface-lowering-base/src/resolve.rs"
+  },
+  {
+    "name": "a head rule of the type grammar names its capitalized tiles, the primitive rule names each tile, and a rule of the same name in another file names none",
+    "input": [
+      "crates/surface-grammar/src/surface/type_shell.rs:495:    for (name, head, retired) in [",
+      "crates/surface-grammar/src/surface/type_shell.rs:496:        (\"path_type\", \"Path\", RetiredForm::PositionalPathCarrier),",
+      "crates/surface-grammar/src/surface/type_shell.rs:502:    ] {",
+      "crates/surface-grammar/src/surface/type_shell.rs:508:                tile(TileLabel(head)),",
+      "crates/surface-grammar/src/surface/type_shell.rs:531:        RuleName(\"flow_type\"),",
+      "crates/surface-grammar/src/surface/type_shell.rs:534:        Regex::seq([tile(TileLabel(\"Flow\")), supplied(Listed::Always)]),",
+      "crates/surface-grammar/src/surface/type_shell.rs:535:    );",
+      "crates/surface-grammar/src/surface/type_shell.rs:955:        RuleName(\"primitive_type\"),",
+      "crates/surface-grammar/src/surface/type_shell.rs:959:            tile(TileLabel(\"Any\")),",
+      "crates/surface-grammar/src/surface/type_shell.rs:964:            tile(TileLabel(\"u32\")),",
+      "crates/surface-grammar/src/surface/type_shell.rs:981:            // The opaque buffer that a \"receive\" places.",
+      "crates/surface-grammar/src/surface/type_shell.rs:983:        ]),",
+      "crates/surface-grammar/src/surface/type_shell.rs:984:    ));",
+      "crates/surface-grammar/src/surface/type_shell.rs:990:            tile(TileLabel(\"Later\")),",
+      "crates/surface-parser/src/mold.rs:5000:        RuleName(\"primitive_type\"),",
+      "crates/surface-parser/src/mold.rs:5001:            tile(TileLabel(\"u32\")),",
+      "crates/surface-parser/src/mold.rs:5002:    ));",
+      ""
+    ],
+    "output": "Any\tcrates/surface-grammar/src/surface/type_shell.rs\nFlow\tcrates/surface-grammar/src/surface/type_shell.rs\nPath\tcrates/surface-grammar/src/surface/type_shell.rs\nu32\tcrates/surface-grammar/src/surface/type_shell.rs"
+  },
+  {
+    "name": "the highlighter names each primitive type but the universes, and a list on one line names its texts",
+    "input": [
+      "crates/surface-grammar/src/highlight.rs:184:const PRIMITIVE_TYPES: &[&str] = &[",
+      "crates/surface-grammar/src/highlight.rs:185:    \"Any\", \"Path\", \"Type\", \"Type+\",",
+      "crates/surface-grammar/src/highlight.rs:186:    \"u8\",",
+      "crates/surface-grammar/src/highlight.rs:188:];",
+      "crates/surface-grammar/src/highlight.rs:802:        label if PRIMITIVE_TYPES.contains(&label) => HlRole::TypeBuiltin,",
+      "crates/surface-parser/src/mold.rs:1389:const CALLED_FORMERS: [&str; 2] = [\"Path\", \"Bridge\"];",
+      "crates/surface-parser/src/mold.rs:1394:const RESERVED_FALLBACK_LABELS: [&str; 1] = [\"constructor\"];",
+      ""
+    ],
+    "output": "Any\tcrates/surface-grammar/src/highlight.rs\nBridge\tcrates/surface-parser/src/mold.rs\nPath\tcrates/surface-grammar/src/highlight.rs\nPath\tcrates/surface-parser/src/mold.rs\nu8\tcrates/surface-grammar/src/highlight.rs"
+  },
+  {
+    "name": "a member names its head, a bare member names none, and a member that a constant spells reads the text that another file gives it",
+    "input": [
+      "crates/surface-lowering-base/src/lower.rs:125:pub const HERE: &str = \"here\";",
+      "crates/surface-lowering-identity/src/lower/identity.rs:564:pub(super) const SPELLED: [(Holder, &str, Operation); 3] = [",
+      "crates/surface-lowering-identity/src/lower/identity.rs:565:    (Holder::Path, HERE, Operation::Here),",
+      "crates/surface-lowering-identity/src/lower/identity.rs:567:    (Holder::Bare, \"equiv\", Operation::Equiv),",
+      "crates/surface-lowering-identity/src/lower/identity.rs:577:    (Holder::Flow, \"stay\", Operation::Stay),",
+      "crates/surface-lowering-identity/src/lower/identity.rs:586:];",
+      ""
+    ],
+    "output": "Flow.stay\tcrates/surface-lowering-identity/src/lower/identity.rs\nPath.here\tcrates/surface-lowering-identity/src/lower/identity.rs\nequiv\tcrates/surface-lowering-identity/src/lower/identity.rs"
+  },
+  {
+    "name": "no line gives no name",
+    "input": [],
+    "output": ""
+  }
+]
