@@ -1,0 +1,19 @@
+[package]
+name = "gandr-core-publish"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The one writer that publishes a file whole: a private temporary created exclusively, then renamed onto its name"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["atomic-write", "filesystem", "gandr"]
+categories = ["filesystem"]
+publish.workspace = true
+
+# The pinned anodized facade supplies the specification attributes.
+[dependencies]
+anodized.workspace = true
+
+[lints]
+workspace = true

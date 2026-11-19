@@ -1,0 +1,22 @@
+[
+  {
+    "name": "a title with its real characters holds no escape",
+    "input": "brunerie: β₂ normalises — parity with cctt",
+    "output": ""
+  },
+  {
+    "name": "a title quoted as JSON names each escape once, in order (#6496)",
+    "input": "brunerie: \\u03b2\\u2082 normalises \\u2014 parity \\u2014 cctt",
+    "output": "`\\u03b2` is a JSON escape, not the character it encodes\n`\\u2082` is a JSON escape, not the character it encodes\n`\\u2014` is a JSON escape, not the character it encodes"
+  },
+  {
+    "name": "an escape in capitals is still an escape",
+    "input": "views: rendered captures \\u00E9",
+    "output": "`\\u00E9` is a JSON escape, not the character it encodes"
+  },
+  {
+    "name": "a backslash that is no escape is kept",
+    "input": "surface: the lambda \\x and the word \\until",
+    "output": ""
+  }
+]
