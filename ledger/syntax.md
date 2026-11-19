@@ -2,10 +2,10 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x3ad2f3030abb0fbf`
-- Rules: 161 — 160 committed, 1 internal
-- Molds: 3124
-- Attributes: 22
+- Grammar fingerprint: `0xf7773d748d188626`
+- Rules: 176 — 175 committed, 1 internal
+- Molds: 3161
+- Attributes: 21
 
 ## Reading a form
 
@@ -65,7 +65,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`as_pattern`](../corpus/ledger/syntax/as-pattern.gandr) | `PATTERN ⦅ @ ‖ .@ ⦆ PATTERN` | `pattern.as` | `as_pattern` | admitted | Other |
 | [`identifier.pattern`](../corpus/ledger/syntax/identifier.pattern.gandr) | `‹identifier›` | `pattern.atom` | `identifier` | admitted | Variable |
 
-## `expression` — 73 rules
+## `expression` — 88 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
@@ -117,13 +117,14 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`break_value_expression`](../corpus/ledger/syntax/break-value-expression.gandr) | `break ( EXPRESSION )` | `expression.atom` | `break_value_expression` * | admitted | Keyword, Other |
 | [`continue_expression`](../corpus/ledger/syntax/continue-expression.gandr) | `continue` | `expression.atom` | `continue_expression` * | admitted | Keyword |
 | [`glob_expression`](../corpus/ledger/syntax/glob-expression.gandr) | `glob { ⦅ ‹identifier› = EXPRESSION ; ⦆* }` | `expression.atom` | `glob_expression` * | admitted | Keyword, Other, Member |
-| [`telescope_expression`](../corpus/ledger/syntax/telescope-expression.gandr) | `*{ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = EXPRESSION ⦆? ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = EXPRESSION ⦆? ⦆* ⦅ , ⦆? } ‖ *{ ⦅ } ‖ EXPRESSION ⦅ = EXPRESSION ⦆? ⦅ \| ⦅ . ⦆? ‹identifier› = EXPRESSION ⦅ , ⦅ . ⦆? ‹identifier› = EXPRESSION ⦆* ⦅ , ⦆? } ‖ ⦅ , EXPRESSION ⦅ = EXPRESSION ⦆? ⦆* ⦅ , ⦆? } ⦆ ⦆` | `expression.atom` | `telescope_expression` * | admitted | Other, Member, Number, Operator |
+| [`telescope_expression`](../corpus/ledger/syntax/telescope-expression.gandr) | `*{ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = EXPRESSION ⦆? ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = EXPRESSION ⦆? ⦆* ⦅ , ⦆? } ‖ *{ ⦅ } ‖ EXPRESSION ⦅ = EXPRESSION ⦆? ⦅ \| ‹identifier› = EXPRESSION ⦅ , ‹identifier› = EXPRESSION ⦆* ⦅ , ⦆? } ‖ ⦅ , EXPRESSION ⦅ = EXPRESSION ⦆? ⦆* ⦅ , ⦆? } ⦆ ⦆` | `expression.atom` | `telescope_expression` * | admitted | Other, Member, Number, Operator |
 | [`labelled_sum_expression`](../corpus/ledger/syntax/labelled-sum-expression.gandr) | `+{ . ⦅ ‹identifier› ‖ ‹number› ⦆ = EXPRESSION }` | `expression.atom` | `labelled_sum_expression` * | admitted | Other, Member, Number |
 | [`lazy_record_expression`](../corpus/ledger/syntax/lazy-record-expression.gandr) | `&{ ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ => EXPRESSION ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ => EXPRESSION ⦆* ⦅ , ⦆? ⦆? }` | `expression.atom` | `lazy_record_expression` * | admitted | Other, Member, Number, Operator |
 | [`offer_expression`](../corpus/ledger/syntax/offer-expression.gandr) | `offer EXPRESSION { \| PATTERN => EXPRESSION ⦅ \| PATTERN => EXPRESSION ⦆* }` | `expression.atom` | `offer_expression` | admitted | Keyword, Other, Operator |
 | [`migrate_expression`](../corpus/ledger/syntax/migrate-expression.gandr) | `migrate [ ‹identifier› ] BLOCK` | `expression.atom` | `migrate_expression` | admitted | Keyword, Other, Label |
 | [`fork_expression`](../corpus/ledger/syntax/fork-expression.gandr) | `fork ⦅ ! ⦆? ( ‹identifier› : TYPE ) EXPRESSION` | `expression.atom` | `fork_expression` * | admitted | Keyword, Other, VariableParam |
 | [`access_expression`](../corpus/ledger/syntax/access-expression.gandr) | `access ⦅ shared ‖ exclusive ⦆? ‹identifier› ⦅ .#[ EXPRESSION ] ⦆? as ‹identifier› BLOCK ⦅ unwind BLOCK ⦆?` | `expression.atom` | `access_expression` * | admitted | Keyword, Other, Variable, VariableDef |
+| [`shell_block`](../corpus/ledger/syntax/shell-block.gandr) | `#!{ ⦅ EXPRESSION ⦆? }` | `expression.atom` | `shell_block` | unadmitted | Other |
 | [`send_expression`](../corpus/ledger/syntax/send-expression.gandr) | `send EXPRESSION` | `expression.unary` | `send_expression` | admitted | Keyword |
 | [`close_expression`](../corpus/ledger/syntax/close-expression.gandr) | `close EXPRESSION` | `expression.unary` | `close_expression` | admitted | Keyword |
 | [`select_expression`](../corpus/ledger/syntax/select-expression.gandr) | `select EXPRESSION` | `expression.unary` | `select_expression` | admitted | Keyword |
@@ -141,6 +142,20 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`typed_number.expression`](../corpus/ledger/syntax/typed-number.expression.gandr) | `‹typed_number›` | `expression.atom` | `typed_number` | admitted | Number |
 | [`character`](../corpus/ledger/syntax/character.gandr) | `‹character›` | `expression.atom` | `character` | admitted | Character |
 | [`string.expression`](../corpus/ledger/syntax/string.expression.gandr) | `" ⦅ ‹escape_sequence› ‖ ‹string_fragment› ‖ ${ EXPRESSION } ⦆* "` | `expression.atom` | `string` | admitted | StringLit, Escape, Other |
+| [`list_operator`](../corpus/ledger/syntax/list-operator.gandr) | `; ‖ & ‖ newline` | `expression.atom` | `list_operator` | admitted | Operator |
+| [`pipeline.pipe`](../corpus/ledger/syntax/pipeline.pipe.gandr) | `EXPRESSION \| EXPRESSION` | `expression.postfix` | `pipeline` | admitted | Operator |
+| [`pipeline.pipe_both`](../corpus/ledger/syntax/pipeline.pipe-both.gandr) | `EXPRESSION \|& EXPRESSION` | `expression.postfix` | `pipeline` | admitted | Operator |
+| [`environment_assignment`](../corpus/ledger/syntax/environment-assignment.gandr) | `‹environment_assignment›` | `expression.atom` | `environment_assignment` | admitted | VariableParam |
+| [`shell_word`](../corpus/ledger/syntax/shell-word.gandr) | `‹shell_word›` | `expression.atom` | `shell_word` | admitted | Path |
+| [`single_quoted_string`](../corpus/ledger/syntax/single-quoted-string.gandr) | `' ‹single_quoted_content› '` | `expression.atom` | `single_quoted_string` | admitted | StringLit |
+| [`double_quoted_string`](../corpus/ledger/syntax/double-quoted-string.gandr) | `" ⦅ ‹double_string_fragment› ‖ ‹escape_sequence› ‖ ⟨variable_expansion⟩ ⦆* "` | `expression.atom` | `double_quoted_string` | admitted | StringLit, Escape, Other, Variable |
+| [`variable_expansion`](../corpus/ledger/syntax/variable-expansion.gandr) | `$ ‹variable_name› ‖ ${ ‹variable_name› }` | `expression.atom` | `variable_expansion` | admitted | Other, Variable |
+| [`variable_name`](../corpus/ledger/syntax/variable-name.gandr) | `‹variable_name›` | `expression.atom` | `variable_name` | admitted | Variable |
+| [`command_substitution`](../corpus/ledger/syntax/command-substitution.gandr) | `$!{ }` | `expression.atom` | `command_substitution` | admitted | Other |
+| [`host_escape`](../corpus/ledger/syntax/host-escape.gandr) | `$ ( EXPRESSION )` | `expression.atom` | `host_escape` | admitted | Other |
+| [`subshell`](../corpus/ledger/syntax/subshell.gandr) | `[ ⦅ EXPRESSION ⦆? ]` | `expression.atom` | `subshell` | admitted | Other |
+| [`file_descriptor`](../corpus/ledger/syntax/file-descriptor.gandr) | `‹file_descriptor›` | `expression.atom` | `file_descriptor` | admitted | Number |
+| [`redirection_operator`](../corpus/ledger/syntax/redirection-operator.gandr) | `<> ‖ <& ‖ >& ‖ >> ‖ < ‖ >` | `expression.atom` | `redirection_operator` | admitted | Operator |
 | [`forget_model_expression`](../corpus/ledger/syntax/forget-model-expression.gandr) | `forget [ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ] ( EXPRESSION ) at TYPE` | `expression.pure` | `forget_model_expression` * | admitted | Other, Keyword |
 
 ## `type` — 45 rules
@@ -175,8 +190,8 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`extension_type`](../corpus/ledger/syntax/extension-type.gandr) | `TYPE .#{ ⦅ ‹identifier› ↦ EXPRESSION ⦅ , ‹identifier› ↦ EXPRESSION ⦆* ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ⦆ }` or `TYPE .#{ ⦅ ‹identifier› \|-> EXPRESSION ⦅ , ‹identifier› \|-> EXPRESSION ⦆* ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ⦆ }` | `type.path` | `extension_type` * | admitted | Other, VariableParam, Operator |
 | [`parenthesized_type`](../corpus/ledger/syntax/parenthesized-type.gandr) | `( TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? )` | `type.atom` | `parenthesized_type` | admitted | Other |
 | [`telescope_type`](../corpus/ledger/syntax/telescope-type.gandr) | `*{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `telescope_type` * | admitted | Other |
-| [`send_session_type`](../corpus/ledger/syntax/send-session-type.gandr) | `! TYPE ⦅ >> ‖ . ⦆ TYPE` | `type.arrow` | `send_session_type` | admitted | Operator, Other |
-| [`receive_session_type`](../corpus/ledger/syntax/receive-session-type.gandr) | `? TYPE ⦅ >> ‖ . ⦆ TYPE` | `type.arrow` | `receive_session_type` | admitted | Operator, Other |
+| [`send_session_type`](../corpus/ledger/syntax/send-session-type.gandr) | `TYPE >! TYPE ‖ ! TYPE ⦅ . ‖ >> ⦆ TYPE` | `type.arrow` | `send_session_type` | admitted | Operator, Other |
+| [`receive_session_type`](../corpus/ledger/syntax/receive-session-type.gandr) | `TYPE >? TYPE ‖ ? TYPE ⦅ . ‖ >> ⦆ TYPE` | `type.arrow` | `receive_session_type` | admitted | Operator, Other |
 | [`end_session_type`](../corpus/ledger/syntax/end-session-type.gandr) | `end` | `type.atom` | `end_session_type` | admitted | Keyword |
 | [`labelled_sum_type`](../corpus/ledger/syntax/labelled-sum-type.gandr) | `+{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `labelled_sum_type` * | admitted | Other |
 | [`lazy_record_type`](../corpus/ledger/syntax/lazy-record-type.gandr) | `&{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `lazy_record_type` * | admitted | Other |
@@ -208,7 +223,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | ---- | ---- | ----- | ---- | --------- | ----- |
 | [`module_definition_member`](../corpus/ledger/syntax/module-definition-member.gandr) | `def ⦅ rec ‹identifier› ⦅ [ ⦅ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆* ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆* ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ -> TYPE ⦆? ⦅ { ⦅ ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦅ , ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦆* ⦅ , ⦆? ‖ ⦅ let PATTERN ⦅ : TYPE ⦆? = EXPRESSION ; ‖ module ‹identifier› = EXPRESSION ; ‖ var ⦅ [ ‹number› ] ⦆? ‹identifier› ⦅ : TYPE ⦆? = EXPRESSION ; ‖ EXPRESSION ; ‖ EXPRESSION ⦅ = ‖ += ‖ -= ‖ *= ⦆ EXPRESSION ; ‖ import ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ; ⦆* ⦅ EXPRESSION ⦆? ⦆ } ‖ = EXPRESSION ; ⦆ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ ‹identifier› ⦅ [ ⦅ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ : TYPE ⦅ ⦅ = EXPRESSION ⦆? ; ‖ where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ = EXPRESSION ; ‖ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆* ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆* ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ ⦅ -> ‖ ⊸ ⦆ TYPE ⦆? ⦅ ⟨block⟩ ‖ = EXPRESSION ; ⦆ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ⦆ ⦆` or `def ⦅ rec ‹identifier› ⦅ [ ⦅ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆* ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆* ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ -> TYPE ⦆? ⦅ { ⦅ ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦅ , ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦆* ⦅ , ⦆? ‖ ⦅ let PATTERN ⦅ : TYPE ⦆? = EXPRESSION ; ‖ module ‹identifier› = EXPRESSION ; ‖ var ⦅ [ ‹number› ] ⦆? ‹identifier› ⦅ : TYPE ⦆? = EXPRESSION ; ‖ EXPRESSION ; ‖ EXPRESSION ⦅ = ‖ += ‖ -= ‖ *= ⦆ EXPRESSION ; ‖ import ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ; ⦆* ⦅ EXPRESSION ⦆? ⦆ } ‖ = EXPRESSION ; ⦆ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ ‹identifier› ⦅ [ ⦅ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ : TYPE ⦅ ⦅ = EXPRESSION ⦆? ; ‖ where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ = EXPRESSION ; ‖ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆* ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆* ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ ⦅ -> ‖ -o ⦆ TYPE ⦆? ⦅ ⟨block⟩ ‖ = EXPRESSION ; ⦆ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ⦆ ⦆` | `item.singleton` | `module_declaration` | admitted | Keyword, FunctionDef, Other, VariableParam, TypeVariable, Type, Operator, Member, Variable, VariableDef, Number |
 | [`attributed_module_member`](../corpus/ledger/syntax/attributed-module-member.gandr) | `⟨attribute_block⟩ ⦅ ⟨attribute_block⟩ ⦆* ⦅ ⟨def_value⟩ ‖ ⟨module_type_member⟩ ‖ ⟨module_law_member⟩ ⦆` | `item.singleton` | `module_declaration` | admitted | Other, Keyword, FunctionDef, VariableParam, TypeVariable, Type, Operator, Member, Variable, VariableDef, Number |
-| [`module_type_member`](../corpus/ledger/syntax/module-type-member.gandr) | `type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ⦅ ; ‖ where { ⦅ face ‹identifier› = { ⦅ ‹identifier› ⦅ , ‹identifier› ⦆* ⦆? } ; ⦆* } ⦆ ‖ : TYPE ; ⦆` | `item.singleton` | `module_declaration` | admitted | Keyword, Type, Other, TypeVariable, Member |
+| [`module_type_member`](../corpus/ledger/syntax/module-type-member.gandr) | `type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? = TYPE ⦅ ; ‖ where { ⦅ face ‹identifier› = { ⦅ ‹identifier› ⦅ , ‹identifier› ⦆* ⦆? } ; ⦆* } ⦆` | `item.singleton` | `module_declaration` | admitted | Keyword, Type, Other, TypeVariable, Member |
 | [`nested_module_member`](../corpus/ledger/syntax/nested-module-member.gandr) | `module ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ *{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ) ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ‖ :> ⦅ *{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ) ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ⦆? where { ⦅ MODULE_MEMBER ⦆* }` | `item.singleton` | `module_declaration` | admitted | Keyword, VariableDef, Type, Other, Member, TypeVariable, Operator |
 | [`module_include_member`](../corpus/ledger/syntax/module-include-member.gandr) | `include ‹type_identifier› ;` | `item.singleton` | `module_declaration` | admitted | Keyword, Type, Other |
 | [`module_law_member`](../corpus/ledger/syntax/module-law-member.gandr) | `law ‹identifier› = EXPRESSION ;` | `item.singleton` | `module_declaration` | admitted | Keyword, FunctionDef, Other |
@@ -228,18 +243,14 @@ A rule no source can mold, with the reason and what the reason is read from: the
 | ---- | ---- | ---- | ------ | --------- |
 | `instantiation.type` | instantiation | `TYPE` | the form holds no tile, so no tree names the rule | grammar |
 
-## Superseded — 18 spellings
+## Superseded — 17 spellings
 
 An old spelling and the spelling that replaces it. A spelling the grammar still parses, so that a stale source reaches the decline of the elaborator, names the open issue that removes it, and `check:ledger` refuses a row whose issue does not stand open. A spelling that a source meets as a refusal names the refusal, and `check:ledger` refuses a row whose exemplar under `corpus/ledger/syntax/superseded/` does not state it.
 
 | Rule | Old spelling | Replaced by | Removal | Why the record stands |
 | ---- | ------------ | ----------- | ------- | --------------------- |
-| `attribute_block` | `native_attribute` | `builtin` | refused as [`RetiredSpelling.native_attribute`](../corpus/ledger/syntax/superseded/native-attribute.gandr) | a native value is a row of the builtin table: `@[builtin("key")]` binds it, and the reader refuses `native` by name |
-| `attribute_block` | `builtin_word` | `builtin("key")` | refused as [`RetiredSpelling.builtin_word`](../corpus/ledger/syntax/superseded/builtin-word.gandr) | a `builtin` mark names its row by a key in quotes, as each row of the builtin table: the reader refuses a bare word by name |
 | `tuple_pattern` | `parenthesized_product_pattern` | `*{p, q}` | refused as [`RetiredSpelling.parenthesized_product_pattern`](../corpus/ledger/syntax/superseded/parenthesized-product-pattern.gandr) | a group in parentheses over a stored product, in a `let` or a match arm, is refused by name: `*{p, q}` is the pattern; a group over a call's outputs keeps its reading |
 | `telescope_expression` | `unit_value` | `*{}` | refused as [`RetiredSpelling.unit_value`](../corpus/ledger/syntax/superseded/unit-value.gandr) | the unit value is the empty telescope `*{}`: the name `unit`, where no declaration binds it, is refused by name |
-| `telescope_expression` | `bare_record_field` | `*{ .l = e }` | refused as [`RetiredSpelling.bare_record_field`](../corpus/ledger/syntax/superseded/bare-record-field.gandr) | a field of a record literal supplies a name, so it writes the dot, `*{ .l = e }`: the undotted `*{ l = e }` is refused by name |
-| `telescope_expression` | `bare_update_field` | `*{ r \| .l = e }` | refused as [`RetiredSpelling.bare_update_field`](../corpus/ledger/syntax/superseded/bare-update-field.gandr) | a field of a record update supplies a name, so it writes the dot, `*{ r \| .l = e }`: the undotted `*{ r \| l = e }` is refused by name |
 | `function_type` | `fat_arrow_box` | `A -> B` | refused as [`RetiredSpelling.fat_arrow_box`](../corpus/ledger/syntax/superseded/fat-arrow-box.gandr) | the box `A => B` in a signature, a nested box, a group in parentheses or a record field is refused by name; a parameter, a result and a constructor field keep their faults, and a box in an expression hole is not named |
 | `path_type` | `positional_path_carrier` | `Path[.A = A](a, b)` | refused as [`RetiredSpelling.positional_path_carrier`](../corpus/ledger/syntax/superseded/positional-path-carrier.gandr) | a carrier written first, by position, is refused by name: the head takes its carrier by name |
 | `bridge_type` | `positional_bridge_carrier` | `Bridge[.A = A](a, b)` | refused as [`RetiredSpelling.positional_bridge_carrier`](../corpus/ledger/syntax/superseded/positional-bridge-carrier.gandr) | a carrier written first, by position, is refused by name: the head takes its carrier by name |
@@ -249,11 +260,14 @@ An old spelling and the spelling that replaces it. A spelling the grammar still 
 | `extension_type` | `bracket_faces` | `T.#{f ↦ v}` | refused as [`RetiredSpelling.bracket_faces`](../corpus/ledger/syntax/superseded/bracket-faces.gandr) | the static bracket that fixes a face's fields, `T[f ↦ v]`, or the fields of each face of a system is refused by name |
 | `parenthesized_type` | `parenthesized_product` | `*{A, B}` | refused as [`RetiredSpelling.parenthesized_product`](../corpus/ledger/syntax/superseded/parenthesized-product.gandr) | a list in parentheses outside the domain of an arrow and a function's outputs is refused by name at its first comma: `*{A, B}` is the product |
 | `telescope_type` | `view_telescope` | `*{ … }` | refused as [`RetiredSpelling.view_telescope`](../corpus/ledger/syntax/superseded/view-telescope.gandr) | the glued token `#{` is refused by name: `*{` opens the telescope and the record |
+| `send_session_type` | `prefix_send_step` | `T >! S` | refused as [`RetiredSpelling.prefix_send_step`](../corpus/ledger/syntax/superseded/prefix-send-step.gandr) | the send step with a lead `!`, `! T . S` or `! T >> S`, is refused by name: `T >! S` is the send. A form that takes the prefix `!` in a type removes this alternative, and its parser refuses the old text by name |
+| `receive_session_type` | `prefix_receive_step` | `T >? S` | refused as [`RetiredSpelling.prefix_receive_step`](../corpus/ledger/syntax/superseded/prefix-receive-step.gandr) | the receive step with a lead `?`, `? T . S` or `? T >> S`, is refused by name: `T >? S` is the receive. A form that takes the prefix `?` in a type removes this alternative, and its parser refuses the old text by name |
+| `mu_session_type` | `mu_recursion` | `rec X => S` | refused as [`RetiredSpelling.mu_recursion`](../corpus/ledger/syntax/superseded/mu-recursion.gandr) | the recursive protocol `mu X . S` is refused by name: `rec X => S` is the recursion. A form that takes the name `mu` removes this alternative, and its parser refuses the old text by name |
 | `theory_declaration` | `shape_member` | `boundary B {…}; face f = {…}` | refused as [`RetiredSpelling.shape_member`](../corpus/ledger/syntax/superseded/shape-member.gandr) | the member `shape` is refused by name: `boundary` states the carrier of the signature's cells, and `face` names each face of it |
 | `theory_declaration` | `empty_operation_inputs` | `oper c : T` | refused as [`RetiredSpelling.empty_operation_inputs`](../corpus/ledger/syntax/superseded/empty-operation-inputs.gandr) | an operation of no input is a constant: `oper c : T` states it, and the reader refuses `() -->` by name |
 | `theory_declaration` | `empty_operation_call` | `c` | refused as [`RetiredSpelling.empty_operation_call`](../corpus/ledger/syntax/superseded/empty-operation-call.gandr) | a constant is its bare name in a term: the reader refuses `c ()` by name |
 
-## Attributes — 22 attributes
+## Attributes — 21 attributes
 
 Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes, linking its exemplar, which the exemplar gate lowers and checks the attribute is filed.
 
@@ -277,12 +291,11 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`identity`](../corpus/ledger/attributes/identity.gandr) | a tuple of two or three declared names: a relation, its reflexivity and optionally its transport law |
 | [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` |
 | [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
-| [`builtin`](../corpus/ledger/attributes/builtin.gandr) | a text payload |
-| [`thir`](../corpus/ledger/attributes/thir.gandr) | a text or a tuple of texts |
-| [`item`](../corpus/ledger/attributes/item.gandr) | a text or a tuple of texts |
+| [`builtin`](../corpus/ledger/attributes/builtin.gandr) | one of the words `irSignature`, `irPair`, `irArgs`, `irDecode` |
 | [`inert`](../corpus/ledger/attributes/inert.gandr) | no payload |
+| [`native`](../corpus/ledger/attributes/native.gandr) | a text payload |
 
-## Decisions — 107 of 161 rules decided at every token
+## Decisions — 118 of 176 rules decided at every token
 
 Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
 
@@ -303,8 +316,8 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `inner_attribute_block` | item | 12 | `@![` | — | 4 |
 | `extern_block` | item | 49 | `extern` | — | 18 |
 | `module_definition_member` | module_member | 201 | `def` | — | 52 |
-| `attributed_module_member` | module_member | 255 | `@[` | — | 64 |
-| `module_type_member` | module_member | 26 | `type` | — | 4 |
+| `attributed_module_member` | module_member | 253 | `@[` | — | 64 |
+| `module_type_member` | module_member | 24 | `type` | — | 4 |
 | `nested_module_member` | module_member | 106 | `module` | — | 40 |
 | `module_include_member` | module_member | 3 | `include` | — | 0 |
 | `module_law_member` | module_member | 4 | `law` | — | 0 |
@@ -374,13 +387,14 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `break_value_expression` | expression | 3 | `break` | `break_expression` | 0 |
 | `continue_expression` | expression | 1 | `continue` | — | 0 |
 | `glob_expression` | expression | 6 | `glob` | — | 0 |
-| `telescope_expression` | expression | 29 | `*{` | — | 12 |
+| `telescope_expression` | expression | 27 | `*{` | — | 12 |
 | `labelled_sum_expression` | expression | 6 | `+{` | — | 0 |
 | `lazy_record_expression` | expression | 12 | `&{` | — | 2 |
 | `offer_expression` | expression | 7 | `offer` | — | 0 |
 | `migrate_expression` | expression | 4 | `migrate` | — | 0 |
 | `fork_expression` | expression | 6 | `fork` | — | 0 |
 | `access_expression` | expression | 9 | `access` | — | 0 |
+| `shell_block` | expression | 2 | `#!{` | — | 0 |
 | `send_expression` | expression | 1 | `send` | — | 0 |
 | `close_expression` | expression | 1 | `close` | — | 0 |
 | `select_expression` | expression | 1 | `select` | — | 0 |
@@ -398,7 +412,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `number.expression` | expression | 1 | `number` | — | 0 |
 | `typed_number.expression` | expression | 1 | `typed_number` | — | 0 |
 | `character` | expression | 1 | `character` | — | 0 |
-| `string.expression` | expression | 6 | `"` | — | 0 |
+| `string.expression` | expression | 6 | `"` | `double_quoted_string` | 0 |
 | `statement_block` | block | 31 | `{` | — | 0 |
 | `function_type` | type | 1 | `->` | — | 0 |
 | `linear_function_type` | type | 1 | `⊸` | — | 0 |
@@ -428,8 +442,8 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `extension_type` | type | 15 | `.#{` | — | 2 |
 | `parenthesized_type` | type | 6 | `(` | — | 4 |
 | `telescope_type` | type | 6 | `*{` | — | 4 |
-| `send_session_type` | type | 3 | `!` | — | 0 |
-| `receive_session_type` | type | 3 | `?` | `unknown_type` | 0 |
+| `send_session_type` | type | 4 | `!` `>!` | — | 0 |
+| `receive_session_type` | type | 4 | `>?` `?` | `unknown_type` | 0 |
 | `end_session_type` | type | 1 | `end` | — | 0 |
 | `labelled_sum_type` | type | 6 | `+{` | — | 4 |
 | `lazy_record_type` | type | 6 | `&{` | — | 4 |
@@ -443,6 +457,20 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `number.type` | type | 1 | `number` | — | 0 |
 | `boolean.type` | type | 2 | `false` `true` | — | 0 |
 | `string.type` | type | 4 | `"` | — | 0 |
+| `list_operator` | expression | 3 | `&` `;` `newline` | — | 0 |
+| `pipeline.pipe` | expression | 1 | `\|` | — | 0 |
+| `pipeline.pipe_both` | expression | 1 | `\|&` | — | 0 |
+| `environment_assignment` | expression | 1 | `environment_assignment` | — | 0 |
+| `shell_word` | expression | 1 | `shell_word` | — | 0 |
+| `single_quoted_string` | expression | 3 | `'` | — | 0 |
+| `double_quoted_string` | expression | 9 | `"` | `string.expression` | 0 |
+| `variable_expansion` | expression | 5 | `$` `${` | `host_escape` | 0 |
+| `variable_name` | expression | 1 | `variable_name` | — | 0 |
+| `command_substitution` | expression | 2 | `command_substitution_start` | — | 0 |
+| `host_escape` | expression | 3 | `$` | `variable_expansion` | 0 |
+| `subshell` | expression | 2 | `subshell_open` | — | 0 |
+| `file_descriptor` | expression | 1 | `file_descriptor` | — | 0 |
+| `redirection_operator` | expression | 6 | `<` `<&` `<>` `>` `>&` `>>` | — | 0 |
 | `theory_declaration` | item | 458 | `theory` | — | 126 |
 | `circuit_declaration` | item | 123 | `oper` `rule` | `derived_rule_declaration` | 38 |
 | `derived_rule_declaration` | item | 10 | `rule` | `circuit_declaration` | 0 |
@@ -450,7 +478,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `f_type.row.labelled` | type | 24 | `-F` | `f_type`, `f_type.row` | 12 |
 | `f_type.result.labelled` | type | 23 | `[` | `f_type.result` | 12 |
 
-## Menus — 196 labels
+## Menus — 215 labels
 
 Every label a tile carries, with the molds the molder ranks when it reads the label, the rules they belong to and how many of them can open a form. The largest menu comes first.
 
@@ -458,15 +486,15 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | ----- | ----- | ----- | ------- |
 | `identifier` | 433 | 59 | 3 |
 | `,` | 282 | 47 | 0 |
-| `:` | 253 | 33 | 0 |
+| `:` | 251 | 33 | 0 |
 | `type_identifier` | 221 | 34 | 2 |
 | `=` | 152 | 38 | 0 |
-| `;` | 137 | 25 | 0 |
-| `)` | 131 | 32 | 0 |
-| `(` | 127 | 31 | 5 |
-| `.` | 99 | 47 | 3 |
+| `;` | 136 | 26 | 1 |
+| `)` | 132 | 33 | 0 |
+| `(` | 128 | 32 | 5 |
+| `.` | 97 | 47 | 3 |
 | `type_variable` | 93 | 15 | 3 |
-| `}` | 80 | 40 | 0 |
+| `}` | 84 | 44 | 0 |
 | `]` | 79 | 40 | 0 |
 | `{` | 61 | 29 | 2 |
 | `[` | 60 | 33 | 4 |
@@ -482,8 +510,8 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `type` | 23 | 5 | 1 |
 | `consumed` | 22 | 7 | 0 |
 | `arm_bar` | 21 | 9 | 0 |
+| `<` | 18 | 9 | 3 |
 | `module` | 18 | 13 | 2 |
-| `<` | 17 | 8 | 2 |
 | `import` | 17 | 12 | 1 |
 | `ω` | 17 | 5 | 0 |
 | `*=` | 16 | 11 | 0 |
@@ -494,33 +522,37 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `rule` | 16 | 5 | 2 |
 | `var` | 16 | 11 | 0 |
 | `with` | 15 | 8 | 1 |
+| `"` | 14 | 6 | 4 |
 | `sort` | 14 | 8 | 1 |
 | `->` | 13 | 8 | 1 |
-| `"` | 12 | 5 | 3 |
 | `data` | 12 | 3 | 1 |
 | `as` | 10 | 5 | 1 |
 | `mobile` | 10 | 2 | 0 |
 | `*{` | 9 | 5 | 4 |
 | `bind` | 9 | 3 | 1 |
+| `\|` | 9 | 9 | 3 |
 | `pi+` | 8 | 2 | 0 |
-| `\|` | 8 | 8 | 2 |
+| `escape_sequence` | 7 | 6 | 0 |
 | `oper` | 7 | 5 | 1 |
 | `+` | 6 | 6 | 2 |
 | `-` | 6 | 6 | 2 |
 | `constructor` | 6 | 5 | 2 |
-| `escape_sequence` | 6 | 5 | 0 |
 | `string_fragment` | 6 | 5 | 0 |
 | `rec` | 5 | 5 | 2 |
+| `variable_name` | 5 | 3 | 1 |
+| `>` | 4 | 4 | 3 |
 | `?` | 4 | 4 | 4 |
 | `@[` | 4 | 3 | 2 |
 | `Type` | 4 | 4 | 1 |
 | `def` | 4 | 4 | 2 |
 | `↦` | 4 | 2 | 0 |
 | `⊸` | 4 | 4 | 1 |
+| `$` | 3 | 3 | 2 |
+| `${` | 3 | 3 | 1 |
 | `+{` | 3 | 3 | 3 |
 | `-F` | 3 | 3 | 3 |
 | `..` | 3 | 2 | 1 |
-| `>` | 3 | 3 | 2 |
+| `>>` | 3 | 3 | 1 |
 | `@![` | 3 | 3 | 2 |
 | `at` | 3 | 3 | 1 |
 | `else` | 3 | 1 | 0 |
@@ -537,11 +569,12 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | ` ` | 2 | 2 | 2 |
 | `!` | 2 | 2 | 1 |
 | `#[` | 2 | 2 | 2 |
+| `&` | 2 | 2 | 2 |
 | `&{` | 2 | 2 | 2 |
+| `'` | 2 | 1 | 1 |
 | `*` | 2 | 2 | 2 |
 | `.#[` | 2 | 2 | 1 |
 | `:>` | 2 | 2 | 0 |
-| `>>` | 2 | 2 | 0 |
 | `break` | 2 | 2 | 2 |
 | `from` | 2 | 2 | 0 |
 | `hole_name` | 2 | 2 | 0 |
@@ -552,17 +585,21 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `≃` | 2 | 2 | 1 |
 | `!=` | 1 | 1 | 1 |
 | `#` | 1 | 1 | 0 |
-| `${` | 1 | 1 | 0 |
-| `&` | 1 | 1 | 1 |
+| `#!{` | 1 | 1 | 1 |
 | `&&` | 1 | 1 | 1 |
 | `++` | 1 | 1 | 1 |
 | `+U` | 1 | 1 | 1 |
 | `.#{` | 1 | 1 | 1 |
 | `.*{` | 1 | 1 | 1 |
 | `.@` | 1 | 1 | 1 |
+| `<&` | 1 | 1 | 1 |
 | `<=` | 1 | 1 | 1 |
+| `<>` | 1 | 1 | 1 |
 | `==` | 1 | 1 | 1 |
+| `>!` | 1 | 1 | 1 |
+| `>&` | 1 | 1 | 1 |
 | `>=` | 1 | 1 | 1 |
+| `>?` | 1 | 1 | 1 |
 | `@` | 1 | 1 | 1 |
 | `Any` | 1 | 1 | 1 |
 | `Boolean` | 1 | 1 | 1 |
@@ -588,15 +625,19 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `character` | 1 | 1 | 1 |
 | `close` | 1 | 1 | 1 |
 | `codata` | 1 | 1 | 1 |
+| `command_substitution_start` | 1 | 1 | 1 |
 | `continue` | 1 | 1 | 1 |
+| `double_string_fragment` | 1 | 1 | 0 |
 | `drop` | 1 | 1 | 1 |
 | `dup` | 1 | 1 | 1 |
 | `end` | 1 | 1 | 1 |
+| `environment_assignment` | 1 | 1 | 1 |
 | `exclusive` | 1 | 1 | 0 |
 | `ext` | 1 | 1 | 0 |
 | `extern` | 1 | 1 | 1 |
 | `f32` | 1 | 1 | 1 |
 | `f64` | 1 | 1 | 1 |
+| `file_descriptor` | 1 | 1 | 1 |
 | `flow` | 1 | 1 | 1 |
 | `for` | 1 | 1 | 1 |
 | `force` | 1 | 1 | 1 |
@@ -618,6 +659,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `match` | 1 | 1 | 1 |
 | `migrate` | 1 | 1 | 1 |
 | `mu` | 1 | 1 | 1 |
+| `newline` | 1 | 1 | 1 |
 | `obs` | 1 | 1 | 0 |
 | `offer` | 1 | 1 | 1 |
 | `offers` | 1 | 1 | 1 |
@@ -635,6 +677,10 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `select` | 1 | 1 | 1 |
 | `send` | 1 | 1 | 1 |
 | `shape` | 1 | 1 | 0 |
+| `shell_word` | 1 | 1 | 1 |
+| `single_quoted_content` | 1 | 1 | 0 |
+| `subshell_close` | 1 | 1 | 0 |
+| `subshell_open` | 1 | 1 | 1 |
 | `tail` | 1 | 1 | 1 |
 | `theory` | 1 | 1 | 1 |
 | `thunk` | 1 | 1 | 1 |
@@ -648,6 +694,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `usize` | 1 | 1 | 1 |
 | `while` | 1 | 1 | 1 |
 | `world` | 1 | 1 | 1 |
+| `\|&` | 1 | 1 | 1 |
 | `\|>` | 1 | 1 | 1 |
 | `\|\|` | 1 | 1 | 1 |
 | `~` | 1 | 1 | 1 |

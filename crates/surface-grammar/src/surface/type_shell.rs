@@ -883,14 +883,14 @@ fn add_type_rules(
         "!",
         "send_session_type",
         RetiredForm::PrefixSendStep,
-        "the send step with a lead `!`, `! T . S` or `! T >> S`, is refused by name: `T >! S` is the send",
+        "the send step with a lead `!`, `! T . S` or `! T >> S`, is refused by name: `T >! S` is the send. A form that takes the prefix `!` in a type removes this alternative, and its parser refuses the old text by name",
     ));
     rules.push(step(
         ">?",
         "?",
         "receive_session_type",
         RetiredForm::PrefixReceiveStep,
-        "the receive step with a lead `?`, `? T . S` or `? T >> S`, is refused by name: `T >? S` is the receive",
+        "the receive step with a lead `?`, `? T . S` or `? T >> S`, is refused by name: `T >? S` is the receive. A form that takes the prefix `?` in a type removes this alternative, and its parser refuses the old text by name",
     ));
     rules.push(rule(
         RuleName("end_session_type"),
@@ -970,7 +970,7 @@ fn add_type_rules(
         RuleName("mu_session_type"),
         RetiredForm::MuRecursion,
         AdaptationReason(
-            "the recursive protocol `mu X . S` is refused by name: `rec X => S` is the recursion",
+            "the recursive protocol `mu X . S` is refused by name: `rec X => S` is the recursion. A form that takes the name `mu` removes this alternative, and its parser refuses the old text by name",
         ),
     ));
     rules.push(recursive);

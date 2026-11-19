@@ -1,8 +1,8 @@
 error[OutOfFragment.NonContractive]: this recursive session type recurses before any action; put a send, a receive or a choice under its `rec`
   ╭▸ corpus/ledger/diagnostics/OutOfFragment.NonContractive.gandr:6:27
   │
-6 │   let desk = fork (seat : mu turn. turn) { close seat };
-  │                           ━━━━━━━━━━━━━ recurses before any action
+6 │   let desk = fork (seat : rec turn => turn) { close seat };
+  │                           ━━━━━━━━━━━━━━━━ recurses before any action
   │
   ├ note: `recursion_before_any_action` is refused with OutOfFragment.NonContractive, as its expectation states
   ╰ help: put a send, receive or choice below `rec`

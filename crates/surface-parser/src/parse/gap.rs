@@ -2037,15 +2037,16 @@ mod tests
     #[test]
     fn an_arrow_left_out_after_a_parameter_list_is_minted_6323() -> Result<(), Failure>
     {
-        // Row 217 of `model/sessions/type-quote.gandr`'s recovery record: a
-        // declaration's head with the `->` before its result type dropped,
-        // after a doc comment, so that `def` begins no line of the scan.
+        // A declaration's head with the `->` before its result type dropped,
+        // after a doc comment, so that `def` begins no line of the scan. The
+        // result type opens with `rec`, which no expression reads, so the
+        // head reads it as a type alone.
         let source = include_str!(
             "gap/unformatted/an-arrow-left-out-after-a-parameter-list-is-minted-6323.gandr"
         );
         let at = source
-            .find("end))")
-            .map_or_default(|start| start.saturating_add("end))".len()));
+            .find("t))")
+            .map_or_default(|start| start.saturating_add("t))".len()));
         let pbg = built_in()?;
         let parsed = parse(&pbg, SourceText::from(source))?;
         let tree = parsed.tree();

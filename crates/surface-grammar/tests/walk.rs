@@ -88,7 +88,8 @@ use crate::failure::Failure;
 /// body after `=` (#6318), then by the six machine width atoms, `u8` to
 /// `isize` (#7960), then by the shell block leaving the grammar with its
 /// words, quotes, expansions and operators (#1057), then by a type signature
-/// with no body, `type T : K;` (#8073).
+/// with no body, `type T : K;` (#8073), then by the protocol steps `T >! S`
+/// and `T >? S` and the recursion `rec X => S`.
 const BUILT_IN_FINGERPRINT: u64 = 0x3ad2_f303_0abb_0fbf;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
@@ -146,8 +147,10 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("==>", 27),
     ("=>", 36),
     (">", 3),
+    (">!", 1),
     (">=", 1),
     (">>", 2),
+    (">?", 1),
     ("?", 4),
     ("@", 1),
     ("@![", 3),

@@ -50,8 +50,8 @@ error[EndpointAsValue]: an endpoint can be used only by a session action
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
    ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:47:62
    │
-45 │    def rec follow(operator : mu open. &{report : ?Integer. open, retire : ?Integer. end}) -> Unit =
-   │    │              ──────── checked against `(rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F Unit`; while checking the rest of this receive's block; binds operator : rec t => &{report : ?Integer >> t, retire : ?Integer >> end}
+45 │    def rec follow(operator : rec open => &{report : Integer >? open, retire : Integer >? end}) -> Unit =
+   │    │              ──────── checked against `(rec t => &{report : Integer >? t, retire : Integer >? end}) -> -F Unit`; while checking the rest of this receive's block; binds operator : rec t => &{report : Integer >? t, retire : Integer >? end}
    │ ┌──┘
    │ │
 46 │ │┌   offer operator {
@@ -65,7 +65,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
 49 │ ││   }
    │ ││   │
    │ └│───│
-   │  └───checked against `(rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> Unit`; while checking the body of this function; binds follow : (rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> Unit
+   │  └───checked against `(rec t => &{report : Integer >? t, retire : Integer >? end}) -> Unit`; while checking the body of this function; binds follow : (rec t => &{report : Integer >? t, retire : Integer >? end}) -> Unit
    │      checked against `-F Unit`; while checking an arm of this offer
    │
    ├ note: `follow` is refused with StageNotBelow, as its expectation states
