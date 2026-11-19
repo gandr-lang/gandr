@@ -149,7 +149,7 @@ pub fn independent(
 ///
 /// # Specification
 /// trivial.
-fn bound_run(
+pub fn bound_run(
     core: &CoreArena,
     head: ComputationId,
 ) -> ComputationId

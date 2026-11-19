@@ -961,6 +961,7 @@ impl<'source> Machine<'_, 'source>
             self.arena,
             &mut provenance,
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .map_err(|refusal| Evaluation::Unrunnable(self.unfocused(constant, refusal)))
     }
@@ -1633,6 +1634,7 @@ impl<'source> Machine<'_, 'source>
                         self.arena,
                         &mut provenance,
                         &gandr_core_sequent::Writers::NONE,
+                        &gandr_core_sequent::Typed::NONE,
                     )?,
                     focus_computation(
                         &core,
@@ -1640,6 +1642,7 @@ impl<'source> Machine<'_, 'source>
                         self.arena,
                         &mut provenance,
                         &gandr_core_sequent::Writers::NONE,
+                        &gandr_core_sequent::Typed::NONE,
                     )?,
                 ))
             },
@@ -1651,6 +1654,7 @@ impl<'source> Machine<'_, 'source>
                     self.arena,
                     &mut provenance,
                     &gandr_core_sequent::Writers::NONE,
+                    &gandr_core_sequent::Typed::NONE,
                 )?;
                 Ok((web, web))
             },
@@ -3507,6 +3511,7 @@ mod tests
             &mut commands,
             &mut provenance,
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("the constructed terminal focuses");
         let mut store = Store::new();
@@ -3793,7 +3798,8 @@ mod tests
                         continue;
                     };
                     match *node {
-                        ConsumerNode::MuTilde { body } | ConsumerNode::MuTildeAll { body, .. } => {
+                        ConsumerNode::MuTilde { body, .. }
+                        | ConsumerNode::MuTildeAll { body, .. } => {
                             pending.push(Node::Command(body));
                         },
                         ConsumerNode::Destructor {
@@ -4097,6 +4103,7 @@ mod tests
             parts.arena,
             &mut provenance,
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("the program focuses");
         let named = gandr_core_sequent::focus_computation(
@@ -4105,6 +4112,7 @@ mod tests
             parts.arena,
             &mut provenance,
             &[outer, forced_left, forced_right].into_iter().collect(),
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("the program focuses with its writers named");
         let (scheduled, definitions) =
@@ -4234,6 +4242,7 @@ mod tests
             &mut arena,
             &mut provenance,
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("the program focuses");
         let named = gandr_core_sequent::focus_computation(
@@ -4242,6 +4251,7 @@ mod tests
             &mut arena,
             &mut provenance,
             &[first, second].into_iter().collect(),
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("the program focuses with its writers named");
         let (scheduled, definitions) =

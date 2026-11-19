@@ -28,10 +28,10 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - `CovariableIndex`: a covariable is a de Bruijn index, in a space of its own.
 - `Store` with `HeapValue`, `HeapValueId`, `ClosedCommand`, `HeapFamily`, `Accumulation` and `StoreFault`: the values a run moved out, immutable and shared by address, a literal stack innermost frame first with closed bind frames, and the full-family refusal.
 - `Environment` with `Store::bind_value` and `Store::bound_values`: persistent producer chains, read innermost first. `Store::copy` (`CopyRefusal`) copies a value into another store, code and sharing kept.
-- `focus_computation`, `focus_value` and `focus_top_value`, recording each created command's `FocusOrigin` in a `Provenance` table: total on closed well-typed core terms that hold no code, every image well formed and closed, a code refused by name, and a refused translation leaving the arena and the table at their marks. A writer the caller names in `Writers` is focused apart from its binder, which carries an `Independence` mark (`MarkRefusal`). `spawn_independent` (`ScheduleRefusal`) spawns each marked writer and reads it before its binder's first use. `focus_definition` focuses a declaration's body: a computed value `⟨c⟩` as the `μ` that runs `c`, which a run unfolding the constant runs once.
+- `focus_computation`, `focus_value`, `focus_top_value` and `focus_definition`, recording each created command's `FocusOrigin` in a `Provenance` table: total on closed well-typed core terms that hold no code, every image well formed and closed, a code refused by name, and a refused translation leaving the arena and the table at their marks. `Writers` names the writers that focus apart from their binders (`Independence`, `MarkRefusal`, `spawn_independent`, `ScheduleRefusal`). `Typed` holds the checker's types of binders and fields, and `Unknowns` counts each position at the unknown type by its `Unknown` cause.
 - `unfocus_command` and `unfocus_value`: the left inverse of focusing, refusing IL outside its image by name with `UnfocusRefusal` and leaving the core arena at its mark.
-- Native `ListNil` and `ListCons` constructors and a `ListFold` consumer, whose annotations the command arena owns.
-- `check_command` with `CheckRefusal`, `ArityHead` and `FreeSet`: reference integrity, arity from the head, focus, polarity, second-class closures — no thunk, recursive thunk, copattern object, `μ` a negative cut binds by name, or fold cell branch names a covariable outside its own binders — and the free variables and covariables of a command read off the support minting stored at its root.
+- Annotations that the command arena owns: the type of each value binder and constructor field, the one unknown type where no checker gave one, and the two types of a native `ListFold` over `ListNil` and `ListCons`.
+- `check_command` with `CheckRefusal`, `ArityHead` and `FreeSet`: reference integrity, arity from the head, focus, polarity, second-class closures, and the free variables and covariables of a command read off the support minting stored at its root. `check_annotations` (`Annotated`) holds each field's type to its binder's by id.
 - `NodeAddress`, `Suspension`, `Captures` and `CommandArena::captures`: the intuitionistic bindings a thunk, a fixpoint, a copattern object, a capture or a bind frame captures — exactly those its support selects, which a run moves into the store and readback pairs with an environment.
 - `producer_children`, `consumer_children`, `command_children` and `Opens`: a node's children in edge order, each with the binders the node opens over it.
 - `ProducerNode::Closure`, `convert_step`, `convert`, `convert_all`, `beta` and `enter_all` with `ClosureRefusal`: abstract closures over an environment of values, converted one captured variable at a time and entered against a frame, directly or at the end of a bind chain.
@@ -64,6 +64,7 @@ let mut arena = CommandArena::new();
 let unit = arena.mint_producer(ProducerNode::Constructor {
     tag: ConstructorTag::Tuple(ProducerArity::ZERO),
     producers: Box::from([]),
+    types: Box::from([]),
     consumers: Box::from([]),
 })?;
 let top = arena.mint_consumer(ConsumerNode::Top)?;
@@ -78,6 +79,7 @@ Focus `return ()`, render the command, and read it back.
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::FreeSet;
 use gandr_core_sequent::Provenance;
+use gandr_core_sequent::Typed;
 use gandr_core_sequent::Writers;
 use gandr_core_sequent::check_command;
 use gandr_core_sequent::focus_computation;
@@ -91,7 +93,7 @@ let returned = core.computation_return(unit);
 
 let mut arena = CommandArena::new();
 let mut provenance = Provenance::new();
-let command = focus_computation(&core, returned, &mut arena, &mut provenance, &Writers::NONE).expect("a closed term focuses");
+let command = focus_computation(&core, returned, &mut arena, &mut provenance, &Writers::NONE, &Typed::NONE).expect("a closed term focuses");
 assert_eq!("⟨() |+ ★⟩", render_command(&arena, command));
 assert_eq!(Ok(FreeSet::default()), check_command(&arena, command));
 

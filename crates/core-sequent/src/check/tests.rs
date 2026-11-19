@@ -18,6 +18,7 @@ fn unit(arena: &mut CommandArena) -> ProducerId
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("a leaf mints")
@@ -57,7 +58,7 @@ fn top(arena: &mut CommandArena) -> ConsumerId
             | CommandNode::Cut { polarity, producer, consumer } => polarity == Polarity::Positive
                 && arena.consumer(consumer).is_some_and(|node| core::mem::discriminant(node) == kind)
                 && arena.producer(producer).is_some_and(|node| matches!(*node,
-                    ProducerNode::Constructor { tag: ConstructorTag::Tuple(ProducerArity::ZERO), ref producers, ref consumers }
+                    ProducerNode::Constructor { tag: ConstructorTag::Tuple(ProducerArity::ZERO), ref producers, ref consumers, .. }
                     if producers.is_empty() && consumers.is_empty())),
             | _ => false,
         }),
@@ -239,6 +240,7 @@ fn terminal_cut_is_wellformed()
     let root = cut_against_top(&mut arena, ProducerNode::Constructor {
         tag: ConstructorTag::Tuple(ProducerArity::ZERO),
         producers: Box::from([]),
+        types: Box::from([]),
         consumers: Box::from([]),
     });
     assert_eq!(
@@ -271,7 +273,11 @@ fn scope_tracks_binders()
     let inner = arena
         .mint_cut(Polarity::Positive, occurrence, inner_top)
         .expect("children resolve");
-    let root = cut_against_unit(&mut arena, ConsumerNode::MuTilde { body: inner });
+    let unknown = arena.unknown_type();
+    let root = cut_against_unit(&mut arena, ConsumerNode::MuTilde {
+        ty: unknown,
+        body: inner,
+    });
     assert_eq!(
         Ok(FreeSet::default()),
         check_command(&arena, root),
@@ -312,6 +318,7 @@ fn scope_tracks_binders()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::TWO),
             producers: Box::from([own, outer]),
+            types: Box::from([arena.unknown_type(); 2]),
             consumers: Box::from([]),
         })
         .expect("fields resolve");
@@ -382,9 +389,11 @@ fn non_value_argument_is_rejected()
         .mint_producer(ProducerNode::Mu { body: inner })
         .expect("the body resolves");
     let other = unit(&mut arena);
+    let unknown = arena.unknown_type();
     let root = cut_against_top(&mut arena, ProducerNode::Constructor {
         tag: ConstructorTag::Tuple(ProducerArity::TWO),
         producers: Box::from([capture, other]),
+        types: Box::from([unknown; 2]),
         consumers: Box::from([]),
     });
     assert_eq!(
@@ -434,9 +443,11 @@ fn constructor_arity_is_checked()
 {
     let mut arena = CommandArena::new();
     let only = unit(&mut arena);
+    let unknown = arena.unknown_type();
     let root = cut_against_top(&mut arena, ProducerNode::Constructor {
         tag: ConstructorTag::Tuple(ProducerArity::TWO),
         producers: Box::from([only]),
+        types: Box::from([unknown]),
         consumers: Box::from([]),
     });
     assert_eq!(
@@ -459,6 +470,7 @@ fn constructor_consumer_arity_is_checked()
     let root = cut_against_top(&mut arena, ProducerNode::Constructor {
         tag: ConstructorTag::Tuple(ProducerArity::ZERO),
         producers: Box::from([]),
+        types: Box::from([]),
         consumers: Box::from([stray]),
     });
     assert_eq!(
@@ -530,6 +542,7 @@ fn consumer_arity_follows_the_head_not_a_constant()
     let root = cut_against_top(&mut arena, ProducerNode::Constructor {
         tag: ConstructorTag::Tuple(ProducerArity::ZERO),
         producers: Box::from([]),
+        types: Box::from([]),
         consumers: Box::from([]),
     });
     assert!(
@@ -539,6 +552,7 @@ fn consumer_arity_follows_the_head_not_a_constant()
     let root = cut_against_top(&mut arena, ProducerNode::Constructor {
         tag: ConstructorTag::Tuple(ProducerArity::ZERO),
         producers: Box::from([]),
+        types: Box::from([]),
         consumers: Box::from([one]),
     });
     assert!(
@@ -643,6 +657,7 @@ fn every_node_kind_declares_its_intrinsic_polarity()
             ProducerNode::Constructor {
                 tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
+                types: Box::from([]),
                 consumers: Box::from([]),
             },
             Some(Polarity::Positive),
@@ -668,7 +683,13 @@ fn every_node_kind_declares_its_intrinsic_polarity()
     for (node, expected) in [
         (ConsumerNode::Covariable(0_u32.into()), None),
         (ConsumerNode::Top, None),
-        (ConsumerNode::MuTilde { body }, None),
+        (
+            ConsumerNode::MuTilde {
+                ty: CommandArena::new().unknown_type(),
+                body,
+            },
+            None,
+        ),
         (
             ConsumerNode::Case {
                 arms: Box::from([]),
@@ -730,6 +751,7 @@ fn scope_boundaries_keep_linear_variables_free()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::from(3_usize)),
             producers: fields.into_boxed_slice(),
+            types: Box::from([arena.unknown_type(); 3]),
             consumers: Box::from([]),
         })
         .expect("fields resolve");
@@ -739,7 +761,11 @@ fn scope_boundaries_keep_linear_variables_free()
     let inner = arena
         .mint_cut(Polarity::Positive, triple, returned)
         .expect("children resolve");
-    let under_mu_tilde = cut_against_unit(&mut arena, ConsumerNode::MuTilde { body: inner });
+    let unknown = arena.unknown_type();
+    let under_mu_tilde = cut_against_unit(&mut arena, ConsumerNode::MuTilde {
+        ty: unknown,
+        body: inner,
+    });
     let under_mu = cut_against_top(&mut arena, ProducerNode::Mu { body: inner });
     for (root, producers, covariables) in [
         (
@@ -912,7 +938,10 @@ fn binder(arena: &mut CommandArena) -> ConsumerId
         .mint_cut(Polarity::Positive, bound, consumer)
         .expect("children resolve");
     arena
-        .mint_consumer(ConsumerNode::MuTilde { body })
+        .mint_consumer(ConsumerNode::MuTilde {
+            ty: arena.unknown_type(),
+            body,
+        })
         .expect("children resolve")
 }
 
@@ -1200,5 +1229,100 @@ fn a_closure_holds_values_over_a_closure_former()
         }),
         check_command(&arena, root),
         "a closure whose code names its creator's α0 is refused"
+    );
+}
+
+/// Build `⟨() |+ μ̃x : binder. ⟨(x : field) |+ ★⟩⟩`: a tuple whose one field is
+/// `x` at the type `field`, under a `μ̃` that binds `x` at `binder`.
+///
+/// # Specification
+/// trivial.
+fn bound_at(
+    arena: &mut CommandArena,
+    binder: ValueTypeId,
+    field: ValueTypeId,
+) -> NodeAddress
+{
+    let variable = arena
+        .mint_producer(ProducerNode::Variable {
+            zone: Zone::Intuitionistic,
+            index: 0_u32.into(),
+        })
+        .expect("a leaf mints");
+    let tuple = arena
+        .mint_producer(ProducerNode::Constructor {
+            tag: ConstructorTag::Tuple(ProducerArity::ONE),
+            producers: Box::from([variable]),
+            types: Box::from([field]),
+            consumers: Box::from([]),
+        })
+        .expect("the field resolves");
+    let end = top(arena);
+    let body = arena
+        .mint_cut(Polarity::Positive, tuple, end)
+        .expect("children resolve");
+    NodeAddress::Command(cut_against_unit(arena, ConsumerNode::MuTilde {
+        ty: binder,
+        body,
+    }))
+}
+
+/// What the check of the annotations answers for [`bound_at`].
+///
+/// # Specification
+/// trivial.
+fn checked_at(
+    arena: &mut CommandArena,
+    binder: ValueTypeId,
+    field: ValueTypeId,
+) -> Result<Annotated, CheckRefusal>
+{
+    let root = bound_at(arena, binder, field);
+    check_annotations(arena, root)
+}
+
+/// #8161: a field's type meets the type of the `μ̃` that binds its variable,
+/// by id. One id verifies the field and the binder, two ids are refused at
+/// the binder, and the unknown type verifies neither.
+#[test]
+fn a_field_meets_its_binder_by_id_8161()
+{
+    let mut arena = CommandArena::new();
+    let integer = arena
+        .annotations_mut()
+        .value_type_base(gandr_kernel_term::BaseType::Integer);
+    let unit_type = arena.annotations_mut().value_type_unit();
+    let unknown = arena.unknown_type();
+    let one = crate::boundary::NodeCount::from(1_usize);
+    let none = crate::boundary::NodeCount::from(0_usize);
+    let same = checked_at(&mut arena, integer, integer).expect("one id verifies");
+    assert_eq!(
+        (one, one, none, none),
+        (
+            same.fields_verified(),
+            same.binders_verified(),
+            same.fields_unverified(),
+            same.binders_unverified()
+        ),
+        "one id verifies the field and its binder"
+    );
+    assert!(
+        matches!(
+            checked_at(&mut arena, unit_type, integer),
+            Err(CheckRefusal::AnnotationMismatch { stated, demanded, .. })
+                if stated == unit_type && demanded == integer
+        ),
+        "two ids are refused, the binder's type against the field's"
+    );
+    let open = checked_at(&mut arena, unknown, integer).expect("the unknown type is no mismatch");
+    assert_eq!(
+        (none, none, one, one),
+        (
+            open.fields_verified(),
+            open.binders_verified(),
+            open.fields_unverified(),
+            open.binders_unverified()
+        ),
+        "the unknown type verifies neither the field nor the binder"
     );
 }

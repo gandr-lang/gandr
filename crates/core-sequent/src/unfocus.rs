@@ -1557,6 +1557,7 @@ impl Unfocusing<'_>
                 ref tag,
                 ref producers,
                 ref consumers,
+                ..
             } => {
                 if !consumers.is_empty() || producers.len() != usize::from(tag.producer_arity()) {
                     return Err(UnfocusRefusal::ProducerOutsideTheImage(id));
@@ -2228,7 +2229,7 @@ impl Unfocusing<'_>
                     Err(UnfocusRefusal::EscapingContinuation(id))
                 }
             },
-            ConsumerNode::MuTilde { body } => {
+            ConsumerNode::MuTilde { body, .. } => {
                 self.tasks.push(Task::Bind);
                 self.tasks.push(Task::Command(body, depth.under_producer()));
                 Ok(())

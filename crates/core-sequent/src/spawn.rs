@@ -439,16 +439,24 @@ impl Images
         };
         let (
             Some(&ProducerNode::Mu { body: writer }),
-            Some(&ConsumerNode::MuTilde { body: reader }),
+            Some(&ConsumerNode::MuTilde {
+                ty: bound,
+                body: reader,
+            }),
         ) = (arena.producer(producer), arena.consumer(consumer))
         else {
             return Ok(rebuilt);
         };
         let mark = arena.watermark();
-        match self.awaiting(arena, reader) {
+        match self.awaiting(arena, reader, bound) {
             Ok(reader) => {
                 let thunk = arena.mint_producer(ProducerNode::Thunk { body: writer })?;
-                let answer = arena.mint_consumer(ConsumerNode::MuTilde { body: reader })?;
+                // A spawn answers a promise, which has no core type.
+                let promised = arena.unknown_type();
+                let answer = arena.mint_consumer(ConsumerNode::MuTilde {
+                    ty: promised,
+                    body: reader,
+                })?;
                 let spawn =
                     arena.mint_command(self.perform(OperationName::from(SPAWN), thunk, answer))?;
                 Ok(NodeAddress::Command(spawn))
@@ -462,7 +470,8 @@ impl Images
     }
 
     /// `reader`, which binds the spawn's answer where the cut bound its value,
-    /// with an await of that answer placed where the value is first needed.
+    /// with an await of that answer placed where the value is first needed,
+    /// bound at `bound`, the type the cut's binder held.
     ///
     /// # Specification
     /// trivial.
@@ -473,12 +482,13 @@ impl Images
         &self,
         arena: &mut CommandArena,
         reader: CommandId,
+        bound: gandr_core_term::ValueTypeId,
     ) -> Result<CommandId, ClosureRefusal>
     {
         let mut spine = Vec::new();
         let mut at = reader;
-        while let Some(next) = past(arena, at, BinderDepth::from(spine.len()))? {
-            spine.push(at);
+        while let Some((next, ty)) = past(arena, at, BinderDepth::from(spine.len()))? {
+            spine.push((at, ty));
             at = next;
         }
         let depth = spine.len();
@@ -494,15 +504,18 @@ impl Images
             zone: Zone::Intuitionistic,
             index: counted(BinderDepth::from(depth))?,
         })?;
-        let bound = arena.mint_consumer(ConsumerNode::MuTilde { body: moved })?;
+        let bound = arena.mint_consumer(ConsumerNode::MuTilde {
+            ty: bound,
+            body: moved,
+        })?;
         let awaited = self.awaited(arena, spawned)?;
         let mut image = arena.mint_command(CommandNode::Cut {
             polarity: Polarity::Positive,
             producer: awaited,
             consumer: bound,
         })?;
-        for &outer in spine.iter().rev() {
-            image = rebound(arena, outer, image)?;
+        for &(outer, ty) in spine.iter().rev() {
+            image = rebound(arena, outer, ty, image)?;
         }
         Ok(image)
     }
@@ -579,9 +592,10 @@ impl Images
     }
 }
 
-/// The body of the value binder that `at` continues to, when the read may
-/// stand past `at`: `at` is a cut or a perform into a value binder, and what
-/// it sends and how it routes do not name the variable `depth` binders out.
+/// The body of the value binder that `at` continues to, and the type that
+/// binder holds, when the read may stand past `at`: `at` is a cut or a
+/// perform into a value binder, and what it sends and how it routes do not
+/// name the variable `depth` binders out.
 ///
 /// # Specification
 /// trivial.
@@ -593,7 +607,7 @@ fn past(
     arena: &CommandArena,
     at: CommandId,
     depth: BinderDepth,
-) -> Result<Option<CommandId>, ClosureRefusal>
+) -> Result<Option<(CommandId, gandr_core_term::ValueTypeId)>, ClosureRefusal>
 {
     let dangling = ClosureRefusal::Dangling(NodeAddress::Command(at));
     let (sent, routed, continuation) = match *arena.command(at).ok_or(dangling)? {
@@ -622,7 +636,7 @@ fn past(
         | CommandNode::World { .. }
         | CommandNode::Session { .. } => return Ok(None),
     };
-    let Some(&ConsumerNode::MuTilde { body }) = arena.consumer(continuation)
+    let Some(&ConsumerNode::MuTilde { ty, body }) = arena.consumer(continuation)
     else {
         return Ok(None);
     };
@@ -640,11 +654,11 @@ fn past(
             return Ok(None);
         }
     }
-    Ok(Some(body))
+    Ok(Some((body, ty)))
 }
 
 /// `outer`, a cut or a perform into a value binder, rebuilt with `body` as
-/// that binder's body.
+/// that binder's body and `ty` as its type.
 ///
 /// # Specification
 /// trivial.
@@ -655,11 +669,12 @@ fn past(
 fn rebound(
     arena: &mut CommandArena,
     outer: CommandId,
+    ty: gandr_core_term::ValueTypeId,
     body: CommandId,
 ) -> Result<CommandId, ClosureRefusal>
 {
     let dangling = ClosureRefusal::Dangling(NodeAddress::Command(outer));
-    let binder = arena.mint_consumer(ConsumerNode::MuTilde { body })?;
+    let binder = arena.mint_consumer(ConsumerNode::MuTilde { ty, body })?;
     let node = match *arena.command(outer).ok_or(dangling)? {
         CommandNode::Cut {
             polarity, producer, ..

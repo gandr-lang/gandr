@@ -1872,6 +1872,138 @@ mod sweeps
         );
     }
 
+    /// The unknown type's sample: sixty-four sources, ranked by their BLAKE3
+    /// digest under this name, at least one of each corpus class, and, in the
+    /// companion, every source the change adds or modifies beside them
+    /// (`gandr-workflow-sweep`). The `sweeps` and nightly profiles visit
+    /// `corpus/model` whole.
+    const UNKNOWNS: Sample = Sample {
+        name: SampleName("focusing_counts_each_unknown_position_by_one_cause_8161"),
+        size: SampleSize(64),
+    };
+
+    /// #8161: over each source's program, focusing counts each binder and each
+    /// field that holds the unknown type by exactly one cause. The counts sum
+    /// to the positions of the program's arena at the unknown type, and the
+    /// check of the annotations accepts each definition. The sweep states the
+    /// rules, and it pins no count.
+    #[test]
+    fn focusing_counts_each_unknown_position_by_one_cause_8161()
+    {
+        unknowns_counted(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn focusing_counts_each_unknown_position_by_one_cause_8161_changed()
+    {
+        unknowns_counted(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Over every source `sweep` visits, focusing's counts by cause sum to the
+    /// binders and fields of the program at the unknown type, and the check of
+    /// the annotations accepts each transparent definition.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unknowns_counted(sweep: &Sweep)
+    {
+        use gandr_core_sequent::ConsumerId;
+        use gandr_core_sequent::ConsumerNode;
+        use gandr_core_sequent::ProducerId;
+        use gandr_core_sequent::ProducerNode;
+        use gandr_core_sequent::Unknown;
+        use gandr_surface_dispatcher::Scheduling;
+        use gandr_surface_dispatcher::compose_on;
+
+        let paths: Vec<PathBuf> = match (sweep.portion(), sweep.coverage()) {
+            (Portion::Fixed, gandr_workflow_sweep::Coverage::Full) => {
+                sources_under(&[fixture_root().join("model")])
+                    .into_iter()
+                    .collect()
+            },
+            (Portion::Fixed, gandr_workflow_sweep::Coverage::Sampled) | (Portion::Changed, _) => {
+                sweep
+                    .visit(
+                        UNKNOWNS,
+                        &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+                    )
+                    .into_iter()
+                    .map(|source| source.path)
+                    .collect()
+            },
+        };
+        let grammar = built_in().expect("the built-in grammar builds");
+        let mut differing = Vec::new();
+        let mut refused = Vec::new();
+        for path in paths {
+            let own = std::fs::read_to_string(&path).expect("a corpus source reads");
+            let Ok(Composed::Settled { program, .. }) = compose_on::<Evaluator>(
+                &grammar,
+                CorpusRoot::Fixture,
+                SourceText::from(own.as_str()),
+                &mut LoweringCount::default(),
+                Scheduling::Sequential,
+                MemoActivity::Active,
+            )
+            else {
+                continue;
+            };
+            let unknowns = program.unknowns();
+            let counted: usize = [
+                Unknown::Open,
+                Unknown::Unchecked,
+                Unknown::Missed,
+                Unknown::Conflict,
+                Unknown::Parameter,
+                Unknown::Minted,
+            ]
+            .into_iter()
+            .map(|cause| usize::from(unknowns.of(cause)))
+            .sum();
+            let arena = program.arena();
+            let unknown = arena.unknown_type();
+            let mut held = 0_usize;
+            for id in 0 .. usize::from(arena.producer_count()) {
+                let id = ProducerId::from(u32::try_from(id).expect("an address fits u32"));
+                if let Some(&ProducerNode::Constructor { ref types, .. }) = arena.producer(id) {
+                    held = held.saturating_add(types.iter().filter(|&&ty| ty == unknown).count());
+                }
+            }
+            for id in 0 .. usize::from(arena.consumer_count()) {
+                let id = ConsumerId::from(u32::try_from(id).expect("an address fits u32"));
+                if let Some(&ConsumerNode::MuTilde { ty, .. }) = arena.consumer(id) {
+                    held = held.saturating_add(usize::from(ty == unknown));
+                }
+            }
+            let definitions = program.definitions();
+            for constant in 0 .. usize::from(definitions.len()) {
+                if let Some(gandr_core_sequent::Definition::Transparent(root)) =
+                    definitions.get(gandr_kernel_term::ConstantIndex::from(constant))
+                    && let Err(refusal) = gandr_core_sequent::check_annotations(
+                        arena,
+                        gandr_core_sequent::NodeAddress::Producer(root),
+                    )
+                {
+                    refused.push((path.clone(), refusal));
+                }
+            }
+            if counted != held {
+                differing.push((path, counted, held));
+            }
+        }
+        assert!(
+            differing.is_empty(),
+            "each position at the unknown type is counted once; (source, counted, held): \
+             {differing:?}"
+        );
+        assert!(
+            refused.is_empty(),
+            "the check of the annotations accepts each definition; (source, refusal): \
+             {refused:?}"
+        );
+    }
+
     /// The goal memo's sample: sixty-four sources, ranked by their BLAKE3
     /// digest under this name, at least one of each corpus class, and, in the
     /// companion, every source the change adds or modifies beside them

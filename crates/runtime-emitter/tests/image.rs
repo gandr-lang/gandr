@@ -310,7 +310,7 @@ fn each_fault_of_the_bytes_is_refused_by_name()
         Record::Close,
     ];
     // The cut stands before the unit and the top that it names.
-    static FORWARD: [Record; 18] = [
+    static FORWARD: [Record; 19] = [
         HEAD[0],
         HEAD[1],
         HEAD[2],
@@ -328,9 +328,10 @@ fn each_fault_of_the_bytes_is_refused_by_name()
         Record::Close,
         Record::Word(0),
         Record::Word(0),
+        Record::Word(0),
         Record::Close,
     ];
-    static ORDERED: [Record; 21] = [
+    static ORDERED: [Record; 22] = [
         HEAD[0],
         HEAD[1],
         HEAD[2],
@@ -341,6 +342,7 @@ fn each_fault_of_the_bytes_is_refused_by_name()
         Record::Open(0x10),
         Record::Word(0),
         Record::Close,
+        Record::Word(0),
         Record::Word(0),
         Record::Word(0),
         Record::Close,

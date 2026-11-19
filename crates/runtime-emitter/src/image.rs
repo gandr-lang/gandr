@@ -26,12 +26,13 @@
 //!
 //! # Boundaries
 //!
-//! - **Annotations cross as content.** A code, a fold, an operation, a handler
-//!   and a session action name core nodes of the arena's annotations. Their
-//!   roots form one content table in the node codec of `gandr-core-content`,
-//!   one place for each distinct content. The reader mints the table into the
-//!   fresh arena before the nodes that name it. A command that names no
-//!   annotation has no table, so its bytes are the image's bytes alone.
+//! - **Annotations cross as content.** A code, a constructor, a value binder, a
+//!   fold, an operation, a handler and a session action name core nodes of the
+//!   arena's annotations. Their roots form one content table in the node codec
+//!   of `gandr-core-content`, one place for each distinct content. The reader
+//!   mints the table into the fresh arena before the nodes that name it. A
+//!   command that names no annotation has no table, so its bytes are the
+//!   image's bytes alone.
 //! - **A digest admits nothing.** A content pointer of the bytes names them.
 //!   The kernel's admission stays the one authority of validity, so [`read`]
 //!   runs [`check_command`] on each root that it mints.
@@ -93,6 +94,7 @@ use gandr_core_sequent::command_annotations;
 use gandr_core_sequent::command_children;
 use gandr_core_sequent::consumer_annotations;
 use gandr_core_sequent::consumer_children;
+use gandr_core_sequent::producer_annotations;
 use gandr_core_sequent::producer_children;
 use gandr_core_term::FieldLabel;
 use gandr_core_term::ValueTypeId;
@@ -552,6 +554,28 @@ enum Pending
         /// The continuation.
         continuation: ConsumerId,
     },
+    /// A constructor.
+    Constructor
+    {
+        /// The head.
+        tag: Head,
+        /// The producer fields.
+        producers: Box<[ProducerId]>,
+        /// The ordinal of the type of each producer field.
+        types: Box<[Word32]>,
+        /// The consumer fields.
+        consumers: Box<[ConsumerId]>,
+    },
+    /// A value binder.
+    MuTilde
+    {
+        /// The ordinal of the bound type.
+        ty: Word32,
+        /// The body.
+        body: CommandId,
+        /// Whether the binder is independent.
+        independence: Independence,
+    },
     /// An operation request.
     Perform
     {
@@ -993,6 +1017,9 @@ impl Walk<'_>
                 if let ProducerNode::Code(value) = *held {
                     self.annotate(ArenaNode::Value(value));
                 }
+                for ty in producer_annotations(held) {
+                    self.annotate(ArenaNode::ValueType(ty));
+                }
                 let at = next(
                     self.producers.len(),
                     gandr_core_sequent::NodeFamily::Producer,
@@ -1291,8 +1318,11 @@ impl<'arena> Image<'arena>
                     Settled::Producer(node) => {
                         let _id = arena.mint_producer(node)?;
                     },
-                    Settled::Consumer(node) => {
-                        let _id = arena.mint_consumer(node)?;
+                    Settled::Consumer(node, independence) => {
+                        let id = arena.mint_consumer(node)?;
+                        if independence == Independence::Independent {
+                            arena.mark_independent(id).map_err(ImageRefusal::Mark)?;
+                        }
                     },
                     Settled::Command(node) => {
                         let _id = arena.mint_command(node)?;
@@ -1338,8 +1368,8 @@ enum Settled
 {
     /// A producer.
     Producer(ProducerNode),
-    /// A consumer.
-    Consumer(ConsumerNode),
+    /// A consumer, and whether it is independent.
+    Consumer(ConsumerNode, Independence),
     /// A command.
     Command(CommandNode),
 }
@@ -1386,13 +1416,41 @@ fn settle(
             on_nil,
             on_cons,
             continuation,
-        } => Settled::Consumer(ConsumerNode::ListFold {
-            element: value_type(roots, element)?,
-            result: value_type(roots, result)?,
-            on_nil,
-            on_cons,
-            continuation,
+        } => Settled::Consumer(
+            ConsumerNode::ListFold {
+                element: value_type(roots, element)?,
+                result: value_type(roots, result)?,
+                on_nil,
+                on_cons,
+                continuation,
+            },
+            Independence::Sequential,
+        ),
+        Pending::Constructor {
+            tag,
+            producers,
+            types,
+            consumers,
+        } => Settled::Producer(ProducerNode::Constructor {
+            tag,
+            producers,
+            types: types
+                .iter()
+                .map(|&ordinal| value_type(roots, ordinal))
+                .collect::<Result<_, _>>()?,
+            consumers,
         }),
+        Pending::MuTilde {
+            ty,
+            body,
+            independence,
+        } => Settled::Consumer(
+            ConsumerNode::MuTilde {
+                ty: value_type(roots, ty)?,
+                body,
+            },
+            independence,
+        ),
         Pending::Perform {
             signature,
             operation,
@@ -1700,8 +1758,12 @@ impl CanonicalValue for Image<'_>
         for _node in 0_u64 .. nodes {
             let node = read_node(reader)?;
             let family = match node {
-                Node::Producer(_) | Node::Pending(Pending::Code(_)) => counts.get_mut(0_usize),
-                Node::Consumer(..) | Node::Pending(Pending::ListFold { .. }) => {
+                Node::Producer(_)
+                | Node::Pending(Pending::Code(_) | Pending::Constructor { .. }) => {
+                    counts.get_mut(0_usize)
+                },
+                Node::Consumer(..)
+                | Node::Pending(Pending::ListFold { .. } | Pending::MuTilde { .. }) => {
                     counts.get_mut(1_usize)
                 },
                 Node::Command(_)
@@ -2041,10 +2103,12 @@ where
             let tag = read_head(reader)?;
             reader.read_close()?;
             let producers = positions(opened, reader)?;
+            let types = positions(opened, reader)?;
             let consumers = positions(opened, reader)?;
-            producer(ProducerNode::Constructor {
+            Node::Pending(Pending::Constructor {
                 tag,
                 producers,
+                types,
                 consumers,
             })
         },
@@ -2107,8 +2171,13 @@ where
                 0_u64 => Independence::Sequential,
                 _ => Independence::Independent,
             };
+            let ty = index(opened, reader)?;
             let body = CommandId::from(index(opened, reader)?);
-            Node::Consumer(Cow::Owned(ConsumerNode::MuTilde { body }), independence)
+            Node::Pending(Pending::MuTilde {
+                ty,
+                body,
+                independence,
+            })
         },
         MU_TILDE_ALL => {
             let arity = ProducerArity::from(ordinal(opened, reader)?);
@@ -2544,6 +2613,26 @@ impl Image<'_>
             .try_for_each(|&id| sink.word(self.numbering.consumer(id)?))
     }
 
+    /// Write the ordinals of the types of `ids` after their count.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The sink's refusal, and a type outside the table.
+    fn types<Sink>(
+        &self,
+        ids: &[ValueTypeId],
+        sink: &mut Sink,
+    ) -> Result<(), ValueError>
+    where
+        Sink: TokenSink + ?Sized,
+    {
+        sink.word(count(ids.len())?)?;
+        ids.iter()
+            .try_for_each(|&ty| sink.word(position(self.ordinal(ArenaNode::ValueType(ty))?)))
+    }
+
     /// Write a producer's open, payload and close.
     ///
     /// # Specification
@@ -2632,12 +2721,14 @@ impl Image<'_>
             ProducerNode::Constructor {
                 ref tag,
                 ref producers,
+                ref types,
                 ref consumers,
             } => {
                 sink.open(ConstructorTag::from(CONSTRUCTOR))?;
                 emit_head(tag, sink).map_err(|_uncrossable| untaken())??;
                 sink.close()?;
                 self.producers(producers, sink)?;
+                self.types(types, sink)?;
                 self.consumers(consumers, sink)?;
             },
             ProducerNode::Thunk { body } => {
@@ -2718,12 +2809,13 @@ impl Image<'_>
                 sink.open(ConstructorTag::from(COVARIABLE))?;
                 sink.word(position(u32::from(index)))?;
             },
-            ConsumerNode::MuTilde { body } => {
+            ConsumerNode::MuTilde { ty, body } => {
                 sink.open(ConstructorTag::from(MU_TILDE))?;
                 sink.word(CanonicalWord::from(match independence {
                     Independence::Sequential => 0_u64,
                     Independence::Independent => 1_u64,
                 }))?;
+                sink.word(position(self.ordinal(ArenaNode::ValueType(ty))?))?;
                 sink.word(numbering.command(body)?)?;
             },
             ConsumerNode::MuTildeAll { arity, body } => {

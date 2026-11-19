@@ -553,6 +553,29 @@ impl<'source, 'target> TypeImporter<'source, 'target>
         }
     }
 
+    /// Start an import session between distinct arenas that files each image
+    /// by its content: the image of each node is the node that `target` files
+    /// for its record over its children's images. Two sources of one content
+    /// then import to one node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn interning(
+        source: &'source CoreArena,
+        target: &'target mut CoreArena,
+    ) -> Self
+    {
+        Self {
+            source: Some(source),
+            target,
+            mint: Mint::Interned,
+            images: BTreeMap::new(),
+            pending: Vec::new(),
+        }
+    }
+
     /// Start a session that interns graphs of `arena` within it: the image of
     /// each node is the node that `arena` files for its record over its
     /// children's images.

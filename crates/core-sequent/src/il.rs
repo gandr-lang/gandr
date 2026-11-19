@@ -575,6 +575,10 @@ pub enum ProducerNode
         tag: ConstructorTag,
         /// The producer fields, left to right.
         producers: Box<[ProducerId]>,
+        /// The value type of each producer field, left to right, in this
+        /// arena's annotation arena: the type the checker elaborated, or the
+        /// unknown type where no checker recorded one.
+        types: Box<[gandr_core_term::ValueTypeId]>,
         /// The consumer fields, left to right.
         consumers: Box<[ConsumerId]>,
     },
@@ -635,6 +639,10 @@ pub enum ConsumerNode
     /// A value binder `μ̃x. s`.
     MuTilde
     {
+        /// The value type of the producer it binds, in this arena's annotation
+        /// arena: the type the checker elaborated, or the unknown type where
+        /// no checker recorded one.
+        ty: gandr_core_term::ValueTypeId,
         /// The command, binding one producer variable.
         body: CommandId,
     },
@@ -949,6 +957,15 @@ pub enum MintRefusal
     DanglingCommand(CommandId),
     /// A type annotation does not resolve in the annotation arena.
     DanglingAnnotation(gandr_core_term::ValueTypeId),
+    /// A constructor holds another count of field types than of producer
+    /// fields.
+    FieldTypes
+    {
+        /// The producer fields it holds.
+        fields: crate::boundary::ProducerArity,
+        /// The field types it holds.
+        types: crate::boundary::ProducerArity,
+    },
     /// The family has reached its address ceiling.
     FamilyFull(NodeFamily),
 }
@@ -969,7 +986,11 @@ impl fmt::Display for MintRefusal
             Self::DanglingProducer(id) => write!(f, "producer {id} is not in the arena"),
             Self::DanglingConsumer(id) => write!(f, "consumer {id} is not in the arena"),
             Self::DanglingCommand(id) => write!(f, "command {id} is not in the arena"),
-            Self::DanglingAnnotation(_) => f.write_str("a List-fold annotation does not resolve"),
+            Self::DanglingAnnotation(_) => f.write_str("a type annotation does not resolve"),
+            Self::FieldTypes { fields, types } => write!(
+                f,
+                "a constructor of {fields} producer fields holds {types} field types"
+            ),
             Self::FamilyFull(family) => {
                 let name = match family {
                     NodeFamily::Producer => "producer",
@@ -1421,7 +1442,7 @@ struct Row<Node>
 /// at the node's address, and the word arena holds the codes wider than a
 /// slot. Rows [`Self::freeze`] froze are shared by every clone made after,
 /// so such a clone copies, and its drop releases, only the rows minted since.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommandArena
 {
     /// The producer nodes and their scopes, in minting order.
@@ -1436,6 +1457,9 @@ pub struct CommandArena
     annotations: gandr_core_term::CoreArena,
     /// The binders `μ̃x.c` marked [`Independence::Independent`], ascending.
     independent: Vec<ConsumerId>,
+    /// The unknown type, minted first in `annotations`: the one node that
+    /// each position that no checker typed shares.
+    unknown: gandr_core_term::ValueTypeId,
 }
 
 impl CommandArena
@@ -1463,15 +1487,52 @@ impl CommandArena
         &mut self.annotations
     }
 
-    /// An empty arena.
+    /// The unknown type in the annotation arena: the annotation of a binder
+    /// or a field whose type no checker recorded, which a later pass reads as
+    /// a position of the uniform form.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the one id that the arena minted first, which the annotation
+    ///   arena resolves to the unknown type past any rollback.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two positions share one node, and a rollback to the
+    ///   arena's first watermark keeps it.
+    /// - witness: `il::tests::the_unknown_type_is_one_node_past_a_rollback_8161`
+    #[spec(ensures: |ret| matches!(self.annotations.value_type(ret), Some(&gandr_core_term::ValueType::Unknown)))]
+    #[inline]
+    #[must_use]
+    pub fn unknown_type(&self) -> gandr_core_term::ValueTypeId
+    {
+        self.unknown
+    }
+
+    /// An empty arena, whose annotations hold the unknown type alone.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: one node of the unknown type, which each untyped binder or
+    ///   field shares, setup
     #[inline]
     #[must_use]
     pub fn new() -> Self
     {
-        Self::default()
+        let mut annotations = gandr_core_term::CoreArena::new();
+        let unknown = annotations.value_type_unknown();
+        Self {
+            producers: Family::default(),
+            consumers: Family::default(),
+            commands: Family::default(),
+            words: WordArena::default(),
+            annotations,
+            independent: Vec::new(),
+            unknown,
+        }
     }
 
     /// Share every row minted so far with every clone of the arena made
@@ -1785,7 +1846,10 @@ impl CommandArena
     ///   scopes its children have and the variable it names, is recorded at the
     ///   same address.
     /// - provides: the one append point of the producer family.
-    /// - fails: [`MintRefusal::DanglingProducer`],
+    /// - fails: [`MintRefusal::FieldTypes`] for a constructor whose field types
+    ///   and producer fields differ in count,
+    ///   [`MintRefusal::DanglingAnnotation`] for a type the annotations do not
+    ///   resolve, [`MintRefusal::DanglingProducer`],
     ///   [`MintRefusal::DanglingConsumer`] or [`MintRefusal::DanglingCommand`]
     ///   naming the first child that does not resolve, and
     ///   [`MintRefusal::FamilyFull`] at the address ceiling; the arena is then
@@ -1806,6 +1870,7 @@ impl CommandArena
     /// - witness: `il::tests::minting_refuses_a_dangling_child`
     /// - witness: `il::tests::every_node_form_checks_its_child_families`
     /// - witness: `il::tests::the_first_dangling_child_wins`
+    /// - witness: `il::tests::a_constructor_holds_one_resolved_type_for_each_field_8161`
     /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling_8054`
     #[inline]
     #[spec(
@@ -1824,8 +1889,10 @@ impl CommandArena
                     | ProducerNode::Primitive { arguments, .. } => arguments.iter().all(|child| self.producer(*child).is_some()),
                     | ProducerNode::Decompose(dialogue) => self.producer(dialogue).is_some(),
                     | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) | ProducerNode::Code(_) => true,
-                    | ProducerNode::Constructor { ref producers, ref consumers, .. } =>
-                        producers.iter().all(|child| self.producer(*child).is_some())
+                    | ProducerNode::Constructor { ref producers, ref types, ref consumers, .. } =>
+                        types.len() == producers.len()
+                            && types.iter().all(|ty| self.annotations.value_type(*ty).is_some())
+                            && producers.iter().all(|child| self.producer(*child).is_some())
                             && consumers.iter().all(|child| self.consumer(*child).is_some()),
                     | ProducerNode::Thunk { body } | ProducerNode::Mu { body } | ProducerNode::Fixpoint { body, .. } => self.command(body).is_some(),
                     | ProducerNode::Cocase { ref arms } => arms.iter().all(|arm| self.command(arm.body).is_some()),
@@ -1884,7 +1951,8 @@ impl CommandArena
                 && self.command_count() == entry.commands
                 && self.consumer(id).is_some_and(|node| match *node {
                     | ConsumerNode::Covariable(_) | ConsumerNode::Top => true,
-                    | ConsumerNode::MuTilde { body } | ConsumerNode::MuTildeAll { body, .. } => self.command(body).is_some(),
+                    | ConsumerNode::MuTilde { ty, body } => self.annotations.value_type(ty).is_some() && self.command(body).is_some(),
+                    | ConsumerNode::MuTildeAll { body, .. } => self.command(body).is_some(),
                     | ConsumerNode::Destructor { ref producers, ref consumers, .. } =>
                         producers.iter().all(|child| self.producer(*child).is_some())
                             && consumers.iter().all(|child| self.consumer(*child).is_some()),
@@ -2061,6 +2129,19 @@ impl CommandArena
     }
 }
 
+impl Default for CommandArena
+{
+    /// An empty arena, as [`CommandArena::new`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self::new()
+    }
+}
+
 /// Visit the children of a producer, each beside the binders the producer
 /// opens over it, in edge order, stopping at the first refusal `each`
 /// answers.
@@ -2208,7 +2289,7 @@ where
     let at = Opens::default();
     match *node {
         ConsumerNode::Covariable(_) | ConsumerNode::Top => {},
-        ConsumerNode::MuTilde { body } => {
+        ConsumerNode::MuTilde { body, .. } => {
             each(
                 NodeAddress::Command(body),
                 Opens::binding(ProducerArity::ONE, ConsumerArity::ZERO),
@@ -2539,30 +2620,58 @@ pub fn command_named(node: &CommandNode) -> core::option::IntoIter<(Zone, DeBrui
     .into_iter()
 }
 
-/// The annotations a consumer carries: a fold's element and result types.
+/// The annotations a producer carries: the type of each producer field of a
+/// constructor.
+///
+/// # Specification
+/// trivial.
+#[inline]
+pub fn producer_annotations(
+    node: &ProducerNode
+) -> impl Iterator<Item = gandr_core_term::ValueTypeId> + '_
+{
+    let types: &[gandr_core_term::ValueTypeId] = match *node {
+        ProducerNode::Constructor { ref types, .. } => types,
+        ProducerNode::Reify(_)
+        | ProducerNode::Primitive { .. }
+        | ProducerNode::Decompose(_)
+        | ProducerNode::Variable { .. }
+        | ProducerNode::Constant(_)
+        | ProducerNode::Literal(_)
+        | ProducerNode::Code(_)
+        | ProducerNode::Thunk { .. }
+        | ProducerNode::Fixpoint { .. }
+        | ProducerNode::Cocase { .. }
+        | ProducerNode::Closure { .. }
+        | ProducerNode::Mu { .. } => &[],
+    };
+    types.iter().copied()
+}
+
+/// The annotations a consumer carries: a fold's element and result types,
+/// and the type a binder `μ̃x. s` binds.
 ///
 /// # Specification
 /// trivial.
 #[inline]
 pub fn consumer_annotations(
     node: &ConsumerNode
-) -> core::iter::Flatten<core::option::IntoIter<[gandr_core_term::ValueTypeId; 2]>>
+) -> impl Iterator<Item = gandr_core_term::ValueTypeId>
 {
-    match *node {
+    let (first, second) = match *node {
         ConsumerNode::ListFold {
             element, result, ..
-        } => Some([element, result]),
+        } => (Some(element), Some(result)),
+        ConsumerNode::MuTilde { ty, .. } => (Some(ty), None),
         ConsumerNode::Covariable(_)
-        | ConsumerNode::MuTilde { .. }
         | ConsumerNode::MuTildeAll { .. }
         | ConsumerNode::Destructor { .. }
         | ConsumerNode::Case { .. }
         | ConsumerNode::DataCase { .. }
         | ConsumerNode::Select { .. }
-        | ConsumerNode::Top => None,
-    }
-    .into_iter()
-    .flatten()
+        | ConsumerNode::Top => (None, None),
+    };
+    first.into_iter().chain(second)
 }
 
 /// The annotations a command carries: an operation's or a handler's interface

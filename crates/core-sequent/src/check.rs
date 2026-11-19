@@ -73,6 +73,11 @@ use crate::il::consumer_annotations;
 use crate::il::consumer_children;
 use crate::il::producer_children;
 
+mod annotations;
+
+pub use annotations::Annotated;
+pub use annotations::check_annotations;
+
 /// A head whose arity a node is held to.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ArityHead
@@ -145,6 +150,18 @@ pub enum CheckRefusal
     /// no binder of several, or a cut sending one value to a binder of
     /// several.
     Delivery(CommandId),
+    /// Two annotations of one variable with two ids: a field's type against
+    /// the type of the `μ̃` that binds its variable, or against another
+    /// field's type of the same variable.
+    AnnotationMismatch
+    {
+        /// The node where the two types meet.
+        at: NodeAddress,
+        /// The type that the binder, or the first field, states.
+        stated: ValueTypeId,
+        /// The type that the other field demands.
+        demanded: ValueTypeId,
+    },
 }
 
 impl fmt::Display for CheckRefusal
@@ -209,6 +226,12 @@ impl fmt::Display for CheckRefusal
                 write!(
                     f,
                     "command {id} sends a number of values its consumer does not bind"
+                )
+            },
+            Self::AnnotationMismatch { at, .. } => {
+                write!(
+                    f,
+                    "{at} meets two types of one variable: a field's type is not its binder's"
                 )
             },
         }
@@ -557,6 +580,7 @@ impl Walk<'_>
                 ref tag,
                 ref producers,
                 ref consumers,
+                ..
             } => {
                 let head = ArityHead::Constructor(tag.clone());
                 self.fields(

@@ -240,7 +240,11 @@ fn minting_refuses_a_dangling_child()
         }),
         "a selection's continuation dangles"
     );
-    let unannotated = gandr_core_term::CoreArena::new().value_type_unit();
+    // The arena's annotations hold the unknown type alone, so the second type
+    // of another arena dangles here.
+    let mut elsewhere = gandr_core_term::CoreArena::new();
+    let _held = elsewhere.value_type_unknown();
+    let unannotated = elsewhere.value_type_unit();
     let signature =
         gandr_core_term::effect::EffectSig::new("E".into(), [gandr_core_term::effect::EffectOp {
             name: "op".into(),
@@ -276,6 +280,7 @@ fn truncation_drops_exactly_the_later_nodes()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("a leaf mints");
@@ -308,6 +313,7 @@ fn a_mark_names_exactly_its_binders_and_truncates_with_them()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("a leaf mints");
@@ -316,7 +322,10 @@ fn a_mark_names_exactly_its_binders_and_truncates_with_them()
         .expect("children resolve");
     let mint_binder = |arena: &mut CommandArena| {
         arena
-            .mint_consumer(ConsumerNode::MuTilde { body })
+            .mint_consumer(ConsumerNode::MuTilde {
+                ty: arena.unknown_type(),
+                body,
+            })
             .expect("a binder mints")
     };
     let first = mint_binder(&mut arena);
@@ -572,6 +581,7 @@ fn every_node_form_checks_its_child_families()
         ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::TWO),
             producers: Box::from([leaf]),
+            types: Box::from([arena.unknown_type()]),
             consumers: Box::from([top]),
         },
         ProducerNode::Thunk { body },
@@ -591,7 +601,10 @@ fn every_node_form_checks_its_child_families()
     for node in [
         ConsumerNode::Top,
         ConsumerNode::Covariable(CovariableIndex::from(4_u32)),
-        ConsumerNode::MuTilde { body },
+        ConsumerNode::MuTilde {
+            ty: arena.unknown_type(),
+            body,
+        },
         ConsumerNode::Destructor {
             tag: DestructorTag::Apply,
             producers: Box::from([leaf]),
@@ -638,7 +651,10 @@ fn every_node_form_checks_its_child_families()
         assert_eq!(entry, arena.watermark());
     }
     for node in [
-        ConsumerNode::MuTilde { body: missing },
+        ConsumerNode::MuTilde {
+            ty: arena.unknown_type(),
+            body: missing,
+        },
         ConsumerNode::Case {
             arms: Box::from([
                 PatternArm {
@@ -673,6 +689,7 @@ fn the_first_dangling_child_wins()
     let missing_producer = ProducerId::from(1_u32);
     let missing_consumer = ConsumerId::from(1_u32);
     let entry = arena.watermark();
+    let unknown = arena.unknown_type();
     for (producers, consumers, expected) in [
         (
             &[leaf, missing_producer, ProducerId::from(2_u32)][..],
@@ -690,6 +707,7 @@ fn the_first_dangling_child_wins()
             arena.mint_producer(ProducerNode::Constructor {
                 tag: ConstructorTag::Tuple(ProducerArity::TWO),
                 producers: Box::from(producers),
+                types: producers.iter().map(|_| unknown).collect(),
                 consumers: Box::from(consumers),
             })
         );
@@ -724,6 +742,7 @@ fn unit(arena: &mut CommandArena) -> ProducerId
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("a leaf mints")
@@ -774,6 +793,7 @@ fn a_wide_scope_is_kept_in_the_word_arena()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::from(scattered.len())),
             producers: fields.into_boxed_slice(),
+            types: core::iter::repeat_n(arena.unknown_type(), scattered.len()).collect(),
             consumers: Box::from([]),
         })
         .expect("the fields resolve");
@@ -816,7 +836,10 @@ fn an_unused_binder_thins_to_zero()
             .mint_cut(Polarity::Positive, occurrence, terminal)
             .expect("children resolve");
         let binder = arena
-            .mint_consumer(ConsumerNode::MuTilde { body })
+            .mint_consumer(ConsumerNode::MuTilde {
+                ty: arena.unknown_type(),
+                body,
+            })
             .expect("the body resolves");
         let inner = scope_of(&arena, NodeAddress::Command(body))
             .producers()
@@ -923,6 +946,7 @@ fn captures_skip_each_suspensions_own_binders()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::from(3_usize)),
             producers: fields.into_boxed_slice(),
+            types: Box::from([arena.unknown_type(); 3]),
             consumers: Box::from([]),
         })
         .expect("fields resolve");
@@ -1025,6 +1049,7 @@ fn an_annotation_counts_in_its_nodes_support()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::ListNil,
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("a leaf mints");
@@ -1053,4 +1078,112 @@ fn an_annotation_counts_in_its_nodes_support()
         let free = crate::check::check_command(&arena, root).expect("the carried covers check");
         assert_eq!(&expected, free.producers());
     }
+}
+
+/// Two binders that no checker typed hold the arena's one unknown type, and a
+/// rollback to the arena's first watermark keeps that node (#8161).
+#[test]
+fn the_unknown_type_is_one_node_past_a_rollback_8161()
+{
+    let mut arena = CommandArena::new();
+    let unknown = arena.unknown_type();
+    let first = arena.watermark();
+    let unit = arena
+        .mint_producer(ProducerNode::Constructor {
+            tag: ConstructorTag::Tuple(ProducerArity::ZERO),
+            producers: Box::from([]),
+            types: Box::from([]),
+            consumers: Box::from([]),
+        })
+        .expect("a leaf mints");
+    let top = arena
+        .mint_consumer(ConsumerNode::Top)
+        .expect("a leaf mints");
+    let body = arena
+        .mint_cut(Polarity::Positive, unit, top)
+        .expect("children resolve");
+    let binders = [0_usize, 1_usize].map(|_| {
+        arena
+            .mint_consumer(ConsumerNode::MuTilde {
+                ty: arena.unknown_type(),
+                body,
+            })
+            .expect("the body resolves")
+    });
+    for binder in binders {
+        assert_eq!(
+            Some(&ConsumerNode::MuTilde { ty: unknown, body }),
+            arena.consumer(binder),
+            "each binder holds the one unknown type"
+        );
+    }
+    arena.truncate_to(first);
+    assert_eq!(unknown, arena.unknown_type(), "the rollback keeps the id");
+    assert_eq!(
+        Some(&gandr_core_term::ValueType::Unknown),
+        arena.annotations().value_type(unknown),
+        "the rollback keeps the node"
+    );
+}
+
+/// A constructor holds one type for each producer field, and each type
+/// resolves in the arena's annotations; minting refuses another count or a
+/// type the annotations do not hold, and leaves the arena at its mark (#8161).
+#[test]
+fn a_constructor_holds_one_resolved_type_for_each_field_8161()
+{
+    let mut arena = CommandArena::new();
+    let unknown = arena.unknown_type();
+    let leaf = arena
+        .mint_producer(ProducerNode::Constant(0_usize.into()))
+        .expect("a leaf mints");
+    let mut elsewhere = gandr_core_term::CoreArena::new();
+    let _first = elsewhere.value_type_unknown();
+    let dangling = elsewhere.value_type_unit();
+    let entry = arena.watermark();
+    for (types, expected) in [
+        (Box::from([unknown]), MintRefusal::FieldTypes {
+            fields: ProducerArity::TWO,
+            types: ProducerArity::ONE,
+        }),
+        (
+            Box::from([unknown, unknown, unknown]),
+            MintRefusal::FieldTypes {
+                fields: ProducerArity::TWO,
+                types: ProducerArity::from(3_usize),
+            },
+        ),
+        (
+            Box::from([unknown, dangling]),
+            MintRefusal::DanglingAnnotation(dangling),
+        ),
+    ] {
+        assert_eq!(
+            Err(expected),
+            arena.mint_producer(ProducerNode::Constructor {
+                tag: ConstructorTag::Tuple(ProducerArity::TWO),
+                producers: Box::from([leaf, leaf]),
+                types,
+                consumers: Box::from([]),
+            })
+        );
+        assert_eq!(
+            entry,
+            arena.watermark(),
+            "a refusal leaves the arena at its mark"
+        );
+    }
+    let pair = arena
+        .mint_producer(ProducerNode::Constructor {
+            tag: ConstructorTag::Tuple(ProducerArity::TWO),
+            producers: Box::from([leaf, leaf]),
+            types: Box::from([unknown, unknown]),
+            consumers: Box::from([]),
+        })
+        .expect("one resolved type for each field");
+    assert_eq!(
+        [unknown, unknown].as_slice(),
+        producer_annotations(arena.producer(pair).expect("minted")).collect::<Vec<_>>(),
+        "the pair holds its two field types in field order"
+    );
 }

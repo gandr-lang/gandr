@@ -125,6 +125,7 @@ impl Emitted
                 &mut self.commands,
                 &mut self.provenance,
                 &gandr_core_sequent::Writers::NONE,
+                &gandr_core_sequent::Typed::NONE,
             ) {
                 Ok(_) if self.native_since(before).is_some() => Definition::Opaque,
                 Ok(root) => Definition::Transparent(root),
@@ -179,6 +180,7 @@ impl Emitted
                 &mut self.commands,
                 &mut self.provenance,
                 &gandr_core_sequent::Writers::NONE,
+                &gandr_core_sequent::Typed::NONE,
             )
         }
         else {
@@ -188,6 +190,7 @@ impl Emitted
                 &mut self.commands,
                 &mut self.provenance,
                 &gandr_core_sequent::Writers::NONE,
+                &gandr_core_sequent::Typed::NONE,
             )
         }
         .ok()?;

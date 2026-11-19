@@ -650,7 +650,7 @@ fn command(
         | ProducerNode::Decompose(_) => matches!(ret.first(), Some(Piece::Text(Token("decompose")))),
         | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) => matches!(ret.as_slice(), &[Piece::Owned(_)]),
         | ProducerNode::Code(_) => matches!(ret.as_slice(), &[Piece::Text(Token("code"))]),
-        | ProducerNode::Constructor { ref tag, ref producers, ref consumers } =>
+        | ProducerNode::Constructor { ref tag, ref producers, ref consumers, .. } =>
             if *tag == ConstructorTag::Tuple(ProducerArity::ZERO) && producers.is_empty() && consumers.is_empty() {
                 matches!(ret.as_slice(), &[Piece::Text(Token("()"))])
             } else { matches!(ret.first(), Some(&Piece::Text(Token(name))) if name == constructor_name(tag).0) },
@@ -722,6 +722,7 @@ fn producer(
             ref tag,
             ref producers,
             ref consumers,
+            ..
         } => {
             if *tag == ConstructorTag::Tuple(ProducerArity::ZERO)
                 && producers.is_empty()
@@ -831,7 +832,7 @@ fn producer(
         | ConsumerNode::Covariable(_) => matches!(ret.as_slice(), &[Piece::Owned(_)]),
         | ConsumerNode::Top => matches!(ret.as_slice(), &[Piece::Text(Token("★"))]),
         | ConsumerNode::ListFold { on_nil, on_cons, continuation, .. } => ret.iter().filter_map(|piece| match *piece { Piece::Command(body, _) => Some(body), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq([on_nil, on_cons]) && ret.iter().any(|piece| matches!(*piece, Piece::Consumer(found, _) if found == continuation)),
-        | ConsumerNode::MuTilde { body } => matches!(ret.as_slice(), &[Piece::Text(Token("μ̃x. ")), Piece::Command(found, _)] if body == found),
+        | ConsumerNode::MuTilde { body, .. } => matches!(ret.as_slice(), &[Piece::Text(Token("μ̃x. ")), Piece::Command(found, _)] if body == found),
         | ConsumerNode::MuTildeAll { arity, body } => matches!(ret.as_slice(), &[Piece::Owned(ref binder), Piece::Command(found, _)] if body == found && *binder == alloc::format!("μ̃({}). ", usize::from(arity))),
         | ConsumerNode::Destructor { tag, .. } => matches!(ret.first(), Some(&Piece::Text(Token(name)))
             if name == match tag { DestructorTag::Apply => "apply", DestructorTag::Force => "force", DestructorTag::Project(_) => "project" })
@@ -866,7 +867,9 @@ fn consumer(
         ConsumerNode::Covariable(index) => {
             alloc::vec![Piece::Owned(alloc::format!("α{}", u32::from(index)))]
         },
-        ConsumerNode::MuTilde { body } => alloc::vec![text!("μ̃x. "), Piece::Command(body, depth)],
+        ConsumerNode::MuTilde { body, .. } => {
+            alloc::vec![text!("μ̃x. "), Piece::Command(body, depth)]
+        },
         ConsumerNode::MuTildeAll { arity, body } => alloc::vec![
             Piece::Owned(alloc::format!("μ̃({}). ", usize::from(arity))),
             Piece::Command(body, depth)

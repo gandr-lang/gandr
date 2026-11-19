@@ -81,6 +81,7 @@ fn pair(
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::TWO),
             producers: Box::from([first, second]),
+            types: Box::from([arena.unknown_type(); 2]),
             consumers: Box::from([]),
         })
         .expect("children resolve")
@@ -143,6 +144,7 @@ fn only_closures_convert()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("a leaf mints");
@@ -273,6 +275,7 @@ fn beta_binds_the_environment_and_the_argument_together()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("a leaf mints");
@@ -361,7 +364,10 @@ fn through_a_link(
 {
     let one = integer(arena, alloc::string::String::from("1"));
     let binder = arena
-        .mint_consumer(ConsumerNode::MuTilde { body: hole })
+        .mint_consumer(ConsumerNode::MuTilde {
+            ty: arena.unknown_type(),
+            body: hole,
+        })
         .expect("children resolve");
     let applied = frame(arena, DestructorTag::Apply, Box::from([one]), binder);
     let forced = frame(arena, DestructorTag::Force, Box::from([]), applied);

@@ -208,6 +208,7 @@ fn on_tiers(
         &mut arena,
         &mut provenance,
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("focusing is total on the pure fragment");
     run_on_tiers(&arena, command)

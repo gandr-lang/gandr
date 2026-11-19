@@ -449,6 +449,7 @@ fn assert_host(
         &mut arena,
         &mut Provenance::new(),
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("the program focuses");
     assert_eq!(Ok(FreeSet::default()), check_command(&arena, root));
@@ -870,6 +871,7 @@ fn a_host_abort_never_resumes_and_a_missing_reply_declines()
         &mut arena,
         &mut Provenance::new(),
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("the exit sequence focuses");
     let definitions = Definitions::new();
@@ -1082,6 +1084,7 @@ fn a_host_built_reply_the_run_cannot_hold_declines()
         &mut arena,
         &mut Provenance::new(),
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("the program focuses");
     let definitions = Definitions::new();
@@ -1193,6 +1196,7 @@ fn a_host_runs_a_program_of_its_own_inside_its_reply_2954()
         &mut arena,
         &mut Provenance::new(),
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("the program focuses");
     let mut nested = CommandArena::new();
@@ -1202,6 +1206,7 @@ fn a_host_runs_a_program_of_its_own_inside_its_reply_2954()
         &mut nested,
         &mut Provenance::new(),
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("the host's program focuses");
     for &tier in tiers() {

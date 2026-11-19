@@ -365,7 +365,7 @@ enum Step<'pattern>
 #[spec(ensures: |ref ret| match root.view() {
     | ProdView::Meta(var) => ret.as_ref().is_err_and(|error| matches!(*error, ReifyRefusal::Metavariable(ref found) if found == var)),
     | ProdView::Ctor { ctor, args } => ret.is_err() || ret.as_ref().is_ok_and(|&id|
-        arena.producer(id).is_some_and(|node| matches!(*node, ProducerNode::Constructor { ref tag, ref producers, ref consumers }
+        arena.producer(id).is_some_and(|node| matches!(*node, ProducerNode::Constructor { ref tag, ref producers, ref consumers, .. }
             if resolver.get(ctor) == Some(tag) && producers.len() == args.len() && consumers.is_empty()))),
 })]
 fn reify_producer(
@@ -397,9 +397,13 @@ fn reify_producer(
                     .checked_sub(usize::from(arity))
                     .ok_or(ReifyRefusal::ReificationInvariant)?;
                 let producers: Box<[ProducerId]> = minted.drain(start ..).collect();
+                // A pattern is no term that a checker typed.
+                let unknown = arena.unknown_type();
+                let types = core::iter::repeat_n(unknown, producers.len()).collect();
                 let id = arena.mint_producer(ProducerNode::Constructor {
                     tag,
                     producers,
+                    types,
                     consumers: Box::from([]),
                 })?;
                 minted.push(id);
@@ -439,10 +443,10 @@ fn reify_producer(
     | ConsView::Op { op, .. } => ret.as_ref().is_err_and(|error| matches!(*error, ReifyRefusal::OperationFrame(ref found) if found == op)),
     | ConsView::Top => ret.is_err() || ret.as_ref().is_ok_and(|&id| matches!(arena.consumer(id), Some(&ConsumerNode::Top))),
     | ConsView::Frame { ctor, .. } => ret.is_err() || ret.as_ref().is_ok_and(|&id| {
-        let Some(&ConsumerNode::MuTilde { body }) = arena.consumer(id) else { return false; };
+        let Some(&ConsumerNode::MuTilde { body, .. }) = arena.consumer(id) else { return false; };
         let Some(&crate::il::CommandNode::Cut { polarity, producer, .. }) = arena.command(body) else { return false; };
         let Some(node) = arena.producer(producer) else { return false; };
-        let ProducerNode::Constructor { ref tag, ref producers, ref consumers } = *node else { return false; };
+        let ProducerNode::Constructor { ref tag, ref producers, ref consumers, .. } = *node else { return false; };
         polarity == Polarity::Positive && resolver.get(ctor) == Some(tag) && producers.len() == 1 && consumers.is_empty()
             && producers.first().is_some_and(|&bound| matches!(arena.producer(bound),
                 Some(&ProducerNode::Variable { zone: Zone::Intuitionistic, index }) if index == DeBruijnIndex::from(0_u32)))
@@ -468,6 +472,8 @@ fn reify_consumer(
         }
     }
     let mut consumer = arena.mint_consumer(ConsumerNode::Top)?;
+    // A pattern is no term that a checker typed.
+    let unknown = arena.unknown_type();
     while let Some(tag) = frames.pop() {
         let bound = arena.mint_producer(ProducerNode::Variable {
             zone: Zone::Intuitionistic,
@@ -476,10 +482,11 @@ fn reify_consumer(
         let wrapped = arena.mint_producer(ProducerNode::Constructor {
             tag,
             producers: Box::from([bound]),
+            types: Box::from([unknown]),
             consumers: Box::from([]),
         })?;
         let body = arena.mint_cut(Polarity::Positive, wrapped, consumer)?;
-        consumer = arena.mint_consumer(ConsumerNode::MuTilde { body })?;
+        consumer = arena.mint_consumer(ConsumerNode::MuTilde { ty: unknown, body })?;
     }
     Ok(consumer)
 }

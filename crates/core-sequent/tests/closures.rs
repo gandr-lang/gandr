@@ -67,6 +67,7 @@ fn focused(
         arena,
         &mut provenance,
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .map_err(|refusal| TestCaseError::fail(alloc::format!("focusing refused: {refusal:?}")))
 }
