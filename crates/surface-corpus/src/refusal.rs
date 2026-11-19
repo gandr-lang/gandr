@@ -128,6 +128,7 @@ use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
 use gandr_surface_lowering::OperandCount;
 use gandr_surface_lowering::Repair;
+use gandr_surface_lowering::StagedFault;
 use gandr_surface_lowering::Unbuilt;
 use gandr_surface_lowering::description::MemberFault;
 use gandr_surface_lowering::model::ModelFault;
@@ -943,6 +944,9 @@ pub enum RefusalName
     /// table, or a holder of a role that the checker refuses, qualified by
     /// why.
     BuiltinMark(Tag),
+    /// A `thir` mark that gives its signature no staged value, qualified by
+    /// why.
+    StagedBody(Tag),
     /// A name an import binds and another binding of the source binds too.
     ImportShadows,
     /// A name an import answers with a declaration its source does not export.
@@ -1635,6 +1639,7 @@ impl RefusalName
             .chain(BOUNDARY_CLAUSES.map(|clause| Self::BoundaryUnrealised(clause.tag())))
             .chain(SIGNATURE_FAULTS.map(|fault| Self::SignatureMismatch(signature_tag(fault))))
             .chain(BUILTIN_TAGS.map(Self::BuiltinMark))
+            .chain(STAGED_TAGS.map(Self::StagedBody))
             .chain([
                 Self::UnprovenLaw,
                 Self::NoFiller(FillerAsk::Omitted),
@@ -1674,7 +1679,7 @@ impl RefusalName
         b"DuplicateSignature") | (Self::DuplicateDefinition, b"DuplicateDefinition") |
         (Self::DuplicateImportAlias, b"DuplicateImportAlias") | (Self::ImportUnresolved,
         b"ImportUnresolved") | (Self::ImportCycle, b"ImportCycle") | (Self::UnlockedDependency,
-        b"UnlockedDependency") | (Self::SignatureMismatch(_), b"SignatureMismatch") | (Self::BuiltinMark(_), b"BuiltinMark") | (Self::ImportShadows,
+        b"UnlockedDependency") | (Self::SignatureMismatch(_), b"SignatureMismatch") | (Self::BuiltinMark(_), b"BuiltinMark") | (Self::StagedBody(_), b"StagedBody") | (Self::ImportShadows,
         b"ImportShadows") | (Self::UnexportedName, b"UnexportedName") | (Self::ShadowedBuiltin,
         b"ShadowedBuiltin") | (Self::OutOfFragment(_), b"OutOfFragment") |
         (Self::BareFeedback, b"BareFeedback") |
@@ -1901,7 +1906,7 @@ impl RefusalName
         | (Self::DialogueInverted, b"DialogueInverted")
         | (Self::ForwardUnsupported, b"ForwardUnsupported")
         | (Self::Boundary, b"Boundary")
-    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::SignatureMismatch(_) | Self::BuiltinMark(_) | Self::RetiredSpelling(_) | Self::UnprovenLaw | Self::NoFiller(FillerAsk::Omitted) | Self::GenericUncovered(GenericCoverage::Dependent) | Self::Immobile(CrossingRead::Capture | CrossingRead::Homed) | Self::NotOpen(CrossingRead::Capture | CrossingRead::Homed))
+    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::SignatureMismatch(_) | Self::BuiltinMark(_) | Self::StagedBody(_) | Self::RetiredSpelling(_) | Self::UnprovenLaw | Self::NoFiller(FillerAsk::Omitted) | Self::GenericUncovered(GenericCoverage::Dependent) | Self::Immobile(CrossingRead::Capture | CrossingRead::Homed) | Self::NotOpen(CrossingRead::Capture | CrossingRead::Homed))
         == ret.qualifier.is_some()
 },
     )]
@@ -1959,6 +1964,7 @@ impl RefusalName
             Self::UnlockedDependency => "UnlockedDependency",
             Self::SignatureMismatch(_) => "SignatureMismatch",
             Self::BuiltinMark(_) => "BuiltinMark",
+            Self::StagedBody(_) => "StagedBody",
             Self::RetiredSpelling(_) => "RetiredSpelling",
             Self::ImportShadows => "ImportShadows",
             Self::UnexportedName => "UnexportedName",
@@ -2175,7 +2181,8 @@ impl RefusalName
         | Self::UndescribedMember(fault)
         | Self::BoundaryUnrealised(fault)
         | Self::SignatureMismatch(fault)
-        | Self::BuiltinMark(fault) = self
+        | Self::BuiltinMark(fault)
+        | Self::StagedBody(fault) = self
         {
             Some(Qualifier::Named(fault))
         }
@@ -2277,6 +2284,7 @@ impl RefusalName
                     tagged(&SIGNATURE_FAULTS.map(signature_tag)).map(Self::SignatureMismatch)
                 },
                 "BuiltinMark" => tagged(&BUILTIN_TAGS).map(Self::BuiltinMark),
+                "StagedBody" => tagged(&STAGED_TAGS).map(Self::StagedBody),
                 "RetiredSpelling" => RetiredForm::ALL
                     .into_iter()
                     .find(|form| form.surface().0 == rest)
@@ -2397,6 +2405,18 @@ const BUILTIN_TAGS: [Tag; 8_usize] = [
     builtin_tag(BuiltinFault::TypeDiffers),
     MISPLACED,
     NOT_CANONICAL,
+];
+
+/// Every tag of the family `StagedBody`: each fault of a `thir` mark.
+const STAGED_TAGS: [Tag; 8_usize] = [
+    Tag("Bodied"),
+    Tag("NoReader"),
+    Tag("Unanswered"),
+    Tag("Unread"),
+    Tag("Outside"),
+    Tag("NotExpr"),
+    Tag("Unmapped"),
+    Tag("ItemMark"),
 ];
 
 /// Every fault a member the description does not read carries.
@@ -2682,6 +2702,32 @@ const fn builtin_tag(fault: BuiltinFault) -> Tag
     })
 }
 
+/// The tag a `thir` mark's fault is named by: its variant.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the fault's variant name, one of [`STAGED_TAGS`].
+/// - panics: none.
+/// - executable: none — the tag is the variant's spelling, which a predicate
+///   would restate. The witness reads each minted name back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `StagedBody.Outside` is minted by its fault's tag.
+/// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
+const fn staged_tag(fault: StagedFault) -> Tag
+{
+    Tag(match fault {
+        StagedFault::Bodied => "Bodied",
+        StagedFault::NoReader => "NoReader",
+        StagedFault::Unanswered => "Unanswered",
+        StagedFault::Unread(_) => "Unread",
+        StagedFault::Outside(_) => "Outside",
+        StagedFault::NotExpr => "NotExpr",
+        StagedFault::Unmapped { .. } => "Unmapped",
+        StagedFault::ItemMark => "ItemMark",
+    })
+}
+
 /// The tag a description member's fault is named by: its variant.
 ///
 /// # Specification
@@ -2963,7 +3009,8 @@ impl<'source> RefusalOf<'source, Arena>
         RefusalName::UnreadCells) | (LoweringRefusal::UnstatedComponent { .. },
         RefusalName::UnstatedComponent(_)) | (LoweringRefusal::SignatureMismatch { .. },
         RefusalName::SignatureMismatch(_)) | (LoweringRefusal::BuiltinMark { .. },
-        RefusalName::BuiltinMark(_)) | (LoweringRefusal::UndescribedMember { .. },
+        RefusalName::BuiltinMark(_)) | (LoweringRefusal::StagedBody { .. },
+        RefusalName::StagedBody(_)) | (LoweringRefusal::UndescribedMember { .. },
         RefusalName::UndescribedMember(_)) | (LoweringRefusal::FamilyTelescope { .. },
         RefusalName::FamilyTelescope) | (LoweringRefusal::NonUniformResult { .. },
         RefusalName::NonUniformResult) | (LoweringRefusal::UninterfacedMember { .. },
@@ -3025,6 +3072,8 @@ impl<'source> RefusalOf<'source, Arena>
         ret == RefusalName::SignatureMismatch(signature_tag(fault))
     } else if let LoweringRefusal::BuiltinMark { fault, .. } = refusal {
         ret == RefusalName::BuiltinMark(builtin_tag(fault))
+    } else if let LoweringRefusal::StagedBody { fault, .. } = refusal {
+        ret == RefusalName::StagedBody(staged_tag(fault))
     } else if let LoweringRefusal::MalformedForm {
         fault: FormFault::Retired(form) | FormFault::Repaired(Repair::Retired(form)),
         ..
@@ -3103,6 +3152,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
             RefusalName::SignatureMismatch(signature_tag(fault))
         },
         LoweringRefusal::BuiltinMark { fault, .. } => RefusalName::BuiltinMark(builtin_tag(fault)),
+        LoweringRefusal::StagedBody { fault, .. } => RefusalName::StagedBody(staged_tag(fault)),
         LoweringRefusal::UndescribedMember { fault, .. } => {
             RefusalName::UndescribedMember(member_tag(fault))
         },
@@ -3759,6 +3809,7 @@ mod tests
         use super::Qualifier;
         use super::Refusal;
         use super::SIGNATURE_FAULTS;
+        use super::STAGED_TAGS;
         use super::STRAY;
         use super::boundary_tag;
         use super::crossed;
@@ -3819,6 +3870,7 @@ mod tests
                 SIGNATURE_FAULTS.map(|fault| RefusalName::SignatureMismatch(signature_tag(fault))),
             )
             .chain(BUILTIN_TAGS.map(RefusalName::BuiltinMark))
+            .chain(STAGED_TAGS.map(RefusalName::StagedBody))
             .chain(
                 crossed()
                     .into_iter()

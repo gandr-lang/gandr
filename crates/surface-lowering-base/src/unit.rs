@@ -62,6 +62,7 @@ use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::NodeKey;
 use quenchant_shape::shape::Maybe;
 
+use crate::error::StagedFault;
 use crate::resolve::SurfaceName;
 
 /// A source's position in its unit, which is the order the unit admits its
@@ -292,6 +293,133 @@ pub enum Unstaged
     Unread(Arc<str>),
     /// The record refuses the function: its cause, as the record states it.
     Refused(Arc<str>),
+}
+
+/// The place of a `thir` mark among the marks of its source, the first
+/// mark at zero.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MarkIndex(usize);
+
+impl From<usize> for MarkIndex
+{
+    /// The mark at `place`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(place: usize) -> Self
+    {
+        Self(place)
+    }
+}
+
+impl From<MarkIndex> for usize
+{
+    /// The place of `index`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: MarkIndex) -> Self
+    {
+        index.0
+    }
+}
+
+/// What a staged-body fault names, read from the marks of its source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StagedName<'marks>
+{
+    /// A node of THIR outside the fragment, by rustc's name of its kind.
+    Node(&'marks gandr_runtime_rust_record::NodeName),
+    /// The path of a callee: a call outside the request, or a call that no
+    /// text of the item mark states.
+    Callee(&'marks str),
+    /// A body past the most nodes that a staged body holds.
+    Large,
+    /// Why the caller read no staging.
+    Cause(&'marks Unstaged),
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a staged-body fault names nothing.
+    pub mod staged_name {
+        /// The reason no name is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The fault names no mark.
+            Unnamed,
+            /// The fault's mark stands past the marks of its source.
+            NoMark,
+            /// The mark's answer is not of the fault's kind.
+            Unmatched,
+            /// The fault's node stands past the body, or is no call.
+            NoNode,
+        }
+    }
+}
+
+/// What `fault` names, read from `marks`, the marks of its source.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for [`StagedFault::Unread`], the mark's cause; for
+///   [`StagedFault::Outside`], the node, the callee or the ceiling of the
+///   mark's staging; for [`StagedFault::Unmapped`], the callee of the call node
+///   at its place. Otherwise, or with no such mark or node, an absence with its
+///   reason.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each fault that names a mark gives its name, and an index
+///   past the marks gives its absence.
+/// - witness: `unit::tests::each_staged_fault_reads_its_name_from_its_mark`
+#[must_use]
+pub fn staged_name(
+    marks: &[Staged],
+    fault: StagedFault,
+) -> Maybe<StagedName<'_>, staged_name::Absent>
+{
+    use gandr_runtime_rust_record::Node;
+    use gandr_runtime_rust_record::Outside;
+    use gandr_runtime_rust_record::Staging;
+    let mark = match fault {
+        StagedFault::Unread(mark)
+        | StagedFault::Outside(mark)
+        | StagedFault::Unmapped { mark, .. } => mark,
+        StagedFault::Bodied
+        | StagedFault::NoReader
+        | StagedFault::Unanswered
+        | StagedFault::NotExpr
+        | StagedFault::ItemMark => return Maybe::Absent(staged_name::Absent::Unnamed),
+    };
+    let Some(staged) = marks.get(usize::from(mark))
+    else {
+        return Maybe::Absent(staged_name::Absent::NoMark);
+    };
+    match (fault, &staged.staging) {
+        (StagedFault::Unread(_), Err(unstaged)) => Maybe::Present(StagedName::Cause(unstaged)),
+        (StagedFault::Outside(_), Ok(Staging::Outside(Outside::Node(name)))) => {
+            Maybe::Present(StagedName::Node(name))
+        },
+        (StagedFault::Outside(_), Ok(Staging::Outside(Outside::Callee(path)))) => {
+            Maybe::Present(StagedName::Callee(path.as_ref()))
+        },
+        (StagedFault::Outside(_), Ok(Staging::Outside(Outside::Large))) => {
+            Maybe::Present(StagedName::Large)
+        },
+        (StagedFault::Unmapped { node, .. }, Ok(Staging::Staged(body))) => {
+            let place = usize::try_from(u32::from(node)).ok();
+            match place.and_then(|place| body.nodes.get(place)) {
+                Some(Node::Call { callee, .. }) => {
+                    Maybe::Present(StagedName::Callee(callee.as_ref()))
+                },
+                Some(_) | None => Maybe::Absent(staged_name::Absent::NoNode),
+            }
+        },
+        _ => Maybe::Absent(staged_name::Absent::Unmatched),
+    }
 }
 
 quenchant_shape::reason_enum! {

@@ -544,6 +544,45 @@ pub enum BuiltinFault
     Repeated,
 }
 
+/// Why a `thir` mark gives its signature no staged value.
+///
+/// A fault that names a node or a path holds the index of its mark, and the
+/// diagnostic reads the name from the mark's answer
+/// ([`crate::unit::staged_name`]).
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum StagedFault
+{
+    /// The signature has a body. The staged body is its value.
+    Bodied,
+    /// The process holds no reader of a Rust crate for the pinned toolchain.
+    NoReader,
+    /// The caller read no answer for the mark: its texts hold an escape.
+    Unanswered,
+    /// The reader read no record, or the record refuses the function. The
+    /// mark's answer states the cause.
+    Unread(crate::unit::MarkIndex),
+    /// The body holds a node outside the fragment, a call outside the
+    /// request, or more nodes than a body holds. The mark's answer names it.
+    Outside(crate::unit::MarkIndex),
+    /// The declared type is not `Expr` of `std.thir` at a data type.
+    NotExpr,
+    /// A staged call names a path that no text of the item type's mark
+    /// states.
+    Unmapped
+    {
+        /// The mark whose body holds the call.
+        mark: crate::unit::MarkIndex,
+        /// The call's place in the body.
+        node: gandr_runtime_rust_record::NodeIndex,
+    },
+    /// A text of the item type's mark is no path and constructor, names no
+    /// constructor of the type, or states a path or a constructor again.
+    ItemMark,
+}
+
 impl FormFault
 {
     /// The fault of a path-shaped type under `head` written over three
@@ -979,6 +1018,15 @@ pub enum LoweringRefusal<'source>
         span: ByteSpan,
         /// Why the mark binds no row.
         fault: BuiltinFault,
+    },
+
+    /// A `thir` mark that gives its signature no staged value.
+    StagedBody
+    {
+        /// The bytes the mark covers.
+        span: ByteSpan,
+        /// Why the mark gives no value.
+        fault: StagedFault,
     },
 
     /// A documentation link to a name the module does not declare.
@@ -2701,6 +2749,29 @@ impl fmt::Display for LoweringRefusal<'_>
                     "a row has one holder, and an earlier declaration holds it"
                 },
             }),
+            Self::StagedBody { fault, .. } => f.write_str(match fault {
+                StagedFault::Bodied => {
+                    "a staged signature has no body, and the staged THIR gives its value"
+                },
+                StagedFault::NoReader => {
+                    "no reader of a Rust crate is installed, so the mark stages nothing"
+                },
+                StagedFault::Unanswered => {
+                    "the mark's texts hold an escape, so the mark stages nothing"
+                },
+                StagedFault::Unread(_) => "the reader gives no body for the function",
+                StagedFault::Outside(_) => "the staged body is outside the fragment",
+                StagedFault::NotExpr => {
+                    "the type of a staged signature is `Expr` of `std.thir` at an item type"
+                },
+                StagedFault::Unmapped { .. } => {
+                    "a staged call names a path that the item mark does not state"
+                },
+                StagedFault::ItemMark => {
+                    "each text of an item mark is a Rust path and a constructor of the type, \
+                     each one time"
+                },
+            }),
         }
     }
 }
@@ -2840,6 +2911,7 @@ impl LoweringRefusal<'_>
             Self::UnresolvedName { span, .. }
             | Self::RetiredName { span, .. }
             | Self::BuiltinMark { span, .. }
+            | Self::StagedBody { span, .. }
             | Self::UnresolvedDocLink { span, .. }
             | Self::UnresolvedTypeHead { span, .. }
             | Self::DuplicateSignature { span, .. }

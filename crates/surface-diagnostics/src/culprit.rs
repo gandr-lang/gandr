@@ -83,6 +83,7 @@ use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
 use gandr_surface_lowering::Repair;
+use gandr_surface_lowering::StagedFault;
 use gandr_surface_lowering::TelescopeFault;
 use gandr_surface_lowering::Unexported;
 use gandr_surface_syntax::ClosingClass;
@@ -167,6 +168,16 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             BuiltinFault::OutsideToolchain => "a builtin mark outside the toolchain",
             BuiltinFault::TypeDiffers => "a type that is not the row's",
             BuiltinFault::Repeated => "a row held again",
+        },
+        LoweringRefusal::StagedBody { fault, .. } => match fault {
+            StagedFault::Bodied => "a staged signature with a body",
+            StagedFault::NoReader => "a mark that no reader stages",
+            StagedFault::Unanswered => "a mark with an escape",
+            StagedFault::Unread(_) => "a function that the reader does not read",
+            StagedFault::Outside(_) => "a body outside the fragment",
+            StagedFault::NotExpr => "a type that is no `Expr`",
+            StagedFault::Unmapped { .. } => "a call that the item mark does not map",
+            StagedFault::ItemMark => "an item mark of the wrong shape",
         },
         LoweringRefusal::UnresolvedDocLink { .. } => "links to no declared name",
         LoweringRefusal::UnresolvedTypeHead { .. } => "no type head of this name and arity",
@@ -673,6 +684,7 @@ mod tests
     use gandr_surface_lowering::PayloadForm;
     use gandr_surface_lowering::RegisteredAttribute;
     use gandr_surface_lowering::Repair;
+    use gandr_surface_lowering::StagedFault;
     use gandr_surface_lowering::StrayKeyword;
     use gandr_surface_lowering::SurfaceName;
     use gandr_surface_lowering::TelescopeFault;
@@ -749,6 +761,16 @@ mod tests
                 BuiltinFault::OutsideToolchain => "a builtin mark outside the toolchain",
                 BuiltinFault::TypeDiffers => "a type that is not the row's",
                 BuiltinFault::Repeated => "a row held again",
+            },
+            LoweringRefusal::StagedBody { fault, .. } => match fault {
+                StagedFault::Bodied => "a staged signature with a body",
+                StagedFault::NoReader => "a mark that no reader stages",
+                StagedFault::Unanswered => "a mark with an escape",
+                StagedFault::Unread(_) => "a function that the reader does not read",
+                StagedFault::Outside(_) => "a body outside the fragment",
+                StagedFault::NotExpr => "a type that is no `Expr`",
+                StagedFault::Unmapped { .. } => "a call that the item mark does not map",
+                StagedFault::ItemMark => "an item mark of the wrong shape",
             },
             LoweringRefusal::UnresolvedDocLink { .. } => "links to no declared name",
             LoweringRefusal::UnresolvedTypeHead { .. } => "no type head of this name and arity",
