@@ -99,7 +99,7 @@ got=$(setup "$scratch/same" && gate && reads)
 got=$(
   setup "$scratch/pushed"
   commit file two pushed > /dev/null
-  "$verdict" write "$(git rev-parse 'HEAD^{tree}')" check:clippy-plain-only 2> /dev/null
+  "$verdict" write "$(git rev-parse 'HEAD^{tree}')" check:clippy-arch 2> /dev/null
   PRE_COMMIT_TO_REF=$(git rev-parse HEAD) PRE_COMMIT_REMOTE_BRANCH=refs/heads/main "$push" > /dev/null 2>&1
   git push --quiet --no-verify origin main
   reads
