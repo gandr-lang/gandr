@@ -128,18 +128,18 @@ impl TypeAtom
         ("qubit", Self::Qubit),
     ];
 
-    /// The word that keys the atom's row.
+    /// The key of the atom's row.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn word(self) -> &'static str
+    pub fn key(self) -> Key<'static>
     {
-        Self::ALL
+        Key(Self::ALL
             .iter()
             .find_map(|&(word, atom)| (atom == self).then_some(word))
-            .unwrap_or("")
+            .unwrap_or(""))
     }
 }
 
@@ -202,7 +202,7 @@ impl Row
     {
         Key(match self {
             Self::Native(primitive) => primitive.name().into(),
-            Self::Atom(atom) => atom.word(),
+            Self::Atom(atom) => atom.key().0,
             Self::Role(role) => role.word().0,
         })
     }

@@ -4270,7 +4270,9 @@ fn an_unread_module_body_is_refused_not_emptied()
 #[test]
 fn a_type_signature_with_no_body_is_refused_outside_its_place_8073()
 {
-    let source = "module M where { @[builtin(\"u8\")] type T : Type; }\ndef after = 1;";
+    let source = include_str!(
+        "modules/unformatted/a-type-signature-with-no-body-is-refused-outside-its-place-8073.gandr"
+    );
     let found = rows(&lower(source));
     assert!(
         matches!(

@@ -122,6 +122,16 @@ impl<'source> Context<'_, 'source>
     ///   [`gandr_core_term::builtin::row::Absent::Unkeyed`] when the slot holds
     ///   no `builtin` attribute with a text, or its key names no atom.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a member under the key of an atom reads that atom in
+    ///   each direction and no other atom.
+    /// - witness: `gandr-surface-lowering::lower::row::tests::a_type_signature_under_builtin_reads_its_atom_8073`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(atom) => gandr_core_term::builtin::Row::named(atom.key())
+            == Maybe::Present(gandr_core_term::builtin::Row::Atom(atom)),
+        Maybe::Absent(_) => true,
+    })]
     #[inline]
     pub fn builtin_atom(
         &self,
