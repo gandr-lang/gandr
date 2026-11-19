@@ -5670,11 +5670,11 @@ mod tests
         assert_eq!(
             refusal(SourceText::from("def z : (Integer, String) ;")),
             LoweringRefusal::MalformedForm {
-                span: at(16_usize, 17_usize),
+                span: at(8_usize, 9_usize),
                 form: FormName::from(NamedKind("parenthesized_type")),
                 fault: FormFault::Retired(gandr_surface_grammar::RetiredForm::ParenthesizedProduct),
             },
-            "a type list anywhere but before an arrow is the retired product, refused at its first comma"
+            "a type list anywhere but before an arrow is the retired product, refused at its opening tile"
         );
         assert_eq!(
             refusal(SourceText::from("def z : Integer -> Integer -> String ;")),
