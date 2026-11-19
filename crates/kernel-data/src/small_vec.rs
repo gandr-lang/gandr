@@ -708,6 +708,14 @@ where
     /// - ensures: the capacity passes the length.
     /// - panics: when the length passes `isize::MAX`; the allocator's refusal
     ///   goes to its error handler.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — pushes at `N` of 0, 1, 4 and 8 grow past each
+    ///   capacity and read back in order, and the model test pushes before each
+    ///   check.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    /// - witness: `tests::small_vec::a_vector_holds_its_items_in_place_up_to_n_and_in_one_block_past_it`
+    #[spec(ensures: self.capacity() > self.count())]
     #[cold]
     #[inline(never)]
     fn grow_one(&mut self)
