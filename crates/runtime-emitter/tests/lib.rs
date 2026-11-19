@@ -27,6 +27,8 @@ mod forms;
 #[cfg(test)]
 mod image;
 #[cfg(test)]
+mod llc;
+#[cfg(test)]
 mod seam;
 #[cfg(test)]
 mod sessions;
