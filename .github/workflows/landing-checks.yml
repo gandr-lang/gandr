@@ -1819,10 +1819,10 @@ jobs:
         id: policy-rest
         if: ${{ github.event_name == 'merge_group' && env.GATE_SCOPE != '' && env.GATE_SCOPE != '--workspace' && steps.verdict.outputs.held != 'true' }}
         run: env -u GATE_SCOPE mise run check:dylint
-      # The reader of a Rust crate links rustc's own libraries, so it is no
-      # member of the workspace, and the lint above never reaches it. This
-      # job holds the pinned toolchain, so the reader builds and its tests
-      # read real crates here.
+      # The reader links the libraries of rustc. So it is no member of the
+      # workspace, and the lint above does not reach it. This job holds the
+      # pinned toolchain. So the reader builds here, and its tests read real
+      # crates.
       - name: check the reader of a Rust crate
         if: ${{ steps.verdict.outputs.held != 'true' }}
         run: mise run check:rust-record

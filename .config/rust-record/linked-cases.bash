@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# The cases of `linked.bash`: a tree whose only source on rustc's libraries
-# is the reader passes, and a tree with one more such source is refused by
-# that source's path.
+# The cases of `linked.bash`. A tree passes when the reader is its only
+# source on the libraries of rustc. A tree with one more such source is
+# refused, and the refusal names the path of that source.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)

@@ -50,6 +50,7 @@ pub const ENTRY: &str = "GANDR_RUST_RECORD_ENTRY";
 const KEY_DOMAIN: &[u8] = b"gandr-rust-record-key\x01";
 
 /// A directory that holds one entry for each key.
+#[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Cache
 {
@@ -58,6 +59,7 @@ pub struct Cache
 }
 
 /// The reader: a program on rustc's own libraries that writes an entry.
+#[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Program(pub PathBuf);
 
@@ -339,6 +341,7 @@ pub fn key(
 ///   no scratch directory.
 /// - witness: `tests::a_failing_reader_is_failed_and_caches_nothing`
 /// - witness: `tests::a_second_request_starts_no_process`
+#[repr(transparent)]
 struct Scratch(PathBuf);
 
 impl Scratch

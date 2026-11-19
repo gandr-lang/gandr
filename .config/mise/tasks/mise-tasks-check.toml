@@ -769,15 +769,20 @@ policy {{ env.GATE_SCOPE | default(value='--workspace') }} $features || status=$
 .config/policy/library-cases.bash
 '''
 
-# The reader of a Rust crate links rustc's own libraries, so it is no member
-# of the workspace, and this task alone builds it. It adds the `rustc-dev`
-# component, as `check:dylint` does. It lints the reader with Clippy's groups
-# and runs its tests on the host's toolchain: the record agrees with the
-# `define` line that rustc emits for each function and with `std.layout`, each
-# refusal names its cause, and a second request starts no process. The
-# reader's own Cargo configuration builds it under `target/rust-reader`. Last,
-# `.config/rust-record/linked.bash` refuses `rustc_private` in each other
-# crate: no crate but the reader links a library of rustc.
+# The reader links the libraries of rustc. So it is no member of the
+# workspace, and only this task builds it. The task adds the `rustc-dev`
+# component, as `check:dylint` does. The reader's own Cargo configuration puts
+# its build in the root's target directory.
+#
+# The task lints the reader with Clippy's groups and runs its tests on the
+# toolchain of the host. Each record agrees with the `define` line that rustc
+# emits and with `std.layout`. Each refusal names its cause. A second request
+# starts no process.
+#
+# Last, the task refuses `rustc_private` in each other crate. So no other
+# crate links a library of rustc.
+#
+# - see: .config/rust-record/linked.bash
 ["check:rust-record"]
 description = "The reader of a Rust crate: its lints and its tests, and no other crate on rustc's libraries"
 run = '''

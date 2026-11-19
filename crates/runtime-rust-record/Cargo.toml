@@ -11,9 +11,9 @@ keywords = ["abi", "gandr", "interop", "rust"]
 categories = ["development-tools::ffi"]
 publish.workspace = true
 
-# The pinned anodized facade supplies the specification attributes, BLAKE3
-# keys each cache entry and digests each source that the reader read, and
-# the publish crate writes each entry whole.
+# The pinned anodized facade supplies the specification attributes. BLAKE3
+# keys each cache entry and digests each source that the reader read. The
+# publish crate writes each entry whole.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true

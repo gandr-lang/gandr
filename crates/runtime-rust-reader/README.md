@@ -37,7 +37,7 @@ The reader of a Rust crate: a driver on rustc's own libraries that writes the re
 
 ## Examples
 
-`runtime-rust-record`'s `Cache::read` runs the reader. The tests in [`tests/reader.rs`](tests/reader.rs) read three crates of [`tests/fixtures`](tests/fixtures) through it. They compare each record with the `define` line that rustc emits and with the goldens of `corpus/model/layouts/rust-default.gandr`.
+`runtime-rust-record`'s `Cache::read` runs the reader. Each test in [`tests/reader.rs`](tests/reader.rs) reads a crate of [`tests/fixtures`](tests/fixtures) through it. The tests compare each record with the `define` line that rustc emits and with the goldens of `corpus/model/layouts/rust-default.gandr`.
 
 ```sh
 mise run check:rust-record

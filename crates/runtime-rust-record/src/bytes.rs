@@ -337,6 +337,7 @@ struct Text<'text>(&'text str);
 struct Chunk<const WIDTH: usize>([u8; WIDTH]);
 
 /// The canonical bytes as the encoder appends them.
+#[repr(transparent)]
 struct Writer
 {
     /// The bytes so far.
