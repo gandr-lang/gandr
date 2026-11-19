@@ -146,6 +146,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     ///   written.
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_manifest_model_implicit_binds_no_fixed_sort_739`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the declared type and of its bindings, setup
+    /// - allocation: the sorts the slot fixes, durable by the slot
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |slot| slot.as_ref().is_none_or(|slot| !slot.theories.is_empty())))]
     #[inline]
     pub fn model_slot(

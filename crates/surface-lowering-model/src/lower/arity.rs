@@ -570,6 +570,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     ///   an update.
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_telescope_value_lowers_by_its_arity`
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_record_update_lowers_to_its_base_and_its_fields`
+    ///
+    /// # Cost
+    /// - allocation: the entries in written order, durable by the plan of the
+    ///   telescope
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| match *read {
         | Telescoped::Entries(ref entries) => entries.iter().all(|entry| entry.key == Key::Positional),
         | Telescoped::Update(_, ref written) => !written.is_empty(),
@@ -638,6 +642,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// - hypothesis: L3 — an update of one field and of two, and a field with
     ///   no dot.
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_record_update_lowers_to_its_base_and_its_fields`
+    ///
+    /// # Cost
+    /// - allocation: the fields the update writes, durable by the plan of the
+    ///   update
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |written| !written.is_empty() && written.iter().all(|entry| matches!(entry.key, Key::Label(..)))))]
     fn update_fields(
         &self,
@@ -1693,6 +1701,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_sum_pattern_reads_a_sum_stated_as_a_chain_791`
     /// - witness: `gandr-surface-lowering::lower::arity::tests::an_observation_reads_through_one_thunk_only`
     /// - witness: `gandr-surface-lowering::lower::arity::tests::an_observation_by_position_projects_its_entry_941`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of each form it reads, growth within the
+    ///   lowering's scratch
+    /// - allocation: the entries of the stated form, durable by the reading
+    ///   that asks for them
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownMold { .. })))]
     #[inline]
     pub fn stated_form(
@@ -1817,6 +1831,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     ///   observation of a stream writes, read for the next link of a chain.
     /// - witness: `gandr-surface-lowering::tests::description::a_codata_declaration_lowers_to_its_signature`
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_chain_of_observations_projects_each_link_1106`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of each form it reads, growth within the
+    ///   lowering's scratch
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| !matches!(*found, Maybe::Present(constant) if self.cx().collected.slots.get(usize::from(constant)).is_none())))]
     fn stated_family(
         &mut self,
@@ -2556,6 +2574,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     /// - witness: `gandr-surface-lowering::lower::arity::tests::an_observation_projects_its_entry`
     /// - witness: `gandr-surface-lowering::lower::arity::tests::an_observation_off_a_call_projects_the_run_result_1106`
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_chain_of_observations_projects_each_link_1106`
+    ///
+    /// # Cost
+    /// - allocation: the links of the selection chain, setup
+    /// - allocation: the pieces of each link, growth within the lowering's
+    ///   scratch
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|subject| match subject { Subject::Written(node, ..) => self.cx().tree.node(node).is_some(), Subject::Family(family) => self.cx().collected.slots.get(usize::from(family)).is_some() })))]
     fn observed_subject(
         &mut self,
@@ -2909,6 +2932,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     ///   patched type.
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_field_of_a_record_no_type_states_projects_its_label_1106`
     /// - witness: `gandr-surface-lowering::lower::patched::tests::a_selection_off_a_patched_name_projects_its_field_5579`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of each link of the chain, setup
+    /// - allocation: the label of the field, durable by the plan of the field
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Field(..))))]
     #[inline]
     pub fn field(
@@ -3323,6 +3350,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::named_later`].
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_nested_record_s_key_is_no_mention_of_an_outer_label_3010`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the form, growth within the lowering's
+    ///   scratch
+    /// - allocation: the entries of the form, durable by the reading that asks
+    ///   for them
     fn keyed_entries(
         &mut self,
         at: Placed,
@@ -3623,6 +3656,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_tuple_pattern_binds_each_output_of_an_operation_4855`
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_box_returns_a_group_under_a_row_4853`
     /// - witness: `gandr-surface-lowering::lower::arity::tests::an_operation_s_outputs_are_selected_and_bound_by_label_5147`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the call, growth within the lowering's
+    ///   scratch
+    /// - allocation: the entries of the outputs, durable by the reading that
+    ///   asks for them
     #[spec(ensures: |ret| !matches!(ret, Ok(Some(_))) || matches!(self.cx().form_at(bound), Ok(Some((_, Former::Call)))))]
     #[inline]
     pub fn called_outputs(
@@ -3766,6 +3805,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// - hypothesis: L3 — a call of a box signature and of a parameter at a box
     ///   each bind every output.
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_box_returns_a_group_under_a_row_4853`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the written output, setup
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |output| output.is_none_or(|node| self.cx().tree.node(node).is_some())))]
     fn written_output(
         &self,
@@ -3869,6 +3911,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// # Adequacy
     /// - hypothesis: L3 — a group under a row is the callee's outputs.
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_row_returns_a_group_of_outputs`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the returner, setup
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|returned| returned.node == at.node || self.cx().form_at(at).is_ok_and(|form| matches!(form, Some((_, Former::ReturnerType))))))]
     fn returned(
         &self,
@@ -4068,6 +4113,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
     /// - witness: `gandr-surface-lowering::lower::arity::tests::an_observation_off_a_call_projects_the_run_result_1106`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the target, setup
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |inner| inner.is_none_or(|inner| inner.span.start() >= target.span.start() && inner.span.end() <= target.span.end())))]
     #[inline]
     pub fn ungrouped_target(
@@ -4333,6 +4381,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::telescope_function`].
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_telescope_binds_each_entry_in_the_ones_after_it`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the domain, growth within the lowering's
+    ///   scratch
+    /// - allocation: the entries of the domain, durable by the box they
+    ///   describe
     fn domain_entries(
         &mut self,
         domain: Placed,
@@ -4388,6 +4442,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     /// # Adequacy
     /// - hypothesis: L3 — an implicit group before a list and before one type.
     /// - witness: `gandr-surface-lowering::lower::arity::tests::an_implicit_group_is_its_explicit_twin_4853`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the domain, growth within the lowering's
+    ///   scratch
+    /// - allocation: the entries of the implicit group, durable by the box they
+    ///   describe
     fn implicit_entries(
         &mut self,
         domain: Placed,
@@ -4604,6 +4664,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     ///   [`Self::linear_arrow`].
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_dependent_arrow_is_the_telescope_the_alias_abbreviates`
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_linear_arrow_binds_its_domain_once_5853`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the domain, growth within the lowering's
+    ///   scratch
+    /// - allocation: the entries of the domain, durable by the arrow they
+    ///   describe
     fn arrow_binder(
         &mut self,
         frame: Frame,
