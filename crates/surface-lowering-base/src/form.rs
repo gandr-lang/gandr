@@ -4620,10 +4620,7 @@ pub fn boxed_extra(
             Maybe::Present(start) => start,
             Maybe::Absent(_) => extra.start(),
         };
-        let span = match ByteSpan::new(start, extra.end()) {
-            Ok(span) => span,
-            Err(_) => extra,
-        };
+        let span = ByteSpan::new(start, extra.end()).unwrap_or(extra);
         RetiredBox(Maybe::Present(span))
     }
     else {
