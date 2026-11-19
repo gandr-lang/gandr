@@ -1,0 +1,12 @@
+/// `DependentBind`: a bind whose body synthesises a type naming the
+/// value it binds.
+def one() -> Integer =
+  pure 1
+
+@[refuses("DependentBind")]
+def bound() -> Integer =
+  let p = {
+    let n = one ();
+    pure Path.here n
+  };
+  pure 1

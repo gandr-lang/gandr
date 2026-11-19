@@ -1,0 +1,8 @@
+module M where {
+  def untyped(self) -> Integer = pure 0;
+  def other(x : Integer) -> Integer = pure x;
+  def generic[a : Type](self : shared a) -> a = pure self;
+}
+def first() -> Integer = { var s = 1; s.untyped () };
+def second() -> Integer = { var s = 1; s.other () };
+def third() -> -F Integer = { var s = 1; s.generic () };

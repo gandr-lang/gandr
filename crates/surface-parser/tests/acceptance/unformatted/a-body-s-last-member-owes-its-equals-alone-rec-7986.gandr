@@ -1,0 +1,5 @@
+rec {
+  def rec f(x : Nat) -> d
+    match x where
+      | Zero => Zero
+}

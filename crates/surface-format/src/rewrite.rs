@@ -1,0 +1,4351 @@
+//! The rewrites between the explicit and the sugared spellings: a table of
+//! named rewrites, each moving one form between its two spellings, applied on
+//! the concrete syntax tree so every comment rides along.
+//!
+//! A form is respelled from its children: its operands, already respelled,
+//! keep their own leaves and comments; its own tiles are replaced by the
+//! other spelling's; its own comments are placed by the operand they
+//! followed. An operand whose binding is looser than its new position admits
+//! is parenthesised, and a parenthesised operand whose binding fits is
+//! unwrapped, as the presentation printer writes them (`gandr-surface-pretty`,
+//! § Two forms, one walk).
+
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
+use core::fmt;
+
+use anodized::spec;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::RuleName;
+use gandr_surface_grammar::Spelling as GrammarSpelling;
+use gandr_surface_grammar::UNRESTRICTED;
+use gandr_surface_lowering::Boxed;
+use gandr_surface_lowering::Kinded;
+use gandr_surface_lowering::Pieces;
+use gandr_surface_lowering::Placed;
+use gandr_surface_lowering::classifies_codes;
+use gandr_surface_lowering::writes_box;
+use gandr_surface_lowering::written_children;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeIndex;
+use gandr_surface_syntax::NodeLabel;
+use gandr_surface_syntax::SourceFragment;
+use gandr_surface_syntax::SyntaxTree;
+
+use crate::Form;
+use crate::composite::Composites;
+use crate::composite::Standing;
+use crate::leaf::Copied;
+use crate::leaf::Documentation;
+use crate::leaf::Leaf;
+use crate::leaf::Material;
+use crate::leaf::Offside;
+use crate::leaf::Origin;
+use crate::leaf::Owner;
+use crate::leaf::copied;
+use crate::merge::Joining;
+use crate::merge::Pairing;
+use crate::merge::Returning;
+use crate::merge::trimmed;
+use crate::reduct::Applied;
+use crate::reduct::Reduct;
+use crate::reduct::Reducts;
+use crate::reduct::Spaced;
+use crate::reduct::Token;
+use crate::space::Context as Spacing;
+use crate::tail::Exit;
+use crate::tail::Tails;
+use crate::thunk::Thunk;
+use crate::thunk::Thunks;
+
+#[cfg(test)]
+mod tests;
+
+/// Which way a rewrite moves a form.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Direction
+{
+    /// From the explicit spelling to the sugared one: [`Form::Sugared`].
+    Sugar,
+    /// From the sugared spelling to the explicit one: [`Form::Explicit`].
+    Desugar,
+}
+
+/// The pair of spellings a rewrite moves between.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RewriteName
+{
+    /// The eager product: `*{A, B}` and `A * B`.
+    Product,
+    /// The sum: `+{A, B}` and `A + B`.
+    Sum,
+    /// The lazy product: `&{C, D}` and `C & D`.
+    LazyProduct,
+    /// The value function: `+U (A -> -F B)` and `(A) -> B`.
+    ValueFunction,
+    /// The default grade of a thunk type: `+U[ω] B` and `+U B`, both forms
+    /// leaving it unwritten as the printer does.
+    DefaultGrade,
+    /// The path composite: `Path.walk (fun (y) { Path[.A = A](a, y) }) q p`
+    /// and `Path.step p q`, both forms writing the composite as the printer
+    /// does (#5206).
+    PathComposite,
+    /// The path inverse: `Path.walk (fun (y) { Path[.A = A](y, a) }) p
+    /// (Path.here a)` and `Path.back p`, both forms writing the inverse as
+    /// the printer does.
+    PathInverse,
+    /// A map's action on a path: `Path.walk (fun (y) { Path[.A = B](f(a),
+    /// f(y)) }) p (Path.here (f a))` and `Path.ap f p`, both forms writing
+    /// the action as the printer does.
+    PathAction,
+    /// A tail's exit: `return v` where a path through a body ends, over a
+    /// value, and `v`; only the sugared form moves it, leaving out the
+    /// keyword the lowering infers. Over a call or an operator, the checker
+    /// runs and returns it as it runs the bare tail, so it moves only beside
+    /// a checker that elaborates both.
+    TailReturn,
+    /// A definition's result: `-> -F B` and `-> B`, `B` a value type, which
+    /// the lowering reads with the returner inserted; only the sugared form
+    /// moves it, and never a returner with an effect row.
+    InsertedReturner,
+    /// The value-function alias at its shortest: `(A) -> B` and `A -> B`, a
+    /// binder nothing later reads left out; only the sugared form moves it.
+    ShortAlias,
+    /// A thunk the checker inserts: `thunk { e }` and `e`, where the checker
+    /// checks `e` against a thunk type; only the sugared form moves it, and
+    /// only beside a checker that elaborates both.
+    InsertedThunk,
+    /// A reduct the checker applies: `T.S(m)` and `m`, where a model of `T`
+    /// stands where a model of `S` is asked; the explicit form writes each
+    /// the checker applies and the sugared form leaves out each it would,
+    /// both only beside a checker that elaborates both.
+    InsertedReduct,
+    /// A forgetting map the checker applies: `forget[sort C = A](m) at
+    /// Model(T)` and `m`, where a model whose sorts are manifest stands where
+    /// a model of its theory is asked; the explicit form writes each the
+    /// checker applies and the sugared form leaves out each it would, both
+    /// only beside a checker that elaborates both.
+    InsertedForget,
+    /// A signature and its definition, merged: `def f : () => B ; def f =
+    /// thunk { c } ;` and `def f() -> -F B = c ;`; both forms move it.
+    FunctionForm,
+    /// A signature and the definition directly after it, joined: `def x : T
+    /// ; def x = e ;` and `def x : T = e ;`; the sugared form joins them and
+    /// the explicit form writes them apart.
+    JoinedDefinition,
+    /// A type application: `F(a, b)` and `F a b`, as a type reads a
+    /// juxtaposition (#5326); both forms write the juxtaposition, an argument
+    /// that is no atom in its parentheses.
+    TypeApplication,
+    /// A definition's body after `=`: `def f() -> B { c }` and `def f() -> B
+    /// = c ;`, a body of statements in a block after `=`; both forms move it,
+    /// as `=` is the one spelling of a body.
+    BodyAfterEquals,
+}
+
+impl fmt::Display for RewriteName
+{
+    /// The rewrite's name, as a caller selects it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Product => "product",
+            Self::Sum => "sum",
+            Self::LazyProduct => "lazy-product",
+            Self::ValueFunction => "value-function",
+            Self::DefaultGrade => "default-grade",
+            Self::PathComposite => "path-composite",
+            Self::PathInverse => "path-inverse",
+            Self::PathAction => "path-action",
+            Self::TailReturn => "tail-return",
+            Self::InsertedReturner => "inserted-returner",
+            Self::ShortAlias => "short-alias",
+            Self::InsertedThunk => "inserted-thunk",
+            Self::InsertedReduct => "inserted-reduct",
+            Self::InsertedForget => "inserted-forget",
+            Self::FunctionForm => "function-form",
+            Self::JoinedDefinition => "joined-definition",
+            Self::TypeApplication => "type-application",
+            Self::BodyAfterEquals => "body-after-equals",
+        })
+    }
+}
+
+/// The grammar rule a rewrite reads: the form it applies to.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct MoldName(pub &'static str);
+
+/// A spelling as the table shows it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Spelling(pub &'static str);
+
+/// Whether a rewrite runs under its form when the caller names none.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Enabled
+{
+    /// It runs.
+    On,
+    /// It runs only when named.
+    Off,
+}
+
+/// One rewrite of the table.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Rewrite
+{
+    /// The pair of spellings it moves between.
+    pub name: RewriteName,
+    /// Which way it moves them.
+    pub direction: Direction,
+    /// The form it applies to; the empty name for one that applies at an
+    /// operand of any form.
+    pub mold: MoldName,
+    /// The spelling it reads.
+    pub from: Spelling,
+    /// The spelling it writes.
+    pub to: Spelling,
+    /// Whether it runs under its form when the caller names none.
+    pub enabled: Enabled,
+}
+
+/// Every rewrite, by name, then direction.
+pub const REWRITES: [Rewrite; 42] = [
+    Rewrite {
+        name: RewriteName::Product,
+        direction: Direction::Sugar,
+        mold: MoldName("telescope_type"),
+        from: Spelling("*{A, B, …}"),
+        to: Spelling("A * B * …"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::Product,
+        direction: Direction::Desugar,
+        mold: MoldName("product_type"),
+        from: Spelling("A * B * …"),
+        to: Spelling("*{A, B, …}"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::Sum,
+        direction: Direction::Sugar,
+        mold: MoldName("labelled_sum_type"),
+        from: Spelling("+{A, B, …}"),
+        to: Spelling("A + B + …"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::Sum,
+        direction: Direction::Desugar,
+        mold: MoldName("sum_type"),
+        from: Spelling("A + B + …"),
+        to: Spelling("+{A, B, …}"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::LazyProduct,
+        direction: Direction::Sugar,
+        mold: MoldName("lazy_record_type"),
+        from: Spelling("&{C, D, …}"),
+        to: Spelling("C & D & …"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::LazyProduct,
+        direction: Direction::Desugar,
+        mold: MoldName("lazy_product_type"),
+        from: Spelling("C & D & …"),
+        to: Spelling("&{C, D, …}"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::ValueFunction,
+        direction: Direction::Sugar,
+        mold: MoldName("u_type"),
+        from: Spelling("+U (A -> B -> -F C)"),
+        to: Spelling("(A, B) -> C"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::ValueFunction,
+        direction: Direction::Desugar,
+        mold: MoldName("function_type"),
+        from: Spelling("(A, B) -> C"),
+        to: Spelling("+U (A -> B -> -F C)"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::DefaultGrade,
+        direction: Direction::Sugar,
+        mold: MoldName("u_type"),
+        from: Spelling("+U[ω] B"),
+        to: Spelling("+U B"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::DefaultGrade,
+        direction: Direction::Desugar,
+        mold: MoldName("u_type"),
+        from: Spelling("+U[ω] B"),
+        to: Spelling("+U B"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::PathComposite,
+        direction: Direction::Sugar,
+        mold: APPLICATION,
+        from: Spelling("Path.walk (fun (y) { type(Path[.A = A](a, y)) }) q p"),
+        to: Spelling("Path.step p q"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::PathComposite,
+        direction: Direction::Desugar,
+        mold: APPLICATION,
+        from: Spelling("Path.walk (fun (y) { type(Path[.A = A](a, y)) }) q p"),
+        to: Spelling("Path.step p q"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::PathInverse,
+        direction: Direction::Sugar,
+        mold: APPLICATION,
+        from: Spelling("Path.walk (fun (y) { type(Path[.A = A](y, a)) }) p (Path.here a)"),
+        to: Spelling("Path.back p"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::PathInverse,
+        direction: Direction::Desugar,
+        mold: APPLICATION,
+        from: Spelling("Path.walk (fun (y) { type(Path[.A = A](y, a)) }) p (Path.here a)"),
+        to: Spelling("Path.back p"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::PathAction,
+        direction: Direction::Sugar,
+        mold: APPLICATION,
+        from: Spelling(
+            "Path.walk (fun (y) { type(Path[.A = B](f(a), f(y))) }) p (Path.here (f a))",
+        ),
+        to: Spelling("Path.ap f p"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::PathAction,
+        direction: Direction::Desugar,
+        mold: APPLICATION,
+        from: Spelling(
+            "Path.walk (fun (y) { type(Path[.A = B](f(a), f(y))) }) p (Path.here (f a))",
+        ),
+        to: Spelling("Path.ap f p"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TailReturn,
+        direction: Direction::Sugar,
+        mold: MoldName("return_expression"),
+        from: Spelling("return v"),
+        to: Spelling("v"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::InsertedReturner,
+        direction: Direction::Sugar,
+        mold: MoldName("f_type"),
+        from: Spelling("-> -F B"),
+        to: Spelling("-> B"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::InsertedReturner,
+        direction: Direction::Sugar,
+        mold: MoldName("f_type.row"),
+        from: Spelling("-> -F [E] B"),
+        to: Spelling("-> [E] B"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::InsertedReturner,
+        direction: Direction::Sugar,
+        mold: MoldName("f_type.row.labelled"),
+        from: Spelling("-> -F [a : E] B"),
+        to: Spelling("-> [a : E] B"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::ShortAlias,
+        direction: Direction::Sugar,
+        mold: MoldName("function_type"),
+        from: Spelling("(x : A) -> B"),
+        to: Spelling("A -> B"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::InsertedThunk,
+        direction: Direction::Sugar,
+        mold: MoldName("thunk_expression"),
+        from: Spelling("thunk { e }"),
+        to: Spelling("e"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::InsertedReduct,
+        direction: Direction::Sugar,
+        mold: APPLICATION,
+        from: Spelling("T.S m"),
+        to: Spelling("m"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::InsertedReduct,
+        direction: Direction::Desugar,
+        mold: MoldName(""),
+        from: Spelling("m"),
+        to: Spelling("T.S m"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::InsertedForget,
+        direction: Direction::Sugar,
+        mold: MoldName("forget_model_expression"),
+        from: Spelling("forget[sort C = A](m) at Model(T)"),
+        to: Spelling("m"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::InsertedForget,
+        direction: Direction::Desugar,
+        mold: MoldName(""),
+        from: Spelling("m"),
+        to: Spelling("forget[sort C = A](m) at Model(T)"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::FunctionForm,
+        direction: Direction::Sugar,
+        mold: MoldName("def_value"),
+        from: Spelling("def f : () -> B ; def f = thunk { c } ;"),
+        to: Spelling("def f() -> -F B = c ;"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::FunctionForm,
+        direction: Direction::Desugar,
+        mold: MoldName("def_value"),
+        from: Spelling("def f : +U (-F B) ; def f = thunk { c } ;"),
+        to: Spelling("def f() -> -F B = c ;"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::JoinedDefinition,
+        direction: Direction::Sugar,
+        mold: MoldName("def_value"),
+        from: Spelling("def x : T ; def x = e ;"),
+        to: Spelling("def x : T = e ;"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::JoinedDefinition,
+        direction: Direction::Desugar,
+        mold: MoldName("def_value"),
+        from: Spelling("def x : T = e ;"),
+        to: Spelling("def x : T ; def x = e ;"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Sugar,
+        mold: MoldName("type_application"),
+        from: Spelling("F(a, b)"),
+        to: Spelling("F a b"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Desugar,
+        mold: MoldName("type_application"),
+        from: Spelling("F(a, b)"),
+        to: Spelling("F a b"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Sugar,
+        mold: MoldName("path_type"),
+        from: Spelling("Path(a, b)"),
+        to: Spelling("Path a b"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Desugar,
+        mold: MoldName("path_type"),
+        from: Spelling("Path(a, b)"),
+        to: Spelling("Path a b"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Sugar,
+        mold: MoldName("bridge_type"),
+        from: Spelling("Bridge(a, b)"),
+        to: Spelling("Bridge a b"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Desugar,
+        mold: MoldName("bridge_type"),
+        from: Spelling("Bridge(a, b)"),
+        to: Spelling("Bridge a b"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::BodyAfterEquals,
+        direction: Direction::Sugar,
+        mold: MoldName("def_value"),
+        from: Spelling("def f() -> B { c }"),
+        to: Spelling("def f() -> B = c ;"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::BodyAfterEquals,
+        direction: Direction::Sugar,
+        mold: MoldName("module_definition_member"),
+        from: Spelling("def f() -> B { c }"),
+        to: Spelling("def f() -> B = c ;"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::BodyAfterEquals,
+        direction: Direction::Sugar,
+        mold: MoldName("attributed_module_member"),
+        from: Spelling("def f() -> B { c }"),
+        to: Spelling("def f() -> B = c ;"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::BodyAfterEquals,
+        direction: Direction::Desugar,
+        mold: MoldName("def_value"),
+        from: Spelling("def f() -> B { c }"),
+        to: Spelling("def f() -> B = c ;"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::BodyAfterEquals,
+        direction: Direction::Desugar,
+        mold: MoldName("module_definition_member"),
+        from: Spelling("def f() -> B { c }"),
+        to: Spelling("def f() -> B = c ;"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::BodyAfterEquals,
+        direction: Direction::Desugar,
+        mold: MoldName("attributed_module_member"),
+        from: Spelling("def f() -> B { c }"),
+        to: Spelling("def f() -> B = c ;"),
+        enabled: Enabled::On,
+    },
+];
+
+/// Which rewrites a form runs.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Selection
+{
+    /// Every enabled rewrite of the form's direction.
+    #[default]
+    Every,
+    /// The rewrites of the form's direction with these names, enabled or not.
+    Only(&'static [RewriteName]),
+}
+
+/// The rewrites one formatting runs: a direction and a selection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Chosen
+{
+    /// The direction the form names.
+    direction: Direction,
+    /// Which of that direction's rewrites run.
+    selection: Selection,
+}
+
+impl Chosen
+{
+    /// The rewrites `form` selects through `selection`; none for
+    /// [`Form::Source`].
+    ///
+    /// # Specification
+    /// trivial.
+    pub const fn of(
+        form: Form,
+        selection: Selection,
+    ) -> Option<Self>
+    {
+        match form {
+            Form::Source => None,
+            Form::Sugared => Some(Self {
+                direction: Direction::Sugar,
+                selection,
+            }),
+            Form::Explicit => Some(Self {
+                direction: Direction::Desugar,
+                selection,
+            }),
+        }
+    }
+
+    /// The rewrites chosen for the form whose rule is `rule`, in the table's
+    /// order: the form takes the first that reads its shape.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rewrites(
+        self,
+        rule: MoldName,
+    ) -> impl Iterator<Item = RewriteName>
+    {
+        REWRITES
+            .iter()
+            .filter(move |rewrite| {
+                rewrite.direction == self.direction
+                    && rewrite.mold == rule
+                    && match self.selection {
+                        Selection::Every => rewrite.enabled == Enabled::On,
+                        Selection::Only(names) => names.contains(&rewrite.name),
+                    }
+            })
+            .map(|rewrite| rewrite.name)
+    }
+
+    /// How a signature and the definition after it are laid out:
+    /// [`Pairing::Merged`] when they are merged into one function form.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn pairing(self) -> Pairing
+    {
+        self.pairs(RewriteName::FunctionForm)
+    }
+
+    /// What the chosen rewrites do with a signature and the definition
+    /// directly after it, when they are no function form, and with a joined
+    /// definition: [`Joining::Join`] the pair under the sugared form,
+    /// [`Joining::Split`] the joined definition under the explicit one.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn joining(self) -> Joining
+    {
+        match (self.pairs(RewriteName::JoinedDefinition), self.direction) {
+            (Pairing::Apart, Direction::Sugar | Direction::Desugar) => Joining::Keep,
+            (Pairing::Merged, Direction::Sugar) => Joining::Join,
+            (Pairing::Merged, Direction::Desugar) => Joining::Split,
+        }
+    }
+
+    /// How a function form the merge writes spells its result:
+    /// [`Returning::Bare`] where the sugared form leaves the returner the
+    /// lowering inserts unwritten.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn returning(self) -> Returning
+    {
+        if self
+            .rewrites(MoldName("f_type"))
+            .any(|chosen| chosen == RewriteName::InsertedReturner)
+        {
+            Returning::Bare
+        }
+        else {
+            Returning::Returner
+        }
+    }
+
+    /// [`Pairing::Merged`] when the rewrite `name` runs on a definition.
+    ///
+    /// # Specification
+    /// trivial.
+    fn pairs(
+        self,
+        name: RewriteName,
+    ) -> Pairing
+    {
+        if self
+            .rewrites(MoldName("def_value"))
+            .any(|chosen| chosen == name)
+        {
+            Pairing::Merged
+        }
+        else {
+            Pairing::Apart
+        }
+    }
+}
+
+/// What respelling a top-level form did.
+#[derive(Debug)]
+pub enum Respelled<'source>
+{
+    /// No rewrite applied; the form keeps its leaves.
+    Kept,
+    /// The form's leaves, rewritten.
+    Changed(Vec<Leaf<'source>>),
+}
+
+/// How tightly a form binds, tightest first: the bands of the grammar's
+/// precedence the printer parenthesises by.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Band
+{
+    /// A name, a braced or parenthesised form, a type applied in brackets.
+    Atom,
+    /// An application by juxtaposition, `f a b`, each argument an atom.
+    Application,
+    /// A bridge: `+U C`, `-F A`.
+    Bridge,
+    /// A product `A * B`.
+    Product,
+    /// A sum `A + B`.
+    Sum,
+    /// A lazy product `C & D`.
+    Lazy,
+    /// An arrow, and anything looser.
+    Loose,
+}
+
+impl Band
+{
+    /// The loosest band an operand at `position` among the operands of a
+    /// form of the rule `rule` admits unparenthesised.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admitted(
+        rule: MoldName,
+        position: Position,
+    ) -> Self
+    {
+        match (rule.0, position) {
+            // A manifest sort's carrier binds no looser than a sum wherever
+            // the sort is fixed, as the printer writes it (#2246, #3715).
+            (_, Position::Carrier) | ("lazy_product_type", _) => Self::Sum,
+            // The type grammar reads `-F Maybe A` as `-F (Maybe A)`, and
+            // `+U Maybe A` as a misplaced tile.
+            (
+                "f_type"
+                | "f_type.row"
+                | "f_type.result"
+                | "f_type.row.labelled"
+                | "f_type.result.labelled",
+                _,
+            )
+            | ("application_expression" | "type_application.juxtaposed", Position::First) => {
+                Self::Application
+            },
+            ("u_type" | "at_type", _)
+            | ("send_session_type" | "receive_session_type", Position::First)
+            | ("application_expression" | "type_application.juxtaposed", Position::Later) => {
+                Self::Atom
+            },
+            ("product_type", _) => Self::Bridge,
+            ("sum_type", _) => Self::Product,
+            ("function_type", Position::First) => Self::Lazy,
+            _ => Self::Loose,
+        }
+    }
+
+    /// The band a form of the rule `rule` binds at.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(rule: MoldName) -> Self
+    {
+        match rule.0 {
+            "u_type"
+            | "f_type"
+            | "f_type.row"
+            | "f_type.result"
+            | "f_type.row.labelled"
+            | "f_type.result.labelled"
+            | "at_type" => Self::Bridge,
+            "application_expression" | "type_application.juxtaposed" => Self::Application,
+            "product_type" => Self::Product,
+            "sum_type" => Self::Sum,
+            "lazy_product_type" => Self::Lazy,
+            "function_type"
+            | "union_type"
+            | "equivalence_type"
+            | "isomorphism_type"
+            | "universe_flow_type"
+            | "manifest_type"
+            | "manifest_sort"
+            | "send_session_type"
+            | "receive_session_type"
+            | "mu_session_type"
+            // A lambda binds loose, as the printer binds it, so a parenthesis
+            // around one as a first argument leads its juxtaposition (#5750).
+            | "lambda_expression" => Self::Loose,
+            _ => Self::Atom,
+        }
+    }
+
+    /// The band a form binds at whose rule, named `name` in the grammar, this
+    /// module reads by no name of its own. An expression binds as an atom
+    /// only when its own tiles close it or it is a postfix form, `f(x)` and
+    /// `r.x`. Every other expression, an operator or a keyword form such as
+    /// `x ∷ w` or `pure x`, binds loose, so an endpoint the path rewrite
+    /// juxtaposes keeps its parentheses.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unread(name: RuleName) -> Self
+    {
+        let full = name.0;
+        let base = full.split('.').next().unwrap_or(full);
+        if base.ends_with("_expression") && !EXPRESSION_ATOMS.contains(&base) {
+            Self::Loose
+        }
+        else {
+            Self::Atom
+        }
+    }
+}
+
+/// The expression rules whose forms bind as atoms: the tiles of each close
+/// the form, or the form is a postfix call, index, selection or
+/// instantiation.
+const EXPRESSION_ATOMS: [&str; 13] = [
+    "parenthesized_expression",
+    "record_expression",
+    "labelled_sum_expression",
+    "list_expression",
+    "tuple_expression",
+    "lazy_record_expression",
+    "telescope_expression",
+    "call_expression",
+    "index_expression",
+    "projection_expression",
+    "record_selection_expression",
+    "instantiation_expression",
+    "type_quote_expression",
+];
+
+/// An operand of a form: a tile standing alone, or a nested form.
+#[derive(Clone, Copy, Debug)]
+enum Child<'source>
+{
+    /// A tile of another rule, or a form copied as written.
+    Leaf(Leaf<'source>),
+    /// A nested form.
+    Node(NodeIndex),
+}
+
+/// What one child of a form is, among its parts.
+#[derive(Clone, Copy, Debug)]
+enum Role<'source>
+{
+    /// One of the form's own tiles.
+    Own(SourceFragment<'source>),
+    /// An operand.
+    Operand(Child<'source>),
+    /// A comment the form owns.
+    Comment,
+}
+
+/// One child of a form beside the layout the source wrote before it.
+#[derive(Clone, Debug)]
+struct Part<'source>
+{
+    /// The whitespace before it, within the form.
+    before: Vec<Leaf<'source>>,
+    /// What it is.
+    role: Role<'source>,
+    /// Its leaves as respelled: a tile's or a comment's one leaf, or an
+    /// operand's.
+    leaves: Vec<Leaf<'source>>,
+}
+
+/// Whether a form owns a comment among its own children.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Commented
+{
+    /// It owns none.
+    No,
+    /// It owns one.
+    Yes,
+}
+
+/// Whether a form is open to rewrites: outside every declaration the meaning
+/// check withdrew them from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Open
+{
+    /// Rewrites may move it.
+    Yes,
+    /// It keeps its spelling.
+    No,
+}
+
+/// What a respelled form is, as a form around it reads it.
+#[derive(Clone, Debug)]
+enum Shape<'source>
+{
+    /// Anything else.
+    Other,
+    /// A parenthesised form: its entries, and whether any is a binder.
+    Parenthesized
+    {
+        /// The entries, in order.
+        entries: Vec<Child<'source>>,
+        /// Whether an entry binds a name, `x : A`.
+        binder: Binder,
+        /// The entries read as a list of domains, each with the name it
+        /// binds; empty when the list is not one.
+        domains: Vec<Domain<'source>>,
+    },
+    /// An arrow `A -> C`.
+    Arrow
+    {
+        /// The domain.
+        domain: Child<'source>,
+        /// The codomain.
+        codomain: Child<'source>,
+    },
+    /// A pure returner `-F A`.
+    Returner
+    {
+        /// The value type it returns.
+        result: Child<'source>,
+    },
+}
+
+/// Whether a parenthesised list binds a name.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Binder
+{
+    /// No entry does.
+    None,
+    /// An entry does.
+    Some,
+}
+
+/// One entry of a parenthesised list of domains, `A` or `x : A`.
+#[derive(Clone, Copy, Debug)]
+struct Domain<'source>
+{
+    /// The name the entry binds, `x` in `x : A`.
+    name: Option<Child<'source>>,
+    /// The entry's type, `A`.
+    ty: Child<'source>,
+}
+
+/// One form, respelled.
+#[derive(Clone, Debug)]
+struct Spelled<'source>
+{
+    /// Its leaves.
+    leaves: Vec<Leaf<'source>>,
+    /// How tightly it binds.
+    band: Band,
+    /// What it is.
+    shape: Shape<'source>,
+    /// Whether it owns a comment.
+    commented: Commented,
+    /// Whether a rewrite respelled it.
+    rewritten: Changed,
+}
+
+/// An operand as a new position reads it: its leaves and band, and, for a
+/// parenthesised operand of one entry and no comment, the entry's.
+#[derive(Clone, Debug)]
+struct Operand<'source>
+{
+    /// Its leaves.
+    leaves: Vec<Leaf<'source>>,
+    /// How tightly it binds.
+    band: Band,
+    /// The entry inside its parentheses, when they can go.
+    inner: Option<(Vec<Leaf<'source>>, Band)>,
+}
+
+/// Whether an argument of a juxtaposition takes parentheses.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Enclosed
+{
+    /// It is written bare.
+    No,
+    /// It is written in parentheses.
+    Yes,
+}
+
+/// Whether an argument that binds at `band` takes parentheses as an argument
+/// of a juxtaposition, `inner` the band of the entry inside the parentheses
+/// it keeps: it binds looser than an atom, or it keeps parentheses around an
+/// entry that binds looser than an atom.
+///
+/// # Specification
+/// trivial.
+fn enclosure(
+    band: Band,
+    inner: Option<Band>,
+) -> Enclosed
+{
+    if inner.is_none_or(|inner| inner > Band::Atom) && (band > Band::Atom || inner.is_some()) {
+        Enclosed::Yes
+    }
+    else {
+        Enclosed::No
+    }
+}
+
+/// The band of a juxtaposition whose head binds at `head` and whose first
+/// argument is `first`: a bridge when the head is a bridge or the first
+/// argument takes parentheses after an atom head, as the printer's `led`
+/// rule binds a former there, so that `-F` encloses it (`-F Var (Extend a
+/// b) c` reads as a call of `Var`); an application otherwise.
+///
+/// # Specification
+/// trivial.
+fn juxtaposition(
+    head: Band,
+    first: Enclosed,
+) -> Band
+{
+    if head == Band::Bridge || (head <= Band::Atom && first == Enclosed::Yes) {
+        Band::Bridge
+    }
+    else {
+        Band::Application
+    }
+}
+
+impl Operand<'_>
+{
+    /// Whether the operand takes parentheses as an argument of a
+    /// juxtaposition, as [`enclosure`] reads its bands.
+    ///
+    /// # Specification
+    /// trivial.
+    fn enclosed(&self) -> Enclosed
+    {
+        enclosure(self.band, self.inner.as_ref().map(|&(_, band)| band))
+    }
+}
+
+/// One top-level form's respelling.
+struct Respelling<'run, 'source>
+{
+    /// The grammar the tree was parsed under.
+    grammar: &'run Pbg,
+    /// The tree.
+    tree: &'run SyntaxTree<'source>,
+    /// The form's leaves, in offset order, whitespace included.
+    leaves: &'run [Leaf<'source>],
+    /// The top-level form.
+    form: NodeIndex,
+    /// The rewrites that run.
+    chosen: Chosen,
+    /// The spans no rewrite enters: declarations whose meaning cannot be
+    /// checked.
+    refused: &'run [ByteSpan],
+    /// How the lowering holds each path composite, by its span.
+    composites: &'source Composites,
+    /// The `return` forms written as their value.
+    tails: &'source Tails,
+    /// Where a thunk is left to the checker.
+    thunks: &'source Thunks,
+    /// The reducts the module mints and where the checker applies them.
+    reducts: &'source Reducts,
+    /// The spans of the top-level forms whose reducts stay as written.
+    unreduced: &'run [ByteSpan],
+    /// The spans of the top-level forms whose type applications keep their
+    /// call form.
+    called: &'run [ByteSpan],
+    /// Each nested form respelled, by position.
+    spelled: BTreeMap<NodeIndex, Spelled<'source>>,
+    /// Each node's extent: its first leaf's start to its last leaf's end.
+    extents: BTreeMap<NodeIndex, ByteSpan>,
+    /// Each nested form's parent within the top-level form.
+    parents: BTreeMap<NodeIndex, NodeIndex>,
+    /// Whether a rewrite applied.
+    changed: Changed,
+    /// The derived path operations a rewrite wrote, by node: those a
+    /// transport kept as written spells as written again.
+    derivations: BTreeSet<NodeIndex>,
+}
+
+/// Whether a respelling changed a form.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Changed
+{
+    /// It did not.
+    No,
+    /// It did.
+    Yes,
+}
+
+/// Where a form stands in its parent, as a rewrite whose spelling reads
+/// otherwise elsewhere asks.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Context
+{
+    /// A type: after a `:`, an operand of a type former, a definition's
+    /// result or a static abstraction's body. Every spelling of the
+    /// value-function alias reads here.
+    Type,
+    /// After a rule's `<=>`: a parenthesised list there is the rule's
+    /// outputs.
+    Outputs,
+    /// An operation's judgment in a theory, after its `:`: a parenthesised
+    /// list there opens the judgment's own port group, so only the
+    /// value-function alias over one bare domain reads as a type (#1329).
+    Judgment,
+    /// A law's statement in a theory, after its `:`: the theory reads it only
+    /// as written, the value-function alias over its named telescope, `(x :
+    /// A, p : P) -> Path[.A = A](…)`, so no rewrite respells it (#2384).
+    Law,
+    /// A data or codata declaration's kind, after its `:` and before its
+    /// `where`: the declaration reads `A -> Type` there as the family's
+    /// indices, never as a value function, so no rewrite respells it.
+    Kind,
+    /// Anywhere else: a value or a computation, where `() -> A` reads as an
+    /// expression, and `A -> B` and `(x : A, B) -> C` as the value-function
+    /// alias.
+    Value,
+}
+
+/// Whether a type stands as a definition's result, after its `->`: the place
+/// the lowering reads a value type with its returner inserted.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Place
+{
+    /// A definition's result.
+    Result,
+    /// Anywhere else.
+    Other,
+}
+
+/// Where an operand stands among its form's operands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Position
+{
+    /// First.
+    First,
+    /// After the first.
+    Later,
+    /// After a manifest sort's `sort x =`: the carrier a model type, a
+    /// capability scope or a labelled row fixes a sort to (#3715).
+    Carrier,
+}
+
+/// Whether a traversal is entering or leaving a node.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Visit
+{
+    /// Entering: its children come first.
+    Enter,
+    /// Leaving: its children are respelled.
+    Leave,
+}
+
+/// What one formatting's rewrites read: the rewrites chosen, the spans they
+/// do not enter, how the lowering holds each path composite, the
+/// tails whose `return` it would infer, the `let` statements that only
+/// sequence a call, where a thunk is left to the checker, and the reducts the
+/// checker applies.
+#[derive(Clone, Copy, Debug)]
+pub struct Rewrites<'run, 'source>
+{
+    /// The rewrites that run.
+    pub chosen: Chosen,
+    /// The spans no rewrite enters: declarations whose meaning cannot be
+    /// checked.
+    pub withdrawn: &'run [ByteSpan],
+    /// How the lowering holds each path composite, by its span.
+    pub composites: &'source Composites,
+    /// The `return` forms written as their value.
+    pub tails: &'source Tails,
+    /// Where a thunk is left to the checker.
+    pub thunks: &'source Thunks,
+    /// The reducts the module mints and where the checker applies them.
+    pub reducts: &'source Reducts,
+    /// The spans of the top-level forms whose reducts stay as written.
+    pub unreduced: &'run [ByteSpan],
+    /// The spans of the top-level forms whose type applications keep their
+    /// call form: a juxtaposition there lowers to other core, or the text
+    /// with it does not parse.
+    pub called: &'run [ByteSpan],
+}
+
+/// The top-level form `form` of `tree`, whose leaves are `leaves`, respelled
+/// by the rewrites `rewrites` chooses, outside the spans it withdraws.
+///
+/// # Specification
+/// - requires: `tree` was parsed under `grammar`, `form` is one of its root's
+///   children, the parser did not repair it, and `leaves` are its leaves from
+///   its first to its last, whitespace included, in offset order.
+/// - ensures: [`Respelled::Kept`] when no chosen rewrite applies to a form
+///   inside `form`; otherwise its leaves with each form a chosen rewrite
+///   applies to respelled bottom-up — its operands' leaves kept, its own tiles
+///   the other spelling's, its comments after the operand they followed, an
+///   operand parenthesised where its band is looser than its position admits
+///   and unwrapped where a parenthesis it was written in is not needed.
+/// - provides: the leaves [`crate::format`] lays out in place of a form's.
+/// - fails: never.
+/// - panics: none.
+/// - intension: one post-order walk of the form with an explicit stack.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each rewrite at each direction over one golden source
+///   holding every pair, nested and with comments, and the corpus sweep.
+/// - witness: `tests::rewrite::each_rewrite_moves_its_pair_both_ways`
+/// - witness: `tests::rewrite::the_path_operations_fold_in_both_forms_5206`
+/// - witness: `tests::rewrite::a_sugared_source_keeps_every_comment_with_its_construct`
+/// - witness: `tests::rewrite::sweeps::every_source_formats_into_either_form_and_keeps_its_meaning`
+#[spec(ensures: |ret| !matches!(ret, Respelled::Changed(ref written) if written.is_empty()))]
+pub fn respell<'source>(
+    grammar: &Pbg,
+    tree: &SyntaxTree<'source>,
+    form: NodeIndex,
+    leaves: &[Leaf<'source>],
+    rewrites: Rewrites<'_, 'source>,
+) -> Respelled<'source>
+{
+    let mut respelling = Respelling {
+        grammar,
+        tree,
+        leaves,
+        form,
+        chosen: rewrites.chosen,
+        refused: rewrites.withdrawn,
+        composites: rewrites.composites,
+        tails: rewrites.tails,
+        thunks: rewrites.thunks,
+        reducts: rewrites.reducts,
+        unreduced: rewrites.unreduced,
+        called: rewrites.called,
+        spelled: BTreeMap::new(),
+        extents: BTreeMap::new(),
+        parents: BTreeMap::new(),
+        changed: Changed::No,
+        derivations: BTreeSet::new(),
+    };
+    let mut stack: Vec<(NodeIndex, Visit)> = Vec::from([(form, Visit::Enter)]);
+    while let Some((at, visit)) = stack.pop() {
+        match visit {
+            Visit::Enter => {
+                stack.push((at, Visit::Leave));
+                for child in tree.children(at) {
+                    if respelling.interior(child) == Interior::Yes {
+                        let _first = respelling.parents.insert(child, at);
+                        stack.push((child, Visit::Enter));
+                    }
+                }
+            },
+            Visit::Leave => respelling.leave(at),
+        }
+    }
+    match (respelling.changed, respelling.spelled.remove(&form)) {
+        (Changed::Yes, Some(spelled)) => Respelled::Changed(spelled.leaves),
+        (Changed::No, _) | (Changed::Yes, None) => Respelled::Kept,
+    }
+}
+
+/// Whether a node is respelled from its children.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Interior
+{
+    /// A form, or documentation: respelled from its children.
+    Yes,
+    /// A leaf, or a form copied as written.
+    No,
+}
+
+impl<'source> Respelling<'_, 'source>
+{
+    /// Whether the node at `at` is respelled from its children.
+    ///
+    /// # Specification
+    /// trivial.
+    fn interior(
+        &self,
+        at: NodeIndex,
+    ) -> Interior
+    {
+        match self.tree.node(at).map(gandr_surface_syntax::Node::label) {
+            Some(NodeLabel::Meld(mold)) => match copied(self.grammar, mold) {
+                Copied::Verbatim => Interior::No,
+                Copied::LaidOut => Interior::Yes,
+            },
+            Some(NodeLabel::Doc) => Interior::Yes,
+            Some(
+                NodeLabel::Wald
+                | NodeLabel::Tile(_)
+                | NodeLabel::Grout { .. }
+                | NodeLabel::GhostClose { .. }
+                | NodeLabel::Space,
+            )
+            | None => Interior::No,
+        }
+    }
+
+    /// The grammar rule the form at `at` realises.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rule(
+        &self,
+        at: NodeIndex,
+    ) -> Option<MoldName>
+    {
+        let (NodeLabel::Meld(mold) | NodeLabel::Tile(mold)) = self.tree.node(at)?.label()
+        else {
+            return None;
+        };
+        let rule = self.grammar.rule_of(mold).ok()?;
+        RULES
+            .iter()
+            .copied()
+            .find(|known| known.0 == rule.name().0)
+            .or(Some(MoldName("")))
+    }
+
+    /// Where the form at `at` stands in its parent: after a rule's `<=>`, in
+    /// a theory's judgment or law, in a kind (a data declaration's, or a type
+    /// component's after `type T :`), in a type, or anywhere else.
+    ///
+    /// # Specification
+    /// trivial.
+    fn context(
+        &self,
+        at: NodeIndex,
+    ) -> Context
+    {
+        let Some(&parent) = self.parents.get(&at)
+        else {
+            return Context::Value;
+        };
+        let name = |node: NodeIndex| {
+            let (NodeLabel::Meld(mold) | NodeLabel::Tile(mold)) = self.tree.node(node)?.label()
+            else {
+                return None;
+            };
+            self.grammar.rule_of(mold).ok().map(|rule| rule.name().0)
+        };
+        let rule = name(parent);
+        let mut preceding = None;
+        let mut law = false;
+        let mut members = false;
+        let mut component = false;
+        for child in self.tree.children(parent) {
+            if child == at {
+                break;
+            }
+            if let Some(node) = self.tree.node(child)
+                && matches!(node.label(), NodeLabel::Tile(_))
+                && name(child) == rule
+            {
+                preceding = self.leaf(node.span()).map(|leaf| leaf.text);
+                match preceding.map(<&str>::from) {
+                    Some("law") => law = true,
+                    Some(";") => {
+                        law = false;
+                        component = false;
+                    },
+                    Some("where") => members = true,
+                    Some("type") => component = true,
+                    Some(",") => component = false,
+                    _ => {},
+                }
+            }
+        }
+        match (rule, preceding.map(<&str>::from)) {
+            (_, Some("<=>")) => Context::Outputs,
+            (Some("theory_declaration"), Some(":")) if law => Context::Law,
+            (Some("theory_declaration"), Some(":")) => Context::Judgment,
+            (Some("data_declaration" | "codata_declaration"), Some(":")) if !members => {
+                Context::Kind
+            },
+            (_, Some(":")) if component => Context::Kind,
+            // After a `:`, or at a definition's result, its returner left
+            // unwritten.
+            (_, Some(":"))
+            | (
+                Some("def_value" | "module_definition_member" | "attributed_module_member"),
+                Some("->"),
+            ) => Context::Type,
+            (Some(rule), _) if rule.ends_with("_type") => Context::Type,
+            _ => Context::Value,
+        }
+    }
+
+    /// Whether the form `at` stands as a definition's result: the operand
+    /// after a `->` of a definition, a module member's among them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn place(
+        &self,
+        at: NodeIndex,
+    ) -> Place
+    {
+        let Some(&parent) = self.parents.get(&at)
+        else {
+            return Place::Other;
+        };
+        let name = |node: NodeIndex| {
+            let (NodeLabel::Meld(mold) | NodeLabel::Tile(mold)) = self.tree.node(node)?.label()
+            else {
+                return None;
+            };
+            self.grammar.rule_of(mold).ok().map(|rule| rule.name().0)
+        };
+        let rule = name(parent);
+        if !matches!(
+            rule,
+            Some("def_value" | "module_definition_member" | "attributed_module_member")
+        ) {
+            return Place::Other;
+        }
+        let mut preceding = None;
+        for child in self.tree.children(parent) {
+            if child == at {
+                break;
+            }
+            if let Some(node) = self.tree.node(child)
+                && matches!(node.label(), NodeLabel::Tile(_))
+                && name(child) == rule
+            {
+                preceding = self.leaf(node.span()).map(|leaf| leaf.text);
+            }
+        }
+        if preceding.map(<&str>::from) == Some("->") {
+            Place::Result
+        }
+        else {
+            Place::Other
+        }
+    }
+
+    /// Spell again as written each derived path operation a rewrite wrote
+    /// among the arguments of the application whose parts are `parts`,
+    /// when that application is a whole transport `Path.walk m q p` kept as
+    /// written, and every one each of those holds so in turn: the printer
+    /// writes a derived operation standing as a transport's operand as the
+    /// transport it derives, nothing there stating the operation's type.
+    /// Whether any was.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Termination
+    /// Each node enters the stack only when removed from the derivations, so
+    /// at most once, and leaves it once.
+    fn unsugar_operands(
+        &mut self,
+        parts: &[Part<'source>],
+    ) -> Changed
+    {
+        let mut stack: Vec<(NodeIndex, Visit)> = Vec::new();
+        self.derived_operands(parts, &mut stack);
+        if stack.is_empty() {
+            return Changed::No;
+        }
+        while let Some((at, visit)) = stack.pop() {
+            let (parts, _) = self.parts(at);
+            match visit {
+                Visit::Enter => {
+                    stack.push((at, Visit::Leave));
+                    self.derived_operands(&parts, &mut stack);
+                },
+                Visit::Leave => {
+                    let (Some(&extent), Some(rule)) = (self.extents.get(&at), self.rule(at))
+                    else {
+                        continue;
+                    };
+                    let commented = if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+                        Commented::Yes
+                    }
+                    else {
+                        Commented::No
+                    };
+                    // A derived application, and a parenthesis around it,
+                    // opens no block: no statement to write away.
+                    let spelled = self.kept(rule, &parts, extent, (commented, Open::No));
+                    let _previous = self.spelled.insert(at, spelled);
+                },
+            }
+        }
+        Changed::Yes
+    }
+
+    /// Push onto `stack`, to enter, each derived path operation a rewrite
+    /// wrote among the arguments of the application whose parts are
+    /// `parts`, when that application is a whole `Path.walk m q p`, removing
+    /// each from the derivations. A partial application in a juxtaposed
+    /// spine, `Path.walk m q`, is no transport yet, so it unsugars nothing.
+    /// A parenthesis around one is pushed below it, to leave after it, so
+    /// that it holds the operation's own spelling again, and below those the
+    /// spine's partial applications, which hold the parenthesis in turn.
+    ///
+    /// # Specification
+    /// trivial.
+    fn derived_operands(
+        &mut self,
+        parts: &[Part<'source>],
+        stack: &mut Vec<(NodeIndex, Visit)>,
+    )
+    {
+        let Some(spine) = self.spine(parts)
+        else {
+            return;
+        };
+        let Some((&callee, arguments)) = spine.split_first()
+        else {
+            return;
+        };
+        if self.spelled_as(callee, WALK) == Spelt::Otherwise || arguments.len() != 3 {
+            return;
+        }
+        // The partial applications of the spine, `Path.walk m q` under
+        // `Path.walk m q p`, shallowest first: each holds an operand's
+        // spelling, so each leaves again after the operands, deepest first.
+        let mut heads: Vec<NodeIndex> = Vec::new();
+        let mut head = head_and_argument(parts).map(|(head, _)| head);
+        while let Some(Child::Node(at)) = head
+            && self.rule(at) == Some(APPLICATION)
+        {
+            heads.push(at);
+            head = head_and_argument(&self.parts(at).0).map(|(head, _)| head);
+        }
+        let base = stack.len();
+        let mut wrappers: Vec<NodeIndex> = Vec::new();
+        for &argument in arguments {
+            wrappers.clear();
+            let mut inner = argument;
+            while let Some(unwrapped) = self.unwrapped(inner) {
+                if let Child::Node(wrapper) = inner {
+                    wrappers.push(wrapper);
+                }
+                inner = unwrapped;
+            }
+            if let Child::Node(node) = inner
+                && self.derivations.remove(&node)
+            {
+                stack.extend(wrappers.iter().map(|&wrapper| (wrapper, Visit::Leave)));
+                stack.push((node, Visit::Enter));
+            }
+        }
+        if stack.len() > base {
+            drop(stack.splice(base .. base, heads.iter().map(|&at| (at, Visit::Leave))));
+        }
+    }
+
+    /// The leaf of the form's leaves spanning exactly `span`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn leaf(
+        &self,
+        span: ByteSpan,
+    ) -> Option<Leaf<'source>>
+    {
+        let at = self
+            .leaves
+            .partition_point(|leaf| leaf.span.start() < span.start());
+        self.leaves
+            .get(at ..)?
+            .iter()
+            .find(|leaf| leaf.span == span && leaf.material != Material::Whitespace)
+            .copied()
+    }
+
+    /// The whitespace leaves of the form between `from` and `to`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn between(
+        &self,
+        from: ByteOffset,
+        to: ByteOffset,
+    ) -> Vec<Leaf<'source>>
+    {
+        let at = self.leaves.partition_point(|leaf| leaf.span.start() < from);
+        self.leaves
+            .get(at ..)
+            .unwrap_or_default()
+            .iter()
+            .take_while(|leaf| leaf.span.end() <= to)
+            .filter(|leaf| leaf.material == Material::Whitespace)
+            .copied()
+            .collect()
+    }
+
+    /// The node at `at` as one of its parent's parts, and its extent.
+    ///
+    /// # Specification
+    /// trivial.
+    fn part(
+        &self,
+        parent: MoldName,
+        at: NodeIndex,
+    ) -> Option<(Role<'source>, Vec<Leaf<'source>>, ByteSpan)>
+    {
+        let node = self.tree.node(at)?;
+        if self.interior(at) == Interior::Yes {
+            let spelled = self.spelled.get(&at)?;
+            let extent = *self.extents.get(&at)?;
+            let role = if node.label() == NodeLabel::Doc {
+                Role::Comment
+            }
+            else {
+                Role::Operand(Child::Node(at))
+            };
+            return Some((role, spelled.leaves.clone(), extent));
+        }
+        let leaf = self.leaf(node.span())?;
+        let role = match node.label() {
+            NodeLabel::Space => Role::Comment,
+            // A shared block's tiles stand among its host's parts only, read
+            // through `written_children`, and are the host's own there.
+            NodeLabel::Tile(_)
+                if self.rule(at) == Some(parent) || self.rule(at) == Some(STATEMENT_BLOCK) =>
+            {
+                Role::Own(leaf.text)
+            },
+            NodeLabel::Wald
+            | NodeLabel::Meld(_)
+            | NodeLabel::Tile(_)
+            | NodeLabel::Grout { .. }
+            | NodeLabel::GhostClose { .. }
+            | NodeLabel::Doc => Role::Operand(Child::Leaf(leaf)),
+        };
+        Some((role, Vec::from([leaf]), leaf.span))
+    }
+
+    /// The parts of the form at `at`, in source order, and its extent: its
+    /// written children, a shared block's braces and statements standing in
+    /// the block's place as the host once held them inline.
+    ///
+    /// # Specification
+    /// trivial.
+    fn parts(
+        &self,
+        at: NodeIndex,
+    ) -> (Vec<Part<'source>>, Option<ByteSpan>)
+    {
+        let rule = self.rule(at).unwrap_or(MoldName(""));
+        let mut parts: Vec<Part<'source>> = Vec::new();
+        let mut extent: Option<ByteSpan> = None;
+        for child in written_children(self.grammar, self.tree, at) {
+            let Some((role, leaves, span)) = self.part(rule, child)
+            else {
+                continue;
+            };
+            let before =
+                extent.map_or_else(Vec::new, |extent| self.between(extent.end(), span.start()));
+            extent = Some(extent.map_or(span, |extent| extent.join(span)));
+            parts.push(Part {
+                before,
+                role,
+                leaves,
+            });
+        }
+        (parts, extent)
+    }
+
+    /// Respell the node at `at`, its children respelled.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the node's extent, derivation and spelling, growth within
+    ///   the source
+    fn leave(
+        &mut self,
+        at: NodeIndex,
+    )
+    {
+        let (parts, extent) = self.parts(at);
+        let Some(extent) = extent
+        else {
+            return;
+        };
+        let _known = self.extents.insert(at, extent);
+        let rule = self.rule(at).unwrap_or(MoldName(""));
+        let commented = if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            Commented::Yes
+        }
+        else {
+            Commented::No
+        };
+        let open = if self
+            .refused
+            .iter()
+            .any(|span| span.start() <= extent.start() && extent.end() <= span.end())
+        {
+            Open::No
+        }
+        else {
+            Open::Yes
+        };
+        let chosen = self.chosen;
+        let rewritten = if open == Open::Yes {
+            chosen.rewrites(rule).find_map(|name| {
+                self.rewrite(name, at, &parts, extent)
+                    .map(|spelled| (name, spelled))
+            })
+        }
+        else {
+            None
+        };
+        let spelled = if let Some((name, spelled)) = rewritten {
+            if matches!(
+                name,
+                RewriteName::PathComposite | RewriteName::PathInverse | RewriteName::PathAction
+            ) {
+                let _first = self.derivations.insert(at);
+            }
+            spelled
+        }
+        else {
+            let parts = match self.unsugar_operands(&parts) {
+                Changed::Yes => self.parts(at).0,
+                Changed::No => parts,
+            };
+            let mut kept = self.kept(rule, &parts, extent, (commented, open));
+            // A rule this module reads by no name binds as the grammar names
+            // it, which only an expression's name loosens.
+            if rule.0.is_empty()
+                && kept.band == Band::Atom
+                && let Some(NodeLabel::Meld(mold) | NodeLabel::Tile(mold)) =
+                    self.tree.node(at).map(gandr_surface_syntax::Node::label)
+                && let Ok(read) = self.grammar.rule_of(mold)
+            {
+                kept.band = Band::unread(read.name());
+            }
+            kept
+        };
+        let _previous = self.spelled.insert(at, spelled);
+    }
+
+    /// A form no rewrite reads, its parts as written but for an operand a
+    /// rewrite respelled: that one placed at the band its position admits,
+    /// and a parenthesis around one alone dropped once the operand binds
+    /// tightest or, where its own position admits a band tighter than an
+    /// arrow, fits that band. Where the form is `open` to rewrites and opens a
+    /// block, each `let` statement the lowering lists as linear is written
+    /// away; where it is open and the explicit form writes
+    /// reducts, each operand the checker applies a reduct to is written as the
+    /// reduct's call.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the written leaves, growth within the form's parts
+    /// - allocation: a lone operand's spelling, growth within its leaves
+    fn kept(
+        &mut self,
+        rule: MoldName,
+        parts: &[Part<'source>],
+        extent: ByteSpan,
+        (commented, open): (Commented, Open),
+    ) -> Spelled<'source>
+    {
+        let shape = shape(rule, parts);
+        if let Shape::Parenthesized {
+            ref entries,
+            binder: Binder::None,
+            ..
+        } = shape
+            && let &[Child::Node(entry)] = entries.as_slice()
+            && commented == Commented::No
+            && let Some(inner) = self.spelled.get(&entry)
+            && inner.rewritten == Changed::Yes
+            && inner.band == Band::Atom
+        {
+            self.changed = Changed::Yes;
+            return inner.clone();
+        }
+        let mut out = Builder {
+            leaves: Vec::new(),
+            position: ByteSpan::new(extent.start(), extent.start()).unwrap_or(extent),
+            form: extent,
+            owner: Owner::Form(self.form),
+        };
+        let mut index = Position::First;
+        // The last three of the form's own tiles since its last operand:
+        // `sort x =` before an operand makes it a manifest sort's carrier.
+        let mut tiles: [&str; 3] = [""; 3];
+        let reducts = self.reducts;
+        let writing = |rewrite: RewriteName| {
+            open == Open::Yes
+                && self
+                    .chosen
+                    .rewrites(MoldName(""))
+                    .any(|name| name == rewrite)
+        };
+        let (reduced, forgotten) = (
+            writing(RewriteName::InsertedReduct),
+            writing(RewriteName::InsertedForget),
+        );
+        for part in parts {
+            out.leaves.extend(part.before.iter().copied());
+            let crossed = match part.role {
+                Role::Operand(child) if reduced || forgotten => self
+                    .span_of(child)
+                    .and_then(|span| reducts.crossed(span, self.unreduced))
+                    .filter(|applied| match *applied {
+                        Applied::Reduct(_) => reduced,
+                        Applied::Forget(_) => forgotten,
+                    }),
+                Role::Operand(_) | Role::Own(_) | Role::Comment => None,
+            };
+            let place = match (part.role, tiles) {
+                (Role::Operand(_), ["sort", _, "="]) => Position::Carrier,
+                (Role::Operand(_) | Role::Own(_) | Role::Comment, _) => index,
+            };
+            // The reduct is an application, `T.S (m)`, and the forgetting
+            // map an `at` form, `forget[…](m) at Model(T)`: where a tighter
+            // band stands, each is parenthesised whole. As the printer
+            // juxtaposes a call, the reduct's operand is parenthesised only
+            // when it is more than one name or literal, `T.S m`.
+            let wrapped = match crossed {
+                Some(Applied::Reduct(_)) => Band::admitted(rule, place) < Band::Application,
+                Some(Applied::Forget(_)) => Band::admitted(rule, place) < Band::Loose,
+                None => false,
+            };
+            let rewritten = match part.role {
+                Role::Operand(Child::Node(at)) => self
+                    .spelled
+                    .get(&at)
+                    .is_some_and(|spelled| spelled.rewritten == Changed::Yes),
+                Role::Operand(_) | Role::Own(_) | Role::Comment => false,
+            };
+            let mut written_leaves = part
+                .leaves
+                .iter()
+                .filter(|leaf| leaf.material != Material::Whitespace);
+            let bare = !rewritten
+                && matches!(part.role, Role::Operand(_))
+                && matches!(
+                    (written_leaves.next(), written_leaves.next()),
+                    (Some(leaf), None) if leaf.material == Material::Token
+                        && AsRef::<str>::as_ref(&leaf.text)
+                            .chars()
+                            .all(|character| character.is_alphanumeric() || character == '_')
+                );
+            match crossed {
+                Some(Applied::Reduct(name)) => {
+                    if wrapped {
+                        out.token(OPEN_PAREN);
+                    }
+                    for (at, segment) in name.iter().enumerate() {
+                        if at > 0 {
+                            out.token(DOT);
+                        }
+                        out.fragment(SourceFragment::from(segment.as_str()));
+                    }
+                    out.gap(Spelling(" "));
+                    if !bare {
+                        out.token(OPEN_PAREN);
+                    }
+                },
+                Some(Applied::Forget(forget)) => {
+                    if wrapped {
+                        out.token(OPEN_PAREN);
+                    }
+                    out.token(Spelling("forget"));
+                    out.token(Spelling("["));
+                    for (at, &(ref sort, ref carrier)) in forget.sorts.iter().enumerate() {
+                        if at > 0 {
+                            out.token(COMMA);
+                            out.gap(Spelling(" "));
+                        }
+                        out.token(Spelling("sort"));
+                        out.gap(Spelling(" "));
+                        out.fragment(SourceFragment::from(sort.as_str()));
+                        out.gap(Spelling(" "));
+                        out.token(Spelling("="));
+                        out.gap(Spelling(" "));
+                        written(&mut out, carrier);
+                    }
+                    out.token(Spelling("]"));
+                    out.token(OPEN_PAREN);
+                },
+                None => {},
+            }
+            match part.role {
+                Role::Operand(child @ Child::Node(at))
+                    if self
+                        .spelled
+                        .get(&at)
+                        .is_some_and(|spelled| spelled.rewritten == Changed::Yes) =>
+                {
+                    let operand = Operand {
+                        inner: None,
+                        ..self.operand(child)
+                    };
+                    let fits = if crossed.is_some() {
+                        Band::Loose
+                    }
+                    else {
+                        Band::admitted(rule, place)
+                    };
+                    out.place(&operand, fits);
+                },
+                Role::Own(_) | Role::Operand(_) | Role::Comment => {
+                    let refitted = match part.role {
+                        Role::Operand(child) if crossed.is_none() => {
+                            self.refitted(child, Band::admitted(rule, place))
+                        },
+                        Role::Operand(_) | Role::Own(_) | Role::Comment => None,
+                    };
+                    if let Some(entry) = refitted {
+                        out.leaves.extend(entry);
+                        self.changed = Changed::Yes;
+                    }
+                    else {
+                        out.leaves.extend(part.leaves.iter().copied());
+                    }
+                },
+            }
+            match crossed {
+                Some(Applied::Reduct(_)) => {
+                    if !bare {
+                        out.token(CLOSE_PAREN);
+                    }
+                    if wrapped {
+                        out.token(CLOSE_PAREN);
+                    }
+                    self.changed = Changed::Yes;
+                },
+                Some(Applied::Forget(forget)) => {
+                    out.token(CLOSE_PAREN);
+                    out.gap(Spelling(" "));
+                    out.token(Spelling("at"));
+                    out.gap(Spelling(" "));
+                    out.token(Spelling("Model"));
+                    out.gap(Spelling(" "));
+                    for (at, segment) in forget.theory.iter().enumerate() {
+                        if at > 0 {
+                            out.token(DOT);
+                        }
+                        out.fragment(SourceFragment::from(segment.as_str()));
+                    }
+                    if wrapped {
+                        out.token(CLOSE_PAREN);
+                    }
+                    self.changed = Changed::Yes;
+                },
+                None => {},
+            }
+            match part.role {
+                Role::Operand(_) => {
+                    index = Position::Later;
+                    tiles = [""; 3];
+                },
+                Role::Own(text) => tiles = [tiles[1], tiles[2], <&str>::from(text)],
+                Role::Comment => {},
+            }
+        }
+        Spelled {
+            leaves: out.leaves,
+            band: self.band_over(rule, parts),
+            shape,
+            commented,
+            rewritten: Changed::No,
+        }
+    }
+
+    /// The operand `child` as a new position reads it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn operand(
+        &self,
+        child: Child<'source>,
+    ) -> Operand<'source>
+    {
+        let spelled = |child: Child<'source>| match child {
+            Child::Leaf(leaf) => Some((Vec::from([leaf]), Band::Atom)),
+            Child::Node(at) => self
+                .spelled
+                .get(&at)
+                .map(|spelled| (spelled.leaves.clone(), spelled.band)),
+        };
+        let Some((leaves, band)) = spelled(child)
+        else {
+            return Operand {
+                leaves: Vec::new(),
+                band: Band::Loose,
+                inner: None,
+            };
+        };
+        Operand {
+            leaves,
+            band,
+            inner: self.unwrapped(child).and_then(spelled),
+        }
+    }
+
+    /// The source bytes the operand `child` covers.
+    ///
+    /// # Specification
+    /// trivial.
+    fn span_of(
+        &self,
+        child: Child<'source>,
+    ) -> Option<ByteSpan>
+    {
+        match child {
+            Child::Leaf(leaf) => Some(leaf.span),
+            Child::Node(at) => self.extents.get(&at).copied(),
+        }
+    }
+
+    /// The entry of the parenthesised operand `child`, when it holds one
+    /// entry, binds no name and owns no comment.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unwrapped(
+        &self,
+        child: Child<'source>,
+    ) -> Option<Child<'source>>
+    {
+        let Child::Node(at) = child
+        else {
+            return None;
+        };
+        let spelled = self.spelled.get(&at)?;
+        match (&spelled.shape, spelled.commented) {
+            (
+                &Shape::Parenthesized {
+                    ref entries,
+                    binder: Binder::None,
+                    ..
+                },
+                Commented::No,
+            ) => match entries.as_slice() {
+                &[only] => Some(only),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// The leaves of the entry of the parenthesised operand `child`, when a
+    /// rewrite respelled the entry, `fits` is tighter than an arrow and the
+    /// entry binds at `fits` or tighter: the parenthesis the rewrite left
+    /// needless where the operand stands. Where an arrow fits, the position
+    /// may read an expression, whose type the printer quotes parenthesised.
+    ///
+    /// # Specification
+    /// trivial.
+    fn refitted(
+        &self,
+        child: Child<'source>,
+        fits: Band,
+    ) -> Option<Vec<Leaf<'source>>>
+    {
+        let Child::Node(entry) = self.unwrapped(child)?
+        else {
+            return None;
+        };
+        let spelled = self.spelled.get(&entry)?;
+        (spelled.rewritten == Changed::Yes && fits < Band::Loose && spelled.band <= fits)
+            .then(|| spelled.leaves.clone())
+    }
+
+    /// `child` with every parenthesis that holds one entry around it
+    /// removed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn stripped(
+        &self,
+        child: Child<'source>,
+    ) -> Child<'source>
+    {
+        let mut child = child;
+        while let Some(inner) = self.unwrapped(child) {
+            child = inner;
+        }
+        child
+    }
+
+    /// The shape of `child`, as respelled.
+    ///
+    /// # Specification
+    /// trivial.
+    fn shape_of(
+        &self,
+        child: Child<'source>,
+    ) -> Option<(&Shape<'source>, Commented)>
+    {
+        let Child::Node(at) = child
+        else {
+            return None;
+        };
+        self.spelled
+            .get(&at)
+            .map(|spelled| (&spelled.shape, spelled.commented))
+    }
+
+    /// Whether `codomain`, an arrow's codomain, is written as a value type,
+    /// so that the arrow is a box: neither an arrow, a returner, pure or with
+    /// a row (`-F [Partial] B`), nor a lazy product, the computation types it
+    /// otherwise is. A name that stands for a computation type reads as a
+    /// value here; the meaning check then withdraws the rewrite.
+    ///
+    /// # Specification
+    /// trivial.
+    fn valued(
+        &self,
+        codomain: Child<'source>,
+    ) -> Valued
+    {
+        let codomain = self.stripped(codomain);
+        let computed = matches!(
+            self.shape_of(codomain),
+            Some((Shape::Arrow { .. } | Shape::Returner { .. }, _))
+        );
+        let named = match codomain {
+            Child::Node(at) => matches!(
+                self.rule(at),
+                Some(MoldName(
+                    "lazy_product_type"
+                        | "lazy_record_type"
+                        | "f_type.row"
+                        | "f_type.row.labelled"
+                        | "f_type.result.labelled"
+                ))
+            ),
+            Child::Leaf(_) => false,
+        };
+        if computed || named {
+            Valued::Computation
+        }
+        else {
+            Valued::Value
+        }
+    }
+
+    /// The form at `at`, whose parts are `parts`, respelled by the rewrite
+    /// `name`, or nothing when its shape is not the one `name` reads.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rewrite(
+        &mut self,
+        name: RewriteName,
+        at: NodeIndex,
+        parts: &[Part<'source>],
+        extent: ByteSpan,
+    ) -> Option<Spelled<'source>>
+    {
+        let position = ByteSpan::new(extent.start(), extent.start()).ok()?;
+        let mut out = Builder {
+            leaves: Vec::new(),
+            position,
+            form: extent,
+            owner: Owner::Form(self.form),
+        };
+        let direction = self.chosen.direction;
+        let band = match (name, direction) {
+            (RewriteName::Product, Direction::Sugar) => {
+                let listed = product(parts)?;
+                self.infix(&mut out, &listed, parts, Spelling(" * "), [
+                    Band::Bridge,
+                    Band::Bridge,
+                ])?;
+                Band::Product
+            },
+            (RewriteName::Sum, Direction::Sugar) => {
+                let listed = listed(parts, &[OPEN_SUM], CLOSE_BRACE)?;
+                self.infix(&mut out, &listed, parts, Spelling(" + "), [
+                    Band::Product,
+                    Band::Product,
+                ])?;
+                Band::Sum
+            },
+            (RewriteName::LazyProduct, Direction::Sugar) => {
+                let listed = listed(parts, &[OPEN_LAZY], CLOSE_BRACE)?;
+                self.infix(&mut out, &listed, parts, Spelling(" & "), [
+                    Band::Sum,
+                    Band::Sum,
+                ])?;
+                Band::Lazy
+            },
+            (RewriteName::Product, Direction::Desugar) => {
+                let chain = self.chain(at, parts, STAR);
+                self.braced(
+                    &mut out,
+                    &chain.operands,
+                    &chain.parts,
+                    &[OPEN_PRODUCT],
+                    CLOSE_BRACE,
+                )?;
+                Band::Atom
+            },
+            (RewriteName::Sum, Direction::Desugar) => {
+                let chain = self.chain(at, parts, PLUS);
+                self.braced(
+                    &mut out,
+                    &chain.operands,
+                    &chain.parts,
+                    &[OPEN_SUM],
+                    CLOSE_BRACE,
+                )?;
+                Band::Atom
+            },
+            (RewriteName::LazyProduct, Direction::Desugar) => {
+                let chain = self.chain(at, parts, AMPERSAND);
+                self.braced(
+                    &mut out,
+                    &chain.operands,
+                    &chain.parts,
+                    &[OPEN_LAZY],
+                    CLOSE_BRACE,
+                )?;
+                Band::Atom
+            },
+            (RewriteName::ValueFunction, Direction::Sugar) => {
+                if self.context(at) == Context::Kind {
+                    return None;
+                }
+                self.alias(&mut out, parts, self.context(at))?;
+                Band::Loose
+            },
+            (RewriteName::ValueFunction, Direction::Desugar) => {
+                // A kind arrow, `Type -> Type`, is a static arrow, no box.
+                if matches!(self.context(at), Context::Law | Context::Kind)
+                    || self.boxes(at) == Boxed(false)
+                    || self.read_as(at) == Read::Computation
+                {
+                    return None;
+                }
+                self.thunk(&mut out, parts)?;
+                Band::Bridge
+            },
+            (RewriteName::DefaultGrade, Direction::Sugar | Direction::Desugar) => {
+                self.ungraded(&mut out, parts)?;
+                Band::Bridge
+            },
+            // Both forms fold a returned transport into the operation it
+            // derives, as the printer reads it in both forms (#5206).
+            (RewriteName::PathComposite, Direction::Sugar | Direction::Desugar) => {
+                if self.composites.standing(extent) != Standing::Returned {
+                    return None;
+                }
+                let Some(Operation::Composite { first, second }) = self.derived(parts)
+                else {
+                    return None;
+                };
+                held(&mut out, STEP);
+                out.gap(Spelling(" "));
+                out.place(&self.operand(first), Band::Atom);
+                out.gap(Spelling(" "));
+                out.place(&self.operand(second), Band::Atom);
+                Band::Application
+            },
+            (RewriteName::PathInverse, Direction::Sugar | Direction::Desugar) => {
+                if self.composites.standing(extent) != Standing::Returned {
+                    return None;
+                }
+                let Some(Operation::Inverse { path }) = self.derived(parts)
+                else {
+                    return None;
+                };
+                held(&mut out, BACK);
+                out.gap(Spelling(" "));
+                out.place(&self.operand(path), Band::Atom);
+                Band::Application
+            },
+            (RewriteName::PathAction, Direction::Sugar | Direction::Desugar) => {
+                if self.composites.standing(extent) != Standing::Returned {
+                    return None;
+                }
+                let Some(Operation::Action { map, path }) = self.derived(parts)
+                else {
+                    return None;
+                };
+                held(&mut out, CONG);
+                out.gap(Spelling(" "));
+                out.place(&self.operand(map), Band::Atom);
+                out.gap(Spelling(" "));
+                out.place(&self.operand(path), Band::Atom);
+                Band::Application
+            },
+            (RewriteName::TypeApplication, Direction::Sugar | Direction::Desugar) => {
+                if self
+                    .called
+                    .iter()
+                    .any(|span| span.start() <= extent.start() && extent.end() <= span.end())
+                {
+                    return None;
+                }
+                self.juxtaposed_type(&mut out, parts)?
+            },
+            (RewriteName::BodyAfterEquals, Direction::Sugar | Direction::Desugar) => {
+                let rule = self.rule(at)?;
+                return self.after_equals(rule, parts, extent);
+            },
+            (RewriteName::TailReturn, Direction::Sugar) => {
+                if self.tails.exit(extent) != Exit::Inferred {
+                    return None;
+                }
+                self.unreturned(&mut out, parts)?
+            },
+            (RewriteName::InsertedReturner, Direction::Sugar) => {
+                if self.place(at) != Place::Result {
+                    return None;
+                }
+                self.unreturning(&mut out, parts)?
+            },
+            (RewriteName::InsertedThunk, Direction::Sugar) => {
+                if self.thunks.thunk(extent) != Thunk::Inserted {
+                    return None;
+                }
+                self.unthunked(&mut out, parts)?
+            },
+            (RewriteName::InsertedReduct, Direction::Sugar) => {
+                self.unreduced_call(&mut out, parts, extent)?
+            },
+            (RewriteName::InsertedForget, Direction::Sugar) => {
+                self.unforgotten(&mut out, parts, extent)?
+            },
+            (RewriteName::ShortAlias, Direction::Sugar) => {
+                let context = self.context(at);
+                if matches!(context, Context::Law | Context::Kind) {
+                    return None;
+                }
+                self.shortened(&mut out, parts, context)?;
+                Band::Loose
+            },
+            // The linear run moves a form opening a block in `kept`, whatever
+            // its rule, and a reduct the explicit form writes is written
+            // around an operand there, whatever its parent's rule.
+            (
+                RewriteName::TailReturn
+                | RewriteName::InsertedReturner
+                | RewriteName::ShortAlias
+                | RewriteName::InsertedThunk
+                | RewriteName::InsertedReduct
+                | RewriteName::InsertedForget,
+                Direction::Desugar,
+            )
+            | (
+                RewriteName::FunctionForm | RewriteName::JoinedDefinition,
+                Direction::Sugar | Direction::Desugar,
+            ) => return None,
+        };
+        self.changed = Changed::Yes;
+        Some(Spelled {
+            leaves: out.leaves,
+            band,
+            shape: Shape::Other,
+            commented: Commented::No,
+            rewritten: Changed::Yes,
+        })
+    }
+
+    /// Whether the arrow at `at` is the box, a function value's type, as the
+    /// lowering reads it: an arrow whose domain and codomain both classify
+    /// codes, `Type -> Type`, is a static arrow, a type operator's classifier,
+    /// and no box; a form the reading cannot place is no box either, so no
+    /// rewrite moves it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn boxes(
+        &self,
+        at: NodeIndex,
+    ) -> Boxed
+    {
+        writes_box(self.grammar, self.tree, at, &mut Pieces::default()).unwrap_or(Boxed(false))
+    }
+
+    /// Where the type at `at` stands: a computation type is read as the
+    /// operand of a thunk, `+U`, and as the codomain of an arrow read there,
+    /// under any parentheses around either. An arrow read there is the
+    /// computation arrow, which the lowering reads as written, so no box
+    /// wraps it (#5207).
+    ///
+    /// # Specification
+    /// trivial.
+    fn read_as(
+        &self,
+        at: NodeIndex,
+    ) -> Read
+    {
+        let mut at = at;
+        while let Some(&parent) = self.parents.get(&at) {
+            match self.rule(parent) {
+                Some(MoldName("u_type")) => return Read::Computation,
+                Some(MoldName("parenthesized_type")) => at = parent,
+                // The codomain is the arrow's last child. The tree answers
+                // it: the children of a form not yet left are not respelled.
+                Some(MoldName("function_type")) => {
+                    let codomain = self
+                        .tree
+                        .children(parent)
+                        .filter(|&child| {
+                            self.tree.node(child).is_some_and(|node| {
+                                !matches!(node.label(), NodeLabel::Space | NodeLabel::Doc)
+                            })
+                        })
+                        .last();
+                    if codomain != Some(at) {
+                        break;
+                    }
+                    at = parent;
+                },
+                Some(_) | None => break,
+            }
+        }
+        Read::Value
+    }
+
+    /// Write `operands` joined by `infix`, the first operand placed at the
+    /// first band of `fits` and every later one at the second, each comment
+    /// of `parts` before the operand it preceded.
+    ///
+    /// # Specification
+    /// trivial.
+    fn infix(
+        &self,
+        out: &mut Builder<'source>,
+        operands: &[Child<'source>],
+        parts: &[Part<'source>],
+        infix: Spelling,
+        fits: [Band; 2],
+    ) -> Option<()>
+    {
+        if operands.len() < 2 {
+            return None;
+        }
+        let comments = comments_by_operand(parts);
+        for (index, &child) in operands.iter().enumerate() {
+            if index > 0 {
+                out.spaced(infix);
+            }
+            out.comments(comments.get(index).map_or(&[][..], Vec::as_slice));
+            let band = if index == 0 { fits[0] } else { fits[1] };
+            out.place(&self.operand(child), band);
+        }
+        out.comments(comments.get(operands.len()).map_or(&[][..], Vec::as_slice));
+        Some(())
+    }
+
+    /// Write `operands` between `open` and `close`, separated by commas, each
+    /// unwrapped from a parenthesis it does not need, each comment of
+    /// `parts` before the operand it preceded.
+    ///
+    /// # Specification
+    /// trivial.
+    fn braced(
+        &self,
+        out: &mut Builder<'source>,
+        operands: &[Child<'source>],
+        parts: &[Part<'source>],
+        open: &[Spelling],
+        close: Spelling,
+    ) -> Option<()>
+    {
+        if operands.is_empty() {
+            return None;
+        }
+        let comments = comments_by_operand(parts);
+        for &tile in open {
+            out.token(tile);
+        }
+        for (index, &child) in operands.iter().enumerate() {
+            if index > 0 {
+                out.token(COMMA);
+                out.gap(Spelling(" "));
+            }
+            out.comments(comments.get(index).map_or(&[][..], Vec::as_slice));
+            out.place(&self.operand(child), Band::Loose);
+        }
+        out.comments(comments.get(operands.len()).map_or(&[][..], Vec::as_slice));
+        out.token(close);
+        Some(())
+    }
+
+    /// The operands of the chain of `infix` forms the form at `at` heads,
+    /// whose parts are `parts`: each form of the chain's rule written as the
+    /// right operand of the one before, unparenthesised, joins it, so `A * B *
+    /// C` is one product of three, as the lowering reads it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn chain(
+        &self,
+        at: NodeIndex,
+        parts: &[Part<'source>],
+        infix: Spelling,
+    ) -> Chain<'source>
+    {
+        let rule = self.rule(at);
+        let mut chain = Chain {
+            operands: Vec::new(),
+            parts: Vec::new(),
+        };
+        let mut pending: Vec<Part<'source>> = parts.to_vec();
+        loop {
+            let last = pending
+                .iter()
+                .rposition(|part| matches!(part.role, Role::Operand(_)));
+            let continues = last.and_then(|last| match pending.get(last).map(|part| part.role) {
+                Some(Role::Operand(Child::Node(next))) if self.rule(next) == rule => {
+                    Some((last, next))
+                },
+                _ => None,
+            });
+            let Some((last, next)) = continues
+            else {
+                chain.extend(pending, infix);
+                return chain;
+            };
+            let tail = pending.split_off(last);
+            chain.extend(pending, infix);
+            let (next_parts, _) = self.parts(next);
+            pending = next_parts;
+            if let Some(Part { before, .. }) = tail.into_iter().next()
+                && let Some(first) = pending.first_mut()
+            {
+                let mut joined = before;
+                joined.append(&mut first.before);
+                first.before = joined;
+            }
+        }
+    }
+
+    /// Write the value-function alias the thunk type whose parts are `parts`
+    /// spells, its grade the default `ω` whether written or not, or nothing
+    /// when its body is not a chain of arrows ending in a pure returner or
+    /// its grade is another. Nothing is written for a thunk over a kind arrow
+    /// either, `+U (Type -> -F Type)`: its alias, `Type -> Type`, is the static
+    /// arrow, which the lowering reads otherwise (#5528). A domain that binds a
+    /// name keeps it, `(x : A, …) -> C`, where a later domain or the result
+    /// reads it, and is written bare otherwise, as the printer writes the
+    /// dependent alias. Where a value is read, a transport's family among
+    /// them, every spelling but the empty domain list is written, since the
+    /// parser reads a group followed by `->` as the alias's domains and
+    /// `() -> A` as an expression. A theory's judgment and a rule's outputs
+    /// write `A -> B` and no other alias, a `(` there opening a port group.
+    ///
+    /// # Specification
+    /// trivial.
+    fn alias(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+        context: Context,
+    ) -> Option<()>
+    {
+        let (owns, operands) = split(parts);
+        let &[thunked] = operands.as_slice()
+        else {
+            return None;
+        };
+        if default_grade(&owns)? == Grade::Written
+            && parts.iter().any(|part| matches!(part.role, Role::Comment))
+        {
+            return None;
+        }
+        let mut domains: Vec<Domain<'source>> = Vec::new();
+        let mut link = self.stripped(thunked);
+        let result = loop {
+            match self.shape_of(link)? {
+                (&Shape::Arrow { domain, codomain }, Commented::No) => {
+                    domains.push(match self.shape_of(domain) {
+                        Some((
+                            &Shape::Parenthesized {
+                                binder: Binder::Some,
+                                ref domains,
+                                ..
+                            },
+                            Commented::No,
+                        )) => match domains.as_slice() {
+                            &[only @ Domain { name: Some(_), .. }] => only,
+                            _ => return None,
+                        },
+                        Some((
+                            &Shape::Parenthesized {
+                                binder: Binder::Some,
+                                ..
+                            },
+                            _,
+                        )) => return None,
+                        Some(_) | None => Domain {
+                            name: None,
+                            ty: domain,
+                        },
+                    });
+                    link = self.stripped(codomain);
+                },
+                (&Shape::Returner { result }, Commented::No) => break result,
+                _ => return None,
+            }
+        };
+        if self.kind_arrow(&domains, result) == Kinded(true) {
+            return None;
+        }
+        self.aliased(out, domains, result, context)
+    }
+
+    /// Whether the value-function alias over `domains` and `result` is a kind
+    /// arrow as the lowering reads it, `Type -> Type`: each of its types
+    /// classifies codes, through parentheses, and a leaf classifies none. The
+    /// result is read first, so an alias to a value type reads one type.
+    ///
+    /// # Specification
+    /// trivial.
+    fn kind_arrow(
+        &self,
+        domains: &[Domain<'source>],
+        result: Child<'source>,
+    ) -> Kinded
+    {
+        let mut scratch = Pieces::default();
+        let mut known = BTreeMap::new();
+        let mut classifies = |child: Child<'source>| {
+            let Child::Node(at) = child
+            else {
+                return false;
+            };
+            self.tree.node(at).is_some_and(|node| {
+                classifies_codes(
+                    self.grammar,
+                    self.tree,
+                    Placed::of(at, node),
+                    &mut scratch,
+                    &mut known,
+                )
+                .is_ok_and(|kinded| kinded.0)
+            })
+        };
+        Kinded(classifies(result) && domains.iter().all(|domain| classifies(domain.ty)))
+    }
+
+    /// Write the value-function alias over `domains` and `result`, as
+    /// [`Self::alias`] says: a domain's binder kept where a later domain or
+    /// the result reads it, one bare domain unparenthesised, the empty list
+    /// only in a type and a list never in a judgment or a rule's outputs.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `named` holds the tokens of one binder's name, searched once per token of one arrow's later domains"
+        )
+    )]
+    fn aliased(
+        &self,
+        out: &mut Builder<'source>,
+        mut domains: Vec<Domain<'source>>,
+        result: Child<'source>,
+        context: Context,
+    ) -> Option<()>
+    {
+        for index in 0 .. domains.len() {
+            let Some(&Domain {
+                name: Some(name), ..
+            }) = domains.get(index)
+            else {
+                continue;
+            };
+            let named = self.tokens(name);
+            let read = domains
+                .iter()
+                .skip(index.saturating_add(1))
+                .map(|later| later.ty)
+                .chain([result])
+                .any(|later| {
+                    self.tokens(later)
+                        .iter()
+                        .any(|&token| named.contains(&token))
+                });
+            if !read && let Some(domain) = domains.get_mut(index) {
+                domain.name = None;
+            }
+        }
+        match domains.as_slice() {
+            &[Domain { name: None, ty }] => {
+                out.place(&self.operand(ty), Band::Lazy);
+            },
+            &[] if context == Context::Type => {
+                out.token(OPEN_PAREN);
+                out.token(CLOSE_PAREN);
+            },
+            &[] => return None,
+            _ if matches!(context, Context::Judgment | Context::Outputs) => return None,
+            many => {
+                out.token(OPEN_PAREN);
+                for (index, domain) in many.iter().enumerate() {
+                    if index > 0 {
+                        out.token(COMMA);
+                        out.gap(Spelling(" "));
+                    }
+                    if let Some(name) = domain.name {
+                        out.place(&self.operand(name), Band::Atom);
+                        out.spaced(Spelling(" : "));
+                    }
+                    out.place(&self.operand(domain.ty), Band::Loose);
+                }
+                out.token(CLOSE_PAREN);
+            },
+        }
+        out.spaced(Spelling(" -> "));
+        out.place(&self.operand(result), Band::Lazy);
+        Some(())
+    }
+
+    /// Write the value-function alias whose parts are `parts` at its shortest,
+    /// as [`Self::aliased`] writes it: one domain unparenthesised and a binder
+    /// nothing later reads left out; or nothing when it is already so
+    /// written, or a comment stands among its parts or its domains.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `named` holds the tokens of one binder's name, searched once per token of one alias's domains"
+        )
+    )]
+    fn shortened(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+        context: Context,
+    ) -> Option<()>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let (owns, operands) = split(parts);
+        let (&[arrow], &[domain, result]) = (owns.as_slice(), operands.as_slice())
+        else {
+            return None;
+        };
+        if <&str>::from(arrow) != "->" || self.valued(result) == Valued::Computation {
+            return None;
+        }
+        let domains: Vec<Domain<'source>> = match self.shape_of(domain) {
+            Some((
+                &Shape::Parenthesized {
+                    ref entries,
+                    binder: Binder::None,
+                    ..
+                },
+                Commented::No,
+            )) => entries
+                .iter()
+                .map(|&ty| Domain {
+                    name: None,
+                    ty: self.stripped(ty),
+                })
+                .collect(),
+            Some((
+                &Shape::Parenthesized {
+                    binder: Binder::Some,
+                    ref domains,
+                    ..
+                },
+                Commented::No,
+            )) => domains.clone(),
+            Some(_) | None => return None,
+        };
+        let unread = domains.iter().any(|domain| {
+            domain.name.is_some_and(|name| {
+                let named = self.tokens(name);
+                !domains
+                    .iter()
+                    .map(|later| later.ty)
+                    .chain([result])
+                    .any(|later| {
+                        self.tokens(later)
+                            .iter()
+                            .any(|&token| named.contains(&token))
+                    })
+            })
+        });
+        let bare = matches!(domains.as_slice(), &[Domain { name: None, .. }]);
+        if !bare && !unread {
+            return None;
+        }
+        self.aliased(out, domains, result, context)
+    }
+
+    /// Write the thunk type whose parts are `parts`, written at the default
+    /// grade `+U[ω] B`, as `+U B`, or nothing when it writes another grade,
+    /// none, or a comment among its tiles.
+    ///
+    /// # Specification
+    /// trivial.
+    fn ungraded(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<()>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let (owns, operands) = split(parts);
+        let (Some(Grade::Written), &[body]) = (default_grade(&owns), operands.as_slice())
+        else {
+            return None;
+        };
+        out.token(Spelling("+U"));
+        out.gap(Spelling(" "));
+        out.place(&self.operand(body), Band::Atom);
+        Some(())
+    }
+
+    /// Write the `return` whose parts are `parts` as the value it returns,
+    /// answering the value's band, or nothing when a comment stands among its
+    /// parts.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unreturned(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<Band>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let (owns, operands) = split(parts);
+        let (&[keyword], &[value]) = (owns.as_slice(), operands.as_slice())
+        else {
+            return None;
+        };
+        if <&str>::from(keyword) != "return" {
+            return None;
+        }
+        let operand = self.operand(value);
+        out.place(&operand, Band::Loose);
+        Some(operand.band)
+    }
+
+    /// Write the returner whose parts are `parts`, `-F B`, as `B`, answering
+    /// `B`'s band, and `-F [E] B` as `[E] B`, the row kept before the type it
+    /// rows in its reading order: its tail among it, `[E | r] B` and `[r] B`,
+    /// and each instance's label before its interface, `[a : I] B`; or nothing
+    /// when a comment stands among its parts, or when `B` is a value at a world
+    /// or a region, `A at w`: the lowering inserts no returner over one, since
+    /// `-> A at w` reads as a computation placed at `w`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unreturning(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<Band>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let &[ref first, ref row @ .., ref last] = parts
+        else {
+            return None;
+        };
+        let (Role::Own(keyword), Role::Operand(value)) = (first.role, last.role)
+        else {
+            return None;
+        };
+        if <&str>::from(keyword) != "-F" || self.unparenthesized(value) == Some(MoldName("at_type"))
+        {
+            return None;
+        }
+        let operand = self.operand(value);
+        let Some(open) = row.first()
+        else {
+            out.place(&operand, Band::Loose);
+            return Some(operand.band);
+        };
+        if !matches!(open.role, Role::Own(text) if <&str>::from(text) == "[") {
+            return None;
+        }
+        for part in row {
+            match part.role {
+                Role::Own(tile) => match <&str>::from(tile) {
+                    "|" | ":" => {
+                        out.gap(Spelling(" "));
+                        out.fragment(tile);
+                        out.gap(Spelling(" "));
+                    },
+                    "," => {
+                        out.fragment(tile);
+                        out.gap(Spelling(" "));
+                    },
+                    _ => out.fragment(tile),
+                },
+                Role::Operand(child) => {
+                    let entry = self.operand(child);
+                    out.place(&entry, Band::Loose);
+                },
+                Role::Comment => return None,
+            }
+        }
+        out.gap(Spelling(" "));
+        out.place(&operand, Band::Atom);
+        Some(Band::Bridge)
+    }
+
+    /// The rule of the type `child` writes under any parentheses around it,
+    /// or nothing when `child` is no node.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unparenthesized(
+        &self,
+        child: Child<'source>,
+    ) -> Option<MoldName>
+    {
+        let Child::Node(mut node) = child
+        else {
+            return None;
+        };
+        while self.rule(node) == Some(MoldName("parenthesized_type")) {
+            let (parts, _) = self.parts(node);
+            let (_, operands) = split(&parts);
+            let &[Child::Node(inner)] = operands.as_slice()
+            else {
+                return None;
+            };
+            node = inner;
+        }
+        self.rule(node)
+    }
+
+    /// Write the `thunk` whose parts are `parts` as the one expression its
+    /// block holds, answering the expression's band, or nothing when a grade
+    /// is written, a statement or a comment stands among its parts, or the
+    /// expression is a `become`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unthunked(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<Band>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let (owns, operands) = split(parts);
+        let (&[keyword, open, close], &[body]) = (owns.as_slice(), operands.as_slice())
+        else {
+            return None;
+        };
+        if (
+            <&str>::from(keyword),
+            <&str>::from(open),
+            <&str>::from(close),
+        ) != ("thunk", "{", "}")
+        {
+            return None;
+        }
+        if let Child::Node(at) = body
+            && self.rule(at) == Some(MoldName("become_expression"))
+        {
+            return None;
+        }
+        let operand = self.operand(body);
+        out.place(&operand, Band::Loose);
+        Some(operand.band)
+    }
+
+    /// The definition spanning `extent` whose parts are `parts`, its body in
+    /// the braces its head opens, written with the body after `=`: `= c ;`
+    /// for one expression, `= { … } ;` for statements. Nothing when no head
+    /// opens a brace body, or the brace holds copattern clauses or a comment.
+    ///
+    /// # Specification
+    /// - requires: `parts` are the parts of a form of the rule `rule`, in
+    ///   source order.
+    /// - ensures: `None` unless an own `{` stands before any own `=` and any
+    ///   own `where`, an own `def` stands before it, the last part is the own
+    ///   `}` that closes it, and no own `=>` and no comment stands between
+    ///   them; otherwise the form as written, but for ` = ` before the `{` and
+    ///   `;` after the `}`, both braces left out when they hold one operand
+    ///   alone.
+    /// - panics: none.
+    /// - executable: none — the clause names the roles of the form's parts,
+    ///   which no predicate on the arguments and the result states more simply.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a brace body moves after `=`, a recursive one too,
+    ///   and a body that holds a comment keeps its braces.
+    /// - witness: `tests::rewrite::a_brace_body_moves_after_the_equals_6318`
+    ///
+    /// # Cost
+    /// - allocation: the written leaves, growth within the form's parts
+    fn after_equals(
+        &mut self,
+        rule: MoldName,
+        parts: &[Part<'source>],
+        extent: ByteSpan,
+    ) -> Option<Spelled<'source>>
+    {
+        let own = |part: &Part<'source>, text: &str| matches!(part.role, Role::Own(tile) if <&str>::from(tile) == text);
+        let open = parts
+            .iter()
+            .position(|part| own(part, "{") || own(part, "=") || own(part, "where"))?;
+        let close = parts.len().checked_sub(1)?;
+        let (opener, closer) = (parts.get(open)?, parts.get(close)?);
+        let defined = parts.get(.. open)?.iter().any(|part| own(part, "def"));
+        if !defined || !own(opener, "{") || !own(closer, "}") || open >= close {
+            return None;
+        }
+        let inner = parts.get(open.saturating_add(1) .. close)?;
+        // A comment in the body would move into the block after `=`, or
+        // beside the body alone, off the node that owns it: the formatter
+        // keeps each comment's owner.
+        let commentary = |part: &Part<'source>| {
+            matches!(part.role, Role::Comment)
+                || part.before.iter().chain(&part.leaves).any(|leaf| {
+                    matches!(
+                        leaf.material,
+                        Material::LineComment | Material::BlockComment
+                    )
+                })
+        };
+        if inner
+            .iter()
+            .chain([closer])
+            .any(|part| own(part, "=>") || commentary(part))
+        {
+            return None;
+        }
+        let lone = matches!(inner, [Part {
+            role: Role::Operand(_),
+            ..
+        }]);
+        let commented = if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            Commented::Yes
+        }
+        else {
+            Commented::No
+        };
+        let kept = self.kept(rule, parts, extent, (commented, Open::Yes));
+        let brace = |part: &Part<'source>| {
+            part.leaves
+                .iter()
+                .find(|leaf| leaf.material == Material::Token)
+                .map(|leaf| leaf.span)
+        };
+        let (open_span, close_span) = (brace(opener)?, brace(closer)?);
+        let at_open = kept
+            .leaves
+            .iter()
+            .position(|leaf| leaf.span == open_span && leaf.material == Material::Token)?;
+        let at_close = kept
+            .leaves
+            .iter()
+            .rposition(|leaf| leaf.span == close_span && leaf.material == Material::Token)?;
+        let head = kept.leaves.get(.. at_open)?;
+        let ends = head
+            .iter()
+            .rposition(|leaf| leaf.material != Material::Whitespace)
+            .map_or(0, |last| last.saturating_add(1));
+        let mut out = Builder {
+            leaves: Vec::with_capacity(kept.leaves.len().saturating_add(3)),
+            position: ByteSpan::new(extent.start(), extent.start()).unwrap_or(extent),
+            form: extent,
+            owner: Owner::Form(self.form),
+        };
+        out.leaves.extend_from_slice(head.get(.. ends)?);
+        out.spaced(Spelling(" = "));
+        if lone {
+            out.leaves.extend_from_slice(trimmed(
+                kept.leaves.get(at_open.saturating_add(1) .. at_close)?,
+            ));
+        }
+        else {
+            out.leaves
+                .extend_from_slice(kept.leaves.get(at_open ..= at_close)?);
+        }
+        out.token(Spelling(";"));
+        out.leaves
+            .extend_from_slice(kept.leaves.get(at_close.saturating_add(1) ..)?);
+        self.changed = Changed::Yes;
+        Some(Spelled {
+            leaves: out.leaves,
+            rewritten: Changed::Yes,
+            ..kept
+        })
+    }
+
+    /// Write the call spanning `extent` whose parts are `parts` as its one
+    /// argument, answering the argument's band, when its callee names a
+    /// reduct the checker would apply there; nothing when a comment stands
+    /// among its parts or it takes another number of arguments.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unreduced_call(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+        extent: ByteSpan,
+    ) -> Option<Band>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let (_, operands) = split(parts);
+        let &[callee, argument] = operands.as_slice()
+        else {
+            return None;
+        };
+        let callee = self.tokens(callee);
+        if self.reducts.called((extent, &callee), self.unreduced) != Reduct::Moved {
+            return None;
+        }
+        let operand = self.operand(argument);
+        out.place(&operand, Band::Loose);
+        Some(operand.band)
+    }
+
+    /// Write the forgetting map's form spanning `extent` whose parts are
+    /// `parts` as its model, answering the model's band, when the checker
+    /// would apply a forgetting map there; nothing when a comment stands
+    /// among its parts.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unforgotten(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+        extent: ByteSpan,
+    ) -> Option<Band>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        if self.reducts.forgotten(extent, self.unreduced) != Reduct::Moved {
+            return None;
+        }
+        // Each sort's binding, then the model, then the theory's model type.
+        let (_, operands) = split(parts);
+        let &[.., model, _] = operands.as_slice()
+        else {
+            return None;
+        };
+        let operand = self.operand(model);
+        out.place(&operand, Band::Loose);
+        Some(operand.band)
+    }
+
+    /// Write the thunk of arrows the value-function alias whose parts are
+    /// `parts` stands for: a domain that binds a name as `(x : A) ->`, every
+    /// other bare.
+    ///
+    /// # Specification
+    /// trivial.
+    fn thunk(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<()>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let (owns, operands) = split(parts);
+        let (&[arrow], &[domain, codomain]) = (owns.as_slice(), operands.as_slice())
+        else {
+            return None;
+        };
+        if <&str>::from(arrow) != "->" || self.valued(codomain) == Valued::Computation {
+            return None;
+        }
+        let domains = match self.shape_of(domain) {
+            Some((
+                &Shape::Parenthesized {
+                    ref entries,
+                    binder: Binder::None,
+                    ..
+                },
+                Commented::No,
+            )) => entries
+                .iter()
+                .map(|&ty| Domain { name: None, ty })
+                .collect(),
+            Some((
+                &Shape::Parenthesized {
+                    binder: Binder::Some,
+                    ref domains,
+                    ..
+                },
+                Commented::No,
+            )) if !domains.is_empty() => domains.clone(),
+            Some((&Shape::Parenthesized { .. }, _)) => return None,
+            Some(_) | None => Vec::from([Domain {
+                name: None,
+                ty: domain,
+            }]),
+        };
+        out.token(Spelling("+U"));
+        out.gap(Spelling(" "));
+        out.token(OPEN_PAREN);
+        for domain in &domains {
+            match domain.name {
+                Some(name) => {
+                    out.token(OPEN_PAREN);
+                    out.place(&self.operand(name), Band::Atom);
+                    out.spaced(Spelling(" : "));
+                    out.place(&self.operand(domain.ty), Band::Loose);
+                    out.token(CLOSE_PAREN);
+                },
+                None => out.place(&self.operand(domain.ty), Band::Lazy),
+            }
+            out.spaced(Spelling(" -> "));
+        }
+        out.token(Spelling("-F"));
+        out.gap(Spelling(" "));
+        // A returner takes an application, `-F Maybe A`, as the printer
+        // writes it.
+        out.place(&self.operand(codomain), Band::Application);
+        out.token(CLOSE_PAREN);
+        Some(())
+    }
+
+    /// The tokens `child` writes, whitespace and comments left out, and the
+    /// empty tile a juxtaposition holds, which no source writes: `f a` is `f`
+    /// and `a`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn tokens(
+        &self,
+        child: Child<'source>,
+    ) -> Vec<SourceFragment<'source>>
+    {
+        self.operand(child)
+            .leaves
+            .iter()
+            .filter(|leaf| leaf.material == Material::Token && !<&str>::from(leaf.text).is_empty())
+            .map(|leaf| leaf.text)
+            .collect()
+    }
+
+    /// The head, then the arguments, of the application whose parts are
+    /// `parts`: the spine of applications nested to the left read whole, `f a
+    /// b` as `f`, `a` and `b`; or nothing when a comment stands among the
+    /// parts of any of them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spine(
+        &self,
+        parts: &[Part<'source>],
+    ) -> Option<Vec<Child<'source>>>
+    {
+        let mut spine = Vec::new();
+        let (mut head, argument) = head_and_argument(parts)?;
+        spine.push(argument);
+        while let Child::Node(at) = head
+            && self.rule(at) == Some(APPLICATION)
+        {
+            let (inner, _) = self.parts(at);
+            let (inner_head, argument) = head_and_argument(&inner)?;
+            spine.push(argument);
+            head = inner_head;
+        }
+        spine.push(head);
+        spine.reverse();
+        Some(spine)
+    }
+
+    /// Whether `child` is written as `spellings`, token by token.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spelled_as(
+        &self,
+        child: Child<'source>,
+        spellings: &[Spelling],
+    ) -> Spelt
+    {
+        let same = self
+            .tokens(child)
+            .iter()
+            .map(|&token| <&str>::from(token))
+            .eq(spellings.iter().map(|spelling| spelling.0));
+        if same { Spelt::As } else { Spelt::Otherwise }
+    }
+
+    /// The carrier and the two endpoints of the path type at `quoted`,
+    /// `Path(l, r)` or `Path[.A = C](l, r)` in a type position: the carrier
+    /// by the tokens of `C`, none when it is left to the endpoints, and each
+    /// endpoint by its tokens and the operands it holds, split at the type's
+    /// own commas.
+    ///
+    /// # Specification
+    /// trivial.
+    fn quoted_endpoints(
+        &self,
+        quoted: NodeIndex,
+    ) -> Option<(Vec<SourceFragment<'source>>, Vec<Endpoint<'source>>)>
+    {
+        let (typed, _) = self.parts(quoted);
+        // The head and the supply by their tokens, then the endpoints by their
+        // tokens and the operands they hold.
+        let mut head: Vec<SourceFragment<'source>> = Vec::new();
+        let mut endpoints: Vec<Endpoint<'source>> = Vec::new();
+        let mut opened = false;
+        for part in &typed {
+            match part.role {
+                Role::Own(text) => match <&str>::from(text) {
+                    "(" if !opened => {
+                        opened = true;
+                        endpoints.push((Vec::new(), Vec::new()));
+                    },
+                    "," if opened => endpoints.push((Vec::new(), Vec::new())),
+                    ")" if opened => {},
+                    _ if opened => endpoints.last_mut()?.0.push(text),
+                    _ => head.push(text),
+                },
+                Role::Operand(child) if !opened => head.extend(self.tokens(child)),
+                Role::Operand(child) => {
+                    let endpoint = endpoints.last_mut()?;
+                    endpoint.0.extend(self.tokens(child));
+                    endpoint.1.push(child);
+                },
+                Role::Comment => return None,
+            }
+        }
+        // `Path`, or `Path[.A = C]`: the carrier is the tokens of `C`.
+        let carrier = match *head.as_slice() {
+            [path] if <&str>::from(path) == "Path" => &[][..],
+            [path, open, dot, _, equals, ref carrier @ .., close]
+                if <&str>::from(path) == "Path"
+                    && <&str>::from(open) == "["
+                    && <&str>::from(dot) == "."
+                    && <&str>::from(equals) == "="
+                    && <&str>::from(close) == "]" =>
+            {
+                carrier
+            },
+            _ => return None,
+        };
+        Some((carrier.to_vec(), endpoints))
+    }
+
+    /// The derived path operation the transport whose parts are `parts`
+    /// spells, when its motive `fun (y) { Path l r }` or `fun (y) {
+    /// type(Path[.A = A](l, r)) }`, its carrier supplied or left to the
+    /// endpoints, is one the lowering derives: `Path.step p q` for
+    /// `Path.walk (fun (y) { Path[.A = A](a, y) }) q p`, `Path.back p` for
+    /// `Path.walk (fun (y) { Path[.A = A](y, a) }) p (Path.here a)` and
+    /// `Path.ap f p` for `Path.walk (fun (y) { Path[.A = B](f(a), f(y)) }) p
+    /// (Path.here (f a))`,
+    /// where neither the carrier, the fixed endpoint nor the map names `y`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn derived(
+        &self,
+        parts: &[Part<'source>],
+    ) -> Option<Operation<'source>>
+    {
+        let spine = self.spine(parts)?;
+        let &[callee, motive, along, moved] = spine.as_slice()
+        else {
+            return None;
+        };
+        if self.spelled_as(callee, WALK) == Spelt::Otherwise {
+            return None;
+        }
+        let Child::Node(motive) = self.stripped(motive)
+        else {
+            return None;
+        };
+        if self.rule(motive) != Some(MoldName("lambda_expression")) {
+            return None;
+        }
+        let (abstraction, _) = self.parts(motive);
+        let (owns, body) = split(&abstraction);
+        let (&[_, _, binder, _, _, _], &[Child::Node(body)]) = (owns.as_slice(), body.as_slice())
+        else {
+            return None;
+        };
+        // The block molds a bare `Path l r` as an application of `Path`, and
+        // a quote `type(Path[.A = A](l, r))`, which the printer writes where a
+        // carrier is supplied, holds it as a path type.
+        let (carrier, endpoints): (Vec<SourceFragment<'source>>, Vec<Endpoint<'source>>) =
+            if self.rule(body) == Some(MoldName("type_quote_expression")) {
+                let (quote, _) = self.parts(body);
+                let (_, quoted) = split(&quote);
+                let &[Child::Node(quoted)] = quoted.as_slice()
+                else {
+                    return None;
+                };
+                if self.rule(quoted) != Some(MoldName("path_type")) {
+                    return None;
+                }
+                self.quoted_endpoints(quoted)?
+            }
+            else if self.rule(body) == Some(APPLICATION) {
+                let (typed, _) = self.parts(body);
+                let typed = self.spine(&typed)?;
+                let (&head, endpoints) = typed.split_first()?;
+                if self.spelled_as(head, &[Spelling("Path")]) == Spelt::Otherwise {
+                    return None;
+                }
+                let endpoints = endpoints
+                    .iter()
+                    .map(|&endpoint| {
+                        let endpoint = self.stripped(endpoint);
+                        (self.tokens(endpoint), Vec::from([endpoint]))
+                    })
+                    .collect();
+                (Vec::new(), endpoints)
+            }
+            else {
+                return None;
+            };
+        let &[(ref left, _), (ref right, ref holds)] = endpoints.as_slice()
+        else {
+            return None;
+        };
+        if carrier.contains(&binder) {
+            return None;
+        }
+        if right.as_slice() == [binder] && !left.contains(&binder) {
+            return Some(Operation::Composite {
+                first: moved,
+                second: along,
+            });
+        }
+        // An inverse and an action move the reflexivity at the fixed
+        // endpoint, `Path.here a`, its endpoint parenthesised when it is not
+        // an atom.
+        let moved = self.tokens(self.stripped(moved));
+        let reflexive = |fixed: &[SourceFragment<'source>]| match moved.as_slice() {
+            &[path, dot, here, ref rest @ ..]
+                if <&str>::from(path) == "Path"
+                    && <&str>::from(dot) == "."
+                    && <&str>::from(here) == "here" =>
+            {
+                rest == fixed
+                    || matches!(
+                        rest,
+                        &[open, ref inner @ .., close]
+                            if <&str>::from(open) == "("
+                                && <&str>::from(close) == ")"
+                                && inner == fixed
+                    )
+            },
+            _ => false,
+        };
+        if left.as_slice() == [binder] && !right.contains(&binder) && reflexive(right) {
+            return Some(Operation::Inverse { path: along });
+        }
+        let &[Child::Node(applied_map)] = holds.as_slice()
+        else {
+            return None;
+        };
+        if self.rule(applied_map) != Some(APPLICATION) {
+            return None;
+        }
+        let (call, _) = self.parts(applied_map);
+        let &[map, argument] = self.spine(&call)?.as_slice()
+        else {
+            return None;
+        };
+        let mapped = self.tokens(map);
+        // The fixed endpoint is the map applied, `f a`, as the action
+        // derives it.
+        let applies = left
+            .strip_prefix(mapped.as_slice())
+            .is_some_and(|rest| !rest.is_empty());
+        (self.tokens(self.stripped(argument)).as_slice() == [binder]
+            && !mapped.contains(&binder)
+            && applies
+            && !left.contains(&binder)
+            && reflexive(left))
+        .then_some(Operation::Action { map, path: along })
+    }
+
+    /// Write the supplied path type whose parts are `parts`, `Path(x, y)` or
+    /// `Path[.A = T](x, y)`, as the juxtaposition `Path x y`. Each endpoint is
+    /// an atom or in its parentheses, and the carrier stays in its brackets.
+    /// Nothing is written for a list that holds a comment, or for parts that
+    /// leave a list or a carrier open. The path binds as [`juxtaposition`]
+    /// states, so a kept form and a rewritten one agree.
+    ///
+    /// # Specification
+    /// trivial.
+    fn supplied_path_type(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<Band>
+    {
+        let mut opened = false;
+        let mut carrier = false;
+        let mut led: Option<bool> = None;
+        for part in parts {
+            match part.role {
+                Role::Own(text) => match <&str>::from(text) {
+                    "(" if !opened => opened = true,
+                    "," if opened => {},
+                    ")" if opened => opened = false,
+                    "=" => {
+                        out.gap(Spelling(" "));
+                        out.fragment(text);
+                        carrier = true;
+                    },
+                    "]" => out.fragment(text),
+                    _ if carrier && !opened => {
+                        out.gap(Spelling(" "));
+                        out.fragment(text);
+                        carrier = false;
+                    },
+                    _ => out.fragment(text),
+                },
+                Role::Operand(child) => {
+                    let operand = self.operand(child);
+                    if opened {
+                        if led.is_none() {
+                            led = Some(operand.enclosed() == Enclosed::Yes);
+                        }
+                        out.glue();
+                        out.place(&operand, Band::Atom);
+                    }
+                    else if carrier {
+                        out.gap(Spelling(" "));
+                        out.place(&operand, Band::Loose);
+                        carrier = false;
+                    }
+                    else {
+                        out.place(&operand, Band::Atom);
+                    }
+                },
+                Role::Comment => return None,
+            }
+        }
+        let led = if led == Some(true) {
+            Enclosed::Yes
+        }
+        else {
+            Enclosed::No
+        };
+        (!opened && !carrier).then_some(juxtaposition(Band::Atom, led))
+    }
+
+    /// Write the type application whose parts are `parts` as juxtaposition.
+    /// Parenthesize each argument that is no atom.
+    /// Do not write a type variable head.
+    /// Do not write a list with no argument.
+    /// Do not write a second list.
+    /// Do not write a list that holds a comment.
+    /// A returner encloses a juxtaposition whose first argument takes
+    /// parentheses.
+    /// The type grammar reads `-F Var (Extend a b) c` as the call
+    /// `Var(Extend a b)` applied to `c`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the operands, growth within the application's arguments
+    fn juxtaposed_type(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<Band>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let (owns, operands) = split(parts);
+        let (&head, rest) = owns.split_first()?;
+        let head_text = <&str>::from(head);
+        // The carrier between `=` and `]` is an operand, or a keyword the
+        // grammar spells as its own tile, `Path[.A = Type](X, Y)`.
+        let carried = rest.len().checked_sub(4_usize).and_then(|end| {
+            Some((
+                rest.get(.. 3_usize)?,
+                rest.get(3_usize .. end)?,
+                rest.get(end ..)?,
+            ))
+        });
+        let supplied = matches!(head_text, "Path" | "Bridge")
+            && carried.is_some_and(|(lead, carrier, tail)| {
+                lead.iter()
+                    .map(|&own| <&str>::from(own))
+                    .eq(["[", ".", "="])
+                    && tail
+                        .iter()
+                        .map(|&own| <&str>::from(own))
+                        .eq(["]", "(", ",", ")"])
+                    && carrier
+                        .iter()
+                        .all(|&own| !matches!(<&str>::from(own), "[" | "]" | "(" | ")" | ","))
+            });
+        let opens = rest
+            .iter()
+            .filter(|&&own| <&str>::from(own) == OPEN_PAREN.0)
+            .count();
+        if (rest.first().map(|&own| <&str>::from(own)) != Some(OPEN_PAREN.0) && !supplied)
+            || opens != 1
+            || operands.is_empty()
+            || !head_text.starts_with(char::is_uppercase)
+        {
+            return None;
+        }
+        if supplied {
+            return self.supplied_path_type(out, parts);
+        }
+        let operands: Vec<Operand<'source>> = operands
+            .into_iter()
+            .map(|operand| self.operand(operand))
+            .collect();
+        let led = operands.first().map_or(Enclosed::No, Operand::enclosed);
+        out.fragment(head);
+        for operand in &operands {
+            out.glue();
+            out.place(operand, Band::Atom);
+        }
+        Some(juxtaposition(Band::Atom, led))
+    }
+
+    /// The band a form of the rule `rule` over `parts` binds at: the rule's
+    /// own band, but [`juxtaposition`]'s for a type juxtaposition, `Var
+    /// (Extend a b) c`, as [`Self::juxtaposed_type`] writes it. The
+    /// juxtaposition nests to the left, so its head is the first operand and
+    /// its first argument the second.
+    ///
+    /// # Specification
+    /// trivial.
+    fn band_over(
+        &self,
+        rule: MoldName,
+        parts: &[Part<'source>],
+    ) -> Band
+    {
+        if rule.0 != "type_application.juxtaposed" {
+            return Band::of(rule);
+        }
+        let mut operands = parts.iter().filter_map(|part| match part.role {
+            Role::Operand(child) => Some(child),
+            Role::Own(_) | Role::Comment => None,
+        });
+        match (operands.next(), operands.next()) {
+            (Some(head), Some(first)) => {
+                let (head, _) = self.bands(head);
+                let (band, inner) = self.bands(first);
+                juxtaposition(head, enclosure(band, inner))
+            },
+            (Some(_), None) | (None, _) => Band::Application,
+        }
+    }
+
+    /// The band the operand `child` binds at, and the band of the entry
+    /// inside the parentheses it keeps, as [`Self::operand`] reads them,
+    /// with no leaf copied.
+    ///
+    /// # Specification
+    /// trivial.
+    fn bands(
+        &self,
+        child: Child<'source>,
+    ) -> (Band, Option<Band>)
+    {
+        let band_of = |child: Child<'source>| match child {
+            Child::Leaf(_) => Some(Band::Atom),
+            Child::Node(at) => self.spelled.get(&at).map(|spelled| spelled.band),
+        };
+        let Some(band) = band_of(child)
+        else {
+            return (Band::Loose, None);
+        };
+        (band, self.unwrapped(child).and_then(band_of))
+    }
+}
+
+/// An endpoint of a path type: its tokens and the operands it holds.
+type Endpoint<'source> = (Vec<SourceFragment<'source>>, Vec<Child<'source>>);
+
+/// The head and the argument of the one application whose parts are
+/// `parts`, or nothing when a comment stands among them or they hold
+/// another count of operands.
+///
+/// # Specification
+/// trivial.
+fn head_and_argument<'source>(parts: &[Part<'source>]) -> Option<(Child<'source>, Child<'source>)>
+{
+    if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+        return None;
+    }
+    let (_, operands) = split(parts);
+    let &[head, argument] = operands.as_slice()
+    else {
+        return None;
+    };
+    Some((head, argument))
+}
+
+/// Write `tokens` into `out`, as the printer spaced them, except that a `,`
+/// or `;` touches the token before it, as the layout's `join` places one:
+/// the printer writes a bind's ` ;`, and a second pass would take its space.
+///
+/// # Specification
+/// trivial.
+fn written<'source>(
+    out: &mut Builder<'source>,
+    tokens: &'source [Token],
+)
+{
+    for token in tokens {
+        if token.spaced == Spaced::Yes && !matches!(token.text.as_str(), "," | ";") {
+            out.gap(Spelling(" "));
+        }
+        out.fragment(SourceFragment::from(token.text.as_str()));
+    }
+}
+
+/// A derived path operation a transport call spells, by the operands of
+/// the call its sugared spelling writes.
+#[derive(Clone, Copy)]
+enum Operation<'source>
+{
+    /// `Path.step p q`.
+    Composite
+    {
+        /// `p`, the transported value.
+        first: Child<'source>,
+        /// `q`, the path it moves along.
+        second: Child<'source>,
+    },
+    /// `Path.back p`.
+    Inverse
+    {
+        /// `p`.
+        path: Child<'source>,
+    },
+    /// `Path.ap f p`.
+    Action
+    {
+        /// `f`.
+        map: Child<'source>,
+        /// `p`.
+        path: Child<'source>,
+    },
+}
+
+/// The operands of an infix chain, with every part of every form in it.
+struct Chain<'source>
+{
+    /// The operands, in order.
+    operands: Vec<Child<'source>>,
+    /// The parts, in order: the comments among them are placed.
+    parts: Vec<Part<'source>>,
+}
+
+impl<'source> Chain<'source>
+{
+    /// Add `parts`, one form's parts up to its right operand, to the chain:
+    /// its operands, and every part but its `infix` tiles.
+    ///
+    /// # Specification
+    /// trivial.
+    fn extend(
+        &mut self,
+        parts: Vec<Part<'source>>,
+        infix: Spelling,
+    )
+    {
+        for part in parts {
+            match part.role {
+                Role::Operand(child) => self.operands.push(child),
+                Role::Own(text) if <&str>::from(text) == infix.0 => continue,
+                Role::Own(_) | Role::Comment => {},
+            }
+            self.parts.push(part);
+        }
+    }
+}
+
+/// The grammar rules this module reads, so a rule's name is a
+/// [`MoldName`].
+const RULES: [MoldName; 40] = [
+    MoldName("telescope_type"),
+    MoldName("product_type"),
+    MoldName("labelled_sum_type"),
+    MoldName("sum_type"),
+    MoldName("lazy_record_type"),
+    MoldName("lazy_product_type"),
+    MoldName("telescope_expression"),
+    MoldName("parenthesized_expression"),
+    MoldName("parenthesized_type"),
+    MoldName("u_type"),
+    MoldName("f_type"),
+    MoldName("f_type.row"),
+    MoldName("f_type.result"),
+    MoldName("f_type.row.labelled"),
+    MoldName("f_type.result.labelled"),
+    MoldName("at_type"),
+    MoldName("function_type"),
+    MoldName("lambda_expression"),
+    MoldName("union_type"),
+    MoldName("equivalence_type"),
+    MoldName("isomorphism_type"),
+    MoldName("universe_flow_type"),
+    MoldName("manifest_type"),
+    MoldName("manifest_sort"),
+    APPLICATION,
+    MoldName("type_application"),
+    MoldName("type_application.juxtaposed"),
+    MoldName("forget_model_expression"),
+    MoldName("path_type"),
+    MoldName("bridge_type"),
+    MoldName("type_quote_expression"),
+    MoldName("send_session_type"),
+    MoldName("receive_session_type"),
+    MoldName("return_expression"),
+    MoldName("thunk_expression"),
+    MoldName("become_expression"),
+    STATEMENT_BLOCK,
+    MoldName("def_value"),
+    MoldName("module_definition_member"),
+    MoldName("attributed_module_member"),
+];
+
+/// The block a form reaches through a `Sort::Block` hole, read among its
+/// host's parts.
+const STATEMENT_BLOCK: MoldName = MoldName("statement_block");
+
+/// The application `f a`, a call written by juxtaposition.
+const APPLICATION: MoldName = MoldName("application_expression");
+
+/// `*{`, the product's opener.
+const OPEN_PRODUCT: Spelling = Spelling("*{");
+
+/// `+{`, the sum's opener.
+const OPEN_SUM: Spelling = Spelling("+{");
+
+/// `&{`, the lazy record's opener.
+const OPEN_LAZY: Spelling = Spelling("&{");
+
+/// `}`.
+const CLOSE_BRACE: Spelling = Spelling("}");
+
+/// `(`.
+const OPEN_PAREN: Spelling = Spelling("(");
+
+/// `)`.
+const CLOSE_PAREN: Spelling = Spelling(")");
+
+/// `,`.
+const COMMA: Spelling = Spelling(",");
+
+/// `.`.
+const DOT: Spelling = Spelling(".");
+
+/// `Path.back`, the path inverse under its former.
+const BACK: &[Spelling] = &[Spelling("Path"), Spelling("."), Spelling("back")];
+
+/// `Path.ap`, a function's action on a path under its former.
+const CONG: &[Spelling] = &[Spelling("Path"), Spelling("."), Spelling("ap")];
+
+/// `Path.step`, the composite of two paths under its former.
+const STEP: &[Spelling] = &[Spelling("Path"), Spelling("."), Spelling("step")];
+
+/// `Path.walk`, the eliminator under its former.
+const WALK: &[Spelling] = &[Spelling("Path"), Spelling("."), Spelling("walk")];
+
+/// Write `spellings`, an operation's head under its former, as one name.
+///
+/// # Specification
+/// trivial.
+fn held(
+    out: &mut Builder<'_>,
+    spellings: &[Spelling],
+)
+{
+    for &spelling in spellings {
+        out.token(spelling);
+    }
+}
+
+/// `+`.
+const PLUS: Spelling = Spelling("+");
+
+/// `&`.
+const AMPERSAND: Spelling = Spelling("&");
+
+/// `*`.
+const STAR: Spelling = Spelling("*");
+
+/// The shape a form of `rule` whose parts are `parts` has, as a form around
+/// it reads it.
+///
+/// # Specification
+/// trivial.
+fn shape<'source>(
+    rule: MoldName,
+    parts: &[Part<'source>],
+) -> Shape<'source>
+{
+    let (owns, operands) = split(parts);
+    let spelled: Vec<&str> = owns.iter().map(|&text| <&str>::from(text)).collect();
+    match (rule.0, spelled.as_slice(), operands.as_slice()) {
+        ("parenthesized_type" | "parenthesized_expression", &["(", .., ")"], _) => {
+            let binder = if spelled.contains(&":") {
+                Binder::Some
+            }
+            else {
+                Binder::None
+            };
+            Shape::Parenthesized {
+                entries: operands,
+                binder,
+                domains: domains(parts).unwrap_or_default(),
+            }
+        },
+        ("function_type", &["->"], &[domain, codomain]) => Shape::Arrow { domain, codomain },
+        ("f_type", &["-F"], &[result]) => Shape::Returner { result },
+        _ => Shape::Other,
+    }
+}
+
+/// The entries of the parenthesised list whose parts are `parts`, each `A`
+/// or `x : A`, or nothing when an entry is spelled otherwise.
+///
+/// # Specification
+/// trivial.
+fn domains<'source>(parts: &[Part<'source>]) -> Option<Vec<Domain<'source>>>
+{
+    let mut domains = Vec::new();
+    let mut name = None;
+    let mut ty = None;
+    for part in parts {
+        match part.role {
+            Role::Own(text) => match <&str>::from(text) {
+                "(" => {},
+                ":" if name.is_none() => name = Some(ty.take()?),
+                "," | ")" => {
+                    domains.push(Domain {
+                        name: name.take(),
+                        ty: ty.take()?,
+                    });
+                },
+                _ => return None,
+            },
+            Role::Operand(child) if ty.is_none() => ty = Some(child),
+            Role::Operand(_) => return None,
+            Role::Comment => {},
+        }
+    }
+    Some(domains)
+}
+
+/// Whether an arrow's codomain is written as a value type or a computation
+/// type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Valued
+{
+    /// A value type: the arrow is a box.
+    Value,
+    /// An arrow, a pure returner or a lazy product.
+    Computation,
+}
+
+/// Where a type stands in the types around it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Read
+{
+    /// Where a computation type is read: the operand of `+U`, or the codomain
+    /// of an arrow read there.
+    Computation,
+    /// Anywhere else.
+    Value,
+}
+
+/// Whether a child is written as given spellings, token by token.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Spelt
+{
+    /// It is.
+    As,
+    /// It is written otherwise.
+    Otherwise,
+}
+
+/// Whether a form writes an application by juxtaposition where it is read.
+/// The own tiles and the operands of `parts`, in order.
+///
+/// # Specification
+/// trivial.
+fn split<'source>(parts: &[Part<'source>]) -> (Vec<SourceFragment<'source>>, Vec<Child<'source>>)
+{
+    let mut owns = Vec::new();
+    let mut operands = Vec::new();
+    for part in parts {
+        match part.role {
+            Role::Own(text) => owns.push(text),
+            Role::Operand(child) => operands.push(child),
+            Role::Comment => {},
+        }
+    }
+    (owns, operands)
+}
+
+/// How a thunk type writes the default grade `ω`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Grade
+{
+    /// `+U B`.
+    Unwritten,
+    /// `+U[ω] B`, or `+U[inf] B` in ASCII.
+    Written,
+}
+
+/// How the own tiles `owns` of a thunk type write its grade, or nothing when
+/// they are no thunk type's or write a grade other than the default `ω`.
+///
+/// # Specification
+/// trivial.
+fn default_grade(owns: &[SourceFragment<'_>]) -> Option<Grade>
+{
+    match *owns {
+        [bridge] if <&str>::from(bridge) == "+U" => Some(Grade::Unwritten),
+        [bridge, open, grade, close]
+            if <&str>::from(bridge) == "+U"
+                && <&str>::from(open) == "["
+                && [GrammarSpelling::Unicode, GrammarSpelling::Ascii]
+                    .into_iter()
+                    .any(|spelling| UNRESTRICTED.written(spelling).0 == <&str>::from(grade))
+                && <&str>::from(close) == "]" =>
+        {
+            Some(Grade::Written)
+        },
+        _ => None,
+    }
+}
+
+/// The entries of a product written `*{ … }`.
+///
+/// # Specification
+/// trivial.
+fn product<'source>(parts: &[Part<'source>]) -> Option<Vec<Child<'source>>>
+{
+    listed(parts, &[OPEN_PRODUCT], CLOSE_BRACE)
+}
+
+/// The entries of a list written `open … close`, separated by commas, a comma
+/// after the last allowed, or nothing when `parts` spell anything else.
+///
+/// # Specification
+/// trivial.
+fn listed<'source>(
+    parts: &[Part<'source>],
+    open: &[Spelling],
+    close: Spelling,
+) -> Option<Vec<Child<'source>>>
+{
+    let mut operands = Vec::new();
+    let mut opened = 0_usize;
+    let mut expecting = Expecting::Entry;
+    let mut closed = Closed::No;
+    for part in parts {
+        match part.role {
+            Role::Comment => {},
+            _ if closed == Closed::Yes => return None,
+            Role::Own(text) if opened < open.len() => {
+                if open
+                    .get(opened)
+                    .is_none_or(|tile| tile.0 != <&str>::from(text))
+                {
+                    return None;
+                }
+                opened = opened.saturating_add(1);
+            },
+            Role::Operand(_) if opened < open.len() => return None,
+            Role::Operand(child) => {
+                if expecting != Expecting::Entry {
+                    return None;
+                }
+                operands.push(child);
+                expecting = Expecting::Separator;
+            },
+            Role::Own(text) => match <&str>::from(text) {
+                "," if expecting == Expecting::Separator => expecting = Expecting::Entry,
+                text if text == close.0 => closed = Closed::Yes,
+                _ => return None,
+            },
+        }
+    }
+    (closed == Closed::Yes && opened == open.len()).then_some(operands)
+}
+
+/// What a list expects next.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Expecting
+{
+    /// An entry.
+    Entry,
+    /// A comma, or the closer.
+    Separator,
+}
+
+/// Whether a list's closer was read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Closed
+{
+    /// Not yet.
+    No,
+    /// It was.
+    Yes,
+}
+
+/// The comment parts of `parts`, grouped by how many operands precede each.
+///
+/// # Specification
+/// trivial.
+fn comments_by_operand<'parts, 'source>(
+    parts: &'parts [Part<'source>]
+) -> Vec<Vec<&'parts Part<'source>>>
+{
+    let mut grouped: Vec<Vec<&Part<'source>>> = Vec::from([Vec::new()]);
+    for part in parts {
+        match part.role {
+            Role::Operand(_) => grouped.push(Vec::new()),
+            Role::Comment => {
+                if let Some(group) = grouped.last_mut() {
+                    group.push(part);
+                }
+            },
+            Role::Own(_) => {},
+        }
+    }
+    grouped
+}
+
+/// The leaves a rewrite writes, in order.
+struct Builder<'source>
+{
+    /// The leaves so far.
+    leaves: Vec<Leaf<'source>>,
+    /// Where a leaf the rewrite writes stands: the form's start, no bytes
+    /// wide.
+    position: ByteSpan,
+    /// The source extent of the form the leaves respell.
+    form: ByteSpan,
+    /// The top-level form the leaves belong to.
+    owner: Owner,
+}
+
+impl<'source> Builder<'source>
+{
+    /// A leaf the rewrite writes.
+    ///
+    /// # Specification
+    /// trivial.
+    fn written(
+        &self,
+        text: SourceFragment<'source>,
+        material: Material,
+    ) -> Leaf<'source>
+    {
+        Leaf {
+            span: self.position,
+            text,
+            material,
+            owner: self.owner,
+            documentation: Documentation::Outside,
+            context: Spacing::Written,
+            offside: Offside::Written,
+            branch: None,
+            origin: Origin::Rewrite(self.form),
+        }
+    }
+
+    /// Write the token `text`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn token(
+        &mut self,
+        text: Spelling,
+    )
+    {
+        self.fragment(SourceFragment::from(text.0));
+    }
+
+    /// Write the token `text`, written outside the source.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fragment(
+        &mut self,
+        text: SourceFragment<'source>,
+    )
+    {
+        let leaf = self.written(text, Material::Token);
+        self.leaves.push(leaf);
+    }
+
+    /// Write the whitespace `text`, unless whitespace ends the leaves already.
+    ///
+    /// # Specification
+    /// trivial.
+    fn gap(
+        &mut self,
+        text: Spelling,
+    )
+    {
+        if self
+            .leaves
+            .last()
+            .is_some_and(|leaf| leaf.material == Material::Whitespace)
+        {
+            return;
+        }
+        let leaf = self.written(SourceFragment::from(text.0), Material::Whitespace);
+        self.leaves.push(leaf);
+    }
+
+    /// Write the token `text` between two spaces: `spaced` spells it padded,
+    /// ` * `.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spaced(
+        &mut self,
+        spaced: Spelling,
+    )
+    {
+        self.gap(Spelling(" "));
+        self.token(Spelling(spaced.0.trim()));
+        self.gap(Spelling(" "));
+    }
+
+    /// Write the empty tile a type's juxtaposition stands on, after a
+    /// space, as the parser reads it before each operand. The layout reads
+    /// the spine of a respelled type at these tiles, as it reads a written
+    /// one.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: one leaf of the respelled stream, growth within the source
+    fn glue(&mut self)
+    {
+        self.gap(Spelling(" "));
+        let leaf = Leaf {
+            context: Spacing::TypeGlue,
+            ..self.written(SourceFragment::from(""), Material::Token)
+        };
+        self.leaves.push(leaf);
+    }
+
+    /// Write `comments`, each after the whitespace the source wrote before
+    /// it, and a line break after each the source broke the line after.
+    ///
+    /// # Specification
+    /// trivial.
+    fn comments(
+        &mut self,
+        comments: &[&Part<'source>],
+    )
+    {
+        for comment in comments {
+            if let Some(last) = self.leaves.last()
+                && last.material == Material::Whitespace
+                && !comment.before.is_empty()
+            {
+                let _replaced = self.leaves.pop();
+            }
+            self.leaves.extend(comment.before.iter().copied());
+            self.leaves.extend(comment.leaves.iter().copied());
+            let line = comment.leaves.iter().any(|leaf| {
+                leaf.material == Material::LineComment || <&str>::from(leaf.text).starts_with("//")
+            });
+            let broken = comment
+                .before
+                .iter()
+                .any(|leaf| <&str>::from(leaf.text).contains('\n'));
+            if line || broken {
+                self.gap(Spelling("\n"));
+            }
+            else {
+                self.gap(Spelling(" "));
+            }
+        }
+    }
+
+    /// Write `operand` where a form binding at `fits` or tighter stands:
+    /// unwrapped from its parenthesis when its entry fits, as written when it
+    /// fits, parenthesised otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the operand's leaves, growth within the form's leaves
+    fn place(
+        &mut self,
+        operand: &Operand<'source>,
+        fits: Band,
+    )
+    {
+        if let Some((ref inner, band)) = operand.inner
+            && band <= fits
+        {
+            self.leaves.extend(inner.iter().copied());
+            return;
+        }
+        if operand.band <= fits {
+            self.leaves.extend(operand.leaves.iter().copied());
+            return;
+        }
+        // The parenthesis opens an operand of its own, spaced from a word
+        // before it as the spacing table spaces the source's.
+        let open = Leaf {
+            context: Spacing::Operand,
+            ..self.written(SourceFragment::from(OPEN_PAREN.0), Material::Token)
+        };
+        self.leaves.push(open);
+        self.leaves.extend(operand.leaves.iter().copied());
+        self.token(CLOSE_PAREN);
+    }
+}

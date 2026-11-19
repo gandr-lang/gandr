@@ -1,0 +1,52 @@
+[
+  {
+    "name": "a crate whose every skip is a row of its list agrees, whatever the order",
+    "input": {
+      "crate": "gandr-runtime-uring",
+      "list": ".config/unsafe/crates.json",
+      "stated": [
+        "it issues a system call by inline assembly, which Miri cannot run",
+        "it sets up a ring through liburing, which Miri cannot run"
+      ],
+      "found": [
+        "it sets up a ring through liburing, which Miri cannot run",
+        "it issues a system call by inline assembly, which Miri cannot run"
+      ]
+    },
+    "output": "gandr-runtime-uring: 2 skip(s), each a row of the list"
+  },
+  {
+    "name": "#7777: a crate that skips a test twice more than its list holds rows for the reason is refused",
+    "input": {
+      "crate": "gandr-runtime-uring",
+      "list": ".config/unsafe/crates.json",
+      "stated": ["it sets up a ring through liburing, which Miri cannot run"],
+      "found": [
+        "it sets up a ring through liburing, which Miri cannot run",
+        "it sets up a ring through liburing, which Miri cannot run",
+        "it sets up a ring through liburing, which Miri cannot run"
+      ]
+    },
+    "fails": true
+  },
+  {
+    "name": "a row whose test the crate no longer skips is refused",
+    "input": {
+      "crate": "gandr-runtime-uring",
+      "list": ".config/unsafe/crates.json",
+      "stated": ["it sets up a ring through liburing, which Miri cannot run"],
+      "found": []
+    },
+    "fails": true
+  },
+  {
+    "name": "a skip whose reason the list words otherwise is refused",
+    "input": {
+      "crate": "gandr-runtime-uring",
+      "list": ".config/unsafe/crates.json",
+      "stated": ["it sets up a ring through liburing, which Miri cannot run"],
+      "found": ["it sets up a ring, which Miri cannot run"]
+    },
+    "fails": true
+  }
+]

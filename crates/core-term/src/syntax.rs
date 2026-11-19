@@ -1,0 +1,7391 @@
+//! The core language: [`Value`] and [`Computation`] on the term side,
+//! [`ValueType`] and [`CompType`] on the type side, and the zone-qualified
+//! variable reference the two-zone context is read through.
+//!
+//! # The alphabet is the kernel's; the grammar is this crate's
+//!
+//! Levels, base types, literals, sum sides, de Bruijn indices and admission
+//! positions are re-used from the trusted base rather than restated, so the two
+//! languages cannot disagree about what a literal or a level *is* and the
+//! erasure that carries a core term down to a kernel term stays an id remapping
+//! rather than a payload translation.
+//!
+//! The node enums are this crate's own, and that is the half that matters: the
+//! elaboration-only formers — [`Value::Hole`], [`Value::Mark`], their
+//! computation counterparts and the unknown types — enter here rather than
+//! widening the vocabulary the kernel is obliged to represent, whose closedness
+//! is one of the trusted base's stated properties. The bridge to the kernel
+//! refuses every one of them by name; [`crate::hole`] states what they mean.
+//!
+//! # A variable names its zone
+//!
+//! The context carries two zones, and a de Bruijn index counts binders within
+//! one zone rather than across both, so an occurrence that did not say which
+//! zone it counted in would be ambiguous. [`Value::Variable`] therefore carries
+//! a [`Zone`] beside its index.
+//!
+//! No former in the core vocabulary binds into the linear zone, so the linear
+//! spelling is reachable only through a context built directly. The zone stays
+//! on every occurrence, so a former that binds linearly changes no occurrence
+//! site.
+//!
+//! # Children are ids, and the derived relations are shallow
+//!
+//! A node's children are typed arena ids and leaf payloads stay inline, so the
+//! derived `Clone`, `Drop`, `PartialEq`, `Eq` and `Hash` do not walk term
+//! depth. The derived equality is child-id equality rather than structural
+//! equality: two structurally equal subterms need not share an id, so every use
+//! site either compares inline leaf payloads or resolves ids explicitly.
+//! Binders are de Bruijn indices, so α-equivalence is syntactic identity and
+//! no freshness invariant is kept.
+//!
+//! # Kernel alphabet and core grammar
+//!
+//! Levels, base types, literals, sum sides, de Bruijn indices, admission
+//! positions and subterm-table entry indices come from `gandr-kernel-strata`
+//! and `gandr-kernel-term`. The two languages therefore agree on what a literal
+//! or a level is, and erasing a core term to a kernel term remaps ids without
+//! translating payloads; the erasure itself is not in this crate. The node
+//! enums, the arena and the context are this crate's own, so an
+//! elaboration-only former enters the core grammar without widening the closed
+//! vocabulary the kernel represents.
+//!
+//! ### Effect rows
+//!
+//! Returner rows are covariant; a shared interface must agree on every
+//! operation name and on its invariant payload and reply types. Operation types
+//! belong to the returner's binder scope: formation, substitution, import and
+//! readback traverse them just as they traverse the result type. A bind
+//! accumulates the bound computation's row, including in checking mode.
+//! Nonempty rows do not cross into a kernel artifact: readmission reports
+//! `UnadmittedFormer::EffectRow`.
+//!
+//! **Choice.** Canonically ordered, shared interface maps keep pure rows
+//! allocation-free and make interface conflicts explicit. An operation carries
+//! types, not merely a name, so no ambient registry can change its meaning
+//! after checking. Open row variables would support row-polymorphic
+//! abstractions but require a solver; revisit when such an abstraction is part
+//! of the language contract.
+//!
+//! Witnesses: `effect::tests::operation_types_survive_substitution_and_import`,
+//! `effect::tests::relocation_keeps_names_and_refuses_duplicate_interfaces`,
+//! `effect::host::tests::host_interfaces_pin_names_payloads_and_replies`,
+//! `formation::tests::effect_operation_types_participate_in_formation_levels_and_scope`,
+//! `judgement::tests::check_mode_bind_subsumes_the_accumulated_row` and
+//! `bridge::tests::effectful_declarations_are_refused_by_name_at_the_pure_boundary`.
+//! The row laws `empty_is_the_bottom`,
+//! `subset_is_a_preorder_with_union_as_join`,
+//! `union_is_a_canonical_set_and_without_subtracts` and
+//! `signature_resolves_operations_by_name` run in `effect::tests`.
+//!
+//! ### Control syntax
+//!
+//! `Stack(C, D)` classifies a first-class continuation from computation `C` to
+//! `D`; `Reify` records its flat frames in execution order. Apply frames carry
+//! values, Bind frames carry independent one-binder computation bodies, and
+//! Project frames select a component of a lazy product. `With([C₀, …, Cₙ₋₁])`
+//! classifies a lazy computation tuple, distinct from an eager value product;
+//! the empty one is the terminal computation type.
+//!
+//! `Perform` and `Handle` carry inline interfaces. A handler return branch
+//! binds the returned value; each operation clause binds payload then
+//! resumption (`#0` is the resumption). `Shift` binds its captured stack.
+//! Interface annotations remain in the ambient scope. Import, substitution and
+//! portable content preserve these boundaries. Execution belongs to
+//! `gandr-core-sequent`'s machine, not to type conversion or kernel replay.
+//!
+//! **Choice.** Flat frames preserve independent scopes and make multi-shot
+//! resumption explicit. A nested encoding would put later frame operands under
+//! earlier binders; host closures would hide frame structure from capture and
+//! readback. Revisit only if the language deliberately changes stack scoping or
+//! continuation multiplicity.
+//!
+//! Witnesses: `control::tests::stack_literals_preserve_binder_scope`,
+//! `control::tests::stack_types_rebuild_both_computation_children`,
+//! `control::tests::effect_interfaces_and_clauses_rewrite_in_their_own_scopes`,
+//! `control::tests::lazy_tuples_keep_their_components_and_projection_position`,
+//! `tests::focus_properties::hand_built_control_cases_cover_every_former` and
+//! `check::tests::control_scopes_are_local_to_each_body`.
+//!
+//! # Nominal data and structural records
+//!
+//! A `DataSignature` owns a parameter telescope, constructor field lists in tag
+//! order and a positive universe bound. `ValueType::Data` retains the
+//! declaration identity and term-valued arguments; `Value::Constructor` retains
+//! its full classifier, tag and ordered fields. Parameter classifiers bind
+//! their predecessors. Constructor fields see all parameters but do not bind
+//! one another. A `DataCase` motive binds one scrutinee; its branches are
+//! functions in the ambient context. Iterative rewrites preserve these distinct
+//! scopes.
+//!
+//! Record types and values use ordered field maps. Labels identify fields, not
+//! offsets, and `RecordProjection` is a computation returning the selected
+//! value. `TupleProjection` is its positional counterpart over a tuple, naming
+//! a `Component` by index. All native children participate in syntax equality,
+//! rewriting and ownership; arities are not limited to three.
+//!
+//! **Choice.** Dedicated native forms rather than abstract atoms or a
+//! structural sum/product encoding. Typed code parameters and value indices
+//! share term-valued slots; the checker keeps every slot invariant.
+//! **Reversal.** Certified definitional index conversion requires its own
+//! evidence reader. The checker and kernel boundary is stated by
+//! `gandr-core-checker`.
+//!
+//! A field may name its own declaration's family: the syntax is an ordinary
+//! `ValueType::Data` at the declaration's own position, and whether that
+//! occurrence is admissible is the checker's question, not the arena's.
+//! `Computation::Fixpoint { body, evidence }` is `fix x. M`: its body stands
+//! under one intuitionistic binder, the self thunk, so binder rewrites, shifts
+//! and substitutions treat it as they treat a lambda. `FixpointEvidence` is the
+//! kernel's own — `Partial`, `StructuralDescent` (its first parameter staged)
+//! or `Staged { position }` — and the arena records the claim and grants
+//! nothing; syntax equality distinguishes the claims. `ValueType::Staged` is
+//! the type a checker's recursion core gives a staged parameter or field; two
+//! such types are syntactically equal at one stage over equal bases.
+//!
+//! # N-ary products and sums
+//!
+//! `ValueType::Product` and `ValueType::Sum` hold their components and summands
+//! as an ordered list. The unit type is the empty product, `ValueType::unit()`;
+//! no separate unit former exists. Syntax equality, rewriting, import and every
+//! walk compare and visit the list in order, so a product of three components
+//! is a node of its own, not a nest of binary products.
+//!
+//! Their introductions and eliminator follow: `Value::Tuple` holds its
+//! components in order, with the unit value as the empty tuple,
+//! `Value::unit()`; `Value::Injection` names its summand by a `Summand`
+//! position rather than a side; and `Computation::Case` holds one branch per
+//! summand, in summand order. A tuple of `n` components inhabits an
+//! `n`-component product and a case splits a sum of as many summands as it has
+//! branches. The kernel's products and sums are n-ary too, so the checker
+//! admits every arity: a tuple checks against a product of as many components,
+//! an injection against a sum with its summand, and a case against a sum of as
+//! many summands as it has branches; the empty sum is the empty type, its case
+//! of no branches the absurd elimination. Matching the unknown type answers one
+//! unknown type for every component (`hole::Components::Unknown`).
+//!
+//! `Computation::Split { scrutinee, arity, motive, body }` eliminates a product
+//! or a dependent pair by binding every component at once: the body stands
+//! under one intuitionistic binder per component, component zero outermost and
+//! the last innermost, so a split of `n` components reads its last at index
+//! zero. The arity is stated rather than read off the scrutinee's type, so that
+//! a split of no components is well scoped on its own and types its scrutinee
+//! as the unit: it discards a unit value without a projection to name. Syntax
+//! equality compares the arity and the motive before the children, and
+//! `Binders::deeper_by` moves a walk under the body's binders.
+//!
+//! The [`SplitMotive`] says what the body is checked against.
+//! `SplitMotive::Ambient` is the type the split is checked against, shifted
+//! past the components, so the split only checks and eliminates a product.
+//! `SplitMotive::Scrutinee(C)` is a computation type under one binder of the
+//! scrutinee, as a nominal case's motive is: the split synthesises `C` at the
+//! scrutinee, and the body checks against `C` at the tuple of the components it
+//! binds, so the body's type may read them.
+//!
+//! **Choice.** A split with an explicit arity and a motive that is either the
+//! ambient type or one under the scrutinee binder, beside the positional
+//! projection. **Alternatives.** Projection alone, which cannot type the
+//! discard of a unit, there being no component to project; a split reading its
+//! arity from the scrutinee's type, which leaves the empty split's scope
+//! undetermined before checking; a second former for the dependent split,
+//! whose body has the same scope as the ambient split's and whose motive is a
+//! child the ambient split lacks, not a child read differently. **Reversal.**
+//! A split whose motive binds more than the scrutinee — an index of the
+//! scrutinee's type — gains a former of its own.
+//!
+//! **Choice.** One n-ary former per connective, with the unit as its empty
+//! instance, rather than a binary former, a separate unit and nesting for wider
+//! shapes. Nesting fixes an association the source never wrote and makes the
+//! unit a special case of every walk. **Alternatives.** A binary former with a
+//! distinct unit, the current kernel shape, which keeps every walk two-child
+//! but leaves arity to an encoding; a record-only encoding, which loses the
+//! positional reading. **Reversal.** If n-ary values and the n-way case cannot
+//! be checked without per-arity rules that nesting avoids, return to binary
+//! formers and spell wider shapes by nesting.
+//!
+//! # The dependent pair
+//!
+//! `ValueType::Sigma { first, second }` is `Σ (x : A). B`, the second factor
+//! under one intuitionistic binder of the first. It is a positive value type at
+//! the join of its factors' levels. Its pair is the [`Value::Tuple`] of two
+//! components, checked against it: the first against `A`, the second against
+//! `B` at the first. A tuple that synthesises has its eager product, so a
+//! dependent pair is reached only by checking. It is eliminated by a split
+//! with a scrutinee motive and observed by the positional projection: `p.0`
+//! returns `A`, and `p.1` returns `B` at the value `p.0` returns, which
+//! [`Value::Returned`] spells in the type.
+//!
+//! **Choice.** `Product` stays its own n-ary former, and `Sigma` is binary and
+//! written only where the second factor reads its binder, as a dependent arrow
+//! is written only where its codomain reads its binder; a dependent record of
+//! more entries nests to the right. The two do not convert with each other,
+//! and neither has an η law: the eager product has none, and the dependent pair
+//! follows it. **Alternatives.** The product read as a dependent pair with a
+//! vacuous binder, which puts a binder into every walk over every first-order
+//! code and loses the n-ary reading; a native dependent record former keyed by
+//! labels, which the core would have to compare up to label order with
+//! dependencies between fields; a package-style existential, which hides the
+//! first component and so cannot state a law about it. **Reversal.** A
+//! conversion that identifies a dependent pair ignoring its binder with the
+//! binary product makes the two spellings one; a labelled consumer the
+//! positional pair cannot serve gains the labelled former.
+//!
+//! # Native universe paths
+//!
+//! `PathUniverse(a, b)` is the classifier `Path_U a b`; reflexivity,
+//! equivalence and product values introduce native paths, and `Transport`
+//! eliminates them. Certificates share the kernel’s portable `PathEvidence`
+//! vocabulary. Arena identity and content hashing retain evidence;
+//! `equal_certificate_syntax` compares raw classifier and map syntax while
+//! erasing evidence only. Computationally equivalent maps do not thereby
+//! identify certificates. Binder rewrites traverse classifier codes and
+//! translator bodies without reducing those maps.
+//!
+//! **Choice.** Native syntax in the ordinary arena, rather than a second path
+//! arena with different traversal and ownership rules. Core syntax itself
+//! grants no admission authority: the checker validates the closed endpoint
+//! fragment and the kernel replays candidates. Element-identity and
+//! higher-field programs remain separate kernel APIs; a bridge type is core
+//! syntax the checker reads in bridge mode, and the directed family's
+//! statements are core values the checker decides and the bridge erases.
+//! **Reversal.**
+//! Extending the code fragment requires corresponding formation, admission and
+//! replay rules, not a syntax-only permission.
+//!
+//! # Static operators
+//!
+//! A type operator such as `\A. A * A` is a code-level function: it takes codes
+//! and returns a code, and it is gone before runtime. The core spells it with
+//! three value-family formers. `ValueType::StaticPi { domain, codomain }`
+//! classifies operators; `Value::StaticLambda` abstracts over one
+//! intuitionistic binder; `Value::StaticApplication` applies an operator to a
+//! code. All three are values because codes are values (§ Universe families):
+//! an operator is a code that awaits codes, so it lives where codes live, and
+//! an application is a code too. It decodes through `ValueType::Element` or
+//! `CompType::Element` like any other code.
+//!
+//! The static Pi is non-dependent: its codomain stands in the ambient context,
+//! as `CompType::Arrow`'s does, not under a binder. Its domain and codomain are
+//! themselves static classifiers: universes, or static Pis over them. That is
+//! the simply kinded discipline of System Fω, enough for a family such as `Type
+//! -> Type[-]` and for a relative monad's carrier. Dependency at the type level
+//! would make classifiers mention codes, and with them the kernel's conversion
+//! would have to compare open codes.
+//!
+//! A static application whose head is a static lambda is a redex, and the arena
+//! represents it. Arena constructors do not reduce it. Static beta belongs to
+//! the normalizer in `gandr-core-nbe`, which reads back static normal forms,
+//! and `instantiate_value` is the one substitution step a certificate replays.
+//! Keeping the redex representable means the elaborator can write a family's
+//! use as it stands in the source, and the checker can name each unfolding it
+//! performs.
+//!
+//! Alternatives:
+//!
+//! - a separate static-term language with its own arena family, which
+//!   duplicates every walk, every binder machine and every content codec;
+//! - type operators as computation-family functions over thunked codes, which
+//!   puts code-level reduction under effects;
+//! - reduce on mint, as decode does, which would hide the redex the certificate
+//!   names and would need substitution inside the arena.
+//!
+//! Reversal: a family whose classifier must mention a code, at which point the
+//! static Pi gains a binder and the kernel's conversion gains open codes.
+
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::BaseType;
+use gandr_kernel_term::Component;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorTag;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldCount;
+use gandr_kernel_term::FieldLabel;
+use gandr_kernel_term::FixpointEvidence;
+use gandr_kernel_term::Literal;
+use gandr_kernel_term::Reflexivities;
+use gandr_kernel_term::Summand;
+use quenchant_shape::shape::Maybe;
+
+use crate::arena::CompTypeId;
+use crate::arena::ComputationId;
+use crate::arena::ValueId;
+use crate::arena::ValueTypeId;
+use crate::classifier::Sort;
+use crate::hole::HoleId;
+use crate::hole::MarkIndex;
+
+mod shared;
+
+/// The zone of the unified context a binder or an occurrence belongs to.
+///
+/// The two zones are `Γ; Σ`: the intuitionistic zone, whose bindings admit
+/// weakening and contraction, and the linear zone, whose bindings are consumed
+/// exactly once. They are separate flat stacks with separate de Bruijn index
+/// spaces, so an index alone does not identify a binder.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Zone
+{
+    /// The intuitionistic zone `Γ`: structural, reusable bindings.
+    Intuitionistic,
+    /// The linear zone `Σ`: one-shot bindings, the type-level form of "a
+    /// control capture cannot be naively duplicated".
+    Linear,
+}
+
+/// A value: the positive fragment of the core term vocabulary.
+///
+/// Values are the total, thunkable half of the polarity split; the only value
+/// embedding a computation is [`Self::Thunk`], and a thunk suspends rather than
+/// runs it.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Value
+{
+    /// A table-typed prelude thunk, with its generated curried body.
+    Primitive
+    {
+        /// The row defining the thunk's signature.
+        primitive: crate::primitive::Primitive,
+        /// The generated lambda chain, ending in the saturated operation.
+        body: ComputationId,
+    },
+    /// Reflexivity at a quoted closed code.
+    PathRefl(ValueId),
+    /// Componentwise product of two native path values.
+    PathProduct(ValueId, ValueId),
+    /// A native equivalence with untrusted, arena-independent replay evidence.
+    PathEquiv
+    {
+        /// The native universe-path classifier.
+        path_type: ValueTypeId,
+        /// The closed forward translator.
+        forward: ValueId,
+        /// The closed backward translator.
+        backward: ValueId,
+        /// Both round-trip dialogues, checked again at kernel admission.
+        evidence: gandr_kernel_data::Shared<gandr_kernel_term::PathEvidence, alloc::alloc::Global>,
+    },
+    /// Reflexivity `here(a)`: the canonical element of the element identity
+    /// `Path[.A = A](a, a)`, checked against a path type whose two endpoints
+    /// convert to `a`.
+    Here(ValueId),
+    /// Function extensionality `funext(f, g)`: an element of `Path[.A = U (A →
+    /// F B)](f, g)` for two closed functions that return the same value at
+    /// every input the domain's coverage reaches. The checker decides it by
+    /// computation, and the kernel replays it as a higher evaluation; it is
+    /// inert, as a native path certificate is.
+    Funext(ValueId, ValueId),
+    /// A universe equivalence `equiv(f, g)`: an element of `Path[.A = U](a, b)`
+    /// for two closed translators `f : U (A → F B)` and `g : U (B → F A)`,
+    /// `a` and `b` the quotes of `A` and `B`, whose round trips return
+    /// their input at every pattern either code's coverage reaches. The
+    /// checker decides it by computation, and the kernel admits it as the
+    /// native universe path its fibre is; it is inert, as a native path
+    /// certificate is.
+    Equiv(ValueId, ValueId),
+    /// Univalence `ua(e)`, written `Univalence(e, f)`: an element of
+    /// `Path[.A = U](a, b)` for a bi-invertible map `e : A ≃ B`, `a` and `b`
+    /// the codes of `A` and `B`, at any two codes of the level-zero value
+    /// universe. The record's laws are its evidence; the kernel checks them
+    /// as the record's fields and decides nothing. `f` is the record's
+    /// forward map `thunk (λx. e.0 x)`, derived by the lowering from `e` so
+    /// that transport along the path applies it; the bridge drops it and
+    /// the kernel derives the same map from the record.
+    Univalence(ValueId, ValueId),
+    /// Univalence at a stated stratum, `ua[n, k](a, b, f, g)`: an element of
+    /// `Path[.A = U](⌜Tel a⌝, ⌜Tel b⌝)` for two descriptions read as graphical
+    /// species, `Tel` the telescope of their elements at each corolla of the
+    /// catalogue, and a record of translators each way keyed by generator. The
+    /// checker decides it at the stratum and records the path it derives, and
+    /// the kernel admits that path; it is inert, as a native path certificate
+    /// is.
+    Ua
+    {
+        /// The degree and the catalogue bound the statement is made at.
+        stratum: crate::ua::Stratum,
+        /// The two descriptions, the source first.
+        sides: alloc::sync::Arc<crate::ua::Sides>,
+        /// The forward translators: a record keyed by the source's generators.
+        forward: ValueId,
+        /// The backward translators: a record keyed by the target's
+        /// generators.
+        backward: ValueId,
+    },
+    /// Unbiased composition at a stated stratum, `compose[n, k](Γ, d)`: an
+    /// element of `Path[.A = A](x₀, xₘ)` for cells `cᵢ : Path[.A = A](xᵢ₋₁,
+    /// xᵢ)` that fill the shape Γ, in vertex order. The checker certifies
+    /// the stratum, reads Γ as a shape of it and checks the cells fill it;
+    /// the value is what `realised`, the lowering's left-nested `then` fold
+    /// of the cells, returns, and evaluation and the kernel read that fold.
+    Compose
+    {
+        /// The stratum and the shape the composite is made at.
+        composite: crate::compose::Composite,
+        /// The cells, in vertex order.
+        cells: alloc::boxed::Box<[ValueId]>,
+        /// The composite the cells realise: their `then` fold.
+        realised: ComputationId,
+    },
+    /// The filler generator at a stated stratum, `fill[n, k](Γ, t, d)`: the
+    /// square `t ↑ X` for `t` a curried function of the entries `d` lists.
+    /// `d` lists Γ's cells in vertex order, or Γ's whole pasting context in
+    /// Catt's order, each entry of `X` written as a path between two. The
+    /// checker certifies the stratum, reads `t`'s path against the entries
+    /// and builds the square's based path induction; the elaboration stands
+    /// the node as that induction, so evaluation and the kernel never meet
+    /// it.
+    Fill
+    {
+        /// The stratum and the shape the cells fill.
+        composite: crate::compose::Composite,
+        /// `t`: the computation returning the curried function of the entries.
+        generator: ComputationId,
+        /// The entries: the cells in vertex order, or the vertices and the
+        /// cells in Catt's order, each an entry or a path between two for an
+        /// entry of `X`.
+        cells: alloc::boxed::Box<[ValueId]>,
+    },
+    /// A session identity statement between two session codes: `bisim(a, b)`,
+    /// an element of `Path[.A = Type](a, b)` when the protocols are bisimilar,
+    /// or `sim(a, b)`, an element of `Flow[.A = Type](a, b)` when `a` is a
+    /// Gay–Hole subtype of `b`. The checker decides it with the session
+    /// engine and records the relation, and the kernel replays that
+    /// relation as a native session path or session flow; it is inert, as a
+    /// native certificate is. `bisim(a, b, p)` relates two protocols whose
+    /// payload types differ at some pairs the relation meets: `p` is a path
+    /// between the two types of the one such pair, or a tuple of them, one
+    /// per pair in the order the relation meets them, each standing for a
+    /// native certificate.
+    SessionRelated
+    {
+        /// The identity claimed.
+        relation: crate::session::SessionRelation,
+        /// The source code.
+        source: ValueId,
+        /// The target code.
+        target: ValueId,
+        /// The paths covering the payload pairs whose types differ: the empty
+        /// tuple when every pair's types are one, one path for one pair, a
+        /// tuple of paths for several.
+        payloads: ValueId,
+    },
+    /// Directed reflexivity `stay(a)`: the canonical element of `Flow[.A =
+    /// A](a, a)`.
+    Stay(ValueId),
+    /// Directed composition `then(f, g)`: given `f : Flow[.A = A](a, b)` and `g
+    /// : Flow[.A = A](b, c)`, an element of `Flow[.A = A](a, c)`.
+    Then(ValueId, ValueId),
+    /// The componentwise product `flowProduct(p, q)` of two universe flows:
+    /// from `p : Flow[.A = Type](a, a')` and `q : Flow[.A = Type](b, b')` an
+    /// element of `Flow[.A = Type](*{a, b}, *{a', b'})`, the directed twin
+    /// of [`Self::PathProduct`].
+    FlowProduct(ValueId, ValueId),
+    /// A forward flow `forward(f)`: an element of `Flow[.A = Type](a, b)` for a
+    /// closed translator `f : U (A → F B)` between first-order codes, `a` and
+    /// `b` the quotes of `A` and `B`, whose output at every pattern of `A`'s
+    /// coverage is leaf-natural. No inverse is asked. The checker decides it by
+    /// computation and the kernel replays it as its forward certificate; it is
+    /// inert, as a native certificate is.
+    Forward(ValueId),
+    /// The arrow's action on two boundary flows, `arrow(d, c)`: an element of
+    /// `Flow[.A = Type](⌜U (A → F B)⌝, ⌜U (A' → F B')⌝)` from a domain flow `d
+    /// : Flow[.A = Type](A', A)`, which runs against the arrow, and a
+    /// codomain flow `c : Flow[.A = Type](B, B')`, which runs with it. The
+    /// kernel replays it as its function certificate; it is inert, as a
+    /// native certificate is.
+    FunctionFlow(ValueId, ValueId),
+    /// A recorded run `recorded(m₁, …, mₙ)`: one endpoint's complete trace,
+    /// each payload a value. It checks against `Run(s)` by replay of its
+    /// moves through the session monitor and of its payloads at the types
+    /// the protocol assigns them.
+    Recorded(alloc::sync::Arc<[crate::session::RecordedMove]>),
+    /// A dialogue `dialogue(left(m₀), right(m₁), …)`: both endpoints' moves
+    /// of one channel in the order a recorder logged them, each payload a
+    /// value. It checks against `Dialogue(s)` when each endpoint's moves
+    /// replay against its protocol, every send is received as sent and the
+    /// log is one linearization of the dialogue's causal web; two dialogues
+    /// are one when each endpoint's moves are, whatever their interleaving.
+    Dialogue(alloc::sync::Arc<[crate::session::DialogueMove]>),
+    /// The modular decomposition of a dialogue's causal web, its nodes in
+    /// preorder: what `decompose` returns.
+    Web(alloc::sync::Arc<[crate::session::WebPiece]>),
+    /// The value a pure computation returns, standing where a value is read:
+    /// a compound path endpoint such as `n + 1` or `f(x)`. It types as the
+    /// computation's result when the computation is a returner with no
+    /// effects, and evaluates by running the computation, so the endpoint is
+    /// compared by what it computes rather than erased.
+    Returned(ComputationId),
+    /// A computation written where a value is read, with no keyword: before
+    /// elaboration only. The checker decides it by the type expected there —
+    /// against a thunk type it suspends, as a thunk does; against any other it
+    /// runs, before the innermost computation enclosing it, and stands for the
+    /// value it returns — and elaboration replaces it by the thunk or by the
+    /// variable of the bind it mints, so neither the kernel nor the evaluator
+    /// meets it. It only checks: with no expected type there is nothing to
+    /// decide by.
+    Nested(ComputationId),
+    /// A written `run c` standing where a value is read: before elaboration
+    /// only. It runs the computation before the innermost computation enclosing
+    /// it and stands for the value the computation returns, which is what it
+    /// synthesises; elaboration replaces it by the variable of the bind it
+    /// mints.
+    Run(ComputationId),
+    /// A record update `*{ base | .l = v, … }`: before elaboration only. It
+    /// synthesises `base`'s record classifier with each of `overlay`'s fields
+    /// laid over it — a label `base` lacks extends the record, a label it has
+    /// takes the overlay's field and that field's type — and elaboration
+    /// replaces it by the record of `base`'s other fields, each the value its
+    /// projection returns, beside `overlay`'s, so neither the kernel nor the
+    /// evaluator meets it.
+    RecordUpdate
+    {
+        /// The record updated.
+        base: ValueId,
+        /// The record of the fields laid over it.
+        overlay: ValueId,
+    },
+    /// A bound value variable, in a named zone of the unified context.
+    Variable
+    {
+        /// The zone whose binder stack the index counts in.
+        zone: Zone,
+        /// The de Bruijn index, counting binders outward from the use site
+        /// within `zone` alone.
+        index: DeBruijnIndex,
+    },
+    /// A reference to a prior declaration by its admission position.
+    Constant(ConstantIndex),
+    /// A base-type literal.
+    Literal(Literal),
+    /// A tuple, introducing a product with one value per component, in
+    /// order. The empty tuple is the unit value.
+    Tuple(alloc::boxed::Box<[ValueId]>),
+    /// A sum injection, introducing a sum at the given summand.
+    Injection(Summand, ValueId),
+    /// The empty native list, checked against its element type.
+    ListNil,
+    /// A native list cell with its head and list tail.
+    ListCons(ValueId, ValueId),
+    /// A thunk, suspending a computation into the value type `U C`.
+    Thunk(ComputationId),
+    /// An ascription `(v : A)`: the value `v` checked against the stated value
+    /// type `A`, which the ascription synthesises. It is the value twin of
+    /// [`Computation::Ascribe`], the bidirectional switch standing a checking
+    /// form — an injection, a thunk, a list — where a type is synthesised: a
+    /// component of a pair no signature types, a definition's value beside the
+    /// signature it must agree with. It evaluates as `v` does; the kernel
+    /// replays `v` where its declaration places it, rather than trusting `A`.
+    Ascribe
+    {
+        /// The value ascribed.
+        value: ValueId,
+        /// The type it is checked against, in the ambient context.
+        ty: ValueTypeId,
+    },
+    /// An explicit universe lift: given `body : A` with `A`'s level strictly
+    /// below `target`, this value inhabits `Lift A target`. There is no
+    /// implicit cumulativity, so the lift is written rather than inferred.
+    Lift
+    {
+        /// The target universe level of the lift.
+        target: Level,
+        /// The value being lifted.
+        body: ValueId,
+    },
+    /// The quote `⌜A⌝` of a value type: the code of `A`, inhabiting
+    /// `Type[+, l]` where `l` is `A`'s level.
+    Quote(ValueTypeId),
+    /// The quote `⌜C⌝` of a computation type: the code of `C`, inhabiting
+    /// `Type[-, l]` where `l` is `C`'s level. A computation type's code is a
+    /// value like any other code: quoting suspends nothing.
+    QuoteComputation(CompTypeId),
+    /// A static lambda `λ. v`, binding one intuitionistic value variable over
+    /// a value body: a type operator, introducing a static Pi. It is static
+    /// content, erased before runtime, and the kernel never represents it.
+    StaticLambda(ValueId),
+    /// A static application `f a` of a type operator to a value argument,
+    /// eliminating a static Pi. Applied to a static lambda it is a static
+    /// redex; applied to anything else it stands as a neutral spine.
+    StaticApplication(ValueId, ValueId),
+    /// A constructor of a nominal application, with declaration-ordered fields.
+    Constructor
+    {
+        /// Admission position of the data family that declares the
+        /// constructor, the name its tag counts in.
+        family: ConstantIndex,
+        /// The complete nominal classifier, including its arguments.
+        datatype: ValueTypeId,
+        /// The constructor's ordinal in its declaration.
+        tag: ConstructorTag,
+        /// Ordinary field values in signature order.
+        fields: Vec<ValueId>,
+    },
+    /// A structural record, in exact UTF-8 label order.
+    Record(BTreeMap<FieldLabel, ValueId>),
+    /// A row of effect instances, closed or open through a tail: the value a
+    /// row variable is supplied or solved to, inhabiting [`ValueType::Row`].
+    Row(crate::effect::EffectRow),
+    /// A typed hole: a value the author has not written yet, named so a fill
+    /// can find it. It synthesises [`ValueType::Unknown`] and checks against
+    /// any type.
+    Hole(HoleId),
+    /// A marked value: a subterm the elaborator could not type, kept in place
+    /// under the mark-table entry that says why. It types as a hole does and
+    /// its body is not judged.
+    Mark
+    {
+        /// The mark-table entry recording the refusal.
+        mark: MarkIndex,
+        /// The subterm as written.
+        body: ValueId,
+    },
+    /// A first-class stack, ordered from the first observation to its answer.
+    Reify(alloc::sync::Arc<[crate::control::StackFrame]>),
+}
+
+impl Value
+{
+    /// The unit value: the tuple of no components.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Tuple([])`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the unit built here and the one the arena mints are
+    ///   the same node, and a tuple of two components is not the unit.
+    /// - witness: `syntax::tests::the_unit_is_the_empty_tuple`
+    #[spec(ensures: |ret| matches!(ret, Self::Tuple(ref components) if components.is_empty()))]
+    #[inline]
+    #[must_use]
+    pub fn unit() -> Self
+    {
+        Self::Tuple(alloc::boxed::Box::default())
+    }
+
+    /// The components of a tuple, in order; nothing for any other former.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the tuple's own component list for a tuple, and nothing for
+    ///   every other former.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tuple of two components, the empty tuple and an
+    ///   injection separate the tuple reading from every other former.
+    /// - witness: `syntax::tests::the_unit_is_the_empty_tuple`
+    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Primitive { .. } | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Here(_) | Self::Univalence(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::Compose { .. } | Self::Fill { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::FlowProduct(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::RecordUpdate { .. } | Self::Variable { .. } | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Ascribe { .. } | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Constructor { .. } | Self::Record(_) | Self::Row(_) | Self::Hole(_) | Self::Mark { .. } | Self::Reify(_) => ret.is_none() })]
+    #[inline]
+    #[must_use]
+    pub fn components(&self) -> Option<&[ValueId]>
+    {
+        match *self {
+            Self::Tuple(ref components) => Some(components),
+            Self::Primitive { .. }
+            | Self::PathRefl(_)
+            | Self::PathProduct(..)
+            | Self::PathEquiv { .. }
+            | Self::Here(_)
+            | Self::Univalence(..)
+            | Self::Funext(..)
+            | Self::Equiv(..)
+            | Self::Ua { .. }
+            | Self::Compose { .. }
+            | Self::Fill { .. }
+            | Self::SessionRelated { .. }
+            | Self::Stay(_)
+            | Self::Then(..)
+            | Self::FlowProduct(..)
+            | Self::Forward(_)
+            | Self::FunctionFlow(..)
+            | Self::Recorded(_)
+            | Self::Dialogue(_)
+            | Self::Web(_)
+            | Self::Returned(_)
+            | Self::Nested(_)
+            | Self::Run(_)
+            | Self::RecordUpdate { .. }
+            | Self::Variable { .. }
+            | Self::Constant(_)
+            | Self::Literal(_)
+            | Self::Injection(..)
+            | Self::ListNil
+            | Self::ListCons(..)
+            | Self::Thunk(_)
+            | Self::Ascribe { .. }
+            | Self::Lift { .. }
+            | Self::Quote(_)
+            | Self::QuoteComputation(_)
+            | Self::StaticLambda(_)
+            | Self::StaticApplication(..)
+            | Self::Constructor { .. }
+            | Self::Record(_)
+            | Self::Row(_)
+            | Self::Hole(_)
+            | Self::Mark { .. }
+            | Self::Reify(_) => None,
+        }
+    }
+}
+
+/// How many components a product elimination binds.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ComponentCount(usize);
+
+impl From<usize> for ComponentCount
+{
+    /// The count of `components`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(components: usize) -> Self
+    {
+        Self(components)
+    }
+}
+
+impl From<ComponentCount> for usize
+{
+    /// The number of components.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: ComponentCount) -> Self
+    {
+        count.0
+    }
+}
+
+/// What a split's body is checked against.
+///
+/// The motive is a payload beside the split's children rather than a second
+/// former: the body stands under one binder per component either way, so no
+/// child changes its scope with the motive.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SplitMotive
+{
+    /// The type the split is checked against, shifted past the components:
+    /// the body's type reads no component, and the split only checks.
+    Ambient,
+    /// A computation type under one intuitionistic binder of the scrutinee:
+    /// the split synthesises it at the scrutinee, and the body checks against
+    /// it at the tuple of the components the body binds.
+    Scrutinee(CompTypeId),
+}
+
+/// A computation: the negative fragment of the core term vocabulary.
+///
+/// The eliminators — application, force, bind, case — synthesize; the
+/// introductions — lambda, return, fixpoint — check against an expected
+/// computation type.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Computation
+{
+    /// A saturated native operation; currying uses ordinary lambdas.
+    Primitive
+    {
+        /// The row defining names, signature and evaluation.
+        primitive: crate::primitive::Primitive,
+        /// Value arguments in source order.
+        arguments: crate::primitive::Arguments,
+    },
+    /// Transport a value along a native universe path.
+    Transport(ValueId, ValueId),
+    /// Transport `tr(P, p, x)` along an element path: given `p : Path[.A =
+    /// A](a, b)` and `x : P[a]`, it returns `P[b]`. The motive `P` is a
+    /// value type under one intuitionistic binder of the carrier `A`.
+    PathTransport
+    {
+        /// The motive, under one intuitionistic binder: the moving endpoint.
+        motive: ValueTypeId,
+        /// The element path transported along.
+        path: ValueId,
+        /// The value transported, an inhabitant of the motive at the path's
+        /// left endpoint.
+        value: ValueId,
+    },
+    /// Directed transport `ride(P, f, x)` along a flow: given `f : Flow[.A =
+    /// A](a, b)` and `x : P[a]`, it returns `P[b]`. The motive `P` is a
+    /// value type under one intuitionistic binder of the carrier `A`, in
+    /// which the binder occurs only covariantly.
+    Ride
+    {
+        /// The motive, under one intuitionistic binder: the moving endpoint.
+        motive: ValueTypeId,
+        /// The flow ridden along.
+        flow: ValueId,
+        /// The value moved, an inhabitant of the motive at the flow's source.
+        value: ValueId,
+    },
+    /// `decompose(d)`: returns the modular decomposition of the dialogue
+    /// `d`'s causal web, a [`Value::Web`].
+    Decompose(ValueId),
+    /// Transport over a two-entry telescope: given `p : Path[.A = A](a, b)`,
+    /// `z₀ : B[a]`, `q : Path[.A = B[b]](⟨tr(B, p, z₀)⟩, z₁)` and `x : C[a,
+    /// z₀]`, it returns `C[b, z₁]`. The motive is the dependent arrow `Π (y
+    /// : A). Π (z : B). F C`: the path moves the first entry and `q`, an
+    /// identity over it, the second.
+    TelescopeTransport
+    {
+        /// The motive, whose arrows bind the telescope's two entries.
+        motive: CompTypeId,
+        /// The identity in the carrier.
+        path: ValueId,
+        /// The family element at the path's source.
+        start: ValueId,
+        /// The identity over the path, in the fibre at its target.
+        over: ValueId,
+        /// The value transported, an inhabitant of the body at the source
+        /// pair.
+        value: ValueId,
+    },
+    /// A lambda `λ. M`, binding one intuitionistic value variable; introduces
+    /// `A → C`.
+    Lambda(ComputationId),
+    /// A linear lambda `λ x ˆ m. M`, introducing `(x : A) ˆ m ⊸ C`. The host
+    /// binds `x` as one intuitionistic shadow `x : A•`, which only types read,
+    /// and the supply holds `m` copies of `x : A`, which the body spends.
+    LinearLambda(ComputationId),
+    /// A fixpoint `fix x. M`, binding its own thunk `x : U C` as one
+    /// intuitionistic value variable over `M : C`; it checks at any
+    /// computation type and carries the termination claim it is offered
+    /// with.
+    Fixpoint
+    {
+        /// The body, under the self binder.
+        body: ComputationId,
+        /// The termination claim.
+        evidence: FixpointEvidence,
+    },
+    /// An application `M v` of a computation to a value argument.
+    Application(ComputationId, ValueId),
+    /// A returner `return v`, introducing `F A`.
+    Return(ValueId),
+    /// A sequencing bind `x ← M; N`, binding the value `M` returns into `N`.
+    Bind(ComputationId, ComputationId),
+    /// A return of several values at once, introducing [`CompType::Returns`]:
+    /// each value checked at its result type with the values before it
+    /// substituted. One value is never held here, it is [`Self::Return`].
+    ReturnAll(alloc::boxed::Box<[ValueId]>),
+    /// A bind of every value a many-value returner returns into the body, the
+    /// first value outermost. A bind of one value is never held here, it is
+    /// [`Self::Bind`].
+    BindAll
+    {
+        /// The computation whose values are bound.
+        bound: ComputationId,
+        /// How many values it returns, each bound in the body.
+        arity: ComponentCount,
+        /// The body, under one intuitionistic binder per value.
+        body: ComputationId,
+    },
+    /// An ascription `(M : C)`: the computation `M` checked against the
+    /// stated type `C`, which the ascription synthesises. It is the
+    /// bidirectional switch, standing a checking form where a type is
+    /// synthesised; it runs as `M` runs, and the kernel replays it at a
+    /// typed position of its own rather than trusting it.
+    ///
+    /// The surface writes one as the typed bind `let x : A = c ;`, which
+    /// ascribes `c` the pure `-F A`: the annotation writes no row, so an
+    /// effectful `c` is refused there. Alternatives: ascribing the returned
+    /// value instead, `x ← c ; (return x : F A)`, which keeps `c`'s row but
+    /// leaves a `c` that only checks, a return or a case, unsynthesisable;
+    /// and a value-type ascription at the row the bind's continuation
+    /// allows, which synthesis does not carry. Reversal: once synthesis
+    /// carries the row a continuation allows, the typed bind ascribes that
+    /// row and an effectful `c` checks.
+    Ascribe
+    {
+        /// The computation ascribed.
+        body: ComputationId,
+        /// The type it is checked against, in the ambient context.
+        ty: CompTypeId,
+    },
+    /// A force `force v` of a thunk value `v : U C`, running it as `C`.
+    Force(ValueId),
+    /// A sum elimination, binding the injected value into the branch of its
+    /// summand.
+    Case
+    {
+        /// The scrutinee value, of a sum type.
+        scrutinee: ValueId,
+        /// One branch per summand, in order, each checked with its summand
+        /// bound.
+        branches: alloc::boxed::Box<[ComputationId]>,
+    },
+    /// A product or dependent-pair elimination, binding every component of
+    /// the scrutinee into the body: component zero outermost, the last
+    /// innermost. The arity is the scrutinee's own, stated so that a split of
+    /// no components types its scrutinee as the unit.
+    Split
+    {
+        /// The scrutinee value, of a product or a dependent-pair type.
+        scrutinee: ValueId,
+        /// How many components the scrutinee has, each bound in the body.
+        arity: ComponentCount,
+        /// What the body is checked against.
+        motive: SplitMotive,
+        /// The body, under one intuitionistic binder per component.
+        body: ComputationId,
+    },
+    /// A nominal case with a motive under one scrutinee binder.
+    DataCase
+    {
+        /// The nominal value being eliminated.
+        scrutinee: ValueId,
+        /// Result type under one intuitionistic scrutinee binder.
+        motive: CompTypeId,
+        /// One ordinary function over the constructor's fields per tag, then
+        /// over one equation per index of the family.
+        branches: Vec<ComputationId>,
+        /// Each constructor's field count, in tag order: how many of its
+        /// branch's curried parameters take fields. A loop arm after the
+        /// constructors' branches has none.
+        arities: alloc::sync::Arc<[FieldCount]>,
+        /// How many index equations each constructor's branch binds after its
+        /// fields: the family's index count, none for a family indexed by
+        /// nothing.
+        equations: gandr_kernel_term::EquationCount,
+    },
+    /// Select a named field, returning it in the computation fragment.
+    RecordProjection(ValueId, FieldLabel),
+    /// Select a tuple's component by position, returning it in the
+    /// computation fragment.
+    TupleProjection(ValueId, Component),
+    /// A typed hole in computation position. It synthesises
+    /// [`CompType::Unknown`] and checks against any computation type.
+    Hole(HoleId),
+    /// A marked computation: a subterm the elaborator could not type, kept in
+    /// place under the mark-table entry that says why.
+    Mark
+    {
+        /// The mark-table entry recording the refusal.
+        mark: MarkIndex,
+        /// The subterm as written.
+        body: ComputationId,
+    },
+    /// A pure right fold; the cell branch binds head then folded result.
+    ListFold
+    {
+        /// Element type in the ambient context.
+        element: ValueTypeId,
+        /// Result type in the ambient context.
+        result: ValueTypeId,
+        /// Native list to eliminate.
+        list: ValueId,
+        /// Empty branch in the ambient context.
+        on_nil: ComputationId,
+        /// Cell branch beneath two intuitionistic binders.
+        on_cons: ComputationId,
+    },
+    /// A case on a native list: the cell branch binds the head then the tail.
+    /// Each branch is an ordinary computation, so a walk through a list may
+    /// stop at any cell. The list's type is read off the list itself, as a
+    /// sum case reads its scrutinee's.
+    ListCase
+    {
+        /// Native list to inspect.
+        list: ValueId,
+        /// Empty branch in the ambient context.
+        on_nil: ComputationId,
+        /// Cell branch beneath two intuitionistic binders: the head at index
+        /// one, the tail at index zero.
+        on_cons: ComputationId,
+    },
+    /// Perform an operation from an inline-carried interface.
+    Perform
+    {
+        /// Operation names and their payload and reply types.
+        signature: crate::effect::EffectSig,
+        /// The selected operation.
+        operation: crate::effect::OperationName,
+        /// Its value payload.
+        payload: ValueId,
+    },
+    /// Handle one interface deeply; clauses run outside the handled scope.
+    Handle
+    {
+        /// The interface whose operations are handled.
+        signature: crate::effect::EffectSig,
+        /// The computation being handled.
+        subject: ComputationId,
+        /// Return clause beneath one intuitionistic result binder.
+        on_return: ComputationId,
+        /// Operation clauses beneath payload then resumption binders.
+        clauses: alloc::sync::Arc<[crate::control::EffectClause]>,
+    },
+    /// Exercise an operation through a capability, `c.op v`: the operation's
+    /// interface rides inline, as a request's does, and the capability names
+    /// the authority the request is made under.
+    Exercise
+    {
+        /// The capability the operation is exercised through.
+        capability: ValueId,
+        /// The full interface the operation belongs to.
+        signature: crate::effect::EffectSig,
+        /// The selected operation.
+        operation: crate::effect::OperationName,
+        /// Its value payload.
+        payload: ValueId,
+    },
+    /// Handle one interface deeply over a body that receives the capability
+    /// the handler introduces, `handle (c. t) with h`: the subject stands
+    /// under one intuitionistic binder, the capability, and the clauses run
+    /// outside it.
+    Scope
+    {
+        /// The interface whose operations are handled, and the authority of
+        /// the capability the subject receives.
+        signature: crate::effect::EffectSig,
+        /// The computation being handled, beneath the capability's binder.
+        subject: ComputationId,
+        /// Return clause beneath one intuitionistic result binder.
+        on_return: ComputationId,
+        /// Operation clauses beneath payload then resumption binders.
+        clauses: alloc::sync::Arc<[crate::control::EffectClause]>,
+    },
+    /// Feed a computation to a first-class stack.
+    Resume(ValueId, ComputationId),
+    /// End a first-class stack without resuming it, `abandon(k)`: the rest of
+    /// the computation the stack captured never runs, and the form returns
+    /// unit.
+    Abandon(ValueId),
+    /// Delimit a continuation capture.
+    Reset(ComputationId),
+    /// Capture to the nearest reset, binding one intuitionistic stack value.
+    Shift(ComputationId),
+    /// A lazy negative tuple; only the observed component executes.
+    With(alloc::boxed::Box<[ComputationId]>),
+    /// Observe the component of a negative product at a position.
+    Project(Component, ComputationId),
+    /// A session action: send, receive, select, offer or close on a linear
+    /// endpoint, or fork a new pair of endpoints.
+    Session(crate::session::SessionAction),
+    /// A memory form: hold a value exclusively, access it through a view,
+    /// or end a view by resuming or aborting it.
+    Memory(crate::memory::MemoryForm),
+    /// A world form: hold a value at the current world, open a handle at its
+    /// world, or migrate to another world.
+    World(crate::world::WorldForm),
+}
+
+/// A value type: the positive fragment of the core type vocabulary.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum ValueType
+{
+    /// A generative nominal head applied to its declared parameter telescope.
+    Data
+    {
+        /// Admission position of the defining signature; never a carrier alias.
+        declaration: ConstantIndex,
+        /// Quoted type or ordinary value arguments, in telescope order.
+        arguments: Vec<ValueId>,
+    },
+    /// A structural record classifier, in exact UTF-8 label order.
+    Record(BTreeMap<FieldLabel, ValueTypeId>),
+    /// The patched type `T.#{.l = v, …}`: the record type `base` with the
+    /// fields `fixed` names fixed at their values. Its elements are the
+    /// records of the fields of `base` that `fixed` leaves free, so a fixed
+    /// field takes no storage. Formation admits a base whose head is a
+    /// record type, a label of `fixed` only where the base holds that
+    /// field, and each value only at the type of its field. A system of
+    /// faces, `T.#{f ↦ v, g ↦ w}`, fixes each label at the value of the
+    /// first face that holds it, and keeps each later face's value on a
+    /// meet in `meets`: formation admits a meet value only where it
+    /// converts with the fixed value at its label.
+    Patched
+    {
+        /// The record type the patch fixes fields of.
+        base: ValueTypeId,
+        /// Each fixed field's label with its value, in exact UTF-8 label
+        /// order.
+        fixed: BTreeMap<FieldLabel, ValueId>,
+        /// Each later face's value at a label of its meet with an earlier
+        /// face, beside the label, in the order the faces are written; empty
+        /// for a patch that is no system.
+        meets: Vec<(FieldLabel, ValueId)>,
+    },
+    /// Certified equivalences between two quoted closed first-order codes.
+    PathUniverse(ValueId, ValueId),
+    /// Element identity `Path[.A = A](a, b)`: the type of paths from `a` to `b`
+    /// in the value type `A`. It is a type of its own, never unfolded into
+    /// another former; the evaluator's identity recursion classifies, carrier
+    /// by carrier, the type its paths correspond to.
+    Path
+    {
+        /// The carrier the two endpoints inhabit.
+        carrier: ValueTypeId,
+        /// The left endpoint.
+        left: ValueId,
+        /// The right endpoint.
+        right: ValueId,
+    },
+    /// Directed identity `Flow[.A = A](a, b)`: the type of forward-only flows
+    /// from `a` to `b` in the value type `A`. It has no inverse: a flow
+    /// transports along itself in one direction only.
+    Flow
+    {
+        /// The carrier the two endpoints inhabit.
+        carrier: ValueTypeId,
+        /// The source endpoint.
+        source: ValueId,
+        /// The target endpoint.
+        target: ValueId,
+    },
+    /// Bridge `Bridge[.A = A](a, b)`: the type of bridges from `a` to `b` in
+    /// the value type `A`, formed as a path type is. It grants no
+    /// reflexivity of its own, no transport and no `J`; the evaluator's
+    /// identity recursion in bridge mode classifies, carrier by carrier,
+    /// what its bridges are.
+    Bridge
+    {
+        /// The carrier the two endpoints inhabit.
+        carrier: ValueTypeId,
+        /// The left endpoint.
+        left: ValueId,
+        /// The right endpoint.
+        right: ValueId,
+    },
+    /// `Run(s)`: the complete recorded runs of the session code `s`, each a
+    /// finite trace the protocol's monitor accepts.
+    Run(ValueId),
+    /// `Prefix(s)`: the recorded prefixes of the session code `s`, each a
+    /// finite trace the protocol's monitor accepts as far as it goes, closed
+    /// or still open.
+    Prefix(ValueId),
+    /// `Dialogue(s)`: the complete dialogues of one channel whose left
+    /// endpoint follows the session code `s` and whose right endpoint
+    /// follows its dual.
+    Dialogue(ValueId),
+    /// `Web`: the modular decompositions of dialogues' causal webs.
+    Web,
+    /// A rigid base-type atom.
+    Base(BaseType),
+    /// The product of its components, in order: `Product([])` is the unit
+    /// type, inhabited by the empty [`Value::Tuple`] alone, and
+    /// `Product([A, B])` the pair type `A × B`.
+    Product(alloc::boxed::Box<[ValueTypeId]>),
+    /// The dependent pair `Σ (x : A). B`: a pair whose second component's
+    /// type reads the first. Its introduction is the [`Value::Tuple`] of two
+    /// components, checked only; its elimination a [`Computation::Split`]
+    /// with a [`SplitMotive::Scrutinee`] motive, or a
+    /// [`Computation::TupleProjection`].
+    ///
+    /// The scoping is the whole difference from a product of two components,
+    /// which is why the two are distinct nodes: the same two children, the
+    /// second under a binder here and in the ambient context there.
+    Sigma
+    {
+        /// The first factor `A`, in the ambient context.
+        first: ValueTypeId,
+        /// The second factor `B`, under one intuitionistic binder of `A`.
+        second: ValueTypeId,
+    },
+    /// The sum of its summands, in order: `Sum([])` is the empty type and
+    /// `Sum([A, B])` the binary sum `A + B`, with left and right injections.
+    Sum(alloc::boxed::Box<[ValueTypeId]>),
+    /// The native finite-list type over its element type.
+    List(ValueTypeId),
+    /// The thunk type `U C` of a computation type `C`.
+    Thunk(CompTypeId),
+    /// The universe of one sort at a canonical level `l`: `Type[+, l]`
+    /// classifies the value types at `l` and `Type[-, l]` the computation
+    /// types. Both are value types, whose own level is `l + 1`.
+    Universe
+    {
+        /// The family the universe classifies.
+        sort: Sort,
+        /// The level within that family.
+        level: Level,
+    },
+    /// An explicit lift of a value type into a strictly higher universe.
+    Lift
+    {
+        /// The value type being lifted.
+        inner: ValueTypeId,
+        /// The target universe level, which is the lifted type's level.
+        target: Level,
+    },
+    /// The value type a code denotes: `El l v`, where `v` is a value of type
+    /// `Type[+, l]`. It is one of the two formers whose child crosses from the
+    /// type language into the term language, which is what lets a dependent
+    /// codomain mention its binder at all.
+    ///
+    /// A decode of a quote is the quoted type: the arena mints the type
+    /// itself rather than this node, so `El ⌜A⌝` is never represented.
+    Element
+    {
+        /// The code: a value whose type is `Type[+, target]`.
+        code: ValueId,
+        /// The universe the code is read out of, which is this type's own
+        /// level.
+        target: Level,
+    },
+    /// `Row`: the kind of row descriptions, classifying the values a row
+    /// variable ranges over.
+    Row,
+    /// The row a row value denotes, standing as a row's tail: the further
+    /// instances a row variable is instantiated with. Like [`Self::Element`]
+    /// its child crosses into the term language. A tail over a row literal is
+    /// merged into the row carrying it when that row is minted, so it stands
+    /// over a variable, a hole or another neutral row.
+    RowTail(ValueId),
+    /// A sealed abstract type: a nominal atom named by the admission position
+    /// of the declaration that introduced it.
+    Abstract(ConstantIndex),
+    /// `A^s`: the values of `base` at the stage `s` of a recursion, which only
+    /// the checker mints — at a fixpoint's staged parameter, its
+    /// self-reference's domain, the recursive fields of a case on a staged
+    /// value and the result of a transport of a staged variable along a path
+    /// in a set. A stage refines the type's values and never its identity:
+    /// `A^s` is used where `A` is wanted, and every other comparison takes
+    /// it for itself. The base is never itself staged.
+    Staged
+    {
+        /// The type the stage refines.
+        base: ValueTypeId,
+        /// The stage.
+        stage: gandr_kernel_term::Stage,
+    },
+    /// The static Pi: the classifier of a type operator, taking an operand
+    /// classified by the domain to a result classified by the codomain.
+    /// Formation admits only static classifiers — universes and static Pis —
+    /// as either child, and a static classifier mentions no term variable, so
+    /// the codomain cannot depend on the operand and stands in the ambient
+    /// context: the [`CompType::Arrow`] scoping, not the [`CompType::Pi`] one.
+    StaticPi
+    {
+        /// The classifier of the operand, in the ambient context.
+        domain: ValueTypeId,
+        /// The classifier of the result, in the ambient context.
+        codomain: ValueTypeId,
+    },
+    /// The unknown value type: what a hole or a mark synthesises. It is
+    /// consistent with every value type and matches every former with unknown
+    /// components.
+    Unknown,
+    /// A first-class continuation consuming one computation and delivering
+    /// another.
+    Stack
+    {
+        /// The computation consumed by the stack.
+        input: CompTypeId,
+        /// The answer delivered by the stack.
+        output: CompTypeId,
+    },
+    /// The type of a linear endpoint: a protocol, its payload types and the
+    /// state the endpoint stands at.
+    Session(crate::session::SessionType),
+    /// The capability `Cap E`: the type of a context hypothesis carrying the
+    /// authority `E`. No term introduces it; a hypothesis the host holds or a
+    /// capability scope's binder is the only inhabitant.
+    Capability
+    {
+        /// The grant atoms: each interface restricted to the operations it
+        /// grants.
+        authority: crate::effect::EffectRow,
+        /// How often the capability may be exercised.
+        grade: crate::effect::capability::CapabilityGrade,
+        /// How long it lives.
+        region: crate::effect::capability::Region,
+    },
+    /// The buffer token `Buf`: an id into a registered area that a completion
+    /// delivers and the program must return, exactly once. No term
+    /// introduces it: a receive's binder holds one, and so does the reply of
+    /// an operation the scope handling it mints the buffer for, each placed
+    /// live in the linear zone; it leaves that zone only by being handed on
+    /// whole, through a send, an operation's payload or a resumption.
+    Buffer,
+    /// The qubit `Qubit`: the state of one quantum bit. It carries no
+    /// comonoid, so no term copies a qubit and no term discards one. A qubit
+    /// lives in the linear zone, as the parameter of a linear function, and
+    /// the checker refuses an intuitionistic binder of one. No term
+    /// introduces it.
+    Qubit,
+    /// A value kept in a region: `A at c`, a value of `A` that may capture a
+    /// shared view lent while the region lives, and so lives as long as the
+    /// region rather than the access: a capability scope's or a hold's, or a
+    /// caller's region the definition abstracts, `A at r` under `[r :
+    /// Region]`.
+    Kept
+    {
+        /// The kept value's type.
+        value: ValueTypeId,
+        /// The region it lives in:
+        /// [`crate::effect::capability::Region::Scoped`]
+        /// or [`crate::effect::capability::Region::Bound`].
+        region: crate::effect::capability::Region,
+    },
+    /// A type that names a world: `A at w`, a handle to a value meaningful
+    /// at `w`, or `cap_w`, the one-shot authority to migrate to `w`.
+    World(crate::world::WorldType),
+}
+
+impl ValueType
+{
+    /// The unit type: the product of no components.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Product([])`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the unit built here and the one the arena mints are
+    ///   the same node, and a product of two components is not the unit.
+    /// - witness: `syntax::tests::the_unit_is_the_empty_product`
+    #[spec(ensures: |ret| matches!(ret, Self::Product(ref components) if components.is_empty()))]
+    #[inline]
+    #[must_use]
+    pub fn unit() -> Self
+    {
+        Self::Product(alloc::boxed::Box::default())
+    }
+}
+
+/// A computation type: the negative fragment of the core type vocabulary.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum CompType
+{
+    /// The returner `F^effects A` of a value type `A`.
+    Returner
+    {
+        /// The returned value type.
+        result: ValueTypeId,
+        /// The closed set of interfaces this computation may perform.
+        effects: crate::effect::EffectRow,
+    },
+    /// The many-value returner `F^effects (x₀ : A₀, …)`: each result type
+    /// stands under the binders of the results before it. One result is never
+    /// held here, it is [`Self::Returner`]; none is the returner of nothing,
+    /// apart from the unit.
+    Returns
+    {
+        /// The result types, each under the binders of those before it.
+        results: alloc::boxed::Box<[ValueTypeId]>,
+        /// The closed set of interfaces this computation may perform.
+        effects: crate::effect::EffectRow,
+    },
+    /// The non-dependent function type `A → C`: its codomain stands in the
+    /// ambient context and binds nothing.
+    Arrow
+    {
+        /// The value-type domain.
+        domain: ValueTypeId,
+        /// The computation-type codomain, in the ambient context.
+        codomain: CompTypeId,
+    },
+    /// The linear function type `(x : A) ˆ m ⊸ C`: its parameter is a supply
+    /// of `m` copies of `x : A`, and its codomain stands in the ambient context
+    /// extended by the shadow `x : A•`, as [`Self::Pi`]'s does.
+    LinearArrow
+    {
+        /// The value-type domain, in the ambient context.
+        domain: ValueTypeId,
+        /// The multiplicity `m`, a host value in the ambient context.
+        multiplicity: ValueId,
+        /// The computation-type codomain, under the shadow's binder.
+        codomain: CompTypeId,
+    },
+    /// The dependent function type `Π (x : A). C`, whose codomain stands in the
+    /// ambient context extended by the domain's binder.
+    ///
+    /// The scoping is the whole difference from [`Self::Arrow`], which is why
+    /// the two are distinct nodes rather than one former with a flag: the same
+    /// two children mean two different things, and a flag would make a child's
+    /// meaning depend on a payload.
+    Pi
+    {
+        /// The value-type domain, in the ambient context.
+        domain: ValueTypeId,
+        /// The computation-type codomain, under the domain's binder.
+        codomain: CompTypeId,
+    },
+    /// The computation type a code denotes: `El l v`, where `v` is a value of
+    /// type `Type[-, l]`.
+    ///
+    /// Like its value counterpart, a decode of a computation quote is the
+    /// quoted computation type and is never represented as this node.
+    Element
+    {
+        /// The code: a value whose type is `Type[-, target]`.
+        code: ValueId,
+        /// The universe the code is read out of, which is this type's own
+        /// level.
+        target: Level,
+    },
+    /// The unknown computation type: what a hole or a mark in computation
+    /// position synthesises.
+    Unknown,
+    /// A lazy negative product; an observation selects one component. The
+    /// empty one is the terminal computation type.
+    With(alloc::boxed::Box<[CompTypeId]>),
+    /// A nominal codata type `νX. &{dᵢ : Bᵢ}` applied to its declaration's
+    /// parameter telescope.
+    ///
+    /// It is read as the lazy product of its observations, each instantiated
+    /// at `arguments`, only where a computation is introduced against it or
+    /// one of its observations is taken; two codata types are equal exactly
+    /// when they name one declaration at equal arguments, and none is equal
+    /// to the product of its observations.
+    Codata
+    {
+        /// Admission position of the codata signature.
+        declaration: ConstantIndex,
+        /// Quoted type or ordinary value arguments, in telescope order.
+        arguments: Vec<ValueId>,
+    },
+}
+
+/// One pair of native syntax roots awaiting structural comparison.
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+enum StructuralGoal
+{
+    /// Values.
+    Value(ValueId, ValueId),
+    /// Computations.
+    Computation(ComputationId, ComputationId),
+    /// Value types.
+    ValueType(ValueTypeId, ValueTypeId),
+    /// Computation types.
+    CompType(CompTypeId, CompTypeId),
+}
+
+/// Which identifications [`equal_syntax`] makes beside the syntax.
+#[derive(Clone, Copy)]
+enum Reading<'signatures>
+{
+    /// As the certificate holds it: two types agree only where their syntax
+    /// does, and a stage is part of its type.
+    Syntax,
+    /// As the bridge erases it: the syntax, but a returned composite as the
+    /// fold it realises, which is all of it the kernel reads (#4057).
+    Folded,
+    /// As a printed type reads back: the words of the signatures' presented
+    /// types as the path at their point, two session types by their protocols'
+    /// behaviour, a decoded static redex as its reduct, as every checker reads
+    /// them, a staged type as its base, which is all of it the surface
+    /// writes, a call kept unelaborated as the value it returns, which is
+    /// all a printed `f(x)` says, a call of a function literal as the
+    /// value its body returns, which no surface call spells, a forced
+    /// returned value as the computation returning it, which a printed call
+    /// on a selection writes alike, and a returned composite as its fold, as
+    /// [`Self::Folded`] reads it.
+    Printed(&'signatures BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>),
+}
+
+/// Result of evidence-erasing certificate syntax comparison.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CertificateEquality
+{
+    /// Every constructor and non-evidence payload agrees.
+    Equal,
+    /// Syntax differs, or a requested node is unreadable.
+    Different,
+}
+
+/// Compare native certificate syntax, erasing evidence but performing no
+/// reduction.
+///
+/// # Specification
+/// - requires: nothing; unreadable roots or children fail closed.
+/// - ensures: compares every constructor, leaf and child, except path evidence;
+///   distinct translator programs stay distinct even if extensionally equal.
+/// - provides: certificate conversion independent of allocation and proof
+///   bytes.
+/// - fails: returns `Different` on a dangling node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fresh allocations and different evidence compare equal;
+///   an administrative translator redex changes the certificate.
+/// - witness: `syntax::tests::certificate_syntax_erases_only_evidence`
+#[spec(ensures: |ret| match (arena.value(left), arena.value(right)) {
+    (Some(a), Some(b)) if matches!(*a, Value::Tuple(ref x) if x.is_empty()) && matches!(*b, Value::Tuple(ref y) if y.is_empty()) => ret == CertificateEquality::Equal,
+    (Some(a), Some(b)) => ret != CertificateEquality::Equal || core::mem::discriminant(a) == core::mem::discriminant(b),
+    _ => ret == CertificateEquality::Different,
+})]
+#[inline]
+#[must_use]
+pub fn equal_certificate_syntax(
+    arena: &crate::CoreArena,
+    left: ValueId,
+    right: ValueId,
+) -> CertificateEquality
+{
+    equal_syntax(arena, Reading::Syntax, StructuralGoal::Value(left, right))
+}
+
+/// Compare native certificate syntax as [`equal_certificate_syntax`] does,
+/// reading the two sides as the graphs they are shared as.
+///
+/// # Specification
+/// - requires: nothing; unreadable roots or children fail closed.
+/// - ensures: the verdict [`equal_certificate_syntax`] gives, in time linear in
+///   the nodes the two sides reach and in the largest offset in its family that
+///   one of them holds, however differently each side shares them ([`shared`]).
+/// - provides: the comparison of two whole readings in an arena that holds them
+///   and little else, as the tier's reading arena does.
+/// - fails: returns `Different` on a dangling node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two sides sharing one subterm differently agree, and
+///   differ once one copy does; every former's twin agrees and each guard's
+///   breach differs, as under the pairwise walk.
+/// - witness: `syntax::tests::sides_shared_differently_agree_until_one_copy_differs`
+/// - witness: `syntax::tests::each_value_former_equals_its_twin_and_differs_where_its_guard_does`
+/// - witness: `syntax::tests::each_computation_former_equals_its_twin_and_differs_where_its_guard_does`
+#[spec(ensures: |ret| ret == equal_certificate_syntax(arena, left, right))]
+#[inline]
+#[must_use]
+pub fn equal_shared_certificate_syntax(
+    arena: &crate::CoreArena,
+    left: ValueId,
+    right: ValueId,
+) -> CertificateEquality
+{
+    shared::equal(arena, left, right)
+}
+
+/// Compare signature type syntax without making allocation identity observable.
+///
+/// # Specification
+/// - ensures: equal roots have the same former and structurally equal children.
+/// - fails: unreadable roots or children compare different.
+///
+/// # Adequacy
+/// - hypothesis: L3 — separately allocated equal signatures retain row
+///   inclusion; changing an operation reply removes inclusion.
+/// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
+#[spec(ensures: |ret| ret != CertificateEquality::Equal || match (arena.value_type(left), arena.value_type(right)) {
+    (Some(left), Some(right)) => core::mem::discriminant(left) == core::mem::discriminant(right),
+    _ => false,
+})]
+#[inline]
+#[must_use]
+pub fn equal_type_syntax(
+    arena: &crate::CoreArena,
+    left: ValueTypeId,
+    right: ValueTypeId,
+) -> CertificateEquality
+{
+    equal_syntax(
+        arena,
+        Reading::Syntax,
+        StructuralGoal::ValueType(left, right),
+    )
+}
+
+/// Compare computation type syntax as [`equal_type_syntax`] compares value
+/// types.
+///
+/// # Specification
+/// - ensures: equal roots have the same former and structurally equal children.
+/// - fails: unreadable roots or children compare different.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two separately allocated codata types over one argument
+///   compare equal; a different argument compares different.
+/// - witness: `syntax::tests::computation_type_syntax_ignores_allocation_identity`
+#[spec(ensures: |ret| ret != CertificateEquality::Equal || match (arena.comp_type(left), arena.comp_type(right)) {
+    (Some(left), Some(right)) => core::mem::discriminant(left) == core::mem::discriminant(right),
+    _ => false,
+})]
+#[inline]
+#[must_use]
+pub fn equal_comp_type_syntax(
+    arena: &crate::CoreArena,
+    left: CompTypeId,
+    right: CompTypeId,
+) -> CertificateEquality
+{
+    equal_syntax(
+        arena,
+        Reading::Syntax,
+        StructuralGoal::CompType(left, right),
+    )
+}
+
+/// Compare certificate syntax as [`equal_certificate_syntax`] does, a
+/// returned composite read as the fold it realises, as the bridge erases it.
+///
+/// # Specification
+/// - requires: nothing; unreadable roots or children fail closed.
+/// - ensures: [`CertificateEquality::Equal`] exactly when every reached pair
+///   agrees as [`equal_certificate_syntax`] compares it, each computation
+///   returning a composite read as its fold ([`folded_computation`]).
+/// - provides: the comparison a rewrite of a source keeps its meaning under: `p
+///   then q` lowers to the binary composite, and its explicit spelling to the
+///   transport the composite folds to (#4057).
+/// - fails: returns `Different` on a dangling node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a composite returned and its fold compare equal, in
+///   either order and under a path type, where the syntax tells them apart; the
+///   fold of the cells swapped stays different.
+/// - witness: `syntax::tests::a_returned_composite_reads_as_its_fold_4057`
+#[spec(ensures: |ret| ret == CertificateEquality::Equal || equal_certificate_syntax(arena, left, right) == CertificateEquality::Different)]
+#[inline]
+#[must_use]
+pub fn equal_certificate_folded(
+    arena: &crate::CoreArena,
+    left: ValueId,
+    right: ValueId,
+) -> CertificateEquality
+{
+    equal_syntax(arena, Reading::Folded, StructuralGoal::Value(left, right))
+}
+
+/// Compare value type syntax as [`equal_type_syntax`] does, a returned
+/// composite read as its fold, as [`equal_certificate_folded`] reads it.
+///
+/// # Specification
+/// - requires: nothing; unreadable roots or children fail closed.
+/// - ensures: [`CertificateEquality::Equal`] exactly when every reached pair
+///   agrees as [`equal_type_syntax`] compares it, each computation returning a
+///   composite read as its fold.
+/// - fails: returns `Different` on a dangling node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_certificate_folded`].
+/// - witness: `syntax::tests::a_returned_composite_reads_as_its_fold_4057`
+#[spec(ensures: |ret| ret == CertificateEquality::Equal || equal_type_syntax(arena, left, right) == CertificateEquality::Different)]
+#[inline]
+#[must_use]
+pub fn equal_type_folded(
+    arena: &crate::CoreArena,
+    left: ValueTypeId,
+    right: ValueTypeId,
+) -> CertificateEquality
+{
+    equal_syntax(
+        arena,
+        Reading::Folded,
+        StructuralGoal::ValueType(left, right),
+    )
+}
+
+/// Compare computation type syntax as [`equal_comp_type_syntax`] does, a
+/// returned composite read as its fold, as [`equal_certificate_folded`]
+/// reads it.
+///
+/// # Specification
+/// - requires: nothing; unreadable roots or children fail closed.
+/// - ensures: [`CertificateEquality::Equal`] exactly when every reached pair
+///   agrees as [`equal_comp_type_syntax`] compares it, each computation
+///   returning a composite read as its fold.
+/// - fails: returns `Different` on a dangling node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_certificate_folded`].
+/// - witness: `syntax::tests::a_returned_composite_reads_as_its_fold_4057`
+#[spec(ensures: |ret| ret == CertificateEquality::Equal || equal_comp_type_syntax(arena, left, right) == CertificateEquality::Different)]
+#[inline]
+#[must_use]
+pub fn equal_comp_type_folded(
+    arena: &crate::CoreArena,
+    left: CompTypeId,
+    right: CompTypeId,
+) -> CertificateEquality
+{
+    equal_syntax(
+        arena,
+        Reading::Folded,
+        StructuralGoal::CompType(left, right),
+    )
+}
+
+/// One variable two computations each read past the binders a comparison
+/// crossed: its zone, and the index each side reads it at from its own root.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct FreePair
+{
+    /// The zone both sides read the variable in.
+    pub zone: Zone,
+    /// The index the left computation reads it at, counted from its root.
+    pub left: DeBruijnIndex,
+    /// The index the right computation reads it at, counted from its root.
+    pub right: DeBruijnIndex,
+}
+
+/// Compare two computations as syntax up to what each reads free: two
+/// computations written apart over scopes laid out apart.
+///
+/// The walk crosses each former's binders as [`crate::children`] hands them.
+/// Two variables under a crossed binder compare by index; two past every
+/// crossed binder are a free pair, each index read from its side's root. Every
+/// other pair compares as [`equal_certificate_syntax`] compares values: every
+/// constructor, leaf and child but path evidence, with no reduction.
+///
+/// # Specification
+/// - requires: nothing; unreadable roots or children fail closed.
+/// - ensures: [`CertificateEquality::Equal`] when the two agree as above,
+///   `free` then holding each free pair once, in order;
+///   [`CertificateEquality::Different`] at the first pair that differs, at two
+///   variables of which one stands under a crossed binder and the other past
+///   them, and at a session action's endpoint or a memory form's resident past
+///   the crossed binders, which the former's shape compares as written.
+/// - provides: the comparison of two closures' bodies, each free pair then read
+///   through its own closure's environment.
+/// - fails: returns `Different` on a dangling node.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: each goal names nodes of a finite acyclic arena and queues only
+///   its children, and a goal under one crossing is read once.
+/// - measure: the goals reachable from the roots not yet read.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two allocations of one lambda agree with no free pair,
+///   two lambdas reading one variable from scopes laid out apart agree with its
+///   pair, a variable bound on one side and free on the other differs, a
+///   variable read at another binder differs, and a free endpoint is declined.
+/// - witness: `syntax::tests::computation_syntax_pairs_what_each_side_reads_free`
+#[spec(ensures: |ret| ret != CertificateEquality::Equal || match (arena.computation(left), arena.computation(right)) {
+    (Some(left), Some(right)) => core::mem::discriminant(left) == core::mem::discriminant(right),
+    _ => false,
+})]
+#[inline]
+pub fn equal_computation_syntax_up_to_free(
+    arena: &crate::CoreArena,
+    left: ComputationId,
+    right: ComputationId,
+    free: &mut Vec<FreePair>,
+) -> CertificateEquality
+{
+    let unread = BTreeMap::new();
+    let mut syntax = alloc::borrow::Cow::Borrowed(arena);
+    let mut pending = alloc::vec![(
+        StructuralGoal::Computation(left, right),
+        crate::support::Crossing::default(),
+    )];
+    let mut visited = alloc::collections::BTreeSet::new();
+    free.clear();
+    while let Some((goal, under)) = pending.pop() {
+        if !visited.insert((goal, under)) {
+            continue;
+        }
+        match read_free(&syntax, goal, under) {
+            FreeReading::Formers => {},
+            FreeReading::Bound => continue,
+            FreeReading::Free(pair) => {
+                free.push(pair);
+                continue;
+            },
+            FreeReading::Apart => return CertificateEquality::Different,
+        }
+        let mut placed = Placed {
+            pending: &mut pending,
+            under,
+        };
+        if pair_step(&mut syntax, Reading::Syntax, &unread, goal, &mut placed)
+            == CertificateEquality::Different
+        {
+            return CertificateEquality::Different;
+        }
+    }
+    free.sort_unstable();
+    free.dedup();
+    CertificateEquality::Equal
+}
+
+/// How [`equal_computation_syntax_up_to_free`] reads a pair before its
+/// formers.
+enum FreeReading
+{
+    /// Neither side is a variable or names its own linear binder past the
+    /// crossed binders: the pair's formers decide.
+    Formers,
+    /// Two variables naming one crossed binder.
+    Bound,
+    /// Two variables each read past the crossed binders.
+    Free(FreePair),
+    /// A pair told apart, or declined, outright.
+    Apart,
+}
+
+/// Read a pair standing under `under` for the variables it names.
+///
+/// # Specification
+/// - ensures: for two variables, [`FreeReading::Bound`] when they share a zone
+///   and one index under that zone's crossed binders, [`FreeReading::Free`]
+///   when both of one zone reach past them, each index read past the crossed
+///   binders, and [`FreeReading::Apart`] otherwise; [`FreeReading::Apart`] for
+///   a left session action or memory form whose endpoint or resident reaches
+///   past the crossed linear binders; [`FreeReading::Formers`] for every other
+///   pair.
+/// - panics: none.
+/// - executable: none — the reading is the body's table, which a predicate
+///   would state again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_computation_syntax_up_to_free`].
+/// - witness: `syntax::tests::computation_syntax_pairs_what_each_side_reads_free`
+fn read_free(
+    arena: &crate::CoreArena,
+    goal: StructuralGoal,
+    under: crate::support::Crossing,
+) -> FreeReading
+{
+    use crate::support::outer;
+    match goal {
+        StructuralGoal::Value(left, right) => {
+            let (
+                Some(&Value::Variable { zone, index: left }),
+                Some(&Value::Variable {
+                    zone: other,
+                    index: right,
+                }),
+            ) = (arena.value(left), arena.value(right))
+            else {
+                return FreeReading::Formers;
+            };
+            if zone != other {
+                return FreeReading::Apart;
+            }
+            let crossed = under.depth(zone);
+            match (outer(left, crossed), outer(right, crossed)) {
+                (Maybe::Absent(_), Maybe::Absent(_)) if left == right => FreeReading::Bound,
+                (Maybe::Present(left), Maybe::Present(right)) => {
+                    FreeReading::Free(FreePair { zone, left, right })
+                },
+                _ => FreeReading::Apart,
+            }
+        },
+        // A former's own linear name is compared as written in its shape:
+        // under the crossed binders that is one binder on both sides, past
+        // them two names the shape cannot pair.
+        StructuralGoal::Computation(left, _) => {
+            let named = match arena.computation(left) {
+                Some(&Computation::Session(ref action)) => match action.endpoint() {
+                    Maybe::Present(index) => Some(index),
+                    Maybe::Absent(_) => None,
+                },
+                Some(&Computation::Memory(ref form)) => match form.resident() {
+                    Maybe::Present(index) => Some(index),
+                    Maybe::Absent(_) => None,
+                },
+                _ => None,
+            };
+            match named.map(|index| outer(index, under.depth(Zone::Linear))) {
+                Some(Maybe::Present(_)) => FreeReading::Apart,
+                Some(Maybe::Absent(_)) | None => FreeReading::Formers,
+            }
+        },
+        StructuralGoal::ValueType(..) | StructuralGoal::CompType(..) => FreeReading::Formers,
+    }
+}
+
+/// Compare type syntax as [`equal_type_syntax`] does, as a printed type reads.
+///
+/// Those read as one are the types every checker reads alike — a
+/// parameterless type of words and the path type at its cells' point,
+/// reflexivity at that point and the words' empty word, two session types
+/// whose protocols behave alike from their states, a type decoding a static
+/// redex and the type its reduct decodes — and a staged type and its base, as
+/// the printer writes it, since the surface spells no stage, and a dependent
+/// arrow whose codomain names no binder and the plain arrow, since the surface
+/// reads `(x : A) -> C` as the arrow where `C` does not name `x` (#577).
+///
+/// # Specification
+/// - requires: `signatures` holds the data declarations the types name.
+/// - ensures: [`CertificateEquality::Equal`] exactly when every reached pair,
+///   each value type read at its base when it is staged, agrees in syntax after
+///   path evidence is erased, is `Data(words, [])` against `Path[.A = S](a, b)`
+///   with [`identified_words`] reading the path as `words`, in either order, is
+///   `here(p)` against the empty word of such words at a point `p` spells
+///   ([`empty_word`]), in either order, or is two session types whose
+///   protocols, each unfolded at its recursion, take the same action at every
+///   pair of states reached from the two types' states — sends and receives
+///   with payload types that agree in turn, selections and offers over the same
+///   labels, `end` — whatever their nodes' positions; a decode whose code is a
+///   static abstraction applied to no more arguments than its chain has binders
+///   is read as the decode of the abstraction's body instantiated at the
+///   arguments, at most [`StaticSteps::ALLOWED`] times along one comparison; a
+///   call of a function literal — a thunk, or a lambda nested where a value is
+///   read — on no more arguments than the literal has abstractions, whose body
+///   returns, is read as the value it returns, and one whose body calls a
+///   forced head as that call, on the same steps; a computation calling a
+///   literal, forced or applied in place, is read as the instantiated body, and
+///   a forced thunk or nested lambda as the computation it holds; a decode of
+///   such a call reads as the decode of what it returns (#736), the runs its
+///   code binds calls by read as the calls first (#768); a call kept
+///   unelaborated is read as the value it returns; a returned composite is read
+///   as the fold it realises (#4057); a dependent arrow is read as the plain
+///   arrow where its codomain reads as the arrow's codomain under the binder,
+///   which then names no binder; and a dependent pair as the product of two
+///   where its second factor reads as the product's second component under the
+///   binder (#771).
+/// - provides: the comparison a printed type's reading back is held to: a type
+///   of words has no name the surface writes, and is spelled as the path type
+///   it reads as; a session type at a state is spelled as the protocol from
+///   that state, which reads back to a protocol at its root; a static redex the
+///   surface cannot apply is spelled as its reduct, and so is a call of a
+///   function literal; a stage has no spelling, and a staged type is spelled as
+///   its base; a dependent arrow ignoring its binder has no spelling, and is
+///   spelled as the arrow; a dependent pair ignoring its binder is spelled as
+///   the product; a transport the checker derives is spelled `p then q`, which
+///   reads back as the composite folding to it; an implicit a call omits is
+///   spelled as nothing, which reads back as another omission (#5026).
+/// - fails: returns `Different` on a dangling node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circle's words against the path at its point, alone
+///   and under a path type, compare equal where the syntax alone compares
+///   different; at an endpoint off the point they stay different; reflexivity
+///   at the point against the empty word compares equal, off it different. A
+///   session type past its first send against the rest of its protocol at its
+///   root, and a recursive protocol against its unfolding, compare equal; a
+///   differing payload or label stays different. A decoded redex against its
+///   reduct compares equal; against another type it stays different. A called
+///   function literal reads as the value its body returns, and a called name
+///   stays a call. A staged type, alone and as an arrow's domain, reads as its
+///   base where the syntax alone tells them apart, and stays different from
+///   another type. A path between a call returned reads as one between the call
+///   kept, and not as one between another call. A dependent arrow ignoring its
+///   binder reads as the arrow, in either order; one naming its binder stays
+///   different. A decoded literal call reads as what it returns, and a
+///   dependent arrow whose binder only that call names as the arrow; so does a
+///   literal decoded at a run-bound call, forty side by side in one comparison,
+///   while a run calling a name stays a decode. A dependent pair ignoring its
+///   binder reads as the product, in either order; one naming it stays
+///   different. A path between a function suspended reads as one between the
+///   function's thunk, in either order, and a call's thunk stays apart from the
+///   call kept. A path between a composite returned reads as one between its
+///   fold, in either order, and not as one between the other bracketing. Two
+///   omitted implicits compare equal, in either order; an omission against a
+///   wildcard stays different.
+/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
+/// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state_400`
+/// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
+/// - witness: `syntax::tests::a_staged_type_reads_as_its_base_465`
+/// - witness: `syntax::tests::a_called_function_literal_reads_as_what_it_returns_675`
+/// - witness: `syntax::tests::a_kept_call_reads_as_the_value_it_returns`
+/// - witness: `syntax::tests::a_dependent_arrow_ignoring_its_binder_reads_as_the_arrow`
+/// - witness: `syntax::tests::a_decoded_literal_call_reads_as_what_it_returns_736`
+/// - witness: `syntax::tests::a_literal_decoded_at_a_run_bound_call_reads_as_what_it_returns_768`
+/// - witness: `syntax::tests::a_dependent_pair_ignoring_its_binder_reads_as_the_product_771`
+/// - witness: `syntax::tests::a_suspended_function_reads_as_its_thunk_3947`
+/// - witness: `syntax::tests::a_returned_composite_reads_as_its_fold_4057`
+/// - witness: `syntax::tests::an_omitted_implicit_reads_as_another_omission_5026`
+#[spec(ensures: |ret| ret == CertificateEquality::Different || (arena.value_type(left).is_some() && arena.value_type(right).is_some()))]
+#[inline]
+#[must_use]
+pub fn equal_type_reading(
+    arena: &crate::CoreArena,
+    signatures: &BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>,
+    left: ValueTypeId,
+    right: ValueTypeId,
+) -> CertificateEquality
+{
+    equal_syntax(
+        arena,
+        Reading::Printed(signatures),
+        StructuralGoal::ValueType(left, right),
+    )
+}
+
+/// The type `id` refines when it is staged, `id` itself otherwise.
+///
+/// # Specification
+/// - requires: nothing; an unreadable id is returned as it is.
+/// - ensures: the base of a staged type, which is never itself staged; `id` for
+///   any other.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_staged_type_reads_as_its_base_465`
+#[spec(ensures: |ret| ret == id || matches!(arena.value_type(id), Some(&ValueType::Staged { base, .. }) if base == ret))]
+#[inline]
+#[must_use]
+pub fn unstaged(
+    arena: &crate::CoreArena,
+    id: ValueTypeId,
+) -> ValueTypeId
+{
+    match arena.value_type(id) {
+        Some(&ValueType::Staged { base, .. }) => base,
+        Some(_) | None => id,
+    }
+}
+
+/// The computation `id` forces when it forces a value that holds its
+/// computation in place, `id` itself otherwise. `force (returned c)` is the
+/// head the checker writes where a type applies a component of a dependent
+/// pair. `c` is the head a call on the selection lowers to. A label spelling
+/// lowers the same projection nested. Both print as the selection called.
+/// A forced thunk literal is its body. A forced lambda nested where a value
+/// is read is its body. The printer writes each as the computation.
+///
+/// # Specification
+/// - requires: nothing. An unreadable id is returned as it is.
+/// - ensures: `c` for `force (returned c)` and `force (thunk c)`. `c` for
+///   `force (nested c)` when `c` is a lambda or a projection. `id` for any
+///   other.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_forced_returned_head_reads_as_its_computation_935`
+/// - witness: `syntax::tests::a_forced_literal_reads_as_its_computation_2325`
+#[spec(ensures: |ret| ret == id || matches!(arena.computation(id), Some(&Computation::Force(forced)) if matches!(arena.value(forced), Some(&(Value::Returned(c) | Value::Thunk(c) | Value::Nested(c))) if c == ret)))]
+fn forced_computation(
+    arena: &crate::CoreArena,
+    id: ComputationId,
+) -> ComputationId
+{
+    let Some(&Computation::Force(forced)) = arena.computation(id)
+    else {
+        return id;
+    };
+    match arena.value(forced) {
+        Some(&(Value::Returned(body) | Value::Thunk(body))) => body,
+        Some(&Value::Nested(body))
+            if matches!(
+                arena.computation(body),
+                Some(
+                    &Computation::Lambda(_)
+                        | &Computation::LinearLambda(_)
+                        | &Computation::TupleProjection(..)
+                        | &Computation::RecordProjection(..)
+                )
+            ) =>
+        {
+            body
+        },
+        Some(_) | None => id,
+    }
+}
+
+/// The fold the composite `id` returns realises, `id` itself otherwise.
+///
+/// The bridge erases a returned composite to that fold, and every reader that
+/// compares terms as the kernel replays them reads it so. `p then q` lowers to
+/// the binary composite, while its explicit spelling, and the transport the
+/// checker derives where a type moves a path, lower to the fold (#4057).
+///
+/// # Specification
+/// - requires: nothing; an unreadable id is returned as it is.
+/// - ensures: the realisation of the composite `id` returns, followed through
+///   each composite a realisation returns in turn; `id` for any other.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_returned_composite_reads_as_its_fold_4057`
+#[spec(ensures: |ret| ret == id || arena.computation(ret).is_some())]
+#[inline]
+#[must_use]
+pub fn folded_computation(
+    arena: &crate::CoreArena,
+    id: ComputationId,
+) -> ComputationId
+{
+    let mut at = id;
+    while let Some(&Computation::Return(returned)) = arena.computation(at)
+        && let Some(&Value::Compose { realised, .. }) = arena.value(returned)
+    {
+        at = realised;
+    }
+    at
+}
+
+/// The static steps one [`equal_type_reading`] has left: a code the steps do
+/// not settle is compared as it stands.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct StaticSteps(u32);
+
+/// Whether [`StaticSteps::spend`] took a step.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Spend
+{
+    /// A step was left and is spent.
+    Taken,
+    /// No step was left.
+    Exhausted,
+}
+
+impl StaticSteps
+{
+    /// The steps one comparison starts with: the record of the λ-calculus's
+    /// models, seventeen components each read at the syntax model, spends
+    /// seventy-one along its widest comparison (#768).
+    const ALLOWED: Self = Self(256);
+
+    /// Spend one step, if one is left.
+    ///
+    /// # Specification
+    /// - ensures: [`Spend::Taken`] and one step fewer when a step was left;
+    ///   [`Spend::Exhausted`] and no change when none was.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`equal_type_reading`].
+    /// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
+    #[spec(captures: before = self.0, ensures: |ret| (ret == Spend::Taken && self.0.checked_add(1) == Some(before)) || (ret == Spend::Exhausted && before == 0 && self.0 == 0))]
+    fn spend(&mut self) -> Spend
+    {
+        match self.0.checked_sub(1_u32) {
+            Some(left) => {
+                self.0 = left;
+                Spend::Taken
+            },
+            None => Spend::Exhausted,
+        }
+    }
+}
+
+/// The code a static redex `code` reduces to in one step, or `code` itself.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for a spine of static applications whose head is a static
+///   abstraction with at least as many binders as the spine has arguments, the
+///   abstraction's body instantiated at the arguments, the first applied
+///   outermost, and the binders left over still bound; `code` itself for every
+///   other code. The arena is copied the first time it is written.
+/// - provides: static β, as the checker's own step takes it, for the comparison
+///   a printed type's reading back is held to.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: `while` loops over the spine and over the arguments.
+/// - measure: the arguments left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
+#[spec(ensures: |ret| ret == code || arena.value(ret).is_some())]
+fn static_reduct(
+    arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
+    code: ValueId,
+) -> ValueId
+{
+    let mut arguments = Vec::new();
+    let mut head = code;
+    while let Some(&Value::StaticApplication(applied, argument)) = arena.value(head) {
+        arguments.push(argument);
+        head = applied;
+    }
+    let mut reduct = head;
+    while let Some(argument) = arguments.pop() {
+        let Some(&Value::StaticLambda(body)) = arena.value(reduct)
+        else {
+            return code;
+        };
+        reduct = crate::rewrite::instantiate_value(arena.to_mut(), body, argument);
+    }
+    if reduct == head { code } else { reduct }
+}
+
+/// The value type `ty` reads as once a static redex its decode holds is
+/// reduced, while `steps` lasts.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for a decode of a code [`static_reduct`] reduces, or else of a
+///   call of a function literal [`called_reduct`] reduces (#736) once each run
+///   the code binds a call by is read as the call ([`inlined_runs`], #768), the
+///   decode of the reduct — the quoted type itself when the reduct is a quote —
+///   taken again while it reduces and `steps` lasts, one step spent per
+///   reduction and per run read; `ty` itself for every other type, its runs
+///   kept and no step spent.
+/// - provides: the value-type half of the static β [`equal_type_reading`] reads
+///   through.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: every turn spends one of `steps`.
+/// - measure: `steps`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
+/// - witness: `syntax::tests::a_decoded_literal_call_reads_as_what_it_returns_736`
+/// - witness: `syntax::tests::a_literal_decoded_at_a_run_bound_call_reads_as_what_it_returns_768`
+#[spec(ensures: |ret| ret == ty || arena.value_type(ret).is_some())]
+fn decoded_value_type(
+    arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
+    steps: &mut StaticSteps,
+    ty: ValueTypeId,
+) -> ValueTypeId
+{
+    let mut ty = ty;
+    while let Some(&ValueType::Element { code, ref target }) = arena.value_type(ty) {
+        let target = target.clone();
+        let reduct = static_reduct(arena, code);
+        let reduct = if reduct == code {
+            literal_reduct(arena, steps, code)
+        }
+        else {
+            reduct
+        };
+        if reduct == code {
+            break;
+        }
+        if steps.spend() == Spend::Exhausted {
+            break;
+        }
+        ty = arena.to_mut().value_type_element(reduct, target);
+    }
+    ty
+}
+
+/// The computation type `ty` reads as once a static redex its decode holds is
+/// reduced, while `steps` lasts.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: as [`decoded_value_type`], for a computation type's decode.
+/// - provides: the computation-type half of the static β [`equal_type_reading`]
+///   reads through.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: every turn spends one of `steps`.
+/// - measure: `steps`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
+#[spec(ensures: |ret| ret == ty || arena.comp_type(ret).is_some())]
+fn decoded_comp_type(
+    arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
+    steps: &mut StaticSteps,
+    ty: CompTypeId,
+) -> CompTypeId
+{
+    let mut ty = ty;
+    while let Some(&CompType::Element { code, ref target }) = arena.comp_type(ty) {
+        let target = target.clone();
+        let reduct = static_reduct(arena, code);
+        let reduct = if reduct == code {
+            literal_reduct(arena, steps, code)
+        }
+        else {
+            reduct
+        };
+        if reduct == code {
+            break;
+        }
+        if steps.spend() == Spend::Exhausted {
+            break;
+        }
+        ty = arena.to_mut().comp_type_element(reduct, target);
+    }
+    ty
+}
+
+/// The code a decode of `code` reads as once a call of a function literal it
+/// stands for is reduced, its runs over calls read as the calls first.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`called_reduct`] of the code [`inlined_runs`] reads `code` as,
+///   with the steps both spend taken from `steps`, when that reduces; `code`
+///   itself, and `steps` as they were, when it does not. Nodes the attempt
+///   makes stay in `arena` unread.
+/// - provides: a family filled by a function literal and applied at a nested
+///   call — `tm(e(g))`, which the lowering binds as `x ← e(g); tm(x)` — reads
+///   as what the literal returns, as the printer spells it (#768).
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_literal_decoded_at_a_run_bound_call_reads_as_what_it_returns_768`
+#[spec(ensures: |ret| ret == code || arena.value(ret).is_some())]
+fn literal_reduct(
+    arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
+    steps: &mut StaticSteps,
+    code: ValueId,
+) -> ValueId
+{
+    let mut trial = *steps;
+    let inlined = inlined_runs(arena, &mut trial, code);
+    let called = called_reduct(arena, &mut trial, inlined);
+    if called == inlined {
+        return code;
+    }
+    *steps = trial;
+    called
+}
+
+/// The computation type `ty` stands for once its decode is read.
+///
+/// The code is reduced as [`equal_type_reading`] reduces it, and a reduct
+/// that quotes a computation type decodes to that type
+/// ([`CoreArena::comp_type_element`]).
+///
+/// # Specification
+/// - requires: nothing; an unreadable id is returned as it is.
+/// - ensures: as `decoded_comp_type` within [`StaticSteps::ALLOWED`] steps: for
+///   a decode whose code reduces, the decode of the reduct — the quoted type
+///   itself when the reduct is a quote — taken again while it reduces; `ty`
+///   itself for every other type. Nodes a reduction makes are minted in
+///   `arena`.
+/// - provides: what a computation the run judged at a decode returns, which a
+///   `run` binder answers at (#298): `T(A)` at `T` a static abstraction reads
+///   as the returner its body is at `A`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a decode of a static abstraction applied to a type reads
+///   as the returner the abstraction's body is at that type; a returner reads
+///   as itself.
+/// - witness: `syntax::tests::a_decoded_redex_reads_as_the_type_it_quotes_298`
+///
+/// [`CoreArena::comp_type_element`]: crate::CoreArena::comp_type_element
+#[spec(ensures: |ret| ret == ty || arena.comp_type(ret).is_some())]
+#[inline]
+pub fn decoded_comp_reading(
+    arena: &mut crate::CoreArena,
+    ty: CompTypeId,
+) -> CompTypeId
+{
+    let mut steps = StaticSteps::ALLOWED;
+    // The arena is moved in and back rather than borrowed: a reduction writes
+    // it, and a borrowed reading would copy it whole on the first write.
+    let mut read = alloc::borrow::Cow::Owned(core::mem::take(arena));
+    let read_type = decoded_comp_type(&mut read, &mut steps, ty);
+    *arena = read.into_owned();
+    read_type
+}
+
+/// The computation `body` reads as once each bind of a returned value it
+/// opens with is taken: `x ← return v; N` reads as `N[v/x]`.
+///
+/// A stated lambda's binder type lowers to such a bind at the head of its
+/// body, the binder ascribed and returned, so its call reads as its reduct
+/// only through the bind (#4101).
+///
+/// # Specification
+/// - requires: nothing; an unreadable id is returned as it is.
+/// - ensures: for a bind whose bound computation, under any ascriptions, is a
+///   return, its continuation instantiated at the returned value, taken again
+///   while the result is such a bind; `body` itself for every other
+///   computation. The arena is copied the first time it is written.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: every turn instantiates one bind's continuation, a strict subterm
+///   of the bind.
+/// - measure: the binds `body` opens with.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_called_stated_literal_reads_as_what_it_returns_4101`
+#[spec(ensures: |ret| ret == body || arena.computation(ret).is_some())]
+fn returned_binds(
+    arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
+    body: ComputationId,
+    carried: &mut Vec<crate::rewrite::Carried>,
+) -> ComputationId
+{
+    let mut body = body;
+    while let Some(&Computation::Bind(bound, rest)) = arena.computation(body) {
+        let mut bound = bound;
+        while let Some(&Computation::Ascribe { body: inner, .. }) = arena.computation(bound) {
+            bound = inner;
+        }
+        let Some(&Computation::Return(value)) = arena.computation(bound)
+        else {
+            break;
+        };
+        carried.clear();
+        body = crate::rewrite::instantiate_computation_traced(arena.to_mut(), rest, value, carried);
+    }
+    body
+}
+
+/// The value `value` reads as once a call of a function literal it stands
+/// for is reduced, while `steps` lasts.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for a call standing as a value, nested or returned, whose head
+///   forces a function literal — a thunk, or a computation nested where a value
+///   is read, which a force decides as a thunk, under any ascriptions — of at
+///   least as many abstractions as the call has arguments, the value the
+///   instantiated body returns, the first argument instantiating the outermost
+///   abstraction, or, for a body that is itself a call of a forced head, that
+///   call nested as the value it returns; the body is read through each bind of
+///   a returned value it opens with ([`returned_binds`]) and through the fold a
+///   returned composite realises; taken again while it reduces and `steps`
+///   lasts, one step spent per reduction; `value` itself for every other value,
+///   and for a body that does more than return or call. The arena is copied the
+///   first time it is written.
+/// - provides: the dynamic β [`equal_type_reading`] reads through: a type
+///   instantiated at a function literal holds its call, which the surface
+///   cannot spell, and is printed as the value the call returns (#675), or as
+///   the call its body makes.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: every turn of the outer loop spends one of `steps`; the inner
+///   loops run over the call's spine and its arguments.
+/// - measure: `steps`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a call of a literal identity and one of a literal
+///   projection on two arguments read as the argument they return, and so does
+///   a call of a nested literal identity, alone and nested in another; a call
+///   of a nested literal whose body calls a name reads as that call on the
+///   argument; a call of a named function and a literal whose body does more
+///   than return or call stay as written. A called stated literal reads as the
+///   call its body makes, and one returning a composite reads as one whose body
+///   is the composite's fold.
+/// - witness: `syntax::tests::a_called_function_literal_reads_as_what_it_returns_675`
+/// - witness: `syntax::tests::a_called_nested_literal_reads_as_what_it_returns_2325`
+/// - witness: `syntax::tests::a_called_stated_literal_reads_as_what_it_returns_4101`
+#[spec(ensures: |ret| ret == value || arena.value(ret).is_some())]
+fn called_reduct(
+    arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
+    steps: &mut StaticSteps,
+    value: ValueId,
+) -> ValueId
+{
+    let mut value = value;
+    let mut arguments = Vec::new();
+    let mut carried = Vec::new();
+    'reduce: while let Some(&(Value::Nested(call) | Value::Returned(call))) = arena.value(value) {
+        arguments.clear();
+        let mut head = call;
+        while let Some(&Computation::Application(function, argument)) = arena.computation(head) {
+            arguments.push(argument);
+            head = function;
+        }
+        let Some(&Computation::Force(mut thunk)) = arena.computation(head)
+        else {
+            break;
+        };
+        while let Some(&Value::Ascribe { value, .. }) = arena.value(thunk) {
+            thunk = value;
+        }
+        let Some(&(Value::Thunk(mut body) | Value::Nested(mut body))) = arena.value(thunk)
+        else {
+            break;
+        };
+        if arguments.is_empty() {
+            break;
+        }
+        while let Some(argument) = arguments.pop() {
+            let Some(&(Computation::Lambda(inner) | Computation::LinearLambda(inner))) =
+                arena.computation(body)
+            else {
+                break 'reduce;
+            };
+            carried.clear();
+            body = crate::rewrite::instantiate_computation_traced(
+                arena.to_mut(),
+                inner,
+                argument,
+                &mut carried,
+            );
+            body = returned_binds(arena, body, &mut carried);
+        }
+        let body = folded_computation(arena, body);
+        let result = match arena.computation(body) {
+            Some(&Computation::Return(result)) => result,
+            Some(&Computation::Application(mut callee, _)) => {
+                while let Some(&Computation::Application(inner, _)) = arena.computation(callee) {
+                    callee = inner;
+                }
+                if !matches!(arena.computation(callee), Some(&Computation::Force(_))) {
+                    break;
+                }
+                arena.to_mut().value_nested(body)
+            },
+            Some(_) | None => break,
+        };
+        if steps.spend() == Spend::Exhausted {
+            break;
+        }
+        value = result;
+    }
+    value
+}
+
+/// The computation `id` reads as once a call of a function literal it is
+/// reduced, while `steps` lasts.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for a call whose head is a function literal — a lambda, or one
+///   forced from a thunk or from a computation nested where a value is read,
+///   under any ascriptions — of at least as many abstractions as the call has
+///   arguments, the instantiated body read through each bind of a returned
+///   value it opens with ([`returned_binds`]), the first argument instantiating
+///   the outermost abstraction, taken again while it reduces and `steps` lasts,
+///   one step spent per reduction; `id` itself for every other computation. The
+///   arena is copied the first time it is written.
+/// - provides: the β [`equal_type_reading`] reads a computation through where
+///   the printer writes a called literal as the call its body makes, and where
+///   the lowering applies a lambda the printer wrote as the literal called,
+///   alike on both sides; [`called_reduct`] gives the same reading of a call
+///   standing as a value.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: every turn of the outer loop spends one of `steps`; the inner
+///   loops run over the call's spine and its arguments.
+/// - measure: `steps`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lambda body calling a literal that calls a name reads
+///   as the name's call, and a call of a literal with more arguments than
+///   abstractions as the call of what it returns; a lambda applied in place
+///   reads as the literal forced and applied; a stated literal called and
+///   suspended reads as the call its body makes.
+/// - witness: `syntax::tests::a_forced_literal_reads_as_its_computation_2325`
+/// - witness: `syntax::tests::a_called_nested_literal_reads_as_what_it_returns_2325`
+/// - witness: `syntax::tests::a_called_stated_literal_reads_as_what_it_returns_4101`
+#[spec(ensures: |ret| ret == id || arena.computation(ret).is_some())]
+fn called_computation(
+    arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
+    steps: &mut StaticSteps,
+    id: ComputationId,
+) -> ComputationId
+{
+    let mut id = id;
+    let mut arguments = Vec::new();
+    let mut carried = Vec::new();
+    'reduce: loop {
+        arguments.clear();
+        let mut head = id;
+        while let Some(&Computation::Application(function, argument)) = arena.computation(head) {
+            arguments.push(argument);
+            head = function;
+        }
+        if arguments.is_empty() {
+            break;
+        }
+        let mut body = match arena.computation(head) {
+            Some(&(Computation::Lambda(_) | Computation::LinearLambda(_))) => head,
+            Some(&Computation::Force(mut thunk)) => {
+                while let Some(&Value::Ascribe { value, .. }) = arena.value(thunk) {
+                    thunk = value;
+                }
+                match arena.value(thunk) {
+                    Some(&(Value::Thunk(body) | Value::Nested(body))) => body,
+                    Some(_) | None => break,
+                }
+            },
+            Some(_) | None => break,
+        };
+        while let Some(argument) = arguments.pop() {
+            let Some(&(Computation::Lambda(inner) | Computation::LinearLambda(inner))) =
+                arena.computation(body)
+            else {
+                break 'reduce;
+            };
+            carried.clear();
+            body = crate::rewrite::instantiate_computation_traced(
+                arena.to_mut(),
+                inner,
+                argument,
+                &mut carried,
+            );
+            body = returned_binds(arena, body, &mut carried);
+        }
+        if steps.spend() == Spend::Exhausted {
+            break;
+        }
+        id = body;
+    }
+    id
+}
+
+/// The value `value` reads as once every run its computation binds a call by
+/// stands for the call, while `steps` lasts.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for a value, nested or returned, whose computation is a bind
+///   whose bound is a call — an application whose spine ends at a force — the
+///   nested value of the rest with the binder instantiated at the call kept
+///   nested, taken again while it binds a call and `steps` lasts, one step
+///   spent per run; `value` itself for every other value. The arena is copied
+///   the first time it is written.
+/// - provides: the reading of a nested call the lowering commutes into a run —
+///   `same(same(x))` lowers to `a ← same(x); same(a)` — as the call it was
+///   written as, which a type instantiated at a function holds and the printer
+///   spells (#676).
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: every turn spends one of `steps`; the inner loop runs over the
+///   bound call's spine.
+/// - measure: `steps`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one run and two runs over calls read as the nested calls;
+///   a run binding a value forced alone stays a run.
+/// - witness: `syntax::tests::a_run_bound_call_reads_as_the_nested_call_676`
+#[spec(ensures: |ret| ret == value || arena.value(ret).is_some())]
+fn inlined_runs(
+    arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
+    steps: &mut StaticSteps,
+    value: ValueId,
+) -> ValueId
+{
+    let mut value = value;
+    let mut carried = Vec::new();
+    while let Some(&(Value::Nested(computation) | Value::Returned(computation))) =
+        arena.value(value)
+        && let Some(&Computation::Bind(bound, rest)) = arena.computation(computation)
+        && let Some(&Computation::Application(mut head, _)) = arena.computation(bound)
+    {
+        while let Some(&Computation::Application(inner, _)) = arena.computation(head) {
+            head = inner;
+        }
+        if !matches!(arena.computation(head), Some(&Computation::Force(_))) {
+            break;
+        }
+        if steps.spend() == Spend::Exhausted {
+            break;
+        }
+        let call = arena.to_mut().value_nested(bound);
+        carried.clear();
+        let rest = crate::rewrite::instantiate_computation_traced(
+            arena.to_mut(),
+            rest,
+            call,
+            &mut carried,
+        );
+        value = arena.to_mut().value_nested(rest);
+    }
+    value
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a path type reads as no type of words.
+    pub mod unworded {
+        /// The reason [`super::identified_words`] answered no declaration.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No declaration's free cells loop over the carrier, as written,
+            /// at a point both endpoints spell.
+            Unlooped,
+        }
+    }
+}
+
+/// The type of words the path type `Path[.A = carrier](left, right)` reads as.
+///
+/// The declaration among `signatures` whose free cells loop at a point both
+/// endpoints spell, over the parameterless data type `carrier` is as written.
+/// Cells above dimension one loop at the point wrapped in its reflexivity:
+/// the carrier is then itself a path type at the wrapped point, down to the
+/// data type, and each endpoint along it the point wrapped once less.
+///
+/// # Specification
+/// - requires: nothing; unreadable ids read as no words.
+/// - ensures: `Present(words)` exactly when the carrier reads, through `n` path
+///   types, down to `Data(sort, [])`, the endpoints at each path type are the
+///   point wrapped once less than at the one above it and `n` times at the
+///   outer one, and `words`, the first such in key order, carries cells over
+///   `sort` wrapped `n` times whose point every unwrapped endpoint spells as a
+///   constructor term of `sort`.
+/// - provides: the identification a checker reads a path type by
+///   (`CheckingContext::words`), the one the kernel's `Presentations::words`
+///   makes over the admitted cells, and the one a printed type's reading back
+///   is held to ([`equal_type_reading`]).
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circle's path at its point reads as its words; with
+///   an endpoint off the point it reads as none; the sphere's path at the
+///   reflexivity of its point reads as the words of its 2-cell.
+/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
+/// - witness: `syntax::tests::a_path_at_a_wrapped_point_reads_as_the_words_above_it`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(words) => signatures.get(&words).is_some_and(|signature| signature.presentation().cells().is_some()),
+    Maybe::Absent(_) => true,
+})]
+#[inline]
+pub fn identified_words(
+    arena: &crate::CoreArena,
+    signatures: &BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>,
+    carrier: ValueTypeId,
+    (left, right): (ValueId, ValueId),
+) -> Maybe<ConstantIndex, unworded::Absent>
+{
+    let Some((sort, wrapped)) = tower(arena, carrier, (left, right))
+    else {
+        return Maybe::Absent(unworded::Absent::Unlooped);
+    };
+    signatures
+        .iter()
+        .find_map(|(&words, signature)| {
+            let cells = signature.presentation().cells()?;
+            (cells.sort() == sort
+                && cells.reflexivities() == wrapped
+                && spelled_along(arena, sort, carrier, (left, right), cells.point())
+                    == Spelling::Spelled)
+                .then_some(words)
+        })
+        .map_or(Maybe::Absent(unworded::Absent::Unlooped), Maybe::Present)
+}
+
+/// The sort a path type's carrier reads down to, and how many path types it
+/// passes on the way.
+///
+/// # Specification
+/// - requires: nothing; unreadable ids read as no tower.
+/// - ensures: `Some((sort, n))` exactly when `carrier` reads through `n` path
+///   types down to `Data(sort, [])`, and the endpoints at each level are
+///   wrapped in reflexivity once less than the level above, `n` times at the
+///   outer endpoints `left` and `right`.
+/// - provides: the shape half of [`identified_words`]; [`spelled_along`] reads
+///   the bases.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `loop` reads one path type of the carrier per turn.
+/// - measure: the path types left in the carrier, each a strict part of the one
+///   above it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`identified_words`].
+/// - witness: `syntax::tests::a_path_at_a_wrapped_point_reads_as_the_words_above_it`
+#[spec(ensures: |ret| ret.is_none_or(|(_, levels)| unwrapped(arena, left).1 == levels && unwrapped(arena, right).1 == levels))]
+fn tower(
+    arena: &crate::CoreArena,
+    carrier: ValueTypeId,
+    (left, right): (ValueId, ValueId),
+) -> Option<(ConstantIndex, Reflexivities)>
+{
+    let (mut carrier, mut ends) = (carrier, (left, right));
+    let mut wraps = None;
+    let mut levels = 0_usize;
+    loop {
+        let (_, left_wraps) = unwrapped(arena, ends.0);
+        let (_, right_wraps) = unwrapped(arena, ends.1);
+        if left_wraps != right_wraps {
+            return None;
+        }
+        // Each level's endpoints are wrapped once less than the level above.
+        let count = usize::from(left_wraps);
+        if let Some(above) = wraps
+            && count.checked_add(1) != Some(above)
+        {
+            return None;
+        }
+        wraps = Some(count);
+        let ty = arena.value_type(carrier)?;
+        if let ValueType::Data {
+            declaration,
+            ref arguments,
+        } = *ty
+            && arguments.is_empty()
+            && left_wraps == Reflexivities::NONE
+        {
+            return Some((declaration, Reflexivities::from(levels)));
+        }
+        let ValueType::Path {
+            carrier: inner,
+            left,
+            right,
+        } = *ty
+        else {
+            return None;
+        };
+        carrier = inner;
+        ends = (left, right);
+        levels = levels.checked_add(1)?;
+    }
+}
+
+/// Whether every endpoint along the carrier [`tower`] reads, unwrapped, spells
+/// `point` over `sort`.
+///
+/// # Specification
+/// - requires: [`tower`] reads `carrier` and the endpoints down to `sort`.
+/// - ensures: [`Spelling::Spelled`] exactly when each endpoint's base spells
+///   `point`.
+/// - provides: the point half of [`identified_words`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: as [`tower`].
+/// - measure: as [`tower`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`identified_words`].
+/// - witness: `syntax::tests::a_path_at_a_wrapped_point_reads_as_the_words_above_it`
+#[spec(ensures: |ret| ret == Spelling::Apart || spells(arena, sort, unwrapped(arena, left).0, point) == Spelling::Spelled)]
+fn spelled_along(
+    arena: &crate::CoreArena,
+    sort: ConstantIndex,
+    carrier: ValueTypeId,
+    (left, right): (ValueId, ValueId),
+    point: &[gandr_kernel_term::RuleNode],
+) -> Spelling
+{
+    let (mut carrier, mut ends) = (carrier, (left, right));
+    loop {
+        let spelled =
+            |end: ValueId| spells(arena, sort, unwrapped(arena, end).0, point) == Spelling::Spelled;
+        if !spelled(ends.0) || !spelled(ends.1) {
+            return Spelling::Apart;
+        }
+        match arena.value_type(carrier) {
+            Some(&ValueType::Path {
+                carrier: inner,
+                left,
+                right,
+            }) => {
+                carrier = inner;
+                ends = (left, right);
+            },
+            Some(_) | None => return Spelling::Spelled,
+        }
+    }
+}
+
+/// `value` with every reflexivity around it taken off, and how many there
+/// were.
+///
+/// # Specification
+/// - requires: nothing; an unreadable id is its own base.
+/// - ensures: `(base, n)` with `value` the base wrapped `n` times in `here(_)`,
+///   and the base no reflexivity.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `while let` takes one reflexivity off per turn.
+/// - measure: the reflexivities left, each a strict part of the one around it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`identified_words`].
+/// - witness: `syntax::tests::a_path_at_a_wrapped_point_reads_as_the_words_above_it`
+#[spec(ensures: |ret| !matches!(arena.value(ret.0), Some(&Value::Here(_))))]
+fn unwrapped(
+    arena: &crate::CoreArena,
+    value: ValueId,
+) -> (ValueId, Reflexivities)
+{
+    let (mut base, mut wraps) = (value, 0_usize);
+    while let Some(&Value::Here(inner)) = arena.value(base) {
+        base = inner;
+        wraps = wraps.saturating_add(1);
+    }
+    (base, Reflexivities::from(wraps))
+}
+
+/// Whether `words` is `Data(w, [])` and `path` a path type
+/// [`identified_words`] reads as `w`.
+///
+/// # Specification
+/// - requires: nothing; unreadable ids identify nothing.
+/// - ensures: `Present(w)` exactly in that case.
+/// - provides: the rule [`equal_type_reading`] adds to the syntax for a type of
+///   words.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(found) => matches!(arena.value_type(words), Some(&ValueType::Data { declaration, .. }) if declaration == found),
+    Maybe::Absent(_) => true,
+})]
+fn read_as_words(
+    arena: &crate::CoreArena,
+    signatures: &BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>,
+    (words, path): (ValueTypeId, ValueTypeId),
+) -> Maybe<ConstantIndex, unworded::Absent>
+{
+    let (
+        Some(&ValueType::Data {
+            declaration,
+            ref arguments,
+        }),
+        Some(&ValueType::Path {
+            carrier,
+            left,
+            right,
+        }),
+    ) = (arena.value_type(words), arena.value_type(path))
+    else {
+        return Maybe::Absent(unworded::Absent::Unlooped);
+    };
+    if !arguments.is_empty() {
+        return Maybe::Absent(unworded::Absent::Unlooped);
+    }
+    if let Maybe::Present(found) = identified_words(arena, signatures, carrier, (left, right))
+        && found == declaration
+    {
+        return Maybe::Present(found);
+    }
+    Maybe::Absent(unworded::Absent::Unlooped)
+}
+
+/// Whether `here` is reflexivity at a point and `word` the empty word of a
+/// type of words over that point, which a checker reads as one path.
+///
+/// # Specification
+/// - requires: nothing; unreadable ids identify nothing.
+/// - ensures: [`CertificateEquality::Equal`] exactly when `here` is `here(p)`
+///   and `word` the constructor of tag zero with no fields of `Data(w, [])`,
+///   `w` among `signatures` with cells wrapped `n` times whose point `p`,
+///   wrapped `n` times in reflexivity, spells over their sort;
+///   [`CertificateEquality::Different`] otherwise.
+/// - provides: the value half of the identification [`read_as_words`] makes for
+///   types: `here(a)` at the point of a family's loops is its empty word, as
+///   the lowering reads it, and `here(here(a))` the empty word of its 2-cells.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circle's reflexivity at its point against its empty
+///   word, alone and under a transport, compares equal; off the point it stays
+///   different.
+/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
+/// - witness: `syntax::tests::a_path_at_a_wrapped_point_reads_as_the_words_above_it`
+#[spec(ensures: |ret| ret == CertificateEquality::Different || matches!(arena.value(here), Some(&Value::Here(_))))]
+fn empty_word(
+    arena: &crate::CoreArena,
+    signatures: &BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>,
+    (here, word): (ValueId, ValueId),
+) -> CertificateEquality
+{
+    let (
+        Some(&Value::Here(point)),
+        Some(&Value::Constructor {
+            datatype,
+            tag,
+            ref fields,
+            ..
+        }),
+    ) = (arena.value(here), arena.value(word))
+    else {
+        return CertificateEquality::Different;
+    };
+    let Some(&ValueType::Data {
+        declaration,
+        ref arguments,
+    }) = arena.value_type(datatype)
+    else {
+        return CertificateEquality::Different;
+    };
+    let (base, wraps) = unwrapped(arena, point);
+    let empty = tag == ConstructorTag::from(0_usize)
+        && fields.is_empty()
+        && arguments.is_empty()
+        && signatures
+            .get(&declaration)
+            .and_then(|signature| signature.presentation().cells())
+            .is_some_and(|cells| {
+                cells.reflexivities() == wraps
+                    && spells(arena, cells.sort(), base, cells.point()) == Spelling::Spelled
+            });
+    if empty {
+        CertificateEquality::Equal
+    }
+    else {
+        CertificateEquality::Different
+    }
+}
+
+/// Whether a value is the closed term a rule side spells.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Spelling
+{
+    /// The value is the term the side spells.
+    Spelled,
+    /// It is another term, or no term the arena can read.
+    Apart,
+}
+
+/// Whether `value` is the constructor term of `sort` that the closed rule side
+/// `side` spells.
+///
+/// # Specification
+/// - requires: nothing — unreadable ids spell nothing.
+/// - ensures: [`Spelling::Spelled`] exactly when reading `value` in pre-order
+///   meets one constructor of `sort` per node of `side`, each with the node's
+///   tag, and no node is left over on either side; a variable node spells
+///   nothing.
+/// - provides: the endpoint comparison of [`identified_words`], as the
+///   kernel's, bounded by the side's length whatever the value's depth.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one `for` loop over `side`'s nodes, not recursion.
+/// - measure: the nodes of `side` not yet read.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`identified_words`].
+/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
+#[spec(ensures: |ret| ret == Spelling::Apart || !side.is_empty())]
+fn spells(
+    arena: &crate::CoreArena,
+    sort: ConstantIndex,
+    value: ValueId,
+    side: &[gandr_kernel_term::RuleNode],
+) -> Spelling
+{
+    let mut pending = Vec::with_capacity(side.len());
+    pending.push(value);
+    for &node in side {
+        let (Some(at), gandr_kernel_term::RuleNode::Constructor(tag)) = (pending.pop(), node)
+        else {
+            return Spelling::Apart;
+        };
+        let Some(&Value::Constructor {
+            datatype,
+            tag: written,
+            ref fields,
+            ..
+        }) = arena.value(at)
+        else {
+            return Spelling::Apart;
+        };
+        if written != tag
+            || !matches!(
+                arena.value_type(datatype),
+                Some(&ValueType::Data { declaration, .. }) if declaration == sort
+            )
+        {
+            return Spelling::Apart;
+        }
+        pending.extend(fields.iter().rev());
+    }
+    if pending.is_empty() {
+        Spelling::Spelled
+    }
+    else {
+        Spelling::Apart
+    }
+}
+
+/// Whether two interfaces share a name and an operation table: the same
+/// operations, by name and in order.
+///
+/// # Specification
+/// - ensures: [`CertificateEquality::Equal`] when the two interfaces share a
+///   name and list as many operations, pairwise of one name;
+///   [`CertificateEquality::Different`] otherwise. Operation types are
+///   children, which this leaves to the caller.
+/// - panics: none.
+/// - executable: none — this is the structural comparison's former rule.
+///
+/// # Adequacy
+/// - hypothesis: L3 — reordered allocations preserve equality, changed replies
+///   do not.
+/// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
+/// - witness: `effect::tests::a_signature_includes_another_only_at_one_name_and_one_operation_table`
+fn signatures_agree(
+    left: &crate::effect::EffectSig,
+    right: &crate::effect::EffectSig,
+) -> CertificateEquality
+{
+    let agree = left.name() == right.name()
+        && left.operations().len() == right.operations().len()
+        && left
+            .operations()
+            .zip(right.operations())
+            .all(|(first, second)| first.name == second.name);
+    if agree {
+        CertificateEquality::Equal
+    }
+    else {
+        CertificateEquality::Different
+    }
+}
+
+/// Queue operation type pairs after checking interface and operation
+/// identities.
+///
+/// # Specification
+/// - ensures: [`CertificateEquality::Equal`] preserves names and queues payload
+///   before reply per operation; [`CertificateEquality::Different`] queues
+///   nothing further for a mismatched name or arity.
+/// - executable: none — this is the structural comparison's work-list rule.
+///
+/// # Adequacy
+/// - hypothesis: L3 — reordered allocations preserve equality, changed replies
+///   do not.
+/// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
+/// - witness: `effect::tests::a_signature_includes_another_only_at_one_name_and_one_operation_table`
+fn signature_children<P>(
+    pending: &mut P,
+    left: &crate::effect::EffectSig,
+    right: &crate::effect::EffectSig,
+) -> CertificateEquality
+where
+    P: Pending,
+{
+    if signatures_agree(left, right) == CertificateEquality::Different {
+        return CertificateEquality::Different;
+    }
+    for (first, second) in left.types().zip(right.types()) {
+        pending.queue(
+            StructuralGoal::ValueType(first, second),
+            crate::support::Crossing::default(),
+        );
+    }
+    CertificateEquality::Equal
+}
+
+/// Whether two rows share a shape: the same interfaces, and a tail on both or
+/// on neither.
+///
+/// # Specification
+/// - ensures: [`CertificateEquality::Equal`] when the two rows list as many
+///   interfaces, each pair agreeing as [`signatures_agree`] reads them, and
+///   both or neither is open; [`CertificateEquality::Different`] otherwise.
+///   Operation types and tails are children, which this leaves to the caller.
+/// - panics: none.
+/// - executable: none — this is the structural comparison's former rule.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a closed row against itself, against the same row open
+///   and two rows open through different tails separate the three answers.
+/// - witness: `syntax::tests::a_returner_open_through_a_tail_is_not_the_closed_one_2270`
+fn rows_agree(
+    left: &crate::effect::EffectRow,
+    right: &crate::effect::EffectRow,
+) -> CertificateEquality
+{
+    let agree = left.signatures().len() == right.signatures().len()
+        && left.tail().is_some() == right.tail().is_some()
+        && left
+            .signatures()
+            .zip(right.signatures())
+            .all(|(first, second)| signatures_agree(first, second) == CertificateEquality::Equal);
+    if agree {
+        CertificateEquality::Equal
+    }
+    else {
+        CertificateEquality::Different
+    }
+}
+
+/// Queue the payload type pairs of two session types whose protocols behave
+/// alike from their states.
+///
+/// # Specification
+/// - ensures: [`CertificateEquality::Equal`] when every pair of states reached
+///   from the two types' states, each unfolded through its `mu` and its
+///   recursion variables, takes the same action: a send against a send and a
+///   receive against a receive, their continuations paired and their payload
+///   types queued; a selection against a selection and an offer against an
+///   offer over the same labels, the arms paired label by label; `end` against
+///   `end`. [`CertificateEquality::Different`] at the first pair that does not,
+///   at a node or payload slot past either protocol, and at a state that
+///   unfolds to no action within the protocol's length.
+/// - executable: none — this is the structural comparison's work-list rule for
+///   sessions; its witness drives it through [`equal_type_reading`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state_400`
+fn session_children<P>(
+    pending: &mut P,
+    left: &crate::session::SessionType,
+    right: &crate::session::SessionType,
+) -> CertificateEquality
+where
+    P: Pending,
+{
+    use crate::session::Protocol;
+    use crate::session::ProtocolNode;
+    use crate::session::ProtocolState;
+    /// The action `at` stands at: past every `mu` and recursion variable.
+    ///
+    /// # Specification
+    /// - ensures: the first node of the unfolding from `at` that is an action
+    ///   or `end`, with its state; none past the protocol or after more steps
+    ///   than it has nodes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a state under a `mu` and one at a recursion variable
+    ///   each reach the action the protocol takes there.
+    /// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state_400`
+    #[spec(ensures: |ret| ret.is_none_or(|(_, node)| !matches!(*node, ProtocolNode::Mu(_) | ProtocolNode::Recur(_))))]
+    fn acting(
+        protocol: &Protocol,
+        at: ProtocolState,
+    ) -> Option<(ProtocolState, &ProtocolNode)>
+    {
+        let mut at = at;
+        for _step in 0 ..= protocol.nodes().len() {
+            match *protocol.node(at).ok()? {
+                ProtocolNode::Mu(next) | ProtocolNode::Recur(next) => at = next,
+                ref node @ (ProtocolNode::Send { .. }
+                | ProtocolNode::Receive { .. }
+                | ProtocolNode::Select(_)
+                | ProtocolNode::Offer(_)
+                | ProtocolNode::End) => return Some((at, node)),
+            }
+        }
+        None
+    }
+    let payload = |session: &crate::session::SessionType, slot: crate::session::PayloadSlot| {
+        session.payloads().get(usize::from(slot)).copied()
+    };
+    let mut seen = alloc::collections::BTreeSet::new();
+    let mut states = alloc::vec![(left.state(), right.state())];
+    while let Some((at_left, at_right)) = states.pop() {
+        let (Some((at_left, acts_left)), Some((at_right, acts_right))) = (
+            acting(left.protocol(), at_left),
+            acting(right.protocol(), at_right),
+        )
+        else {
+            return CertificateEquality::Different;
+        };
+        if !seen.insert((at_left, at_right)) {
+            continue;
+        }
+        match (acts_left, acts_right) {
+            (
+                &ProtocolNode::Send {
+                    payload: sent,
+                    next,
+                },
+                &ProtocolNode::Send {
+                    payload: other,
+                    next: then,
+                },
+            )
+            | (
+                &ProtocolNode::Receive {
+                    payload: sent,
+                    next,
+                },
+                &ProtocolNode::Receive {
+                    payload: other,
+                    next: then,
+                },
+            ) => {
+                let (Some(sent), Some(other)) = (payload(left, sent), payload(right, other))
+                else {
+                    return CertificateEquality::Different;
+                };
+                pending.queue(
+                    StructuralGoal::ValueType(sent, other),
+                    crate::support::Crossing::default(),
+                );
+                states.push((next, then));
+            },
+            (&ProtocolNode::Select(ref arms), &ProtocolNode::Select(ref others))
+            | (&ProtocolNode::Offer(ref arms), &ProtocolNode::Offer(ref others)) => {
+                if !arms.keys().eq(others.keys()) {
+                    return CertificateEquality::Different;
+                }
+                states.extend(arms.values().copied().zip(others.values().copied()));
+            },
+            (&ProtocolNode::End, &ProtocolNode::End) => {},
+            (
+                &(ProtocolNode::Send { .. }
+                | ProtocolNode::Receive { .. }
+                | ProtocolNode::Select(_)
+                | ProtocolNode::Offer(_)
+                | ProtocolNode::End
+                | ProtocolNode::Mu(_)
+                | ProtocolNode::Recur(_)),
+                _,
+            ) => return CertificateEquality::Different,
+        }
+    }
+    CertificateEquality::Equal
+}
+
+/// What two recorded moves leave to compare.
+///
+/// # Specification
+/// trivial.
+pub enum MovePair
+{
+    /// A send against a send, or a receipt against a receipt: their payloads.
+    Payloads(ValueId, ValueId),
+    /// Two choices of one label, or two closes: nothing further.
+    Agreed,
+    /// Two moves of different actions or labels.
+    Different,
+}
+
+/// Pair the moves `left` and `right` for the structural comparison.
+///
+/// # Specification
+/// - ensures: the two payloads of two sends or two receipts, agreement for two
+///   choices of one label and for two closes, and a difference for any other
+///   pair.
+/// - panics: none.
+/// - executable: none — the clause is the body's table.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run and a dialogue that differ in one move's action or
+///   label differ, and two that agree move for move compare their payloads.
+/// - witness: `syntax::tests::each_value_former_equals_its_twin_and_differs_where_its_guard_does`
+pub fn move_pair(
+    left: &crate::session::RecordedMove,
+    right: &crate::session::RecordedMove,
+) -> MovePair
+{
+    use crate::session::RecordedMove;
+    match (left, right) {
+        (&RecordedMove::Sent(a), &RecordedMove::Sent(b))
+        | (&RecordedMove::Received(a), &RecordedMove::Received(b)) => MovePair::Payloads(a, b),
+        (&RecordedMove::Selected(ref a), &RecordedMove::Selected(ref b))
+        | (&RecordedMove::Offered(ref a), &RecordedMove::Offered(ref b)) => {
+            if a == b {
+                MovePair::Agreed
+            }
+            else {
+                MovePair::Different
+            }
+        },
+        (&RecordedMove::Closed, &RecordedMove::Closed) => MovePair::Agreed,
+        (
+            &(RecordedMove::Sent(_)
+            | RecordedMove::Received(_)
+            | RecordedMove::Selected(_)
+            | RecordedMove::Offered(_)
+            | RecordedMove::Closed),
+            &(RecordedMove::Sent(_)
+            | RecordedMove::Received(_)
+            | RecordedMove::Selected(_)
+            | RecordedMove::Offered(_)
+            | RecordedMove::Closed),
+        ) => MovePair::Different,
+    }
+}
+
+/// Run the shared, evidence-erasing structural comparison.
+///
+/// # Specification
+/// - ensures: returns equal exactly when every reached pair agrees in syntax
+///   after path evidence is erased or, under [`Reading::Printed`], is a pair a
+///   printed type reads back as one type: each value type at its base when it
+///   is staged, a value-type pair the signatures read as one type of words
+///   ([`read_as_words`]) agreeing outright, two session types whose protocols
+///   behave alike from their states ([`session_children`]), a decoded static
+///   redex read as its reduct ([`decoded_value_type`], [`decoded_comp_type`]),
+///   a call of a function literal read as the value its body returns
+///   ([`called_reduct`]), a call kept unelaborated read as the value it
+///   returns, as the lowering keeps it where a type after it reads it, a
+///   function kept unelaborated read as its thunk, as the checker suspends it
+///   (#3947), a returned composite read as its fold ([`folded_computation`]), a
+///   dependent arrow read as the plain arrow where its codomain reads as the
+///   arrow's codomain weakened past its binder, and a dependent pair as the
+///   product of two where its second factor reads as the product's second
+///   component weakened past its binder (#771), a patched type read at its base
+///   and its fixed values, the meets of a system of faces erased, and two
+///   dialogues whose endpoints made the same moves, however the logs interleave
+///   them; under [`Reading::Syntax`] no reduction is performed.
+/// - executable: none — the contract is the inductive graph comparison, not a
+///   second traversal pretending to be an independent postcondition.
+///
+/// # Adequacy
+/// - hypothesis: L3 — both certificate and type roots must reach the same child
+///   comparison rules without depending on allocation order.
+/// - witness: `syntax::tests::certificate_syntax_erases_only_evidence`
+/// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
+/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
+/// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state_400`
+/// - witness: `syntax::tests::a_system_of_faces_reads_back_as_its_glued_type_5106`
+/// - witness: `syntax::tests::a_dependent_arrow_ignoring_its_binder_reads_as_the_arrow`
+/// - witness: `syntax::tests::each_value_former_equals_its_twin_and_differs_where_its_guard_does`
+/// - witness: `syntax::tests::each_computation_former_equals_its_twin_and_differs_where_its_guard_does`
+/// - witness: `syntax::tests::each_type_former_equals_its_twin_and_differs_where_its_guard_does`
+fn equal_syntax(
+    arena: &crate::CoreArena,
+    reading: Reading<'_>,
+    root: StructuralGoal,
+) -> CertificateEquality
+{
+    use StructuralGoal::CompType as CT;
+    use StructuralGoal::Computation as C;
+    use StructuralGoal::Value as V;
+    use StructuralGoal::ValueType as VT;
+    let unread = BTreeMap::new();
+    let signatures = match reading {
+        Reading::Syntax | Reading::Folded => &unread,
+        Reading::Printed(signatures) => signatures,
+    };
+    let mut arena = alloc::borrow::Cow::Borrowed(arena);
+    let mut steps = StaticSteps::ALLOWED;
+    let mut pending = alloc::vec![root];
+    let mut visited = alloc::collections::BTreeSet::new();
+    while let Some(goal) = pending.pop() {
+        let goal = match (reading, goal) {
+            (Reading::Printed(_), VT(a, b)) => {
+                let (a, b) = (unstaged(&arena, a), unstaged(&arena, b));
+                VT(
+                    decoded_value_type(&mut arena, &mut steps, a),
+                    decoded_value_type(&mut arena, &mut steps, b),
+                )
+            },
+            (Reading::Printed(_), CT(a, b)) => CT(
+                decoded_comp_type(&mut arena, &mut steps, a),
+                decoded_comp_type(&mut arena, &mut steps, b),
+            ),
+            (Reading::Printed(_), V(a, b)) => {
+                let a = inlined_runs(&mut arena, &mut steps, a);
+                let b = inlined_runs(&mut arena, &mut steps, b);
+                V(
+                    called_reduct(&mut arena, &mut steps, a),
+                    called_reduct(&mut arena, &mut steps, b),
+                )
+            },
+            (Reading::Printed(_), C(a, b)) => {
+                let a = called_computation(&mut arena, &mut steps, a);
+                let b = called_computation(&mut arena, &mut steps, b);
+                C(
+                    folded_computation(&arena, forced_computation(&arena, a)),
+                    folded_computation(&arena, forced_computation(&arena, b)),
+                )
+            },
+            (Reading::Folded, C(a, b)) => {
+                C(folded_computation(&arena, a), folded_computation(&arena, b))
+            },
+            (Reading::Syntax, _) | (Reading::Folded, V(..) | VT(..) | CT(..)) => goal,
+        };
+        if !visited.insert(goal) {
+            continue;
+        }
+        if pair_step(&mut arena, reading, signatures, goal, &mut pending)
+            == CertificateEquality::Different
+        {
+            return CertificateEquality::Different;
+        }
+    }
+    CertificateEquality::Equal
+}
+
+/// The place of a goal on a structural comparison's work list.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Queued(usize);
+
+/// The work list a structural comparison queues pairs of children on.
+trait Pending
+{
+    /// Queue `goal`, a pair of children standing under `crossing` below the
+    /// pair being read.
+    ///
+    /// # Specification
+    /// trivial.
+    fn queue(
+        &mut self,
+        goal: StructuralGoal,
+        crossing: crate::support::Crossing,
+    );
+
+    /// The place the next queued goal takes.
+    ///
+    /// # Specification
+    /// trivial.
+    fn queued(&self) -> Queued;
+
+    /// The goal queued at `at`, absent past the queue.
+    ///
+    /// # Specification
+    /// trivial.
+    fn goal_at(
+        &mut self,
+        at: Queued,
+    ) -> Option<&mut StructuralGoal>;
+}
+
+impl Pending for Vec<StructuralGoal>
+{
+    /// Push `goal`: a comparison that reads no variable by its binders keeps
+    /// no crossing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn queue(
+        &mut self,
+        goal: StructuralGoal,
+        _crossing: crate::support::Crossing,
+    )
+    {
+        self.push(goal);
+    }
+
+    /// The queue's length.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn queued(&self) -> Queued
+    {
+        Queued(self.len())
+    }
+
+    /// The goal at `at`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn goal_at(
+        &mut self,
+        at: Queued,
+    ) -> Option<&mut StructuralGoal>
+    {
+        self.get_mut(at.0)
+    }
+}
+
+/// The work list of [`equal_computation_syntax_up_to_free`] while it reads a
+/// pair standing under `under`: each goal kept with the binders crossed from
+/// the comparison's roots down to it.
+struct Placed<'pending>
+{
+    /// The work list.
+    pending: &'pending mut Vec<(StructuralGoal, crate::support::Crossing)>,
+    /// The binders crossed from the roots down to the pair being read.
+    under: crate::support::Crossing,
+}
+
+impl Pending for Placed<'_>
+{
+    /// Push `goal` under the binders above the pair being read and those
+    /// `crossing` adds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn queue(
+        &mut self,
+        goal: StructuralGoal,
+        crossing: crate::support::Crossing,
+    )
+    {
+        self.pending.push((goal, deeper(self.under, crossing)));
+    }
+
+    /// The queue's length.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn queued(&self) -> Queued
+    {
+        Queued(self.pending.len())
+    }
+
+    /// The goal at `at`, its crossing kept.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn goal_at(
+        &mut self,
+        at: Queued,
+    ) -> Option<&mut StructuralGoal>
+    {
+        self.pending
+            .get_mut(at.0)
+            .map(|&mut (ref mut goal, _)| goal)
+    }
+}
+
+/// The binders `inner` crosses below a node that stands under `outer`, counted
+/// from the comparison's roots.
+///
+/// # Specification
+/// trivial.
+fn deeper(
+    outer: crate::support::Crossing,
+    inner: crate::support::Crossing,
+) -> crate::support::Crossing
+{
+    let sum = |zone| {
+        crate::context::BinderDepth::from(
+            usize::from(outer.depth(zone)).saturating_add(usize::from(inner.depth(zone))),
+        )
+    };
+    crate::support::Crossing::new(sum(Zone::Intuitionistic), sum(Zone::Linear))
+}
+
+/// Which node's children a [`Pairing`] is reading.
+#[derive(Clone, Copy)]
+enum Side
+{
+    /// The left node's, each queued as it comes.
+    Left,
+    /// The right node's, the next one written into the goal at this place.
+    Right(Queued),
+}
+
+/// Two nodes' children paired place by place on the work list: the left
+/// node's queued first, each as a goal pairing the child with itself, then the
+/// right node's written into those goals in turn.
+struct Pairing<'pending, P>
+{
+    /// The work list.
+    pending: &'pending mut P,
+    /// Which node's children are being read, and where the next right child
+    /// pairs.
+    side: Side,
+    /// Whether each right child so far met a left child of its family.
+    agreed: CertificateEquality,
+}
+
+impl<P: Pending> Pairing<'_, P>
+{
+    /// Queue `child`, a goal pairing a child with itself standing under
+    /// `crossing`, while the left node's children are read; afterwards write
+    /// its child, as the right side, into the next queued goal.
+    ///
+    /// # Specification
+    /// trivial.
+    fn place(
+        &mut self,
+        child: StructuralGoal,
+        crossing: crate::support::Crossing,
+    )
+    {
+        let Side::Right(next) = self.side
+        else {
+            self.pending.queue(child, crossing);
+            return;
+        };
+        self.side = Side::Right(Queued(next.0.saturating_add(1)));
+        let Some(goal) = self.pending.goal_at(next)
+        else {
+            self.agreed = CertificateEquality::Different;
+            return;
+        };
+        *goal = match (*goal, child) {
+            (StructuralGoal::Value(left, _), StructuralGoal::Value(_, right)) => {
+                StructuralGoal::Value(left, right)
+            },
+            (StructuralGoal::Computation(left, _), StructuralGoal::Computation(_, right)) => {
+                StructuralGoal::Computation(left, right)
+            },
+            (StructuralGoal::ValueType(left, _), StructuralGoal::ValueType(_, right)) => {
+                StructuralGoal::ValueType(left, right)
+            },
+            (StructuralGoal::CompType(left, _), StructuralGoal::CompType(_, right)) => {
+                StructuralGoal::CompType(left, right)
+            },
+            _ => {
+                self.agreed = CertificateEquality::Different;
+                return;
+            },
+        };
+    }
+}
+
+impl<P: Pending> crate::children::Visit for Pairing<'_, P>
+{
+    /// Place a value child.
+    ///
+    /// # Specification
+    /// trivial.
+    fn value(
+        &mut self,
+        child: ValueId,
+        crossing: crate::support::Crossing,
+    )
+    {
+        self.place(StructuralGoal::Value(child, child), crossing);
+    }
+
+    /// Place a computation child.
+    ///
+    /// # Specification
+    /// trivial.
+    fn computation(
+        &mut self,
+        child: ComputationId,
+        crossing: crate::support::Crossing,
+    )
+    {
+        self.place(StructuralGoal::Computation(child, child), crossing);
+    }
+
+    /// Place a value-type child.
+    ///
+    /// # Specification
+    /// trivial.
+    fn value_type(
+        &mut self,
+        child: ValueTypeId,
+        crossing: crate::support::Crossing,
+    )
+    {
+        self.place(StructuralGoal::ValueType(child, child), crossing);
+    }
+
+    /// Place a computation-type child.
+    ///
+    /// # Specification
+    /// trivial.
+    fn comp_type(
+        &mut self,
+        child: CompTypeId,
+        crossing: crate::support::Crossing,
+    )
+    {
+        self.place(StructuralGoal::CompType(child, child), crossing);
+    }
+}
+
+/// Pair the children of two nodes of one former, place by place.
+///
+/// # Specification
+/// - ensures: [`CertificateEquality::Equal`] when `of` hands the two sides as
+///   many children each, of one family at each place, with the pair at each
+///   place pushed onto `pending` in the order `of` hands them;
+///   [`CertificateEquality::Different`] otherwise, with `pending` holding goals
+///   the caller drops.
+/// - panics: none.
+/// - executable: none — this is the structural comparison's work-list rule.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each former's twin agrees through its children, and a
+///   breach in any one child disagrees.
+/// - witness: `syntax::tests::each_value_former_equals_its_twin_and_differs_where_its_guard_does`
+/// - witness: `syntax::tests::each_computation_former_equals_its_twin_and_differs_where_its_guard_does`
+/// - witness: `syntax::tests::each_type_former_equals_its_twin_and_differs_where_its_guard_does`
+fn paired_children<Former, P>(
+    pending: &mut P,
+    (left, right): (&Former, &Former),
+    of: fn(&Former, &mut Pairing<'_, P>),
+) -> CertificateEquality
+where
+    P: Pending,
+{
+    let start = pending.queued();
+    let mut pairing = Pairing {
+        pending,
+        side: Side::Left,
+        agreed: CertificateEquality::Equal,
+    };
+    of(left, &mut pairing);
+    pairing.side = Side::Right(start);
+    of(right, &mut pairing);
+    match pairing.side {
+        Side::Right(next) if next == pairing.pending.queued() => pairing.agreed,
+        Side::Right(_) | Side::Left => CertificateEquality::Different,
+    }
+}
+
+/// Whether two values are one former agreeing in every payload but its
+/// children, for the formers [`pair_step`] pairs through
+/// [`crate::children::of_value`].
+///
+/// # Specification
+/// - ensures: [`CertificateEquality::Equal`] for two values of one former that
+///   agree in each payload the enumeration does not hand on: a constructor's
+///   tag and field count, a record's labels, a reified stack's frame kinds and
+///   projections, a tuple's width, univalence's stratum and sides, a
+///   composite's or a fill's stratum, pasting and cell count, an injection's
+///   summand, a primitive, a lift's target, a mark, a session relation, a row's
+///   shape, a web, and a variable, constant, literal or hole whole. A path
+///   equivalence's evidence is no payload. [`CertificateEquality::Different`]
+///   otherwise, and for two recorded logs or two dialogues, which [`pair_step`]
+///   pairs itself.
+/// - panics: none.
+/// - executable: none — this is the structural comparison's former rule.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each former's twin agrees and each guard's breach
+///   disagrees.
+/// - witness: `syntax::tests::each_value_former_equals_its_twin_and_differs_where_its_guard_does`
+/// - witness: `syntax::tests::certificate_syntax_erases_only_evidence`
+fn value_formers(
+    a: &Value,
+    b: &Value,
+) -> CertificateEquality
+{
+    use crate::control::StackFrame;
+    let agree = match (a, b) {
+        (
+            &Value::Constructor {
+                tag: left_tag,
+                fields: ref left_fields,
+                ..
+            },
+            &Value::Constructor {
+                tag: right_tag,
+                fields: ref right_fields,
+                ..
+            },
+        ) => left_tag == right_tag && left_fields.len() == right_fields.len(),
+        (&Value::Record(ref left), &Value::Record(ref right)) => {
+            left.len() == right.len() && left.keys().eq(right.keys())
+        },
+        (&Value::Reify(ref left), &Value::Reify(ref right)) => {
+            left.len() == right.len()
+                && left.iter().zip(right.iter()).all(|frames| match frames {
+                    (&StackFrame::Apply(_), &StackFrame::Apply(_))
+                    | (&StackFrame::Bind(_), &StackFrame::Bind(_)) => true,
+                    (&StackFrame::Project(first), &StackFrame::Project(second)) => first == second,
+                    _ => false,
+                })
+        },
+        (&Value::Tuple(ref left), &Value::Tuple(ref right)) => left.len() == right.len(),
+        (
+            &Value::Ua {
+                stratum: left_stratum,
+                sides: ref left_sides,
+                ..
+            },
+            &Value::Ua {
+                stratum: right_stratum,
+                sides: ref right_sides,
+                ..
+            },
+        ) => left_stratum == right_stratum && left_sides == right_sides,
+        (
+            &Value::Compose {
+                composite: left,
+                cells: ref left_cells,
+                ..
+            },
+            &Value::Compose {
+                composite: right,
+                cells: ref right_cells,
+                ..
+            },
+        )
+        | (
+            &Value::Fill {
+                composite: left,
+                cells: ref left_cells,
+                ..
+            },
+            &Value::Fill {
+                composite: right,
+                cells: ref right_cells,
+                ..
+            },
+        ) => left == right && left_cells.len() == right_cells.len(),
+        (&Value::Injection(left, _), &Value::Injection(right, _)) => left == right,
+        (
+            &Value::Primitive {
+                primitive: left, ..
+            },
+            &Value::Primitive {
+                primitive: right, ..
+            },
+        ) => left == right,
+        (
+            &Value::Lift {
+                target: ref left, ..
+            },
+            &Value::Lift {
+                target: ref right, ..
+            },
+        ) => left == right,
+        (&Value::Mark { mark: left, .. }, &Value::Mark { mark: right, .. }) => left == right,
+        (
+            &Value::SessionRelated { relation: left, .. },
+            &Value::SessionRelated {
+                relation: right, ..
+            },
+        ) => left == right,
+        (&Value::Row(ref left), &Value::Row(ref right)) => {
+            rows_agree(left, right) == CertificateEquality::Equal
+        },
+        (&Value::Web(ref left), &Value::Web(ref right)) => left == right,
+        (
+            &(Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_)),
+            _,
+        ) => a == b,
+        (
+            &(Value::ListNil
+            | Value::ListCons(..)
+            | Value::PathRefl(_)
+            | Value::Here(_)
+            | Value::Stay(_)
+            | Value::Forward(_)
+            | Value::Returned(_)
+            | Value::Nested(_)
+            | Value::Run(_)
+            | Value::Thunk(_)
+            | Value::StaticLambda(_)
+            | Value::StaticApplication(..)
+            | Value::PathProduct(..)
+            | Value::Funext(..)
+            | Value::Equiv(..)
+            | Value::Univalence(..)
+            | Value::Then(..)
+            | Value::FlowProduct(..)
+            | Value::FunctionFlow(..)
+            | Value::RecordUpdate { .. }
+            | Value::PathEquiv { .. }
+            | Value::Ascribe { .. }
+            | Value::Quote(_)
+            | Value::QuoteComputation(_)),
+            _,
+        ) => core::mem::discriminant(a) == core::mem::discriminant(b),
+        _ => false,
+    };
+    if agree {
+        CertificateEquality::Equal
+    }
+    else {
+        CertificateEquality::Different
+    }
+}
+
+/// Whether two computations are one former agreeing in every payload but its
+/// children.
+///
+/// # Specification
+/// - ensures: [`CertificateEquality::Equal`] for two computations of one former
+///   that agree in each payload [`crate::children::of_computation`] does not
+///   hand on: a data case's branch count, arities and equations, a projection's
+///   label, component or field, an operation and its interface's shape, a
+///   handler's or scope's clause operations, a split's arity and motive kind, a
+///   many-value bind's arity, a width, a primitive and its arity, a fixpoint's
+///   evidence, a hole, a mark, and a session action's, memory form's or world
+///   form's shape. [`CertificateEquality::Different`] otherwise.
+/// - panics: none.
+/// - executable: none — this is the structural comparison's former rule.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each former's twin agrees and each guard's breach
+///   disagrees.
+/// - witness: `syntax::tests::each_computation_former_equals_its_twin_and_differs_where_its_guard_does`
+fn computation_formers(
+    a: &Computation,
+    b: &Computation,
+) -> CertificateEquality
+{
+    let agree = match (a, b) {
+        (
+            &Computation::DataCase {
+                branches: ref left_branches,
+                arities: ref left_arities,
+                equations: left_equations,
+                ..
+            },
+            &Computation::DataCase {
+                branches: ref right_branches,
+                arities: ref right_arities,
+                equations: right_equations,
+                ..
+            },
+        ) => {
+            left_branches.len() == right_branches.len()
+                && left_arities == right_arities
+                && left_equations == right_equations
+        },
+        (
+            &Computation::RecordProjection(_, ref left),
+            &Computation::RecordProjection(_, ref right),
+        ) => left == right,
+        (&Computation::TupleProjection(_, left), &Computation::TupleProjection(_, right)) => {
+            left == right
+        },
+        (&Computation::Project(left, _), &Computation::Project(right, _)) => left == right,
+        (
+            &Computation::Perform {
+                signature: ref left,
+                operation: ref left_operation,
+                ..
+            },
+            &Computation::Perform {
+                signature: ref right,
+                operation: ref right_operation,
+                ..
+            },
+        )
+        | (
+            &Computation::Exercise {
+                signature: ref left,
+                operation: ref left_operation,
+                ..
+            },
+            &Computation::Exercise {
+                signature: ref right,
+                operation: ref right_operation,
+                ..
+            },
+        ) => {
+            left_operation == right_operation
+                && signatures_agree(left, right) == CertificateEquality::Equal
+        },
+        (
+            &Computation::Handle {
+                signature: ref left,
+                clauses: ref left_clauses,
+                ..
+            },
+            &Computation::Handle {
+                signature: ref right,
+                clauses: ref right_clauses,
+                ..
+            },
+        )
+        | (
+            &Computation::Scope {
+                signature: ref left,
+                clauses: ref left_clauses,
+                ..
+            },
+            &Computation::Scope {
+                signature: ref right,
+                clauses: ref right_clauses,
+                ..
+            },
+        ) => {
+            left_clauses.len() == right_clauses.len()
+                && left_clauses
+                    .iter()
+                    .zip(right_clauses.iter())
+                    .all(|(first, second)| first.operation == second.operation)
+                && signatures_agree(left, right) == CertificateEquality::Equal
+        },
+        (
+            &Computation::Split {
+                arity: left_arity,
+                motive: left_motive,
+                ..
+            },
+            &Computation::Split {
+                arity: right_arity,
+                motive: right_motive,
+                ..
+            },
+        ) => {
+            left_arity == right_arity
+                && matches!(
+                    (left_motive, right_motive),
+                    (SplitMotive::Ambient, SplitMotive::Ambient)
+                        | (SplitMotive::Scrutinee(_), SplitMotive::Scrutinee(_))
+                )
+        },
+        (&Computation::With(ref left), &Computation::With(ref right))
+        | (
+            &Computation::Case {
+                branches: ref left, ..
+            },
+            &Computation::Case {
+                branches: ref right,
+                ..
+            },
+        ) => left.len() == right.len(),
+        (
+            &Computation::Primitive {
+                primitive: left,
+                arguments: ref left_arguments,
+            },
+            &Computation::Primitive {
+                primitive: right,
+                arguments: ref right_arguments,
+            },
+        ) => left == right && left_arguments.len() == right_arguments.len(),
+        (
+            &Computation::Fixpoint { evidence: left, .. },
+            &Computation::Fixpoint {
+                evidence: right, ..
+            },
+        ) => left == right,
+        (&Computation::Hole(left), &Computation::Hole(right)) => left == right,
+        (&Computation::Mark { mark: left, .. }, &Computation::Mark { mark: right, .. }) => {
+            left == right
+        },
+        (&Computation::Session(ref left), &Computation::Session(ref right)) => {
+            left.shape() == right.shape()
+        },
+        (&Computation::Memory(ref left), &Computation::Memory(ref right)) => {
+            left.shape() == right.shape()
+        },
+        (&Computation::World(ref left), &Computation::World(ref right)) => {
+            left.shape() == right.shape()
+        },
+        (&Computation::ReturnAll(ref left), &Computation::ReturnAll(ref right)) => {
+            left.len() == right.len()
+        },
+        (&Computation::BindAll { arity: left, .. }, &Computation::BindAll { arity: right, .. }) => {
+            left == right
+        },
+        (
+            &(Computation::Lambda(_)
+            | Computation::LinearLambda(_)
+            | Computation::Shift(_)
+            | Computation::Reset(_)
+            | Computation::Return(_)
+            | Computation::Force(_)
+            | Computation::Application(..)
+            | Computation::Bind(..)
+            | Computation::Ascribe { .. }
+            | Computation::Transport(..)
+            | Computation::PathTransport { .. }
+            | Computation::Ride { .. }
+            | Computation::TelescopeTransport { .. }
+            | Computation::ListFold { .. }
+            | Computation::ListCase { .. }
+            | Computation::Resume(..)
+            | Computation::Abandon(_)
+            | Computation::Decompose(_)),
+            _,
+        ) => core::mem::discriminant(a) == core::mem::discriminant(b),
+        _ => false,
+    };
+    if agree {
+        CertificateEquality::Equal
+    }
+    else {
+        CertificateEquality::Different
+    }
+}
+
+/// Whether two value types are one former agreeing in every payload but its
+/// children, for the formers [`pair_step`] pairs through
+/// [`crate::children::of_value_type`].
+///
+/// # Specification
+/// - ensures: [`CertificateEquality::Equal`] for two value types of one former
+///   that agree in each payload the enumeration does not hand on: a datatype's
+///   declaration and arity, a record's labels, a patched type's fixed labels, a
+///   product's or sum's width, a lift's or element's target, a stage, a region,
+///   a session's protocol and state, a world's shape, and a base type,
+///   universe, abstract type, unknown type, buffer or qubit whole.
+///   [`CertificateEquality::Different`] otherwise, and for two capabilities,
+///   which [`pair_step`] pairs itself.
+/// - panics: none.
+/// - executable: none — this is the structural comparison's former rule.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each former's twin agrees and each guard's breach
+///   disagrees.
+/// - witness: `syntax::tests::each_type_former_equals_its_twin_and_differs_where_its_guard_does`
+fn value_type_formers(
+    a: &ValueType,
+    b: &ValueType,
+) -> CertificateEquality
+{
+    let agree = match (a, b) {
+        (
+            &ValueType::Data {
+                declaration: left,
+                arguments: ref left_arguments,
+            },
+            &ValueType::Data {
+                declaration: right,
+                arguments: ref right_arguments,
+            },
+        ) => left == right && left_arguments.len() == right_arguments.len(),
+        (&ValueType::Record(ref left), &ValueType::Record(ref right)) => {
+            left.len() == right.len() && left.keys().eq(right.keys())
+        },
+        (
+            &ValueType::Patched {
+                fixed: ref left,
+                meets: ref left_meets,
+                ..
+            },
+            &ValueType::Patched {
+                fixed: ref right,
+                meets: ref right_meets,
+                ..
+            },
+        ) => {
+            left.len() == right.len()
+                && left.keys().eq(right.keys())
+                && left_meets.len() == right_meets.len()
+                && left_meets
+                    .iter()
+                    .map(|&(ref label, _)| label)
+                    .eq(right_meets.iter().map(|&(ref label, _)| label))
+        },
+        (&ValueType::Product(ref left), &ValueType::Product(ref right))
+        | (&ValueType::Sum(ref left), &ValueType::Sum(ref right)) => left.len() == right.len(),
+        (
+            &ValueType::Lift {
+                target: ref left, ..
+            },
+            &ValueType::Lift {
+                target: ref right, ..
+            },
+        )
+        | (
+            &ValueType::Element {
+                target: ref left, ..
+            },
+            &ValueType::Element {
+                target: ref right, ..
+            },
+        ) => left == right,
+        (
+            &ValueType::Staged {
+                stage: ref left, ..
+            },
+            &ValueType::Staged {
+                stage: ref right, ..
+            },
+        ) => left == right,
+        (&ValueType::Kept { region: left, .. }, &ValueType::Kept { region: right, .. }) => {
+            left == right
+        },
+        (&ValueType::Session(ref left), &ValueType::Session(ref right)) => {
+            left.protocol() == right.protocol() && left.state() == right.state()
+        },
+        (&ValueType::World(ref left), &ValueType::World(ref right)) => {
+            left.shape() == right.shape()
+        },
+        (
+            &(ValueType::Base(_)
+            | ValueType::Universe { .. }
+            | ValueType::Abstract(_)
+            | ValueType::Unknown
+            | ValueType::Buffer
+            | ValueType::Qubit),
+            _,
+        ) => a == b,
+        (
+            &(ValueType::Stack { .. }
+            | ValueType::Path { .. }
+            | ValueType::Flow { .. }
+            | ValueType::Bridge { .. }
+            | ValueType::List(_)
+            | ValueType::Run(_)
+            | ValueType::Prefix(_)
+            | ValueType::Dialogue(_)
+            | ValueType::PathUniverse(..)
+            | ValueType::StaticPi { .. }
+            | ValueType::Sigma { .. }
+            | ValueType::Thunk(_)
+            | ValueType::Web
+            | ValueType::Row
+            | ValueType::RowTail(_)),
+            _,
+        ) => core::mem::discriminant(a) == core::mem::discriminant(b),
+        _ => false,
+    };
+    if agree {
+        CertificateEquality::Equal
+    }
+    else {
+        CertificateEquality::Different
+    }
+}
+
+/// Whether two computation types are one former agreeing in every payload but
+/// its children.
+///
+/// # Specification
+/// - ensures: [`CertificateEquality::Equal`] for two computation types of one
+///   former that agree in each payload [`crate::children::of_comp_type`] does
+///   not hand on: a width, a returner's row shape, a many-value returner's
+///   width and row shape, an element's target, and a codata type's declaration
+///   and arity. [`CertificateEquality::Different`] otherwise.
+/// - panics: none.
+/// - executable: none — this is the structural comparison's former rule.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each former's twin agrees and each guard's breach
+///   disagrees.
+/// - witness: `syntax::tests::each_type_former_equals_its_twin_and_differs_where_its_guard_does`
+/// - witness: `syntax::tests::a_returner_open_through_a_tail_is_not_the_closed_one_2270`
+fn comp_type_formers(
+    a: &CompType,
+    b: &CompType,
+) -> CertificateEquality
+{
+    let agree = match (a, b) {
+        (&CompType::With(ref left), &CompType::With(ref right)) => left.len() == right.len(),
+        (
+            &CompType::Returner {
+                effects: ref left, ..
+            },
+            &CompType::Returner {
+                effects: ref right, ..
+            },
+        ) => rows_agree(left, right) == CertificateEquality::Equal,
+        (
+            &CompType::Returns {
+                results: ref left_results,
+                effects: ref left,
+            },
+            &CompType::Returns {
+                results: ref right_results,
+                effects: ref right,
+            },
+        ) => {
+            left_results.len() == right_results.len()
+                && rows_agree(left, right) == CertificateEquality::Equal
+        },
+        (
+            &CompType::Element {
+                target: ref left, ..
+            },
+            &CompType::Element {
+                target: ref right, ..
+            },
+        ) => left == right,
+        (
+            &CompType::Codata {
+                declaration: left,
+                arguments: ref left_arguments,
+            },
+            &CompType::Codata {
+                declaration: right,
+                arguments: ref right_arguments,
+            },
+        ) => left == right && left_arguments.len() == right_arguments.len(),
+        (
+            &(CompType::Arrow { .. }
+            | CompType::LinearArrow { .. }
+            | CompType::Pi { .. }
+            | CompType::Unknown),
+            _,
+        ) => core::mem::discriminant(a) == core::mem::discriminant(b),
+        _ => false,
+    };
+    if agree {
+        CertificateEquality::Equal
+    }
+    else {
+        CertificateEquality::Different
+    }
+}
+
+/// One pair's step of [`equal_syntax`]: whether the pair's two formers agree,
+/// and the pairs of their children that must agree in turn.
+///
+/// The children are the ones [`crate::children`] lists, paired place by place.
+/// A recorded log, a dialogue, a capability's interfaces and the printed
+/// reading's identifications pair their own.
+///
+/// # Specification
+/// - ensures: [`CertificateEquality::Different`] when either node is unreadable
+///   or the two disagree in former or in a payload other than path evidence;
+///   otherwise [`CertificateEquality::Equal`], with each pair of children the
+///   two must agree on pushed onto `pending`. Under [`Reading::Printed`] a pair
+///   the printed reading identifies outright is `Equal` with nothing pushed,
+///   and the reading's other identifications push the pairs they read; under
+///   [`Reading::Syntax`] the step leaves `arena` borrowed.
+/// - panics: none.
+/// - executable: none — the contract is the former's comparison, which the body
+///   states once.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each former's twin agrees and each guard's breach
+///   disagrees, through [`equal_syntax`] and through the sharing check.
+/// - witness: `syntax::tests::each_value_former_equals_its_twin_and_differs_where_its_guard_does`
+/// - witness: `syntax::tests::each_computation_former_equals_its_twin_and_differs_where_its_guard_does`
+/// - witness: `syntax::tests::each_type_former_equals_its_twin_and_differs_where_its_guard_does`
+fn pair_step<P>(
+    arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
+    reading: Reading<'_>,
+    signatures: &BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>,
+    goal: StructuralGoal,
+    pending: &mut P,
+) -> CertificateEquality
+where
+    P: Pending,
+{
+    use StructuralGoal::CompType as CT;
+    use StructuralGoal::Computation as C;
+    use StructuralGoal::Value as V;
+    use StructuralGoal::ValueType as VT;
+
+    use crate::support::Crossing;
+    let beside = Crossing::default();
+    let under_one = Crossing::of(Zone::Intuitionistic, crate::context::BinderDepth::from(1));
+    match goal {
+        V(a, b) => {
+            if empty_word(arena, signatures, (a, b)) == CertificateEquality::Equal
+                || empty_word(arena, signatures, (b, a)) == CertificateEquality::Equal
+            {
+                return CertificateEquality::Equal;
+            }
+            let (Some(a), Some(b)) = (arena.value(a), arena.value(b))
+            else {
+                return CertificateEquality::Different;
+            };
+            if value_formers(a, b) == CertificateEquality::Equal {
+                return paired_children(pending, (a, b), |value, pairing| {
+                    crate::children::of_value(value, pairing);
+                });
+            }
+            match (a, b) {
+                // A call printed in a type, `f(x)`, is one spelling the
+                // lowering keeps unelaborated where the checker decides
+                // it and as the value it returns where a type after it
+                // reads it; read back, either is the value it returns.
+                (&Value::Returned(left), &Value::Nested(right))
+                | (&Value::Nested(left), &Value::Returned(right))
+                    if matches!(reading, Reading::Printed(_)) =>
+                {
+                    pending.queue(C(left, right), beside);
+                    CertificateEquality::Equal
+                },
+                // An implicit a call omits prints as nothing: the call writes
+                // what the source wrote. Read back, the lowering nominates a
+                // fresh hole in its place, which is the same omission.
+                (&Value::Hole(left), &Value::Hole(right))
+                    if matches!(reading, Reading::Printed(_))
+                        && left.origin() == crate::hole::HoleOrigin::Nominated
+                        && right.origin() == crate::hole::HoleOrigin::Nominated =>
+                {
+                    CertificateEquality::Equal
+                },
+                // A function written as a call's argument is kept nested,
+                // and the checker suspends it, as a function returns
+                // nothing; printed, it is the bare `fun` a thunk of the
+                // function prints as, and read back, that thunk.
+                (&Value::Thunk(left), &Value::Nested(right))
+                | (&Value::Nested(left), &Value::Thunk(right))
+                    if matches!(reading, Reading::Printed(_))
+                        && [left, right].iter().any(|&body| {
+                            matches!(
+                                arena.computation(body),
+                                Some(&(Computation::Lambda(_) | Computation::LinearLambda(_)))
+                            )
+                        }) =>
+                {
+                    pending.queue(C(left, right), beside);
+                    CertificateEquality::Equal
+                },
+                (&Value::Recorded(ref left), &Value::Recorded(ref right))
+                    if left.len() == right.len() =>
+                {
+                    for (left, right) in left.iter().zip(right.iter()) {
+                        match move_pair(left, right) {
+                            MovePair::Payloads(a, b) => pending.queue(V(a, b), beside),
+                            MovePair::Agreed => {},
+                            MovePair::Different => return CertificateEquality::Different,
+                        }
+                    }
+                    CertificateEquality::Equal
+                },
+                // A dialogue is its endpoints' moves: two logs that
+                // interleave the same moves differently are one dialogue.
+                (&Value::Dialogue(ref left), &Value::Dialogue(ref right)) => {
+                    crate::session::pair_dialogues(left, right, |a, b| {
+                        pending.queue(V(a, b), beside);
+                    })
+                },
+                _ => CertificateEquality::Different,
+            }
+        },
+        C(a, b) => {
+            let (Some(a), Some(b)) = (arena.computation(a), arena.computation(b))
+            else {
+                return CertificateEquality::Different;
+            };
+            if computation_formers(a, b) == CertificateEquality::Equal {
+                paired_children(pending, (a, b), |computation, pairing| {
+                    crate::children::of_computation(computation, pairing);
+                })
+            }
+            else {
+                CertificateEquality::Different
+            }
+        },
+        VT(a, b) => {
+            if matches!(read_as_words(arena, signatures, (a, b)), Maybe::Present(_))
+                || matches!(read_as_words(arena, signatures, (b, a)), Maybe::Present(_))
+            {
+                return CertificateEquality::Equal;
+            }
+            let (Some(a), Some(b)) = (arena.value_type(a), arena.value_type(b))
+            else {
+                return CertificateEquality::Different;
+            };
+            if value_type_formers(a, b) == CertificateEquality::Equal {
+                return paired_children(pending, (a, b), |value_type, pairing| {
+                    crate::children::of_value_type(value_type, pairing);
+                });
+            }
+            match (a, b) {
+                // The surface reads a record whose later field names no
+                // earlier one as the product, and the printer spells a
+                // dependent pair whose second factor, as printed, names
+                // no binder as that record: read back, it is the product.
+                // The second factor is compared with the product's second
+                // component weakened past the binder, so a binder only a
+                // reduced call names (#771) reads as the product too.
+                (&ValueType::Sigma { first, second }, &ValueType::Product(ref parts))
+                | (&ValueType::Product(ref parts), &ValueType::Sigma { first, second })
+                    if matches!(reading, Reading::Printed(_)) =>
+                {
+                    let [component, rest] = **parts
+                    else {
+                        return CertificateEquality::Different;
+                    };
+                    let rest = crate::rewrite::shift_value_type(
+                        arena.to_mut(),
+                        rest,
+                        crate::rewrite::Binders::ONE,
+                    )
+                    .settle(arena.to_mut());
+                    pending.queue(VT(first, component), beside);
+                    pending.queue(VT(second, rest), under_one);
+                    CertificateEquality::Equal
+                },
+                (&ValueType::Session(ref left), &ValueType::Session(ref right))
+                    if matches!(reading, Reading::Printed(_)) =>
+                {
+                    session_children(pending, left, right)
+                },
+                // The printer spells a system of faces as the glued type, its
+                // fixed fields. Formation admits a meet value only where it
+                // converts with the fixed value at its label, so the meets
+                // are evidence: read back, the glued type is the same type.
+                (
+                    &ValueType::Patched {
+                        base: left_base,
+                        fixed: ref left,
+                        ..
+                    },
+                    &ValueType::Patched {
+                        base: right_base,
+                        fixed: ref right,
+                        ..
+                    },
+                ) if matches!(reading, Reading::Printed(_))
+                    && left.len() == right.len()
+                    && left.keys().eq(right.keys()) =>
+                {
+                    pending.queue(VT(left_base, right_base), beside);
+                    for (&left, &right) in left.values().zip(right.values()) {
+                        pending.queue(V(left, right), beside);
+                    }
+                    CertificateEquality::Equal
+                },
+                (
+                    &ValueType::Capability {
+                        authority: ref first,
+                        grade: left_grade,
+                        region: left_region,
+                    },
+                    &ValueType::Capability {
+                        authority: ref second,
+                        grade: right_grade,
+                        region: right_region,
+                    },
+                ) if left_grade == right_grade
+                    && left_region == right_region
+                    && first.signatures().len() == second.signatures().len() =>
+                {
+                    for (left, right) in first.signatures().zip(second.signatures()) {
+                        if signature_children(pending, left, right)
+                            == CertificateEquality::Different
+                        {
+                            return CertificateEquality::Different;
+                        }
+                    }
+                    CertificateEquality::Equal
+                },
+                _ => CertificateEquality::Different,
+            }
+        },
+        CT(a, b) => {
+            let (Some(a), Some(b)) = (arena.comp_type(a), arena.comp_type(b))
+            else {
+                return CertificateEquality::Different;
+            };
+            if comp_type_formers(a, b) == CertificateEquality::Equal {
+                return paired_children(pending, (a, b), |comp_type, pairing| {
+                    crate::children::of_comp_type(comp_type, pairing);
+                });
+            }
+            match (a, b) {
+                // The surface reads `(x : A) -> C` as the plain arrow
+                // where `C` does not name `x`, and the printer spells a
+                // dependent arrow whose codomain, as printed, names no
+                // binder as that arrow: read back, it is the arrow. The
+                // codomain is compared with the arrow's weakened past the
+                // binder, so a binder only a reduced call names (#736)
+                // reads as the arrow too.
+                (
+                    &CompType::Pi {
+                        domain: a,
+                        codomain: b,
+                    },
+                    &CompType::Arrow {
+                        domain: c,
+                        codomain: d,
+                    },
+                )
+                | (
+                    &CompType::Arrow {
+                        domain: c,
+                        codomain: d,
+                    },
+                    &CompType::Pi {
+                        domain: a,
+                        codomain: b,
+                    },
+                ) if matches!(reading, Reading::Printed(_)) => {
+                    let d = crate::rewrite::shift_comp_type(
+                        arena.to_mut(),
+                        d,
+                        crate::rewrite::Binders::ONE,
+                    )
+                    .settle(arena.to_mut());
+                    pending.queue(VT(a, c), beside);
+                    pending.queue(CT(b, d), under_one);
+                    CertificateEquality::Equal
+                },
+                _ => CertificateEquality::Different,
+            }
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+
+    #[test]
+    fn the_unit_is_the_empty_product()
+    {
+        let mut arena = crate::CoreArena::new();
+        let unit = arena.value_type_unit();
+        let first = arena.value_type_unit();
+        let pair = arena.value_type_product(&[unit, first]);
+        assert_eq!(
+            arena.value_type(unit),
+            Some(&ValueType::unit()),
+            "the minted unit is the empty product"
+        );
+        assert_ne!(
+            arena.value_type(pair),
+            Some(&ValueType::unit()),
+            "a product of two components is not the unit"
+        );
+        assert_eq!(
+            equal_type_syntax(&arena, unit, first),
+            CertificateEquality::Equal,
+            "two units are one type"
+        );
+        assert_eq!(
+            equal_type_syntax(&arena, unit, pair),
+            CertificateEquality::Different,
+            "and no arity but zero is the unit"
+        );
+    }
+
+    #[test]
+    fn computation_type_syntax_ignores_allocation_identity()
+    {
+        let mut arena = crate::CoreArena::new();
+        let stream = gandr_kernel_term::ConstantIndex::from(0_usize);
+        let over = |arena: &mut crate::CoreArena, index: u32| {
+            let argument = arena.value_variable(
+                crate::Zone::Intuitionistic,
+                gandr_kernel_term::DeBruijnIndex::from(index),
+            );
+            arena.comp_type_codata(stream, alloc::vec![argument])
+        };
+        let first = over(&mut arena, 0);
+        let twin = over(&mut arena, 0);
+        let other = over(&mut arena, 1);
+        assert_eq!(
+            equal_comp_type_syntax(&arena, first, twin),
+            CertificateEquality::Equal,
+            "two allocations of one codata type are one type"
+        );
+        assert_eq!(
+            equal_comp_type_syntax(&arena, first, other),
+            CertificateEquality::Different,
+            "a different argument is a different type"
+        );
+    }
+
+    #[test]
+    fn computation_syntax_pairs_what_each_side_reads_free()
+    {
+        use crate::session::SessionAction;
+        let mut arena = crate::CoreArena::new();
+        let variable = |arena: &mut crate::CoreArena, index: u32| {
+            arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+        };
+        let returning = |arena: &mut crate::CoreArena, indices: &[u32]| {
+            let read = if let [index] = *indices {
+                variable(arena, index)
+            }
+            else {
+                let fields = indices
+                    .iter()
+                    .map(|&index| variable(arena, index))
+                    .collect::<Vec<_>>();
+                arena.value_tuple(&fields)
+            };
+            let returned = arena.computation_return(read);
+            arena.computation_lambda(returned)
+        };
+        let compare = |arena: &crate::CoreArena, left, right| {
+            let mut free = Vec::new();
+            let equality = equal_computation_syntax_up_to_free(arena, left, right, &mut free);
+            (equality, free)
+        };
+        let pair = |left: u32, right: u32| FreePair {
+            zone: Zone::Intuitionistic,
+            left: DeBruijnIndex::from(left),
+            right: DeBruijnIndex::from(right),
+        };
+        let bound = returning(&mut arena, &[0]);
+        let twin = returning(&mut arena, &[0]);
+        let near = returning(&mut arena, &[1]);
+        let far = returning(&mut arena, &[3]);
+        assert_eq!(
+            compare(&arena, bound, twin),
+            (CertificateEquality::Equal, Vec::new()),
+            "two allocations of one lambda are one computation reading nothing free"
+        );
+        assert_eq!(
+            compare(&arena, near, far),
+            (CertificateEquality::Equal, alloc::vec![pair(0, 2)]),
+            "two lambdas reading one variable past their binder at other indices agree, \
+             the pair left to their scopes"
+        );
+        assert_eq!(
+            compare(&arena, bound, near).0,
+            CertificateEquality::Different,
+            "a lambda returning its own binder is not one returning a variable past it"
+        );
+        let both = returning(&mut arena, &[1, 2]);
+        let once = returning(&mut arena, &[1, 1]);
+        let again = returning(&mut arena, &[2, 2]);
+        assert_eq!(
+            compare(&arena, both, once),
+            (CertificateEquality::Equal, alloc::vec![
+                pair(0, 0),
+                pair(1, 0)
+            ]),
+            "two variables read against one are two pairs, in order"
+        );
+        assert_eq!(
+            compare(&arena, once, again),
+            (CertificateEquality::Equal, alloc::vec![pair(0, 1)]),
+            "one pair read twice is one pair"
+        );
+        let outer_binder = arena.computation_lambda(bound);
+        let inner_binder = arena.computation_lambda(near);
+        assert_eq!(
+            compare(&arena, outer_binder, inner_binder).0,
+            CertificateEquality::Different,
+            "two crossed binders are apart"
+        );
+        let linear = arena.value_variable(Zone::Linear, DeBruijnIndex::from(1_u32));
+        let linear = arena.computation_return(linear);
+        let linear = arena.computation_lambda(linear);
+        assert_eq!(
+            compare(&arena, near, linear).0,
+            CertificateEquality::Different,
+            "variables of two zones are apart"
+        );
+        let close = |arena: &mut crate::CoreArena| {
+            arena.computation_session(SessionAction::Close {
+                endpoint: DeBruijnIndex::from(0_u32),
+            })
+        };
+        let fork = |arena: &mut crate::CoreArena| {
+            let protocol = arena.value_type_unit();
+            let child = close(arena);
+            let unit = arena.value_unit();
+            let parent = arena.computation_return(unit);
+            arena.computation_session(SessionAction::Fork {
+                protocol,
+                child,
+                parent,
+            })
+        };
+        let (forked, refork) = (fork(&mut arena), fork(&mut arena));
+        assert_eq!(
+            compare(&arena, forked, refork),
+            (CertificateEquality::Equal, Vec::new()),
+            "an endpoint the fork binds is compared as written"
+        );
+        let (closed, reclosed) = (close(&mut arena), close(&mut arena));
+        assert_eq!(
+            compare(&arena, closed, reclosed).0,
+            CertificateEquality::Different,
+            "an endpoint past the crossed binders is declined: its action's shape names it as \
+             written"
+        );
+    }
+
+    #[test]
+    fn the_unit_is_the_empty_tuple()
+    {
+        let mut arena = crate::CoreArena::new();
+        let unit = arena.value_unit();
+        let other = arena.value_tuple(&[]);
+        let pair = arena.value_tuple(&[unit, other]);
+        let injected = arena.value_injection(Summand::from(0_usize), unit);
+        assert_eq!(
+            arena.value(unit),
+            Some(&Value::unit()),
+            "the minted unit is the empty tuple"
+        );
+        assert_eq!(
+            arena.value(pair).and_then(Value::components),
+            Some([unit, other].as_slice()),
+            "a tuple reads back its components in order"
+        );
+        assert_eq!(
+            arena.value(unit).and_then(Value::components),
+            Some([].as_slice())
+        );
+        assert_eq!(
+            arena.value(injected).and_then(Value::components),
+            None,
+            "an injection has no components"
+        );
+        assert_eq!(
+            equal_certificate_syntax(&arena, unit, other),
+            CertificateEquality::Equal,
+            "two units are one value"
+        );
+        assert_eq!(
+            equal_certificate_syntax(&arena, unit, pair),
+            CertificateEquality::Different,
+            "and no arity but zero is the unit"
+        );
+    }
+
+    #[test]
+    fn certificate_syntax_erases_only_evidence()
+    {
+        let mut arena = crate::CoreArena::new();
+        let unit = arena.value_type_unit();
+        let code = arena.value_quote(unit);
+        let classifier = arena.value_type_path_universe(code, code);
+        let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returned = arena.computation_return(variable);
+        let lambda = arena.computation_lambda(returned);
+        let identity = arena.value_thunk(lambda);
+        let first = arena.value_path_equiv(
+            classifier,
+            identity,
+            identity,
+            gandr_kernel_data::Shared::new(gandr_kernel_term::PathEvidence::default()),
+        );
+        let mut evidence = gandr_kernel_term::PathEvidence::default();
+        evidence.source.push(gandr_kernel_data::SmallVec::new());
+        let evidence = gandr_kernel_data::Shared::new(evidence);
+        let same = arena.value_path_equiv(
+            classifier,
+            identity,
+            identity,
+            gandr_kernel_data::Shared::clone(&evidence),
+        );
+        assert_eq!(
+            CertificateEquality::Equal,
+            equal_certificate_syntax(&arena, first, same)
+        );
+        let extra = arena.computation_bind(returned, returned);
+        let extra = arena.computation_lambda(extra);
+        let extra = arena.value_thunk(extra);
+        let different = arena.value_path_equiv(classifier, extra, identity, evidence);
+        assert_eq!(
+            CertificateEquality::Different,
+            equal_certificate_syntax(&arena, first, different)
+        );
+        let fresh = arena.value_type_unit();
+        let fresh = arena.value_quote(fresh);
+        let one = arena.value_path_refl(code);
+        let two = arena.value_path_refl(fresh);
+        assert_eq!(
+            CertificateEquality::Equal,
+            equal_certificate_syntax(&arena, one, two)
+        );
+    }
+
+    #[test]
+    fn sides_shared_differently_agree_until_one_copy_differs()
+    {
+        const DEPTH: u32 = 10;
+        let mut arena = crate::CoreArena::new();
+        let mut shared = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let mut paired = shared;
+        let mut copy = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        for _ in 0 .. DEPTH {
+            shared = arena.value_tuple(&[shared, shared]);
+            let next = arena.value_tuple(&[paired, copy]);
+            copy = arena.value_tuple(&[copy, paired]);
+            paired = next;
+        }
+        // Two balanced trees of pairs, every copy minted afresh, their leaves
+        // the variable `0` but for the second tree's last leaf, the variable
+        // `1`. Each level pairs the one below it, left to right.
+        let width = 1_usize << DEPTH;
+        let mut level = Vec::with_capacity(width);
+        let mut above = Vec::with_capacity(width);
+        let mut roots = Vec::with_capacity(2);
+        for odd in [None, Some(width.saturating_sub(1))] {
+            level.clear();
+            for leaf in 0 .. width {
+                let index = u32::from(Some(leaf) == odd);
+                level.push(arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index)));
+            }
+            while level.len() > 1 {
+                above.clear();
+                for pair in level.as_chunks::<2>().0 {
+                    above.push(arena.value_tuple(pair));
+                }
+                core::mem::swap(&mut level, &mut above);
+            }
+            roots.push(level.first().copied().expect("a tree has a root"));
+        }
+        let [tree, odd] = [roots.first(), roots.get(1)].map(|root| *root.expect("two trees"));
+        for (left, right, expected, message) in [
+            (
+                shared,
+                tree,
+                CertificateEquality::Equal,
+                "one node a level against a tree",
+            ),
+            (
+                tree,
+                shared,
+                CertificateEquality::Equal,
+                "a tree against one node a level",
+            ),
+            (
+                shared,
+                paired,
+                CertificateEquality::Equal,
+                "two chains crossing at each level",
+            ),
+            (
+                paired,
+                tree,
+                CertificateEquality::Equal,
+                "crossing chains against a tree",
+            ),
+            (
+                shared,
+                odd,
+                CertificateEquality::Different,
+                "the tree's last leaf differs",
+            ),
+            (
+                odd,
+                paired,
+                CertificateEquality::Different,
+                "the tree's last leaf differs",
+            ),
+        ] {
+            assert_eq!(
+                expected,
+                equal_shared_certificate_syntax(&arena, left, right),
+                "{message}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_type_of_words_reads_as_the_path_at_its_point_399()
+    {
+        use gandr_kernel_term::FreeCell;
+        use gandr_kernel_term::FreeCells;
+        use gandr_kernel_term::Presentation;
+        use gandr_kernel_term::RuleNode;
+
+        let mut arena = crate::CoreArena::new();
+        let kind = arena.value_type_universe(
+            Sort::Ground(gandr_kernel_term::GroundSort::Value),
+            Level::zero(),
+        );
+        let (sort, words) = (ConstantIndex::from(0_usize), ConstantIndex::from(1_usize));
+        let carrier = arena.value_type_data(sort, alloc::vec![]);
+        let own = arena.value_type_data(words, alloc::vec![]);
+        let point =
+            arena.value_constructor(sort, carrier, ConstructorTag::from(0_usize), alloc::vec![]);
+        let base = || -> alloc::boxed::Box<[RuleNode]> {
+            [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+        };
+        let cells = FreeCells::new(
+            sort,
+            gandr_kernel_data::SmallVec::from_iter([FreeCell::new(base(), base())]),
+        );
+        let mut signatures = BTreeMap::new();
+        let _sort = signatures.insert(
+            sort,
+            alloc::sync::Arc::new(DataSignature::new(
+                alloc::vec![],
+                alloc::vec![alloc::vec![]],
+                kind,
+            )),
+        );
+        let _words = signatures.insert(
+            words,
+            alloc::sync::Arc::new(
+                DataSignature::new(
+                    alloc::vec![],
+                    alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                    kind,
+                )
+                .presented(Presentation::words(cells)),
+            ),
+        );
+        let at_point = arena.value_type_path(carrier, point, point);
+        let off = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let off_point = arena.value_type_path(carrier, point, off);
+        assert_eq!(
+            identified_words(&arena, &signatures, carrier, (point, point)),
+            Maybe::Present(words),
+            "the path at the point reads as its words"
+        );
+        assert_eq!(
+            identified_words(&arena, &signatures, carrier, (point, off)),
+            Maybe::Absent(unworded::Absent::Unlooped),
+            "an endpoint off the point reads as none"
+        );
+        // The point is spelled by its constructor of its own sort: another
+        // constructor, or the same tag of another datatype, is off it.
+        let other_tag =
+            arena.value_constructor(sort, carrier, ConstructorTag::from(1_usize), alloc::vec![]);
+        let foreign =
+            arena.value_constructor(words, own, ConstructorTag::from(0_usize), alloc::vec![]);
+        for endpoint in [other_tag, foreign] {
+            assert_eq!(
+                identified_words(&arena, &signatures, carrier, (point, endpoint)),
+                Maybe::Absent(unworded::Absent::Unlooped),
+                "an endpoint spelled otherwise reads as none"
+            );
+        }
+        // A word's own type, alone and as the carrier of a path between words.
+        let empty =
+            arena.value_constructor(words, own, ConstructorTag::from(0_usize), alloc::vec![]);
+        let over_words = arena.value_type_path(own, empty, empty);
+        let over_path = arena.value_type_path(at_point, empty, empty);
+        for (left, right, what) in [
+            (own, at_point, "the words against the path at their point"),
+            (at_point, own, "in either order"),
+            (over_words, over_path, "under a path type"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Equal,
+                "{what} read as one type"
+            );
+            assert_eq!(
+                equal_type_syntax(&arena, left, right),
+                CertificateEquality::Different,
+                "{what} differ in syntax"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, own, off_point),
+            CertificateEquality::Different,
+            "the words are not a path off their point"
+        );
+        // Reflexivity at the point, against the empty word, as a path's
+        // endpoint: the value half of the same identification.
+        let reflexive = arena.value_here(point);
+        let off_reflexive = arena.value_here(off);
+        let doubled = arena.value_type_path(at_point, reflexive, reflexive);
+        let off_doubled = arena.value_type_path(at_point, off_reflexive, off_reflexive);
+        assert_eq!(
+            (
+                equal_type_reading(&arena, &signatures, doubled, over_path),
+                equal_type_reading(&arena, &signatures, over_path, doubled),
+                equal_type_syntax(&arena, doubled, over_path),
+            ),
+            (
+                CertificateEquality::Equal,
+                CertificateEquality::Equal,
+                CertificateEquality::Different
+            ),
+            "reflexivity at the point reads as the empty word, in either order"
+        );
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, off_doubled, over_path),
+            CertificateEquality::Different,
+            "reflexivity off the point is no word"
+        );
+    }
+
+    #[test]
+    fn a_path_at_a_wrapped_point_reads_as_the_words_above_it()
+    {
+        use gandr_kernel_term::FreeCell;
+        use gandr_kernel_term::FreeCells;
+        use gandr_kernel_term::Presentation;
+        use gandr_kernel_term::Reflexivities;
+        use gandr_kernel_term::RuleNode;
+
+        // The 2-sphere: one point, and words over a cell at its reflexivity.
+        let mut arena = crate::CoreArena::new();
+        let kind = arena.value_type_universe(
+            Sort::Ground(gandr_kernel_term::GroundSort::Value),
+            Level::zero(),
+        );
+        let (sort, words) = (ConstantIndex::from(0_usize), ConstantIndex::from(1_usize));
+        let carrier = arena.value_type_data(sort, alloc::vec![]);
+        let own = arena.value_type_data(words, alloc::vec![]);
+        let point =
+            arena.value_constructor(sort, carrier, ConstructorTag::from(0_usize), alloc::vec![]);
+        let base = || -> alloc::boxed::Box<[RuleNode]> {
+            [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+        };
+        let cells = FreeCells::new(
+            sort,
+            gandr_kernel_data::SmallVec::from_iter([FreeCell::new(base(), base())]),
+        )
+        .wrapped(Reflexivities::from(1_usize));
+        let mut signatures = BTreeMap::new();
+        let _sort = signatures.insert(
+            sort,
+            alloc::sync::Arc::new(DataSignature::new(
+                alloc::vec![],
+                alloc::vec![alloc::vec![]],
+                kind,
+            )),
+        );
+        let _words = signatures.insert(
+            words,
+            alloc::sync::Arc::new(
+                DataSignature::new(
+                    alloc::vec![],
+                    alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                    kind,
+                )
+                .presented(Presentation::words(cells)),
+            ),
+        );
+        let loops = arena.value_type_path(carrier, point, point);
+        let reflexive = arena.value_here(point);
+        let twice = arena.value_here(reflexive);
+        assert_eq!(
+            identified_words(&arena, &signatures, loops, (reflexive, reflexive)),
+            Maybe::Present(words),
+            "the path at the point's reflexivity reads as the words above it"
+        );
+        assert_eq!(
+            identified_words(&arena, &signatures, carrier, (point, point)),
+            Maybe::Absent(unworded::Absent::Unlooped),
+            "the path at the point itself reads as no words: no loop stands there"
+        );
+        for (left, right, what) in [
+            (point, point, "endpoints wrapped once too few"),
+            (reflexive, twice, "endpoints wrapped unequally"),
+            (twice, twice, "endpoints wrapped once too many"),
+        ] {
+            assert_eq!(
+                identified_words(&arena, &signatures, loops, (left, right)),
+                Maybe::Absent(unworded::Absent::Unlooped),
+                "{what} read as no words"
+            );
+        }
+        let off = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let off_loops = arena.value_type_path(carrier, point, off);
+        assert_eq!(
+            identified_words(&arena, &signatures, off_loops, (reflexive, reflexive)),
+            Maybe::Absent(unworded::Absent::Unlooped),
+            "a carrier off the point reads as no words"
+        );
+        // Reflexivity at the wrapped point against the empty word above it.
+        let at_wrapped = arena.value_type_path(loops, reflexive, reflexive);
+        let empty =
+            arena.value_constructor(words, own, ConstructorTag::from(0_usize), alloc::vec![]);
+        let doubled = arena.value_type_path(at_wrapped, twice, twice);
+        let over_path = arena.value_type_path(at_wrapped, empty, empty);
+        let once = arena.value_type_path(at_wrapped, reflexive, reflexive);
+        assert_eq!(
+            (
+                equal_type_reading(&arena, &signatures, own, at_wrapped),
+                equal_type_reading(&arena, &signatures, doubled, over_path),
+                equal_type_reading(&arena, &signatures, once, over_path),
+            ),
+            (
+                CertificateEquality::Equal,
+                CertificateEquality::Equal,
+                CertificateEquality::Different
+            ),
+            "the words are the path at the wrapped point, and its reflexivity their empty word"
+        );
+    }
+
+    #[test]
+    fn a_returner_open_through_a_tail_is_not_the_closed_one_2270()
+    {
+        use crate::effect::EffectName;
+        use crate::effect::EffectOp;
+        use crate::effect::EffectRow;
+        use crate::effect::EffectSig;
+        use crate::effect::OperationName;
+
+        let mut arena = crate::CoreArena::new();
+        let unit = arena.value_type_unit();
+        let console = EffectRow::singleton(
+            EffectSig::new(EffectName::from("Console"), [EffectOp {
+                name: OperationName::from("print"),
+                payload: unit,
+                reply: unit,
+            }])
+            .expect("one operation"),
+        );
+        let first = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let second = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let tail = arena.value_type_row_tail(first);
+        let other = arena.value_type_row_tail(second);
+        let closed = arena.comp_type_returner_with_effects(unit, console.clone());
+        let open = arena.comp_type_returner_with_effects(unit, console.with_tail(Some(tail)));
+        let again = arena.comp_type_returner_with_effects(unit, console.with_tail(Some(tail)));
+        let elsewhere = arena.comp_type_returner_with_effects(unit, console.with_tail(Some(other)));
+        assert_eq!(
+            equal_comp_type_syntax(&arena, open, again),
+            CertificateEquality::Equal,
+            "one row open through one tail"
+        );
+        assert_eq!(
+            equal_comp_type_syntax(&arena, open, closed),
+            CertificateEquality::Different,
+            "a row open through a tail is not the row closed"
+        );
+        assert_eq!(
+            equal_comp_type_syntax(&arena, open, elsewhere),
+            CertificateEquality::Different,
+            "two tails over different variables"
+        );
+        let row = arena.value_row(console.with_tail(Some(tail)));
+        let closed_row = arena.value_row(console);
+        assert_eq!(
+            equal_certificate_syntax(&arena, row, closed_row),
+            CertificateEquality::Different,
+            "a row value open through a tail is not the closed one"
+        );
+    }
+
+    #[test]
+    fn a_session_type_reads_as_its_protocol_from_its_state_400()
+    {
+        use alloc::sync::Arc;
+
+        use crate::session::PayloadCount;
+        use crate::session::PayloadSlot;
+        use crate::session::Protocol;
+        use crate::session::ProtocolState;
+        use crate::session::ProtocolSyntax;
+        use crate::session::RecursionIndex;
+        use crate::session::SessionType;
+
+        let slot = PayloadSlot::from;
+        let state = ProtocolState::from;
+        let mut arena = crate::CoreArena::new();
+        let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let string = arena.value_type_base(gandr_kernel_term::BaseType::String);
+        let protocol = |syntax: alloc::vec::Vec<ProtocolSyntax>, payloads: usize| {
+            Arc::new(
+                Protocol::new(syntax, state(0_usize), PayloadCount::from(payloads))
+                    .expect("the protocol is well formed"),
+            )
+        };
+        // !Integer. mu t. ?String. t, past its send.
+        let whole = protocol(
+            alloc::vec![
+                ProtocolSyntax::Send {
+                    payload: slot(0_usize),
+                    next: state(1_usize),
+                },
+                ProtocolSyntax::Mu(state(2_usize)),
+                ProtocolSyntax::Receive {
+                    payload: slot(1_usize),
+                    next: state(3_usize),
+                },
+                ProtocolSyntax::Recur(RecursionIndex::from(0_usize)),
+            ],
+            2_usize,
+        );
+        let past = SessionType::new(whole, Arc::from([integer, string]))
+            .and_then(|session| session.at(state(1_usize)))
+            .expect("the state is a node of the protocol");
+        let past = arena.value_type_session(past);
+        // mu t. ?A. t, and its unfolding ?A. mu t. ?A. t, each at its root.
+        let rest = protocol(
+            alloc::vec![
+                ProtocolSyntax::Mu(state(1_usize)),
+                ProtocolSyntax::Receive {
+                    payload: slot(0_usize),
+                    next: state(2_usize),
+                },
+                ProtocolSyntax::Recur(RecursionIndex::from(0_usize)),
+            ],
+            1_usize,
+        );
+        let unfolded = protocol(
+            alloc::vec![
+                ProtocolSyntax::Receive {
+                    payload: slot(0_usize),
+                    next: state(1_usize),
+                },
+                ProtocolSyntax::Mu(state(2_usize)),
+                ProtocolSyntax::Receive {
+                    payload: slot(0_usize),
+                    next: state(3_usize),
+                },
+                ProtocolSyntax::Recur(RecursionIndex::from(0_usize)),
+            ],
+            1_usize,
+        );
+        let mut rooted = |protocol: &Arc<Protocol>, payload| {
+            let session = SessionType::new(Arc::clone(protocol), Arc::from([payload]))
+                .expect("one payload for one slot");
+            arena.value_type_session(session)
+        };
+        let rest_of_strings = rooted(&rest, string);
+        let unfolded_strings = rooted(&unfolded, string);
+        let rest_of_integers = rooted(&rest, integer);
+        let signatures = BTreeMap::new();
+        for (other, what) in [
+            (rest_of_strings, "the rest of the protocol at its root"),
+            (unfolded_strings, "its unfolding"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, past, other),
+                CertificateEquality::Equal,
+                "the state reads as {what}"
+            );
+            assert_eq!(
+                equal_type_syntax(&arena, past, other),
+                CertificateEquality::Different,
+                "the state and {what} differ in syntax"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, past, rest_of_integers),
+            CertificateEquality::Different,
+            "a differing payload type stays different"
+        );
+    }
+
+    #[test]
+    fn a_decoded_redex_reads_as_its_reduct()
+    {
+        let mut arena = crate::CoreArena::new();
+        let level = Level::constant(gandr_kernel_strata::LevelConstant::ZERO);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let quoted_integer = arena.value_quote(integer);
+        let quoted_string = arena.value_quote(string);
+        let decoded = |arena: &mut crate::CoreArena, index: u32| {
+            let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+            arena.value_type_element(variable, level.clone())
+        };
+        // `(\a. -F (a * a))(Integer)`, a computation type's decode.
+        let a = decoded(&mut arena, 0_u32);
+        let square = arena.value_type_product(&[a, a]);
+        let returner = arena.comp_type_returner(square);
+        let body = arena.value_quote_computation(returner);
+        let operator = arena.value_static_lambda(body);
+        let redex = arena.value_static_application(operator, quoted_integer);
+        let redex = arena.comp_type_element(redex, level.clone());
+        let redex = arena.value_type_thunk(redex);
+        let squared = arena.value_type_product(&[integer, integer]);
+        let squared = arena.comp_type_returner(squared);
+        let squared = arena.value_type_thunk(squared);
+        let mixed = arena.value_type_product(&[integer, string]);
+        let mixed = arena.comp_type_returner(mixed);
+        let mixed = arena.value_type_thunk(mixed);
+        // `(\a. \b. a * b)(Integer)(String)`, a value type's decode.
+        let outer = decoded(&mut arena, 1_u32);
+        let inner = decoded(&mut arena, 0_u32);
+        let pair = arena.value_type_product(&[outer, inner]);
+        let pair = arena.value_quote(pair);
+        let pair = arena.value_static_lambda(pair);
+        let pair = arena.value_static_lambda(pair);
+        let pair = arena.value_static_application(pair, quoted_integer);
+        let pair = arena.value_static_application(pair, quoted_string);
+        let pair = arena.value_type_element(pair, level.clone());
+        let in_order = arena.value_type_product(&[integer, string]);
+        let swapped = arena.value_type_product(&[string, integer]);
+        let signatures = BTreeMap::new();
+
+        assert_eq!(
+            (
+                equal_type_reading(&arena, &signatures, redex, squared),
+                equal_type_syntax(&arena, redex, squared),
+            ),
+            (CertificateEquality::Equal, CertificateEquality::Different),
+            "the decoded redex reads as its reduct, which its syntax is not"
+        );
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, redex, mixed),
+            CertificateEquality::Different,
+            "the reduct is not another type"
+        );
+        assert_eq!(
+            (
+                equal_type_reading(&arena, &signatures, pair, in_order),
+                equal_type_reading(&arena, &signatures, pair, swapped),
+            ),
+            (CertificateEquality::Equal, CertificateEquality::Different),
+            "the first argument instantiates the outer binder"
+        );
+    }
+
+    /// #298: a decode of a static abstraction applied to a type reads as the
+    /// returner the abstraction's body is at that type, which a `run` binder
+    /// answers at; a returner reads as itself.
+    #[test]
+    fn a_decoded_redex_reads_as_the_type_it_quotes_298()
+    {
+        let mut arena = crate::CoreArena::new();
+        let level = Level::constant(gandr_kernel_strata::LevelConstant::ZERO);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let quoted_integer = arena.value_quote(integer);
+        // `(\a. -F (a * a))(Integer)`, a computation type's decode.
+        let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let a = arena.value_type_element(variable, level.clone());
+        let square = arena.value_type_product(&[a, a]);
+        let body = arena.comp_type_returner(square);
+        let body = arena.value_quote_computation(body);
+        let operator = arena.value_static_lambda(body);
+        let redex = arena.value_static_application(operator, quoted_integer);
+        let redex = arena.comp_type_element(redex, level);
+        let squared = arena.value_type_product(&[integer, integer]);
+
+        let read = decoded_comp_reading(&mut arena, redex);
+        let Some(&CompType::Returner { result, .. }) = arena.comp_type(read)
+        else {
+            panic!(
+                "the decode reads as a returner: {:?}",
+                arena.comp_type(read)
+            );
+        };
+        assert_eq!(
+            equal_type_syntax(&arena, result, squared),
+            CertificateEquality::Equal,
+            "the returner returns the body's type at the argument"
+        );
+        let returner = arena.comp_type_returner(squared);
+        assert_eq!(
+            decoded_comp_reading(&mut arena, returner),
+            returner,
+            "a returner reads as itself"
+        );
+    }
+
+    /// #935: a type calling a dependent pair's first component, as the
+    /// checker writes it (`force (returned p.0)` called), reads as the call
+    /// on the selection the surface lowers it to; a call on another head
+    /// stays different.
+    #[test]
+    fn a_forced_returned_head_reads_as_its_computation_935()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let nat = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let pair = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let point = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let selected = |arena: &mut crate::CoreArena| {
+            arena.computation_tuple_projection(pair, gandr_kernel_term::Component::from(0_usize))
+        };
+        // `Path[.A = Nat](head(x), x)`.
+        let called = |arena: &mut crate::CoreArena, head: ComputationId| {
+            let call = arena.computation_application(head, point);
+            let value = arena.value_returned(call);
+            arena.value_type_path(nat, value, point)
+        };
+        let projected = selected(&mut arena);
+        let returned = arena.value_returned(projected);
+        let forced = arena.computation_force(returned);
+        let checked = called(&mut arena, forced);
+        let selection = selected(&mut arena);
+        let lowered = called(&mut arena, selection);
+        let nested = arena.value_nested(projected);
+        let nested = arena.computation_force(nested);
+        let nested = called(&mut arena, nested);
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, checked, nested),
+            CertificateEquality::Equal,
+            "a forced nested projection reads as the checker's head"
+        );
+
+        let other = arena.computation_force(point);
+        let elsewhere = called(&mut arena, other);
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, checked, lowered),
+            CertificateEquality::Equal,
+            "the checker's head reads as the lowered selection"
+        );
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, lowered, checked),
+            CertificateEquality::Equal,
+            "in either order"
+        );
+        assert_eq!(
+            equal_type_syntax(&arena, checked, lowered),
+            CertificateEquality::Different,
+            "the two heads differ in syntax"
+        );
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, checked, elsewhere),
+            CertificateEquality::Different,
+            "a call on another head does not read as the selection's"
+        );
+    }
+
+    /// #2325: a call whose head forces a function literal, a thunk or a
+    /// lambda nested where a value is read, reads as the call of the lambda
+    /// the printer writes, even where the literal's body neither returns nor
+    /// calls. A forced nested computation that is no lambda and no projection
+    /// stays different.
+    #[test]
+    fn a_forced_literal_reads_as_its_computation_2325()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let nat = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let point = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        // `fun (b) { force b }`: its body forces, so no call of it reduces.
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let forces = arena.computation_force(bound);
+        let literal = arena.computation_lambda(forces);
+        // `Path[.A = Nat](head(x), x)`.
+        let called = |arena: &mut crate::CoreArena, head: ComputationId| {
+            let call = arena.computation_application(head, point);
+            let value = arena.value_returned(call);
+            arena.value_type_path(nat, value, point)
+        };
+        let thunked = arena.value_thunk(literal);
+        let thunked = arena.computation_force(thunked);
+        let thunked = called(&mut arena, thunked);
+        let nested = arena.value_nested(literal);
+        let nested = arena.computation_force(nested);
+        let nested = called(&mut arena, nested);
+        let written = called(&mut arena, literal);
+        let other = arena.value_nested(forces);
+        let other = arena.computation_force(other);
+        let other = called(&mut arena, other);
+        let forcing = called(&mut arena, forces);
+        for (left, right, what) in [
+            (
+                thunked,
+                written,
+                "a forced thunk literal against its lambda",
+            ),
+            (written, thunked, "in either order"),
+            (nested, written, "a forced nested lambda against the lambda"),
+        ] {
+            assert_eq!(
+                (
+                    equal_type_reading(&arena, &signatures, left, right),
+                    equal_type_syntax(&arena, left, right),
+                ),
+                (CertificateEquality::Equal, CertificateEquality::Different),
+                "{what} reads as one type, which its syntax is not"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, other, forcing),
+            CertificateEquality::Different,
+            "a forced nested computation that is no lambda and no projection stays itself"
+        );
+    }
+
+    #[test]
+    fn a_staged_type_reads_as_its_base_465()
+    {
+        use gandr_kernel_term::Stage;
+        use gandr_kernel_term::StageId;
+
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let nat = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let other = arena.value_type_data(ConstantIndex::from(1_usize), alloc::vec![]);
+        let staged = arena.value_type_staged(nat, Stage::At(StageId::from(1_usize)));
+        // A recursion's self reference: the parameter it descends on, staged,
+        // as the domain of a thunked arrow.
+        let returner = arena.comp_type_returner(nat);
+        let at_stage = arena.comp_type_arrow(staged, returner);
+        let at_stage = arena.value_type_thunk(at_stage);
+        let plain = arena.comp_type_arrow(nat, returner);
+        let plain = arena.value_type_thunk(plain);
+        for (left, right, what) in [
+            (staged, nat, "the staged type against its base"),
+            (nat, staged, "in either order"),
+            (at_stage, plain, "as an arrow's domain"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Equal,
+                "{what} read as one type"
+            );
+            assert_eq!(
+                equal_type_syntax(&arena, left, right),
+                CertificateEquality::Different,
+                "{what} differ in syntax"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, staged, other),
+            CertificateEquality::Different,
+            "a staged type does not read as another type"
+        );
+    }
+
+    /// #736: a decode of a called function literal reads as the decode of
+    /// what the call returns, and a dependent arrow whose binder only that
+    /// call names reads as the plain arrow; one whose codomain still names
+    /// its binder once read stays different.
+    #[test]
+    fn a_decoded_literal_call_reads_as_what_it_returns_736()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let unit = arena.value_type_product(&[]);
+        let unit_code = arena.value_quote(unit);
+        let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        // `(thunk { fun (g) { return Unit } })(x)`, decoded.
+        let returns = arena.computation_return(unit_code);
+        let constant = arena.computation_lambda(returns);
+        let constant = arena.value_thunk(constant);
+        let forced = arena.computation_force(constant);
+        let called = arena.computation_application(forced, x);
+        let called = arena.value_returned(called);
+        let decoded = arena.value_type_element(called, Level::zero());
+        let held = arena.comp_type_returner(decoded);
+        let read = arena.comp_type_returner(unit);
+        let dependent = arena.comp_type_pi(unit, held);
+        let plain = arena.comp_type_arrow(unit, read);
+        // `(x : Unit) -> -F (x = x)`, whose codomain names its binder.
+        let path = arena.value_type_path(unit, x, x);
+        let path = arena.comp_type_returner(path);
+        let naming = arena.comp_type_pi(unit, path);
+        let (held, read, dependent, plain, naming) = (
+            arena.value_type_thunk(held),
+            arena.value_type_thunk(read),
+            arena.value_type_thunk(dependent),
+            arena.value_type_thunk(plain),
+            arena.value_type_thunk(naming),
+        );
+        for (left, right, what) in [
+            (
+                decoded,
+                unit,
+                "a decoded literal call against what it returns",
+            ),
+            (held, read, "the same under a returner"),
+            (
+                dependent,
+                plain,
+                "a dependent arrow whose binder only the call names against the arrow",
+            ),
+            (plain, dependent, "in either order"),
+        ] {
+            assert_eq!(
+                (
+                    equal_type_reading(&arena, &signatures, left, right),
+                    equal_type_syntax(&arena, left, right),
+                ),
+                (CertificateEquality::Equal, CertificateEquality::Different),
+                "{what} read as one type and differ in syntax"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, naming, plain),
+            CertificateEquality::Different,
+            "a dependent arrow naming its binder does not read as the arrow"
+        );
+    }
+
+    /// A decode substituting a constant family leaves a dependent arrow
+    /// whose codomain names no binder (#577); printed as the arrow, it reads
+    /// back as one.
+    #[test]
+    fn a_dependent_arrow_ignoring_its_binder_reads_as_the_arrow()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let nat = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        // A path between the binder `index` binders out, the codomain's
+        // result.
+        let path = |arena: &mut crate::CoreArena, index: u32| {
+            let end = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+            let path = arena.value_type_path(nat, end, end);
+            arena.comp_type_returner(path)
+        };
+        let thunked = |arena: &mut crate::CoreArena, ty: CompTypeId| arena.value_type_thunk(ty);
+        // Under one binder around the type: the dependent arrow's codomain
+        // names that binder at index one, the arrow's at index zero.
+        let (outer_under, outer, own) = (
+            path(&mut arena, 1),
+            path(&mut arena, 0),
+            path(&mut arena, 0),
+        );
+        let vacuous = arena.comp_type_pi(nat, outer_under);
+        let vacuous = thunked(&mut arena, vacuous);
+        let plain = arena.comp_type_arrow(nat, outer);
+        let plain = thunked(&mut arena, plain);
+        let dependent = arena.comp_type_pi(nat, own);
+        let dependent = thunked(&mut arena, dependent);
+        for (left, right, what) in [
+            (
+                vacuous,
+                plain,
+                "a dependent arrow ignoring its binder against the arrow",
+            ),
+            (plain, vacuous, "in either order"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Equal,
+                "{what} read as one type"
+            );
+            assert_eq!(
+                equal_type_syntax(&arena, left, right),
+                CertificateEquality::Different,
+                "{what} differ in syntax"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, dependent, plain),
+            CertificateEquality::Different,
+            "a dependent arrow naming its binder does not read as the arrow"
+        );
+    }
+
+    /// #771: a dependent pair whose second factor names no binder prints as
+    /// the product, and reads back as one, in either order; one whose second
+    /// factor names its binder stays different.
+    #[test]
+    fn a_dependent_pair_ignoring_its_binder_reads_as_the_product_771()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let nat = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let path = |arena: &mut crate::CoreArena, index: u32| {
+            let end = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+            arena.value_type_path(nat, end, end)
+        };
+        // Under one binder around the type: the pair's second factor names
+        // that binder at index one, the product's component at index zero.
+        let (outer_under, outer, own) = (
+            path(&mut arena, 1),
+            path(&mut arena, 0),
+            path(&mut arena, 0),
+        );
+        let vacuous = arena.value_type_sigma(nat, outer_under);
+        let product = arena.value_type_product(&[nat, outer]);
+        let dependent = arena.value_type_sigma(nat, own);
+        for (left, right, what) in [
+            (
+                vacuous,
+                product,
+                "a dependent pair ignoring its binder against the product",
+            ),
+            (product, vacuous, "in either order"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Equal,
+                "{what} read as one type"
+            );
+            assert_eq!(
+                equal_type_syntax(&arena, left, right),
+                CertificateEquality::Different,
+                "{what} differ in syntax"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, dependent, product),
+            CertificateEquality::Different,
+            "a dependent pair naming its binder does not read as the product"
+        );
+    }
+
+    #[test]
+    fn a_kept_call_reads_as_the_value_it_returns()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let int = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        // `f(x)` with `f` and `x` the two binders around the type.
+        let function = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let forced = arena.computation_force(function);
+        let call = arena.computation_application(forced, argument);
+        let other = arena.computation_force(argument);
+        let returned = arena.value_returned(call);
+        let nested = arena.value_nested(call);
+        let elsewhere = arena.value_nested(other);
+        let at = |arena: &mut crate::CoreArena, end: ValueId| arena.value_type_path(int, end, end);
+        let (returned, nested, elsewhere) = (
+            at(&mut arena, returned),
+            at(&mut arena, nested),
+            at(&mut arena, elsewhere),
+        );
+        for (left, right, what) in [
+            (returned, nested, "a call returned against the call kept"),
+            (nested, returned, "in either order"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Equal,
+                "{what} read as one type"
+            );
+            assert_eq!(
+                equal_type_syntax(&arena, left, right),
+                CertificateEquality::Different,
+                "{what} differ in syntax"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, returned, elsewhere),
+            CertificateEquality::Different,
+            "a call does not read as another call kept"
+        );
+    }
+
+    /// #5026: a refused declaration keeps an implicit its call omits as a
+    /// nominated hole, and the printer writes nothing there. Read back, the
+    /// lowering nominates another hole in the same place.
+    #[test]
+    fn an_omitted_implicit_reads_as_another_omission_5026()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let int = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let hole = |index: u32| {
+            HoleId::nominated(crate::hole::NominationIndex::from(index))
+                .expect("a small index names a nominated hole")
+        };
+        let wildcard = HoleId::wildcard(crate::hole::NominationIndex::from(0_u32))
+            .expect("a small index names a wildcard");
+        let at = |arena: &mut crate::CoreArena, hole: HoleId| {
+            let end = arena.value_hole(hole);
+            arena.value_type_path(int, end, end)
+        };
+        let (written, read, again, wild) = (
+            at(&mut arena, hole(0)),
+            at(&mut arena, hole(1)),
+            at(&mut arena, hole(2)),
+            at(&mut arena, wildcard),
+        );
+        for (left, right, what) in [
+            (
+                written,
+                read,
+                "an omission against the one its reading nominates",
+            ),
+            (read, again, "in either order"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Equal,
+                "{what} read as one type"
+            );
+            assert_eq!(
+                equal_type_syntax(&arena, left, right),
+                CertificateEquality::Different,
+                "{what} differ in syntax"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, written, wild),
+            CertificateEquality::Different,
+            "an omission does not read as a written wildcard"
+        );
+    }
+
+    /// #3947: a function written as a call's argument is kept as a nested
+    /// computation the checker suspends, and the surface prints it as the
+    /// bare `fun` a thunk of the function prints as.
+    #[test]
+    fn a_suspended_function_reads_as_its_thunk_3947()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let int = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        // `fun (w) { f(w) }` with `f` the binder around the type.
+        let function = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let forced = arena.computation_force(function);
+        let call = arena.computation_application(forced, bound);
+        let lambda = arena.computation_lambda(call);
+        let thunk = arena.value_thunk(lambda);
+        let suspended = arena.value_nested(lambda);
+        let nested_call = arena.value_nested(call);
+        let thunked_call = arena.value_thunk(call);
+        let at = |arena: &mut crate::CoreArena, end: ValueId| arena.value_type_path(int, end, end);
+        let (thunk, suspended, nested_call, thunked_call) = (
+            at(&mut arena, thunk),
+            at(&mut arena, suspended),
+            at(&mut arena, nested_call),
+            at(&mut arena, thunked_call),
+        );
+        for (left, right, what) in [
+            (
+                thunk,
+                suspended,
+                "a thunk of a function against the function suspended",
+            ),
+            (suspended, thunk, "in either order"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Equal,
+                "{what} read as one type"
+            );
+            assert_eq!(
+                equal_type_syntax(&arena, left, right),
+                CertificateEquality::Different,
+                "{what} differ in syntax"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, thunked_call, nested_call),
+            CertificateEquality::Different,
+            "a thunk of a call does not read as the call kept"
+        );
+    }
+
+    /// #4057: `p then q` lowers to the binary composite, and the checker
+    /// derives the transport the composite folds to, which the printer writes
+    /// `p then q`.
+    #[test]
+    fn a_returned_composite_reads_as_its_fold_4057()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let int = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        // `p then q` from `x`, with `x`, `p` and `q` the binders around the
+        // type.
+        let [start, first, second] = [2_u32, 1, 0]
+            .map(|index| arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index)));
+        let composite = crate::compose::compose(
+            &mut arena,
+            crate::compose::Composite::binary(),
+            (int, start),
+            &[first, second],
+        );
+        let composite = arena.computation_return(composite);
+        let composite = arena.value_returned(composite);
+        let fold = crate::identity::then(&mut arena, int, start, first, second);
+        let fold = arena.value_returned(fold);
+        let swapped = crate::identity::then(&mut arena, int, start, second, first);
+        let swapped = arena.value_returned(swapped);
+        let at = |arena: &mut crate::CoreArena, end: ValueId| arena.value_type_path(int, end, end);
+        let (composite, fold, swapped) = (
+            at(&mut arena, composite),
+            at(&mut arena, fold),
+            at(&mut arena, swapped),
+        );
+        for (left, right, what) in [
+            (composite, fold, "a composite returned against its fold"),
+            (fold, composite, "in either order"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Equal,
+                "{what} read as one type"
+            );
+            assert_eq!(
+                equal_type_folded(&arena, left, right),
+                CertificateEquality::Equal,
+                "{what} agree as the bridge erases them"
+            );
+            let (returns_left, returns_right) = (
+                arena.comp_type_returner(left),
+                arena.comp_type_returner(right),
+            );
+            assert_eq!(
+                equal_comp_type_folded(&arena, returns_left, returns_right),
+                CertificateEquality::Equal,
+                "{what} agree as returned types"
+            );
+            assert_eq!(
+                equal_type_syntax(&arena, left, right),
+                CertificateEquality::Different,
+                "{what} differ in syntax"
+            );
+        }
+        let erased: fn(&crate::CoreArena, ValueTypeId, ValueTypeId) -> CertificateEquality =
+            equal_type_folded;
+        for (compare, how) in [
+            (erased, "erased"),
+            (
+                |arena: &crate::CoreArena, left, right| {
+                    equal_type_reading(arena, &BTreeMap::new(), left, right)
+                },
+                "read",
+            ),
+        ] {
+            assert_eq!(
+                compare(&arena, composite, swapped),
+                CertificateEquality::Different,
+                "a composite {how} is not the fold of its cells swapped"
+            );
+        }
+    }
+
+    /// #675: a type instantiated at a function literal holds its call, which
+    /// the surface prints as the value the call returns.
+    #[test]
+    fn a_called_function_literal_reads_as_what_it_returns_675()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let int = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let y = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        // `(thunk { fun (b) { return b } })(x)`.
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returns = arena.computation_return(bound);
+        let identity = arena.computation_lambda(returns);
+        let identity = arena.value_thunk(identity);
+        let forced = arena.computation_force(identity);
+        let called = arena.computation_application(forced, x);
+        let called = arena.value_nested(called);
+        // `(thunk { fun (a) { fun (b) { return a } } })(y)((… )(x))`: the first
+        // argument instantiates the outer abstraction, and the second is
+        // itself a call that reduces.
+        let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let first = arena.computation_return(outer);
+        let first = arena.computation_lambda(first);
+        let first = arena.computation_lambda(first);
+        let first = arena.value_thunk(first);
+        let forced_first = arena.computation_force(first);
+        let partly = arena.computation_application(forced_first, y);
+        let projected = arena.computation_application(partly, called);
+        let projected = arena.value_returned(projected);
+        // A call of a name, and a literal whose body does more than return.
+        let named = arena.computation_force(y);
+        let named = arena.computation_application(named, x);
+        let named = arena.value_nested(named);
+        let forced_body = arena.computation_force(bound);
+        let forcing = arena.computation_lambda(forced_body);
+        let forcing = arena.value_thunk(forcing);
+        let forcing = arena.computation_force(forcing);
+        let forcing = arena.computation_application(forcing, x);
+        let forcing = arena.value_nested(forcing);
+        let at = |arena: &mut crate::CoreArena, end: ValueId| arena.value_type_path(int, end, x);
+        let (called, projected, named, forcing, plain, other) = (
+            at(&mut arena, called),
+            at(&mut arena, projected),
+            at(&mut arena, named),
+            at(&mut arena, forcing),
+            at(&mut arena, x),
+            at(&mut arena, y),
+        );
+        for (left, right, what) in [
+            (
+                called,
+                plain,
+                "a called identity literal against its argument",
+            ),
+            (plain, called, "in either order"),
+            (
+                projected,
+                other,
+                "the first argument instantiates the outer abstraction",
+            ),
+        ] {
+            assert_eq!(
+                (
+                    equal_type_reading(&arena, &signatures, left, right),
+                    equal_type_syntax(&arena, left, right),
+                ),
+                (CertificateEquality::Equal, CertificateEquality::Different),
+                "{what} reads as one type, which its syntax is not"
+            );
+        }
+        for (left, right, what) in [
+            (projected, plain, "the outer binder is not the inner one"),
+            (named, plain, "a call of a name stays a call"),
+            (
+                forcing,
+                plain,
+                "a body that does more than return stays a call",
+            ),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Different,
+                "{what}"
+            );
+        }
+    }
+
+    /// #2325: a bare function literal is a computation nested where a value
+    /// is read, which a force decides as a thunk; a type instantiated at it
+    /// holds its call, which reads as what it returns, alone and nested in
+    /// another call, and a literal whose body calls a name reads as that call
+    /// on the argument, in a lambda's body too and given more arguments than
+    /// it abstracts, while a forced nested computation that is no literal
+    /// stays a call.
+    #[test]
+    fn a_called_nested_literal_reads_as_what_it_returns_2325()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let int = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let y = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        // `(fun (a) { a })(x)`, the literal nested where its call reads it.
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returns = arena.computation_return(bound);
+        let identity = arena.computation_lambda(returns);
+        let identity = arena.value_nested(identity);
+        let forced = arena.computation_force(identity);
+        let called = arena.computation_application(forced, x);
+        let called = arena.value_nested(called);
+        // `(fun (a) { a })((fun (a) { a })(x))`.
+        let twice = arena.computation_application(forced, called);
+        let twice = arena.value_nested(twice);
+        // `(fun (a) { y(a) })(x)` and `y(x)`; under the literal's binder `y`
+        // is the third variable out.
+        let inner_y = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let inner_y = arena.computation_force(inner_y);
+        let calls = arena.computation_application(inner_y, bound);
+        let calls = arena.computation_lambda(calls);
+        let calls = arena.value_nested(calls);
+        let calls = arena.computation_force(calls);
+        let calls = arena.computation_application(calls, x);
+        let calls = arena.value_nested(calls);
+        let direct = arena.computation_force(y);
+        let direct = arena.computation_application(direct, x);
+        let direct = arena.value_nested(direct);
+        // A forced nested call of a name, `(y(x))(x)`, is no literal.
+        let named = arena.computation_force(y);
+        let named = arena.computation_application(named, x);
+        let named = arena.value_nested(named);
+        let named = arena.computation_force(named);
+        let named = arena.computation_application(named, x);
+        let named = arena.value_nested(named);
+        // `thunk { fun (d) { (fun (w) { y(w) })(d) } }` and `thunk { fun (d) {
+        // y(d) } }`: under `d` and `w`, `y` is the fourth variable out, and
+        // under `d` alone the third.
+        let d = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let y_under_two = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(3_u32));
+        let y_under_one = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let inner_call = arena.computation_force(y_under_two);
+        let inner_call = arena.computation_application(inner_call, d);
+        let inner = arena.computation_lambda(inner_call);
+        let inner = arena.value_nested(inner);
+        let inner = arena.computation_force(inner);
+        let in_body = arena.computation_application(inner, d);
+        let in_body = arena.computation_lambda(in_body);
+        let in_body = arena.value_thunk(in_body);
+        let flat = arena.computation_force(y_under_one);
+        let flat_call = arena.computation_application(flat, d);
+        let flat_body = arena.computation_lambda(flat_call);
+        let flat_body = arena.value_thunk(flat_body);
+        // `thunk { fun (d) { (fun (w) { y(w) })(d)(d) } }` and `thunk { fun (d)
+        // { y(d)(d) } }`: the inner application reduces on its own.
+        let over = arena.computation_application(inner, d);
+        let over = arena.computation_application(over, d);
+        let over = arena.computation_lambda(over);
+        let over = arena.value_thunk(over);
+        let flat_over = arena.computation_application(flat_call, d);
+        let flat_over = arena.computation_lambda(flat_over);
+        let flat_over = arena.value_thunk(flat_over);
+        let at = |arena: &mut crate::CoreArena, end: ValueId| arena.value_type_path(int, end, x);
+        let (called, twice, calls, direct, named, plain) = (
+            at(&mut arena, called),
+            at(&mut arena, twice),
+            at(&mut arena, calls),
+            at(&mut arena, direct),
+            at(&mut arena, named),
+            at(&mut arena, x),
+        );
+        let (in_body, flat_body, over, flat_over) = (
+            at(&mut arena, in_body),
+            at(&mut arena, flat_body),
+            at(&mut arena, over),
+            at(&mut arena, flat_over),
+        );
+        for (left, right, what) in [
+            (
+                called,
+                plain,
+                "a called nested identity against its argument",
+            ),
+            (plain, called, "in either order"),
+            (twice, plain, "a call of it nested in another"),
+            (calls, direct, "a literal calling a name against that call"),
+            (in_body, flat_body, "a literal called in a lambda's body"),
+            (
+                over,
+                flat_over,
+                "a literal given more arguments than it abstracts",
+            ),
+        ] {
+            assert_eq!(
+                (
+                    equal_type_reading(&arena, &signatures, left, right),
+                    equal_type_syntax(&arena, left, right),
+                ),
+                (CertificateEquality::Equal, CertificateEquality::Different),
+                "{what} reads as one type, which its syntax is not"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, named, plain),
+            CertificateEquality::Different,
+            "a forced nested call of a name stays a call"
+        );
+    }
+
+    /// #4101: a stated literal is a thunk under an ascription, and its body
+    /// binds its binder, ascribed and returned, before the work; called, it
+    /// reads as the call its body makes, standing as a value and suspended
+    /// as a computation, while a literal whose body binds a call stays a
+    /// call.
+    #[test]
+    fn a_called_stated_literal_reads_as_what_it_returns_4101()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let int = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let y = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let returns_int = arena.comp_type_returner(int);
+        let arrow = arena.comp_type_arrow(int, returns_int);
+        let stated_type = arena.value_type_thunk(arrow);
+        // `(fun (q : Int) { y(q) } : Int -> Int)`: under `q` and the bind's
+        // binder, `y` is the fourth variable out.
+        let q = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let y_inside = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(3_u32));
+        let stated = arena.computation_return(q);
+        let stated = arena.computation_ascribe(stated, returns_int);
+        let work = arena.computation_force(y_inside);
+        let work = arena.computation_application(work, q);
+        let body = arena.computation_bind(stated, work);
+        let body = arena.computation_lambda(body);
+        let literal = arena.value_thunk(body);
+        let literal = arena.value_ascribe(literal, stated_type);
+        let literal = arena.computation_force(literal);
+        let called = arena.computation_application(literal, x);
+        let direct = arena.computation_force(y);
+        let direct = arena.computation_application(direct, x);
+        // `fun (q : Int) { r ← y(q); return r }`: its bind binds a call.
+        let y_under_one = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let bound = arena.computation_force(y_under_one);
+        let bound = arena.computation_application(bound, q);
+        let kept = arena.computation_return(q);
+        let kept = arena.computation_bind(bound, kept);
+        let kept = arena.computation_lambda(kept);
+        let kept = arena.value_thunk(kept);
+        let kept = arena.value_ascribe(kept, stated_type);
+        let kept = arena.computation_force(kept);
+        let kept = arena.computation_application(kept, x);
+        let at = |arena: &mut crate::CoreArena, end: ValueId| arena.value_type_path(int, end, x);
+        let (as_value, direct_value, kept_value) = (
+            arena.value_nested(called),
+            arena.value_nested(direct),
+            arena.value_nested(kept),
+        );
+        let (as_value, direct_value, kept_value) = (
+            at(&mut arena, as_value),
+            at(&mut arena, direct_value),
+            at(&mut arena, kept_value),
+        );
+        let (suspended, direct_suspended) = (arena.value_thunk(called), arena.value_thunk(direct));
+        let (suspended, direct_suspended) =
+            (at(&mut arena, suspended), at(&mut arena, direct_suspended));
+        // `(fun (q : Int) { q then s } : …)(p)` written twice: once its body
+        // returns the composite, once it is the fold the composite realises.
+        // Under `q` and the bind's binder, `x` is the fifth variable out and
+        // `s` the third.
+        let p = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let [start, inner_q, inner_s] = [4_u32, 0, 2]
+            .map(|index| arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index)));
+        let composite = crate::compose::compose(
+            &mut arena,
+            crate::compose::Composite::binary(),
+            (int, start),
+            &[inner_q, inner_s],
+        );
+        let composite = arena.computation_return(composite);
+        let fold = crate::identity::then(&mut arena, int, start, inner_q, inner_s);
+        let composed = |arena: &mut crate::CoreArena, work: ComputationId| {
+            let body = arena.computation_bind(stated, work);
+            let body = arena.computation_lambda(body);
+            let body = arena.value_thunk(body);
+            let body = arena.value_ascribe(body, stated_type);
+            let body = arena.computation_force(body);
+            let body = arena.computation_application(body, p);
+            let body = arena.value_nested(body);
+            at(arena, body)
+        };
+        let (returning, folding) = (composed(&mut arena, composite), composed(&mut arena, fold));
+        for (left, right, what) in [
+            (
+                as_value,
+                direct_value,
+                "a called stated literal against its call",
+            ),
+            (direct_value, as_value, "in either order"),
+            (suspended, direct_suspended, "the call suspended"),
+            (
+                returning,
+                folding,
+                "a stated literal returning a composite against one that folds it",
+            ),
+        ] {
+            assert_eq!(
+                (
+                    equal_type_reading(&arena, &signatures, left, right),
+                    equal_type_syntax(&arena, left, right),
+                ),
+                (CertificateEquality::Equal, CertificateEquality::Different),
+                "{what} reads as one type, which its syntax is not"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, kept_value, direct_value),
+            CertificateEquality::Different,
+            "a stated literal whose bind binds a call stays a call"
+        );
+    }
+
+    /// #676: the lowering commutes a nested call in a type into a run,
+    /// `same(same(x))` into `a ← same(x); same(a)`; read back, the run is
+    /// the nested call it was written as.
+    #[test]
+    fn a_run_bound_call_reads_as_the_nested_call_676()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let int = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let at = |arena: &mut crate::CoreArena, index: u32| {
+            arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+        };
+        let call = |arena: &mut crate::CoreArena, function: ValueId, argument: ValueId| {
+            let forced = arena.computation_force(function);
+            arena.computation_application(forced, argument)
+        };
+        // `f` and `x` the two binders around the type.
+        let (f, x) = (at(&mut arena, 1_u32), at(&mut arena, 0_u32));
+        // `f(f(x))` and `f(f(f(x)))` as written: each inner call nested.
+        let inner = call(&mut arena, f, x);
+        let inner = arena.value_returned(inner);
+        let twice = call(&mut arena, f, inner);
+        let twice_value = arena.value_returned(twice);
+        let thrice = call(&mut arena, f, twice_value);
+        let twice = arena.value_nested(twice);
+        let thrice = arena.value_nested(thrice);
+        // `a ← f(x); f(a)`, and `a ← f(x); b ← f(a); f(b)`.
+        let bound = call(&mut arena, f, x);
+        let (f_under, a) = (at(&mut arena, 2_u32), at(&mut arena, 0_u32));
+        let rest = call(&mut arena, f_under, a);
+        let one_run = arena.computation_bind(bound, rest);
+        let one_run = arena.value_nested(one_run);
+        let second = call(&mut arena, f_under, a);
+        let (f_twice_under, b) = (at(&mut arena, 3_u32), at(&mut arena, 0_u32));
+        let last = call(&mut arena, f_twice_under, b);
+        let two_runs = arena.computation_bind(second, last);
+        let two_runs = arena.computation_bind(bound, two_runs);
+        let two_runs = arena.value_nested(two_runs);
+        // `a ← force(f); f(a)`: the bound is no call.
+        let forced = arena.computation_force(f);
+        let forced_run = arena.computation_bind(forced, rest);
+        let forced_run = arena.value_nested(forced_run);
+        let path = |arena: &mut crate::CoreArena, end: ValueId| arena.value_type_path(int, end, x);
+        let (twice, thrice, one_run, two_runs, forced_run) = (
+            path(&mut arena, twice),
+            path(&mut arena, thrice),
+            path(&mut arena, one_run),
+            path(&mut arena, two_runs),
+            path(&mut arena, forced_run),
+        );
+        for (left, right, what) in [
+            (one_run, twice, "one run against the call nested once"),
+            (twice, one_run, "in either order"),
+            (two_runs, thrice, "two runs, the second naming the first"),
+        ] {
+            assert_eq!(
+                (
+                    equal_type_reading(&arena, &signatures, left, right),
+                    equal_type_syntax(&arena, left, right),
+                ),
+                (CertificateEquality::Equal, CertificateEquality::Different),
+                "{what} reads as one type, which its syntax is not"
+            );
+        }
+        for (left, right, what) in [
+            (one_run, thrice, "a run reads as its own call and no other"),
+            (forced_run, twice, "a run binding no call stays a run"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Different,
+                "{what}"
+            );
+        }
+    }
+
+    /// #768: a family filled by a function literal and applied at a nested
+    /// call decodes `x ← f(y); lit(x)`, the run the lowering binds the call
+    /// by; read back, it is what the literal returns, as the printer spells
+    /// it, while a run calling no literal stays a decode. A comparison whose
+    /// reductions outnumber sixty-four, as the λ-calculus's model record's
+    /// does, still reads through every one.
+    #[test]
+    fn a_literal_decoded_at_a_run_bound_call_reads_as_what_it_returns_768()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let unit = arena.value_type_product(&[]);
+        let unit_code = arena.value_quote(unit);
+        let at = |arena: &mut crate::CoreArena, index: u32| {
+            arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+        };
+        let call = |arena: &mut crate::CoreArena, function: ValueId, argument: ValueId| {
+            let forced = arena.computation_force(function);
+            arena.computation_application(forced, argument)
+        };
+        // `f` and `y` the two binders around the type; `x` the run's.
+        let (f, y) = (at(&mut arena, 1_u32), at(&mut arena, 0_u32));
+        let bound = call(&mut arena, f, y);
+        let x = at(&mut arena, 0_u32);
+        // `x ← f(y); (thunk { fun (g) { return Unit } })(x)`, decoded.
+        let returns = arena.computation_return(unit_code);
+        let literal = arena.computation_lambda(returns);
+        let literal = arena.value_thunk(literal);
+        let rest = call(&mut arena, literal, x);
+        let run = arena.computation_bind(bound, rest);
+        let run = arena.value_returned(run);
+        let decoded = arena.value_type_element(run, Level::zero());
+        // `x ← f(y); f(x)`, decoded: the run calls no literal.
+        let f_under = at(&mut arena, 2_u32);
+        let named = call(&mut arena, f_under, x);
+        let named = arena.computation_bind(bound, named);
+        let named = arena.value_returned(named);
+        let named = arena.value_type_element(named, Level::zero());
+        // Forty of each side by side: eighty reductions in one comparison.
+        let wide = arena.value_type_product(&alloc::vec![decoded; 40]);
+        let units = arena.value_type_product(&alloc::vec![unit; 40]);
+        for (left, right, what) in [
+            (
+                decoded,
+                unit,
+                "a literal decoded at a run-bound call against what it returns",
+            ),
+            (unit, decoded, "in either order"),
+            (wide, units, "forty of them against forty units"),
+        ] {
+            assert_eq!(
+                (
+                    equal_type_reading(&arena, &signatures, left, right),
+                    equal_type_syntax(&arena, left, right),
+                ),
+                (CertificateEquality::Equal, CertificateEquality::Different),
+                "{what} reads as one type, which its syntax is not"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, named, unit),
+            CertificateEquality::Different,
+            "a run calling no literal does not read as the unit"
+        );
+    }
+
+    #[test]
+    fn each_value_former_equals_its_twin_and_differs_where_its_guard_does()
+    {
+        use alloc::sync::Arc;
+
+        use crate::control::StackFrame;
+        use crate::session::RecordedMove;
+        use crate::session::SessionRelation;
+        use crate::ua::Description;
+        use crate::ua::Sides;
+        use crate::ua::Stratum;
+
+        let mut arena = crate::CoreArena::new();
+        let unit = arena.value_unit();
+        let unit_type = arena.value_type_unit();
+        let returned = arena.computation_return(unit);
+        let label = |name| FieldLabel::from(alloc::string::String::from(name));
+        let one = Level::zero().succ().expect("one is a level");
+        let mut cases = Vec::new();
+
+        let [twin, same, other_tag, wider] =
+            [(0, 1), (0, 1), (1, 1), (0, 2)].map(|(tag, width)| {
+                arena.value_constructor(
+                    ConstantIndex::from(0_usize),
+                    unit_type,
+                    ConstructorTag::from(tag),
+                    alloc::vec![unit; width],
+                )
+            });
+        cases.push((twin, same, alloc::vec![other_tag, wider], "a constructor"));
+        let [twin, same, other_label, wider] = [
+            alloc::vec!["a"],
+            alloc::vec!["a"],
+            alloc::vec!["b"],
+            alloc::vec!["a", "b"],
+        ]
+        .map(|labels| {
+            arena.value_record(labels.into_iter().map(|name| (label(name), unit)).collect())
+        });
+        cases.push((twin, same, alloc::vec![other_label, wider], "a record"));
+        let frames = [
+            StackFrame::Apply(unit),
+            StackFrame::Bind(returned),
+            StackFrame::Project(Component::from(0_usize)),
+        ];
+        let [twin, same] = [(); 2].map(|()| arena.value_reify(Arc::from(frames)));
+        let shorter = arena.value_reify(Arc::from([StackFrame::Apply(unit)]));
+        let other_side = arena.value_reify(Arc::from([
+            StackFrame::Apply(unit),
+            StackFrame::Bind(returned),
+            StackFrame::Project(Component::from(1_usize)),
+        ]));
+        cases.push((twin, same, alloc::vec![shorter, other_side], "a stack"));
+        let [twin, same, other] = [
+            SessionRelation::Equivalence,
+            SessionRelation::Equivalence,
+            SessionRelation::Subtyping,
+        ]
+        .map(|relation| arena.value_session_related(relation, unit, unit, unit));
+        let covered = arena.value_path_refl(unit);
+        let paid = arena.value_session_related(SessionRelation::Equivalence, unit, unit, covered);
+        cases.push((twin, same, alloc::vec![other, paid], "a session identity"));
+        let moves = |chosen| {
+            Arc::from([
+                RecordedMove::Sent(unit),
+                RecordedMove::Selected(label(chosen)),
+                RecordedMove::Closed,
+            ])
+        };
+        let [twin, same, other_choice] =
+            ["a", "a", "b"].map(|chosen| arena.value_recorded(moves(chosen)));
+        let shorter = arena.value_recorded(Arc::from([RecordedMove::Sent(unit)]));
+        cases.push((
+            twin,
+            same,
+            alloc::vec![shorter, other_choice],
+            "a recorded run",
+        ));
+        let description = |name| Description {
+            name: gandr_theory_levitation::Name::from(name),
+            generators: alloc::boxed::Box::from([]),
+        };
+        let sides = |name| {
+            Arc::new(Sides {
+                source: description(name),
+                target: description(name),
+            })
+        };
+        let stratum = |degree| Stratum {
+            degree: gandr_theory_sites::Degree::from(degree),
+            bound: gandr_theory_sites::ShapeSize::from(4_usize),
+        };
+        let [twin, same, other_degree, other_sides] =
+            [(1_usize, "M"), (1, "M"), (2, "M"), (1, "N")]
+                .map(|(degree, name)| arena.value_ua(stratum(degree), sides(name), unit, unit));
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_degree, other_sides],
+            "a univalence",
+        ));
+        let composite = |degree, cells| crate::compose::Composite {
+            stratum: stratum(degree),
+            pasting: crate::compose::Pasting::chain(crate::compose::CellCount::from(cells))
+                .expect("the chain packs"),
+        };
+        let [twin, same, other_degree, other_count] = [(3_usize, 2_usize), (3, 2), (2, 2), (3, 1)]
+            .map(|(degree, cells)| {
+                arena.value_compose(
+                    composite(degree, cells),
+                    alloc::vec![unit; cells].into_boxed_slice(),
+                    returned,
+                )
+            });
+        let wider = arena.value_compose(
+            composite(3, 2),
+            alloc::vec![unit; 3].into_boxed_slice(),
+            returned,
+        );
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_degree, other_count, wider],
+            "a composite",
+        ));
+        let [twin, same, other_degree, other_count] = [(3_usize, 2_usize), (3, 2), (2, 2), (3, 1)]
+            .map(|(degree, cells)| {
+                arena.value_fill(
+                    composite(degree, cells),
+                    returned,
+                    alloc::vec![unit; cells].into_boxed_slice(),
+                )
+            });
+        let wider = arena.value_fill(
+            composite(3, 2),
+            returned,
+            alloc::vec![unit; 3].into_boxed_slice(),
+        );
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_degree, other_count, wider],
+            "a fill",
+        ));
+        let [twin, same, other] =
+            [0_usize, 0, 1].map(|summand| arena.value_injection(Summand::from(summand), unit));
+        cases.push((twin, same, alloc::vec![other], "an injection"));
+        let primitives = crate::primitive::PRELUDE;
+        let [twin, same, other] = [0_usize, 0, 1].map(|row| {
+            arena.alloc_value(Value::Primitive {
+                primitive: primitives
+                    .get(row)
+                    .copied()
+                    .expect("the prelude has two rows"),
+                body: returned,
+            })
+        });
+        cases.push((twin, same, alloc::vec![other], "a native function"));
+        let [twin, same, other] =
+            [Level::zero(), Level::zero(), one].map(|target| arena.value_lift(target, unit));
+        cases.push((twin, same, alloc::vec![other], "a lift"));
+        let [twin, same, other] =
+            [0_u32, 0, 1].map(|mark| arena.value_mark(MarkIndex::from(mark), unit));
+        cases.push((twin, same, alloc::vec![other], "a marked value"));
+        let pair_type = arena.value_type_product(&[unit_type, unit_type]);
+        let pair = arena.value_tuple(&[unit, unit]);
+        let [twin, same] = [(); 2].map(|()| arena.value_ascribe(unit, unit_type));
+        let other_type = arena.value_ascribe(unit, pair_type);
+        let other_value = arena.value_ascribe(pair, unit_type);
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_type, other_value],
+            "an ascription (#1543)",
+        ));
+        let written = |name| arena.value_record(core::iter::once((label(name), unit)).collect());
+        let [overlay, other_overlay] = ["a", "b"].map(written);
+        let [twin, same] = [(); 2].map(|()| arena.value_record_update(unit, overlay));
+        let other_base = arena.value_record_update(pair, overlay);
+        let other_fields = arena.value_record_update(unit, other_overlay);
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_base, other_fields],
+            "a record update",
+        ));
+
+        let comparisons: [fn(&crate::CoreArena, ValueId, ValueId) -> CertificateEquality; 2] =
+            [equal_certificate_syntax, equal_shared_certificate_syntax];
+        for (twin, same, others, what) in cases {
+            for compare in comparisons {
+                assert_eq!(
+                    CertificateEquality::Equal,
+                    compare(&arena, twin, same),
+                    "{what} equals its twin"
+                );
+                for &other in &others {
+                    assert_eq!(
+                        CertificateEquality::Different,
+                        compare(&arena, twin, other),
+                        "{what} differs from one that changes a guarded part"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn each_computation_former_equals_its_twin_and_differs_where_its_guard_does()
+    {
+        use alloc::sync::Arc;
+
+        use crate::control::EffectClause;
+        use crate::effect::EffectName;
+        use crate::effect::EffectOp;
+        use crate::effect::EffectSig;
+        use crate::effect::OperationName;
+        use crate::memory::MemoryForm;
+        use crate::primitive::Arguments;
+        use crate::session::SessionAction;
+
+        let mut arena = crate::CoreArena::new();
+        let unit = arena.value_unit();
+        let unit_type = arena.value_type_unit();
+        let returned = arena.computation_return(unit);
+        let motive = arena.comp_type_returner(unit_type);
+        let label = |name| FieldLabel::from(alloc::string::String::from(name));
+        let signature = |name| {
+            EffectSig::new(EffectName::from(name), [
+                EffectOp {
+                    name: OperationName::from("ask"),
+                    payload: unit_type,
+                    reply: unit_type,
+                },
+                EffectOp {
+                    name: OperationName::from("tell"),
+                    payload: unit_type,
+                    reply: unit_type,
+                },
+            ])
+            .expect("two distinct operations")
+        };
+        let clause = |operation: &'static str| EffectClause {
+            operation: OperationName::from(operation),
+            body: returned,
+        };
+        let mut cases = Vec::new();
+
+        let [twin, same, wider] = [1_usize, 1, 2].map(|count| {
+            arena.computation_data_case(
+                unit,
+                motive,
+                alloc::vec![returned; count],
+                alloc::vec![FieldCount::from(0_usize); count],
+            )
+        });
+        cases.push((twin, same, alloc::vec![wider], "a nominal case"));
+        let [twin, same, other] =
+            ["a", "a", "b"].map(|name| arena.computation_record_projection(unit, label(name)));
+        cases.push((twin, same, alloc::vec![other], "a record projection"));
+        let [twin, same, other] = [0_usize, 0, 1]
+            .map(|component| arena.computation_tuple_projection(unit, Component::from(component)));
+        cases.push((twin, same, alloc::vec![other], "a tuple projection"));
+        let [twin, same, other_operation, other_signature] =
+            [("P", "ask"), ("P", "ask"), ("P", "tell"), ("Q", "ask")].map(|(name, operation)| {
+                arena.computation_perform(signature(name), OperationName::from(operation), unit)
+            });
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_operation, other_signature],
+            "a perform",
+        ));
+        let [twin, same, other_operation, other_signature] =
+            [("P", "ask"), ("P", "ask"), ("P", "tell"), ("Q", "ask")].map(|(name, operation)| {
+                arena.computation_exercise(
+                    unit,
+                    signature(name),
+                    OperationName::from(operation),
+                    unit,
+                )
+            });
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_operation, other_signature],
+            "an exercise",
+        ));
+        for scoped in [false, true] {
+            let mut handler = |name, operations: &[&'static str]| {
+                let clauses: Arc<[EffectClause]> = operations
+                    .iter()
+                    .map(|&operation| clause(operation))
+                    .collect();
+                if scoped {
+                    arena.computation_scope(signature(name), returned, returned, clauses)
+                }
+                else {
+                    arena.computation_handle(signature(name), returned, returned, clauses)
+                }
+            };
+            let twin = handler("P", &["ask"]);
+            let same = handler("P", &["ask"]);
+            let others = alloc::vec![
+                handler("P", &["ask", "tell"]),
+                handler("Q", &["ask"]),
+                handler("P", &["tell"]),
+            ];
+            cases.push((
+                twin,
+                same,
+                others,
+                if scoped { "a scope" } else { "a handler" },
+            ));
+        }
+        let [twin, same, other] = [1_usize, 1, 2]
+            .map(|arity| arena.computation_split(unit, ComponentCount::from(arity), returned));
+        cases.push((twin, same, alloc::vec![other], "a split"));
+        let [twin, same] = [(); 2]
+            .map(|()| arena.computation_list_fold(unit_type, unit_type, unit, returned, returned));
+        cases.push((twin, same, alloc::vec![], "a list fold"));
+        let [twin, same] =
+            [(); 2].map(|()| arena.computation_telescope_transport(motive, unit, unit, unit, unit));
+        cases.push((twin, same, alloc::vec![], "a telescope transport"));
+        let primitives = crate::primitive::PRELUDE;
+        let row = |index: usize| {
+            primitives
+                .get(index)
+                .copied()
+                .expect("the prelude has two rows")
+        };
+        let [twin, same, other_row, other_count] = [
+            (0_usize, Arguments::Unary(unit)),
+            (0, Arguments::Unary(unit)),
+            (1, Arguments::Unary(unit)),
+            (0, Arguments::Binary([unit, unit])),
+        ]
+        .map(|(index, arguments)| arena.computation_primitive(row(index), arguments));
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_row, other_count],
+            "a native operation",
+        ));
+        let [twin, same, other] = [
+            FixpointEvidence::Partial,
+            FixpointEvidence::Partial,
+            FixpointEvidence::StructuralDescent,
+        ]
+        .map(|evidence| arena.computation_fixpoint(returned, evidence));
+        cases.push((twin, same, alloc::vec![other], "a fixpoint"));
+        let [twin, same] = [(); 2].map(|()| arena.computation_transport(unit, unit));
+        cases.push((twin, same, alloc::vec![], "a transport"));
+        let [twin, same, wider] = [1_usize, 1, 2]
+            .map(|count| arena.computation_case(unit, &alloc::vec![returned; count]));
+        cases.push((twin, same, alloc::vec![wider], "a sum case"));
+        let [twin, same, other] =
+            [0_u32, 0, 1].map(|hole| arena.computation_hole(HoleId::from(hole)));
+        cases.push((twin, same, alloc::vec![other], "a hole"));
+        let [twin, same, other] =
+            [0_u32, 0, 1].map(|mark| arena.computation_mark(MarkIndex::from(mark), returned));
+        cases.push((twin, same, alloc::vec![other], "a marked computation"));
+        let send = |endpoint| SessionAction::Send {
+            endpoint: DeBruijnIndex::from(endpoint),
+            payload: unit,
+        };
+        let [twin, same, other] =
+            [0_u32, 0, 1].map(|endpoint| arena.computation_session(send(endpoint)));
+        cases.push((twin, same, alloc::vec![other], "a session action"));
+        let hold = |grade| MemoryForm::Hold {
+            value: unit,
+            body: returned,
+            grade,
+        };
+        let [twin, same] =
+            [(); 2].map(|()| arena.computation_memory(hold(crate::memory::HoldGrade::Many)));
+        let other = arena.computation_memory(MemoryForm::Abort {
+            view: DeBruijnIndex::from(0_u32),
+        });
+        let graded = arena.computation_memory(hold(crate::memory::HoldGrade::One));
+        cases.push((twin, same, alloc::vec![other, graded], "a memory form"));
+        let migrate = |world: usize| crate::world::WorldForm::Migrate {
+            world: crate::world::World::Declared(ConstantIndex::from(world)),
+            body: returned,
+        };
+        let [twin, same, other] =
+            [0_usize, 0, 1].map(|world| arena.computation_world(migrate(world)));
+        cases.push((twin, same, alloc::vec![other], "a world form"));
+        let unit_list = arena.value_type_list(unit_type);
+        let unit_motive = arena.comp_type_returner(unit_list);
+        let [twin, same] = [(); 2].map(|()| arena.computation_ascribe(returned, motive));
+        let other = arena.computation_ascribe(returned, unit_motive);
+        cases.push((twin, same, alloc::vec![other], "an ascription"));
+
+        let comparisons: [fn(&crate::CoreArena, ValueId, ValueId) -> CertificateEquality; 2] =
+            [equal_certificate_syntax, equal_shared_certificate_syntax];
+        let mut thunks = Vec::new();
+        for (twin, same, others, what) in cases {
+            let twin = arena.value_thunk(twin);
+            let same = arena.value_thunk(same);
+            thunks.clear();
+            thunks.extend(others.into_iter().map(|other| arena.value_thunk(other)));
+            for compare in comparisons {
+                assert_eq!(
+                    CertificateEquality::Equal,
+                    compare(&arena, twin, same),
+                    "{what} equals its twin"
+                );
+                for &other in &thunks {
+                    assert_eq!(
+                        CertificateEquality::Different,
+                        compare(&arena, twin, other),
+                        "{what} differs from one that changes a guarded part"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn each_type_former_equals_its_twin_and_differs_where_its_guard_does()
+    {
+        let mut arena = crate::CoreArena::new();
+        let unit = arena.value_unit();
+        let unit_type = arena.value_type_unit();
+        let label = |name| FieldLabel::from(alloc::string::String::from(name));
+        let one = Level::zero().succ().expect("one is a level");
+        let mut cases = Vec::new();
+
+        let [twin, same, other_declaration, wider] = [(0_usize, 1_usize), (0, 1), (1, 1), (0, 2)]
+            .map(|(declaration, count)| {
+                arena.value_type_data(ConstantIndex::from(declaration), alloc::vec![unit; count])
+            });
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_declaration, wider],
+            "a nominal type",
+        ));
+        let [twin, same, other_label, wider] = [
+            alloc::vec!["a"],
+            alloc::vec!["a"],
+            alloc::vec!["b"],
+            alloc::vec!["a", "b"],
+        ]
+        .map(|labels| {
+            arena.value_type_record(
+                labels
+                    .into_iter()
+                    .map(|name| (label(name), unit_type))
+                    .collect(),
+            )
+        });
+        cases.push((twin, same, alloc::vec![other_label, wider], "a record type"));
+        let fields = arena.value_type_record(
+            ["a", "b"]
+                .into_iter()
+                .map(|name| (label(name), unit_type))
+                .collect(),
+        );
+        let [twin, same, other_label, wider] = [
+            alloc::vec!["a"],
+            alloc::vec!["a"],
+            alloc::vec!["b"],
+            alloc::vec!["a", "b"],
+        ]
+        .map(|labels| {
+            arena.value_type_patched(
+                fields,
+                labels.into_iter().map(|name| (label(name), unit)).collect(),
+            )
+        });
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_label, wider],
+            "a patched type",
+        ));
+        let [twin, same, wider] =
+            [1_usize, 1, 2].map(|count| arena.value_type_product(&alloc::vec![unit_type; count]));
+        cases.push((twin, same, alloc::vec![wider], "a product type"));
+        let [twin, same, wider] =
+            [1_usize, 1, 2].map(|count| arena.value_type_sum(&alloc::vec![unit_type; count]));
+        cases.push((twin, same, alloc::vec![wider], "a sum type"));
+        let [twin, same, other] = [Level::zero(), Level::zero(), one.clone()]
+            .map(|target| arena.value_type_lift(unit_type, target));
+        cases.push((twin, same, alloc::vec![other], "a lifted type"));
+        let [twin, same, other] = [Level::zero(), Level::zero(), one.clone()]
+            .map(|target| arena.value_type_element(unit, target));
+        cases.push((twin, same, alloc::vec![other], "an element type"));
+        let base = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let [twin, same, other] = [0_usize, 0, 1].map(|stage| {
+            arena.value_type_staged(
+                base,
+                gandr_kernel_term::Stage::At(gandr_kernel_term::StageId::from(stage)),
+            )
+        });
+        cases.push((twin, same, alloc::vec![other], "a staged type"));
+        let session = {
+            use crate::session::PayloadCount;
+            use crate::session::PayloadSlot;
+            use crate::session::Protocol;
+            use crate::session::ProtocolState;
+            use crate::session::ProtocolSyntax;
+            let send = Protocol::new(
+                alloc::vec![
+                    ProtocolSyntax::Send {
+                        payload: PayloadSlot::from(0_usize),
+                        next: ProtocolState::from(1_usize),
+                    },
+                    ProtocolSyntax::End,
+                ],
+                ProtocolState::from(0_usize),
+                PayloadCount::from(1_usize),
+            )
+            .expect("a send, then the end");
+            crate::session::SessionType::new(
+                alloc::sync::Arc::new(send),
+                alloc::sync::Arc::from([unit_type]),
+            )
+            .expect("one payload for one slot")
+        };
+        let [twin, same] = [(); 2].map(|()| arena.value_type_session(session.clone()));
+        let received = arena.value_type_session(session.dual());
+        let ended = arena.value_type_session(
+            session
+                .at(crate::session::ProtocolState::from(1_usize))
+                .expect("the end is a state"),
+        );
+        cases.push((twin, same, alloc::vec![received, ended], "a session type"));
+        let returner = arena.comp_type_returner(unit_type);
+        let arrows = [
+            arena.comp_type_arrow(unit_type, returner),
+            arena.comp_type_arrow(unit_type, returner),
+            arena.comp_type_pi(unit_type, returner),
+            arena.comp_type_pi(unit_type, returner),
+        ];
+        let mut thunked = |comp_type| arena.value_type_thunk(comp_type);
+        let [arrow, same_arrow, pi, same_pi] = arrows.map(&mut thunked);
+        cases.push((arrow, same_arrow, alloc::vec![], "an arrow"));
+        cases.push((pi, same_pi, alloc::vec![], "a dependent arrow"));
+        let elements =
+            [Level::zero(), Level::zero(), one].map(|target| arena.comp_type_element(unit, target));
+        let [twin, same, other] = elements.map(|element| arena.value_type_thunk(element));
+        cases.push((twin, same, alloc::vec![other], "a computation element type"));
+        let unknowns = [(); 2].map(|()| arena.comp_type_unknown());
+        let [twin, same] = unknowns.map(|unknown| arena.value_type_thunk(unknown));
+        cases.push((twin, same, alloc::vec![], "an unknown computation type"));
+        let [twin, same] = [(); 2].map(|()| arena.value_type_qubit());
+        let buffer = arena.value_type_buffer();
+        cases.push((twin, same, alloc::vec![buffer], "the qubit type"));
+
+        for (twin, same, others, what) in cases {
+            assert_eq!(
+                CertificateEquality::Equal,
+                equal_type_syntax(&arena, twin, same),
+                "{what} equals its twin"
+            );
+            for other in others {
+                assert_eq!(
+                    CertificateEquality::Different,
+                    equal_type_syntax(&arena, twin, other),
+                    "{what} differs from one that changes a guarded part"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_system_of_faces_reads_back_as_its_glued_type_5106()
+    {
+        let mut arena = crate::CoreArena::new();
+        let unit = arena.value_unit();
+        let other = arena.value_tuple(&[unit]);
+        let unit_type = arena.value_type_unit();
+        let label = |name| FieldLabel::from(alloc::string::String::from(name));
+        let record = arena.value_type_record(
+            ["a", "b", "c"]
+                .into_iter()
+                .map(|name| (label(name), unit_type))
+                .collect(),
+        );
+        let fields = |value: ValueId| -> BTreeMap<FieldLabel, ValueId> {
+            ["a", "b", "c"]
+                .into_iter()
+                .map(|name| (label(name), value))
+                .collect()
+        };
+        let system = arena.value_type_system(record, fields(unit), alloc::vec![(label("b"), unit)]);
+        let glued = arena.value_type_patched(record, fields(unit));
+        let elsewhere = arena.value_type_patched(record, fields(other));
+        let signatures = BTreeMap::new();
+        for (left, right) in [(system, glued), (glued, system)] {
+            assert_eq!(
+                CertificateEquality::Equal,
+                equal_type_reading(&arena, &signatures, left, right),
+                "a system of faces reads back as its glued type, in either order"
+            );
+        }
+        assert_eq!(
+            CertificateEquality::Different,
+            equal_type_reading(&arena, &signatures, system, elsewhere),
+            "a glued type at other values is another type"
+        );
+        assert_eq!(
+            CertificateEquality::Different,
+            equal_type_syntax(&arena, system, glued),
+            "the syntax keeps the meets: only the printed reading erases them"
+        );
+    }
+}
+
+/// A nominal declaration's parameter telescope, index telescope, constructor
+/// table with the index each constructor stands at, universe and the rules
+/// presenting its terms.
+///
+/// Parameter classifiers are scoped under their predecessors, and index
+/// classifiers under the parameters and the indices before them. Constructor
+/// fields are scoped under all parameters and then the fields before them in
+/// their constructor, which a later field may name; a constructor's result
+/// indices under the parameters and all its fields.
+/// Admission, not this container, verifies those scopes, the universe bound
+/// and that every rule is constructor-headed over the table.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct DataSignature
+{
+    /// Parameter classifiers in telescope order.
+    parameters: Vec<ValueTypeId>,
+    /// Index classifiers in telescope order; none for a parameterised type.
+    indices: Vec<ValueTypeId>,
+    /// Constructor fields in tag order.
+    constructors: Vec<Vec<ValueTypeId>>,
+    /// Each constructor's result indices in tag order; none for a
+    /// parameterised type.
+    results: Vec<Vec<ValueId>>,
+    /// The positive universe bounding every constructor field.
+    kind: ValueTypeId,
+    /// The rules rewriting the type's constructor terms; none for a free type.
+    presentation: gandr_kernel_term::Presentation,
+}
+
+impl DataSignature
+{
+    /// Construct a free signature whose formation remains the checker's
+    /// obligation; [`Self::presented`] attaches rules and [`Self::indexed`]
+    /// indices.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn new(
+        parameters: Vec<ValueTypeId>,
+        constructors: Vec<Vec<ValueTypeId>>,
+        kind: ValueTypeId,
+    ) -> Self
+    {
+        Self {
+            parameters,
+            indices: Vec::new(),
+            constructors,
+            results: Vec::new(),
+            kind,
+            presentation: gandr_kernel_term::Presentation::default(),
+        }
+    }
+
+    /// This signature indexed by `indices`, each constructor standing at its
+    /// row of `results`; its parameters, constructors and universe unchanged.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn indexed(
+        self,
+        indices: Vec<ValueTypeId>,
+        results: Vec<Vec<ValueId>>,
+    ) -> Self
+    {
+        Self {
+            indices,
+            results,
+            ..self
+        }
+    }
+
+    /// Index classifiers in telescope order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn indices(&self) -> &[ValueTypeId]
+    {
+        &self.indices
+    }
+
+    /// Each constructor's result indices in tag order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn results(&self) -> &[Vec<ValueId>]
+    {
+        &self.results
+    }
+
+    /// The arguments an application of the family carries: its parameters,
+    /// then its indices.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn arity(&self) -> crate::description::TypeArity
+    {
+        crate::description::TypeArity(self.parameters.len().saturating_add(self.indices.len()))
+    }
+
+    /// Parameter classifiers in telescope order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn parameters(&self) -> &[ValueTypeId]
+    {
+        &self.parameters
+    }
+
+    /// Constructor field classifiers in tag order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn constructors(&self) -> &[Vec<ValueTypeId>]
+    {
+        &self.constructors
+    }
+
+    /// The positive universe bounding constructor fields.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn kind(&self) -> ValueTypeId
+    {
+        self.kind
+    }
+
+    /// The rules rewriting the type's constructor terms, in written order:
+    /// none for a free type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn presentation(&self) -> &gandr_kernel_term::Presentation
+    {
+        &self.presentation
+    }
+
+    /// This signature presenting its terms by `presentation`, its parameters,
+    /// constructors and universe unchanged.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn presented(
+        self,
+        presentation: gandr_kernel_term::Presentation,
+    ) -> Self
+    {
+        Self {
+            presentation,
+            ..self
+        }
+    }
+}
+
+/// A nominal codata declaration's parameter telescope, its observations and
+/// the computation universe bounding them.
+///
+/// Parameter classifiers are scoped under their predecessors; each
+/// observation is a computation type scoped under all parameters, which may
+/// name the declaration itself at its result. Admission, not this container,
+/// verifies those scopes, the universe bound and that every self reference
+/// stands at an observation's result.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct CodataSignature
+{
+    /// Parameter classifiers in telescope order.
+    parameters: Vec<ValueTypeId>,
+    /// The observations, in written order.
+    observations: Vec<CompTypeId>,
+    /// The computation universe bounding every observation.
+    kind: ValueTypeId,
+}
+
+impl CodataSignature
+{
+    /// Construct a signature whose formation remains the checker's
+    /// obligation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn new(
+        parameters: Vec<ValueTypeId>,
+        observations: Vec<CompTypeId>,
+        kind: ValueTypeId,
+    ) -> Self
+    {
+        Self {
+            parameters,
+            observations,
+            kind,
+        }
+    }
+
+    /// Parameter classifiers in telescope order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn parameters(&self) -> &[ValueTypeId]
+    {
+        &self.parameters
+    }
+
+    /// The observations, in written order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn observations(&self) -> &[CompTypeId]
+    {
+        &self.observations
+    }
+
+    /// The computation universe bounding the observations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn kind(&self) -> ValueTypeId
+    {
+        self.kind
+    }
+}
