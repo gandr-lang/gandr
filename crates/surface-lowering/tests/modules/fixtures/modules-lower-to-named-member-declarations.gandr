@@ -1,0 +1,6 @@
+module Config where {
+  def first = 0;
+  module limits where { module hard where { module detail where { def note = 1; } } }
+  def after = 2;
+}
+def top = Config.limits.hard.detail.note;

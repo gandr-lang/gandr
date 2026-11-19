@@ -1,0 +1,25 @@
+{
+  "signers": ["agent-shade"],
+  "checks": {
+    "check:clippy-plain-only": {
+      "profile": "dev",
+      "inputs": [".config/mise/gated", ".config/mise/scope"],
+      "greps": [{ "pattern": "not(anodized_panic)", "in": "crates" }]
+    },
+    "check:clippy-enforcing": {
+      "profile": "test",
+      "inputs": [
+        ".config/mise/enforcing",
+        ".config/mise/gated",
+        ".config/mise/scope",
+        ".config/policy/required.bash"
+      ]
+    },
+    "check:dylint": {
+      "profile": "dev",
+      "inputs": [".config/policy/", ".config/mise/gated", ".config/mise/scope"],
+      "base": true
+    },
+    "check:clippy-arch": { "profile": "test" }
+  }
+}

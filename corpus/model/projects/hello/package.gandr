@@ -1,0 +1,54 @@
+// A package is its `package.gandr` and its `sources`. That file declares the
+// model of the package. `gandr check` writes `package.gandr.toml` beside it.
+// The modules of the package are under `src`. Its version is the version that
+// the workspace above it states.
+//
+// - see: #2687
+// - see: #4916
+// - see: #2874 — `tone`
+import text.greet (greeting);
+// The workspace above the package, whose model states its version.
+import "../workspace.gandr";
+// The manifest theories.
+import std.build (Gandr);
+// The tone, a module three names deep.
+import text.tone.kind;
+
+/// The package: its name, its version and the rest of what
+/// `package.gandr.toml` records.
+pub module Package : Model(Gandr.Package) where
+  /// The name the manifest records.
+  def name = "hello";
+  /// The version, the workspace's.
+  def version = Workspace.version;
+  /// The package's authors.
+  def authors = "The gandr authors";
+  /// The licence, an SPDX expression.
+  def licence = "MIT OR Apache-2.0";
+  /// The address the package's documentation stands at.
+  def documentation = "https://github.com/gandr-lang/gandr";
+  /// The address a resolver may fetch the package from.
+  def endpoint = "https://github.com/gandr-lang/gandr";
+  /// The language version, the workspace's.
+  def gandr = Workspace.gandr;
+  /// The features the sources use, the workspace's.
+  def features = Workspace.features;
+  /// The systems the package builds on, the workspace's.
+  def systems = Workspace.systems;
+  /// The spelling the package asks for: the reader's own.
+  def spelling = "";
+  /// The directory the modules sit under.
+  def sources = "src";
+
+/// The greeting, read from the module `text.greet` by its path, at the type
+/// an import at a signature matches it by.
+@[runs("\"hello, world\"")]
+pub def welcome : String = text.greet.greeting;
+
+/// The greeting again, by the name the import lists.
+@[runs("\"hello, world\"")]
+pub def hello : String = greeting;
+
+/// The tone, its type read through the module's whole path.
+@[runs("Warm")]
+pub def tone : text.tone.kind.Tone = text.tone.kind.warm;
