@@ -3025,6 +3025,8 @@ impl<'pbg> Molder<'pbg>
     ///   `state`. The candidate buffer holds that menu when `lexeme` is a
     ///   layout separator. Leaves `state` unchanged.
     /// - panics: none.
+    /// - executable: none — the clause restates the gather and the frontier
+    ///   scan of the body.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a `module` that lost its `where` before its `{` reads
