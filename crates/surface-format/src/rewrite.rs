@@ -3375,16 +3375,21 @@ impl<'source> Respelling<'_, 'source>
     /// `Path.ap f p` for `Path.walk (fun (y) { Path[.A = B](f(a), f(y)) }) p
     /// (Path.here (f a))`,
     /// where neither the carrier, the fixed endpoint nor the map names `y`.
+    /// A composite moves a reflexivity `Path.here b` only where `a` is `b`.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the tokens of the motive's endpoints and of the moved
+    ///   path, setup
     fn derived(
         &self,
         parts: &[Part<'source>],
     ) -> Option<Operation<'source>>
     {
         let spine = self.spine(parts)?;
-        let &[callee, motive, along, moved] = spine.as_slice()
+        let &[callee, motive, along, moved_at] = spine.as_slice()
         else {
             return None;
         };
@@ -3446,22 +3451,22 @@ impl<'source> Respelling<'_, 'source>
         if carrier.contains(&binder) {
             return None;
         }
-        if right.as_slice() == [binder] && !left.contains(&binder) {
-            return Some(Operation::Composite {
-                first: moved,
-                second: along,
-            });
-        }
         // An inverse and an action move the reflexivity at the fixed
         // endpoint, `Path.here a`, its endpoint parenthesised when it is not
         // an atom.
-        let moved = self.tokens(self.stripped(moved));
-        let reflexive = |fixed: &[SourceFragment<'source>]| match moved.as_slice() {
-            &[path, dot, here, ref rest @ ..]
+        let moved = self.tokens(self.stripped(moved_at));
+        let here = match moved.as_slice() {
+            &[path, dot, word, ref rest @ ..]
                 if <&str>::from(path) == "Path"
                     && <&str>::from(dot) == "."
-                    && <&str>::from(here) == "here" =>
+                    && <&str>::from(word) == "here" =>
             {
+                Some(rest)
+            },
+            _ => None,
+        };
+        let reflexive = |fixed: &[SourceFragment<'source>]| {
+            here.is_some_and(|rest| {
                 rest == fixed
                     || matches!(
                         rest,
@@ -3470,9 +3475,20 @@ impl<'source> Respelling<'_, 'source>
                                 && <&str>::from(close) == ")"
                                 && inner == fixed
                     )
-            },
-            _ => false,
+            })
         };
+        // A reflexivity moved along a motive that starts at another point,
+        // `Path.step f (Path.here z)` for `Path.here f`, is a transport that
+        // the composite does not spell.
+        if right.as_slice() == [binder]
+            && !left.contains(&binder)
+            && (here.is_none() || reflexive(left))
+        {
+            return Some(Operation::Composite {
+                first: moved_at,
+                second: along,
+            });
+        }
         if left.as_slice() == [binder] && !right.contains(&binder) && reflexive(right) {
             return Some(Operation::Inverse { path: along });
         }

@@ -20785,8 +20785,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
 
     /// The refusal of the slot `slot`, refused as `refusal` at `at`: the
     /// refusal of the first retired token that a form of the slot holds, when
-    /// one holds such a token; the retired box, when `refusal` is an extra
-    /// operand that [`boxed_extra`] reads as the box; and `refusal`
+    /// one holds such a token; the full retired box, when `refusal` is an
+    /// extra operand that [`boxed_extra`] reads as the box; and `refusal`
     /// otherwise.
     ///
     /// A declaration that holds an old spelling reports that refusal and no
@@ -20815,7 +20815,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// # Adequacy
     /// - hypothesis: L3 — `def a = #{ .x = 1 };` reads an extra operand first
     ///   and reports the retired token; `def b : Integer => Integer;` reports
-    ///   the box at `=> Integer`; a declaration with neither keeps its refusal.
+    ///   the box from `Integer` through its result; a declaration with neither
+    ///   keeps its refusal.
     /// - witness: `gandr-surface-lowering::lower::tests::the_glued_view_telescope_is_refused_by_name_7879`
     /// - witness: `gandr-surface-lowering::lower::tests::the_fat_arrow_box_is_refused_by_name_7879`
     #[spec(ensures: |ret| ret == refusal || matches!(ret, LoweringRefusal::MalformedForm { fault: FormFault::Repaired(Repair::Retired(_)) | FormFault::Retired(RetiredForm::FatArrowBox), .. }))]
@@ -20860,10 +20861,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             form,
             fault: FormFault::ExtraOperand,
         } = refusal
-            && forms
-                .into_iter()
-                .flatten()
-                .any(|held| boxed_extra(cx.pbg, cx.tree, held, span) == RetiredBox(true))
+            && let Some(span) = forms.into_iter().flatten().find_map(|held| {
+                let RetiredBox(Maybe::Present(found)) = boxed_extra(cx.pbg, cx.tree, held, span)
+                else {
+                    return None;
+                };
+                Some(found)
+            })
         {
             return LoweringRefusal::MalformedForm {
                 span,
