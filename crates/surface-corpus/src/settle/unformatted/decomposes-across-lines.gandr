@@ -1,0 +1,5 @@
+@[ decomposes(
+  event
+    left
+    0
+) ] def a = 3 ;

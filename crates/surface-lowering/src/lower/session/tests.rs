@@ -1,0 +1,993 @@
+use alloc::collections::BTreeSet;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::ValueType;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::session::SessionAction;
+use gandr_core_term::session::SessionType;
+use gandr_core_term::session::Step;
+use gandr_kernel_term::FieldLabel;
+use gandr_surface_grammar::NamedKind;
+use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
+
+use crate::error::FormFault;
+use crate::error::FragmentBoundary;
+use crate::error::FragmentSort;
+use crate::error::LoweringRefusal;
+use crate::form::FormName;
+use crate::lower::exits::tests::assert_same_body;
+use crate::lower::exits::tests::spelled_within;
+use crate::lower::native::tests::assert_accepted;
+use crate::lower::native::tests::body_named;
+use crate::lower::native::tests::judged;
+use crate::lower::native::tests::lowered;
+use crate::lower::native::tests::refusal_of;
+use crate::lower::native::tests::tail_of;
+use crate::module::DeclarationOutcome;
+use crate::module::LoweredModule;
+use crate::origin::Labelled;
+use crate::resolve::OperandCount;
+use crate::resolve::SurfaceName;
+
+/// The seat exchange over strings: the seat's end forked to the child, the
+/// operator's held by the rest of the block, with an intuitionistic parameter
+/// and every receipt's binder standing between an endpoint and its uses.
+const EXCHANGE: &str = include_str!("tests/unformatted/exchange.gandr");
+
+/// One move along a protocol: past a send or a receive, or into the branch a
+/// label names.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: a choice is entered only by a label.
+/// - executable: none — the move holds no protocol to check against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the protocol witness walks every former with these.
+/// - witness: `lower::session::tests::a_session_type_lowers_to_its_protocol`
+#[derive(Clone, Copy, Debug)]
+enum Move
+{
+    /// Past an action that carries a payload, or onto the close.
+    On,
+    /// Into the branch of a choice the label names.
+    Take(&'static str),
+}
+
+/// The declared type of `name` in `module`.
+///
+/// # Specification
+/// - requires: `module` lowers a signature for `name`.
+/// - ensures: that signature.
+/// - fails: never.
+/// - panics: if the declaration is missing or lowers no signature.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the protocol witnesses read each session type here.
+/// - witness: `lower::session::tests::a_session_type_lowers_to_its_protocol`
+#[spec(ensures: |ret| module.declarations().iter().any(|declaration| matches!(
+    declaration.outcome(),
+    DeclarationOutcome::Completed { declared_type, .. } | DeclarationOutcome::Uncompleted { declared_type } if declared_type == ret
+)))]
+fn declared_of(
+    module: &LoweredModule<'_>,
+    name: SurfaceName<'_>,
+) -> ValueTypeId
+{
+    let Some(declaration) = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name() == name)
+    else {
+        panic!("`{name}` is declared");
+    };
+    match declaration.outcome() {
+        DeclarationOutcome::Completed { declared_type, .. }
+        | DeclarationOutcome::Uncompleted { declared_type } => declared_type,
+        other @ (DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a signature: {other:?}"),
+    }
+}
+
+/// The steps the session type `declared` takes along `moves`, one token per
+/// step: `!P` and `?P` for a send and a receive of the payload `P`, `+l,…`
+/// and `&l,…` for a select and an offer over their labels, `end` for the
+/// close, which ends the walk.
+///
+/// # Specification
+/// - requires: `declared` is a session type in `arena`, and each move fits the
+///   step it is taken at.
+/// - ensures: one token per move taken, the recursion unfolded as the protocol
+///   steps.
+/// - fails: never on accepted fixtures.
+/// - panics: if `declared` is no session type, or a move does not fit.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the witness walks a select, an offer, a recursion back to
+///   its binder, each payload and the close.
+/// - witness: `lower::session::tests::a_session_type_lowers_to_its_protocol`
+#[spec(ensures: |ret| ret.len() <= moves.len())]
+fn walked(
+    arena: &CoreArena,
+    declared: ValueTypeId,
+    moves: &[Move],
+) -> Vec<String>
+{
+    let Some(held) = arena.value_type(declared)
+    else {
+        panic!("`{declared:?}` is in the arena");
+    };
+    let ValueType::Session(ref session) = *held
+    else {
+        panic!("a session type: {held:?}");
+    };
+    let named = |payload: ValueTypeId| match arena.value_type(payload) {
+        Some(&ValueType::Base(base)) => format!("{base:?}"),
+        other => format!("{other:?}"),
+    };
+    let mut at: SessionType = session.clone();
+    let mut tokens = Vec::new();
+    for &taken in moves {
+        let step = at.step().expect("the protocol steps");
+        let next = match step {
+            Step::Send { payload, next } => {
+                tokens.push(format!("!{}", named(payload)));
+                next
+            },
+            Step::Receive { payload, next } => {
+                tokens.push(format!("?{}", named(payload)));
+                next
+            },
+            Step::Select(ref branches) | Step::Offer(ref branches) => {
+                let polarity = if matches!(step, Step::Select(_)) {
+                    "+"
+                }
+                else {
+                    "&"
+                };
+                let mut token = String::from(polarity);
+                for (index, label) in branches.labels().enumerate() {
+                    if index > 0 {
+                        token.push(',');
+                    }
+                    token.push_str(AsRef::<str>::as_ref(label));
+                }
+                tokens.push(token);
+                let Move::Take(label) = taken
+                else {
+                    panic!("a choice is entered by a label");
+                };
+                match branches
+                    .get(&FieldLabel::from(String::from(label)))
+                    .expect("the branch steps")
+                {
+                    Maybe::Present(branch) => branch,
+                    Maybe::Absent(_) => panic!("the choice names `{label}`"),
+                }
+            },
+            Step::End => {
+                tokens.push(String::from("end"));
+                break;
+            },
+        };
+        at = next;
+    }
+
+    tokens
+}
+
+/// Every session action under `root`, in a preorder walk through binds,
+/// splits, lambdas, an offer's arms in label order and a fork's child before
+/// its parent: one token per action, its kind, its endpoint's linear index
+/// and the label it selects.
+///
+/// # Specification
+/// - requires: `root` is in `arena`.
+/// - ensures: one token per session action reached.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the exchange's actions at both ends, each asserted at its
+///   endpoint.
+/// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
+#[spec(ensures: |ret| ret.iter().all(|token| !token.is_empty()))]
+fn actions(
+    arena: &CoreArena,
+    root: ComputationId,
+) -> Vec<String>
+{
+    let mut seen = Vec::new();
+    let mut pending = Vec::from([root]);
+    while let Some(next) = pending.pop() {
+        match arena.computation(next) {
+            Some(&Computation::Bind(first, second)) => pending.extend([second, first]),
+            Some(&Computation::Lambda(under) | &Computation::Split { body: under, .. }) => {
+                pending.push(under);
+            },
+            Some(&Computation::Session(ref action)) => {
+                let kind = match *action {
+                    SessionAction::Send { .. } => String::from("send"),
+                    SessionAction::Receive { .. } => String::from("recv"),
+                    SessionAction::Select { ref label, .. } => {
+                        format!("select {}", AsRef::<str>::as_ref(label))
+                    },
+                    SessionAction::Offer { .. } => String::from("offer"),
+                    SessionAction::Close { .. } => String::from("close"),
+                    SessionAction::Fork { .. } => String::from("fork"),
+                    SessionAction::Place { .. } => String::from("place"),
+                };
+                seen.push(match action.endpoint() {
+                    Maybe::Present(endpoint) => format!("{kind} @{}", u32::from(endpoint)),
+                    Maybe::Absent(_) => kind,
+                });
+                pending.extend(action.computations().rev());
+            },
+            _ => {},
+        }
+    }
+
+    seen
+}
+
+#[test]
+fn a_session_type_lowers_to_its_protocol()
+{
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/a-session-type-lowers-to-its-protocol.gandr"
+    ));
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    let seat = declared_of(&module, SurfaceName::from("seat"));
+    assert_eq!(
+        walked(&arena, seat, &[
+            Move::On,
+            Move::Take("report"),
+            Move::On,
+            Move::Take("next"),
+            Move::Take("handoff"),
+            Move::On,
+            Move::On,
+        ]),
+        [
+            "?String",
+            "+handoff,report",
+            "!String",
+            "&next,retire",
+            "+handoff,report",
+            "!Integer",
+            "end"
+        ],
+        "every former reads to its own step, each payload in its own slot, and `turn` returns to its `rec`"
+    );
+    assert_eq!(
+        walked(&arena, seat, &[
+            Move::On,
+            Move::Take("report"),
+            Move::On,
+            Move::Take("retire"),
+            Move::On,
+        ]),
+        [
+            "?String",
+            "+handoff,report",
+            "!String",
+            "&next,retire",
+            "end"
+        ],
+        "each branch continues at its own state"
+    );
+    let ticker = declared_of(&module, SurfaceName::from("ticker"));
+    assert_eq!(
+        walked(&arena, ticker, &[Move::On, Move::On, Move::On]),
+        ["!Integer", "!Integer", "!Integer"],
+        "a variable under its `rec`, parenthesised, recurs"
+    );
+    let choose = declared_of(&module, SurfaceName::from("choose"));
+    assert_eq!(
+        walked(&arena, choose, &[Move::Take("ok"), Move::On, Move::On]),
+        ["+ok", "!Integer", "end"],
+        "braces at the root over session types are the select"
+    );
+    let menu = declared_of(&module, SurfaceName::from("menu"));
+    assert_eq!(
+        walked(&arena, menu, &[Move::Take("put"), Move::On, Move::On]),
+        ["&get,put", "?String", "end"],
+        "and the lazy record over them the offer"
+    );
+}
+
+#[test]
+fn each_state_answers_where_it_is_written()
+{
+    let text = "def seat : ?String >> rec turn => +{ report : !String >> &{ next : turn, retire : end }, \
+                handoff : !Integer >> end } ;\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(text), &mut arena);
+    let written = |start: usize, end: usize| text.get(start .. end).unwrap_or_default();
+    let state = |ty: ValueTypeId| match arena.value_type(ty) {
+        Some(&ValueType::Session(ref session)) => Some(session.state()),
+        _ => None,
+    };
+    let mut forms: Vec<(&str, Option<_>)> = module
+        .origins()
+        .value_types()
+        .iter()
+        .filter(|&&(ty, origin)| {
+            origin.provenance() == crate::origin::Provenance::Written && state(ty).is_some()
+        })
+        .map(|&(ty, origin)| {
+            let span = origin.span();
+            (
+                written(usize::from(span.start()), usize::from(span.end())),
+                state(ty),
+            )
+        })
+        .collect();
+    forms.sort_unstable();
+    let at = |form: &str| {
+        forms
+            .iter()
+            .find(|&&(held, _)| held == form)
+            .map(|&(_, at)| at)
+    };
+    for continuation in [
+        "rec turn => +{ report : !String >> &{ next : turn, retire : end }, handoff : !Integer >> end }",
+        "+{ report : !String >> &{ next : turn, retire : end }, handoff : !Integer >> end }",
+        "!String >> &{ next : turn, retire : end }",
+        "&{ next : turn, retire : end }",
+        "!Integer >> end",
+        "turn",
+        "end",
+    ] {
+        assert!(
+            at(continuation).is_some(),
+            "`{continuation}` answers at its own state: {forms:?}"
+        );
+    }
+    let labels: Vec<(&str, Option<_>)> = module
+        .origins()
+        .labels()
+        .iter()
+        .filter_map(|label| match label.labelled {
+            crate::origin::Labelled::ValueType { ty, .. } => Some((
+                written(
+                    usize::from(label.span.start()),
+                    usize::from(label.span.end()),
+                ),
+                state(ty),
+            )),
+            crate::origin::Labelled::CompType { .. }
+            | crate::origin::Labelled::Value(_)
+            | crate::origin::Labelled::Endpoint(_)
+            | crate::origin::Labelled::Branch { .. }
+            | crate::origin::Labelled::Bound(_)
+            | crate::origin::Labelled::Kind(_) => None,
+        })
+        .collect();
+    let named = |label: &str| {
+        labels
+            .iter()
+            .find(|&&(held, _)| held == label)
+            .map(|&(_, at)| at)
+    };
+    assert_eq!(
+        named("report"),
+        at("!String >> &{ next : turn, retire : end }"),
+        "a select's label answers at the state it continues with"
+    );
+    assert_eq!(
+        named("next"),
+        at("turn"),
+        "an offer's label answers at its branch's state"
+    );
+    assert_eq!(
+        named("turn"),
+        at(
+            "rec turn => +{ report : !String >> &{ next : turn, retire : end }, handoff : !Integer >> end }"
+        ),
+        "a `rec`'s variable answers at the state it binds"
+    );
+}
+
+#[test]
+fn a_malformed_protocol_is_refused_where_it_is_written()
+{
+    let source = SourceText::from(include_str!(
+        "tests/unformatted/a-malformed-protocol-is-refused-where-it-is-written.gandr"
+    ));
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    let mu = FormName::from(NamedKind("mu_session_type"));
+    assert_eq!(
+        refusal_of(&module, SurfaceName::from("spin")),
+        LoweringRefusal::OutOfFragment {
+            span: spelled_within(
+                source,
+                SourceText::from("spin : rec t => t"),
+                SourceText::from("rec t => t")
+            ),
+            form: mu,
+            sort: FragmentSort::ValueType,
+            boundary: FragmentBoundary::NonContractive,
+        },
+        "a `rec` whose body is its own variable is not contractive"
+    );
+    assert_eq!(
+        refusal_of(&module, SurfaceName::from("nested")),
+        LoweringRefusal::OutOfFragment {
+            span: spelled_within(
+                source,
+                SourceText::from("nested : !Integer >> rec t => rec u => !Integer >> t"),
+                SourceText::from("rec t => rec u => !Integer >> t")
+            ),
+            form: mu,
+            sort: FragmentSort::ValueType,
+            boundary: FragmentBoundary::NonContractive,
+        },
+        "nor one whose body is a `rec`, refused at the outer one"
+    );
+    for (name, written, continuation) in [
+        ("typed", "typed : !Integer >> Integer", "Integer"),
+        ("free", "free : !Integer >> t", "t"),
+    ] {
+        assert!(
+            matches!(
+                refusal_of(&module, SurfaceName::from(name)),
+                LoweringRefusal::OutOfFragment { span, sort: FragmentSort::Continuation, boundary: FragmentBoundary::WrongSort, .. }
+                    if span == spelled_within(source, SourceText::from(written), SourceText::from(continuation))
+            ),
+            "`{name}`: a type no `rec` binds stands where a continuation is read"
+        );
+    }
+    assert_eq!(
+        refusal_of(&module, SurfaceName::from("positional")),
+        LoweringRefusal::MalformedForm {
+            span: spelled_within(
+                source,
+                SourceText::from("positional : !Integer >> +{ end,"),
+                SourceText::from("end")
+            ),
+            form: FormName::SELECT_SESSION_TYPE,
+            fault: FormFault::MisplacedTile,
+        },
+        "a branch with no label has nothing to select"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("twice")),
+            LoweringRefusal::DuplicateDefinition { name, span, .. }
+                if name == SurfaceName::from("go")
+                    && span == spelled_within(source, SourceText::from("twice : !Integer >> &{ go : end, go"), SourceText::from("go"))
+        ),
+        "a label is offered once"
+    );
+}
+
+#[test]
+fn the_seat_exchange_lowers_both_ends()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(EXCHANGE), &mut arena);
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("exchange")));
+    assert_eq!(
+        actions(&arena, tail),
+        [
+            "fork",
+            "recv @0",
+            "select report @1",
+            "send @1",
+            "offer @1",
+            "select handoff @1",
+            "send @1",
+            "close @1",
+            "close @1",
+            "send @0",
+            "offer @0",
+            "recv @0",
+            "close @1",
+            "recv @0",
+            "select next @1",
+            "offer @1",
+            "recv @1",
+            "close @2",
+            "recv @1",
+            "select retire @2",
+            "close @2",
+        ],
+        "the seat's end is the child's, the operator's the parent's, and each names its endpoint by linear index past the parameter and every receipt's linear binder"
+    );
+    assert!(
+        matches!(
+            arena.computation(tail),
+            Some(&Computation::Session(SessionAction::Fork { .. }))
+        ),
+        "the body's tail is its fork"
+    );
+    assert!(
+        matches!(module.origins().fork(tail), Maybe::Present(name) if name.as_ref() == "c"),
+        "the fork names its channel by its child's end, not the parent's"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn each_endpoint_answers_at_its_action()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(EXCHANGE), &mut arena);
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("exchange")));
+    let mut reached = BTreeSet::new();
+    let mut pending = Vec::from([tail]);
+    while let Some(next) = pending.pop() {
+        match arena.computation(next) {
+            Some(&Computation::Bind(first, second)) => pending.extend([second, first]),
+            Some(&Computation::Lambda(under) | &Computation::Split { body: under, .. }) => {
+                pending.push(under);
+            },
+            Some(&Computation::Session(ref action)) => {
+                if let Maybe::Present(_) = action.endpoint() {
+                    let _fresh = reached.insert(next);
+                }
+                pending.extend(action.computations());
+            },
+            _ => {},
+        }
+    }
+    let labelled: Vec<(&str, ComputationId)> = module
+        .origins()
+        .labels()
+        .iter()
+        .filter_map(|label| match label.labelled {
+            Labelled::Endpoint(action) => Some((
+                EXCHANGE
+                    .get(usize::from(label.span.start()) .. usize::from(label.span.end()))
+                    .unwrap_or(""),
+                action,
+            )),
+            Labelled::ValueType { .. }
+            | Labelled::CompType { .. }
+            | Labelled::Value(_)
+            | Labelled::Branch { .. }
+            | Labelled::Bound(_)
+            | Labelled::Kind(_) => None,
+        })
+        .collect();
+    assert!(
+        labelled
+            .iter()
+            .all(|&(written, _)| written == "c" || written == "peer"),
+        "each label stands at an endpoint's name: {labelled:?}"
+    );
+    let named: BTreeSet<ComputationId> = labelled.iter().map(|&(_, action)| action).collect();
+    assert_eq!(
+        (labelled.len(), &named),
+        (20, &reached),
+        "each of the 20 actions the body holds is named by its endpoint once, through every \
+         rewrite"
+    );
+    // #298: each offer arm's label names the branch it takes of the offer
+    // the body holds, through every rewrite.
+    let branches: Vec<(&str, ComputationId, &FieldLabel)> = module
+        .origins()
+        .labels()
+        .iter()
+        .filter_map(|written| match written.labelled {
+            Labelled::Branch { action, ref label } => Some((
+                EXCHANGE
+                    .get(usize::from(written.span.start()) .. usize::from(written.span.end()))
+                    .unwrap_or(""),
+                action,
+                label,
+            )),
+            Labelled::ValueType { .. }
+            | Labelled::CompType { .. }
+            | Labelled::Value(_)
+            | Labelled::Endpoint(_)
+            | Labelled::Bound(_)
+            | Labelled::Kind(_) => None,
+        })
+        .collect();
+    // A `rec t =>` binds a protocol variable; every other ` => ` arms an offer.
+    let offered = EXCHANGE
+        .matches(" => ")
+        .count()
+        .saturating_sub(EXCHANGE.matches("rec ").count());
+    assert!(
+        branches.len() == offered
+            && branches.iter().all(|&(written, action, label)| {
+                *label == FieldLabel::from(String::from(written))
+                    && reached.contains(&action)
+                    && matches!(arena.computation(action), Some(&Computation::Session(SessionAction::Offer { ref arms, .. })) if arms.contains_key(label))
+            }),
+        "each of the {offered} offer arms answers by its label at the offer it arms: {branches:?}"
+    );
+}
+
+/// A keyword head takes its operands by juxtaposition, and parentheses only
+/// group one operand: `send c v`, `recv(c)`, `close(c)`, `resume v e` and
+/// `abort(v)` lower and check. A tuple, a missing operand and an extra one
+/// are each refused with the count written, a label that is no name is
+/// refused at the label, and a declaration named as an endpoint, bare or
+/// grouped, is refused as no endpoint, not as unresolved (#5556).
+#[test]
+fn a_keyword_head_takes_its_operands_by_juxtaposition_5556()
+{
+    let spoken = SourceText::from(include_str!(
+        "tests/unformatted/a-keyword-head-takes-its-operands-by-juxtaposition-5556-1.gandr"
+    ));
+    let mut arena = CoreArena::new();
+    let module = lowered(spoken, &mut arena);
+    assert_accepted(&judged(&module, &mut arena));
+
+    let source = SourceText::from(include_str!(
+        "tests/unformatted/a-keyword-head-takes-its-operands-by-juxtaposition-5556-2.gandr"
+    ));
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    for (name, context, written, form, count) in [
+        (
+            "tupled",
+            "send(d, n)",
+            "send(d, n)",
+            FormName::SEND,
+            2_usize,
+        ),
+        ("short", "send d }", "send d", FormName::SEND, 1_usize),
+        ("long", "send d n n", "send d n n", FormName::SEND, 3_usize),
+        (
+            "paired",
+            "close(d, d)",
+            "close(d, d)",
+            FormName::CLOSE,
+            2_usize,
+        ),
+        (
+            "viewed",
+            "resume(v, 1)",
+            "resume(v, 1)",
+            FormName::RESUME,
+            2_usize,
+        ),
+    ] {
+        assert_eq!(
+            refusal_of(&module, SurfaceName::from(name)),
+            LoweringRefusal::OutOfFragment {
+                span: spelled_within(source, SourceText::from(context), SourceText::from(written)),
+                form,
+                sort: FragmentSort::Computation,
+                boundary: FragmentBoundary::Arity(OperandCount::from(count)),
+            },
+            "`{name}`: `{written}` writes {count} operands"
+        );
+    }
+    assert_eq!(
+        refusal_of(&module, SurfaceName::from("numbered")),
+        LoweringRefusal::MalformedForm {
+            span: spelled_within(
+                source,
+                SourceText::from("select d 1"),
+                SourceText::from("1")
+            ),
+            form: FormName::SELECT,
+            fault: FormFault::MisplacedTile,
+        },
+        "a selection's label is a name"
+    );
+    for (name, written) in [("declared", "send other 1"), ("grouped", "close(other)")] {
+        assert_eq!(
+            refusal_of(&module, SurfaceName::from(name)),
+            LoweringRefusal::OutOfFragment {
+                span: spelled_within(source, SourceText::from(written), SourceText::from("other")),
+                form: FormName::IDENTIFIER,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Endpoint,
+            },
+            "`{name}`: a declaration is no endpoint, read before the walk reaches it"
+        );
+    }
+}
+
+#[test]
+fn an_action_on_no_endpoint_is_refused()
+{
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/an-action-on-no-endpoint-is-refused.gandr"
+    ));
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    for (name, written, subject, form) in [
+        ("parameter", "close n", "n", FormName::IDENTIFIER),
+        ("literal", "send 3 n", "3", FormName::NUMBER),
+        ("declared", "select other go", "other", FormName::IDENTIFIER),
+    ] {
+        assert_eq!(
+            refusal_of(&module, SurfaceName::from(name)),
+            LoweringRefusal::OutOfFragment {
+                span: spelled_within(source, SourceText::from(written), SourceText::from(subject)),
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Endpoint,
+            },
+            "`{name}`: only a name a fork binds is an endpoint"
+        );
+    }
+    assert_eq!(
+        refusal_of(&module, SurfaceName::from("unbound")),
+        LoweringRefusal::UnresolvedName {
+            span: spelled_within(
+                source,
+                SourceText::from("close missing"),
+                SourceText::from("missing")
+            ),
+            name: SurfaceName::from("missing"),
+        },
+        "a name nothing binds is unresolved"
+    );
+    // A misspelt fork leaves `desk` an intuitionistic binder: the refusal
+    // marks the value the `let` binds, where the source lost its endpoint,
+    // and not the action on it (#4784).
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("misspelt")),
+            LoweringRefusal::OutOfFragment {
+                span,
+                boundary: FragmentBoundary::Endpoint,
+                ..
+            } if span == spelled_within(
+                source,
+                SourceText::from("let desk = fokr (seat : end) { close seat };"),
+                SourceText::from("fokr (seat : end) { close seat }")
+            )
+        ),
+        "the endpoint a misspelt fork leaves is refused at the misspelt fork: {:?}",
+        refusal_of(&module, SurfaceName::from("misspelt"))
+    );
+}
+
+#[test]
+fn a_parameter_at_a_session_type_is_placed_1862()
+{
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/a-parameter-at-a-session-type-is-placed-1862.gandr"
+    ));
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    for (name, expected) in [
+        ("finish", &["place", "close @0"][..]),
+        ("answer", &["place", "recv @0", "close @1"][..]),
+    ] {
+        let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
+        assert_eq!(
+            actions(&arena, tail),
+            expected,
+            "`{name}`: the body stands under the placement of its parameter at a session type"
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+/// A parameter at a name for a session type is placed as one written at the
+/// session type is: a top-level declaration, a name for that name and a path
+/// to a module's manifest component. A sealed component and a name for
+/// `Integer` stay unplaced.
+#[test]
+fn a_parameter_at_a_named_session_type_is_placed()
+{
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/a-parameter-at-a-named-session-type-is-placed.gandr"
+    ));
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    for (name, expected) in [
+        ("asked", &["place", "recv @0", "close @1"][..]),
+        ("sent", &["place", "send @0", "close @0"][..]),
+        ("again", &["place", "send @0", "close @0"][..]),
+        ("counted", &[][..]),
+    ] {
+        let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
+        assert_eq!(
+            actions(&arena, tail),
+            expected,
+            "`{name}`: the body stands under a placement exactly when its type names a session type"
+        );
+    }
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("sealed")),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Endpoint,
+                ..
+            }
+        ),
+        "a sealed component's definition is not read, so its parameter is no endpoint"
+    );
+}
+
+#[test]
+fn an_offer_arm_is_one_label()
+{
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/an-offer-arm-is-one-label.gandr"
+    ));
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("twice")),
+            LoweringRefusal::DuplicateDefinition { name, span, .. }
+                if name == SurfaceName::from("go")
+                    && span == spelled_within(source, SourceText::from("go => close c | go"), SourceText::from("go"))
+        ),
+        "a label is armed once"
+    );
+    assert_eq!(
+        refusal_of(&module, SurfaceName::from("patterned")),
+        LoweringRefusal::OutOfFragment {
+            span: spelled_within(source, SourceText::from("{ | 7 =>"), SourceText::from("7")),
+            form: FormName::from(NamedKind("literal_pattern")),
+            sort: FragmentSort::Pattern,
+            boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::LiteralPattern),
+        },
+        "an arm's pattern is a label"
+    );
+}
+
+#[test]
+fn sharing_is_reserved_by_name()
+{
+    let source = SourceText::from(include_str!(
+        "tests/unformatted/sharing-is-reserved-by-name.gandr"
+    ));
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    for (name, context, written, feature) in [
+        (
+            "shared",
+            "{ fork !(c : end) { close c } ;",
+            "fork !(c : end) { close c }",
+            crate::Unbuilt::SharedFork,
+        ),
+        (
+            "bound",
+            "= fork !(c : end) { close c } ;",
+            "fork !(c : end) { close c }",
+            crate::Unbuilt::SharedFork,
+        ),
+        (
+            "acquired",
+            "acquire n",
+            "acquire n",
+            crate::Unbuilt::Acquire,
+        ),
+        (
+            "released",
+            "release n",
+            "release n",
+            crate::Unbuilt::Release,
+        ),
+    ] {
+        assert!(
+            matches!(
+                refusal_of(&module, SurfaceName::from(name)),
+                LoweringRefusal::OutOfFragment {
+                    span,
+                    boundary: FragmentBoundary::Reserved(reserved),
+                    ..
+                } if reserved == feature
+                    && span == spelled_within(source, SourceText::from(context), SourceText::from(written))
+            ),
+            "`{name}`: a shared session's form is reserved by its name"
+        );
+    }
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("duplicated")),
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                boundary: FragmentBoundary::Reserved(crate::Unbuilt::Dup),
+                ..
+            }
+                if form == FormName::from(NamedKind("dup_expression"))
+                    && span == spelled_within(source, SourceText::from("; dup d ;"), SourceText::from("dup d"))
+        ),
+        "and so is a shared endpoint's duplication"
+    );
+}
+
+/// A receive and a fork each give one linear end, so one no `let` binds to a
+/// name is refused where it stands.
+#[test]
+fn a_receive_or_a_fork_no_let_binds_is_refused()
+{
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/a-receive-or-a-fork-no-let-binds-is-refused.gandr"
+    ));
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    for (name, written, kind) in [
+        ("received", "recv d", "recv_expression"),
+        ("forked", "fork (c : end) { close c }", "fork_expression"),
+    ] {
+        assert!(
+            matches!(
+                refusal_of(&module, SurfaceName::from(name)),
+                LoweringRefusal::OutOfFragment {
+                    span,
+                    form,
+                    boundary: FragmentBoundary::Unbound,
+                    ..
+                } if form == FormName::from(NamedKind(kind))
+                    && span == spelled_within(source, SourceText::from(written), SourceText::from(written))
+            ),
+            "`{name}`: an end no `let` binds is refused"
+        );
+    }
+}
+
+/// #1500: a fork in an arm whose ends continue the block leaves the rest
+/// reading the slot it named before the fork, not the fork's parent end, which
+/// it would read as a value.
+#[test]
+fn a_fork_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
+{
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/a-fork-in-a-joined-arm-leaves-the-rest-its-own-slots-1500.gandr"
+    ));
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    assert_accepted(&judged(&module, &mut arena));
+    assert_same_body(
+        &module,
+        &arena,
+        (
+            SurfaceName::from("joined"),
+            SurfaceName::from("joined_by_hand"),
+        ),
+    );
+}
+
+#[test]
+fn an_exit_commutes_through_a_fork_s_parent_and_an_offer_s_arms()
+{
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/an-exit-commutes-through-a-fork-s-parent-and-an-offer-s-arms.gandr"
+    ));
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    for (written, by_hand) in [("forked", "forked_by_hand"), ("offered", "offered_by_hand")] {
+        assert_same_body(
+            &module,
+            &arena,
+            (SurfaceName::from(written), SurfaceName::from(by_hand)),
+        );
+    }
+}
+
+#[test]
+fn a_drop_is_the_end_action_1054()
+{
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/a-drop-is-the-end-action-1054.gandr"
+    ));
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    assert_same_body(
+        &module,
+        &arena,
+        (SurfaceName::from("dropped"), SurfaceName::from("closed")),
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}

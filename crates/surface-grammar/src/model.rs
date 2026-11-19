@@ -1,0 +1,3291 @@
+//! The checked grammar model: sorts, symbols, regular expressions over them,
+//! rules, the named precedence table, the refusal vocabulary, and [`Pbg`],
+//! the grammar that exists only once its three build-time gates have passed.
+//!
+//! # Regex layout
+//!
+//! A `Regex` is one vector of entries in pre-order, each holding its node and
+//! the length of its subtree, so a child is reached by offset and the type
+//! holds no pointer to its own type. `view` borrows a subtree and `shape` reads
+//! it one level deep; every walk over a form is an explicit work list.
+//!
+//! - Alternatives: a recursive enum with boxed children reads more directly,
+//!   but owns a pointer to its own type, which the workspace lint policy
+//!   refuses, and its natural walks and its drop recurse.
+//! - Reversal: a consumer that edits forms in place, which this layout turns
+//!   into a copy.
+//!
+//! # Successor runs and dense membership flags
+//!
+//! The table keeps same-form adjacency as one list of `(left, right)` pairs
+//! sorted by left then right, and form membership as the sorted `form_first`
+//! and `form_last` lists. The parser asks four questions of them on every
+//! candidate of every token: does this mold continue that one, what are this
+//! mold's successors, is it a form's first tile, does it end its form or
+//! require a tail. Answered by search, those questions are the molder's largest
+//! self-time cost. The build therefore also lays down, per mold, the start of
+//! its run in the pair list, and three dense flags for first, completing-last
+//! and required-tail. `Pbg::mold_successors` reads a run in constant time,
+//! `Pbg::molds_adjacent` searches only that run, and the membership queries
+//! read a flag. The lists stay the record and the fingerprint does not change:
+//! the run starts and flags are computed from them, and
+//! `tests::walk::form_membership_flags_agree_with_their_lists` checks every
+//! built-in mold, and the first id past the table, against them.
+//!
+//! - Alternatives: a hash set of pairs costs a hasher and `std`; a dense
+//!   mold-by-mold bit matrix is quadratic in a table of over two thousand
+//!   molds.
+//! - Reversal: a grammar whose successor runs grow long enough that a per-run
+//!   search costs more than the list search did.
+//!
+//! # A lookup builds its refusal only on a miss
+//!
+//! The lookups by mold and context id — `Pbg::mold`, `Pbg::bounds`, `Pbg::step`
+//! and `Pbg::rule_of` — run on every candidate of every token and almost never
+//! miss. `PbgError` has a variant that owns a vector, so a refusal built
+//! eagerly and dropped on the hit path (`Option::ok_or`) would run the error's
+//! drop glue on every call. Each lookup matches on the hit and builds the
+//! refusal in the miss arm; `RoleTable::role_of` and `PrecTable::prec` take the
+//! same shape.
+//!
+//! - Alternatives: `ok_or_else` is the same code behind a closure the lint wall
+//!   flags as needless for a variant of plain fields; making `PbgError`
+//!   trivially droppable would move its owned diagnostics behind indices into a
+//!   side table.
+//! - Reversal: a `PbgError` with no owning variant has no drop glue, and the
+//!   eager form costs nothing again.
+//!
+//! # Fingerprint
+//!
+//! `Pbg::fingerprint` is 64-bit FNV-1a over the frame byte `M`, the precedence
+//! DAG's fingerprint, the mold count, each mold as its label, a zero byte, its
+//! context, its group and its sort tag, then the context count and each context
+//! as its two sort-facing bytes and its two step lists — a list as its length,
+//! then each step as `S` and a sort tag or `T`, a label and a zero byte. Words
+//! are little-endian and counts 64-bit, so the value is the same on every
+//! platform. The accumulator is the shared `Fnv64` of `gandr-theory-graphs`. A
+//! fingerprint keys a cache and is no proof of equality.
+
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::borrow::Borrow;
+use core::error::Error;
+use core::fmt::Display;
+use core::fmt::Formatter;
+use core::fmt::Result as FmtResult;
+
+use anodized::spec;
+use gandr_surface_syntax::ClosingClass;
+use gandr_surface_syntax::GrammarFingerprint;
+use gandr_surface_syntax::GroutSort;
+use gandr_surface_syntax::MoldId;
+use gandr_theory_graphs::Bound;
+use gandr_theory_graphs::Dir;
+use gandr_theory_graphs::Fnv64;
+use gandr_theory_graphs::Prec;
+use gandr_theory_graphs::PrecDag;
+use gandr_theory_graphs::PrecDagError;
+use gandr_theory_graphs::PrecSpecError;
+use gandr_theory_graphs::WalkBuildError;
+
+use crate::automaton::MoldSet;
+use crate::automaton::Observation;
+use crate::automaton::TileAutomaton;
+use crate::automaton::TileKind;
+use crate::automaton::TileSet;
+use crate::automaton::TileTableBytes;
+use crate::check::validate_assumption_3;
+use crate::check::validate_operator_form;
+use crate::mold::FrozenTable;
+use crate::mold::HoleFollows;
+use crate::mold::LabelFollowsForm;
+use crate::mold::LabelId;
+use crate::mold::MoldDef;
+use crate::mold::MoldHasPredecessor;
+use crate::mold::MoldHasRequiredTail;
+use crate::mold::MoldHasSuccessor;
+use crate::mold::MoldIsFormFirst;
+use crate::mold::MoldIsFormLast;
+use crate::mold::MoldTable;
+use crate::mold::MoldsAdjacent;
+use crate::mold::RCtxId;
+use crate::mold::RCtxStep;
+use crate::parity::NamedKind;
+
+/// Defines a transparent static-text identity with `AsRef<str>`,
+/// `Borrow<str>` and `Display`, so a consumer compares, keys and prints it
+/// without unpacking it.
+macro_rules! static_text_wrapper {
+    ($name:ident, $doc:literal) => {
+        #[doc = $doc]
+        #[repr(transparent)]
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub struct $name(pub &'static str);
+
+        impl AsRef<str> for $name
+        {
+            /// Borrows the text.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn as_ref(&self) -> &str
+            {
+                self.0
+            }
+        }
+
+        impl Borrow<str> for $name
+        {
+            /// Borrows the text, so a map keyed by this type is probed with a
+            /// `&str`.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn borrow(&self) -> &str
+            {
+                self.0
+            }
+        }
+
+        impl Display for $name
+        {
+            /// Writes the text.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn fmt(
+                &self,
+                f: &mut Formatter<'_>,
+            ) -> FmtResult
+            {
+                f.write_str(self.0)
+            }
+        }
+    };
+}
+
+static_text_wrapper!(RuleName, "The identity of one grammar rule.");
+static_text_wrapper!(
+    TileLabel,
+    "The label of one tile: the token class a lexer emits for it."
+);
+static_text_wrapper!(
+    Provenance,
+    "The named node kind a rule realises: a tree-sitter named kind, or a kind only this grammar has."
+);
+static_text_wrapper!(PrecName, "The name of one precedence group.");
+static_text_wrapper!(
+    SurfaceForm,
+    "The surface form an adaptation record documents."
+);
+static_text_wrapper!(
+    AdaptationReason,
+    "Why a rule's shape departs from the surface form it realises."
+);
+static_text_wrapper!(SortName, "The display name of one grammar sort.");
+
+/// A label as a token spells it, declared by the grammar or not;
+/// [`Pbg::tile_label`] resolves it to the declared [`TileLabel`].
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct LabelText<'text>(pub &'text str);
+
+/// How many molds a grammar declares.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MoldCount(pub usize);
+
+/// Whether a precedence table names a group.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct PrecPresence(pub bool);
+
+/// How many molds one tile label can take.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CandidateCount(pub usize);
+
+/// A grammar sort: the closed set of things a hole can stand for.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Sort
+{
+    /// A top-level item.
+    Item,
+    /// A pattern.
+    Pattern,
+    /// An expression.
+    Expression,
+    /// A type.
+    Type,
+    /// A resident of an instantiation slot.
+    Instantiation,
+    /// A member of a module body.
+    ///
+    /// Module members have a sort of their own so a nested module holds
+    /// members of the same sort by reference, which is the only recursion a
+    /// precedence-bounded grammar has: rules recur through sorts, never through
+    /// rule names. Nesting is unbounded and costs one rule.
+    ModuleMember,
+    /// A block of statements, `{ s… e }`.
+    ///
+    /// Every form whose body is a block holds it by reference, so a statement
+    /// alternative is molded once for the block rather than once per form
+    /// that opens one.
+    Block,
+}
+
+impl Sort
+{
+    /// Names the sort's grout tag.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the tags are `0` to `6` in declaration order, and
+    ///   [`try_from_tag`](Self::try_from_tag) reads each back to its sort.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For all seven sorts, L2 exhaustive tag observations catch
+    ///   reordered, aliased or shifted discriminants; decoding rejection beyond
+    ///   the closed set is checked separately.
+    /// - witness: `tests::surface::sort_decode_contract`
+    #[spec(ensures: |ret| u16::from(ret) == match self { Self::Item => 0, Self::Pattern => 1, Self::Expression => 2, Self::Type => 3, Self::Instantiation => 4, Self::ModuleMember => 5, Self::Block => 6 })]
+    #[inline]
+    #[must_use]
+    pub fn grout_sort(self) -> GroutSort
+    {
+        GroutSort::from(match self {
+            Self::Item => 0_u16,
+            Self::Pattern => 1,
+            Self::Expression => 2,
+            Self::Type => 3,
+            Self::Instantiation => 4,
+            Self::ModuleMember => 5,
+            Self::Block => 6,
+        })
+    }
+
+    /// Names the sort for display.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn name(self) -> SortName
+    {
+        match self {
+            Self::Item => SortName("item"),
+            Self::Pattern => SortName("pattern"),
+            Self::Expression => SortName("expression"),
+            Self::Type => SortName("type"),
+            Self::Instantiation => SortName("instantiation"),
+            Self::ModuleMember => SortName("module_member"),
+            Self::Block => SortName("block"),
+        }
+    }
+
+    /// Reads a grout tag back as its sort.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the sort whose [`grout_sort`](Self::grout_sort) is
+    ///   `sort`.
+    /// - provides: the checked boundary from a tree's grout back to the
+    ///   grammar's sorts.
+    /// - fails: a tag no sort carries.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`PbgError::InvalidSort`] for a tag past the closed set.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For the seven legal tags and the first illegal tag, L3
+    ///   boundary observations catch missing sorts, swapped tags and mistaken
+    ///   acceptance; larger rejected tags are not individually enumerated.
+    /// - witness: `tests::surface::sort_decode_contract`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, PbgError::InvalidSort { sort: rejected } if *rejected == sort) && u16::from(sort) > 6, |decoded| decoded.grout_sort() == sort))]
+    #[inline]
+    pub fn try_from_tag(sort: GroutSort) -> Result<Self, PbgError>
+    {
+        match u16::from(sort) {
+            0 => Ok(Self::Item),
+            1 => Ok(Self::Pattern),
+            2 => Ok(Self::Expression),
+            3 => Ok(Self::Type),
+            4 => Ok(Self::Instantiation),
+            5 => Ok(Self::ModuleMember),
+            6 => Ok(Self::Block),
+            _ => Err(PbgError::InvalidSort { sort }),
+        }
+    }
+}
+
+/// A terminal tile, declared by label alone: its mold — context,
+/// precedence and sort — is assigned per occurrence when the grammar is built.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Tile
+{
+    /// The tile's label.
+    pub label: &'static str,
+}
+
+impl Tile
+{
+    /// Declares a tile by its label.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(label: TileLabel) -> Self
+    {
+        Self { label: label.0 }
+    }
+}
+
+/// One symbol of a regular grammar expression.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum Sym
+{
+    /// A hole of a grammar sort.
+    Sort(Sort),
+    /// A terminal tile.
+    Tile(Tile),
+}
+
+/// How many children a composite regular-expression node has.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RegexArity(usize);
+
+/// How many layout entries a regular-expression subtree spans, its root
+/// included.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RegexExtent(usize);
+
+/// One node of a [`Regex`]'s pre-order layout.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RegexNode
+{
+    /// The empty sequence.
+    Empty,
+    /// One symbol.
+    Sym(Sym),
+    /// A concatenation of the next `arity` subtrees.
+    Seq(RegexArity),
+    /// An alternation of the next `arity` subtrees.
+    Alt(RegexArity),
+    /// The next subtree, or nothing.
+    Optional,
+    /// Zero or more of the next subtree.
+    Repeat,
+}
+
+/// One layout entry: a node and the extent of the subtree it roots.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RegexEntry
+{
+    /// The node.
+    node: RegexNode,
+    /// The extent of the subtree the node roots.
+    extent: RegexExtent,
+}
+
+/// Which composite a [`Regex::composite`] call builds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Composite
+{
+    /// A concatenation.
+    Seq,
+    /// An alternation.
+    Alt,
+}
+
+/// A regular expression over grammar symbols.
+///
+/// The expression is stored flat, in pre-order: each node records the extent
+/// of its subtree, so a child is reached by offset and the type owns no path
+/// back to itself. [`view`](Self::view) reads it back as a tree.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Regex
+{
+    /// The layout, root first.
+    entries: Vec<RegexEntry>,
+}
+
+impl Regex
+{
+    /// Builds a one-node expression.
+    ///
+    /// # Specification
+    /// - requires: the node is empty or a single symbol, not a composite.
+    /// - ensures: the layout has exactly that node with extent one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For empty, tile and sort leaves inside a nested
+    ///   expression, L3 shape observations catch the wrong leaf kind or extent;
+    ///   malformed composite leaves are excluded by the precondition.
+    /// - witness: `tests::regex::nested_shapes_read_back_as_built`
+    #[spec(requires: matches!(node, RegexNode::Empty | RegexNode::Sym(_)), ensures: |ret| ret.entries.len() == 1 && ret.entries.first().is_some_and(|root| root.node == node && root.extent.0 == 1))]
+    fn leaf(node: RegexNode) -> Self
+    {
+        Self {
+            entries: vec![RegexEntry {
+                node,
+                extent: RegexExtent(1),
+            }],
+        }
+    }
+
+    /// Builds a concatenation or an alternation of `items`, in order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the root records the item count and the whole extent, and
+    ///   each item's layout follows it unchanged, in order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For finite constructor-built children, L3 nested and
+    ///   empty-composite shape observations catch wrong root kinds, extents and
+    ///   child order; the predicate checks root kind and extent, not the
+    ///   consumed input stream.
+    /// - witness: `tests::regex::nested_shapes_read_back_as_built`
+    /// - witness: `tests::regex::empty_alternation_stays_distinct_from_empty_sequence`
+    #[spec(ensures: |ret| ret.entries.first().is_some_and(|root| root.extent.0 == ret.entries.len() && matches!((kind, root.node), (Composite::Seq, RegexNode::Seq(_)) | (Composite::Alt, RegexNode::Alt(_)))))]
+    fn composite<I>(
+        kind: Composite,
+        items: I,
+    ) -> Self
+    where
+        I: IntoIterator<Item = Self>,
+    {
+        let mut entries = vec![RegexEntry {
+            node: RegexNode::Empty,
+            extent: RegexExtent(1),
+        }];
+        let mut arity = 0_usize;
+        for item in items {
+            entries.extend(item.entries);
+            arity = arity.saturating_add(1);
+        }
+        let extent = RegexExtent(entries.len());
+        let node = match kind {
+            Composite::Seq => RegexNode::Seq(RegexArity(arity)),
+            Composite::Alt => RegexNode::Alt(RegexArity(arity)),
+        };
+        if let Some(root) = entries.first_mut() {
+            *root = RegexEntry { node, extent };
+        }
+        Self { entries }
+    }
+
+    /// Wraps `inner` under a one-child node.
+    ///
+    /// # Specification
+    /// - requires: `node` is [`RegexNode::Optional`] or [`RegexNode::Repeat`].
+    /// - ensures: the root is `node` with the whole extent, and `inner`'s
+    ///   layout follows it unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For optional and repeated constructor-built subtrees, L3
+    ///   nested shape observations catch the wrong wrapper or lost child; the
+    ///   precondition rejects another node class, while the postcondition
+    ///   checks extent without copying the consumed child.
+    /// - witness: `tests::regex::nested_shapes_read_back_as_built`
+    #[spec(requires: matches!(node, RegexNode::Optional | RegexNode::Repeat), captures: inner_len = inner.entries.len(), ensures: |ret| ret.entries.len() == inner_len.saturating_add(1) && ret.entries.first().is_some_and(|root| root.node == node && root.extent.0 == ret.entries.len()))]
+    fn wrap(
+        node: RegexNode,
+        inner: Self,
+    ) -> Self
+    {
+        let mut entries = Vec::with_capacity(inner.entries.len().saturating_add(1));
+        entries.push(RegexEntry {
+            node,
+            extent: RegexExtent(inner.entries.len().saturating_add(1)),
+        });
+        entries.extend(inner.entries);
+        Self { entries }
+    }
+
+    /// The empty sequence.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn empty() -> Self
+    {
+        Self::leaf(RegexNode::Empty)
+    }
+
+    /// A hole of `sort`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn sort(sort: Sort) -> Self
+    {
+        Self::leaf(RegexNode::Sym(Sym::Sort(sort)))
+    }
+
+    /// A tile labelled `label`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn tile(label: TileLabel) -> Self
+    {
+        Self::leaf(RegexNode::Sym(Sym::Tile(Tile::new(label))))
+    }
+
+    /// The concatenation of `items`, in order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`view`](Self::view) reads back a sequence of `items`, in
+    ///   order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For finite nested and empty sequences, L3 shape
+    ///   observations catch reordered or missing children and a wrong root
+    ///   kind; they do not enumerate arbitrary consumed iterators.
+    /// - witness: `tests::regex::nested_shapes_read_back_as_built`
+    #[spec(ensures: |ret| ret.entries.first().is_some_and(|root| matches!(root.node, RegexNode::Seq(_)) && root.extent.0 == ret.entries.len()))]
+    #[inline]
+    #[must_use]
+    pub fn seq<I>(items: I) -> Self
+    where
+        I: IntoIterator<Item = Self>,
+    {
+        Self::composite(Composite::Seq, items)
+    }
+
+    /// The alternation of `items`, in order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`view`](Self::view) reads back an alternation of `items`, in
+    ///   order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For nested, empty and multi-branch alternatives, L3 shape
+    ///   observations catch branch loss, reordering and confusion with an empty
+    ///   sequence; arbitrary consumed iterators are outside this finite census.
+    /// - witness: `tests::regex::nested_shapes_read_back_as_built`
+    /// - witness: `tests::regex::empty_alternation_stays_distinct_from_empty_sequence`
+    #[spec(ensures: |ret| ret.entries.first().is_some_and(|root| matches!(root.node, RegexNode::Alt(_)) && root.extent.0 == ret.entries.len()))]
+    #[inline]
+    #[must_use]
+    pub fn alt<I>(items: I) -> Self
+    where
+        I: IntoIterator<Item = Self>,
+    {
+        Self::composite(Composite::Alt, items)
+    }
+
+    /// `inner`, or nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn optional(inner: Self) -> Self
+    {
+        Self::wrap(RegexNode::Optional, inner)
+    }
+
+    /// Zero or more of `inner`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn repeat(inner: Self) -> Self
+    {
+        Self::wrap(RegexNode::Repeat, inner)
+    }
+
+    /// Reads the expression as a tree.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn view(&self) -> RegexView<'_>
+    {
+        RegexView {
+            entries: &self.entries,
+        }
+    }
+
+    /// The expression's top-level alternatives: the branches of a root
+    /// alternation, or the whole expression otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a root alternation yields its branches in order; any other
+    ///   root yields the expression alone.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For root alternatives, other root kinds and empty
+    ///   alternatives, L3 grouped-form observations catch flattening at the
+    ///   wrong depth and reordered or dropped branches; no language-equivalence
+    ///   claim is made.
+    /// - witness: `tests::pbg::grouped_forms_preserve_branch_and_rule_order`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies every entry into the branches once; the check compares each once"
+        )
+    )]
+    #[spec(ensures: |ret| match self.entries.first().map(|root| root.node) { Some(RegexNode::Alt(arity)) => ret.len() == arity.0 && ret.iter().flat_map(|branch| branch.entries.iter()).eq(self.entries.iter().skip(1)), _ => ret.as_slice() == core::slice::from_ref(self) })]
+    pub(crate) fn alternatives(&self) -> Vec<Self>
+    {
+        match self.view().shape() {
+            RegexShape::Alt(items) => items.into_iter().map(RegexView::to_regex).collect(),
+            RegexShape::Empty
+            | RegexShape::Sym(_)
+            | RegexShape::Seq(_)
+            | RegexShape::Optional(_)
+            | RegexShape::Repeat(_) => vec![self.clone()],
+        }
+    }
+}
+
+/// A borrowed subtree of a [`Regex`].
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RegexView<'regex>
+{
+    /// The subtree's layout, root first.
+    entries: &'regex [RegexEntry],
+}
+
+/// The root of a [`RegexView`] with its children as views.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RegexShape<'regex>
+{
+    /// The empty sequence.
+    Empty,
+    /// One symbol.
+    Sym(Sym),
+    /// A concatenation, children in order.
+    Seq(Vec<RegexView<'regex>>),
+    /// An alternation, branches in order.
+    Alt(Vec<RegexView<'regex>>),
+    /// The child, or nothing.
+    Optional(RegexView<'regex>),
+    /// Zero or more of the child.
+    Repeat(RegexView<'regex>),
+}
+
+impl<'regex> RegexView<'regex>
+{
+    /// Reads the subtree's root and its children.
+    ///
+    /// # Specification
+    /// - requires: nothing; a view's layout is a [`Regex`] subtree by
+    ///   construction.
+    /// - ensures: returns the root node with one view per child, in order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For constructor-built nested expressions and zero-child
+    ///   composites, L3 structural observations catch wrong root tags, child
+    ///   order and subtree boundaries; malformed private layouts are outside
+    ///   the public domain.
+    /// - witness: `tests::regex::nested_shapes_read_back_as_built`
+    #[spec(ensures: |ret| match (self.entries.split_first(), &ret) {
+        (None, &RegexShape::Empty) => true,
+        (Some((root, rest)), shape) => match (root.node, shape) {
+            (RegexNode::Empty, &RegexShape::Empty) => true,
+            (RegexNode::Sym(expected), &RegexShape::Sym(actual)) => expected == actual,
+            (RegexNode::Seq(arity), &RegexShape::Seq(ref items)) | (RegexNode::Alt(arity), &RegexShape::Alt(ref items)) => items.len() == arity.0 && items.iter().flat_map(|child| child.entries.iter()).eq(rest.iter()),
+            (RegexNode::Optional, &RegexShape::Optional(child)) | (RegexNode::Repeat, &RegexShape::Repeat(child)) => child.entries == rest,
+            _ => false,
+        },
+        _ => false,
+    })]
+    #[inline]
+    #[must_use]
+    pub fn shape(self) -> RegexShape<'regex>
+    {
+        let Some((root, rest)) = self.entries.split_first()
+        else {
+            return RegexShape::Empty;
+        };
+        match root.node {
+            RegexNode::Empty => RegexShape::Empty,
+            RegexNode::Sym(sym) => RegexShape::Sym(sym),
+            RegexNode::Seq(arity) => RegexShape::Seq(children(rest, arity)),
+            RegexNode::Alt(arity) => RegexShape::Alt(children(rest, arity)),
+            RegexNode::Optional => RegexShape::Optional(first_child(rest)),
+            RegexNode::Repeat => RegexShape::Repeat(first_child(rest)),
+        }
+    }
+
+    /// Copies the subtree out as an expression of its own.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn to_regex(self) -> Regex
+    {
+        Regex {
+            entries: self.entries.to_vec(),
+        }
+    }
+}
+
+/// Splits the layout after a composite root into its first `arity`
+/// subtrees.
+///
+/// # Specification
+/// - requires: `rest` starts with `arity` consecutive subtrees.
+/// - ensures: returns one view per subtree, in order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For consecutive well-formed subtree layouts, L3 nested and
+///   empty-composite observations catch skipped or merged child spans and
+///   incorrect arity; invalid private layouts are not a supported input.
+/// - witness: `tests::regex::nested_shapes_read_back_as_built`
+/// - witness: `tests::regex::empty_alternation_stays_distinct_from_empty_sequence`
+#[spec(ensures: |ret| ret.len() == arity.0 && ret.iter().all(|view| view.entries.first().is_some_and(|root| root.extent.0 == view.entries.len())))]
+fn children(
+    rest: &[RegexEntry],
+    arity: RegexArity,
+) -> Vec<RegexView<'_>>
+{
+    let mut views = Vec::with_capacity(arity.0);
+    let mut remaining = rest;
+    for _child in 0 .. arity.0 {
+        let Some(first) = remaining.first()
+        else {
+            break;
+        };
+        let (child, tail) = remaining
+            .split_at_checked(first.extent.0)
+            .unwrap_or((remaining, &[]));
+        views.push(RegexView { entries: child });
+        remaining = tail;
+    }
+    views
+}
+
+/// The first subtree of the layout after a one-child root.
+///
+/// # Specification
+/// - requires: `rest` starts with one subtree.
+/// - ensures: returns a view of exactly that subtree.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For a valid leading subtree, L3 nested wrapper observations
+///   catch inclusion of siblings or truncation; the predicate bounds and
+///   measures the first extent, not arbitrary malformed private layouts.
+/// - witness: `tests::regex::nested_shapes_read_back_as_built`
+#[spec(requires: rest.first().is_some_and(|root| root.extent.0 > 0 && root.extent.0 <= rest.len()), ensures: |ret| rest.first().is_some_and(|root| ret.entries.len() == root.extent.0) && core::ptr::eq(ret.entries.as_ptr(), rest.as_ptr()))]
+fn first_child(rest: &[RegexEntry]) -> RegexView<'_>
+{
+    let extent = rest.first().map_or(0, |entry| entry.extent.0);
+    RegexView {
+        entries: rest.get(.. extent).unwrap_or(rest),
+    }
+}
+
+/// The number of the tracker issue that removes an old spelling.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RemovalIssue(pub u32);
+
+/// The spelling that stays in the place of an old one: a rule's name, a
+/// surface form inside a rule, or the text a source writes.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Replacement(pub &'static str);
+
+/// The text that a source writes for an old spelling: the word or the tile a
+/// reader meets.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct OldSpelling(pub &'static str);
+
+/// An old spelling that a source meets as a refusal.
+///
+/// Each arm is one row of the syntax ledger. The row's surface is the tag of
+/// the refusal `RetiredSpelling.<surface>`, and the row's replacement is the
+/// text that the refusal's message offers, so the row and the refusal hold
+/// one string each.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RetiredForm
+{
+    /// A theory member written `shape`, which `boundary` and `face` replace.
+    ShapeMember,
+    /// The unit value written `unit`, which `*{}` replaces.
+    UnitValue,
+    /// A path type written `Path(A, a, b)`, its carrier first.
+    PositionalPathCarrier,
+    /// A bridge type written `Bridge(A, a, b)`, its carrier first.
+    PositionalBridgeCarrier,
+    /// A flow type written `Flow(A, a, b)`, its carrier first.
+    PositionalFlowCarrier,
+    /// A telescope or a record opened by the glued token `#{`, which `*{`
+    /// replaces.
+    ViewTelescope,
+    /// A function type written `A => B` in a type position, which `A -> B`
+    /// replaces.
+    FatArrowBox,
+    /// A record type's fixed fields in a static bracket, `T[.l = v]`, which
+    /// `T.#{.l = v}` replaces.
+    BracketFields,
+    /// A record type's faces in a static bracket, `T[f ↦ v]`, which
+    /// `T.#{f ↦ v}` replaces.
+    BracketFaces,
+    /// A product type written as a list in parentheses, `(A, B)`, outside the
+    /// domain of an arrow and a function's outputs, which `*{A, B}` replaces.
+    ParenthesizedProduct,
+    /// A pattern over a stored product written as a group in parentheses,
+    /// `(p, q)`, which `*{p, q}` replaces. A group still receives a call's
+    /// outputs.
+    ParenthesizedProductPattern,
+    /// A theory operation of no input written `oper c : () --> T`, which the
+    /// constant `oper c : T` replaces.
+    EmptyOperationInputs,
+    /// A theory operation of no input applied to `()` in a term, `c ()`,
+    /// which the constant's bare name `c` replaces.
+    EmptyOperationCall,
+    /// The attribute `native`, which `builtin` replaces: `@[builtin("key")]`
+    /// names a row of the builtin table, a native value among them.
+    NativeAttribute,
+    /// A `builtin` mark whose payload is a bare word, `@[builtin(irPair)]`,
+    /// which the key in quotes replaces: `@[builtin("irPair")]`.
+    BuiltinWord,
+}
+
+impl RetiredForm
+{
+    /// Every retired spelling, in the order of the enum.
+    pub const ALL: [Self; 15] = [
+        Self::ShapeMember,
+        Self::UnitValue,
+        Self::PositionalPathCarrier,
+        Self::PositionalBridgeCarrier,
+        Self::PositionalFlowCarrier,
+        Self::ViewTelescope,
+        Self::FatArrowBox,
+        Self::BracketFields,
+        Self::BracketFaces,
+        Self::ParenthesizedProduct,
+        Self::ParenthesizedProductPattern,
+        Self::EmptyOperationInputs,
+        Self::EmptyOperationCall,
+        Self::NativeAttribute,
+        Self::BuiltinWord,
+    ];
+
+    /// The surface name of the spelling: the row's surface and the tag of its
+    /// refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn surface(self) -> SurfaceForm
+    {
+        SurfaceForm(match self {
+            Self::ShapeMember => "shape_member",
+            Self::UnitValue => "unit_value",
+            Self::PositionalPathCarrier => "positional_path_carrier",
+            Self::PositionalBridgeCarrier => "positional_bridge_carrier",
+            Self::PositionalFlowCarrier => "positional_flow_carrier",
+            Self::ViewTelescope => "view_telescope",
+            Self::FatArrowBox => "fat_arrow_box",
+            Self::BracketFields => "bracket_fields",
+            Self::BracketFaces => "bracket_faces",
+            Self::ParenthesizedProduct => "parenthesized_product",
+            Self::ParenthesizedProductPattern => "parenthesized_product_pattern",
+            Self::EmptyOperationInputs => "empty_operation_inputs",
+            Self::EmptyOperationCall => "empty_operation_call",
+            Self::NativeAttribute => "native_attribute",
+            Self::BuiltinWord => "builtin_word",
+        })
+    }
+
+    /// The spelling that stays, as a source writes it: the row's
+    /// replacement and the text the refusal's message offers.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn replaced_by(self) -> Replacement
+    {
+        Replacement(match self {
+            Self::ShapeMember => "boundary B {…}; face f = {…}",
+            Self::UnitValue => "*{}",
+            Self::PositionalPathCarrier => "Path[.A = A](a, b)",
+            Self::PositionalBridgeCarrier => "Bridge[.A = A](a, b)",
+            Self::PositionalFlowCarrier => "Flow[.A = A](a, b)",
+            Self::ViewTelescope => "*{ … }",
+            Self::FatArrowBox => "A -> B",
+            Self::BracketFields => "T.#{.l = v}",
+            Self::BracketFaces => "T.#{f ↦ v}",
+            Self::ParenthesizedProduct => "*{A, B}",
+            Self::ParenthesizedProductPattern => "*{p, q}",
+            Self::EmptyOperationInputs => "oper c : T",
+            Self::EmptyOperationCall => "c",
+            Self::NativeAttribute => "builtin",
+            Self::BuiltinWord => "builtin(\"key\")",
+        })
+    }
+
+    /// The old spelling as a source writes it: the word or the tile a reader
+    /// meets.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn written(self) -> OldSpelling
+    {
+        OldSpelling(match self {
+            Self::ShapeMember => "shape",
+            Self::UnitValue => "unit",
+            Self::PositionalPathCarrier => "Path",
+            Self::PositionalBridgeCarrier => "Bridge",
+            Self::PositionalFlowCarrier => "Flow",
+            Self::ViewTelescope => "#{",
+            Self::FatArrowBox => "=>",
+            Self::BracketFields => "[.",
+            Self::BracketFaces => "↦",
+            Self::ParenthesizedProduct => "(A, B)",
+            Self::ParenthesizedProductPattern => "(p, q)",
+            Self::EmptyOperationInputs | Self::EmptyOperationCall => "()",
+            Self::NativeAttribute => "native",
+            Self::BuiltinWord => "builtin(key)",
+        })
+    }
+}
+
+/// Whether an adaptation records an old spelling, and how far its removal
+/// stands.
+///
+/// An old spelling that the grammar still parses names the open issue that
+/// removes it: `ledger:syntax` writes the mark, and `check:ledger` refuses a
+/// mark whose issue does not stand open. An old spelling that the parser or
+/// the lowering refuses is a retired form: the mark stays, so a later change
+/// that reads the spelling again meets the exemplar that states the refusal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Removal
+{
+    /// The adaptation keeps a shape that the surface keeps.
+    Kept,
+    /// The grammar still parses the old spelling: this issue removes it, and
+    /// the replacement stays.
+    By(RemovalIssue, Replacement),
+    /// A source that writes the old spelling meets the refusal of this
+    /// retired form.
+    Refused(RetiredForm),
+}
+
+/// An adaptation record: where a rule's shape departs from the surface form
+/// it realises, and why.
+///
+/// The parser never reads it. The syntax ledger writes each record of an old
+/// spelling, with the spelling that replaces it and how far its removal
+/// stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Adaptation
+{
+    /// The rule the record belongs to.
+    pub rule: &'static str,
+    /// The surface form the record documents.
+    pub surface: &'static str,
+    /// Why the shape departs.
+    pub reason: &'static str,
+    /// Whether the record keeps an old spelling, and how far its removal
+    /// stands.
+    pub removal: Removal,
+}
+
+impl Adaptation
+{
+    /// Records an adaptation of a shape that the surface keeps.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        rule: RuleName,
+        surface: SurfaceForm,
+        reason: AdaptationReason,
+    ) -> Self
+    {
+        Self {
+            rule: rule.0,
+            surface: surface.0,
+            reason: reason.0,
+            removal: Removal::Kept,
+        }
+    }
+
+    /// Records an old spelling that the grammar still parses, the spelling
+    /// that replaces it, and the issue that removes it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn superseded(
+        rule: RuleName,
+        surface: SurfaceForm,
+        reason: AdaptationReason,
+        (replaced_by, removal): (Replacement, RemovalIssue),
+    ) -> Self
+    {
+        Self {
+            rule: rule.0,
+            surface: surface.0,
+            reason: reason.0,
+            removal: Removal::By(removal, replaced_by),
+        }
+    }
+
+    /// Records an old spelling that a source meets as a refusal. The retired
+    /// form gives the record its surface, its replacement and its refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn refused(
+        rule: RuleName,
+        form: RetiredForm,
+        reason: AdaptationReason,
+    ) -> Self
+    {
+        Self {
+            rule: rule.0,
+            surface: form.surface().0,
+            reason: reason.0,
+            removal: Removal::Refused(form),
+        }
+    }
+}
+
+/// What a rule whose form opens on its left operand takes there.
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+pub enum LeftOperand
+{
+    /// Any whole operand of the rule's operand sort.
+    #[default]
+    Any,
+    /// A name: a lone tile, or the rule's own form over a name, `M.N.T`. A
+    /// whole form over other tiles, as a lone `Path`, is no left operand.
+    Name,
+}
+
+/// One grammar rule: a named form of one sort at one precedence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Rule
+{
+    /// The rule's identity, unique in its grammar.
+    pub name: &'static str,
+    /// The sort the rule's form produces.
+    pub sort: Sort,
+    /// The precedence group of the rule's form.
+    pub prec: Prec,
+    /// The rule's form.
+    pub regex: Regex,
+    /// The named node kind the rule realises.
+    pub provenance: &'static str,
+    /// Adaptation records, audit data only.
+    pub adaptations: Vec<Adaptation>,
+    /// The sort of the operands that the rule's form takes by juxtaposition,
+    /// `Path a b`, where the form states it and the head's sort does not
+    /// decide it.
+    pub operands: Option<Sort>,
+    /// What the form takes as its left operand, when it opens on one.
+    pub left: LeftOperand,
+}
+
+impl Rule
+{
+    /// Declares a rule whose provenance is its own name.
+    ///
+    /// # Specification
+    /// - requires: nothing; uniqueness of `name` is checked by [`Pbg::build`].
+    /// - ensures: the rule carries no adaptation records.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For checked rules with distinct names and ordered
+    ///   branches, L3 grouped-form and provenance observations catch fabricated
+    ///   adaptation records and name/provenance drift; the finite grammar is
+    ///   not a census of every possible rule body.
+    /// - witness: `tests::pbg::grouped_forms_preserve_branch_and_rule_order`
+    #[spec(ensures: |ret| ret.name == name.0 && ret.provenance == name.0 && ret.sort == sort && ret.prec == prec && ret.adaptations.is_empty())]
+    #[inline]
+    #[must_use]
+    pub fn new(
+        name: RuleName,
+        sort: Sort,
+        prec: Prec,
+        regex: Regex,
+    ) -> Self
+    {
+        Self {
+            provenance: name.0,
+            name: name.0,
+            sort,
+            prec,
+            regex,
+            adaptations: Vec::new(),
+            operands: None,
+            left: LeftOperand::Any,
+        }
+    }
+
+    /// Declares a rule with an explicit provenance.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_provenance(
+        name: RuleName,
+        provenance: Provenance,
+        sort: Sort,
+        prec: Prec,
+        regex: Regex,
+    ) -> Self
+    {
+        Self {
+            name: name.0,
+            sort,
+            prec,
+            regex,
+            provenance: provenance.0,
+            adaptations: Vec::new(),
+            operands: None,
+            left: LeftOperand::Any,
+        }
+    }
+
+    /// Declares a rule, provenance its name, with one adaptation record.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_adaptation(
+        name: RuleName,
+        sort: Sort,
+        prec: Prec,
+        regex: Regex,
+        adaptation: Adaptation,
+    ) -> Self
+    {
+        let mut rule = Self::new(name, sort, prec, regex);
+        rule.adaptations.push(adaptation);
+        rule
+    }
+
+    /// Declares the sort of the operands that the rule's form takes by
+    /// juxtaposition.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_operands(
+        mut self,
+        sort: Sort,
+    ) -> Self
+    {
+        self.operands = Some(sort);
+        self
+    }
+
+    /// Declares what the form takes as its left operand.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn with_left(
+        mut self,
+        left: LeftOperand,
+    ) -> Self
+    {
+        self.left = left;
+        self
+    }
+
+    /// The rule's identity.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn name(&self) -> RuleName
+    {
+        RuleName(self.name)
+    }
+
+    /// The sort the rule produces.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn sort(&self) -> Sort
+    {
+        self.sort
+    }
+
+    /// The rule's precedence group.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn prec(&self) -> Prec
+    {
+        self.prec
+    }
+
+    /// The rule's form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn regex(&self) -> &Regex
+    {
+        &self.regex
+    }
+
+    /// The named node kind the rule realises.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn provenance(&self) -> Provenance
+    {
+        Provenance(self.provenance)
+    }
+
+    /// The rule's adaptation records.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn adaptations(&self) -> &[Adaptation]
+    {
+        &self.adaptations
+    }
+
+    /// The sort of the operands that the rule's form takes by juxtaposition,
+    /// where the form states it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn operands(&self) -> Option<Sort>
+    {
+        self.operands
+    }
+
+    /// What the form takes as its left operand, when it opens on one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn left(&self) -> LeftOperand
+    {
+        self.left
+    }
+}
+
+/// The frame byte that opens a [`RulesDigest`].
+const FRAME_RULES: u8 = b'R';
+
+/// A rule list as one 64-bit FNV-1a word over what a mold table reads of
+/// each rule: its name, sort, precedence group and form.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RulesDigest(pub u64);
+
+impl RulesDigest
+{
+    /// Digests `rules`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: FNV-1a over the frame byte `R` and the rule count, then each
+    ///   rule as its name and a zero byte, its sort tag, its group's index and
+    ///   its form's entry count, and each entry of the form in pre-order as a
+    ///   node — `E` empty, `S` and a sort tag, `T`, a label and a zero byte,
+    ///   `Q` or `A` and an arity, `O` optional, `R` repeat — then its extent.
+    ///   Words are little-endian and counts 64-bit, so the digest is the same
+    ///   on every platform.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a rule list and its one-field edits (another name,
+    ///   sort, group, tile label, arity, and two rules swapped) digest apart,
+    ///   and the predicate recomputes the byte stream whole; 64-bit collisions
+    ///   are outside the witness.
+    /// - witness: `model::tests::every_rule_field_a_mold_reads_moves_the_digest`
+    #[spec(ensures: |ret| {
+        let mut stream = vec![FRAME_RULES];
+        stream.extend_from_slice(&u64::try_from(rules.len()).unwrap_or(u64::MAX).to_le_bytes());
+        for rule in rules {
+            stream.extend_from_slice(rule.name.as_bytes());
+            stream.push(0_u8);
+            stream.extend_from_slice(&u16::from(rule.sort.grout_sort()).to_le_bytes());
+            stream.extend_from_slice(&u16::from(rule.prec.index()).to_le_bytes());
+            stream.extend_from_slice(&u64::try_from(rule.regex.entries.len()).unwrap_or(u64::MAX).to_le_bytes());
+            for entry in &rule.regex.entries {
+                match entry.node {
+                    RegexNode::Empty => stream.push(b'E'),
+                    RegexNode::Sym(Sym::Sort(sort)) => { stream.push(b'S'); stream.extend_from_slice(&u16::from(sort.grout_sort()).to_le_bytes()); },
+                    RegexNode::Sym(Sym::Tile(tile)) => { stream.push(b'T'); stream.extend_from_slice(tile.label.as_bytes()); stream.push(0_u8); },
+                    RegexNode::Seq(arity) => { stream.push(b'Q'); stream.extend_from_slice(&u64::try_from(arity.0).unwrap_or(u64::MAX).to_le_bytes()); },
+                    RegexNode::Alt(arity) => { stream.push(b'A'); stream.extend_from_slice(&u64::try_from(arity.0).unwrap_or(u64::MAX).to_le_bytes()); },
+                    RegexNode::Optional => stream.push(b'O'),
+                    RegexNode::Repeat => stream.push(b'R'),
+                }
+                stream.extend_from_slice(&u64::try_from(entry.extent.0).unwrap_or(u64::MAX).to_le_bytes());
+            }
+        }
+        let mut expected = Fnv64::new();
+        expected.write_bytes(stream.as_slice());
+        ret.0 == u64::from(expected.finish())
+    })]
+    pub(crate) fn of(rules: &[Rule]) -> Self
+    {
+        let mut hasher = Fnv64::new();
+        hasher.write_byte(FRAME_RULES);
+        hasher.write_u64(u64::try_from(rules.len()).unwrap_or(u64::MAX));
+        for rule in rules {
+            hasher.write_bytes(rule.name.as_bytes());
+            hasher.write_byte(0_u8);
+            hasher.write_u16(u16::from(rule.sort.grout_sort()));
+            hasher.write_u16(u16::from(rule.prec.index()));
+            hasher.write_u64(u64::try_from(rule.regex.entries.len()).unwrap_or(u64::MAX));
+            for entry in &rule.regex.entries {
+                match entry.node {
+                    RegexNode::Empty => hasher.write_byte(b'E'),
+                    RegexNode::Sym(Sym::Sort(sort)) => {
+                        hasher.write_byte(b'S');
+                        hasher.write_u16(u16::from(sort.grout_sort()));
+                    },
+                    RegexNode::Sym(Sym::Tile(tile)) => {
+                        hasher.write_byte(b'T');
+                        hasher.write_bytes(tile.label.as_bytes());
+                        hasher.write_byte(0_u8);
+                    },
+                    RegexNode::Seq(arity) => {
+                        hasher.write_byte(b'Q');
+                        hasher.write_u64(u64::try_from(arity.0).unwrap_or(u64::MAX));
+                    },
+                    RegexNode::Alt(arity) => {
+                        hasher.write_byte(b'A');
+                        hasher.write_u64(u64::try_from(arity.0).unwrap_or(u64::MAX));
+                    },
+                    RegexNode::Optional => hasher.write_byte(b'O'),
+                    RegexNode::Repeat => hasher.write_byte(b'R'),
+                }
+                hasher.write_u64(u64::try_from(entry.extent.0).unwrap_or(u64::MAX));
+            }
+        }
+        Self(u64::from(hasher.finish()))
+    }
+}
+
+/// A built precedence DAG with its groups' names.
+#[derive(Clone, Debug)]
+pub struct PrecTable
+{
+    /// The DAG.
+    dag: PrecDag,
+    /// Each group's name and identity.
+    names: BTreeMap<PrecName, Prec>,
+}
+
+impl PrecTable
+{
+    /// Pairs a DAG with its groups' names.
+    ///
+    /// # Specification
+    /// - requires: every pair names a group of `dag`.
+    /// - ensures: [`get`](Self::get) answers each name with its group.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For a DAG whose supplied names reference its groups, L3
+    ///   built-in group observations catch foreign identities and name
+    ///   association errors; the predicate validates stored identities without
+    ///   replaying or copying the consumed name iterator.
+    /// - witness: `tests::surface::built_in_precedence_bands_are_exact`
+    #[spec(ensures: |ret| ret.names.values().all(|&prec| ret.dag.name(prec).is_some()))]
+    #[inline]
+    #[must_use]
+    pub fn new<I>(
+        dag: PrecDag,
+        names: I,
+    ) -> Self
+    where
+        I: IntoIterator<Item = (PrecName, Prec)>,
+    {
+        Self {
+            dag,
+            names: names.into_iter().collect(),
+        }
+    }
+
+    /// The DAG.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn dag(&self) -> &PrecDag
+    {
+        &self.dag
+    }
+
+    /// Releases the DAG.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn into_dag(self) -> PrecDag
+    {
+        self.dag
+    }
+
+    /// Whether `prec` names a group of the DAG.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn contains(
+        &self,
+        prec: Prec,
+    ) -> PrecPresence
+    {
+        PrecPresence(self.dag.name(prec).is_some())
+    }
+
+    /// Looks up a group by name.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn get(
+        &self,
+        name: PrecName,
+    ) -> Option<Prec>
+    {
+        self.names.get(name.as_ref()).copied()
+    }
+
+    /// Looks up a group by name, refusing an unknown one by name.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the group `name` names.
+    /// - provides: the checked lookup the built-in rule assemblies use.
+    /// - fails: a name the table does not hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`PbgError::MissingPrec`] naming the absent group.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For the finite built-in name table and an absent name, L3
+    ///   exact lookup observations catch swapped identities and fabricated
+    ///   acceptance or refusal; arbitrary user-supplied alias maps are outside
+    ///   that census.
+    /// - witness: `tests::surface::built_in_precedence_bands_are_exact`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(|error| !self.names.contains_key(name.0) && matches!(error, PbgError::MissingPrec { name: missing } if *missing == name.0), |prec| self.names.get(name.0) == Some(prec)))]
+    #[inline]
+    pub fn prec(
+        &self,
+        name: PrecName,
+    ) -> Result<Prec, PbgError>
+    {
+        self.get(name).ok_or(PbgError::MissingPrec { name: name.0 })
+    }
+}
+
+/// Every refusal of grammar construction and lookup.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PbgError
+{
+    /// A grout tag no sort carries.
+    InvalidSort
+    {
+        /// The tag.
+        sort: GroutSort,
+    },
+    /// A precedence group name the table does not hold.
+    MissingPrec
+    {
+        /// The name.
+        name: &'static str,
+    },
+    /// The precedence specification refused a group or an edge.
+    PrecedenceSpec(PrecSpecError),
+    /// The precedence relation is cyclic.
+    PrecedenceCycle
+    {
+        /// The groups on the cycle, by name, closed.
+        witness: Vec<&'static str>,
+    },
+    /// The precedence DAG refused its specification for a reason other than
+    /// a cycle.
+    PrecedenceDag(PrecDagError),
+    /// The walk index refused a walk.
+    Walk(WalkBuildError),
+    /// A rule names a precedence group the DAG does not hold.
+    InvalidPrec
+    {
+        /// The rule.
+        rule: &'static str,
+        /// The group.
+        prec: Prec,
+    },
+    /// Two rules share a name.
+    DuplicateRule
+    {
+        /// The name.
+        name: &'static str,
+    },
+    /// A rule's form can put two holes side by side (the Operator Form gate).
+    AdjacentSorts
+    {
+        /// The rule.
+        rule: &'static str,
+        /// The sort of the left hole.
+        left: Sort,
+        /// The sort of the right hole.
+        right: Sort,
+    },
+    /// Two tile occurrences share a label and a context (the Unique Tiles
+    /// gate).
+    DuplicateTile
+    {
+        /// The label.
+        label: &'static str,
+        /// The sort of the second occurrence's form.
+        sort: Sort,
+        /// The precedence of the second occurrence's form.
+        prec: Prec,
+        /// The rule of the first occurrence.
+        first_rule: &'static str,
+        /// The rule of the second occurrence.
+        second_rule: &'static str,
+    },
+    /// Two distinct sorts can each begin and end the other's forms (the
+    /// Assumption 3 gate): `s ∈ FIRST(G(r, p))` and `r ∈ LAST(G(s, q))`.
+    Assumption3Conflict
+    {
+        /// The sort `r`.
+        first_sort: Sort,
+        /// The sort `s`.
+        second_sort: Sort,
+    },
+    /// The mold table outgrew the 32-bit mold identity.
+    MoldOverflow,
+    /// A mold id past the table.
+    UnknownMold
+    {
+        /// The id.
+        id: MoldId,
+    },
+    /// A context id past the table.
+    UnknownRCtx
+    {
+        /// The id.
+        rctx: RCtxId,
+    },
+}
+
+impl Display for PbgError
+{
+    /// Writes the refusal with the values it names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: successful output identifies the refusal and its named
+    ///   values.
+    /// - fails: propagates a formatter write refusal.
+    /// - panics: none.
+    /// - executable: none — the formatter is a write-only sink with no
+    ///   observation of the emitted text or the originating write error.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For representative local refusals and a wrapped precedence
+    ///   error, L3 payload and distinguishability observations catch lost
+    ///   identities; a one-byte sink checks write refusal without pinning
+    ///   prose. Other formatting flags and every payload value are outside the
+    ///   witness.
+    /// - witness: `model::tests::grammar_error_messages_keep_payloads_and_refuse_a_full_sink`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut Formatter<'_>,
+    ) -> FmtResult
+    {
+        match *self {
+            Self::InvalidSort { sort } => {
+                write!(f, "invalid grammar sort tag {}", u16::from(sort))
+            },
+            Self::MissingPrec { name } => write!(f, "missing precedence group {name}"),
+            Self::PrecedenceSpec(ref error) => Display::fmt(error, f),
+            Self::PrecedenceCycle { ref witness } => {
+                f.write_str("precedence cycle")?;
+                for name in witness {
+                    write!(f, " {name}")?;
+                }
+                Ok(())
+            },
+            Self::PrecedenceDag(ref error) => Display::fmt(error, f),
+            Self::Walk(ref error) => Display::fmt(error, f),
+            Self::InvalidPrec { rule, prec } => {
+                write!(f, "rule {rule} names unknown precedence {}", prec.index())
+            },
+            Self::DuplicateRule { name } => write!(f, "duplicate grammar rule {name}"),
+            Self::AdjacentSorts { rule, left, right } => write!(
+                f,
+                "rule {rule} can put a {} hole beside a {} hole",
+                left.name(),
+                right.name()
+            ),
+            Self::DuplicateTile {
+                label,
+                sort,
+                prec,
+                first_rule,
+                second_rule,
+            } => write!(
+                f,
+                "tile {label} at sort {} precedence {} has one context in rules {first_rule} and {second_rule}",
+                sort.name(),
+                prec.index()
+            ),
+            Self::Assumption3Conflict {
+                first_sort,
+                second_sort,
+            } => write!(
+                f,
+                "assumption 3 conflict: {} begins a form of {} while {} ends a form of {}",
+                second_sort.name(),
+                first_sort.name(),
+                first_sort.name(),
+                second_sort.name()
+            ),
+            Self::MoldOverflow => f.write_str("mold table exceeds the 32-bit mold identity"),
+            Self::UnknownMold { id } => write!(f, "unknown mold id {}", u32::from(id)),
+            Self::UnknownRCtx { rctx } => {
+                write!(f, "unknown context id {}", u32::from(rctx))
+            },
+        }
+    }
+}
+
+impl Error for PbgError
+{
+    /// The wrapped refusal, for the variants that wrap one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a wrapped precedence or walk refusal is the typed source;
+    ///   local refusals have no source.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For a wrapped duplicate-name cause and local refusals, L3
+    ///   typed downcast observations catch a missing, substituted or fabricated
+    ///   source; the predicate covers every wrapper class, but the witness does
+    ///   not enumerate every nested cause.
+    /// - witness: `model::tests::grammar_error_sources_keep_the_original_cause`
+    #[spec(ensures: |ret| match *self {
+            Self::PrecedenceSpec(ref error) => ret.and_then(|source| source.downcast_ref::<PrecSpecError>()) == Some(error),
+            Self::PrecedenceDag(ref error) => ret.and_then(|source| source.downcast_ref::<PrecDagError>()) == Some(error),
+            Self::Walk(ref error) => ret.and_then(|source| source.downcast_ref::<WalkBuildError>()) == Some(error),
+            Self::InvalidSort { .. } | Self::MissingPrec { .. } | Self::PrecedenceCycle { .. } | Self::InvalidPrec { .. } | Self::DuplicateRule { .. } | Self::AdjacentSorts { .. } | Self::DuplicateTile { .. } | Self::Assumption3Conflict { .. } | Self::MoldOverflow | Self::UnknownMold { .. } | Self::UnknownRCtx { .. } => ret.is_none(),
+        })]
+    #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            trait_object,
+            reason = "signature: `Error::source` returns the trait object that `core`'s own signature fixes"
+        )
+    )]
+    fn source(&self) -> Option<&(dyn Error + 'static)>
+    {
+        match *self {
+            Self::PrecedenceSpec(ref error) => Some(error),
+            Self::PrecedenceDag(ref error) => Some(error),
+            Self::Walk(ref error) => Some(error),
+            Self::InvalidSort { .. }
+            | Self::MissingPrec { .. }
+            | Self::PrecedenceCycle { .. }
+            | Self::InvalidPrec { .. }
+            | Self::DuplicateRule { .. }
+            | Self::AdjacentSorts { .. }
+            | Self::DuplicateTile { .. }
+            | Self::Assumption3Conflict { .. }
+            | Self::MoldOverflow
+            | Self::UnknownMold { .. }
+            | Self::UnknownRCtx { .. } => None,
+        }
+    }
+}
+
+impl From<PrecSpecError> for PbgError
+{
+    /// Wraps a precedence-specification refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: PrecSpecError) -> Self
+    {
+        Self::PrecedenceSpec(value)
+    }
+}
+
+impl From<WalkBuildError> for PbgError
+{
+    /// Wraps a walk refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: WalkBuildError) -> Self
+    {
+        Self::Walk(value)
+    }
+}
+
+/// A checked precedence-bounded grammar.
+///
+/// A value exists only once its three gates have passed: no form puts two
+/// holes side by side (Operator Form), no two tile occurrences share a label
+/// and a context (Unique Tiles), and no two sorts can each begin and end the
+/// other's forms (Assumption 3).
+#[derive(Clone, Debug)]
+pub struct Pbg
+{
+    /// The precedence DAG.
+    dag: PrecDag,
+    /// The forms grouped by sort and precedence.
+    forms: BTreeMap<(Sort, Prec), Regex>,
+    /// The rules, in input order.
+    rules: Vec<Rule>,
+    /// The rule names, ascending.
+    rule_names: BTreeSet<RuleName>,
+    /// The adaptation records, in rule order.
+    adaptations: Vec<Adaptation>,
+    /// The mold and context tables.
+    molds: MoldTable,
+    /// The tile automaton's tables, derived from the mold table.
+    automaton: TileAutomaton,
+    /// The mold of juxtaposition's tile between two expressions, `f x`, when
+    /// the grammar has one.
+    application: Option<MoldId>,
+    /// The mold of juxtaposition's tile between two types, `Maybe A`, when
+    /// the grammar has one.
+    type_application: Option<MoldId>,
+}
+
+impl Pbg
+{
+    /// Checks `rules` over `dag` and builds the grammar.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success every rule names a group of `dag`, rule names are
+    ///   unique, and the Operator Form, Unique Tiles and Assumption 3 gates
+    ///   hold; forms are grouped by sort and precedence, alternatives in input
+    ///   order, and each tile occurrence has one mold, numbered in rule order
+    ///   and left to right within a rule.
+    /// - fails: the first violation, checked in that order: headers (unknown
+    ///   precedence, duplicate name) rule by rule, Operator Form rule by rule,
+    ///   Unique Tiles, then Assumption 3.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`PbgError::InvalidPrec`], [`PbgError::DuplicateRule`],
+    /// [`PbgError::AdjacentSorts`], [`PbgError::DuplicateTile`],
+    /// [`PbgError::MoldOverflow`] or [`PbgError::Assumption3Conflict`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: For finite rule lists over checked DAGs, L3 minimal
+    ///   violations and neighboring legal grammars observe error identity,
+    ///   refusal priority and grouped-form order, catching skipped gates or
+    ///   reordered alternatives; mold-id exhaustion and arbitrary deep forms
+    ///   are outside these witnesses.
+    /// - witness: `tests::pbg::pbg_rejects_invalid_prec_before_later_header_errors`
+    /// - witness: `tests::pbg::pbg_rejects_duplicate_rule_names_deterministically`
+    /// - witness: `tests::pbg::pbg_rejects_direct_adjacent_sorts_in_sequence`
+    /// - witness: `tests::pbg::pbg_rejects_adjacency_exposed_by_nullable_sequence_paths`
+    /// - witness: `tests::pbg::pbg_accepts_terminal_separators_between_sort_uses`
+    /// - witness: `tests::pbg::pbg_rejects_duplicate_rctx_tile`
+    /// - witness: `tests::pbg::pbg_accepts_same_label_at_distinct_contexts`
+    /// - witness: `tests::pbg::assumption_3_contract`
+    /// - witness: `tests::pbg::grouped_forms_preserve_branch_and_rule_order`
+    #[spec(captures: input = (rules.len(), dag.fingerprint()), ensures: |ret| ret.as_ref().map_or_else(
+        |error| matches!(error, PbgError::InvalidPrec { .. } | PbgError::DuplicateRule { .. } | PbgError::AdjacentSorts { .. } | PbgError::DuplicateTile { .. } | PbgError::MoldOverflow | PbgError::Assumption3Conflict { .. }),
+        |pbg| pbg.rules.len() == input.0 && pbg.dag.fingerprint() == input.1 && pbg.rule_names.len() == input.0 && pbg.rules.iter().all(|rule| pbg.dag.name(rule.prec).is_some() && pbg.rule_names.contains(rule.name)) && pbg.adaptations.iter().eq(pbg.rules.iter().flat_map(|rule| rule.adaptations.iter()))))]
+    #[inline]
+    pub fn build(
+        dag: PrecDag,
+        rules: Vec<Rule>,
+    ) -> Result<Self, PbgError>
+    {
+        validate_rule_headers(&dag, &rules)?;
+        for rule in &rules {
+            validate_operator_form(rule)?;
+        }
+        let molds = MoldTable::build(
+            &rules,
+            GrammarFingerprint::from(u64::from(dag.fingerprint())),
+        )?;
+        validate_assumption_3(&rules)?;
+        Ok(Self::assemble(dag, rules, molds))
+    }
+
+    /// Checks `rules` over a table's DAG and builds the grammar.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`build`](Self::build) over `table`'s DAG.
+    /// - fails: as [`build`](Self::build).
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`build`](Self::build).
+    ///
+    /// # Adequacy
+    /// - hypothesis: For a named checked DAG and finite rules, L3 grouped-form
+    ///   observations catch loss of the table identity, rule multiplicity or
+    ///   branch order; the delegated gate refusals are witnessed at the build
+    ///   boundary.
+    /// - witness: `tests::pbg::grouped_forms_preserve_branch_and_rule_order`
+    #[spec(captures: input = (rules.len(), table.dag.fingerprint()), ensures: |ret| ret.as_ref().map_or(true, |pbg| pbg.rules.len() == input.0 && pbg.dag.fingerprint() == input.1 && pbg.rule_names.len() == input.0))]
+    #[inline]
+    pub fn build_table(
+        table: PrecTable,
+        rules: Vec<Rule>,
+    ) -> Result<Self, PbgError>
+    {
+        Self::build(table.into_dag(), rules)
+    }
+
+    /// Builds the grammar of `rules` over a table's DAG from a table frozen
+    /// ahead of time, or through every gate when `rules` do not digest to
+    /// the frozen table's rules.
+    ///
+    /// # Specification
+    /// - requires: `frozen` was frozen from the grammar of the rules it
+    ///   digests, every gate passed.
+    /// - ensures: the grammar [`build_table`](Self::build_table) returns for
+    ///   `table` and `rules`: thawed from `frozen` when its digest is `rules`',
+    ///   built otherwise.
+    /// - fails: as [`build_table`](Self::build_table) when built; as
+    ///   [`MoldTable::thaw`] when thawed.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`build_table`](Self::build_table), or [`PbgError::UnknownMold`],
+    /// [`PbgError::UnknownRCtx`] or [`PbgError::MoldOverflow`] for a frozen
+    /// table that does not fit its own rules.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the built-in surface thawed renders byte-identical to
+    ///   the one built through every gate, and a frozen table whose digest is
+    ///   not the rules' builds them, so a thaw that skipped the digest or a
+    ///   fallback that skipped a gate shows. A digest collision between two
+    ///   rule lists is outside the witnesses.
+    /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+    /// - witness: `surface::tests::a_stale_frozen_table_builds_its_rules`
+    #[spec(captures: input = (rules.len(), table.dag.fingerprint()), ensures: |ret| ret.as_ref().map_or(true, |pbg| pbg.rules.len() == input.0 && pbg.dag.fingerprint() == input.1 && pbg.rule_names.len() == input.0))]
+    pub(crate) fn thawed(
+        table: PrecTable,
+        rules: Vec<Rule>,
+        frozen: &FrozenTable,
+    ) -> Result<Self, PbgError>
+    {
+        if frozen.rules != RulesDigest::of(&rules) {
+            return Self::build_table(table, rules);
+        }
+        let dag = table.into_dag();
+        let molds = MoldTable::thaw(
+            frozen,
+            &rules,
+            GrammarFingerprint::from(u64::from(dag.fingerprint())),
+        )?;
+        Ok(Self::assemble(dag, rules, molds))
+    }
+
+    /// Assembles a grammar from its checked parts: groups the forms and
+    /// collects the rule names and adaptation records.
+    ///
+    /// # Specification
+    /// - requires: `molds` is the mold table of `rules` over `dag`.
+    /// - ensures: the forms grouped by sort and precedence, alternatives in
+    ///   input order; the rule names; the adaptation records in rule order.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the grouped forms, the rule names and the adaptation
+    ///   records, setup
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both the gated build and the thaw assemble here; the
+    ///   grouped-form witness observes branch and rule order, and the
+    ///   frozen-table witness compares the two assemblies whole.
+    /// - witness: `tests::pbg::grouped_forms_preserve_branch_and_rule_order`
+    /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+    ///
+    /// # Cost
+    /// - allocation: the grouped forms, the rule names, the adaptation records
+    ///   and the tile automaton, setup
+    #[spec(captures: count = rules.len(), ensures: |ret| ret.rules.len() == count && ret.rule_names.len() <= count && ret.adaptations.iter().eq(ret.rules.iter().flat_map(|rule| rule.adaptations.iter())))]
+    fn assemble(
+        dag: PrecDag,
+        rules: Vec<Rule>,
+        molds: MoldTable,
+    ) -> Self
+    {
+        let forms = grouped_forms(&rules);
+        let rule_names = rules.iter().map(|rule| RuleName(rule.name)).collect();
+        let adaptations = rules
+            .iter()
+            .flat_map(|rule| rule.adaptations.iter().copied())
+            .collect();
+        let automaton = TileAutomaton::derive(&molds, &rules);
+        let application_in = |sort: Sort| {
+            molds
+                .candidates(TileLabel(crate::surface::APPLICATION))
+                .iter()
+                .copied()
+                .find(|&mold| molds.mold(mold).is_ok_and(|def| def.sort == sort))
+        };
+        let application = application_in(Sort::Expression);
+        let type_application = application_in(Sort::Type);
+        Self {
+            dag,
+            forms,
+            rules,
+            rule_names,
+            adaptations,
+            molds,
+            automaton,
+            application,
+            type_application,
+        }
+    }
+
+    /// Renders the grammar's mold table as the source of a frozen table
+    /// digesting its rules.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`MoldTable::frozen_source`] under the rules' digest.
+    /// - fails: only as the string sink fails.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`core::fmt::Error`] from the sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the built-in surface's rendering is compared with the
+    ///   committed frozen source.
+    /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+    #[cfg(test)]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body renders every mold once; the check counts the molds once"
+        )
+    )]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |source| source.matches("FrozenMold(").count() == self.molds.iter().count()))]
+    pub(crate) fn frozen_source(&self) -> Result<alloc::string::String, core::fmt::Error>
+    {
+        self.molds.frozen_source(RulesDigest::of(&self.rules))
+    }
+
+    /// The precedence DAG.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn dag(&self) -> &PrecDag
+    {
+        &self.dag
+    }
+
+    /// The forms, grouped by sort and precedence: each group one alternation
+    /// of its rules' alternatives, in input order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn forms(&self) -> &BTreeMap<(Sort, Prec), Regex>
+    {
+        &self.forms
+    }
+
+    /// The rules, in input order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn rules(&self) -> &[Rule]
+    {
+        &self.rules
+    }
+
+    /// The rule names, ascending.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn rule_names(&self) -> &BTreeSet<RuleName>
+    {
+        &self.rule_names
+    }
+
+    /// The adaptation records, in rule order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn adaptations(&self) -> &[Adaptation]
+    {
+        &self.adaptations
+    }
+
+    /// The mold `id` names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the mold at `id` in the table.
+    /// - fails: an id past the table.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`PbgError::UnknownMold`] for an id past the table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For a two-mold grammar, L3 first, last and first-past-id
+    ///   observations catch off-by-one acceptance, wrong mold identity and
+    ///   incorrect error payloads; arbitrary huge tables are outside the
+    ///   witness.
+    /// - witness: `tests::walk::mold_lookup_checks_bounds`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(
+        |error| usize::try_from(u32::from(id)).map_or(true, |index| index >= self.molds.len().0) && matches!(error, PbgError::UnknownMold { id: missing } if *missing == id),
+        |mold| self.molds.mold(id).is_ok_and(|expected| core::ptr::eq(core::ptr::from_ref(*mold), core::ptr::from_ref(expected)))))]
+    #[inline]
+    pub fn mold(
+        &self,
+        id: MoldId,
+    ) -> Result<&MoldDef, PbgError>
+    {
+        self.molds.mold(id)
+    }
+
+    /// The rule mold `id` belongs to: the rule whose tile occurrence the mold
+    /// was numbered for.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the rule's sort and precedence are the mold's; molds are
+    ///   numbered in rule order, so ascending ids meet the rules in
+    ///   non-decreasing order.
+    /// - fails: an id past the table.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`PbgError::UnknownMold`] for an id past the table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For all built-in molds and the first invalid id, L2 finite
+    ///   census plus L3 boundary observations catch wrong owner sort,
+    ///   precedence, ordering and refusal payload; arbitrary user grammars are
+    ///   not exhausted.
+    /// - witness: `tests::surface::every_mold_resolves_to_its_rule_and_named_kind`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(
+        |error| self.molds.mold(id).is_err() && matches!(error, PbgError::UnknownMold { id: missing } if *missing == id),
+        |rule| self.molds.mold(id).is_ok_and(|mold| mold.sort == rule.sort && mold.prec == rule.prec) && self.molds.rule_of(&self.rules, id).is_ok_and(|expected| core::ptr::eq(core::ptr::from_ref(*rule), core::ptr::from_ref(expected)))))]
+    #[inline]
+    pub fn rule_of(
+        &self,
+        id: MoldId,
+    ) -> Result<&Rule, PbgError>
+    {
+        self.molds.rule_of(&self.rules, id)
+    }
+
+    /// The named kind the form of mold `id` realises: its rule's
+    /// provenance.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a total function over the mold table — every id in it
+    ///   resolves to the named kind its rule realises, a node kind of the
+    ///   surface's committed inventory or one this grammar adds.
+    /// - provides: the kind a consumer of a molded tree dispatches on, read
+    ///   from the mold a node carries.
+    /// - fails: an id past the table.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`PbgError::UnknownMold`] for an id past the table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For every built-in mold and the first invalid id, L2
+    ///   finite census and L3 boundary observations catch wrong provenance and
+    ///   lost refusal identity; recognition of arbitrary caller-defined
+    ///   provenance is not claimed.
+    /// - witness: `tests::surface::every_mold_resolves_to_its_rule_and_named_kind`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(
+        |error| self.rule_of(id).is_err() && matches!(error, PbgError::UnknownMold { id: missing } if *missing == id),
+        |kind| self.rule_of(id).is_ok_and(|rule| kind.0 == rule.provenance)))]
+    #[inline]
+    pub fn named_kind(
+        &self,
+        id: MoldId,
+    ) -> Result<NamedKind<'static>, PbgError>
+    {
+        let rule = self.rule_of(id)?;
+        Ok(NamedKind(rule.provenance))
+    }
+
+    /// The precedence bounds of mold `id`, left and right: its precedence on
+    /// a side a hole faces, the root bound on a side it does not.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each side is [`Bound::Value`] of the mold's precedence when a
+    ///   hole can face the mold there, and [`Bound::Root`] otherwise.
+    /// - fails: an id past the table.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`PbgError::UnknownMold`] for an id past the table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For infix, operand-facing prefix and closed-atom contexts,
+    ///   L3 side-specific observations catch swapped root/value bounds and
+    ///   wrong precedence; first-past-id rejection covers the lookup boundary,
+    ///   not all context shapes.
+    /// - witness: `tests::walk::mold_bounds_follow_context_nullability`
+    /// - witness: `tests::walk::mold_lookup_checks_bounds`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(
+        |error| self.molds.mold(id).is_err() && matches!(error, PbgError::UnknownMold { id: missing } if *missing == id),
+        |&(left, right)| self.molds.mold(id).is_ok_and(|mold| (matches!(left, Bound::Root) || left == Bound::Value(mold.prec)) && (matches!(right, Bound::Root) || right == Bound::Value(mold.prec)))))]
+    #[inline]
+    pub fn bounds(
+        &self,
+        id: MoldId,
+    ) -> Result<(Bound<Prec>, Bound<Prec>), PbgError>
+    {
+        self.molds.bounds(id)
+    }
+
+    /// Whether a hole can follow mold `id` within its form: whether a hole
+    /// can face it on its right.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when [`bounds`](Self::bounds) reads a value
+    ///   bound on the right; false for an id past the table.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an infix operator and an opener are followed by a
+    ///   hole, an atom is not.
+    /// - witness: `tests::walk::mold_bounds_follow_context_nullability`
+    #[spec(ensures: |ret| bool::from(ret) == self.molds.bounds(id).is_ok_and(|(_, right)| !matches!(right, Bound::Root)))]
+    #[inline]
+    #[must_use]
+    pub fn hole_follows(
+        &self,
+        id: MoldId,
+    ) -> HoleFollows
+    {
+        HoleFollows::from(
+            self.molds
+                .bounds(id)
+                .is_ok_and(|(_, right)| !matches!(right, Bound::Root)),
+        )
+    }
+
+    /// The symbols a context's zipper crosses stepping out in direction
+    /// `dir`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns, ascending, the symbols that can stand next to the
+    ///   context on that side.
+    /// - fails: a context id past the table.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`PbgError::UnknownRCtx`] for an id past the table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For both directions of a finite infix context and an
+    ///   unknown context, L3 observations catch direction swaps, missing
+    ///   adjacent symbols and wrong refusal payload; larger context languages
+    ///   are not enumerated.
+    /// - witness: `tests::walk::rctx_steps_cross_adjacent_symbols`
+    /// - witness: `tests::walk::unknown_context_preserves_its_identity`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, PbgError::UnknownRCtx { rctx: missing } if *missing == rctx), |steps| steps.iter().is_sorted_by(|left, right| left.crossed < right.crossed)))]
+    #[inline]
+    pub fn step(
+        &self,
+        rctx: RCtxId,
+        dir: Dir,
+    ) -> Result<&[RCtxStep], PbgError>
+    {
+        self.molds.step(rctx, dir)
+    }
+
+    /// The declared label spelled `spelled`: how a token's spelling, or the
+    /// lexeme class it falls back to, finds its menus.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the declared label with exactly this spelling, or
+    ///   none when no rule declares one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every built-in label resolves to itself and a
+    ///   spelling no rule declares to none; a lost, shadowed or misspelt key
+    ///   changes one of the observations. The predicate checks a returned
+    ///   label's spelling and menu without scanning the table.
+    /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
+    #[spec(ensures: |ret| ret.is_none_or(|label| label.0 == spelled.0 && !self.molds.candidates(label).is_empty()))]
+    #[inline]
+    #[must_use]
+    pub fn tile_label(
+        &self,
+        spelled: LabelText<'_>,
+    ) -> Option<TileLabel>
+    {
+        self.molds.tile_label(spelled)
+    }
+
+    /// Every mold `label` can take, ascending.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns one mold per occurrence of the label, ascending; an
+    ///   undeclared label has none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For the built-in label inventory and an absent label, L2
+    ///   finite inventory observations catch lost, duplicated or reordered mold
+    ///   occurrences; arbitrary grammars are outside the census. Construction
+    ///   proves each menu exact once; the predicate checks the returned molds'
+    ///   order and label.
+    /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
+    #[spec(ensures: |ret| ret.is_sorted_by(|left, right| left < right) && ret.iter().all(|&mold| self.molds.mold(mold).is_ok_and(|def| def.label == label.0)))]
+    #[inline]
+    #[must_use]
+    pub fn candidates(
+        &self,
+        label: TileLabel,
+    ) -> &[MoldId]
+    {
+        self.molds.candidates(label)
+    }
+
+    /// The mold of juxtaposition's tile between two expressions, `f x`, when
+    /// the grammar has one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the mold the label [`crate::APPLICATION`] takes in the
+    ///   expression sort, and `None` when the grammar declares no such tile.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the built-in inventory holds one mold for the
+    ///   application label in each of two sorts, so a lost or doubled tile
+    ///   shows. The parser's suite witnesses where the melder pushes it.
+    /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
+    #[spec(ensures: |ret| ret.is_none_or(|mold| self.molds.mold(mold).is_ok_and(|def| def.label == crate::APPLICATION && def.sort == Sort::Expression)))]
+    #[inline]
+    #[must_use]
+    pub fn application(&self) -> Option<MoldId>
+    {
+        self.application
+    }
+
+    /// The mold of juxtaposition's tile in `sort`: `f x` between two
+    /// expressions, `Maybe A` between two types.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the mold the label [`crate::APPLICATION`] takes in `sort`,
+    ///   and `None` for a sort in which the grammar declares no such tile.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the built-in inventory holds one application mold in
+    ///   the expression sort and one in the type sort, so a lost or doubled
+    ///   tile shows.
+    /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
+    #[spec(ensures: |ret| ret.is_none_or(|mold| self.molds.mold(mold).is_ok_and(|def| def.label == crate::APPLICATION && def.sort == sort)))]
+    #[inline]
+    #[must_use]
+    pub fn application_in(
+        &self,
+        sort: Sort,
+    ) -> Option<MoldId>
+    {
+        match sort {
+            Sort::Expression => self.application,
+            Sort::Type => self.type_application,
+            Sort::Item | Sort::Pattern | Sort::Instantiation | Sort::ModuleMember | Sort::Block => {
+                None
+            },
+        }
+    }
+
+    /// The molds `label` can take where no form is open: those without a
+    /// same-form predecessor, and those that can open a form.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns, ascending, the molds of
+    ///   [`candidates`](Self::candidates) that have no same-form predecessor or
+    ///   are form-first; each dropped mold needs an open form.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For every built-in label and an absent label, L2 finite
+    ///   inventory observations compare fresh menus with the predecessor-free
+    ///   or form-first subset, catching dropped openers and retained dependent
+    ///   molds; arbitrary grammars are not enumerated. Construction proves each
+    ///   menu exact once; the predicate checks the returned molds' order, label
+    ///   and freshness.
+    /// - witness: `tests::walk::fresh_menus_keep_exactly_the_form_openers`
+    #[spec(ensures: |ret| ret.is_sorted_by(|left, right| left < right) && ret.iter().all(|&mold| self.molds.mold(mold).is_ok_and(|def| def.label == label.0) && (!bool::from(self.molds.has_predecessor(mold)) || bool::from(self.molds.is_form_first(mold)))))]
+    #[inline]
+    #[must_use]
+    pub fn fresh_candidates(
+        &self,
+        label: TileLabel,
+    ) -> &[MoldId]
+    {
+        self.molds.fresh_candidates(label)
+    }
+
+    /// Whether a token labelled `label` can stand right after a whole form of
+    /// `sort`: one of its [`candidates`](Self::candidates) faces, on its
+    /// left, a hole of `sort` — of any sort when `sort` is [`Sort::Item`].
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when some mold of `label` has a context whose
+    ///   [`step`](Self::step) to the left crosses a hole of `sort`, or a hole
+    ///   of any sort when `sort` is [`Sort::Item`]; false for an undeclared
+    ///   label.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every built-in label after a form of each of the six
+    ///   sorts, and an undeclared label, compared with the walk over its
+    ///   candidates' left steps; a dropped mold, a tile step read as a hole,
+    ///   the right steps read instead or a form of [`Sort::Item`] answered by
+    ///   its own sort alone changes a row. Construction proves each label's
+    ///   left-hole sorts exact once; the predicate checks that a label which
+    ///   follows a form has a mold.
+    /// - witness: `tests::walk::a_label_follows_a_form_exactly_when_one_of_its_molds_faces_its_sort_2213`
+    #[spec(ensures: |ret| !bool::from(ret) || !self.molds.candidates(label).is_empty())]
+    #[inline]
+    #[must_use]
+    pub fn follows_form(
+        &self,
+        label: TileLabel,
+        sort: Sort,
+    ) -> LabelFollowsForm
+    {
+        self.molds.follows_form(label, sort)
+    }
+
+    /// The number of the declared label spelled `spelled`: a token's spelling
+    /// resolved once, so its menus and the labels of molds are read by number
+    /// rather than by spelling.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns a number exactly when
+    ///   [`tile_label`](Self::tile_label) resolves `spelled`, and the molds
+    ///   read by it carry that spelling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every built-in label's number reads back its own
+    ///   menus, follows the forms it follows, and is each of its molds' label,
+    ///   and an undeclared spelling has none; two labels sharing a number, or a
+    ///   number reading another label's menus, changes an observation.
+    /// - witness: `tests::walk::a_label_reads_its_menus_by_its_number`
+    #[spec(ensures: |ret| ret.is_some() == self.molds.tile_label(spelled).is_some() && ret.is_none_or(|id| self.molds.label_candidates(id).first().is_some_and(|&mold| self.molds.mold(mold).is_ok_and(|def| def.label == spelled.0))))]
+    #[inline]
+    #[must_use]
+    pub fn label_id(
+        &self,
+        spelled: LabelText<'_>,
+    ) -> Option<LabelId>
+    {
+        self.molds.label_id(spelled)
+    }
+
+    /// The number of the label mold `mold` carries.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns a number exactly when the grammar declares `mold`,
+    ///   and `mold` is among that label's
+    ///   [`label_candidates`](Self::label_candidates).
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`label_id`](Self::label_id).
+    /// - witness: `tests::walk::a_label_reads_its_menus_by_its_number`
+    #[spec(ensures: |ret| ret.is_some() == self.molds.mold(mold).is_ok() && ret.is_none_or(|id| self.molds.label_candidates(id).binary_search(&mold).is_ok()))]
+    #[inline]
+    #[must_use]
+    pub fn mold_label(
+        &self,
+        mold: MoldId,
+    ) -> Option<LabelId>
+    {
+        self.molds.mold_label(mold)
+    }
+
+    /// Every mold the label numbered `id` can take, ascending: the label's
+    /// [`candidates`](Self::candidates).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns, ascending, the molds whose label is numbered `id`; a
+    ///   number past the table has none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`label_id`](Self::label_id).
+    /// - witness: `tests::walk::a_label_reads_its_menus_by_its_number`
+    #[spec(ensures: |ret| ret.is_sorted_by(|left, right| left < right) && ret.iter().all(|&mold| self.molds.mold_label(mold) == Some(id)))]
+    #[inline]
+    #[must_use]
+    pub fn label_candidates(
+        &self,
+        id: LabelId,
+    ) -> &[MoldId]
+    {
+        self.molds.label_candidates(id)
+    }
+
+    /// The molds the label numbered `id` can take where no form is open: the
+    /// label's [`fresh_candidates`](Self::fresh_candidates).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns, ascending, the molds of
+    ///   [`label_candidates`](Self::label_candidates) that have no same-form
+    ///   predecessor or are form-first.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`label_id`](Self::label_id).
+    /// - witness: `tests::walk::a_label_reads_its_menus_by_its_number`
+    #[spec(ensures: |ret| ret.is_sorted_by(|left, right| left < right) && ret.iter().all(|&mold| self.molds.mold_label(mold) == Some(id) && (!bool::from(self.molds.has_predecessor(mold)) || bool::from(self.molds.is_form_first(mold)))))]
+    #[inline]
+    #[must_use]
+    pub fn label_fresh_candidates(
+        &self,
+        id: LabelId,
+    ) -> &[MoldId]
+    {
+        self.molds.label_fresh_candidates(id)
+    }
+
+    /// Whether a token of the label numbered `id` can stand right after a
+    /// whole form of `sort`, as [`follows_form`](Self::follows_form) reads it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when [`follows_form`](Self::follows_form) is
+    ///   true of the label numbered `id`; false for a number past the table.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`label_id`](Self::label_id).
+    /// - witness: `tests::walk::a_label_reads_its_menus_by_its_number`
+    #[spec(ensures: |ret| !bool::from(ret) || !self.molds.label_candidates(id).is_empty())]
+    #[inline]
+    #[must_use]
+    pub fn label_follows_form(
+        &self,
+        id: LabelId,
+        sort: Sort,
+    ) -> LabelFollowsForm
+    {
+        self.molds.label_follows_form(id, sort)
+    }
+
+    /// Every declared label with how many molds it can take, ascending by
+    /// label.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one row per label with at least one occurrence.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For the complete built-in label inventory, L2 finite
+    ///   observations compare ordered labels and exact multiplicities, catching
+    ///   omitted labels, duplicate rows and incorrect counts; the inventory is
+    ///   not a proof for arbitrary user grammars.
+    /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
+    #[spec(ensures: |ret| ret.iter().is_sorted_by(|left, right| left.0 < right.0) && ret.iter().all(|&(label, count)| count.0 > 0 && count.0 == self.candidates(label).len()) && ret.iter().try_fold(0_usize, |sum, &(_, count)| sum.checked_add(count.0)) == Some(self.molds.len().0))]
+    #[inline]
+    #[must_use]
+    pub fn candidate_counts(&self) -> Vec<(TileLabel, CandidateCount)>
+    {
+        self.molds.candidate_counts()
+    }
+
+    /// How many molds the grammar declares.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn mold_count(&self) -> MoldCount
+    {
+        self.molds.len()
+    }
+
+    /// Every mold with its id, ascending.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: yields each mold once, in id order.
+    /// - panics: none.
+    /// - executable: none — the opaque iterator return cannot be named by the
+    ///   specification macro; consuming it in a predicate would also consume
+    ///   the caller's cursor.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For the finite built-in table, L2 enumeration and
+    ///   walk-projection observations catch missing, repeated or reordered mold
+    ///   ids; this does not exhaust arbitrary grammars or iterator
+    ///   interleavings.
+    /// - witness: `tests::walk::walk_index_projects_every_mold_once`
+    #[inline]
+    pub fn iter_molds(&self) -> impl Iterator<Item = (MoldId, &MoldDef)>
+    {
+        self.molds.iter()
+    }
+
+    /// The same-form adjacency `≐`: pairs of molds consecutive within one
+    /// form, holes between them skipped, ascending and unique.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `(left, right)` is present exactly when some form can put
+    ///   `right`'s occurrence next after `left`'s, past holes only; returns the
+    ///   complete stored table by reference.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For a bracket form and a closed atom, L3 exact edge
+    ///   observations catch cross-hole omissions and invented same-form
+    ///   adjacency. Construction checks ordering and ownership; this predicate
+    ///   protects borrowed-table identity without rescanning immutable edges.
+    ///   Arbitrary regex languages are not exhausted.
+    /// - witness: `tests::walk::same_form_adjacency_is_the_eq_relation`
+    /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret), core::ptr::from_ref(self.molds.adjacencies())))]
+    #[inline]
+    #[must_use]
+    pub fn adjacencies(&self) -> &[(MoldId, MoldId)]
+    {
+        self.molds.adjacencies()
+    }
+
+    /// The [`adjacencies`](Self::adjacencies) pairs whose left is `mold`,
+    /// ascending: its same-form successors.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: exactly the pairs of [`adjacencies`](Self::adjacencies) whose
+    ///   left is `mold`, in their order; empty for an id past the table.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every built-in mold's run compares with a filter of
+    ///   the whole adjacency, and the first id past the table reads empty; a
+    ///   run cut short, shifted, or a neighbor's changes a comparison.
+    ///   Construction proves every run exact once; the predicate checks that
+    ///   each returned pair starts at `mold`.
+    /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| ret.iter().all(|&(left, _)| left == mold))]
+    #[inline]
+    #[must_use]
+    pub fn mold_successors(
+        &self,
+        mold: MoldId,
+    ) -> &[(MoldId, MoldId)]
+    {
+        self.molds.successors(mold)
+    }
+
+    /// Whether `left` then `right` are same-form adjacent: `(left, right)` is
+    /// one of the [`adjacencies`](Self::adjacencies).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when `(left, right)` is in
+    ///   [`adjacencies`](Self::adjacencies).
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every built-in pair, its reverse and a pair past the
+    ///   table compare with the whole list; a lookup in the wrong run changes a
+    ///   comparison.
+    /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| bool::from(ret) == self.adjacencies().binary_search(&(left, right)).is_ok())]
+    #[inline]
+    #[must_use]
+    pub fn molds_adjacent(
+        &self,
+        left: MoldId,
+        right: MoldId,
+    ) -> MoldsAdjacent
+    {
+        self.molds.adjacent(left, right)
+    }
+
+    /// The molds that can be a form's first tile, ascending and unique.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a mold is present exactly when its occurrence is in its
+    ///   form's FIRST set, holes skipped; a mold behind a nullable prefix
+    ///   counts.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For all built-in molds, L2 ordered-set and membership
+    ///   observations catch omitted or duplicated first tiles and inconsistent
+    ///   flags; nullable prefixes of arbitrary user forms are not exhausted.
+    ///   Construction proves the list equals the flags once; the predicate
+    ///   checks the returned molds' order and flag.
+    /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| ret.is_sorted_by(|left, right| left < right) && ret.iter().all(|&mold| bool::from(self.molds.is_form_first(mold))))]
+    #[inline]
+    #[must_use]
+    pub fn form_first(&self) -> &[MoldId]
+    {
+        self.molds.form_first()
+    }
+
+    /// The molds that can be a form's last tile, ascending and unique.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a mold is present exactly when its occurrence is in its
+    ///   form's LAST set, holes skipped; exactly one of
+    ///   [`mold_is_form_last`](Self::mold_is_form_last) and
+    ///   [`mold_has_required_tail`](Self::mold_has_required_tail) holds for
+    ///   each.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For all built-in molds, L2 finite membership observations
+    ///   catch omissions, duplicates and overlaps between clean completion and
+    ///   required tails; arbitrary form languages are outside the census.
+    ///   Construction proves the list equals the flags once; the predicate
+    ///   checks the returned molds' order and flags.
+    /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| ret.is_sorted_by(|left, right| left < right) && ret.iter().all(|&mold| bool::from(self.molds.is_form_last(mold)) != bool::from(self.molds.has_required_tail(mold))))]
+    #[inline]
+    #[must_use]
+    pub fn form_last(&self) -> &[MoldId]
+    {
+        self.molds.form_last()
+    }
+
+    /// Whether `mold` has a same-form predecessor.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when some pair of
+    ///   [`adjacencies`](Self::adjacencies) ends at `mold`; false for an id
+    ///   past the table.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For every built-in mold and the first invalid id, L2
+    ///   finite and L3 boundary observations compare the flag with incoming
+    ///   adjacency, catching reversed direction and fabricated out-of-range
+    ///   membership. Construction proves the edge/flag relation once; the
+    ///   predicate checks the immutable stored answer.
+    /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| bool::from(ret) == bool::from(self.molds.has_predecessor(mold)))]
+    #[inline]
+    #[must_use]
+    pub fn mold_has_predecessor(
+        &self,
+        mold: MoldId,
+    ) -> MoldHasPredecessor
+    {
+        self.molds.has_predecessor(mold)
+    }
+
+    /// Whether `mold` has a same-form successor.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when some pair of
+    ///   [`adjacencies`](Self::adjacencies) starts at `mold`; false for an id
+    ///   past the table.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For every built-in mold and the first invalid id, L2
+    ///   finite and L3 boundary observations compare the flag with outgoing
+    ///   adjacency, catching reversed direction and fabricated out-of-range
+    ///   membership. Construction proves the edge/flag relation once; the
+    ///   predicate checks the immutable stored answer.
+    /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| bool::from(ret) == bool::from(self.molds.has_successor(mold)))]
+    #[inline]
+    #[must_use]
+    pub fn mold_has_successor(
+        &self,
+        mold: MoldId,
+    ) -> MoldHasSuccessor
+    {
+        self.molds.has_successor(mold)
+    }
+
+    /// Whether `mold` can open a form.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when `mold` is in
+    ///   [`form_first`](Self::form_first).
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For every built-in mold and the first invalid id, L2
+    ///   finite and L3 boundary observations compare first membership with the
+    ///   ordered list, catching reversed flags and out-of-range acceptance.
+    /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| bool::from(ret) == self.molds.form_first().binary_search(&mold).is_ok())]
+    #[inline]
+    #[must_use]
+    pub fn mold_is_form_first(
+        &self,
+        mold: MoldId,
+    ) -> MoldIsFormFirst
+    {
+        self.molds.is_form_first(mold)
+    }
+
+    /// Whether `mold` can complete its form with no hole still required.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when `mold` is in [`form_last`](Self::form_last)
+    ///   and the form's remainder after it needs no hole.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For built-in molds, L2 finite partition observations and
+    ///   L3 infix/prefix contrasts catch premature completion and missing clean
+    ///   completion; arbitrary user forms are outside the census, and the first
+    ///   invalid id is rejected.
+    /// - witness: `tests::surface::infix_type_operator_keeps_clean_completion`
+    /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| bool::from(ret) == (self.molds.form_last().binary_search(&mold).is_ok() && !bool::from(self.molds.has_required_tail(mold))))]
+    #[inline]
+    #[must_use]
+    pub fn mold_is_form_last(
+        &self,
+        mold: MoldId,
+    ) -> MoldIsFormLast
+    {
+        self.molds.is_form_last(mold)
+    }
+
+    /// Whether `mold` can end its form only once a trailing hole is filled.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when `mold` is in [`form_last`](Self::form_last)
+    ///   and the form's remainder after it needs a hole.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For built-in molds, L2 finite partition observations and
+    ///   L3 required prefix operands catch lost tails and invented
+    ///   requirements; arbitrary user forms are outside the census, and the
+    ///   first invalid id is rejected.
+    /// - witness: `tests::surface::prefix_formers_keep_required_type_tails_unclosed`
+    /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| bool::from(ret) == (self.molds.form_last().binary_search(&mold).is_ok() && !bool::from(self.molds.is_form_last(mold))))]
+    #[inline]
+    #[must_use]
+    pub fn mold_has_required_tail(
+        &self,
+        mold: MoldId,
+    ) -> MoldHasRequiredTail
+    {
+        self.molds.has_required_tail(mold)
+    }
+
+    /// The closing class of `mold`'s form: the bracket family every
+    /// completion from `mold` ends in, when they agree on one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Some(c)` exactly when every completion path from `mold`
+    ///   within its own rule ends at a closer of family `c` that the rule also
+    ///   opens; `None` when the completions disagree, end at a non-closer,
+    ///   close a family the rule never opens, or `mold` is past the table.
+    /// - provides: the family a parser's minted closing delimiter stands in
+    ///   for; `None` pairs with nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For repeated containers, non-closer endings and divergent
+    ///   branches, L3 class observations catch wrong-family and premature
+    ///   pairing; the predicate protects invalid-id refusal, while arbitrary
+    ///   completion languages are not enumerated.
+    /// - witness: `tests::closing_class::closing_class_is_form_level`
+    /// - witness: `tests::closing_class::closing_class_repeat_with_exit_shares_its_component_answer`
+    #[spec(ensures: |ret| ret.is_none() || self.molds.mold(mold).is_ok())]
+    #[inline]
+    #[must_use]
+    pub fn closing_class(
+        &self,
+        mold: MoldId,
+    ) -> Option<ClosingClass>
+    {
+        self.molds.closing_class(mold)
+    }
+
+    /// The least mold interchangeable with `mold`: the least mold whose
+    /// pushed tile the melder reads exactly as `mold`'s — the same rule,
+    /// precedence, sort, context contents, closing class, form membership,
+    /// same-form successors and same-form predecessors, the label aside.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a mold at most `mold` that is its own least interchangeable
+    ///   mold; `mold` itself when no lesser mold is interchangeable with it or
+    ///   it is past the table.
+    /// - provides: two molds with the same answer leave the slope to evolve
+    ///   alike under every later tile, so a parser that weighs both by what
+    ///   follows needs to weigh only one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the built-in grammar each mold's answer is
+    ///   checked against the mold on every component of the reading through the
+    ///   other public queries, and the parameter-name molds of a definition
+    ///   share an answer.
+    /// - witness: `tests::walk::interchangeable_molds_differ_only_in_label`
+    #[spec(ensures: |ret| ret <= mold)]
+    #[inline]
+    #[must_use]
+    pub fn least_interchangeable(
+        &self,
+        mold: MoldId,
+    ) -> MoldId
+    {
+        self.molds.least_interchangeable(mold)
+    }
+
+    /// The tile kind of `mold`: what pushing it does to the slope, read off
+    /// its same-form neighbours, its required tail and its bounds.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a start, absorbing when a hole faces it on the left, for a
+    ///   successor and no predecessor; a mid for a predecessor and a successor
+    ///   or a required tail; an end for a predecessor alone; an operand,
+    ///   prefix, postfix or infix by the holes facing it otherwise.
+    /// - fails: an id past the table.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`PbgError::UnknownMold`] for an id past the table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the built-in grammar every mold's kind is reread
+    ///   from the neighbour, tail and bound queries, and the first id past the
+    ///   table is refused; a swapped side or flag misclassifies.
+    /// - witness: `tests::walk::tile_kinds_observations_and_sets_agree_with_the_table`
+    #[spec(ensures: |ret| ret.is_ok() == self.molds.mold(mold).is_ok())]
+    #[inline]
+    pub fn tile_kind(
+        &self,
+        mold: MoldId,
+    ) -> Result<TileKind, PbgError>
+    {
+        self.automaton.kind(mold)
+    }
+
+    /// The observation class of `mold`: the molds a parser reads alike once
+    /// pushed, their identities, labels and same-form neighbours aside.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: two molds share a class exactly when their kinds, sorts,
+    ///   precedence groups, neighbour flags, form membership, next hole sorts
+    ///   and bound shapes agree.
+    /// - fails: an id past the table.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`PbgError::UnknownMold`] for an id past the table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the built-in grammar every pair of molds'
+    ///   classes is compared with their readings through the public queries; a
+    ///   dropped component merges molds a parser tells apart, and a spurious
+    ///   one keeps alike molds apart.
+    /// - witness: `tests::walk::tile_kinds_observations_and_sets_agree_with_the_table`
+    #[spec(ensures: |ret| ret.is_ok() == self.molds.mold(mold).is_ok())]
+    #[inline]
+    pub fn observation(
+        &self,
+        mold: MoldId,
+    ) -> Result<Observation, PbgError>
+    {
+        self.automaton.observation(mold)
+    }
+
+    /// The molds of tile set `set`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each mold's bit is set exactly when the mold is in the set; a
+    ///   word past the table is empty.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the built-in grammar every mold's bit in every
+    ///   set is compared with its kind and sort; a misplaced word or bit admits
+    ///   a mold its frontier does not take.
+    /// - witness: `tests::walk::tile_kinds_observations_and_sets_agree_with_the_table`
+    #[spec(ensures: |ret| ret.word(crate::automaton::MoldWordIndex::of(MoldId::from(u32::MAX))) == crate::automaton::MoldWord::default())]
+    #[inline]
+    #[must_use]
+    pub fn tile_set(
+        &self,
+        set: TileSet,
+    ) -> MoldSet<'_>
+    {
+        self.automaton.set(set)
+    }
+
+    /// How many bytes the tile automaton's tables hold.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn tile_table_bytes(&self) -> TileTableBytes
+    {
+        self.automaton.bytes()
+    }
+
+    /// The grammar's fingerprint: the precedence DAG's fingerprint folded
+    /// with the mold and context tables.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: two builds of the same rules over the same DAG agree; a
+    ///   changed mold, context or precedence group moves it.
+    /// - provides: the scope a tree's [`MoldId`]s are read in.
+    /// - panics: none.
+    /// - executable: none — the returned fingerprint has a private primitive
+    ///   field in another crate and no const-readable observer or const
+    ///   comparison; direct instrumentation cannot compare it here.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For repeated built-in builds and a renamed precedence
+    ///   group, L3 value observations with an external compatibility pin catch
+    ///   ignored DAG input and unstable hashing; no collision-freedom or
+    ///   universal sensitivity claim follows.
+    /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+    #[inline]
+    #[must_use]
+    pub const fn fingerprint(&self) -> GrammarFingerprint
+    {
+        self.molds.fingerprint()
+    }
+}
+
+/// Checks every rule's precedence and name before any form is read.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on success every rule's group is in `dag` and the names are
+///   unique.
+/// - fails: the first rule, in input order, with an unknown group or a name
+///   already seen.
+/// - panics: none.
+///
+/// # Errors
+/// [`PbgError::InvalidPrec`] or [`PbgError::DuplicateRule`].
+///
+/// # Adequacy
+/// - hypothesis: For finite rules over a checked DAG, L3 duplicate and
+///   invalid-group observations catch swapped header priority and lost error
+///   identity; the predicate validates successful groups and refusal payloads,
+///   not every possible input ordering.
+/// - witness: `tests::pbg::pbg_rejects_invalid_prec_before_later_header_errors`
+/// - witness: `tests::pbg::pbg_rejects_duplicate_rule_names_deterministically`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(
+    |error| match *error {
+        PbgError::InvalidPrec { rule, prec } => dag.name(prec).is_none() && rules.iter().any(|item| item.name == rule && item.prec == prec),
+        PbgError::DuplicateRule { name } => rules.iter().filter(|rule| rule.name == name).take(2).count() == 2,
+        PbgError::InvalidSort { .. } | PbgError::MissingPrec { .. } | PbgError::PrecedenceSpec(_) | PbgError::PrecedenceCycle { .. } | PbgError::PrecedenceDag(_) | PbgError::Walk(_) | PbgError::AdjacentSorts { .. } | PbgError::DuplicateTile { .. } | PbgError::Assumption3Conflict { .. } | PbgError::MoldOverflow | PbgError::UnknownMold { .. } | PbgError::UnknownRCtx { .. } => false,
+    },
+    |&()| rules.iter().all(|rule| dag.name(rule.prec).is_some()) && rules.iter().enumerate().all(|(index, rule)| rules.iter().take(index).all(|prior| prior.name != rule.name))))]
+fn validate_rule_headers(
+    dag: &PrecDag,
+    rules: &[Rule],
+) -> Result<(), PbgError>
+{
+    let mut names = BTreeSet::new();
+    for rule in rules {
+        if dag.name(rule.prec).is_none() {
+            return Err(PbgError::InvalidPrec {
+                rule: rule.name,
+                prec: rule.prec,
+            });
+        }
+        if !names.insert(rule.name) {
+            return Err(PbgError::DuplicateRule { name: rule.name });
+        }
+    }
+    Ok(())
+}
+
+/// Groups the rules' alternatives by sort and precedence.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each key maps to one alternation of every alternative of every
+///   rule with that key, in input order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For interleaved rule groups, top-level alternatives, nested
+///   sequences and an empty alternation, L3 exact branch observations catch
+///   sorting by the wrong key, branch loss and flattening below the root;
+///   arbitrary regex languages are not enumerated.
+/// - witness: `tests::pbg::grouped_forms_preserve_branch_and_rule_order`
+#[spec(ensures: |ret| rules.iter().all(|rule| ret.contains_key(&(rule.sort, rule.prec))) && ret.iter().all(|(key, regex)| rules.iter().any(|rule| (rule.sort, rule.prec) == *key) && regex.entries.first().is_some_and(|root| matches!(root.node, RegexNode::Alt(_)))))]
+fn grouped_forms(rules: &[Rule]) -> BTreeMap<(Sort, Prec), Regex>
+{
+    let mut grouped: BTreeMap<(Sort, Prec), Vec<Regex>> = BTreeMap::new();
+    for rule in rules {
+        grouped
+            .entry((rule.sort, rule.prec))
+            .or_default()
+            .extend(rule.regex.alternatives());
+    }
+    grouped
+        .into_iter()
+        .map(|(key, alternatives)| (key, Regex::alt(alternatives)))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests
+{
+    extern crate std;
+
+    use alloc::string::ToString as _;
+    use core::error::Error as _;
+    use std::io::Write as _;
+
+    use gandr_theory_graphs::Prec;
+    use gandr_theory_graphs::PrecIndex;
+    use gandr_theory_graphs::PrecSpecError;
+
+    use super::PbgError;
+    use super::Regex;
+    use super::Rule;
+    use super::RuleName;
+    use super::RulesDigest;
+    use super::Sort;
+    use super::TileLabel;
+
+    /// Every field a mold table reads of a rule moves the digest: the name,
+    /// the sort, the group, a tile's label, a form's shape and the rules'
+    /// order. Audit fields — the provenance and the adaptation records — do
+    /// not, since the table never reads them.
+    #[test]
+    fn every_rule_field_a_mold_reads_moves_the_digest()
+    {
+        let rule = |name: &'static str, sort: Sort, group: u16, label: &'static str| {
+            Rule::new(
+                RuleName(name),
+                sort,
+                Prec::new(PrecIndex::from(group)),
+                Regex::seq([Regex::tile(TileLabel(label)), Regex::sort(Sort::Expression)]),
+            )
+        };
+        let base = [
+            rule("first", Sort::Expression, 0, "a"),
+            rule("second", Sort::Pattern, 1, "b"),
+        ];
+        let digest = RulesDigest::of(&base);
+        assert_eq!(
+            digest,
+            RulesDigest::of(&[
+                rule("first", Sort::Expression, 0, "a"),
+                rule("second", Sort::Pattern, 1, "b"),
+            ])
+        );
+        let edits = [
+            [rule("renamed", Sort::Expression, 0, "a"), base[1].clone()],
+            [rule("first", Sort::Type, 0, "a"), base[1].clone()],
+            [rule("first", Sort::Expression, 1, "a"), base[1].clone()],
+            [rule("first", Sort::Expression, 0, "z"), base[1].clone()],
+            [base[1].clone(), base[0].clone()],
+        ];
+        for edit in &edits {
+            assert_ne!(digest, RulesDigest::of(edit), "{edit:?}");
+        }
+        let mut reshaped = base.clone();
+        reshaped[0].regex =
+            Regex::alt([Regex::tile(TileLabel("a")), Regex::sort(Sort::Expression)]);
+        assert_ne!(digest, RulesDigest::of(&reshaped));
+        let mut audited = base.clone();
+        audited[0].provenance = "another_kind";
+        assert_eq!(digest, RulesDigest::of(&audited));
+        assert_ne!(digest, RulesDigest::of(&base[.. 1]));
+    }
+
+    #[test]
+    fn grammar_error_sources_keep_the_original_cause()
+    {
+        let cause = PrecSpecError::DuplicateName {
+            name: "duplicate-group".into(),
+        };
+        let wrapped = PbgError::from(cause.clone());
+        assert_eq!(
+            Some(&cause),
+            wrapped
+                .source()
+                .and_then(|source| source.downcast_ref::<PrecSpecError>())
+        );
+        assert!(PbgError::MissingPrec { name: "absent" }.source().is_none());
+        assert!(PbgError::MoldOverflow.source().is_none());
+    }
+
+    #[test]
+    fn grammar_error_messages_keep_payloads_and_refuse_a_full_sink()
+    {
+        let named = PbgError::MissingPrec {
+            name: "absent-group",
+        };
+        assert!(named.to_string().contains("absent-group"));
+        let wrapped = PbgError::from(PrecSpecError::DuplicateName {
+            name: "duplicate-group".into(),
+        });
+        assert!(wrapped.to_string().contains("duplicate-group"));
+        let messages = [
+            named.to_string(),
+            wrapped.to_string(),
+            PbgError::DuplicateRule {
+                name: "duplicate-rule",
+            }
+            .to_string(),
+            PbgError::AdjacentSorts {
+                rule: "adjacent-rule",
+                left: Sort::Type,
+                right: Sort::Pattern,
+            }
+            .to_string(),
+            PbgError::Assumption3Conflict {
+                first_sort: Sort::Expression,
+                second_sort: Sort::Type,
+            }
+            .to_string(),
+            PbgError::MoldOverflow.to_string(),
+        ];
+        for (index, left) in messages.iter().enumerate() {
+            for right in messages.iter().skip(index.saturating_add(1)) {
+                assert_ne!(left, right, "different refusals remain distinguishable");
+            }
+        }
+        let mut bytes = [0_u8; 1];
+        let mut sink = bytes.as_mut_slice();
+        assert!(write!(&mut sink, "{named}").is_err());
+    }
+}

@@ -1,0 +1,32 @@
+// Indexed patterns infer a case's sum.
+//
+// `run` binds a comparison before the case scrutinises it.
+// Arms that cover `.0` to `.n-1` settle the sum that they inject into.
+//
+// A Boolean case reads back as indexed arms.
+//
+// - see: #1169 — `open`
+
+/// This case returns one below 128 and two otherwise.
+def written(c : Integer) -> Integer =
+  let small = c < 128
+  match small where
+    | true => 1
+    | false => 2
+
+/// The same case as the printer writes it, each arm an index of the sum the
+/// boolean stands for.
+def printed(c : Integer) -> Integer =
+  let small = c < 128
+  match small where
+    | +{.0 = u} => 1
+    | +{.1 = u} => 2
+
+/// An arm that matches anything leaves the sum's width open, so the arms
+/// settle no sum and the scrutinee still needs its type.
+@[refuses("OutOfFragment.Unannotated")]
+def open(c : Integer) -> Integer =
+  let small = c < 128
+  match small where
+    | +{.0 = u} => return 1
+    | _ => return 2
