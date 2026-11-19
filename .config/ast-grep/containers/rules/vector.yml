@@ -1,7 +1,5 @@
-# A `Vec` in a type takes the small vector over the global allocator. `N` of
-# zero is a plain heap vector of the same size, so no type grows. The census
-# sets a larger `N` where an inline capacity pays. A `Vec` that names its own
-# allocator is the next rule's.
+# A `Vec` in a type takes the small vector over the global allocator.
+# The rule moves a test too, since a changed signature does not compile against `vec!`.
 id: vec-is-small-vec
 language: Rust
 severity: hint
@@ -20,11 +18,6 @@ rule:
           field: type_arguments
           has:
             nthChild: 2
-    - not:
-        inside:
-          kind: mod_item
-          regex: ^mod tests
-          stopBy: end
 transform:
   ITEMS:
     replace:
@@ -33,87 +26,63 @@ transform:
       by: <$items, 0, Global>
 fix: SmallVec$ITEMS
 ---
-# A `Vec` that names its own allocator takes the small vector over that
-# allocator.
+# A `Vec` that names its own allocator takes the small vector over that allocator.
 id: vec-in-is-small-vec-in
 language: Rust
 severity: hint
 message: the vector of the kernel's data, its allocator named at the site
 rule:
-  all:
-    - pattern:
-        context: type Case = Vec<$ITEM, $ALLOC>;
-        selector: generic_type
-    - not:
-        inside:
-          kind: mod_item
-          regex: ^mod tests
-          stopBy: end
+  pattern:
+    context: type Case = Vec<$ITEM, $ALLOC>;
+    selector: generic_type
 fix: SmallVec<$ITEM, 0, $ALLOC>
 ---
-# The constructors of a vector in a given allocator.
+# The constructor of a vector in a given allocator.
 id: vec-new-in-is-small-vec-new-in
 language: Rust
 severity: hint
 message: the vector of the kernel's data, its allocator named at the site
 rule:
   pattern: $PATH::new_in($ALLOC)
-  not:
-    inside:
-      kind: mod_item
-      regex: ^mod tests
-      stopBy: end
 constraints:
   PATH:
     regex: ^(?:(?:alloc|std)::vec::)?Vec$
 fix: SmallVec::<_, 0, _>::new_in($ALLOC)
 ---
+# The constructor of a vector with a capacity in a given allocator.
 id: vec-with-capacity-in-is-small-vec-with-capacity-in
 language: Rust
 severity: hint
 message: the vector of the kernel's data, its allocator named at the site
 rule:
   pattern: $PATH::with_capacity_in($CAPACITY, $ALLOC)
-  not:
-    inside:
-      kind: mod_item
-      regex: ^mod tests
-      stopBy: end
 constraints:
   PATH:
     regex: ^(?:(?:alloc|std)::vec::)?Vec$
 fix: SmallVec::<_, 0, _>::with_capacity_in(Count::from($CAPACITY), $ALLOC)
 ---
-# The constructor of an empty vector. The constructors name `N` and the
-# allocator, since a vector with no annotation leaves `N` to no inference.
+# The constructor of an empty vector.
+# The constructor names the capacity and the allocator.
+# A vector with no annotation leaves the capacity to no inference.
 id: vec-new-is-small-vec-new
 language: Rust
 severity: hint
 message: the vector of the kernel's data, its allocator named at the site
 rule:
   pattern: $PATH::new()
-  not:
-    inside:
-      kind: mod_item
-      regex: ^mod tests
-      stopBy: end
 constraints:
   PATH:
     regex: ^(?:(?:alloc|std)::vec::)?Vec$
 fix: SmallVec::<_, 0, Global>::new()
 ---
-# The constructor of a vector with a capacity, which the small vector counts.
+# The constructor of a vector with a capacity.
+# The small vector counts that capacity.
 id: vec-with-capacity-is-small-vec-with-capacity
 language: Rust
 severity: hint
 message: the vector of the kernel's data, its allocator named at the site
 rule:
   pattern: $PATH::with_capacity($CAPACITY)
-  not:
-    inside:
-      kind: mod_item
-      regex: ^mod tests
-      stopBy: end
 constraints:
   PATH:
     regex: ^(?:(?:alloc|std)::vec::)?Vec$
@@ -127,11 +96,6 @@ message: the vector of the kernel's data, its allocator named at the site
 rule:
   kind: macro_invocation
   regex: ^(?:(?:alloc|std)::)?vec!\s*\[\s*\]$
-  not:
-    inside:
-      kind: mod_item
-      regex: ^mod tests
-      stopBy: end
 fix: SmallVec::<_, 0, Global>::new()
 ---
 # A `vec!` of a repeated item takes the small vector of the repetition.
@@ -144,11 +108,6 @@ rule:
     - kind: macro_invocation
     - pattern: $CALL
     - regex: ^(?:(?:alloc|std)::)?vec!\s*\[[^;\[\]]+;[^;\[\]]+\]$
-    - not:
-        inside:
-          kind: mod_item
-          regex: ^mod tests
-          stopBy: end
 transform:
   ITEMS:
     replace:
@@ -171,10 +130,6 @@ rule:
         any:
           - regex: ^(?:(?:alloc|std)::)?vec!\s*\[\s*\]$
           - regex: ^(?:(?:alloc|std)::)?vec!\s*\[[^;\[\]]+;[^;\[\]]+\]$
-          - inside:
-              kind: mod_item
-              regex: ^mod tests
-              stopBy: end
 transform:
   ITEMS:
     replace:
@@ -190,33 +145,22 @@ severity: hint
 message: the vector of the kernel's data, its allocator named at the site
 rule:
   pattern: $SLICE.to_vec()
-  not:
-    inside:
-      kind: mod_item
-      regex: ^mod tests
-      stopBy: end
 fix: SmallVec::<_, 0, Global>::from_iter($SLICE.iter().cloned())
 ---
-# A vector made from an array or another iterable takes the small vector of
-# its items.
+# A vector made from an array or another iterable takes the small vector of its items.
 id: vec-from-is-small-vec-from-iter
 language: Rust
 severity: hint
 message: the vector of the kernel's data, its allocator named at the site
 rule:
   pattern: $PATH::from($ITEMS)
-  not:
-    inside:
-      kind: mod_item
-      regex: ^mod tests
-      stopBy: end
 constraints:
   PATH:
     regex: ^(?:(?:alloc|std)::vec::)?Vec$
 fix: SmallVec::<_, 0, Global>::from_iter($ITEMS)
 ---
-# The import of `Vec` takes the imports of the small vector and of the global
-# allocator, and of `Count` in a file that reserves a capacity.
+# The task inserts the import. A prelude name has no `use` to replace.
+# This rule covers a file that imports `Vec` and reserves a capacity.
 id: vec-import-is-small-vec-import-with-count
 language: Rust
 severity: hint
@@ -230,17 +174,12 @@ rule:
         has:
           regex: ^(?:(?:alloc|std)::vec::)?Vec::with_capacity(?:_in)?$
           stopBy: end
-    - not:
-        inside:
-          kind: mod_item
-          regex: ^mod tests
-          stopBy: end
 fix: |-
   use alloc::alloc::Global;
   use gandr_kernel_data::Count;
   use gandr_kernel_data::SmallVec;
 ---
-# The import of `Vec` in a file that reserves no capacity.
+# The task inserts the import. This rule covers a file that imports `Vec`.
 id: vec-import-is-small-vec-import
 language: Rust
 severity: hint
@@ -255,11 +194,6 @@ rule:
           has:
             regex: ^(?:(?:alloc|std)::vec::)?Vec::with_capacity(?:_in)?$
             stopBy: end
-    - not:
-        inside:
-          kind: mod_item
-          regex: ^mod tests
-          stopBy: end
 fix: |-
   use alloc::alloc::Global;
   use gandr_kernel_data::SmallVec;

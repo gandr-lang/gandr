@@ -1,8 +1,10 @@
 //! The refusals a timing report can meet, each naming what it refused.
 
+use alloc::alloc::Global;
 use core::fmt;
 use std::path::PathBuf;
 
+use gandr_kernel_data::SmallString;
 use gandr_workflow_github::GitHubError;
 
 /// Why a timing report could not be produced.
@@ -20,7 +22,7 @@ pub enum TimingError
         /// The path the operation named.
         path: PathBuf,
         /// The operating system's description of the failure.
-        message: String,
+        message: SmallString<Global>,
     },
     /// A report is not well-formed XML.
     Xml
@@ -28,7 +30,7 @@ pub enum TimingError
         /// The report.
         path: PathBuf,
         /// The parser's description of the defect.
-        message: String,
+        message: SmallString<Global>,
     },
     /// A `<testcase>` element cannot be read as a timed test.
     TestCase
@@ -59,7 +61,7 @@ pub enum TimingError
     Output
     {
         /// The writer's description of the failure.
-        message: String,
+        message: SmallString<Global>,
     },
 }
 
@@ -77,7 +79,7 @@ pub enum TestCaseDefect
     /// The element has no `time` attribute.
     MissingTime,
     /// The `time` attribute is not a finite, non-negative number of seconds.
-    Time(String),
+    Time(SmallString<Global>),
 }
 
 /// What a nextest configuration holds that the report cannot read.
@@ -88,16 +90,16 @@ pub enum TestCaseDefect
 pub enum ConfigDefect
 {
     /// The file is not TOML.
-    Toml(String),
+    Toml(SmallString<Global>),
     /// `profile.default.overrides` is not an array of tables.
     Overrides,
     /// An override's `filter` is not a string.
     Filter,
     /// A filter term is neither `test(=NAME)` nor `test(TEXT)`.
-    Term(String),
+    Term(SmallString<Global>),
     /// An override's `priority` is not an integer from -100 to 100: the
     /// integer in backticks, or the kind of value it is.
-    Priority(String),
+    Priority(SmallString<Global>),
 }
 
 impl fmt::Display for TimingError
@@ -236,6 +238,31 @@ impl From<GitHubError> for TimingError
     }
 }
 
+/// The small string of `text`. The allocator holds it, or the call panics.
+macro_rules! held {
+    ($text:expr) => {
+        gandr_kernel_data::SmallString::try_from($text).expect("the allocator holds the text")
+    };
+}
+pub(crate) use held;
+
+/// The small string of a call that builds a `String` of `alloc`.
+/// The call stays. No local format stands.
+macro_rules! held_built {
+    ($built:expr) => {{
+        #[cfg_attr(
+            all(dylint_lib = "quenchant_dylints", not(test)),
+            expect(
+                std_container,
+                reason = "the call builds a String of alloc, and no local format stands"
+            )
+        )]
+        let built = $built;
+        $crate::error::held!(built.as_str())
+    }};
+}
+pub(crate) use held_built;
+
 #[cfg(test)]
 mod tests
 {
@@ -254,14 +281,14 @@ mod tests
             (
                 TimingError::Io {
                     path: path.clone(),
-                    message: "denied".into(),
+                    message: held!("denied"),
                 },
                 "reports/junit.xml: denied",
             ),
             (
                 TimingError::Xml {
                     path: path.clone(),
-                    message: "unexpected end".into(),
+                    message: held!("unexpected end"),
                 },
                 "reports/junit.xml: not a JUnit report: unexpected end",
             ),
@@ -289,14 +316,14 @@ mod tests
             (
                 TimingError::TestCase {
                     path,
-                    defect: TestCaseDefect::Time("-1".into()),
+                    defect: TestCaseDefect::Time(held!("-1")),
                 },
                 "reports/junit.xml: a testcase time `-1` is not seconds",
             ),
             (
                 TimingError::Config {
                     path: config.clone(),
-                    defect: ConfigDefect::Toml("expected `=`".into()),
+                    defect: ConfigDefect::Toml(held!("expected `=`")),
                 },
                 ".config/nextest.toml: not TOML: expected `=`",
             ),
@@ -317,7 +344,7 @@ mod tests
             (
                 TimingError::Config {
                     path: config.clone(),
-                    defect: ConfigDefect::Term("package(x)".into()),
+                    defect: ConfigDefect::Term(held!("package(x)")),
                 },
                 ".config/nextest.toml: filter term `package(x)` is neither `test(=NAME)` nor \
                  `test(TEXT)`",
@@ -325,7 +352,7 @@ mod tests
             (
                 TimingError::Config {
                     path: config,
-                    defect: ConfigDefect::Priority("`101`".into()),
+                    defect: ConfigDefect::Priority(held!("`101`")),
                 },
                 ".config/nextest.toml: priority `101` is not an integer from -100 to 100",
             ),
@@ -337,7 +364,7 @@ mod tests
             ),
             (
                 TimingError::Output {
-                    message: "broken pipe".into(),
+                    message: held!("broken pipe"),
                 },
                 "standard output: broken pipe",
             ),

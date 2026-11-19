@@ -16,6 +16,8 @@
 //!
 //! See the [levels and their margins](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-test-timing/README.md#levels-and-margins).
 
+extern crate alloc;
+
 pub mod error;
 pub mod fetch;
 pub mod priority;

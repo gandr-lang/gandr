@@ -28,6 +28,7 @@ path = "tests/lib.rs"
 [dependencies]
 anodized.workspace = true
 clap.workspace = true
+gandr-kernel-data.workspace = true
 gandr-workflow-github.workspace = true
 quenchant-shape.workspace = true
 roxmltree.workspace = true
