@@ -1,0 +1,6 @@
+theory Long where {{
+  sort Ob : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
+  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
+  rule chain : {left} ==> {right};
+}}
