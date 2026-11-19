@@ -1641,6 +1641,31 @@ fn a_carrier_by_name_writes_its_path_juxtaposed_8085()
     );
 }
 
+/// A reflexivity `Path.here f` moved along a motive that starts at another
+/// point, `Path.step f (Path.here z)`, keeps its transport. The walk beside
+/// it, whose motive starts at `f`, writes as the composite `Path.step
+/// (Path.here f) r`, and the path calls write juxtaposed. The formatter
+/// withdraws nothing.
+#[test]
+fn a_transport_whose_motive_starts_elsewhere_keeps_its_walk_8085()
+{
+    let grammar = grammar();
+    let source = include_str!(
+        "rewrite/unformatted/a-transport-whose-motive-starts-elsewhere-keeps-its-walk-8085.gandr"
+    );
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Sugared,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(formatted.withdrawn(), []);
+    assert_eq!(
+        formatted.into_text(),
+        "def moved(\n  A : Type,\n  x : A,\n  z : A,\n  f : Path[.A = A] x z,\n  m : Path[.A = A] x z,\n  r : Path[.A = Path[.A = A] x z] f m\n) -> Path[.A = Path[.A = Path[.A = A] x z] f m] (Path.walk\n  (fun (c) { type(Path[.A = Path[.A = A] x z] (Path.step f (Path.here z)) c) })\n  r\n  (Path.here f)) (Path.step (Path.here f) r) = Path.here (Path.step (Path.here f) r);\n"
+    );
+}
+
 /// The explicit form writes the refused declaration as a signature and a
 /// definition, so its refusal moves from `24..37` to `37..50`. Both copy the
 /// one leaf `selfComposite` of the source, so the refusal keeps its site, and
