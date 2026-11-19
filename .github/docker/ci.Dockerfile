@@ -1,0 +1,167 @@
+# The Linux CI image carries this workspace's pinned Rust toolchain, CI mise
+# subset, gh, cargo-mutants, runtime and Dylint driver. No engine SDK or LLVM pin exists here.
+# Pin files are copied, never retyped; image-tag.sh hashes the build inputs.
+#
+# Every container job extracts the whole image before its first step. The
+# extraction takes most of that time, and the download takes little. So the
+# image carries only what most jobs run. Build caches, as Cargo's registry
+# and mise's downloads, leave in the layer that made them.
+# - see: #1999
+#
+# The toolchain is the channel of the pin, with clippy, rustfmt and
+# llvm-tools. The tests of the runtime emitter run the `llc` of llvm-tools. A
+# task adds each component that few jobs use: rustc-dev for Dylint and
+# rust-src for `build-dist`. `RUSTUP_TOOLCHAIN` names the channel, so rustup
+# reads no component list from rust-toolchain.toml. mise leaves rust alone
+# (below), so nothing installs the rest on first use.
+ARG UBUNTU_BASE=docker.io/library/ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+FROM ${UBUNTU_BASE} AS tools
+# The pin's channel, passed by build-ci-image.yml and checked against the pin below.
+ARG RUST_CHANNEL
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ENV DEBIAN_FRONTEND=noninteractive
+
+# rustup needs curl and certificates. The Rust linker needs build-essential
+# and mold, which the cargo configuration names for every Linux build. git2's
+# openssl-sys needs pkg-config and libssl-dev. Cargo Git sources need git.
+# The coverage upload verifies the Codecov uploader's signature with gpg.
+# - see: `.cargo/config.toml`
+#
+# The liburing crate of `gandr-runtime-uring` runs bindgen in its build.
+# Bindgen needs libclang-dev, until a later unit removes that crate.
+# - see: #7638
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl git build-essential mold pkg-config libssl-dev zstd gpg libclang-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Build tools as UID 1000. Job steps run as root to write runner-owned mounts.
+RUN userdel --remove ubuntu && useradd --create-home --home-dir /opt/ci --uid 1000 ci
+USER 1000
+
+ENV RUSTUP_HOME=/opt/ci/.rustup \
+    CARGO_HOME=/opt/ci/.cargo \
+    RUSTUP_TOOLCHAIN=${RUST_CHANNEL} \
+    PATH=/opt/ci/.local/bin:/opt/ci/.cargo/bin:$PATH
+
+# This must match landing-checks.yml: workstation-only tools never enter CI installs.
+# mise's rust backend would install every component rust-toolchain.toml
+# lists, at build time and again on a job's first mise command, since it
+# counts the pin missing until all are present. With the version file off,
+# mise leaves rust alone and rustup serves `RUSTUP_TOOLCHAIN` from the layer
+# below; no workflow sets this variable, so it holds in every container job.
+ENV MISE_DISABLE_TOOLS=cargo:bindgen-cli,cargo:hotpath,github:j178/prek,github:max-sixty/worktrunk,github:nektos/act,github:orhun/git-cliff \
+    MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS= \
+    MISE_CARGO_BINSTALL_QUICKINSTALL=true \
+    MISE_CARGO_BINSTALL_NATIVE=true
+
+# mise may rewrite its lockfile while installing, so the build user owns pins.
+# The version-2 lockfile is two parts: mise.lock and the per-npm-tool sidecars
+# under .mise/locks, which the npm backend reads to install from lock.
+COPY --chown=1000:1000 rust-toolchain.toml mise.toml mise.lock .github/workflows/landing-checks.yml .github/actions/install-tools/action.yml /opt/pins/
+COPY --chown=1000:1000 .mise/locks /opt/pins/.mise/locks
+COPY --chown=1000:1000 .config/mise/tasks/mise-tasks-fmt.toml .config/mise/tasks/mise-tasks-check.toml .config/mise/tasks/mise-tasks-mutants.toml /opt/pins/.config/mise/tasks/
+WORKDIR /opt/pins
+
+# The pin supplies the channel. The image installs clippy, rustfmt and
+# llvm-tools alone.
+RUN set -eux; \
+    [ -n "$RUST_CHANNEL" ]; \
+    [ "$RUST_CHANNEL" = "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" ]; \
+    curl -fsSL https://sh.rustup.rs -o /tmp/rustup-init.sh; \
+    sh /tmp/rustup-init.sh -y --no-modify-path --default-toolchain none; \
+    rm /tmp/rustup-init.sh; \
+    rustup toolchain install "$RUST_CHANNEL" --profile minimal --component clippy,rustfmt,llvm-tools; \
+    rustup default "$RUST_CHANNEL"
+
+# The shared install action selects mise's version. A BuildKit secret authenticates release
+# attestations without persisting a credential in any layer. The mutants
+# tasks pin cargo-mutants, which ships no Linux arm64 binary, so the image
+# builds it once instead of every mutants job.
+RUN --mount=type=secret,id=github_token,uid=1000,required=false set -eux; \
+    if [ -s /run/secrets/github_token ]; then GITHUB_TOKEN="$(cat /run/secrets/github_token)"; export GITHUB_TOKEN; fi; \
+    expected="$(sed -n 's/^  MISE_DISABLE_TOOLS: "\(.*\)"$/\1/p' /opt/pins/landing-checks.yml)"; \
+    [ "$MISE_DISABLE_TOOLS" = "$expected" ] || { echo "MISE_DISABLE_TOOLS drifts from landing-checks.yml: image='$MISE_DISABLE_TOOLS' ci='$expected'" >&2; exit 1; }; \
+    MISE_VERSION="$(grep -A2 'uses: jdx/mise-action' /opt/pins/action.yml | sed -n 's/^ *version: *//p' | head -n1 | tr -d '"')"; \
+    [ -n "$MISE_VERSION" ]; \
+    case "$(uname -m)" in \
+        x86_64) ARCH=x64 ;; \
+        aarch64) ARCH=arm64 ;; \
+        *) echo "unsupported architecture $(uname -m)" >&2; exit 1 ;; \
+    esac; \
+    mkdir -p /opt/ci/.local/bin; \
+    curl -fsSL "https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-${ARCH}" -o /opt/ci/.local/bin/mise; \
+    chmod +x /opt/ci/.local/bin/mise; \
+    mise install; \
+    mise install "cargo:cargo-mutants@$(sed -n 's/^tools."cargo:cargo-mutants" = "\(.*\)"$/\1/p' .config/mise/tasks/mise-tasks-mutants.toml | sort -u)"; \
+    rm -rf /opt/ci/.cargo/registry /opt/ci/.cargo/git /opt/ci/.cache
+
+# Cargo resolves its subcommands by name; expose pinned binaries without shims.
+RUN set -eux; \
+    for tool in cargo-dylint dylint-link cargo-nextest; do \
+        ln -sf "$(mise which "$tool")" "/opt/ci/.cargo/bin/$tool"; \
+    done
+
+# act invokes JavaScript actions through PATH rather than the hosted runner's
+# bundled Node. Expose the pinned interpreter. Workflow steps call gh outside
+# mise, as they do on the hosted runner; expose the pinned client.
+RUN ln -sf "$(mise which node)" /opt/ci/.local/bin/node \
+    && ln -sf "$(mise which gh)" /opt/ci/.local/bin/gh
+
+# A bare `cargo dylint list` does not build the compiler driver. Load a small
+# disposable library against a stub crate to bake the rustc-private driver for
+# the toolchain pin; the external quenchant library stays an exact CI cache.
+# Building the driver needs rustc-dev, so it builds in a stage of its own and
+# only the driver reaches the image: it runs on the toolchain's own rustc
+# library, and rustup cannot remove a component inside a layer.
+#
+# The driver's build script clones rust-clippy and reads no pin of ours;
+# rust-clippy.bash serves it the pinned commit (that script says how), as it
+# does for `check:dylint` on a host.
+FROM tools AS driver
+COPY --chown=1000:1000 .github/docker/rust-clippy.bash /opt/pins/
+WORKDIR /opt/ci/warmup/app
+RUN set -eux; \
+    TC="$(rustup show active-toolchain | awk '{print $1}')"; \
+    rustup component add rustc-dev llvm-tools; \
+    mkdir -p /opt/ci/warmup/gates/src /opt/ci/warmup/app/src; \
+    printf '[package]\nname = "dylint-warmup-gates"\nversion = "0.1.0"\nedition = "2021"\n\n[lib]\ncrate-type = ["cdylib"]\n' > /opt/ci/warmup/gates/Cargo.toml; \
+    printf '%s\n' \
+        '#![feature(rustc_private)]' \
+        '' \
+        'extern crate rustc_driver;' \
+        'extern crate rustc_lint;' \
+        'extern crate rustc_session;' \
+        '' \
+        'use std::ffi::CString;' \
+        'use std::os::raw::c_char;' \
+        '' \
+        'use rustc_lint::LintStore;' \
+        'use rustc_session::Session;' \
+        '' \
+        '#[no_mangle]' \
+        'pub extern "C" fn dylint_version() -> *mut c_char {' \
+        '    CString::new("0.1.0").unwrap().into_raw()' \
+        '}' \
+        '' \
+        '#[no_mangle]' \
+        'pub extern "C" fn register_lints(_sess: &Session, _store: &mut LintStore) {}' \
+        > /opt/ci/warmup/gates/src/lib.rs; \
+    printf '[package]\nname = "dylint-warmup-app"\nversion = "0.1.0"\nedition = "2021"\n' > /opt/ci/warmup/app/Cargo.toml; \
+    printf 'fn main() {}\n' > /opt/ci/warmup/app/src/main.rs; \
+    cargo build --manifest-path /opt/ci/warmup/gates/Cargo.toml --release; \
+    mv "/opt/ci/warmup/gates/target/release/libdylint_warmup_gates.so" "/opt/ci/warmup/gates/target/release/libdylint_warmup_gates@${TC}.so"; \
+    DYLINT_LIBRARY_PATH=/opt/ci/warmup/gates/target/release \
+        /opt/pins/rust-clippy.bash /opt/ci/warmup/rust-clippy.git "$RUSTUP_TOOLCHAIN" cargo dylint --lib dylint_warmup_gates --no-deps; \
+    ls -l "/opt/ci/.dylint_drivers/${TC}/dylint-driver"
+
+FROM tools
+COPY --from=driver --chown=1000:1000 /opt/ci/.dylint_drivers /opt/ci/.dylint_drivers
+
+# The runner overrides HOME. Explicit homes retain the image's populated
+# tools, while root can write the workspace and runner file-command mounts.
+ENV MISE_DATA_DIR=/opt/ci/.local/share/mise \
+    MISE_CACHE_DIR=/opt/ci/.cache/mise \
+    DYLINT_DRIVER_PATH=/opt/ci/.dylint_drivers
+USER root
+WORKDIR /opt/ci
