@@ -1,0 +1,7 @@
+/// `builtin_word`: a `builtin` mark whose payload is a bare word. The key in
+/// quotes names the row, `@[builtin("irPair")]`, and the reader refuses the
+/// bare word by its name.
+@[refuses("RetiredSpelling.builtin_word")]
+@[builtin(irPair)]
+data Pair(a : Type, b : a -> Type) : Type where
+  | MkPair : (x : a, y : b(x)) --> Pair a b

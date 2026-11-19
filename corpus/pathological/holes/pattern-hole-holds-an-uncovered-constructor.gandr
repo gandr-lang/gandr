@@ -1,0 +1,20 @@
+// A pattern hole holds the one constructor no written arm covers, `Green`,
+// so which arm runs for it is undecided and the checker refuses the match.
+
+/// Three colours, one arm each.
+data Color : Type where
+  | Red : Color
+  | Green : Color
+  | Blue : Color
+
+/// `Green` falls to the hole.
+@[refuses("UndecidedCoverage")]
+def classify(c : Color) -> Integer =
+  match c where
+    | Red => 0
+    | ? => 1
+    | Blue => 2
+
+/// `Green` classified: it checks against `classify`'s signature, whose body is
+/// refused above, so it is not run.
+def green() -> Integer = classify Green;
