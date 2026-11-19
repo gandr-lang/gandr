@@ -37,7 +37,8 @@ use crate::verdicts::AlreadyInstalled;
 
 /// The stager this process installed.
 // economy: one reader and one cache per process, read where each source's
-// marks are read, as the hydration is read where each import resolves.
+// marks are read, as the hydration is read where each import resolves. A
+// reader for each crate waits for the interop epic (#327).
 static INSTALLED: OnceLock<Stager> = OnceLock::new();
 
 /// The text that opens a `thir` mark, before its tuple of two texts.
@@ -186,7 +187,8 @@ pub fn staged(
 /// - allocation: each mark's two texts, growth within the marks of the source
 // economy: a scan of the text, as `paths_formed` reads the import forms. A
 // mark inside a comment stages too, and the lowering reads only the marks
-// that it collects.
+// that it collects. A read of the parsed marks waits for the interop epic
+// (#327).
 fn marks(text: SourceText<'_>) -> Vec<Mark>
 {
     // The text of the string literal at the start of `rest`, past its
