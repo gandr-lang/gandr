@@ -66,7 +66,6 @@ use crate::import::Translation;
 use crate::lower::DeclarationOutcome;
 use crate::lower::Sink;
 use crate::model::ModelForm;
-use crate::model::derive;
 use crate::module::BodyScope;
 use crate::module::Container;
 use crate::module::Functor;
@@ -423,10 +422,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
             named.span,
             name,
         ) {
-            Ok((_, presentation)) => presentation,
+            Ok((theory, presentation)) => (theory, presentation),
             Err(refusal) => return Maybe::Present(Unmatched::Unnamed(refusal)),
         };
-        let Ok(derived) = derive(presentation)
+        let Ok(derived) = self.cx().collected.derived(presentation.0, presentation.1)
         else {
             return Maybe::Present(Unmatched::Member(name, MatchFault::Unstated));
         };
@@ -436,6 +435,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                 binds: &[],
                 manifests: &[],
             }),
+            atoms: self.cx().collected.port_atoms_of(derived.theory),
             origin: Origin::new(named.node, named.span),
         };
         for component in &derived.components {
@@ -509,7 +509,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                 named.span,
                 name,
             ) {
-                Ok((_, presentation)) => derive(presentation)
+                Ok((theory, presentation)) => self
+                    .cx()
+                    .collected
+                    .derived(theory, presentation)
                     .map_err(|_underived| Unmatched::Member(name, MatchFault::Unstated)),
                 Err(refusal) => Err(Unmatched::Unnamed(refusal)),
             }
@@ -522,12 +525,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
             Ok(produced) => produced,
             Err(unmatched) => return Maybe::Present(unmatched),
         };
-        let minting = |named: Placed| Minting {
+        let minting = |named: Placed, atoms| Minting {
             members: Members::Fields(Fields {
                 before: &[],
                 binds: &[],
                 manifests: &[],
             }),
+            atoms,
             origin: Origin::new(named.node, named.span),
         };
         // The codomain's components by name, the first of each name kept.
@@ -552,8 +556,22 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                 return fault(MatchFault::Unstated);
             };
             let (Ok(expected), Ok(found)) = (
-                self.mint_form(form, &minting(signature.named), sink),
-                self.mint_form(made_form, &minting(codomain.named), sink),
+                self.mint_form(
+                    form,
+                    &minting(
+                        signature.named,
+                        self.cx().collected.port_atoms_of(stated.theory),
+                    ),
+                    sink,
+                ),
+                self.mint_form(
+                    made_form,
+                    &minting(
+                        codomain.named,
+                        self.cx().collected.port_atoms_of(produced.theory),
+                    ),
+                    sink,
+                ),
             )
             else {
                 return fault(MatchFault::Unstated);

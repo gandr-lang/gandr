@@ -197,7 +197,7 @@ impl<'source> Collector<'_, 'source>
                 Maybe::Present(&crate::description::DescribedDeclaration {
                     presentation: Maybe::Present(ref presentation),
                     ..
-                }) => derive(presentation).ok(),
+                }) => derive(presentation, Maybe::Present(node)).ok(),
                 Maybe::Present(_) | Maybe::Absent(_) => None,
             }
             .filter(|signature| {
@@ -383,7 +383,7 @@ impl<'source> Collector<'_, 'source>
         else {
             return Ok(());
         };
-        let Ok(signature) = derive(presentation)
+        let Ok(signature) = self.collected.derived(theory, presentation)
         else {
             return Ok(());
         };

@@ -331,6 +331,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
                 components: &signature.components,
                 binds: &binds,
             }),
+            atoms: self.cx().collected.port_atoms_of(signature.theory),
             origin: origin.inserted(Insertion::Derived),
         };
         let law = self

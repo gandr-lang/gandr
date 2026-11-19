@@ -104,6 +104,7 @@ use anodized::spec;
 use gandr_core_term::builtin::TypeAtom;
 use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeIndex;
 use gandr_theory_circuit_algebras::SpiderCanon;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
@@ -1739,12 +1740,42 @@ pub struct ModelComponent<N = Name>
 /// - hypothesis: L3 — the `CatShape` signature lists its five components in
 ///   order.
 /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
-#[repr(transparent)]
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelSignature
 {
     /// The components, in signature order.
     pub components: Vec<ModelComponent>,
+    /// The written declaration of the theory the signature derives from,
+    /// whose port sorts the scope of its source resolves (#8139).
+    pub theory: Maybe<NodeIndex, signature_theory::Absent>,
+}
+
+impl Default for ModelSignature
+{
+    /// No components, from no theory.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self {
+            components: Vec::new(),
+            theory: Maybe::Absent(signature_theory::Absent::Unwritten),
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a model signature names no written theory.
+    pub mod signature_theory {
+        /// The reason a model signature names no written theory.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The presentation stands in no theory block of a collection.
+            Unwritten,
+        }
+    }
 }
 
 /// The model signature of a presentation's members on ids: each component,
@@ -1806,7 +1837,10 @@ impl Derivation
                 inert: component.inert,
             });
         }
-        Ok(ModelSignature { components })
+        Ok(ModelSignature {
+            components,
+            theory: Maybe::Absent(signature_theory::Absent::Unwritten),
+        })
     }
 }
 
@@ -1837,11 +1871,15 @@ impl Derivation
 /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
 /// - witness: `model::tests::an_underivable_component_keeps_its_fault`
 #[inline]
-pub fn derive(presentation: &Presentation) -> Result<ModelSignature, PresentationFault>
+pub fn derive(
+    presentation: &Presentation,
+    theory: Maybe<NodeIndex, signature_theory::Absent>,
+) -> Result<ModelSignature, PresentationFault>
 {
     let members = presentation.members()?;
     let mut signature =
         derive_members(&members, presentation.wired(), &presentation.laws)?.spelled()?;
+    signature.theory = theory;
     for component in &mut signature.components {
         component.inert = presentation.inert.contains(&component.name);
     }
@@ -2079,17 +2117,21 @@ fn derive_heads(
     names: &mut Names,
 ) -> (infer::Heads, Vec<ModelComponent<NameId>>)
 {
-    /// Hold the builtin `term` names as a closed sort, once.
+    /// Hold the bare sort `term` names as a closed sort, once, when no sort
+    /// of the members declares it: the type universe or a port sort that the
+    /// scope of the theory's source resolves (#8139).
     ///
     /// # Specification
     /// trivial.
     fn close(
         heads: &mut infer::Heads,
         names: &mut Names,
+        declared: &[PresentedSort<NameId>],
         term: &SortTerm<NameId>,
     )
     {
-        if let Maybe::Present(_) = term.builtin_in(names)
+        if term.indices.is_empty()
+            && !declared.iter().any(|sort| sort.name == term.sort)
             && heads.get(term.sort).is_none()
         {
             let closed = infer::derive_head(heads, infer::HeadKind::Sort, (&[], &[]), names);
@@ -2108,7 +2150,7 @@ fn derive_heads(
     let computational = |port: &Port<NameId>| computations.contains(&port.sort.sort);
     for sort in &members.sorts {
         for index in &sort.indices {
-            close(&mut heads, names, &index.sort);
+            close(&mut heads, names, &members.sorts, &index.sort);
         }
         let head = if sort.indices.iter().any(computational) {
             Err(ModelFault::Computation)
@@ -2136,7 +2178,7 @@ fn derive_heads(
         .iter()
         .flat_map(|operation| operation.inputs.iter().chain(&operation.outputs));
     for port in ports {
-        close(&mut heads, names, &port.sort);
+        close(&mut heads, names, &members.sorts, &port.sort);
     }
     for operation in &members.operations {
         let head = if operation
@@ -2419,6 +2461,8 @@ pub struct LoweredTheory<'module>
     pub description: &'module TheoryDesc<DescriptionGrade>,
     /// What it presents to the signature of its models.
     pub presentation: &'module Presentation,
+    /// Its written declaration, which its signature names as its theory.
+    pub declaration: NodeIndex,
 }
 
 impl LoweredTheory<'_>
@@ -2434,6 +2478,6 @@ impl LoweredTheory<'_>
     #[inline]
     pub fn model(&self) -> Result<ModelSignature, PresentationFault>
     {
-        derive(self.presentation)
+        derive(self.presentation, Maybe::Present(self.declaration))
     }
 }

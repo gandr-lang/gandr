@@ -13229,6 +13229,7 @@ impl<'source> LoweredModule<'source>
                     named: declaration.named,
                     description: &declaration.description,
                     presentation,
+                    declaration: declaration.at.node,
                 }),
                 Maybe::Absent(_) => None,
             })

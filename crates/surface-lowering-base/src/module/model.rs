@@ -564,7 +564,7 @@ impl<'source> Collected<'source>
             signature.name,
         )
         .ok()
-        .and_then(|(_, presentation)| crate::model::derive(presentation).ok())
+        .and_then(|(theory, presentation)| self.derived(theory, presentation).ok())
         .map_or_default(|derived| {
             derived
                 .components
@@ -572,6 +572,50 @@ impl<'source> Collected<'source>
                 .map(|component| component.name)
                 .collect()
         })
+    }
+
+    /// The model signature that the presentation of the theory at `slot`
+    /// derives, naming the theory's written declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`crate::model::derive`].
+    #[inline]
+    pub fn derived(
+        &self,
+        slot: SlotIndex,
+        presentation: &Presentation,
+    ) -> Result<crate::model::ModelSignature, crate::model::PresentationFault>
+    {
+        let theory = self.slots.get(slot.0).map_or(
+            Maybe::Absent(crate::model::signature_theory::Absent::Unwritten),
+            |held| Maybe::Present(held.introduced_by.node),
+        );
+        crate::model::derive(presentation, theory)
+    }
+
+    /// The atom of each port sort of the theory `theory` names, as the scope
+    /// of its source resolved them: none before its source's resolve pass,
+    /// and none for a signature of no written theory.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn port_atoms_of(
+        &self,
+        theory: Maybe<gandr_surface_syntax::NodeIndex, crate::model::signature_theory::Absent>,
+    ) -> &[(
+        gandr_theory_levitation::Name,
+        gandr_core_term::builtin::TypeAtom,
+    )]
+    {
+        match theory {
+            Maybe::Present(node) => self.port_atoms.get(&node).map_or(&[], Vec::as_slice),
+            Maybe::Absent(_) => &[],
+        }
     }
 
     /// The slot `position` and the presentation it holds, when a `theory`
@@ -941,7 +985,7 @@ impl<'source> Collector<'_, 'source>
         let (position, presentation) =
             self.collected
                 .presented_theory_in(form.span.start(), prefix, theory.span, name)?;
-        let Ok(model) = crate::model::derive(presentation)
+        let Ok(model) = self.collected.derived(position, presentation)
         else {
             return Err(LoweringRefusal::OutOfFragment {
                 span: theory.span,
@@ -1050,7 +1094,7 @@ impl<'source> Collector<'_, 'source>
         else {
             return ModelsTheory(false);
         };
-        let Ok((_, presentation)) =
+        let Ok((theory_slot, presentation)) =
             self.collected
                 .presented_theory(form.span.start(), form.span, name)
         else {
@@ -1068,7 +1112,7 @@ impl<'source> Collector<'_, 'source>
         ModelsTheory(matches!(
             ascribed,
             Maybe::Present(signature)
-                if crate::model::derive(presentation).is_ok_and(|derived| derived == *signature)
+                if self.collected.derived(theory_slot, presentation).is_ok_and(|derived| derived == *signature)
         ))
     }
 

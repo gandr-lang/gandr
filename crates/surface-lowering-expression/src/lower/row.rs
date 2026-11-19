@@ -290,7 +290,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             else {
                 continue;
             };
-            if presentation.ported.is_empty() {
+            let includes = cx
+                .collected
+                .included
+                .get(&SlotIndex::from(index))
+                .is_some_and(|reached| !reached.is_empty());
+            if presentation.ported.is_empty() && !includes {
                 continue;
             }
             let Some(slot) = cx.collected.slots.get(index)
@@ -345,9 +350,32 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     )),
                 }
             }
-            resolved.push((theory, atoms, refused));
+            resolved.push((SlotIndex::from(index), theory, atoms, refused));
         }
-        for (theory, atoms, refused) in resolved {
+        for (position, theory, mut atoms, refused) in resolved {
+            // An included theory's ports stand in the theory's members, and
+            // its source resolved them first: an earlier source, or an
+            // earlier theory of this one, which this pass has stored.
+            let reached: Vec<_> = cx
+                .collected
+                .included
+                .get(&position)
+                .into_iter()
+                .flatten()
+                .filter_map(|&(included, _)| {
+                    cx.collected
+                        .slots
+                        .get(usize::from(included))
+                        .map(|held| held.introduced_by.node)
+                })
+                .collect();
+            for node in reached {
+                for &(ref name, atom) in cx.collected.port_atoms.get(&node).into_iter().flatten() {
+                    if !atoms.iter().any(|&(ref held, _)| held == name) {
+                        atoms.push((name.clone(), atom));
+                    }
+                }
+            }
             let _first = cx.collected.port_atoms.insert(theory, atoms);
             cx.collected.description_diagnostics.extend(refused);
         }

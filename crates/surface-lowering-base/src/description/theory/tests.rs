@@ -294,12 +294,15 @@ fn an_inert_operation_is_marked_on_its_presentation_3029()
         else {
             panic!("the theory presents its members")
         };
-        crate::model::derive(presentation)
-            .unwrap()
-            .components
-            .iter()
-            .map(|component| (String::from(component.name.as_ref()), component.inert))
-            .collect::<Vec<_>>()
+        crate::model::derive(
+            presentation,
+            Maybe::Absent(crate::model::signature_theory::Absent::Unwritten),
+        )
+        .unwrap()
+        .components
+        .iter()
+        .map(|component| (String::from(component.name.as_ref()), component.inert))
+        .collect::<Vec<_>>()
     };
     assert_eq!(marks(0), [(String::from("version"), true)]);
     assert_eq!(marks(1), [
@@ -354,7 +357,11 @@ fn a_thunk_type_reads_as_the_operation_it_curries_1226()
     else {
         panic!("the theory presents its members")
     };
-    let model = crate::model::derive(presentation).unwrap();
+    let model = crate::model::derive(
+        presentation,
+        Maybe::Absent(crate::model::signature_theory::Absent::Unwritten),
+    )
+    .unwrap();
     let mut spelled = alloc::string::String::new();
     for component in &model.components {
         if let Ok(crate::model::ModelForm::Operation {
@@ -404,7 +411,11 @@ fn the_box_reads_as_its_thunk_1329()
         else {
             panic!("the theory presents its members")
         };
-        let model = crate::model::derive(presentation).unwrap();
+        let model = crate::model::derive(
+            presentation,
+            Maybe::Absent(crate::model::signature_theory::Absent::Unwritten),
+        )
+        .unwrap();
         let mut spelled = alloc::string::String::new();
         for component in &model.components {
             if let Ok(crate::model::ModelForm::Operation {
@@ -2787,7 +2798,11 @@ fn diagram(
         panic!("`{source}`: one diagram")
     };
     assert_eq!(read.circuit.name, *name);
-    let model = crate::model::derive(presentation).unwrap();
+    let model = crate::model::derive(
+        presentation,
+        Maybe::Absent(crate::model::signature_theory::Absent::Unwritten),
+    )
+    .unwrap();
     assert!(
         model
             .components

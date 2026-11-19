@@ -426,6 +426,9 @@ struct Minting<'source, 'model>
 {
     /// Where the type reads the sorts and operations it names.
     members: Members<'source, 'model>,
+    /// The atom of each port sort that the theory's source resolved, which a
+    /// sort no member names reads before the table of atoms (#8139).
+    atoms: &'model [(Name, gandr_core_term::builtin::TypeAtom)],
     /// The origin every minted node carries.
     origin: Origin,
 }
@@ -1140,6 +1143,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                 structure,
                 operations: self.operation_names(model),
             },
+            atoms: self.cx().collected.port_atoms_of(model.theory),
             origin,
         };
 
@@ -1457,7 +1461,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
             })
             .copied()
         else {
-            let builtin = match sort.builtin() {
+            let resolved = minting
+                .atoms
+                .iter()
+                .find(|&&(ref named, _)| sort.indices.is_empty() && *named == sort.sort)
+                .map(|&(_, atom)| BuiltinSort::Atom(atom));
+            let builtin = match resolved.map_or_else(|| sort.builtin(), Maybe::Present) {
                 Maybe::Present(BuiltinSort::Universe(ground)) => {
                     let id = sink.arena.value_type_universe(
                         Sort::Ground(ground),
@@ -2682,7 +2691,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
             self.cx()
                 .collected
                 .presented_theory_in(at, prefix, written.at.span, name)?;
-        let Ok(signature) = crate::model::derive(presentation)
+        let Ok(signature) = self.cx().collected.derived(position, presentation)
         else {
             return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
         };
@@ -3919,6 +3928,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                     binds: binds.get(.. at).unwrap_or_default(),
                     manifests,
                 }),
+                atoms: self.cx().collected.port_atoms_of(signature.theory),
                 origin: below,
             };
             let field = match component.form {
@@ -4358,11 +4368,25 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
         else {
             return Err(Missing::Unlowered);
         };
+        let atoms = match self
+            .cx()
+            .collected
+            .structures
+            .get(usize::from(structure))
+            .map(|entry| entry.model)
+        {
+            Some(Maybe::Present(index)) => match self.cx().collected.models.get(&index) {
+                Maybe::Present(signature) => self.cx().collected.port_atoms_of(signature.theory),
+                Maybe::Absent(_) => &[],
+            },
+            Some(Maybe::Absent(_)) | None => &[],
+        };
         let minting = Minting {
             members: Members::Module {
                 structure,
                 operations: BTreeMap::new(),
             },
+            atoms,
             origin,
         };
         let dependent: Vec<Dependent> = binders.iter().map(|_| Dependent(true)).collect();
