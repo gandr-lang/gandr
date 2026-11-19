@@ -2111,12 +2111,12 @@ fn a_port_sort_reads_the_binding_of_its_theory_s_source_8139()
     use gandr_surface_lowering::UnitSource;
     use gandr_surface_syntax::ByteOffset;
 
-    let closure_text = SourceText::from(
-        "type Integer = String ;\npub theory Shout where { sort C : Type ; oper say : (c : C) --> Integer ; }\n",
-    );
-    let own = SourceText::from(
-        "import \"./shout.gandr\" ;\nmodule Loud : Model(Shout) where { type C = Bool ; def say(flag : Bool) -> String = \"loud\" ; }\nmodule Quiet : Model(Shout) where { type C = Bool ; def say(flag : Bool) -> Integer = 0 ; }\n",
-    );
+    let closure_text = SourceText::from(include_str!(
+        "compose/unformatted/a-port-sort-reads-the-binding-of-its-theory-s-source-8139-shout.gandr"
+    ));
+    let own = SourceText::from(include_str!(
+        "compose/unformatted/a-port-sort-reads-the-binding-of-its-theory-s-source-8139.gandr"
+    ));
     let said = |judged: gandr_surface_dispatcher::Judged<'_>| -> Vec<String> {
         let Ok(Composed::Settled { report, .. }) = judged.into_parts().0
         else {
