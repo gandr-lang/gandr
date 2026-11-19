@@ -736,6 +736,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///   each retired spelling is refused by its own name.
     /// - witness: `gandr-surface-lowering::lower::session::tests::a_session_type_lowers_to_its_protocol`
     /// - witness: `gandr-surface-lowering::lower::session::tests::each_retired_protocol_spelling_is_refused_by_name`
+    ///
+    /// # Cost
+    /// - allocation: the binder, the state site, the payload operand and the
+    ///   queued continuation of each form, growth within the protocol's forms
+    /// - allocation: the refusal of a malformed or retired form, error path
     #[spec(
         captures: before = (draft.syntax.len(), self.cx().operands.entries().len()),
         ensures: |ret| ret.as_ref().map_or(true, |node| match *node {
