@@ -1,0 +1,20 @@
+/// `RideUnsupported`: a ride between two distinct session codes whose motive is
+/// no run of them.
+
+// The native finite lists.
+import std.list (List);
+
+/// The module holds a seat's end, the end it keeps when it never retires, and
+/// the flow between.
+module Evolution where {
+  type SeatEnd = String >? rec turn => +{
+    report : String >! &{next : turn, retire : end},
+    handoff : String >! end
+  };
+  type Kept = String >? rec turn => +{report : String >! &{next : turn}, handoff : String >! end};
+  @[checks]
+  def keep : Flow[.A = Type](SeatEnd, Kept) = Flow.sim SeatEnd Kept;
+}
+
+@[refuses("RideUnsupported")]
+def listed() -> List Evolution.Kept = Flow.ride (fun (X) { List X }) Evolution.keep (#[]);
