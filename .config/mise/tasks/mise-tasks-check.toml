@@ -414,6 +414,7 @@ trap 'rm -f "$stamp"' EXIT
 # it (#6894).
 ["check:clippy-plain-only"]
 description = "The plain clippy wall over the targets that carry plain-only code"
+tools.jq = "1.8.1"
 usage = 'flag "--units <file>" help="write the units of the pass to this file as Cargo JSON messages"'
 run = '''
 {% raw %}#!/usr/bin/env bash
