@@ -388,11 +388,11 @@ pub enum Operation
 {
     /// [`PageSize::new`].
     Page,
-    /// [`map`], or the run of pages that a heap maps.
+    /// [`Mapper::map`], or the run of pages that a heap maps.
     Map,
-    /// [`protect`].
+    /// [`Block::protect`].
     Protect,
-    /// [`unmap`], or the run of pages that a heap gives back.
+    /// [`Block::unmap`], or the run of pages that a heap gives back.
     Unmap,
     /// [`Heap::allocate`] and [`Heap::grow`], for a layout that no block
     /// takes.
