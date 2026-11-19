@@ -1,0 +1,2 @@
+def x = "hi";
+def y = x;
