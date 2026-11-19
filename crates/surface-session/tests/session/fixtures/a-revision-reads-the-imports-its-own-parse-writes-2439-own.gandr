@@ -1,0 +1,4 @@
+import "./base.gandr";
+import "file:///far.gandr" as far;
+def two : Integer;
+def two = one;

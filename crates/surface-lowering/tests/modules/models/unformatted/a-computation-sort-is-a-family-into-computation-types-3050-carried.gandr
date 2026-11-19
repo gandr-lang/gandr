@@ -1,0 +1,7 @@
+{MAYBE}{carrier}{plain}module Option : Model(Carrier) where {{
+  type Lift(a : Type) = -F Maybe(a);
+  type Cell = -F Integer;
+}}
+def derived : Model(Carrier) ;
+def written : *{{Lift : (a : Type) -> Type[-], Cell : Type[-]}} ;
+def valued : Model(Plain) ;

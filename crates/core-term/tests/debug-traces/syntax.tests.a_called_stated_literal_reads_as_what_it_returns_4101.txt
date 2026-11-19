@@ -1,0 +1,119 @@
+test: syntax::tests::a_called_stated_literal_reads_as_what_it_returns_4101
+package: gandr-core-term
+command: mise run debug:test gandr-core-term syntax::tests::a_called_stated_literal_reads_as_what_it_returns_4101 --break returned_binds$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-core-term/afbe77dd0efd4551/out/gandr_core_term-afbe77dd0efd4551"
+Current executable set to 'target/debug-trace/debug/build/gandr-core-term/afbe77dd0efd4551/out/gandr_core_term-afbe77dd0efd4551' (x86_64).
+(lldb) settings set -- target.run-args  "syntax::tests::a_called_stated_literal_reads_as_what_it_returns_4101" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex returned_binds$
+Breakpoint 1: where = gandr_core_term-afbe77dd0efd4551`gandr_core_term::syntax::returned_binds + 22 at syntax.rs:2318:1, address = 0x00000000003d1c36
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_core_term-afbe77dd0efd4551`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x00000000007888b8
+(lldb) run
+
+running 1 test
+test syntax::tests::a_called_stated_literal_reads_as_what_it_returns_4101 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 244827 launched: 'target/debug-trace/debug/build/gandr-core-term/afbe77dd0efd4551/out/gandr_core_term-afbe77dd0efd4551' (x86_64)
+Process 244827 stopped
+* thread #2, name = 'syntax::tests::', stop reason = breakpoint 1.1
+       frame #0: 0x0000555555925c36 gandr_core_term-afbe77dd0efd4551`gandr_core_term::syntax::returned_binds(arena=Owned({values:{frozen:None, own:size=31}, computations:{frozen:None, own:size=34}, value_types:{frozen:None, own:size=11}, comp_types:{frozen:None, own:size=2}, words:{words:{0:size=0}}, region_binders_from:None}), body={0:33}, carried=size=7) at syntax.rs:2318:1
+   2315	/// # Adequacy
+   2316	/// - hypothesis: L3 — as [`equal_type_reading`].
+   2317	/// - witness: `syntax::tests::a_called_stated_literal_reads_as_what_it_returns_4101`
+-> 2318	#[spec(ensures: |ret| ret == body || arena.computation(ret).is_some())]
+    	^
+   2319	fn returned_binds(
+   2320	    arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
+   2321	    body: ComputationId,
+(lldb) bt 24
+* thread #2, name = 'syntax::tests::', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555555925c36 gandr_core_term-afbe77dd0efd4551`gandr_core_term::syntax::returned_binds(arena=Owned({values:{frozen:None, own:size=31}, computations:{frozen:None, own:size=34}, value_types:{frozen:None, own:size=11}, comp_types:{frozen:None, own:size=2}, words:{words:{0:size=0}}, region_binders_from:None}), body={0:33}, carried=size=7) at syntax.rs:2318:1
+     frame #1: 0x0000555555916c53 gandr_core_term-afbe77dd0efd4551`gandr_core_term::syntax::called_reduct::{closure#0} at syntax.rs:2425:20
+     frame #2: 0x0000555555af3c35 gandr_core_term-afbe77dd0efd4551`anodized::__::eval_once::<gandr_core_term::arena::ValueId, gandr_core_term::syntax::called_reduct::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #3: 0x0000555555925199 gandr_core_term-afbe77dd0efd4551`gandr_core_term::syntax::called_reduct(arena=Owned({values:{frozen:None, own:size=31}, computations:{frozen:None, own:size=34}, value_types:{frozen:None, own:size=11}, comp_types:{frozen:None, own:size=2}, words:{words:{0:size=0}}, region_binders_from:None}), steps={__0:256}, value={0:9}) at syntax.rs:2382:1
+     frame #4: 0x0000555555924d3f gandr_core_term-afbe77dd0efd4551`gandr_core_term::syntax::equal_syntax(arena={values:{frozen:None, own:size=30}, computations:{frozen:None, own:size=29}, value_types:{frozen:None, own:size=11}, comp_types:{frozen:None, own:size=2}, words:{words:{0:size=0}}, region_binders_from:None}, reading=Printed({root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}), root=ValueType({0:2}, {0:3})) at syntax.rs:3223:21
+     frame #5: 0x0000555555918519 gandr_core_term-afbe77dd0efd4551`gandr_core_term::syntax::equal_type_reading::{closure#0} at syntax.rs:1915:5
+     frame #6: 0x0000555555af40d1 gandr_core_term-afbe77dd0efd4551`anodized::__::eval_once::<gandr_core_term::syntax::CertificateEquality, gandr_core_term::syntax::equal_type_reading::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #7: 0x00005555559263b8 gandr_core_term-afbe77dd0efd4551`gandr_core_term::syntax::equal_type_reading(arena={values:{frozen:None, own:size=30}, computations:{frozen:None, own:size=29}, value_types:{frozen:None, own:size=11}, comp_types:{frozen:None, own:size=2}, words:{words:{0:size=0}}, region_binders_from:None}, signatures={root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, left={0:2}, right={0:3}) at syntax.rs:1905:1
+     frame #8: 0x0000555555bf80de gandr_core_term-afbe77dd0efd4551`gandr_core_term::syntax::tests::a_called_stated_literal_reads_as_what_it_returns_4101 at syntax.rs:5864:21
+     frame #9: 0x0000555555bcb0f7 gandr_core_term-afbe77dd0efd4551`gandr_core_term::syntax::tests::a_called_stated_literal_reads_as_what_it_returns_4101::{closure#0}((null)={}) at syntax.rs:5770:63
+     frame #10: 0x0000555555ae2106 gandr_core_term-afbe77dd0efd4551`<gandr_core_term::syntax::tests::a_called_stated_literal_reads_as_what_it_returns_4101::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #11: 0x0000555555c682bb gandr_core_term-afbe77dd0efd4551`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #12: 0x0000555555c682b9 gandr_core_term-afbe77dd0efd4551`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #13: 0x0000555555c75805 gandr_core_term-afbe77dd0efd4551`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #14: 0x0000555555c75800 gandr_core_term-afbe77dd0efd4551`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #15: 0x0000555555c75800 gandr_core_term-afbe77dd0efd4551`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #16: 0x0000555555c757eb gandr_core_term-afbe77dd0efd4551`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #17: 0x0000555555c757eb gandr_core_term-afbe77dd0efd4551`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #18: 0x0000555555c757eb gandr_core_term-afbe77dd0efd4551`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #19: 0x0000555555c757d6 gandr_core_term-afbe77dd0efd4551`test::run_test::{closure#0} at lib.rs:677:43
+     frame #20: 0x0000555555c701c4 gandr_core_term-afbe77dd0efd4551`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #21: 0x0000555555c70149 gandr_core_term-afbe77dd0efd4551`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #22: 0x0000555555c78962 gandr_core_term-afbe77dd0efd4551`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #23: 0x0000555555c78953 gandr_core_term-afbe77dd0efd4551`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+(lldb) frame variable --depth 3
+(alloc::borrow::Cow<gandr_core_term::arena::CoreArena> *) arena = 0x00007ffff79fdbb8 Owned({values:{frozen:None, own:size=31}, computations:{frozen:None, own:size=34}, value_types:{frozen:None, own:size=11}, comp_types:{frozen:None, own:size=2}, words:{words:{0:size=0}}, region_binders_from:None})
+(gandr_core_term::arena::ComputationId) body = {0:33}
+(alloc::vec::Vec<gandr_core_term::rewrite::Carried, alloc::alloc::Global> *) carried = 0x00007ffff79fd928 size=7
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x0000555555916c53 gandr_core_term-afbe77dd0efd4551`gandr_core_term::syntax::called_reduct::{closure#0} at syntax.rs:2425:20
+   2422	                argument,
+   2423	                &mut carried,
+   2424	            );
+-> 2425	            body = returned_binds(arena, body, &mut carried);
+    	                   ^
+   2426	        }
+   2427	        let body = folded_computation(arena, body);
+   2428	        let result = match arena.computation(body) {
+(lldb) frame variable --depth 3
+(gandr_core_term::syntax::StaticSteps) steps = {0:256}
+(alloc::borrow::Cow<gandr_core_term::arena::CoreArena>) arena = Owned({values:{frozen:None, own:size=31}, computations:{frozen:None, own:size=34}, value_types:{frozen:None, own:size=11}, comp_types:{frozen:None, own:size=2}, words:{words:{0:size=0}}, region_binders_from:None}) {
+  0 = {values:{frozen:None, own:size=31}, computations:{frozen:None, own:size=34}, value_types:{frozen:None, own:size=11}, comp_types:{frozen:None, own:size=2}, words:{words:{0:size=0}}, region_binders_from:None}
+}
+(gandr_core_term::arena::ValueId) value = {0:9}
+(gandr_core_term::arena::ValueId) value = {0:9}
+(alloc::vec::Vec<gandr_core_term::arena::ValueId, alloc::alloc::Global>) arguments = size=0
+(alloc::vec::Vec<gandr_core_term::rewrite::Carried, alloc::alloc::Global>) carried = size=7 {
+  [0] = Value({0:2}, {0:0}) {
+    0 = {0:2}
+    1 = {0:0}
+  }
+  [1] = Value({0:3}, {0:30}) {
+    0 = {0:3}
+    1 = {0:30}
+  }
+  [2] = Computation({0:0}, {0:29}) {
+    0 = {0:0}
+    1 = {0:29}
+  }
+  [3] = Computation({0:1}, {0:30}) {
+    0 = {0:1}
+    1 = {0:30}
+  }
+  [4] = Computation({0:2}, {0:31}) {
+    0 = {0:2}
+    1 = {0:31}
+  }
+  [5] = Computation({0:3}, {0:32}) {
+    0 = {0:3}
+    1 = {0:32}
+  }
+  [6] = Computation({0:4}, {0:33}) {
+    0 = {0:4}
+    1 = {0:33}
+  }
+}
+(gandr_core_term::arena::ComputationId) call = {0:7}
+(gandr_core_term::arena::ComputationId) head = {0:6}
+(gandr_core_term::arena::ValueId) thunk = {0:4}
+(gandr_core_term::arena::ComputationId) body = {0:33}
+(gandr_core_term::arena::ValueId) argument = {0:0}
+(gandr_core_term::arena::ComputationId) inner = {0:4}
