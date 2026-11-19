@@ -1,0 +1,472 @@
+{
+  "groups": {
+    "rust": [
+      "check:anodized",
+      "check:anodized-enforcing",
+      "check:clippy",
+      "check:clippy-arch",
+      "check:clippy-enforcing",
+      "check:clippy-plain-only",
+      "check:corpus-comments",
+      "check:doctests",
+      "check:dylint",
+      "check:landing",
+      "check:obligations",
+      "check:rust-record",
+      "check:tests-enforcing",
+      "check:tests-plain-only",
+      "check:witnesses"
+    ],
+    "doc": ["check:doc"],
+    "corpus": [
+      "check:corpus",
+      "check:corpus-comments",
+      "check:corpus-format",
+      "check:corpus-goldens",
+      "check:differential",
+      "check:exemplars",
+      "check:fences",
+      "check:gandr-doc",
+      "check:syntax-exemplars"
+    ],
+    "corpus-tests": ["check:tests-enforcing"],
+    "extension": ["check:extension", "check:input-table", "check:vscode-smoke"],
+    "prose": ["check:fences", "check:prose"],
+    "riscv64": ["check:riscv64-ring"]
+  },
+  "readers": [
+    "gandr-surface-dispatcher",
+    "gandr-surface-evaluate",
+    "gandr-surface-grammar",
+    "gandr-surface-parser"
+  ],
+  "light": ["check:cases", "check:deny", "check:spec-cost-landed"],
+  "landing": [
+    "check:corpus",
+    "check:corpus-comments",
+    "check:corpus-format",
+    "check:corpus-goldens",
+    "check:doc",
+    "check:fences",
+    "check:landing",
+    "check:prose",
+    "check:syntax-exemplars",
+    "check:tests-enforcing",
+    "check:witnesses"
+  ],
+  "comments": ["rust"],
+  "formatting": {
+    "configuration": [
+      ".mise/locks/",
+      ".oxfmtrc.json",
+      ".oxlintrc.json",
+      "mise.lock",
+      "mise.toml",
+      "rumdl.toml",
+      "rust-toolchain.toml",
+      "rustfmt.toml",
+      "sizelint.toml",
+      "tombi.toml",
+      "treefmt.toml",
+      "typos.toml"
+    ],
+    "programs": [
+      {
+        "reads": [
+          "**.mts",
+          "**.ts",
+          "aube-lock.yaml",
+          "aube-workspace.yaml",
+          "contrib/gandr-vscode/package.json",
+          "contrib/gandr-vscode/tsconfig.json",
+          "package.json"
+        ],
+        "sources": ["**.mts", "**.ts"]
+      }
+    ],
+    "links": { "sources": ["**.md"] }
+  },
+  "lints": {
+    "configuration": [
+      ".config/mise/enforcing",
+      ".config/mise/tasks/mise-tasks-check.toml",
+      ".github/actions/",
+      ".github/docker/",
+      ".github/workflows/landing-checks.yml",
+      ".mise/locks/",
+      "mise.lock",
+      "mise.toml"
+    ]
+  },
+  "reads": {
+    "every": [
+      ".config/mise/tasks/mise-tasks-check.toml",
+      ".mise/",
+      "mise.lock",
+      "mise.toml",
+      "rust-toolchain.toml"
+    ],
+    "checks": {
+      "check:bench": [
+        ".cargo/",
+        ".config/bench/",
+        ".config/bodies/",
+        ".config/cases/",
+        ".config/gh/budget.bash",
+        ".config/issues/",
+        ".config/mise/scope",
+        ".config/mise/tasks/mise-tasks-ci.toml",
+        ".config/references/",
+        ".github/ISSUE_TEMPLATE/unit.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/",
+        "hotpath/",
+        "ledger/concerns.sql",
+        "library/std/"
+      ],
+      "check:cases": [".config/"],
+      "check:census": [".config/cases/", ".config/census/"],
+      "check:claims": [
+        ".cargo/",
+        ".config/",
+        ".github/ISSUE_TEMPLATE/unit.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "contrib/",
+        "corpus/",
+        "crates/",
+        "ledger/concerns.sql",
+        "ledger/features.sql",
+        "library/"
+      ],
+      "check:commits": [".config/commits/", ".config/pr-stack/", "commitlint.config.mjs"],
+      "check:coverage": [
+        ".cargo/",
+        ".config/cases/",
+        ".config/coverage/",
+        ".github/workflows/report-coverage.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/"
+      ],
+      "check:crate-lead": [".config/cases/", ".config/crate-lead/", "crates/"],
+      "check:crate-map": [
+        ".cargo/",
+        ".config/cases/",
+        ".config/crate-map/",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/",
+        "ledger/README.md",
+        "ledger/concerns.sql",
+        "ledger/crates.dot"
+      ],
+      "check:dead-weight": [".config/cases/", ".config/dead-weight/"],
+      "check:debug": [".config/debug/"],
+      "check:doc-features": [
+        ".cargo/",
+        ".config/doc/",
+        ".config/mise/gated",
+        ".config/mise/scope",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/"
+      ],
+      "check:doc-targets": [
+        ".cargo/",
+        ".config/doc/",
+        ".config/mise/gated",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/",
+        "rust-toolchain.toml"
+      ],
+      "check:find-image": [".github/actions/find-image/"],
+      "check:follow": [
+        ".cargo/",
+        ".config/cases/",
+        ".config/follow/",
+        ".config/mise/tasks/mise-tasks-toolchain.toml",
+        ".config/toolchain/",
+        ".github/actions/install-tools/action.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/"
+      ],
+      "check:gate-rows": [".config/claims/", ".config/gate-rows/", ".config/mise/"],
+      "check:gh-budget": [".config/", ".github/"],
+      "check:gh-direct": [".config/", ".github/", "crates/"],
+      "check:hooks": ["prek.toml"],
+      "check:host-lock": [".config/cases/", ".config/mise/"],
+      "check:hotpath": [
+        ".config/cases/",
+        ".config/hotpath/",
+        ".github/workflows/landing-checks.yml",
+        "hotpath/"
+      ],
+      "check:issues": [
+        ".config/bodies/",
+        ".config/cases/",
+        ".config/epics/",
+        ".config/gh/",
+        ".config/issues/",
+        ".config/mise/disabled-tools.bash",
+        ".config/mise/tasks/mise-tasks-ci.toml",
+        ".config/triage/",
+        "crates/",
+        "ledger/concerns.sql"
+      ],
+      "check:landing-queue": [
+        ".config/cases/",
+        ".config/landing/",
+        ".github/workflows/landing-checks.yml",
+        ".github/workflows/nightly-sweeps.yml"
+      ],
+      "check:landing-rebase": [".config/cases/", ".config/landing/"],
+      "check:ledger": [
+        ".config/cases/",
+        ".config/ledger/",
+        ".config/mise/tasks/mise-tasks-ledger.toml",
+        ".config/pr-stack/",
+        "contrib/",
+        "corpus/",
+        "crates/",
+        "ledger/"
+      ],
+      "check:lockfile": [".config/mise/"],
+      "check:merge-driver": [".config/merge-driver/", "crates/surface-lowering/"],
+      "check:merge-residue": [".config/merge-residue/"],
+      "check:mutants": [".config/cases/", ".config/mutants/"],
+      "check:nightly": [
+        ".config/cases/",
+        ".config/nightly/",
+        ".github/workflows/nightly-sweeps.yml"
+      ],
+      "check:positions": [
+        ".config/cases/",
+        ".config/mise/tasks/mise-tasks-ledger.toml",
+        ".config/positions/",
+        "crates/",
+        "ledger/positions.sql"
+      ],
+      "check:pr-stack": [
+        ".config/cases/",
+        ".config/gh/",
+        ".config/mise/disabled-tools.bash",
+        ".config/mise/tasks/mise-tasks-ci.toml",
+        ".config/pr-stack/",
+        ".config/replay/",
+        ".config/toolchain/",
+        ".github/workflows/",
+        "crates/",
+        "ledger/references.sql"
+      ],
+      "check:pr-title": [".config/pr-title/"],
+      "check:publish": [".cargo/", "Cargo.lock", "Cargo.toml", "crates/"],
+      "check:purposes": [
+        ".cargo/",
+        ".config/cases/",
+        ".config/mise/scope",
+        ".config/mise/tasks/mise-tasks-ledger.toml",
+        ".config/purposes/",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/",
+        "ledger/",
+        "library/"
+      ],
+      "check:readme-pin": [".config/readme.sha256", "README.md"],
+      "check:recovery-change": [
+        ".cargo/",
+        ".config/cases/",
+        ".config/mise/scope",
+        ".config/mise/tasks/mise-tasks-ci.toml",
+        ".config/recovery/",
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "corpus/",
+        "crates/",
+        "ledger/"
+      ],
+      "check:recovery-rise": [
+        ".config/cases/",
+        ".config/recovery/",
+        "corpus/",
+        "crates/surface-corpus/strict/",
+        "crates/surface-parser/tests/"
+      ],
+      "check:references": [
+        ".config/bodies/",
+        ".config/cases/",
+        ".config/references/",
+        "README.md",
+        "corpus/",
+        "crates/",
+        "ledger/references.sql",
+        "library/"
+      ],
+      "check:replay": [
+        ".config/cases/",
+        ".config/gh/budget.bash",
+        ".config/pr-stack/",
+        ".config/replay/",
+        ".config/toolchain/",
+        "crates/"
+      ],
+      "check:reserved-width": [".config/nextest.toml", ".config/reserved/", "crates/"],
+      "check:rust-clippy": [".config/rust-clippy/", "rust-toolchain.toml"],
+      "check:service": [".config/cases/", ".config/service/"],
+      "check:shared": [
+        ".config/cases/",
+        ".config/mise/tasks/mise-tasks-ledger.toml",
+        ".config/shared/",
+        "crates/",
+        "ledger/shared.sql"
+      ],
+      "check:sites": ["crates/theory-sites/"],
+      "check:spec-cost-landed": [
+        ".cargo/",
+        ".config/mise/enforcing",
+        ".config/mise/scope",
+        ".config/mise/tasks/mise-tasks-ci.toml",
+        ".config/spec-cost/",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/"
+      ],
+      "check:stall": [".config/bodies/", ".config/cases/", ".config/claims/", ".config/stall/"],
+      "check:syntax-ledger": [
+        ".cargo/",
+        ".config/ledger/",
+        ".config/mise/scope",
+        ".config/mise/tasks/mise-tasks-ledger.toml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "corpus/",
+        "crates/",
+        "ledger/"
+      ],
+      "check:target-pin": [
+        ".cargo/",
+        ".config/mise/",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/",
+        "rust-toolchain.toml"
+      ],
+      "check:tracking": [
+        ".config/bodies/",
+        ".config/cases/",
+        ".config/gh/budget.bash",
+        ".config/tracking/",
+        "crates/core-term/",
+        "ledger/features.sql"
+      ],
+      "check:unsafe-skips": [
+        ".cargo/",
+        ".config/cases/",
+        ".config/mise/scope",
+        ".config/unsafe/",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/"
+      ],
+      "check:vectors": [".config/pr-stack/", "crates/storage-records/", "crates/storage-values/"],
+      "check:vscode-smoke-admits": [".config/vscode-smoke/"],
+      "check:witness-cases": [
+        ".cargo/",
+        ".config/cases/",
+        ".config/mise/enforcing",
+        ".config/mise/scope",
+        ".config/witnesses/",
+        ".github/workflows/landing-checks.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/"
+      ],
+      "check:workflow-hashing": [".config/cases/", ".config/workflow-contexts/", ".github/"],
+      "check:workflow-hashing-shell": [".config/cases/", ".config/workflow-contexts/", ".github/"],
+      "check:workflow-names": [".config/cases/", ".config/workflow-names/", ".github/workflows/"]
+    }
+  },
+  "paths": [
+    { "path": ".config/nextest.toml", "groups": ["rust", "doc"] },
+    { "path": ".config/obligations/", "groups": ["rust", "doc"] },
+    { "path": ".config/rust-clippy/", "groups": ["rust", "doc"] },
+    { "path": ".config/witnesses/", "groups": ["rust", "doc"] },
+    { "path": ".config/issues/templates/", "groups": ["prose"] },
+    { "path": ".config/prose/", "groups": ["prose"] },
+    { "path": ".config/", "groups": [] },
+    { "path": ".github/", "groups": [] },
+    { "path": "crates/workflow-prose/", "groups": ["rust", "doc", "corpus", "extension", "prose"] },
+    {
+      "path": "crates/workflow-debt-ledger/",
+      "groups": ["rust", "doc", "corpus", "extension", "prose"]
+    },
+    {
+      "path": "crates/surface-render-terminal/tests/golden/",
+      "groups": ["rust", "doc", "corpus", "extension", "prose"]
+    },
+    { "path": "crates/*/README.md", "groups": ["rust", "doc", "corpus", "extension", "prose"] },
+    { "path": "crates/**.gandr", "groups": ["rust", "doc", "corpus", "extension", "prose"] },
+    { "path": "crates/README.md", "groups": ["rust", "doc", "corpus", "extension", "prose"] },
+    { "path": "crates/", "groups": ["rust", "doc", "corpus", "extension"] },
+    { "path": ".cargo/", "groups": ["rust", "doc", "corpus", "extension", "prose"] },
+    { "path": "Cargo.toml", "groups": ["rust", "doc", "corpus", "extension", "prose"] },
+    { "path": "Cargo.lock", "groups": ["rust", "doc", "corpus", "extension", "prose"] },
+    { "path": "rust-toolchain.toml", "groups": ["rust", "doc", "corpus", "extension", "prose"] },
+    { "path": "clippy.toml", "groups": ["rust", "doc"] },
+    { "path": "rustfmt.toml", "groups": ["rust", "doc"] },
+    { "path": "corpus/glossary.toml", "groups": ["corpus", "prose"] },
+    { "path": "corpus/prose.ledger", "groups": ["corpus", "prose"] },
+    { "path": "corpus/**.gandr", "groups": ["corpus", "corpus-tests", "prose"] },
+    { "path": "**.gandr", "groups": ["corpus", "prose"] },
+    { "path": "corpus/**.md", "groups": ["corpus", "corpus-tests", "prose"] },
+    { "path": "corpus/", "groups": ["corpus", "corpus-tests"] },
+    { "path": "library/**.md", "groups": ["corpus", "prose"] },
+    { "path": "library/", "groups": ["corpus"] },
+    { "path": "ledger/README.md", "groups": ["corpus", "prose"] },
+    { "path": "ledger/", "groups": ["corpus"] },
+    { "path": "contrib/gandr-vscode/**.md", "groups": ["extension", "prose"] },
+    { "path": "contrib/gandr-vscode/", "groups": ["extension"] },
+    { "path": "package.json", "groups": ["extension"] },
+    { "path": "aube-lock.yaml", "groups": ["extension"] },
+    { "path": "aube-workspace.yaml", "groups": ["extension"] },
+    { "path": ".oxfmtrc.json", "groups": ["extension"] },
+    { "path": ".oxlintrc.json", "groups": ["extension"] },
+    { "path": ".actrc", "groups": [] },
+    { "path": ".coderabbit.yaml", "groups": [] },
+    { "path": ".gitignore", "groups": [] },
+    { "path": "README.md", "groups": ["prose"] },
+    { "path": "cliff.toml", "groups": [] },
+    { "path": "codecov.yml", "groups": [] },
+    { "path": "commitlint.config.mjs", "groups": [] },
+    { "path": "prek.toml", "groups": [] },
+    { "path": "rumdl.toml", "groups": [] },
+    { "path": "sizelint.toml", "groups": [] },
+    { "path": "tombi.toml", "groups": [] },
+    { "path": "treefmt.toml", "groups": [] },
+    { "path": "typos.toml", "groups": [] }
+  ],
+  "adds": [
+    { "path": "**.toml", "groups": ["prose"] },
+    { "path": "**.bash", "groups": ["prose"] },
+    { "path": "**.sh", "groups": ["prose"] },
+    { "path": "**.yml", "groups": ["prose"] },
+    { "path": "**.yaml", "groups": ["prose"] },
+    { "path": "**.jq", "groups": ["prose"] },
+    { "path": "**.py", "groups": ["prose"] },
+    { "path": "**.awk", "groups": ["prose"] },
+    { "path": "**Dockerfile", "groups": ["prose"] },
+    { "path": "**.txt", "groups": ["prose"] },
+    { "path": "**.tsv", "groups": ["prose"] },
+    { "path": ".config/mise/", "groups": ["prose"] },
+    { "path": ".config/local-paths/", "groups": ["prose"] },
+    { "path": ".config/debug/", "groups": ["prose"] },
+    { "path": "crates/*/tests/fakes/**", "groups": ["prose"] },
+    { "path": ".actrc", "groups": ["prose"] },
+    { "path": ".gitignore", "groups": ["prose"] }
+  ]
+}

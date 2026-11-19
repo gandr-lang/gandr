@@ -1,0 +1,3 @@
+module Bare where {
+  def other = 1;
+}
