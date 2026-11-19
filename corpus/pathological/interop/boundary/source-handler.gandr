@@ -1,5 +1,5 @@
-// Handlers of an `extern` block's interface written in gandr, each refused
-// where it leaves the block's members.
+// Each handler below answers an `extern` block's interface in gandr.
+// The checker refuses each one where it leaves the block's members.
 //
 // A clause answers a member that the block declares. It binds the member's
 // arguments as one payload, or none for a member of no argument, and then the
@@ -15,7 +15,7 @@
 // The boundary check reads `admitBlock` here, whatever the listing names.
 import std.boundary (Arg, NoCode, Plain, Row);
 
-// `U32`, the scalar a `u32` is coded as.
+// `U32`, the scalar that codes a `u32`.
 import std.layout (U32);
 
 /// `add`'s row: two `u32` to a `u32`.

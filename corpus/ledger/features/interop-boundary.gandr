@@ -8,13 +8,12 @@
 /// block of fixed-width members declares an interface that its source's
 /// definitions perform and the Rust caller's host answers, and the checker
 /// admits a block carrying `boundary` against the rows it names where the block
-/// stands. An importer of the block's source reads the interface too. A
-/// handler written in gandr answers the interface inside its scope, where its
-/// clauses shadow the host. A value crosses by its layout as words the Rust
-/// caller lends: a list Rust holds tagged or packed answers the `length` Rust
-/// counts, and `Option<&u32>` reads by its null niche.
-/// Not implemented: a capability type that names the operations of a block,
-/// and a block of a language that does not lower yet.
+/// stands. An importer of the block's source reads the interface too, and a
+/// handler in gandr answers it inside its scope before the host does. A value
+/// crosses by its layout as words the Rust caller lends: a list Rust holds
+/// tagged or packed answers the `length` Rust counts, and `Option<&u32>` reads
+/// by its null niche.
+/// Not implemented: a capability type does not list the operations of a block.
 ///
 /// The Rust caller is `crates/surface-dispatcher/tests/boundary.rs`; each call
 /// below is one it makes.
