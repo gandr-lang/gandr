@@ -1,3 +1,0 @@
-@[item("identity")]
-data Item : Type where
-  | Identity : Item

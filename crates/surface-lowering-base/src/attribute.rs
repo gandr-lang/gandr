@@ -736,7 +736,6 @@ impl AttributePlaces
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub const fn refusing(
         self,
         place: AttributePlace,

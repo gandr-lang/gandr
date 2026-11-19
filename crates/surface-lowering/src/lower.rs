@@ -8401,15 +8401,15 @@ mod tests
 
     /// #8119: an attribute at a place that the registry does not let it
     /// stand is refused by its name, its place and the place it takes. The
-    /// mark `item` on a type is the old spelling, and `deprecated` before the
-    /// second arm stands on a constructor.
+    /// mark `item` before a definition stands on a declaration, and
+    /// `deprecated` before the second arm stands on a constructor.
     #[test]
     fn an_attribute_at_another_place_is_refused_by_name_and_place_8119()
     {
         use crate::attribute::AttributePlace;
         for (text, name, written, place, takes) in [
             (
-                include_str!("lower/fixtures/an-item-mark-on-a-type-is-refused-8119.gandr"),
+                include_str!("lower/fixtures/an-item-mark-on-a-definition-is-refused-8119.gandr"),
                 "item",
                 "item(\"identity\")",
                 AttributePlace::Declaration,

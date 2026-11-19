@@ -5302,7 +5302,8 @@ impl<'source> Collector<'_, 'source>
             };
             let Maybe::Present(constructor) = member.constructor
             else {
-                refused = refused.or(Some((block.node, misplaced_in(FormName::DATA, block.span))));
+                refused = refused
+                    .or_else(|| Some((block.node, misplaced_in(FormName::DATA, block.span))));
                 continue;
             };
             let start = marks.len();

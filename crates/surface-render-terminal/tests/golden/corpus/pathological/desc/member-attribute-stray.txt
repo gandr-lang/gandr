@@ -1,8 +1,8 @@
-error[MalformedForm]: a keyword or symbol of this data declaration is out of place
-  ╭▸ corpus/pathological/desc/member-attribute-stray.gandr:8:3
+error[MisplacedAttribute]: the attribute `checks` stands on a declaration, not on a constructor
+  ╭▸ corpus/pathological/desc/member-attribute-stray.gandr:8:5
   │
 8 │   @[checks]
-  │   ━━━━━━━━━ out of place
+  │     ━━━━━━ an attribute at another place
   │
-  ├ note: `Stray` is refused with MalformedForm, as its expectation states
-  ╰ help: move the keyword or symbol to its place in the data declaration
+  ├ note: `Stray` is refused with MisplacedAttribute, as its expectation states
+  ╰ help: write `checks` before a declaration

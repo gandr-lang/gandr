@@ -1657,6 +1657,8 @@ impl<'source> Collector<'_, 'source>
     ///   block that follows it.
     /// - fails: no operand; a second operand that is no attribute block.
     /// - panics: none.
+    /// - executable: none — whether the next operand is an attribute block is a
+    ///   read of the syntax tree, which a predicate would repeat.
     ///
     /// # Errors
     /// [`LoweringRefusal::MalformedForm`].

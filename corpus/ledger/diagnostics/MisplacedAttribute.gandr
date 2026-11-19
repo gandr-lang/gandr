@@ -1,6 +1,8 @@
 /// `MisplacedAttribute`: an attribute written at a place that the registry
-/// does not let it stand. The mark `item` stands on a constructor.
+/// does not let it stand. The mark `deprecated` stands on a declaration, and
+/// here it stands on a constructor.
 @[refuses("MisplacedAttribute")]
-@[item("identity")]
-data Item : Type where
-  | Identity : Item
+data Flag : Type where
+  | Off : Flag
+  @[deprecated]
+  | On : Flag

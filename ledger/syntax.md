@@ -255,32 +255,32 @@ An old spelling and the spelling that replaces it. A spelling the grammar still 
 
 ## Attributes — 22 attributes
 
-Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes, linking its exemplar, which the exemplar gate lowers and checks the attribute is filed.
+Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes and the places where it stands, linking its exemplar, which the exemplar gate lowers and checks the attribute is filed.
 
-| Attribute | Payload |
-| --------- | ------- |
-| [`checks`](../corpus/ledger/attributes/checks.gandr) | no payload |
-| [`owes`](../corpus/ledger/attributes/owes.gandr) | an integer payload |
-| [`refuses`](../corpus/ledger/attributes/refuses.gandr) | a text payload |
-| [`runs`](../corpus/ledger/attributes/runs.gandr) | a text payload |
-| [`normalizes`](../corpus/ledger/attributes/normalizes.gandr) | a text payload |
-| [`decomposes`](../corpus/ledger/attributes/decomposes.gandr) | an unquoted form |
-| [`traces`](../corpus/ledger/attributes/traces.gandr) | an unquoted form |
-| [`reads`](../corpus/ledger/attributes/reads.gandr) | an unquoted form |
-| [`distributes`](../corpus/ledger/attributes/distributes.gandr) | a text or a tuple of texts |
-| [`doc`](../corpus/ledger/attributes/doc.gandr) | a text payload |
-| [`explicit_exits`](../corpus/ledger/attributes/explicit_exits.gandr) | no payload |
-| [`explicit_runs`](../corpus/ledger/attributes/explicit_runs.gandr) | no payload or the text "effects" |
-| [`respects`](../corpus/ledger/attributes/respects.gandr) | a declared name or a tuple of declared names |
-| [`entry`](../corpus/ledger/attributes/entry.gandr) | a declared name or a tuple of declared names |
-| [`form`](../corpus/ledger/attributes/form.gandr) | one of the words `explicit`, `sugared` |
-| [`identity`](../corpus/ledger/attributes/identity.gandr) | a tuple of two or three declared names: a relation, its reflexivity and optionally its transport law |
-| [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` |
-| [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
-| [`builtin`](../corpus/ledger/attributes/builtin.gandr) | a text payload |
-| [`thir`](../corpus/ledger/attributes/thir.gandr) | a text or a tuple of texts |
-| [`item`](../corpus/ledger/attributes/item.gandr) | a text or a tuple of texts |
-| [`inert`](../corpus/ledger/attributes/inert.gandr) | no payload |
+| Attribute | Payload | Stands on |
+| --------- | ------- | --------- |
+| [`checks`](../corpus/ledger/attributes/checks.gandr) | no payload | a declaration |
+| [`owes`](../corpus/ledger/attributes/owes.gandr) | an integer payload | a declaration |
+| [`refuses`](../corpus/ledger/attributes/refuses.gandr) | a text payload | a declaration |
+| [`runs`](../corpus/ledger/attributes/runs.gandr) | a text payload | a declaration |
+| [`normalizes`](../corpus/ledger/attributes/normalizes.gandr) | a text payload | a declaration |
+| [`decomposes`](../corpus/ledger/attributes/decomposes.gandr) | an unquoted form | a declaration |
+| [`traces`](../corpus/ledger/attributes/traces.gandr) | an unquoted form | a declaration |
+| [`reads`](../corpus/ledger/attributes/reads.gandr) | an unquoted form | a declaration |
+| [`distributes`](../corpus/ledger/attributes/distributes.gandr) | a text or a tuple of texts | a declaration |
+| [`doc`](../corpus/ledger/attributes/doc.gandr) | a text payload | a declaration or a constructor |
+| [`explicit_exits`](../corpus/ledger/attributes/explicit_exits.gandr) | no payload | a declaration |
+| [`explicit_runs`](../corpus/ledger/attributes/explicit_runs.gandr) | no payload or the text "effects" | a declaration |
+| [`respects`](../corpus/ledger/attributes/respects.gandr) | a declared name or a tuple of declared names | a declaration |
+| [`entry`](../corpus/ledger/attributes/entry.gandr) | a declared name or a tuple of declared names | a declaration |
+| [`form`](../corpus/ledger/attributes/form.gandr) | one of the words `explicit`, `sugared` | a declaration |
+| [`identity`](../corpus/ledger/attributes/identity.gandr) | a tuple of two or three declared names: a relation, its reflexivity and optionally its transport law | a declaration |
+| [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` | a declaration |
+| [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names | a declaration |
+| [`builtin`](../corpus/ledger/attributes/builtin.gandr) | a text payload | a declaration |
+| [`thir`](../corpus/ledger/attributes/thir.gandr) | a text or a tuple of texts | a declaration |
+| [`item`](../corpus/ledger/attributes/item.gandr) | a text payload | a constructor |
+| [`inert`](../corpus/ledger/attributes/inert.gandr) | no payload | a declaration |
 
 ## Decisions — 109 of 161 rules decided at every token
 
