@@ -1150,6 +1150,7 @@ fixture/model/desc/cwf.gandr	210	2	8031
 fixture/model/desc/cwf.gandr	212	3	8031
 fixture/model/desc/cwf.gandr	218	3	8031
 fixture/model/desc/cwf.gandr	330	5	8030
+fixture/model/desc/cwf.gandr	347	2	8072
 fixture/model/desc/cwf.gandr	358	5	8030
 fixture/model/desc/cwf.gandr	406	4	8031
 fixture/model/desc/cwf.gandr	435	7	7881
@@ -1319,6 +1320,7 @@ fixture/model/desc/lc/syntax-model.gandr	25	0	8031
 fixture/model/desc/lc/syntax-model.gandr	30	0	8031
 fixture/model/desc/lc/syntax-model.gandr	35	0	8031
 fixture/model/desc/lc/syntax-model.gandr	56	4	8031
+fixture/model/desc/lc/syntax-model.gandr	71	2	8072
 fixture/model/desc/lc/syntax.gandr	0	0	8030
 fixture/model/desc/lc/syntax.gandr	34	0	8030
 fixture/model/desc/lc/syntax.gandr	120	7	8031
@@ -3345,6 +3347,7 @@ fixture/model/modules/dotted-nested.gandr	39	4	8031
 fixture/model/modules/dotted-nested.gandr	46	2	8031
 fixture/model/modules/dotted-nested.gandr	51	2	8031
 fixture/model/modules/dotted-nested.gandr	85	2	8031
+fixture/model/modules/family-applied.gandr	34	2	8072
 fixture/model/modules/family-applied.gandr	44	5	8030
 fixture/model/modules/family-applied.gandr	127	2	8031
 fixture/model/modules/family-applied.gandr	169	1	8030
@@ -3533,7 +3536,9 @@ fixture/model/modules/top-level-type-imported.gandr	20	2	8031
 fixture/model/modules/top-level-type-imported.gandr	50	2	8031
 fixture/model/modules/top-level-type.gandr	12	2	8031
 fixture/model/modules/top-level-type.gandr	29	2	8031
+fixture/model/modules/top-level-type.gandr	84	2	8072
 fixture/model/modules/top-level-type.gandr	104	2	8031
+fixture/model/modules/top-level-type.gandr	158	2	8072
 fixture/model/modules/translated-newer.gandr	5	2	8031
 fixture/model/modules/translated-newer.gandr	52	1	8031
 fixture/model/modules/translated.gandr	4	2	8031
@@ -5504,6 +5509,7 @@ fixture/pathological/module-duplicate-member.gandr	17	1	8031
 fixture/pathological/modules/dotted-prefix-clash.gandr	4	1	8031
 fixture/pathological/modules/dotted-prefix-clash.gandr	24	2	8031
 fixture/pathological/modules/dotted-prefix-clash.gandr	49	3	8031
+fixture/pathological/modules/family-applied.gandr	6	2	8072
 fixture/pathological/modules/functor-mistyped.gandr	0	0	8030
 fixture/pathological/modules/functor-mistyped.gandr	35	1	8031
 fixture/pathological/modules/functor-mistyped.gandr	79	2	8031
