@@ -19862,6 +19862,14 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// # Errors
     /// The attribute's refusal.
     ///
+    /// # Cost
+    /// - allocation: the name and span the declaration's seen list gains,
+    ///   growth within the declaration's attributes
+    /// - allocation: the spelling of a spelled payload or a `builtin` key, and
+    ///   the names or members a payload carries, durable by the declaration's
+    ///   key
+    /// - allocation: the refusal and its suggestion, error path
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a filed entry adds exactly one recognized name and
     ///   keeps its schema, payload and span; duplicate, unknown and ill-typed
