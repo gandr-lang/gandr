@@ -37,7 +37,7 @@ def headOfEmpty() -> Integer = head (VNil : Vec Integer Zero);
 /// The length one, written as a call.
 def single() -> Nat = Succ Zero;
 
-/// The vector two long, at a length that holds a call under `Succ`. The
-/// checker pairs the field of each `Succ`, and the call converts with its value.
+/// The vector two long, at a length with a call under `Succ`. The checker
+/// pairs the field of each `Succ`, and the call converts with its value.
 @[checks]
 def pairViaCall() -> Vec Integer (Succ (single())) = pair ();
