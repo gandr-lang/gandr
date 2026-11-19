@@ -1,0 +1,7 @@
+theory Metering where {
+  sort Ratio : Type;
+  oper scale : Ratio;
+}
+module M : Model(Metering) with sort Rate = Integer where {
+  def scale = 2;
+}
