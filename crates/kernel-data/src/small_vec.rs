@@ -5,11 +5,15 @@
 //! and the tag names the live half. So an access branches once, on the tag.
 //!
 //! `N` is a parameter of the type, so each site sets its own, and `N` of zero
-//! is a plain heap vector. A zero-sized item takes no storage, so a vector of
-//! them counts its items and never draws a block. A grow that the allocator
-//! refuses is an error of [`SmallVec::try_reserve`], and the vector stays as
-//! it was. The length, the emptiness, the index and the iterators come from
-//! the slice that the vector dereferences to.
+//! is a plain heap vector. At `N` of zero, the tag is set from the start, so
+//! no access tests it, and an empty vector holds a dangling block of capacity
+//! zero, as an empty `Vec` does.
+//!
+//! A zero-sized item takes no storage, so a vector of them counts its items
+//! and never draws a block. A grow that the allocator refuses is an error of
+//! [`SmallVec::try_reserve`], and the vector stays as it was. The length, the
+//! emptiness, the index and the iterators come from the slice that the vector
+//! dereferences to.
 //!
 //! | `N` and `T` | Size | Storage |
 //! | ----------- | ---- | ------- |
@@ -20,10 +24,12 @@
 //!
 //! # Safety
 //! - unsafe invariants: the tag names the live half. With the tag clear, the
-//!   inline array is live. With the tag set, the pair is live, and its pointer
-//!   is a block of the vector's allocator with the array layout of its
-//!   capacity. The first `len` slots of the live half hold items, and no other
-//!   slot does. A vector of zero-sized items never sets the tag.
+//!   inline array is live. With the tag set, the pair is live. Its pointer is a
+//!   block of the vector's allocator with the array layout of its capacity, or
+//!   a dangling pointer at a capacity of zero, which no allocator holds. The
+//!   first `len` slots of the live half hold items, and no other slot does. A
+//!   vector of zero-sized items never sets the tag. A vector of `N` zero and
+//!   items of a size always sets it.
 
 use alloc::alloc::Global;
 use alloc::alloc::handle_alloc_error;
@@ -243,6 +249,11 @@ impl<T, const N: usize, A> SmallVec<T, N, A>
 where
     A: Allocator,
 {
+    /// Whether the block holds the items from the start: `N` of zero and
+    /// items of a size. The tag is then set from the start, and each access
+    /// reads the block with no test of the tag.
+    const BLOCK_ONLY: bool = N == 0 && size_of::<T>() != 0;
+
     /// An empty vector over `alloc`.
     ///
     /// # Specification
@@ -265,6 +276,16 @@ where
                 "the inline array holds more items than the length counts"
             );
         };
+        if Self::BLOCK_ONLY {
+            return Self {
+                tagged: SPILLED,
+                raw: Raw {
+                    heap: (NonNull::dangling(), 0),
+                },
+                alloc,
+                items: PhantomData,
+            };
+        }
         Self {
             tagged: 0,
             raw: Raw {
@@ -301,18 +322,19 @@ where
         vec
     }
 
-    /// The half that holds the items, as the tag names it.
+    /// The half that holds the items, as the tag names it. At `N` of zero
+    /// with items of a size, the block, with no test of the tag.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     const fn live(&self) -> Live
     {
-        if (self.tagged & SPILLED) == 0 {
-            Live::Inline
+        if Self::BLOCK_ONLY || (self.tagged & SPILLED) != 0 {
+            Live::Block
         }
         else {
-            Live::Block
+            Live::Inline
         }
     }
 
@@ -524,12 +546,22 @@ where
             Live::Block => {
                 // SAFETY: the tag names the pair live.
                 let (old, old_capacity) = unsafe { self.raw.heap };
-                let old_layout =
-                    Layout::array::<T>(old_capacity).map_err(|_overflow| Refused::Overflow)?;
-                // SAFETY: `old` is a block of `self.alloc` with `old_layout`,
-                // and `layout` is larger, with the same alignment.
-                unsafe { self.alloc.grow(old.cast(), old_layout, layout) }
-                    .map_err(|_refusal| Refused::Allocator(layout))?
+                if old_capacity == 0 {
+                    // A block of capacity zero dangles, and no allocator holds
+                    // it, so the grow draws a new block.
+                    self.alloc
+                        .allocate(layout)
+                        .map_err(|_refusal| Refused::Allocator(layout))?
+                }
+                else {
+                    let old_layout =
+                        Layout::array::<T>(old_capacity).map_err(|_overflow| Refused::Overflow)?;
+                    // SAFETY: `old` is a block of `self.alloc` with
+                    // `old_layout`, and `layout` is larger, with the same
+                    // alignment.
+                    unsafe { self.alloc.grow(old.cast(), old_layout, layout) }
+                        .map_err(|_refusal| Refused::Allocator(layout))?
+                }
             },
             Live::Inline => {
                 let block = self
@@ -580,13 +612,25 @@ where
         // SAFETY: the tag names the pair live.
         let (block, capacity) = unsafe { self.raw.heap };
         let len = self.count().0;
-        if len > N && len == capacity {
+        if (len > N || Self::BLOCK_ONLY) && len == capacity {
             return;
         }
         let Ok(held) = Layout::array::<T>(capacity)
         else {
             Refused::Overflow.raise()
         };
+        if len <= N && Self::BLOCK_ONLY {
+            self.raw = Raw {
+                heap: (NonNull::dangling(), 0),
+            };
+            // SAFETY: `block` is a block of `self.alloc` with `held`, since its
+            // capacity is not zero, and it holds no item. The dangling pair
+            // names it no more, so it returns once.
+            unsafe {
+                self.alloc.deallocate(block.cast(), held);
+            }
+            return;
+        }
         if len <= N {
             let mut inline = MaybeUninit::<[T; N]>::uninit();
             // SAFETY: the first `len` slots of the block hold the items, the
@@ -1227,10 +1271,13 @@ where
                     Box::from_raw_in(ptr::slice_from_raw_parts_mut(block.as_ptr(), len), alloc)
                 };
             }
-            // SAFETY: `block` is a block of `alloc` with `held` and holds no
-            // item, and `vec` names it no more, so it returns once.
-            unsafe {
-                alloc.deallocate(block.cast(), held);
+            if capacity > 0 {
+                // SAFETY: `block` is a block of `alloc` with `held`, since its
+                // capacity is not zero, and it holds no item. `vec` names it
+                // no more, so it returns once.
+                unsafe {
+                    alloc.deallocate(block.cast(), held);
+                }
             }
         }
         let block: NonNull<T> = if kept.size() == 0 {
@@ -1276,10 +1323,21 @@ where
         if self.live() == Live::Block {
             // SAFETY: the tag names the pair live.
             let (block, capacity) = unsafe { self.raw.heap };
-            self.tagged = 0;
-            if let Ok(layout) = Layout::array::<T>(capacity) {
-                // SAFETY: `block` is a block of `self.alloc` with `layout`, and
-                // the cleared tag names it no more, so it returns once.
+            if Self::BLOCK_ONLY {
+                self.raw = Raw {
+                    heap: (NonNull::dangling(), 0),
+                };
+                self.tagged = SPILLED;
+            }
+            else {
+                self.tagged = 0;
+            }
+            if capacity > 0
+                && let Ok(layout) = Layout::array::<T>(capacity)
+            {
+                // SAFETY: `block` is a block of `self.alloc` with `layout`,
+                // since its capacity is not zero. The cleared tag or the
+                // dangling pair names it no more, so it returns once.
                 unsafe {
                     self.alloc.deallocate(block.cast(), layout);
                 }
@@ -1826,7 +1884,9 @@ where
     A: Allocator + Default,
 {
     /// The array, in place. The blanket `TryFrom` of this conversion has the
-    /// never type as its error, so its caller matches `Ok` alone.
+    /// never type as its error, so its caller matches `Ok` alone. At `N` of
+    /// zero with items of a size, the empty array gives the empty vector, in
+    /// its dangling block.
     ///
     /// # Specification
     /// - ensures: the vector holds the array's items in order, and draws no
@@ -1837,11 +1897,14 @@ where
     /// - hypothesis: L3 — an array converts with no error arm and reads back in
     ///   place.
     /// - witness: `tests::small_vec::an_array_converts_with_no_error_arm`
-    #[spec(ensures: |ret| ret.count() == Count(N) && ret.live() == Live::Inline)]
+    #[spec(ensures: |ret| ret.count() == Count(N) && (Self::BLOCK_ONLY || ret.live() == Live::Inline))]
     #[inline]
     fn from(value: [T; N]) -> Self
     {
         let mut vec = Self::new_in(A::default());
+        if Self::BLOCK_ONLY {
+            return vec;
+        }
         vec.raw = Raw {
             inline: ManuallyDrop::new(MaybeUninit::new(value)),
         };
