@@ -7405,7 +7405,7 @@ impl Walk<'_, '_>
     }
 
     /// Pushes the label an entry of a braced former is written after: `l : `
-    /// before a record type's field, `.l = ` before a record's, `l = ` before
+    /// before a record type's field, `.l = ` before a record's field and before
     /// a field a record update writes, `.i = ` before an injection's body.
     ///
     /// # Specification
@@ -7429,6 +7429,10 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
     /// - witness: `tests::goldens::n_ary_tuples_and_injections_spell_between_their_braces`
     /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+    ///
+    /// # Cost
+    /// - allocation: the label's text with its separator, durable by the piece
+    ///   that holds it
     #[spec(
         captures: [entry = self.pieces.len(), fidelity = self.fidelity],
         ensures: |ref ret| (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
