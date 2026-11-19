@@ -141,6 +141,10 @@ impl<'source> Collector<'_, 'source>
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the recorded inclusions and the derived slots, durable by
+    ///   the collection.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a monoid's semigroup, an extension of the monoid
     ///   reaching the semigroup through it, and two extensions of the semigroup
@@ -334,6 +338,10 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Errors
     /// As the fails clause.
+    ///
+    /// # Cost
+    /// - allocation: the forgetting slots and the sort sets, durable by the
+    ///   collection.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a counter's carrier fixed at a type and at a

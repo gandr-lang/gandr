@@ -548,6 +548,10 @@ impl<'source> Collected<'source>
     /// - executable: none — the names are the derived signature's, which a
     ///   clause would derive again.
     ///
+    /// # Cost
+    /// - allocation: the derived signature and the names it hands back, durable
+    ///   by the returned names.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::state_signatures`].
     /// - witness: `gandr-surface-lowering::tests::namespace::an_import_at_a_narrower_signature_settles_3098`
@@ -939,6 +943,10 @@ impl<'source> Collector<'_, 'source>
     /// [`LoweringRefusal::UnknownMember`],
     /// [`LoweringRefusal::UnreadAscription`] and
     /// [`LoweringRefusal::DuplicateDefinition`].
+    ///
+    /// # Cost
+    /// - allocation: the derived signature and the manifest types, durable by
+    ///   the returned model.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::model_signature`], and a flow's domain and

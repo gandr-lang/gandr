@@ -3715,6 +3715,9 @@ pub fn collect<'source>(
 /// # Errors
 /// The description elaboration's refusal.
 ///
+/// # Cost
+/// - allocation: the descriptions and the tables of the collection, setup.
+///
 /// # Adequacy
 /// - hypothesis: L3 — every collection starts here, so every witness of
 ///   [`collect_source`] reaches it.
@@ -7878,6 +7881,10 @@ impl<'source> Collector<'_, 'source>
     /// - provides: the flow half of [`Self::header`].
     /// - fails: never; every fault of the form is yielded.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the boxed header and the derived signatures, durable by
+    ///   the flow's slot.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a flow whose body reads its domain's members by name
