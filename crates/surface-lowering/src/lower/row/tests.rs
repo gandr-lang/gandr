@@ -200,3 +200,30 @@ fn a_port_sort_no_scope_binds_is_refused_at_its_bytes_8139()
         "the theory is refused at the unbound name: {refusal:?}"
     );
 }
+
+/// #8139: a name that the scope of its source binds reads that binding, and
+/// the table of atoms answers only a name that no scope binds. A source binds
+/// `Integer` to the strings, so a word checks at it and a number does not.
+#[test]
+fn the_scope_wins_over_the_atom_8139()
+{
+    let text = "type Integer = String ;\ndef word(x : Integer) -> String = x ;\ndef number() -> Integer = 0 ;\n";
+    let mut arena = CoreArena::new();
+    let module = preluded(SourceText::from(text), &Unit::single(), &mut arena);
+    let report = judged(&module, &mut arena);
+    let verdicts: Vec<bool> = report
+        .judged()
+        .iter()
+        .map(|judged| {
+            matches!(
+                judged.verdict(),
+                gandr_core_checker::Verdict::Checked { .. }
+            )
+        })
+        .collect();
+    assert_eq!(
+        verdicts,
+        vec![true, false],
+        "`word` checks at the source's `Integer`, and `number` is refused: {report:?}"
+    );
+}
