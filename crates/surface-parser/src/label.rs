@@ -1,0 +1,4971 @@
+//! The labeler: a hand-rolled DFA over source bytes into lexical tokens.
+//!
+//! `label` is the front of the batch pipeline
+//! (`labeler ∘ molder ∘ fold(push) ∘ commit`). It is a total scan over `&[u8]`
+//! — no `logos`, no `phf`, no proc-macro — that classifies each maximal lexeme
+//! into a [`Lexeme`] class and records its exact byte span. The classes mirror
+//! the lexical surface of gandr's tree-sitter grammar:
+//!
+//! * trivia — whitespace, newlines, `//` line comments, nested `/* */` block
+//!   comments, and `#!/…` shebangs (the tree-sitter `extras`) — classify as
+//!   [`Lexeme::Space`], stored as layout for losslessness and skipped by the
+//!   content digest (that invariance holds in `gandr-surface-syntax`);
+//! * every non-trivia lexeme is handed to the molder, which resolves the
+//!   grammar tile label(s) by dry-run (`crate::mold`);
+//! * a byte the grammar has no tile for classifies as [`Lexeme::Unknown`] and
+//!   flows the [`crate::Oblig::UnmoldedTok`] path in the molder — never a lexer
+//!   error (totality extends to the labeler).
+//!
+//! Lexical ambiguity (a lowercase word is an `identifier` or a `type_variable`;
+//! an uppercase word is a `constructor`, a `type_identifier`, or a keyword like
+//! `Type` / `Integer`) is **not** resolved here: the labeler emits the class
+//! and the exact text, and the molder enumerates the candidate molds over the
+//! text-as-label plus the class's generic labels, picking the obligation
+//! minimum (`crate::mold::candidate_labels`).
+//!
+//! # A run is cut only at whitespace and the delimiters
+//!
+//! Code is read in runs. A run ends at whitespace, at a delimiter — `( ) [ ]
+//! { } ; , " . @` — and at a comment's opener. A run the operator table holds
+//! whole is that operator, `->` or `<=>` or `pi+`. Any other run is one name,
+//! so `x-y`, `x:` and `x'` are names, as Agda reads them. A `!`, `?` or `~`
+//! that leads a run is a sigil cut from the rest. A digit-led run is a number
+//! only where the whole run is one. Every other run is one word, `-x` and
+//! `\T` included. An operator therefore stands apart from its operands: `a -
+//! b`, `- x`, `x : T`.
+//!
+//! - Alternatives: maximal munch over a table of operators and marked words,
+//!   which needs bridge tiles for `+U` and `-F` and makes `x-y` an expression,
+//!   and per-character punctuation, which splits `->`.
+//! - Reversal: an operand form that must be written against its operator.
+//!
+//! # A dot before a digit stands alone
+//!
+//! A number's fraction is written after its whole part, `0.5`, and a `.` the
+//! labeler meets outside a number is a lexeme of its own whatever follows it,
+//! a digit included; `..` stays the rest token. So `.1` is a dot and a
+//! number: the positional label of `+{ .1 = b }` and `#{ .0 = a }`, the
+//! leading-dot entries of the arity-shaped formers
+//! (`gandr_surface_grammar::built_in`). Before, `.5` scanned as a number with
+//! no whole part, which the lowering never read as one.
+//!
+//! - Alternatives: a label lexeme `.name` scanned by context, a dot preceded by
+//!   space, `{` or `,`, which teaches the labeler grammar and breaks a
+//!   projection spread over lines.
+//! - Reversal: a fraction written without its whole part that must read as a
+//!   number, which needs a lead the label does not take.
+//!
+//! # An arm's bar is told apart from the union's
+//!
+//! A `|` opens a clause, a constructor or a match arm when it is the first
+//! token on its line, when it follows a `,` directly inside a brace, or when
+//! it stands directly in a brace whose first token is a `|`; it is then a
+//! [`Lexeme::ArmBar`]. In such a brace, a `|` inside an arm's patterns is the
+//! or-pattern's, as OCaml's `function | A | B -> e` reads it: one standing
+//! before the arm's `=>` with a `=>` still to come before the next `:`, `;`,
+//! line-leading bar or the brace's close. Every other `|` is the union, an
+//! or-pattern or the pipeline. A union inside a
+//! bar block is parenthesised: `| C : (A | B)`. The marking reads brackets,
+//! line starts and the arm's `=>` only, so it runs over the labeled stream,
+//! never inside a scanner.
+//!
+//! - Alternatives: one `|` tile that the molder reads as either, which ties `|
+//!   true => 1 | false => 0` against the pipeline `1 | false`, a bracket stack
+//!   in the scanner, which leaves no ground to relabel from, and or-patterns in
+//!   a clause only in parentheses, which the pattern grammar holds no grouping
+//!   for.
+//! - Reversal: a context the bar reads that brackets, line starts and the arm's
+//!   `=>` do not carry.
+
+use alloc::string::String;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_surface_grammar::RetiredForm;
+use gandr_surface_syntax::SourceFragment;
+
+use crate::meld::primitive_copy_wrapper;
+use crate::mold::TokenIndex;
+
+mod layout;
+
+pub use layout::Move;
+
+/// The lexical class of one maximal lexeme.
+///
+/// The class is the labeler's whole output vocabulary; the molder maps each
+/// non-space, non-unknown class plus the lexeme text to grammar tile labels.
+///
+/// # Specification
+/// - requires: none.
+/// - ensures: exactly one class is assigned per maximal lexeme.
+/// - provides: the closed labeler output vocabulary the molder consumes.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — this carrier has no entry or return boundary; the
+///   labeler and token-text observer carry its executable obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — host and shell contexts cover the complete lexical
+///   vocabulary with exact class streams and source spans. Wrong modes, missing
+///   classes and shifted spans change these observations.
+/// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
+/// - witness: `label::tests::labels_a_definition_losslessly`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Lexeme
+{
+    /// A lowercase-led word: an `identifier`, a `type_variable`, or a keyword.
+    LowerWord,
+    /// An uppercase-led word: a `constructor`, a `type_identifier`, a primitive
+    /// type name, or an uppercase keyword (`Type`).
+    UpperWord,
+    /// A numeric literal with no primitive-type suffix.
+    Number,
+    /// A numeric literal with a mandatory primitive-type suffix.
+    TypedNumber,
+    /// A single-quoted character literal.
+    Character,
+    /// A string delimiter `"`.
+    Quote,
+    /// A run of ordinary string content between escapes and the closing quote
+    /// of a host string (`string_fragment`).
+    StringFragment,
+    /// A run of ordinary content inside a shell double-quoted string
+    /// (`double_string_fragment`). Kept apart from [`Lexeme::StringFragment`]
+    /// so the token after an opening `"` tells a host string from a shell one.
+    ShellStringFragment,
+    /// A backslash escape inside a string or character.
+    EscapeSequence,
+    /// An operator or punctuation tile whose label is its exact text.
+    Punct,
+    /// A bare word inside a shell block (a `command_name` / `shell_word` /
+    /// `argument` run over the shell-word byte class).
+    ShellWord,
+    /// A command-local environment assignment `NAME=value` inside a shell
+    /// block: one whole token, the shape the tree-sitter `token(seq(…))`
+    /// `environment_assignment` and the PBG's single-tile atom both expect.
+    /// A shell word whose name part is not identifier-shaped
+    /// (`--color=auto`) or that has no name (`=`) stays a
+    /// [`Lexeme::ShellWord`].
+    EnvAssign,
+    /// The raw interior of a single-quoted shell string (`'…'`): everything
+    /// between the quotes verbatim (the tree-sitter `single_quoted_string`'s
+    /// `token.immediate(/[^']*/)`), one opaque `single_quoted_content` tile.
+    SingleQuotedContent,
+    /// A shell variable name after `$` (`$name`): the `variable_name` tile of a
+    /// `variable_expansion` (tree-sitter `variable_expansion`).
+    VariableName,
+    /// A shell subshell opener `[` (tree-sitter `subshell` = `[ … ]`). A
+    /// shell-context bracket, DISTINCT from the host list-literal `[`, so a
+    /// subshell never widens the host `[` mold menu.
+    SubshellOpen,
+    /// A shell subshell closer `]`, the shell-context partner of
+    /// [`Lexeme::SubshellOpen`].
+    SubshellClose,
+    /// A shell redirection file descriptor: a digit run immediately before a
+    /// `<` / `>` redirection operator (`2>`, `2>&1`; tree-sitter
+    /// `file_descriptor`). A bare digit run NOT before a redirection stays an
+    /// ordinary shell word.
+    FileDescriptor,
+    /// A `|` that opens a clause, a constructor or a match arm: the first
+    /// token on its line, or one standing directly in a brace whose first
+    /// token is a `|`. Every other `|` stays [`Lexeme::Punct`].
+    ArmBar,
+    /// A layout block's opener, which the molder reads as `{`: zero-width, or
+    /// a body's line-final `=` relabeled.
+    LayoutOpen,
+    /// A layout block's zero-width separator, which the molder reads as `;`.
+    LayoutSemi,
+    /// A layout block's zero-width closer, which the molder reads as `}`.
+    LayoutClose,
+    /// Insignificant layout: whitespace, newlines, comments, or a shebang.
+    Space,
+    /// A byte or run the grammar has no tile for (the `UnmoldedTok` path).
+    Unknown,
+}
+
+/// Borrowed UTF-8 source bytes under the labeler's cursor domain.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct SourceBytes<'source>(&'source [u8]);
+
+impl SourceBytes<'_>
+{
+    /// Return an empty borrowed byte buffer.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    fn empty() -> Self
+    {
+        Self(&[])
+    }
+
+    /// Return the byte length as a lexer cursor offset.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    fn len(self) -> ByteOffset
+    {
+        ByteOffset::from(self.0.len())
+    }
+
+    /// Return the byte at `pos` when it is inside the source buffer.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    fn byte(
+        self,
+        pos: ByteOffset,
+    ) -> Option<SourceByte>
+    {
+        self.0.get(usize::from(pos)).copied().map(SourceByte::from)
+    }
+
+    /// Return the borrowed byte slice covered by `start .. end`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    fn span(
+        self,
+        start: ByteOffset,
+        end: ByteOffset,
+    ) -> Option<Self>
+    {
+        self.0.get(usize::from(start) .. usize::from(end)).map(Self)
+    }
+
+    /// Return whether the whole byte slice equals `pattern`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    fn equals(
+        self,
+        pattern: BytePattern<'_>,
+    ) -> BytePredicate
+    {
+        BytePredicate::from(self.0 == pattern.0)
+    }
+
+    /// Return whether the byte slice starts with `pattern`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    fn starts_with(
+        self,
+        pattern: BytePattern<'_>,
+    ) -> BytePredicate
+    {
+        BytePredicate::from(self.0.starts_with(pattern.0))
+    }
+
+    /// Return whether the byte slice ends with `pattern`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    fn ends_with(
+        self,
+        pattern: BytePattern<'_>,
+    ) -> BytePredicate
+    {
+        BytePredicate::from(self.0.ends_with(pattern.0))
+    }
+
+    /// Return whether `start .. end` equals `pattern`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    fn span_matches(
+        self,
+        start: ByteOffset,
+        end: ByteOffset,
+        pattern: BytePattern<'_>,
+    ) -> BytePredicate
+    {
+        BytePredicate::from(self.0.get(usize::from(start) .. usize::from(end)) == Some(pattern.0))
+    }
+}
+
+impl<'source> From<&'source [u8]> for SourceBytes<'source>
+{
+    /// Borrow a byte slice as the scanner's source bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: &'source [u8]) -> Self
+    {
+        Self(value)
+    }
+}
+
+/// Borrowed byte-pattern literal used for lexer lookahead checks.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct BytePattern<'pattern>(&'pattern [u8]);
+
+/// Host byte cursor in the labeler's source buffer.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct ByteOffset(usize);
+
+impl ByteOffset
+{
+    /// Start of a source buffer.
+    const ZERO: Self = Self(0);
+
+    /// Advance this cursor by a checked byte width, saturating at host maximum.
+    ///
+    /// # Specification
+    /// - ensures: the cursor advances by the width, saturating at the host
+    ///   ceiling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, ordinary and host-ceiling operands expose exact
+    ///   cursors; arithmetic wrap, wrong direction and an off-by-one saturation
+    ///   boundary change the observed offsets.
+    /// - witness: `label::tests::cursor_arithmetic_saturates_at_both_boundaries`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_add(width.0))]
+    fn advance(
+        self,
+        width: ByteWidth,
+    ) -> Self
+    {
+        Self(self.0.saturating_add(width.0))
+    }
+
+    /// Move this cursor backwards by a byte width, saturating at zero.
+    ///
+    /// # Specification
+    /// - ensures: the cursor moves back by the width, saturating at zero.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, ordinary and host-ceiling operands expose exact
+    ///   cursors; arithmetic wrap, wrong direction and an off-by-one saturation
+    ///   boundary change the observed offsets.
+    /// - witness: `label::tests::cursor_arithmetic_saturates_at_both_boundaries`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_sub(width.0))]
+    fn retreat(
+        self,
+        width: ByteWidth,
+    ) -> Self
+    {
+        Self(self.0.saturating_sub(width.0))
+    }
+}
+
+impl From<usize> for ByteOffset
+{
+    /// Adopt a host offset as a scanner cursor.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: usize) -> Self
+    {
+        Self(value)
+    }
+}
+
+impl From<ByteOffset> for usize
+{
+    /// Read the cursor back as a host offset.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: ByteOffset) -> Self
+    {
+        value.0
+    }
+}
+
+/// Width in UTF-8/source bytes.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct ByteWidth(usize);
+
+impl ByteWidth
+{
+    /// One byte.
+    const ONE: Self = Self(1);
+    /// Two bytes.
+    const TWO: Self = Self(2);
+    /// Three bytes.
+    const THREE: Self = Self(3);
+    /// Four bytes.
+    const FOUR: Self = Self(4);
+}
+
+impl From<usize> for ByteWidth
+{
+    /// Adopt a host width as a byte width.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: usize) -> Self
+    {
+        Self(value)
+    }
+}
+
+impl From<ByteWidth> for usize
+{
+    /// Read the width back as a host width.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: ByteWidth) -> Self
+    {
+        value.0
+    }
+}
+
+/// One source byte under a lexical byte-class predicate.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct SourceByte(u8);
+
+impl SourceByte
+{
+    /// Return whether this byte is an ASCII digit.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    fn is_ascii_digit(self) -> BytePredicate
+    {
+        BytePredicate::from(u8::from(self).is_ascii_digit())
+    }
+
+    /// Return whether this byte can start a shell variable name (`[A-Za-z_]`).
+    ///
+    /// # Specification
+    /// - ensures: accepts ASCII letters and underscore.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all 256 byte values are compared with the explicit
+    ///   lexical alphabet, including both neighbors of every ASCII class
+    ///   boundary. Missing members and accidental additions flip an observed
+    ///   classification.
+    /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| bool::from(ret) == matches!(self.0, b'A' ..= b'Z' | b'a' ..= b'z' | b'_'))]
+    fn is_var_name_start(self) -> BytePredicate
+    {
+        let byte = u8::from(self);
+        BytePredicate::from(byte.is_ascii_alphabetic() || byte == b'_')
+    }
+
+    /// Return whether this byte continues a word `[A-Za-z0-9_]`.
+    ///
+    /// # Specification
+    /// - ensures: accepts ASCII letters, digits and underscore.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all 256 byte values are compared with the explicit
+    ///   lexical alphabet, including both neighbors of every ASCII class
+    ///   boundary. Missing members and accidental additions flip an observed
+    ///   classification.
+    /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| bool::from(ret) == matches!(self.0, b'A' ..= b'Z' | b'a' ..= b'z' | b'0' ..= b'9' | b'_'))]
+    fn is_word_continue(self) -> BytePredicate
+    {
+        let byte = u8::from(self);
+        BytePredicate::from(byte.is_ascii_alphanumeric() || byte == b'_')
+    }
+
+    /// Return whether this byte continues a shell word.
+    ///
+    /// # Specification
+    /// - ensures: accepts every byte except shell separators and delimiters.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all 256 byte values are compared with the explicit
+    ///   lexical alphabet, including both neighbors of every ASCII class
+    ///   boundary. Missing members and accidental additions flip an observed
+    ///   classification.
+    /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| bool::from(ret) != b" \t\r\n\x0c\x0b;|&<>{}[]()`\"'$#".contains(&self.0))]
+    fn is_shell_word(self) -> BytePredicate
+    {
+        BytePredicate::from(!matches!(
+            u8::from(self),
+            b' ' | b'\t'
+                | b'\r'
+                | b'\n'
+                | 0x0c
+                | 0x0b
+                | b';'
+                | b'|'
+                | b'&'
+                | b'<'
+                | b'>'
+                | b'{'
+                | b'}'
+                | b'['
+                | b']'
+                | b'('
+                | b')'
+                | b'`'
+                | b'"'
+                | b'\''
+                | b'$'
+                | b'#'
+        ))
+    }
+
+    /// Return whether this byte can appear in a shell dialect word.
+    ///
+    /// # Specification
+    /// - ensures: accepts ASCII letters, digits, underscore and hyphen.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all 256 byte values are compared with the explicit
+    ///   lexical alphabet, including both neighbors of every ASCII class
+    ///   boundary. Missing members and accidental additions flip an observed
+    ///   classification.
+    /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| bool::from(ret) == matches!(self.0, b'A' ..= b'Z' | b'a' ..= b'z' | b'0' ..= b'9' | b'_' | b'-'))]
+    fn is_dialect(self) -> BytePredicate
+    {
+        let byte = u8::from(self);
+        BytePredicate::from(byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+    }
+
+    /// Return whether this byte ends a run: ASCII whitespace or a delimiter.
+    ///
+    /// The delimiters are the brackets, `;`, `,`, the string quote, `.` and
+    /// `@`. Every other byte continues a run, so an operator character joins
+    /// the word it is written against: `x-y` is one name.
+    ///
+    /// # Specification
+    /// - ensures: accepts exactly ASCII whitespace and the delimiters.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all 256 byte values are compared with the explicit
+    ///   delimiter alphabet, including both neighbors of every ASCII class
+    ///   boundary. Missing members and accidental additions flip an observed
+    ///   classification.
+    /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| bool::from(ret) == b" \t\r\n\x0b\x0c()[]{};,\".@".contains(&self.0))]
+    fn is_run_end(self) -> BytePredicate
+    {
+        BytePredicate::from(matches!(
+            u8::from(self),
+            b' ' | b'\t'
+                | b'\r'
+                | b'\n'
+                | 0x0b
+                | 0x0c
+                | b'('
+                | b')'
+                | b'['
+                | b']'
+                | b'{'
+                | b'}'
+                | b';'
+                | b','
+                | b'"'
+                | b'.'
+                | b'@'
+        ))
+    }
+}
+
+impl From<u8> for SourceByte
+{
+    /// Wrap a raw source byte.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: u8) -> Self
+    {
+        Self(value)
+    }
+}
+
+impl From<SourceByte> for u8
+{
+    /// Read the raw byte back.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: SourceByte) -> Self
+    {
+        value.0
+    }
+}
+
+/// Boolean result of a lexical byte predicate.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct BytePredicate(bool);
+
+impl From<bool> for BytePredicate
+{
+    /// Wrap a predicate's answer.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: bool) -> Self
+    {
+        Self(value)
+    }
+}
+
+impl From<BytePredicate> for bool
+{
+    /// Read the predicate's answer back.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: BytePredicate) -> Self
+    {
+        value.0
+    }
+}
+
+/// One scanner step: the lexeme class and the next byte cursor.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct ScanResult
+{
+    /// Class assigned to the scanned lexeme.
+    lexeme: Lexeme,
+    /// Cursor immediately after the lexeme.
+    next: ByteOffset,
+}
+
+impl ScanResult
+{
+    /// Build a scanner step from its semantic parts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    fn new(
+        lexeme: Lexeme,
+        next: ByteOffset,
+    ) -> Self
+    {
+        Self { lexeme, next }
+    }
+}
+
+/// One labeled lexeme: its class and exact byte span.
+///
+/// The token borrows nothing; the source text is recovered from the `start ..
+/// end` span against the original buffer. A [`Lexeme::Space`] token is layout;
+/// every other token, unknown bytes included, is handed to the molder.
+///
+/// # Specification
+/// - requires: `start <= end` and both index the labeled source buffer.
+/// - ensures: preserves the class and span exactly.
+/// - provides: the unit of the labeler's output stream and the molder's input.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — this carrier has no entry or return boundary; the
+///   labeler and token-text observer carry its executable obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — host and shell contexts cover the complete lexical
+///   vocabulary with exact class streams and source spans. Wrong modes, missing
+///   classes and shifted spans change these observations.
+/// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
+/// - witness: `label::tests::labels_a_definition_losslessly`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Token
+{
+    /// The lexical class of the lexeme.
+    pub lexeme: Lexeme,
+    /// Inclusive source start byte.
+    pub start: u32,
+    /// Exclusive source end byte.
+    pub end: u32,
+}
+
+impl Token
+{
+    /// Return the token's source text against the labeled buffer.
+    ///
+    /// # Specification
+    /// - requires: `src` is the exact buffer the token was labeled from.
+    /// - ensures: returns the `start .. end` slice, or `""` if the span escapes
+    ///   `src` (never on the labeler's own output).
+    /// - provides: zero-copy token text for the molder and tests.
+    /// - fails: never; an out-of-range span yields `""`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — whole multibyte text, a tail token, empty ranges,
+    ///   inverted bounds, split characters and one-past-source ends expose
+    ///   exact fragments; clamping or partial UTF-8 changes those answers.
+    /// - witness: `label::tests::token_text_checks_ranges_and_character_boundaries`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.as_ref() == src.as_ref().get(usize::try_from(self.start).unwrap_or(usize::MAX) .. usize::try_from(self.end).unwrap_or(usize::MAX)).unwrap_or(""))]
+    pub fn text<'src>(
+        &self,
+        src: &'src SourceFragment<'src>,
+    ) -> SourceFragment<'src>
+    {
+        let source = AsRef::<str>::as_ref(src);
+        let start = usize::try_from(self.start).unwrap_or(usize::MAX);
+        let end = usize::try_from(self.end).unwrap_or(usize::MAX);
+        SourceFragment::from(source.get(start .. end).unwrap_or(""))
+    }
+}
+
+/// How a token takes part in bracket nesting.
+///
+/// # Specification
+/// - ensures: as [`bracket`] reads a token.
+/// - panics: none.
+/// - executable: none — a plain value; [`bracket`] carries the executable
+///   clause.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Bracket
+{
+    /// The token opens a bracket: `(`, `[`, `{`, or a compound opener such as
+    /// `@[` or `#{`.
+    Open,
+    /// The token closes the innermost open bracket.
+    Close,
+    /// The token does not nest.
+    Neither,
+}
+
+/// What `token` does to the brackets open around it, its spelling read from
+/// `bytes`.
+///
+/// Every family nests alike: a closer closes the innermost open bracket
+/// whatever opened it, so a mismatched closer still balances the count, the
+/// convention the molder's form runs split by. The layout pass's block opener
+/// and closer nest as a written pair does.
+///
+/// # Specification
+/// - requires: `bytes` is the exact buffer `token` was labeled from.
+/// - ensures: [`Bracket::Open`] for a layout opener and [`Bracket::Close`] for
+///   a layout closer. For a punctuation or subshell token, [`Bracket::Open`]
+///   when its spelling ends in `(`, `[` or `{`, and [`Bracket::Close`] when it
+///   is `)`, `]` or `}`. [`Bracket::Neither`] otherwise.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — plain and compound openers, the three closers, a word and
+///   a string fragment spelling a bracket; reading the lexeme loosely counts a
+///   bracket inside a string, and reading the closer by suffix counts `]]` or a
+///   compound closer that does not exist.
+/// - witness: `mold::tests::brackets_are_classified_by_lexeme_and_text`
+#[inline]
+#[spec(ensures: |ret| {
+    let spelled = bytes.0.get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).unwrap_or_default();
+    ret == if token.lexeme == Lexeme::LayoutOpen {
+        Bracket::Open
+    } else if token.lexeme == Lexeme::LayoutClose {
+        Bracket::Close
+    } else if !matches!(token.lexeme, Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose) {
+        Bracket::Neither
+    } else if spelled.ends_with(b"(") || spelled.ends_with(b"[") || spelled.ends_with(b"{") {
+        Bracket::Open
+    } else if matches!(spelled, b")" | b"]" | b"}") {
+        Bracket::Close
+    } else {
+        Bracket::Neither
+    }
+})]
+pub fn bracket(
+    token: Token,
+    bytes: SourceBytes<'_>,
+) -> Bracket
+{
+    match token.lexeme {
+        Lexeme::LayoutOpen => return Bracket::Open,
+        Lexeme::LayoutClose => return Bracket::Close,
+        Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose => {},
+        Lexeme::LowerWord
+        | Lexeme::UpperWord
+        | Lexeme::Number
+        | Lexeme::TypedNumber
+        | Lexeme::Character
+        | Lexeme::Quote
+        | Lexeme::StringFragment
+        | Lexeme::ShellStringFragment
+        | Lexeme::EscapeSequence
+        | Lexeme::ShellWord
+        | Lexeme::EnvAssign
+        | Lexeme::SingleQuotedContent
+        | Lexeme::VariableName
+        | Lexeme::FileDescriptor
+        | Lexeme::ArmBar
+        | Lexeme::LayoutSemi
+        | Lexeme::Space
+        | Lexeme::Unknown => return Bracket::Neither,
+    }
+    let spelled = bytes
+        .0
+        .get(
+            usize::try_from(token.start).unwrap_or(usize::MAX)
+                .. usize::try_from(token.end).unwrap_or(usize::MAX),
+        )
+        .unwrap_or_default();
+    if spelled.ends_with(b"(") || spelled.ends_with(b"[") || spelled.ends_with(b"{") {
+        Bracket::Open
+    }
+    else if matches!(spelled, b")" | b"]" | b"}") {
+        Bracket::Close
+    }
+    else {
+        Bracket::Neither
+    }
+}
+
+/// The runs that are operator tiles: a run whose whole text is one of these is
+/// that tile, and no shorter run is cut out of a longer one.
+///
+/// The labeler cuts at whitespace and the delimiters, so an operator is a
+/// whole run, as Agda's lexer reads one: `x - y` is a difference, and `x-y` is
+/// one name. No entry is matched as a prefix, so the arrow grid's glyphs, the
+/// grid of `-->`, `<->`, `==>` and `<=>`, and the shorter tiles they extend
+/// never compete. A run the table does not hold is a word, after a leading
+/// sigil `!`, `?` or `~` is cut off it.
+///
+/// The entries are the tiles the grammar spells:
+///
+/// - the arrow grid, the term arrow `->`, the bind arrow `<-` and the arm's
+///   `=>`;
+/// - the comparisons, the connectives and the list append;
+/// - `∷`, the word cons, and `::`, its ASCII spelling; `≃`, `≅` and `⇝`, which
+///   relate two types, and `<~>` and `~~>`, the ASCII spellings of `≃` and `⇝`;
+/// - `:>`, the opaque ascription, beside `:`, the transparent one;
+/// - `↦`, which restricts a type along a named face, and `|->`, its ASCII
+///   spelling;
+/// - `⊸`, the linear arrow, and `-o`, its ASCII spelling;
+/// - `+=`, `-=` and `*=`, which write a held place through its value;
+/// - `~>`, the retired rewrite-face arrow, kept so a stale spelling is one tile
+///   and earns the elaborator's migration decline;
+/// - the single-character tiles, and `?` alone, the hole;
+/// - the bridges `+U` and `-F`, the marked words `pi+` and `Type+`, the grade
+///   `ω` and the wildcard `_`.
+///
+/// `@[` and `@![` are read at the delimiter `@`, and `#`, `//`, `/*`, `"` and
+/// `'` lead a shebang, a shell block, a comment, a string or a character before
+/// any run is read.
+const OPERATORS: &[&str] = &[
+    "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "↦", "⊸", "<~>", "~~>", "|->", "-o", "~>",
+    "->", "<-", "=>", "==", "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", ":>",
+    "::", "+=", "-=", "*=", "!", "&", "*", "+", "-", ":", "<", "=", ">", "?", "|", "$", "~", "+U",
+    "-F", "pi+", "Type+", "ω", "_",
+];
+
+/// UTF-8 bytes for U+00A0 NO-BREAK SPACE.
+const NO_BREAK_SPACE_UTF8: [u8; 2] = [0xc2, 0xa0];
+/// UTF-8 continuation bytes after E2 for U+200B ZERO WIDTH SPACE.
+const ZERO_WIDTH_SPACE_TAIL: (u8, u8) = (0x80, 0x8b);
+/// UTF-8 continuation bytes after E2 for U+2060 WORD JOINER.
+const WORD_JOINER_TAIL: (u8, u8) = (0x81, 0xa0);
+/// Shared first byte for U+200B and U+2060 layout blanks.
+const THREE_BYTE_LAYOUT_PREFIX: u8 = 0xe2;
+/// UTF-8 bytes for U+FEFF ZERO WIDTH NO-BREAK SPACE.
+const BYTE_ORDER_MARK_UTF8: [u8; 3] = [0xef, 0xbb, 0xbf];
+
+/// Label a UTF-8 source buffer into a total stream of lexemes.
+///
+/// The scan is left to right and total: every byte is covered by exactly one
+/// token, trivia and unknown bytes included, so the concatenated token spans
+/// reconstruct the source (losslessness). The molder consumes the non-space
+/// tokens; space tokens are recorded into the tree verbatim.
+///
+/// # Specification
+/// - requires: `src` is valid UTF-8 (the caller's source buffer).
+/// - ensures: returns tokens whose spans tile `0 .. src.len()` with no gaps or
+///   overlaps; trivia classify as [`Lexeme::Space`]; the scan never panics on
+///   any input.
+/// - provides: the labeler stage of the batch pipeline.
+/// - fails: never; ungrammatical bytes classify as [`Lexeme::Unknown`], not an
+///   error.
+/// - panics: none.
+/// - intension: multi-byte operators match longest-first; words, numbers,
+///   strings, and comments are maximal-munch runs; a lone stray byte is one
+///   `Unknown` token.
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — exact token classes and spans for every lexical mode
+///   distinguish wrong dispatch, premature consumption, overconsumption and
+///   lost layout; sampled sources additionally observe full reconstruction. The
+///   green witnesses do not cover a dangling shell-assignment escape or a
+///   non-ASCII braced shell name, whose spans violate the intended boundary
+///   contract. Source sizes above the wire ceiling are not exercised.
+/// - witness: `label::tests::labels_a_definition_losslessly`
+/// - witness: `label::tests::span_tiling_is_total_and_gapless`
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+/// - witness: `parse::tests::arbitrary_source_parses_totally`
+#[inline]
+#[must_use]
+#[spec(ensures: |ret| ret.first().map_or_else(|| src.as_ref().is_empty(), |first| first.start == 0)
+    && ret.last().is_none_or(|last| usize::try_from(last.end).ok() == Some(src.as_ref().len()))
+    && ret.iter().all(|token| (token.start < token.end || matches!(token.lexeme, Lexeme::LayoutOpen | Lexeme::LayoutSemi | Lexeme::LayoutClose)) && usize::try_from(token.start).ok().zip(usize::try_from(token.end).ok()).is_some_and(|(start, end)| src.as_ref().get(start .. end).is_some()))
+    && ret.iter().zip(ret.iter().skip(1)).all(|(left, right)| left.end == right.start))]
+pub fn label(src: SourceFragment<'_>) -> Vec<Token>
+{
+    label_moving(src, &[])
+}
+
+/// Label `src` as [`label`] does, with each line of `moves` kept in a layout
+/// block that its column closes: the melder's dry run reads a line at column
+/// zero inside nested blocks in each block it may stand in.
+///
+/// # Specification
+/// - requires: `moves` ascend by line.
+/// - ensures: the tokens [`label`] answers, but that the layout pass keeps each
+///   line of `moves` in the block its move names.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the call.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as the layout pass, whose witness labels one line in each
+///   block it may stand in.
+/// - witness: `label::layout::tests::a_moved_line_stays_in_the_block_its_move_names_5434`
+#[must_use]
+pub fn label_moving(
+    src: SourceFragment<'_>,
+    moves: &[Move],
+) -> Vec<Token>
+{
+    let source_bytes = SourceBytes::from(AsRef::<str>::as_ref(&src).as_bytes());
+    let mut tokens = Vec::new();
+    let mut mode = LabelMode::default();
+    let mut pos = ByteOffset::ZERO;
+    while pos < source_bytes.len() {
+        let (token, next) = mode.step(source_bytes, pos);
+        tokens.push(token);
+        pos = next;
+    }
+    mark_arm_bars(source_bytes, &mut tokens);
+    layout::lay_out(source_bytes, &mut tokens, layout::Next::End, moves);
+    tokens
+}
+
+/// What a bracket opened, as the arm-bar marking reads it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Opened
+{
+    /// A brace whose first token is a `|`: every `|` directly in it is an arm
+    /// bar, but one among an arm's patterns.
+    Bars
+    {
+        /// The current arm has written a token since its bar.
+        written: bool,
+        /// The current arm's `=>` has passed.
+        arrowed: bool,
+    },
+    /// Any other host brace: a `|` after its `,` opens the next arm.
+    Brace,
+    /// A host parenthesis or bracket.
+    Plain,
+    /// A shell block or a bracket inside one, where `|` is the shell's pipe.
+    Shell,
+}
+
+primitive_copy_wrapper!(
+    /// Whether a token resets the passes that read brackets and blocks.
+    struct Resets(bool);
+);
+
+/// Whether `token` is a word or an attribute's opener at column zero: the
+/// first token of a declaration. The layout and the arm-bar marking stand in
+/// their first state there, every block and bracket closed, so an edit
+/// relabels from one such token to another.
+///
+/// # Specification
+/// - requires: `token` is a token of `bytes`.
+/// - ensures: true exactly when `token` is a [`Lexeme::LowerWord`], or a
+///   [`Lexeme::Punct`] spelled `@[` or `@![`, that starts the source or follows
+///   a newline.
+/// - panics: none.
+/// - executable: none — the clause restates the body.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a word at column zero closes the blocks and brackets
+///   before it, and an edit relabels as the edited source labels from one reset
+///   to the next.
+/// - witness: `label::layout::tests::a_word_at_column_zero_closes_every_block`
+/// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
+fn resets(
+    bytes: SourceBytes<'_>,
+    token: Token,
+) -> Resets
+{
+    let start = usize::try_from(token.start).unwrap_or(usize::MAX);
+    let leads = start == 0 || bytes.0.get(start.saturating_sub(1)) == Some(&b'\n');
+    Resets(
+        leads
+            && (token.lexeme == Lexeme::LowerWord
+                || (token.lexeme == Lexeme::Punct
+                    && matches!(
+                        bytes
+                            .0
+                            .get(start .. usize::try_from(token.end).unwrap_or(usize::MAX)),
+                        Some(b"@[" | b"@![")
+                    ))),
+    )
+}
+
+primitive_copy_wrapper!(
+    /// Whether an arm's `=>` follows a bar standing among its patterns.
+    struct ArrowAhead(bool);
+);
+
+/// Whether a `=>` stands directly in the bracket the token at `from` stands
+/// in, after it and before the next `:`, `;`, line-leading `|`, reset or the
+/// bracket's close.
+///
+/// # Specification
+/// - requires: `tokens` are labeled tokens of `bytes`.
+/// - ensures: true exactly when such a `=>` is found at the starting depth.
+/// - panics: none.
+/// - executable: none — the clause restates the scan.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`mark_arm_bars`].
+/// - witness: `label::tests::arm_bars_lead_lines_and_bar_braces`
+fn arrow_ahead(
+    bytes: SourceBytes<'_>,
+    tokens: &[Token],
+    from: TokenIndex,
+) -> ArrowAhead
+{
+    let text = |token: &Token| {
+        bytes
+            .0
+            .get(
+                usize::try_from(token.start).unwrap_or(usize::MAX)
+                    .. usize::try_from(token.end).unwrap_or(usize::MAX),
+            )
+            .unwrap_or_default()
+    };
+    let mut depth = 0_usize;
+    let mut line_start = false;
+    let after = usize::from(from).saturating_add(1);
+    for &token in tokens.get(after ..).unwrap_or_default() {
+        if token.lexeme == Lexeme::Space {
+            line_start |= text(&token).contains(&b'\n');
+            continue;
+        }
+        // A reset closes the bracket the bar stands in.
+        if bool::from(resets(bytes, token)) {
+            return ArrowAhead(false);
+        }
+        let spelled = text(&token);
+        if depth == 0 {
+            match spelled {
+                b"=>" => return ArrowAhead(true),
+                b":" | b";" | b")" | b"]" | b"}" => return ArrowAhead(false),
+                b"|" if line_start => return ArrowAhead(false),
+                _ => {},
+            }
+        }
+        if spelled.ends_with(b"(") || spelled.ends_with(b"[") || spelled.ends_with(b"{") {
+            depth = depth.saturating_add(1);
+        }
+        else if matches!(spelled, b")" | b"]" | b"}") {
+            depth = depth.saturating_sub(1);
+        }
+        line_start = false;
+    }
+    ArrowAhead(false)
+}
+
+/// Mark every `|` that opens an arm as [`Lexeme::ArmBar`], and every other
+/// as [`Lexeme::Punct`].
+///
+/// # Specification
+/// - requires: `tokens` are the labeled tokens of `bytes`.
+/// - ensures: a `|` outside a shell block is an arm bar exactly when no token
+///   but space stands between it and the line's start, when the innermost open
+///   bracket is a brace and the token before the bar is a `,`, or when the
+///   innermost open bracket is a brace whose first token after it is a `|`,
+///   unless the brace's current arm has met no `=>` and one follows before the
+///   next `:`, `;`, line-leading `|`, reset or the brace's close, where it is
+///   an or-pattern's; no other token changes. A token that [`resets`] closes
+///   every bracket open before it.
+/// - panics: none.
+/// - executable: none — the clause would walk every token twice per call; the
+///   witness checks each class.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a line-leading bar, bars on one line in a bar brace, a
+///   union in parentheses inside one, an or-pattern among a clause's patterns
+///   on one line and on its own, a bar after a plain brace's first token, a bar
+///   after a plain brace's comma and a shell pipe each take their class;
+///   marking by line alone, by brace alone or past the arm's `=>` changes one
+///   of them.
+/// - witness: `label::tests::arm_bars_lead_lines_and_bar_braces`
+fn mark_arm_bars(
+    bytes: SourceBytes<'_>,
+    tokens: &mut [Token],
+)
+{
+    let text = |token: &Token| {
+        bytes
+            .0
+            .get(
+                usize::try_from(token.start).unwrap_or(usize::MAX)
+                    .. usize::try_from(token.end).unwrap_or(usize::MAX),
+            )
+            .unwrap_or_default()
+    };
+    let is_bar = |token: &Token| {
+        matches!(token.lexeme, Lexeme::Punct | Lexeme::ArmBar)
+            && token.end.saturating_sub(token.start) == 1
+            && text(token) == b"|"
+    };
+    let mut opened: Vec<Opened> = Vec::new();
+    let mut after_comma = false;
+    // Where the last significant token ends: a bar starts its line when a
+    // newline stands in the space since then.
+    let mut last_end: Option<u32> = None;
+    for index in 0 .. tokens.len() {
+        let Some(&token) = tokens.get(index)
+        else {
+            break;
+        };
+        if token.lexeme == Lexeme::Space {
+            continue;
+        }
+        let since = last_end.replace(token.end);
+        if bool::from(resets(bytes, token)) {
+            opened.clear();
+            after_comma = false;
+        }
+        let within = opened.last().copied();
+        if is_bar(&token) {
+            let line_start = since.is_none_or(|end| {
+                bytes
+                    .0
+                    .get(
+                        usize::try_from(end).unwrap_or(usize::MAX)
+                            .. usize::try_from(token.start).unwrap_or(usize::MAX),
+                    )
+                    .is_some_and(|gap| gap.contains(&b'\n'))
+            });
+            let arm = match within {
+                Some(Opened::Shell) => false,
+                Some(Opened::Bars { written, arrowed }) => {
+                    line_start
+                        || !written
+                        || arrowed
+                        || !bool::from(arrow_ahead(bytes, tokens, TokenIndex::from(index)))
+                },
+                Some(Opened::Brace) => line_start || after_comma,
+                Some(Opened::Plain) | None => line_start,
+            };
+            if arm
+                && let Some(&mut Opened::Bars {
+                    ref mut written,
+                    ref mut arrowed,
+                }) = opened.last_mut()
+            {
+                *written = false;
+                *arrowed = false;
+            }
+            if let Some(bar) = tokens.get_mut(index) {
+                bar.lexeme = if arm { Lexeme::ArmBar } else { Lexeme::Punct };
+            }
+            after_comma = false;
+            continue;
+        }
+        if let Some(&mut Opened::Bars {
+            ref mut written,
+            ref mut arrowed,
+        }) = opened.last_mut()
+        {
+            *written = true;
+            *arrowed |= token.lexeme == Lexeme::Punct && text(&token) == b"=>";
+        }
+        if matches!(
+            token.lexeme,
+            Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose
+        ) {
+            let spelled = text(&token);
+            if spelled.ends_with(b"(") || spelled.ends_with(b"[") || spelled.ends_with(b"{") {
+                let shell = within == Some(Opened::Shell)
+                    || spelled.starts_with(b"#!")
+                    || spelled.starts_with(b"$!");
+                let bars = !shell
+                    && spelled.ends_with(b"{")
+                    && tokens
+                        .get(index.saturating_add(1) ..)
+                        .unwrap_or_default()
+                        .iter()
+                        .find(|next| next.lexeme != Lexeme::Space)
+                        .is_some_and(&is_bar);
+                opened.push(if shell {
+                    Opened::Shell
+                }
+                else if bars {
+                    Opened::Bars {
+                        written: false,
+                        arrowed: false,
+                    }
+                }
+                else if spelled.ends_with(b"{") {
+                    Opened::Brace
+                }
+                else {
+                    Opened::Plain
+                });
+            }
+            else if matches!(spelled, b")" | b"]" | b"}") {
+                let _closed = opened.pop();
+            }
+        }
+        after_comma = token.lexeme == Lexeme::Punct
+            && token.end.saturating_sub(token.start) == 1
+            && text(&token) == b",";
+    }
+}
+
+/// How far past the end of a token any scanner's decision about it reads,
+/// short of a line break, rounded well up.
+///
+/// The furthest bounded reads are a bridge's prime check, a number's
+/// primitive suffix and a character literal's closing quote, each under eight
+/// bytes past the token. The one unbounded read, a shell start's dialect run,
+/// stops at the first byte no dialect word holds, a line break among them.
+const RELABEL_MARGIN: usize = 64;
+
+/// Where the labeler stands between two tokens.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Standing
+{
+    /// No string, shell block or interpolation open: where a source begins.
+    Ground,
+    /// Within a string, a shell block, a shell quote or expansion, or an
+    /// interpolation.
+    Within,
+}
+
+/// Whether one of the labeler's lexical modes is open.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum Toggle
+{
+    /// Not open: the position every mode begins in.
+    #[default]
+    Closed,
+    /// Open until the token that closes it.
+    Open,
+}
+
+impl Toggle
+{
+    /// The other position.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn flipped(self) -> Self
+    {
+        match self {
+            Self::Closed => Self::Open,
+            Self::Open => Self::Closed,
+        }
+    }
+}
+
+/// The lexical modes the labeler tracks between tokens, each opened and
+/// closed by a token it labeled.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the default is ground, the mode every source begins in.
+/// - panics: none.
+/// - executable: none — this state carrier has no call boundary; its step
+///   carries the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact token classes and spans for every lexical mode
+///   distinguish a mode opened or closed by the wrong token.
+/// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
+/// - witness: `label::tests::string_interpolation_nests_braces_and_strings`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct LabelMode
+{
+    /// Whether the cursor sits between a `"` and its closing `"`, so string
+    /// content lexes as fragments and escapes (the tree-sitter string
+    /// sub-grammar).
+    in_string: Toggle,
+    /// The `#!{` / `$!{` shell-block nesting, so the interior lexes in the
+    /// shell word class (context-aware lexing, tree-sitter
+    /// `_shell_block_start`).
+    shell_depth: u32,
+    /// Whether the cursor sits between a shell `'` and its closing `'`, so
+    /// the single-quoted interior lexes as one opaque `single_quoted_content`
+    /// run (tree-sitter `single_quoted_string`), never split on interior
+    /// spaces.
+    shell_single: Toggle,
+    /// A one-shot flag: the token immediately after a shell `$` that a name
+    /// follows is the `variable_name` of a `variable_expansion`, not a shell
+    /// word (tree-sitter `variable_expansion` = `$` `variable_name`).
+    shell_var: Toggle,
+    /// Whether the cursor sits inside a shell braced parameter expansion
+    /// `${name}`: the interior lexes as a `variable_name` parameter and the
+    /// matching `}` closes the brace without touching `shell_depth` (it is
+    /// not the shell block's closer). A shell-native brace, distinct from
+    /// the string-interpolation `${ E }` (`interp_stack`): a shell parameter
+    /// name is not a host expression. A flag rather than a depth suffices for
+    /// `${name}`, whose interior has no nested braces (the `${name:-word}` /
+    /// `${#name}` operator forms are not scanned yet).
+    shell_brace: Toggle,
+    /// Whether the cursor sits inside a shell double-quoted string `"…"`: the
+    /// interior lexes as `double_string_fragment` runs, `\.` escapes, and
+    /// `$name` / `${name}` expansions (tree-sitter `double_quoted_string`),
+    /// so a quoted argument with interior spaces is one string rather than
+    /// juxtaposed shell words. Entered only at `shell_depth > 0`; a `'`
+    /// inside is an ordinary fragment byte. Distinct from the host string
+    /// mode (`in_string`), which never lexes shell expansions.
+    shell_double: Toggle,
+    /// String-interpolation frames: each `"… ${` opens an interpolation whose
+    /// interior lexes as ordinary host-expression tokens. The entry is that
+    /// interpolation's `{`-brace depth (the opening `${` counts as one); a `}`
+    /// that returns the depth to zero closes the interpolation and resumes
+    /// the containing string. A stack, so a nested string inside an
+    /// interpolation — `"${ f("${x}") }"` — is handled to any depth. Only
+    /// `{`-suffixed openers at this level (`{`, `#{`) push depth; `#!{` /
+    /// `$!{` switch to shell mode, which owns its own `}` accounting.
+    interp_stack: Vec<u32>,
+}
+
+impl LabelMode
+{
+    /// Where the labeler stands in this mode.
+    ///
+    /// # Specification
+    /// trivial.
+    fn standing(&self) -> Standing
+    {
+        if self.in_string == Toggle::Open
+            || self.shell_depth > 0
+            || self.shell_single == Toggle::Open
+            || self.shell_var == Toggle::Open
+            || self.shell_brace == Toggle::Open
+            || self.shell_double == Toggle::Open
+            || !self.interp_stack.is_empty()
+        {
+            Standing::Within
+        }
+        else {
+            Standing::Ground
+        }
+    }
+
+    /// Label the token at `pos` and step the mode past it.
+    ///
+    /// # Specification
+    /// - requires: `pos` is a byte of `source_bytes`.
+    /// - ensures: the token starting at `pos` in this mode and the cursor just
+    ///   past it, strictly beyond `pos`; the mode is the one the token leaves.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact token classes and spans for every lexical mode
+    ///   distinguish wrong dispatch and a mode the wrong token opens or closes;
+    ///   every relabeled source resumes this step mid-source.
+    /// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
+    /// - witness: `label::tests::span_tiling_is_total_and_gapless`
+    /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
+    #[spec(requires: pos < source_bytes.len(), ensures: |ret| ret.1 > pos)]
+    fn step(
+        &mut self,
+        source_bytes: SourceBytes<'_>,
+        pos: ByteOffset,
+    ) -> (Token, ByteOffset)
+    {
+        let start = pos;
+        let scan = if self.in_string == Toggle::Open {
+            scan_string_interior(source_bytes, pos)
+        }
+        else if self.shell_single == Toggle::Open {
+            scan_single_quoted_interior(source_bytes, pos)
+        }
+        else if self.shell_var == Toggle::Open {
+            scan_variable_name(source_bytes, pos)
+        }
+        else if self.shell_brace == Toggle::Open {
+            scan_braced_shell_interior(source_bytes, pos)
+        }
+        else if self.shell_double == Toggle::Open {
+            scan_shell_double_interior(source_bytes, pos)
+        }
+        else if self.shell_depth > 0 {
+            scan_shell_interior(source_bytes, pos)
+        }
+        else {
+            scan_one(source_bytes, pos)
+        };
+        let lexeme = scan.lexeme;
+        // The variable-name state lasts exactly one token after its `$`.
+        self.shell_var = Toggle::Closed;
+        // Defensive: scanning always advances; never emit a zero-width token.
+        let next = if scan.next > start {
+            scan.next
+        }
+        else {
+            start.advance(ByteWidth::ONE)
+        };
+        if matches!(lexeme, Lexeme::Quote) {
+            self.in_string = self.in_string.flipped();
+        }
+        else if matches!(lexeme, Lexeme::Punct) {
+            self.track_punct(source_bytes, start, next);
+        }
+        let token = Token {
+            lexeme,
+            start: u32::try_from(usize::from(start)).unwrap_or(u32::MAX),
+            end: u32::try_from(usize::from(next)).unwrap_or(u32::MAX),
+        };
+        (token, next)
+    }
+
+    /// Open or close the mode the punctuation at `start .. next` names.
+    ///
+    /// # Specification
+    /// - requires: `start .. next` is a punctuation token of `source_bytes`.
+    /// - ensures: a string-interpolation `${` leaves the string and pushes a
+    ///   frame; a shell `${` opens a braced parameter and its `}` closes it; a
+    ///   shell `"` or `'` toggles its quote; a shell `$` before a name marks
+    ///   the name; a shell start deepens the block and a `}` in a block closes
+    ///   one; inside an interpolation, `{` and `#{` deepen the frame and a `}`
+    ///   that empties it resumes the string.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — interpolations nesting strings, braced shell
+    ///   parameters, shell quotes and nested shell blocks expose every
+    ///   transition through exact token streams.
+    /// - witness: `label::tests::string_interpolation_nests_braces_and_strings`
+    /// - witness: `label::tests::shell_braced_parameter_lexes_distinctly_from_interpolation`
+    /// - witness: `label::tests::shell_single_and_double_quotes_do_not_cross`
+    /// - witness: `label::tests::shell_braced_parameters_nest_and_juxtapose`
+    ///
+    /// # Cost
+    /// - allocation: a frame of the interpolation stack at each `${` that opens
+    ///   a string interpolation, growth within the stack's capacity
+    #[spec(requires: start < next && next <= source_bytes.len())]
+    fn track_punct(
+        &mut self,
+        source_bytes: SourceBytes<'_>,
+        start: ByteOffset,
+        next: ByteOffset,
+    )
+    {
+        let text = source_bytes
+            .span(start, next)
+            .unwrap_or_else(SourceBytes::empty);
+        if bool::from(text.equals(BytePattern(b"${"))) && self.in_string == Toggle::Open {
+            // A `"… ${` opens a string interpolation: leave string mode and
+            // lex the interior as ordinary host-expression tokens until the
+            // matching `}`. The opening brace counts, so the frame depth is 1.
+            self.in_string = Toggle::Closed;
+            self.interp_stack.push(1);
+        }
+        else if bool::from(text.equals(BytePattern(b"${"))) && self.shell_depth > 0 {
+            // A shell `${` opens a braced parameter expansion: the interior
+            // lexes as a `variable_name` parameter and the matching `}`
+            // closes the brace (not the shell block). Distinct from the
+            // string-interpolation `${` above — the shell interior is a
+            // shell parameter name, never a host expression.
+            self.shell_brace = Toggle::Open;
+        }
+        else if bool::from(text.equals(BytePattern(b"}"))) && self.shell_brace == Toggle::Open {
+            // The braced parameter expansion's closer: end the brace mode
+            // and resume shell lexing without decrementing `shell_depth`
+            // (this `}` is the parameter's, not the shell block's).
+            self.shell_brace = Toggle::Closed;
+        }
+        else if bool::from(text.equals(BytePattern(b"\""))) && self.shell_depth > 0 {
+            // A shell `"` opens or closes a double-quoted string: the
+            // interior lexes as fragments / escapes / expansions (never a
+            // nested block or the shell block's closer).
+            self.shell_double = self.shell_double.flipped();
+        }
+        else if bool::from(text.equals(BytePattern(b"'"))) && self.shell_depth > 0 {
+            // A shell `'` opens or closes a single-quoted string; the
+            // interior between them is lexed opaquely, so it cannot start a
+            // nested block or close the shell block.
+            self.shell_single = self.shell_single.flipped();
+        }
+        else if bool::from(text.equals(BytePattern(b"$")))
+            && self.shell_depth > 0
+            && source_bytes
+                .byte(next)
+                .is_some_and(|byte| bool::from(byte.is_var_name_start()))
+        {
+            // A bare shell `$name`: the following word is the variable name
+            // (`$( … )` host escapes and `$!{ … }` substitutions do not set
+            // this — their next byte is not a name start).
+            self.shell_var = Toggle::Open;
+        }
+        else if bool::from(is_shell_open(text)) {
+            self.shell_depth = self.shell_depth.saturating_add(1);
+        }
+        else if bool::from(text.equals(BytePattern(b"}"))) && self.shell_depth > 0 {
+            self.shell_depth = self.shell_depth.saturating_sub(1);
+        }
+        else if self.shell_depth == 0
+            && let Some(depth) = self.interp_stack.last_mut()
+        {
+            // Inside an interpolation's host-expression interior (shell mode
+            // owns its own brace accounting, so it is excluded). A form opened
+            // by a brace or a connective's opener deepens this frame; a `}`
+            // that empties it closes the interpolation and resumes the
+            // containing string.
+            if matches!(text.0, b"{" | b"*{" | b"+{" | b"&{" | b".*{" | b".#{") {
+                *depth = depth.saturating_add(1);
+            }
+            else if bool::from(text.equals(BytePattern(b"}"))) {
+                *depth = depth.saturating_sub(1);
+                if *depth == 0 {
+                    self.interp_stack.pop();
+                    self.in_string = Toggle::Open;
+                }
+            }
+        }
+    }
+}
+
+/// A source's tokens, with the places the labeler stood within a mode, so an
+/// edit of the source relabels only around itself
+/// ([`relabel`](Self::relabel)).
+///
+/// # Specification
+/// - requires: constructed by [`new`](Self::new) or [`relabel`](Self::relabel).
+/// - ensures: the tokens are [`label`]'s; the start of every token the labeler
+///   scanned off ground is listed, ascending, and no other.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; its constructors
+///   carry the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — hostile sources edited at arbitrary byte ranges relabel
+///   to the labeling of the edited source, standings included.
+/// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Labeling
+{
+    /// The tokens, as [`label`] returns them.
+    tokens: Vec<Token>,
+    /// The starts of the tokens the labeler scanned off ground, ascending.
+    within: Vec<ByteOffset>,
+}
+
+impl Labeling
+{
+    /// Label `src` from its start.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`label`]'s tokens of `src`, with the starts of the tokens
+    ///   the labeler scanned within a mode.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the relabel witness compares every relabeling with
+    ///   this one, standings included.
+    /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.tokens == label(src))]
+    pub fn new(src: SourceFragment<'_>) -> Self
+    {
+        let source_bytes = SourceBytes::from(AsRef::<str>::as_ref(&src).as_bytes());
+        let mut labeling = Self::default();
+        let mut mode = LabelMode::default();
+        let mut pos = ByteOffset::ZERO;
+        while pos < source_bytes.len() {
+            if mode.standing() == Standing::Within {
+                labeling.within.push(pos);
+            }
+            let (token, next) = mode.step(source_bytes, pos);
+            labeling.tokens.push(token);
+            pos = next;
+        }
+        mark_arm_bars(source_bytes, &mut labeling.tokens);
+        layout::lay_out(source_bytes, &mut labeling.tokens, layout::Next::End, &[]);
+        labeling.tokens.shrink_to_fit();
+        labeling.within.shrink_to_fit();
+        labeling
+    }
+
+    /// The tokens.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn tokens(&self) -> &[Token]
+    {
+        &self.tokens
+    }
+
+    /// Relabel `after`, an edit of `before`, from this labeling of `before`,
+    /// from the declaration the edit starts in to the first one past it.
+    ///
+    /// The relabel restarts at the last token that [`resets`] at ground on a
+    /// line before the edit's and at least [`RELABEL_MARGIN`] bytes before
+    /// it. No scanner's decision about a token reads further past it than that
+    /// margin, or past a line break, so every token before the restart is a
+    /// token of `after`. The arm bars and the layout stand in their first
+    /// state at a reset, and no mark before it reads past it, so the marks
+    /// before the restart stay. The scan stops at the first token in the
+    /// unedited suffix that resets, where it stands at ground over a token
+    /// the old labeling stood at ground on. From there the labeler, the arm
+    /// bars and the layout read the same tokens from the same state, so the
+    /// old tokens past it are the new ones, shifted. Only the tokens between
+    /// are scanned, marked and laid out.
+    ///
+    /// # Specification
+    /// - requires: this is the labeling of `before`.
+    /// - ensures: the labeling of `after`, as [`new`](Self::new) labels it, and
+    ///   how many tokens the scan labeled afresh: those from the restart to the
+    ///   resynchronizing token.
+    /// - panics: none.
+    /// - economy: scans, marks the arm bars and lays out from the restart to
+    ///   the resynchronizing token. The tokens past it are shifted in place, a
+    ///   ceiling linear in the text after the edit that #5041 removes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — hostile sources replaced at arbitrary byte ranges by
+    ///   hostile text, edits inside strings, shell blocks, interpolations,
+    ///   comments, numbers, layout blocks and a long dialect run among them,
+    ///   relabel to the labeling of the edited source; a restart inside the
+    ///   margin, on the edit's line or off a reset, a restart off ground, or a
+    ///   resync short of the suffix or off a reset changes a token.
+    /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
+    /// - witness: `label::tests::a_relabel_restarts_before_what_a_token_read`
+    #[inline]
+    #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "ceiling, removed by #5041: labels `before` and `after` whole, linear in the source like the split, join and commit every relabeled revision feeds"
+        )
+    )]
+    #[spec(requires: self == Self::new(before), ensures: |ret| ret.0.eq(&Self::new(after)) && ret.1.0 <= ret.0.tokens().len())]
+    pub fn relabel(
+        self,
+        before: SourceFragment<'_>,
+        after: SourceFragment<'_>,
+    ) -> (Self, TokenCount)
+    {
+        let old = AsRef::<str>::as_ref(&before).as_bytes();
+        let new = AsRef::<str>::as_ref(&after).as_bytes();
+        let prefix = old
+            .iter()
+            .zip(new)
+            .take_while(|&(left, right)| left == right)
+            .count();
+        let room = old.len().min(new.len()).saturating_sub(prefix);
+        let suffix = old
+            .iter()
+            .rev()
+            .zip(new.iter().rev())
+            .take(room)
+            .take_while(|&(left, right)| left == right)
+            .count();
+        let Self {
+            mut tokens,
+            mut within,
+        } = self;
+        let old_bytes = SourceBytes::from(old);
+        let new_bytes = SourceBytes::from(new);
+        let start = |token: &Token| usize::try_from(token.start).unwrap_or(usize::MAX);
+        let grounded = |within: &[ByteOffset], token: &Token| {
+            token.start < token.end
+                && within
+                    .binary_search(&ByteOffset::from(start(token)))
+                    .is_err()
+        };
+        // The restart: the last reset at ground at or before both the margin
+        // and the line break before the edit, or the source's start.
+        let bound = old
+            .get(.. prefix)
+            .and_then(|head| head.iter().rposition(|&byte| byte == b'\n'))
+            .map_or(0, |line_break| {
+                line_break.min(prefix.saturating_sub(RELABEL_MARGIN))
+            });
+        let restart = tokens
+            .get(.. tokens.partition_point(|token| start(token) <= bound))
+            .unwrap_or_default()
+            .iter()
+            .rposition(|&token| bool::from(resets(old_bytes, token)) && grounded(&within, &token))
+            .unwrap_or(0);
+        let resume = tokens.get(restart).map_or(0, start);
+        // Old offsets past the edit sit `old_tail` bytes before the end of
+        // `before`, new ones `new_tail` before the end of `after`.
+        let old_tail = old.len().saturating_sub(suffix);
+        let new_tail = new.len().saturating_sub(suffix);
+        let mut fresh: Vec<Token> = Vec::new();
+        let mut fresh_within: Vec<ByteOffset> = Vec::new();
+        let mut mode = LabelMode::default();
+        let mut pos = ByteOffset::from(resume);
+        let mut resync = None;
+        while pos < new_bytes.len() {
+            let standing = mode.standing();
+            // A reset in the suffix: its line break is unedited too.
+            if standing == Standing::Ground
+                && usize::from(pos) > new_tail
+                && new_bytes.0.get(usize::from(pos).saturating_sub(1)) == Some(&b'\n')
+            {
+                let old_pos = usize::from(pos)
+                    .saturating_sub(new_tail)
+                    .saturating_add(old_tail);
+                let at = restart.saturating_add(
+                    tokens
+                        .get(restart ..)
+                        .unwrap_or_default()
+                        .partition_point(|token| start(token) < old_pos),
+                );
+                if let Some(&token) = tokens.get(at)
+                    && start(&token) == old_pos
+                    && bool::from(resets(old_bytes, token))
+                    && grounded(&within, &token)
+                {
+                    resync = Some(at);
+                    break;
+                }
+            }
+            if standing == Standing::Within {
+                fresh_within.push(pos);
+            }
+            let (token, next) = mode.step(new_bytes, pos);
+            fresh.push(token);
+            pos = next;
+        }
+        let fresh_count = fresh.len();
+        mark_arm_bars(new_bytes, &mut fresh);
+        layout::lay_out(
+            new_bytes,
+            &mut fresh,
+            if resync.is_some() {
+                layout::Next::Reset
+            }
+            else {
+                layout::Next::End
+            },
+            &[],
+        );
+        let resync = resync.unwrap_or(tokens.len());
+        let resynced = tokens.get(resync).map_or(old.len(), start);
+        // Shift the kept tail by the edit's change in length, then splice.
+        let grown = new.len() >= old.len();
+        let change = new.len().abs_diff(old.len());
+        let shift = |offset: usize| {
+            if grown {
+                offset.saturating_add(change)
+            }
+            else {
+                offset.saturating_sub(change)
+            }
+        };
+        let shift_u32 = |offset: u32| {
+            u32::try_from(shift(usize::try_from(offset).unwrap_or(usize::MAX))).unwrap_or(u32::MAX)
+        };
+        for token in tokens.get_mut(resync ..).unwrap_or_default() {
+            token.start = shift_u32(token.start);
+            token.end = shift_u32(token.end);
+        }
+        tokens.reserve_exact(fresh.len().saturating_sub(resync.saturating_sub(restart)));
+        drop(tokens.splice(restart .. resync, fresh));
+        let kept_head = within.partition_point(|&offset| usize::from(offset) < resume);
+        let kept_tail = within.partition_point(|&offset| usize::from(offset) < resynced);
+        let tail: Vec<ByteOffset> = within
+            .get(kept_tail ..)
+            .unwrap_or_default()
+            .iter()
+            .map(|&offset| ByteOffset::from(shift(usize::from(offset))))
+            .collect();
+        within.truncate(kept_head);
+        within.reserve_exact(fresh_within.len().saturating_add(tail.len()));
+        within.extend(fresh_within);
+        within.extend(tail);
+        (Self { tokens, within }, TokenCount(fresh_count))
+    }
+}
+
+/// A count of tokens: those a relabel labeled afresh.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TokenCount(pub usize);
+
+/// Scan one lexeme of string interior: a closing quote, an escape, an
+/// interpolation opener `${`, or a fragment run up to the next `"` / `\` /
+/// `${`.
+///
+/// # Specification
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; string mode distinguishes quotes, escapes,
+///   interpolation and raw fragments.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — quotes, escapes, interpolation openers and raw fragments
+///   at zero and nonzero offsets expose exact class and end positions. A
+///   mode-insensitive classifier or premature stop changes the token stream.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+/// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Quote | Lexeme::EscapeSequence | Lexeme::Punct | Lexeme::StringFragment | Lexeme::Unknown)))]
+fn scan_string_interior(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    match bytes.byte(pos).map(u8::from) {
+        Some(b'"') => ScanResult::new(Lexeme::Quote, pos.advance(ByteWidth::ONE)),
+        Some(b'\\') => scan_escape(bytes, pos),
+        // `${` opens a string interpolation; the caller leaves string mode.
+        Some(b'$') if bytes.byte(pos.advance(ByteWidth::ONE)) == Some(SourceByte::from(b'{')) => {
+            ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO))
+        },
+        Some(_) => {
+            let mut cursor = pos;
+            while let Some(byte) = bytes.byte(cursor) {
+                if u8::from(byte) == b'"'
+                    || u8::from(byte) == b'\\'
+                    || (u8::from(byte) == b'$'
+                        && bytes.byte(cursor.advance(ByteWidth::ONE))
+                            == Some(SourceByte::from(b'{')))
+                {
+                    break;
+                }
+                cursor = cursor.advance(ByteWidth::ONE);
+            }
+            ScanResult::new(Lexeme::StringFragment, cursor)
+        },
+        None => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
+    }
+}
+/// Scan one lexeme of single-quoted shell interior: the closing `'`, or the
+/// raw content run up to it (tree-sitter `single_quoted_string` is `'`
+/// `token.immediate(/[^']*/)` `'` — the interior is verbatim, no escapes).
+///
+/// # Specification
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; a closing quote is punctuation; all interior
+///   bytes remain verbatim.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — closing quotes and verbatim runs containing
+///   escape-looking bytes expose exact class and end positions at two offsets.
+///   Interpreting an escape or swallowing the closing quote changes shell text.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+/// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::SingleQuotedContent)))]
+fn scan_single_quoted_interior(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    if bytes.byte(pos) == Some(SourceByte::from(b'\'')) {
+        return ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE));
+    }
+    let mut cursor = pos;
+    while bytes
+        .byte(cursor)
+        .is_some_and(|byte| u8::from(byte) != b'\'')
+    {
+        cursor = cursor.advance(ByteWidth::ONE);
+    }
+    ScanResult::new(Lexeme::SingleQuotedContent, cursor)
+}
+/// Scan a shell variable name after `$` (`[A-Za-z_][A-Za-z0-9_]*`, tree-sitter
+/// `variable_name`).
+///
+/// # Specification
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; a nonempty word-byte run is a variable name;
+///   other starts advance as unknown.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — names, digit continuations and non-name starts at two
+///   offsets expose exact variable width and unknown fallback. Accepting
+///   punctuation into a name or failing to advance changes the shell token
+///   stream.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+/// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::VariableName | Lexeme::Unknown)))]
+fn scan_variable_name(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    let mut cursor = pos;
+    while bytes
+        .byte(cursor)
+        .is_some_and(|byte| bool::from(byte.is_word_continue()))
+    {
+        cursor = cursor.advance(ByteWidth::ONE);
+    }
+    if cursor > pos {
+        ScanResult::new(Lexeme::VariableName, cursor)
+    }
+    else {
+        // Defensive: the caller only sets the flag when a name start follows.
+        ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE))
+    }
+}
+/// Scan one lexeme of shell braced-parameter interior (`${…}`): the
+/// closing `}`, or the parameter's `variable_name` run.
+///
+/// The interior is a bare parameter name `[A-Za-z0-9_]+` (tree-sitter
+/// `variable_name`); the `${name:-word}` / `${#name}` operator forms are not
+/// scanned yet. A stray non-name, non-`}` scalar advances by its UTF-8 width
+/// as a shell word, preserving source boundaries on malformed input.
+///
+/// # Specification
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; the closing brace is punctuation, names are
+///   variable runs and stray scalars are shell words with complete UTF-8 spans.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — closing braces, parameter-name runs and stray scalars of
+///   every UTF-8 width at two offsets expose exact class and width. Treating a
+///   closer as content, stopping a name early or splitting a scalar changes the
+///   parameter subtree or loses source bytes.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+/// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::VariableName | Lexeme::ShellWord)))]
+fn scan_braced_shell_interior(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    if bytes.byte(pos) == Some(SourceByte::from(b'}')) {
+        return ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE));
+    }
+    let mut cursor = pos;
+    while bytes
+        .byte(cursor)
+        .is_some_and(|byte| bool::from(byte.is_word_continue()))
+    {
+        cursor = cursor.advance(ByteWidth::ONE);
+    }
+    if cursor > pos {
+        ScanResult::new(Lexeme::VariableName, cursor)
+    }
+    else {
+        // Preserve the complete scalar so token spans remain UTF-8 boundaries.
+        let width = bytes.byte(pos).map_or(ByteWidth::ONE, utf8_width);
+        ScanResult::new(Lexeme::ShellWord, pos.advance(width))
+    }
+}
+
+/// Scan one lexeme of shell double-quoted interior (`"…"`): the closing
+/// `"`, a `\.` escape, a `$`-led expansion, or a `double_string_fragment` run
+/// up to the next `"` / `\` / `$` (tree-sitter `double_quoted_string`).
+///
+/// The `$`-led forms (`$name`, `${name}`, and the `$!{…}` command-substitution
+/// start) are dispatched by [`scan_dollar`]; the caller's shell-depth
+/// conditions then set the variable / brace state, so an expansion inside a
+/// double-quoted string lexes exactly as it does bare. A fragment run keeps
+/// interior spaces, so a quoted argument is one string.
+///
+/// # Specification
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; double-quoted shell mode preserves spaces and
+///   recognizes escapes and dollar expansions.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; double-quoted shell mode preserves
+///   spaces and recognizes escapes and dollar expansions.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::EscapeSequence | Lexeme::Unknown | Lexeme::ShellStringFragment)))]
+fn scan_shell_double_interior(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    match bytes.byte(pos).map(u8::from) {
+        Some(b'"') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
+        Some(b'\\') => scan_escape(bytes, pos),
+        Some(b'$') => scan_dollar(bytes, pos),
+        Some(_) => {
+            let mut cursor = pos;
+            while let Some(byte) = bytes.byte(cursor) {
+                if matches!(u8::from(byte), b'"' | b'\\' | b'$') {
+                    break;
+                }
+                cursor = cursor.advance(ByteWidth::ONE);
+            }
+            ScanResult::new(Lexeme::ShellStringFragment, cursor)
+        },
+        None => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
+    }
+}
+/// Scan one lexeme of shell-block interior: separators and operators as
+/// punctuation, quoted strings, and otherwise a run of shell-word bytes.
+///
+/// # Specification
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; shell brackets are subshell delimiters, not
+///   host punctuation; a lone `#` is unknown, the freshness relation being host
+///   syntax.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; shell brackets are subshell
+///   delimiters, not host punctuation, and a lone `#` stays unknown.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (match bytes.0.get(pos.0).copied() { Some(b'[') => ret.lexeme == Lexeme::SubshellOpen, Some(b']') => ret.lexeme == Lexeme::SubshellClose, Some(b'#') if bytes.0.get(pos.0 ..).and_then(|rest| rest.get(1)) != Some(&b'!') => ret.lexeme == Lexeme::Unknown, _ => true }))]
+fn scan_shell_interior(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    let Some(byte) = bytes.byte(pos)
+    else {
+        return ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE));
+    };
+    match u8::from(byte) {
+        // Whitespace and newlines are layout inside shell blocks too (the
+        // grammar's `list_operator` newline is approximated as layout; the
+        // explicit `;` / `&` separators carry the list structure the corpus
+        // uses).
+        b' ' | b'\t' | 0x0c | 0x0b => {
+            ScanResult::new(Lexeme::Space, scan_horizontal_space(bytes, pos))
+        },
+        b'\r' | b'\n' => ScanResult::new(Lexeme::Space, scan_newlines(bytes, pos)),
+        // `#!{` / `$!{` open a nested shell block; the brace / bracket / paren
+        // punctuation is structural. The freshness relation's lone `#`, the
+        // sequence literal's `#[` and the retired `#{` are host syntax, so
+        // inside a shell block a `#` that opens no shell stays unknown.
+        b'#' if bytes.byte(pos.advance(ByteWidth::ONE)) == Some(SourceByte::from(b'!')) => {
+            scan_hash(bytes, pos)
+        },
+        b'#' => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
+        b'$' => scan_dollar(bytes, pos),
+        // A shell `[` / `]` is a subshell bracket (tree-sitter `subshell`),
+        // classified DISTINCTLY from the host list-literal `[` so a subshell
+        // never widens the host `[` mold menu.
+        b'[' => ScanResult::new(Lexeme::SubshellOpen, pos.advance(ByteWidth::ONE)),
+        b']' => ScanResult::new(Lexeme::SubshellClose, pos.advance(ByteWidth::ONE)),
+        // Brace / paren / quote punctuation is structural. `=` is NOT: it is a
+        // shell-word byte, so `NAME=value` munches into one `environment_assignment`
+        // token and a bare `=` stays an ordinary word — no shell rule
+        // declares a `=` tile, so a split `=` could only ever be an `UnmoldedTok`.
+        b'}' | b'{' | b'(' | b')' | b'\'' | b'"' => {
+            ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE))
+        },
+        // Shell list / pipe / logical operators.
+        b';' | b'&' | b'|' => scan_shell_operator(bytes, pos),
+        // Redirections.
+        b'<' | b'>' => scan_shell_redirection(bytes, pos),
+        // A digit run immediately before a redirection is a file descriptor
+        // (`2>`); otherwise it is an ordinary shell word.
+        b'0' ..= b'9' => scan_shell_fd_or_word(bytes, pos),
+        // A run of shell-word bytes (`pattern_shell_word`).
+        _ => scan_shell_word(bytes, pos),
+    }
+}
+/// Scan one lexeme starting at `pos`, returning its class and the next cursor.
+///
+/// Layout, a comment, a shebang or shell start, a string quote, a character, a
+/// number and each delimiter are read first; any other byte starts a run,
+/// which [`scan_run`] reads to the next whitespace or delimiter.
+///
+/// # Specification
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; a delimiter is its own punctuation, `@[` and
+///   `@![` included; a run starting at a letter is a word of its letter's case
+///   unless the operator table holds it whole.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; host word classification preserves
+///   the case of its leading letter.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+/// - witness: `label::tests::a_run_is_one_token_cut_only_at_whitespace_and_delimiters`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (match bytes.0.get(pos.0).copied() { Some(b'a' ..= b'z') => matches!(ret.lexeme, Lexeme::LowerWord | Lexeme::Punct), Some(b'A' ..= b'Z') => matches!(ret.lexeme, Lexeme::UpperWord | Lexeme::Punct), _ => true }))]
+fn scan_one(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    let Some(byte) = bytes.byte(pos)
+    else {
+        return ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE));
+    };
+    let second = bytes.byte(pos.advance(ByteWidth::ONE)).map(u8::from);
+    match u8::from(byte) {
+        b' ' | b'\t' | 0x0c | 0x0b => {
+            ScanResult::new(Lexeme::Space, scan_horizontal_space(bytes, pos))
+        },
+        b'\r' | b'\n' => ScanResult::new(Lexeme::Space, scan_newlines(bytes, pos)),
+        b'/' if matches!(second, Some(b'/' | b'*')) => scan_slash(bytes, pos),
+        b'#' => scan_hash(bytes, pos),
+        b'"' => ScanResult::new(Lexeme::Quote, pos.advance(ByteWidth::ONE)),
+        b'\'' => scan_character(bytes, pos),
+        b'0' ..= b'9' => scan_numeral(bytes, pos),
+        b'.' => scan_dot(bytes, pos),
+        b'@' => scan_at(bytes, pos),
+        b'(' | b')' | b'[' | b']' | b'{' | b'}' | b';' | b',' => {
+            ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE))
+        },
+        _ if unicode_blank_len(bytes, pos).is_some() => {
+            ScanResult::new(Lexeme::Space, scan_horizontal_space(bytes, pos))
+        },
+        _ => scan_run(bytes, pos),
+    }
+}
+/// Return whether a punctuation token text opens a shell block (`#!…{` /
+/// `$!…{`).
+///
+/// # Specification
+/// - ensures: recognizes exactly hash-bang or dollar-bang prefixes whose final
+///   byte is an opening brace.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, truncated, complete and wrong-sigil forms expose
+///   the decision; dropping either the prefix or final-brace condition accepts
+///   a negative neighbor.
+/// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
+#[spec(ensures: |ret| bool::from(ret) == ((text.0.starts_with(b"#!") || text.0.starts_with(b"$!")) && text.0.ends_with(b"{")))]
+fn is_shell_open(text: SourceBytes<'_>) -> BytePredicate
+{
+    BytePredicate::from(
+        (bool::from(text.starts_with(BytePattern(b"#!")))
+            || bool::from(text.starts_with(BytePattern(b"$!"))))
+            && bool::from(text.ends_with(BytePattern(b"{"))),
+    )
+}
+
+/// Scan a run of non-newline horizontal whitespace, including the Unicode
+/// blank code points the grammar treats as layout.
+///
+/// # Specification
+/// - requires: the cursor is a character boundary within the UTF-8 source or at
+///   its end.
+/// - ensures: consumes exactly the maximal ASCII or Unicode horizontal-blank
+///   run, never a newline.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty and nonblank input, every admitted Unicode blank, a
+///   mixed run and an immediately following newline expose the exact endpoint.
+///   Adding newlines, dropping a Unicode blank or splitting its bytes changes
+///   it.
+/// - witness: `label::tests::run_scanners_stop_at_the_first_excluded_byte`
+#[spec(requires: pos <= bytes.len(), ensures: |ret| ret >= pos && ret <= bytes.len() && bytes.0.get(pos.0 .. ret.0).is_some_and(|run| core::str::from_utf8(run).is_ok_and(|text| text.chars().all(|ch| matches!(ch, ' ' | '\t' | '\u{c}' | '\u{b}' | '\u{a0}' | '\u{200b}' | '\u{2060}' | '\u{feff}')))))]
+fn scan_horizontal_space(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ByteOffset
+{
+    let mut cursor = pos;
+    while cursor < bytes.len() {
+        // ASCII blanks advance one byte; the Unicode layout blanks
+        // (U+00A0, U+200B, U+2060, U+FEFF) are handled as UTF-8 sequences.
+        if let Some(byte) = bytes.byte(cursor)
+            && matches!(u8::from(byte), b' ' | b'\t' | 0x0c | 0x0b)
+        {
+            cursor = cursor.advance(ByteWidth::ONE);
+            continue;
+        }
+        match unicode_blank_len(bytes, cursor) {
+            Some(width) => cursor = cursor.advance(width),
+            None => break,
+        }
+    }
+    cursor
+}
+
+/// Scan a run of `\r` / `\n` newlines as one layout token (tree-sitter
+/// `_newline`).
+///
+/// # Specification
+/// - requires: the cursor is within the source or at its end.
+/// - ensures: returns the maximal run of carriage returns and line feeds,
+///   including an empty run.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty input, an immediate delimiter, a mixed run, end of
+///   input and a nonzero origin expose the first excluded byte. Skipping a
+///   delimiter, accepting the neighboring class or consuming too little changes
+///   the pinned end offset.
+/// - witness: `label::tests::run_scanners_stop_at_the_first_excluded_byte`
+#[spec(requires: pos <= bytes.len(), ensures: |ret| ret >= pos && ret <= bytes.len() && bytes.0.get(pos.0 .. ret.0).is_some_and(|run| run.iter().copied().all(|byte| matches!(byte, b'\r' | b'\n'))) && bytes.0.get(ret.0).copied().is_none_or(|byte| !(matches!(byte, b'\r' | b'\n'))))]
+fn scan_newlines(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ByteOffset
+{
+    let mut cursor = pos;
+    while let Some(byte) = bytes.byte(cursor) {
+        if matches!(u8::from(byte), b'\r' | b'\n') {
+            cursor = cursor.advance(ByteWidth::ONE);
+        }
+        else {
+            break;
+        }
+    }
+    cursor
+}
+
+/// Return the UTF-8 width of a Unicode layout blank at `pos`, if any.
+///
+/// # Specification
+/// - ensures: returns the complete width of one of the four admitted Unicode
+///   blanks, otherwise none.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every admitted blank, each incomplete byte prefix, an
+///   ordinary space and a neighboring nonblank scalar expose the optional
+///   width. Prefix-only matching or a shifted Unicode code point changes it.
+/// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
+#[spec(ensures: |ret| ret.map(usize::from) == bytes.0.get(pos.0 ..).and_then(|tail| ["\u{a0}", "\u{200b}", "\u{2060}", "\u{feff}"].into_iter().find(|blank| tail.starts_with(blank.as_bytes())).map(str::len)))]
+fn unicode_blank_len(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> Option<ByteWidth>
+{
+    let b0 = bytes.byte(pos)?;
+    // U+00A0 NO-BREAK SPACE = C2 A0.
+    if b0 == SourceByte::from(NO_BREAK_SPACE_UTF8[0])
+        && bytes.byte(pos.advance(ByteWidth::ONE)) == Some(SourceByte::from(NO_BREAK_SPACE_UTF8[1]))
+    {
+        return Some(ByteWidth::TWO);
+    }
+    // U+200B ZERO WIDTH SPACE = E2 80 8B; U+2060 WORD JOINER = E2 81 A0.
+    if b0 == SourceByte::from(THREE_BYTE_LAYOUT_PREFIX) {
+        let b1 = bytes.byte(pos.advance(ByteWidth::ONE))?;
+        let b2 = bytes.byte(pos.advance(ByteWidth::TWO))?;
+        let tail = (u8::from(b1), u8::from(b2));
+        if tail == ZERO_WIDTH_SPACE_TAIL || tail == WORD_JOINER_TAIL {
+            return Some(ByteWidth::THREE);
+        }
+    }
+    // U+FEFF ZERO WIDTH NO-BREAK SPACE (BOM) = EF BB BF.
+    if b0 == SourceByte::from(BYTE_ORDER_MARK_UTF8[0])
+        && bytes.byte(pos.advance(ByteWidth::ONE))
+            == Some(SourceByte::from(BYTE_ORDER_MARK_UTF8[1]))
+        && bytes.byte(pos.advance(ByteWidth::TWO))
+            == Some(SourceByte::from(BYTE_ORDER_MARK_UTF8[2]))
+    {
+        return Some(ByteWidth::THREE);
+    }
+    None
+}
+
+/// Scan a lexeme led by `/`: `//` line comment or `/* */` block comment.
+///
+/// # Specification
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; line and nested block comments are layout; a
+///   lone slash is unknown.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; line and nested block comments are
+///   layout; a lone slash is unknown, a backslash after it included.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'/'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Space | Lexeme::Unknown)))]
+fn scan_slash(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    match bytes.byte(pos.advance(ByteWidth::ONE)).map(u8::from) {
+        Some(b'/') => ScanResult::new(
+            Lexeme::Space,
+            scan_line_comment_from(bytes, pos.advance(ByteWidth::TWO)),
+        ),
+        Some(b'*') => ScanResult::new(Lexeme::Space, scan_block_comment(bytes, pos)),
+        _ => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
+    }
+}
+/// Scan a lexeme led by `#`: a shebang, a shell start, the sequence literal's
+/// `#[`, the retired token `#{`, the freshness relation, or a stray byte.
+///
+/// # Specification
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; shebangs are layout, sequence and valid shell
+///   openers are punctuation, the glued `#{` is one unknown token that the
+///   lowering refuses by name, a `#` that opens none is the one-byte
+///   punctuation of a freshness condition `a # t`, and a `#!` that opens no
+///   shell is unknown.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; shebangs are layout, sequence and
+///   valid shell openers are punctuation, a lone hash is punctuation and a `#!`
+///   that opens no shell is unknown.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'#'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Space | Lexeme::Punct | Lexeme::Unknown)))]
+fn scan_hash(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    // The glued `#{` is a retired token: one token that no tile molds, so the
+    // parser grouts it whole and the lowering names it. `# {` with a space
+    // stays the freshness relation and a brace.
+    let retired = RetiredForm::ViewTelescope.written().0.as_bytes();
+    if bytes
+        .0
+        .get(pos.0 ..)
+        .is_some_and(|rest| rest.starts_with(retired))
+    {
+        return ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::from(retired.len())));
+    }
+    match bytes.byte(pos.advance(ByteWidth::ONE)).map(u8::from) {
+        Some(b'!') => match bytes.byte(pos.advance(ByteWidth::TWO)).map(u8::from) {
+            // `#!/…` first-line shebang (trivia).
+            Some(b'/') => ScanResult::new(
+                Lexeme::Space,
+                scan_line_comment_from(bytes, pos.advance(ByteWidth::TWO)),
+            ),
+            // `#!{` or `#!dialect{` shell-block start.
+            _ => scan_shell_start(bytes, pos, SourceByte::from(b'{')),
+        },
+        // `#[` opens a sequence.
+        Some(b'[') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO)),
+        // `a # t`: the freshness relation.
+        _ => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
+    }
+}
+
+/// Scan to end of line from `from` (line comments and shebangs).
+///
+/// # Specification
+/// - requires: the cursor is within the source or at its end.
+/// - ensures: returns the maximal run of bytes before the next carriage return
+///   or line feed, including an empty run.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty input, an immediate delimiter, a mixed run, end of
+///   input and a nonzero origin expose the first excluded byte. Skipping a
+///   delimiter, accepting the neighboring class or consuming too little changes
+///   the pinned end offset.
+/// - witness: `label::tests::run_scanners_stop_at_the_first_excluded_byte`
+#[spec(requires: from <= bytes.len(), ensures: |ret| ret >= from && ret <= bytes.len() && bytes.0.get(from.0 .. ret.0).is_some_and(|run| run.iter().copied().all(|byte| !matches!(byte, b'\r' | b'\n'))) && bytes.0.get(ret.0).copied().is_none_or(|byte| matches!(byte, b'\r' | b'\n')))]
+fn scan_line_comment_from(
+    bytes: SourceBytes<'_>,
+    from: ByteOffset,
+) -> ByteOffset
+{
+    let mut cursor = from;
+    while let Some(byte) = bytes.byte(cursor) {
+        if matches!(u8::from(byte), b'\r' | b'\n') {
+            break;
+        }
+        cursor = cursor.advance(ByteWidth::ONE);
+    }
+    cursor
+}
+
+/// Scan a nested `/* … */` block comment.
+///
+/// # Specification
+/// - requires: the cursor points to an opening block-comment pair.
+/// - ensures: stops just after the matching outer close, or at the source end
+///   if unclosed.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nested and unterminated comments plus following live
+///   source expose the consumed endpoint. Ignoring depth, swallowing following
+///   source or failing to consume the opener changes the boundary.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0 ..).is_some_and(|tail| tail.starts_with(b"/*")), ensures: |ret| ret.0 >= pos.0.saturating_add(2) && ret <= bytes.len() && (ret == bytes.len() || bytes.0.get(ret.0.saturating_sub(2) .. ret.0) == Some(b"*/")))]
+fn scan_block_comment(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ByteOffset
+{
+    let mut cursor = pos.advance(ByteWidth::TWO);
+    let mut depth = 1_u32;
+    while depth > 0 && cursor < bytes.len() {
+        match (
+            bytes.byte(cursor).map(u8::from),
+            bytes.byte(cursor.advance(ByteWidth::ONE)).map(u8::from),
+        ) {
+            (Some(b'/'), Some(b'*')) => {
+                depth = depth.saturating_add(1);
+                cursor = cursor.advance(ByteWidth::TWO);
+            },
+            (Some(b'*'), Some(b'/')) => {
+                depth = depth.saturating_sub(1);
+                cursor = cursor.advance(ByteWidth::TWO);
+            },
+            (Some(_), _) => cursor = cursor.advance(ByteWidth::ONE),
+            (None, _) => break,
+        }
+    }
+    cursor
+}
+
+/// Scan a `'…'` character literal (`'\.'` or `'[^'\]'`), tolerating an
+/// unterminated tail as a stray quote.
+///
+/// # Specification
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; a complete character consumes both quotes;
+///   empty and truncated literals leave a punctuation quote.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; a complete character consumes both
+///   quotes; empty and truncated literals leave a punctuation quote.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'\''), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Character | Lexeme::Punct)))]
+fn scan_character(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    let inner = pos.advance(ByteWidth::ONE);
+    match bytes.byte(inner).map(u8::from) {
+        Some(b'\\') => {
+            // `'\x'`: backslash, one escaped byte, closing quote.
+            let escaped = inner.advance(ByteWidth::TWO);
+            if bytes.byte(escaped) == Some(SourceByte::from(b'\'')) {
+                ScanResult::new(Lexeme::Character, escaped.advance(ByteWidth::ONE))
+            }
+            else {
+                ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE))
+            }
+        },
+        Some(byte) if byte != b'\'' => {
+            // `'x'`: one non-quote byte (or UTF-8 lead) and a closing quote.
+            let width = utf8_width(SourceByte::from(byte));
+            let close = inner.advance(width);
+            if bytes.byte(close) == Some(SourceByte::from(b'\'')) {
+                ScanResult::new(Lexeme::Character, close.advance(ByteWidth::ONE))
+            }
+            else {
+                ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE))
+            }
+        },
+        // A bare `'` or empty `''`: treat the quote as a stray punctuation tile.
+        _ => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
+    }
+}
+/// Scan a `\x` escape sequence (backslash and one following byte).
+///
+/// # Specification
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; an escape consumes its following scalar; a
+///   terminal backslash remains unknown.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; an escape consumes its following
+///   scalar; a terminal backslash remains unknown.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'\\'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::EscapeSequence | Lexeme::Unknown)))]
+fn scan_escape(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    bytes.byte(pos.advance(ByteWidth::ONE)).map_or_else(
+        || ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
+        |byte| {
+            ScanResult::new(
+                Lexeme::EscapeSequence,
+                pos.advance(ByteWidth::ONE).advance(utf8_width(byte)),
+            )
+        },
+    )
+}
+/// Scan a `$`-led shell lexeme (`$!{` command substitution, `${` braced
+/// parameter expansion, `$(` host escape, `$name` variable, or a bare `$`).
+///
+/// # Specification
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; a braced parameter or valid command opener is
+///   punctuation; an incomplete command start is unknown.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; a braced parameter or valid command
+///   opener is punctuation; an incomplete command start is unknown.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'$'), ensures: |ret| ret.next > pos && matches!(ret.lexeme, Lexeme::Punct | Lexeme::Unknown))]
+fn scan_dollar(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    match bytes.byte(pos.advance(ByteWidth::ONE)).map(u8::from) {
+        Some(b'!') => scan_shell_start(bytes, pos, SourceByte::from(b'{')),
+        // `${` opens a braced parameter expansion (`${name}`); the two-byte
+        // opener is one lexeme, and the caller sets the brace mode so the
+        // interior lexes as a `variable_name` and the matching `}` does not
+        // close the shell block.
+        Some(b'{') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO)),
+        _ => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
+    }
+}
+/// Scan a shell list/pipe/logical operator (`;`, `&`, `&&`, `|`, `||`, `|&`).
+///
+/// # Specification
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; shell logical and pipe pairs take precedence
+///   over their single-byte prefixes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; shell logical and pipe pairs take
+///   precedence over their single-byte prefixes.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0).is_some_and(|byte| b";&|".contains(byte)), ensures: |ret| ret.next > pos && (ret.lexeme == Lexeme::Punct && ret.next.0 == pos.0.saturating_add(if bytes.0.get(pos.0 ..).is_some_and(|tail| [b"&&", b"||", b"|&"].iter().any(|op| tail.starts_with(*op))) { 2 } else { 1 })))]
+fn scan_shell_operator(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    let two = pos.advance(ByteWidth::TWO);
+    if bool::from(bytes.span_matches(pos, two, BytePattern(b"&&")))
+        || bool::from(bytes.span_matches(pos, two, BytePattern(b"||")))
+        || bool::from(bytes.span_matches(pos, two, BytePattern(b"|&")))
+    {
+        ScanResult::new(Lexeme::Punct, two)
+    }
+    else {
+        ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE))
+    }
+}
+/// Scan a shell redirection operator (`<`, `>`, `<>`, `<&`, `>&`, `>>`).
+///
+/// # Specification
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; redirection pairs consume two bytes; other
+///   redirection prefixes consume one.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; redirection pairs consume two bytes;
+///   other redirection prefixes consume one.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0).is_some_and(|byte| b"<>".contains(byte)), ensures: |ret| ret.next > pos && (ret.lexeme == Lexeme::Punct && ret.next.0 == pos.0.saturating_add(if bytes.0.get(pos.0 ..).is_some_and(|tail| [b"<>", b"<&", b">&", b">>"].iter().any(|op| tail.starts_with(*op))) { 2 } else { 1 })))]
+fn scan_shell_redirection(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    let two = pos.advance(ByteWidth::TWO);
+    if bool::from(bytes.span_matches(pos, two, BytePattern(b"<>")))
+        || bool::from(bytes.span_matches(pos, two, BytePattern(b"<&")))
+        || bool::from(bytes.span_matches(pos, two, BytePattern(b">&")))
+        || bool::from(bytes.span_matches(pos, two, BytePattern(b">>")))
+    {
+        ScanResult::new(Lexeme::Punct, two)
+    }
+    else {
+        ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE))
+    }
+}
+
+/// Scan a shell digit run as a redirection file descriptor when it abuts a
+/// `<` / `>` operator (`2>`, `2>&1`), else as an ordinary shell word.
+///
+/// The lookahead is exactly one byte past the digit run, so a bare numeric
+/// word (`echo 2`) and a digit-led word (`2nd`) stay shell words; only the
+/// `2>` / `2>>` / `2>&1` redirection-prefix shape classifies as a
+/// `file_descriptor` (tree-sitter `file_descriptor`).
+///
+/// # Specification
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; only a digit run immediately followed by
+///   redirection is a file descriptor.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; only a digit run immediately followed
+///   by redirection is a file descriptor.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0).is_some_and(u8::is_ascii_digit), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::FileDescriptor | Lexeme::ShellWord)))]
+fn scan_shell_fd_or_word(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    let digits_end = scan_digits(bytes, pos);
+    if bytes
+        .byte(digits_end)
+        .is_some_and(|byte| matches!(u8::from(byte), b'<' | b'>'))
+    {
+        ScanResult::new(Lexeme::FileDescriptor, digits_end)
+    }
+    else {
+        scan_shell_word(bytes, pos)
+    }
+}
+
+/// Scan a `#!` / `$!` shell start with an optional dialect run up to `open`.
+///
+/// The whole `#!dialect{` (or `$!dialect{`) spelling is one lexeme; its label
+/// is resolved by the molder from the opener text.
+///
+/// # Specification
+/// - requires: the cursor points to a hash-bang or dollar-bang prefix.
+/// - ensures: a complete optional dialect and opener is punctuation; otherwise
+///   only the leading byte is unknown.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty and named dialects, absent openers and trailing
+///   source expose the exact class/end pair. Accepting a missing brace or
+///   keeping the dialect after a rejected prefix changes the observation.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+/// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
+#[spec(requires: bytes.0.get(pos.0 ..).is_some_and(|tail| tail.starts_with(b"#!") || tail.starts_with(b"$!")), ensures: |ret| match ret.lexeme { Lexeme::Punct => ret.next.0 >= pos.0.saturating_add(3) && ret.next <= bytes.len() && bytes.0.get(ret.next.0.saturating_sub(1)) == Some(&open.0), Lexeme::Unknown => ret.next.0 == pos.0.saturating_add(1), Lexeme::LowerWord | Lexeme::UpperWord | Lexeme::Number | Lexeme::TypedNumber | Lexeme::Character | Lexeme::Quote | Lexeme::StringFragment | Lexeme::ShellStringFragment | Lexeme::EscapeSequence | Lexeme::ShellWord | Lexeme::EnvAssign | Lexeme::SingleQuotedContent | Lexeme::VariableName | Lexeme::SubshellOpen | Lexeme::SubshellClose | Lexeme::FileDescriptor | Lexeme::ArmBar | Lexeme::LayoutOpen | Lexeme::LayoutSemi | Lexeme::LayoutClose | Lexeme::Space => false })]
+fn scan_shell_start(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+    open: SourceByte,
+) -> ScanResult
+{
+    // Skip the two-byte `#!` / `$!` lead, then an optional dialect word.
+    let mut cursor = pos.advance(ByteWidth::TWO);
+    while let Some(byte) = bytes.byte(cursor) {
+        if bool::from(byte.is_dialect()) {
+            cursor = cursor.advance(ByteWidth::ONE);
+        }
+        else {
+            break;
+        }
+    }
+    if bytes.byte(cursor) == Some(open) {
+        ScanResult::new(Lexeme::Punct, cursor.advance(ByteWidth::ONE))
+    }
+    else {
+        // No opening brace: not a shell start; fall back to a stray byte.
+        ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE))
+    }
+}
+
+/// Scan a numeric literal, classifying a trailing primitive suffix as
+/// `typed_number`.
+///
+/// # Specification
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; a number commits fractions and exponents only
+///   with a digit and promotes only a bounded primitive suffix.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; a number commits fractions and
+///   exponents only with a digit and promotes only a bounded primitive suffix.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0).is_some_and(u8::is_ascii_digit), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Number | Lexeme::TypedNumber)))]
+fn scan_number(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    let mut cursor = scan_digits(bytes, pos);
+    // Optional fractional part `.[0-9]+` (a lone `.` after digits is a
+    // projection, so only consume the dot when a digit follows).
+    if bytes.byte(cursor) == Some(SourceByte::from(b'.'))
+        && bytes
+            .byte(cursor.advance(ByteWidth::ONE))
+            .is_some_and(|byte| bool::from(byte.is_ascii_digit()))
+    {
+        cursor = scan_digits(bytes, cursor.advance(ByteWidth::ONE));
+    }
+    // Optional exponent `[eE][+-]?[0-9]+`.
+    if let Some(byte) = bytes.byte(cursor)
+        && matches!(u8::from(byte), b'e' | b'E')
+    {
+        let mut probe = cursor.advance(ByteWidth::ONE);
+        if matches!(bytes.byte(probe).map(u8::from), Some(b'+' | b'-')) {
+            probe = probe.advance(ByteWidth::ONE);
+        }
+        if bytes
+            .byte(probe)
+            .is_some_and(|digit| bool::from(digit.is_ascii_digit()))
+        {
+            cursor = scan_digits(bytes, probe);
+        }
+    }
+    // Optional primitive-type suffix promotes the literal to `typed_number`.
+    suffix_len(bytes, cursor).map_or_else(
+        || ScanResult::new(Lexeme::Number, cursor),
+        |width| ScanResult::new(Lexeme::TypedNumber, cursor.advance(width)),
+    )
+}
+
+/// Advance over a run of ASCII digits.
+///
+/// # Specification
+/// - requires: the cursor is within the source or at its end.
+/// - ensures: returns the maximal run of ASCII decimal digits, including an
+///   empty run.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty input, an immediate delimiter, a mixed run, end of
+///   input and a nonzero origin expose the first excluded byte. Skipping a
+///   delimiter, accepting the neighboring class or consuming too little changes
+///   the pinned end offset.
+/// - witness: `label::tests::run_scanners_stop_at_the_first_excluded_byte`
+#[spec(requires: pos <= bytes.len(), ensures: |ret| ret >= pos && ret <= bytes.len() && bytes.0.get(pos.0 .. ret.0).is_some_and(|run| run.iter().copied().all(|byte| byte.is_ascii_digit())) && bytes.0.get(ret.0).copied().is_none_or(|byte| !byte.is_ascii_digit()))]
+fn scan_digits(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ByteOffset
+{
+    let mut cursor = pos;
+    while bytes
+        .byte(cursor)
+        .is_some_and(|byte| bool::from(byte.is_ascii_digit()))
+    {
+        cursor = cursor.advance(ByteWidth::ONE);
+    }
+    cursor
+}
+/// Scan a run of shell-word bytes, classifying a `NAME=…` run as an
+/// environment assignment.
+///
+/// The `=` is a shell-word byte, so the run is a maximal munch across it and a
+/// `NAME=value` assignment arrives as ONE token — the whole-token shape both
+/// tree-sitter grammar (`environment_assignment` is a `token(seq(…))`, not a
+/// composite rule) and the PBG (a single-tile Expression atom) already expect.
+/// Splitting it into `NAME` / `=` / `value` left the `=` with no admissible
+/// shell mold at all — no shell rule declares a `=` tile — so it could only
+/// ever raise an `UnmoldedTok`, and the assignment mold could never fire.
+///
+/// A `"`-quoted value binds into the same token when the run ends at the `=`
+/// (the tree-sitter `choice(pattern_shell_word, /"([^"\\]|\\.)*"/)` value), so
+/// `FOO="a b"` is one assignment rather than an assignment plus a string.
+///
+/// # Specification
+/// - requires: the cursor identifies an existing byte.
+/// - ensures: advances over a shell word, whole assignment or one unknown byte.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; identifier-led assignment prefixes
+///   stay whole, while flags containing equals remain ordinary words.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::ShellWord | Lexeme::EnvAssign | Lexeme::Unknown)))]
+fn scan_shell_word(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    let mut cursor = pos;
+    while bytes
+        .byte(cursor)
+        .is_some_and(|byte| bool::from(byte.is_shell_word()))
+    {
+        cursor = cursor.advance(ByteWidth::ONE);
+    }
+    if cursor <= pos {
+        // Not a shell-word byte and unmatched above: advance one to stay total.
+        return ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE));
+    }
+    if !bool::from(is_env_assign_run(bytes, pos, cursor)) {
+        return ScanResult::new(Lexeme::ShellWord, cursor);
+    }
+    // `NAME=` immediately before a `"` takes the quoted string as its value.
+    let end = if bytes.byte(cursor.retreat(ByteWidth::ONE)) == Some(SourceByte::from(b'='))
+        && bytes.byte(cursor) == Some(SourceByte::from(b'"'))
+    {
+        scan_shell_quoted_value(bytes, cursor)
+    }
+    else {
+        cursor
+    };
+    ScanResult::new(Lexeme::EnvAssign, end)
+}
+
+/// Return whether the shell-word run `bytes[start .. end]` is an environment
+/// assignment: an identifier-shaped `NAME` followed by `=` (tree-sitter
+/// `environment_assignment`'s `/[A-Za-z_][A-Za-z0-9_]*/ "="` prefix).
+///
+/// A run whose name part is not identifier-shaped is an ordinary shell word,
+/// so `--color=auto` and a bare `=` (a `[ "$a" = "$b" ]` test operator) stay
+/// words rather than assignments.
+///
+/// # Specification
+/// - requires: start and end bound a source run.
+/// - ensures: recognizes a nonempty ASCII variable name immediately followed by
+///   equals, irrespective of its value.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty runs, empty values, digit-led names and flags
+///   containing equals are compared with assignment classification. Moving the
+///   name-start boundary or accepting a separator inside the name changes it.
+/// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
+#[spec(requires: start <= end && end <= bytes.len(), ensures: |ret| bool::from(ret) == bytes.0.get(start.0 .. end.0).is_some_and(|run| run.iter().position(|byte| *byte == b'=').is_some_and(|equal| equal > 0 && run.first().is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_') && run.get(1 .. equal).is_some_and(|name| name.iter().all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')))))]
+fn is_env_assign_run(
+    bytes: SourceBytes<'_>,
+    start: ByteOffset,
+    end: ByteOffset,
+) -> BytePredicate
+{
+    let mut cursor = start;
+    if !bytes
+        .byte(cursor)
+        .is_some_and(|byte| bool::from(byte.is_var_name_start()))
+    {
+        return BytePredicate::from(false);
+    }
+    cursor = cursor.advance(ByteWidth::ONE);
+    while cursor < end
+        && bytes
+            .byte(cursor)
+            .is_some_and(|byte| bool::from(byte.is_word_continue()))
+    {
+        cursor = cursor.advance(ByteWidth::ONE);
+    }
+    BytePredicate::from(cursor < end && bytes.byte(cursor) == Some(SourceByte::from(b'=')))
+}
+
+/// Scan a `"`-quoted environment-assignment value from its opening quote to the
+/// byte past its closing quote, honoring `\.` escapes. An unterminated string
+/// runs to end of input (the scan stays total; the melder raises the
+/// obligation).
+///
+/// # Specification
+/// - requires: the cursor points to a double quote.
+/// - ensures: an unescaped closing quote ends the value; otherwise scanning
+///   continues through the tail, an escape at the last byte ending it at the
+///   source's end.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, spaced and escaped-quote values, with a following
+///   delimiter or an ordinary unclosed tail, expose the end offset. Stopping at
+///   an escaped quote or consuming past a real closing quote changes it.
+/// - witness: `label::tests::quoted_values_stop_only_at_an_unescaped_quote`
+/// - witness: `label::tests::a_quoted_value_ending_in_a_lone_backslash_ends_at_the_source_1070`
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'"'), ensures: |ret| ret > pos && ret <= bytes.len() && (ret == bytes.len() || bytes.0.get(ret.0.saturating_sub(1)) == Some(&b'"')))]
+fn scan_shell_quoted_value(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ByteOffset
+{
+    let mut cursor = pos.advance(ByteWidth::ONE);
+    while let Some(byte) = bytes.byte(cursor) {
+        match u8::from(byte) {
+            b'\\' => cursor = cursor.advance(ByteWidth::TWO).min(bytes.len()),
+            b'"' => return cursor.advance(ByteWidth::ONE),
+            _ => cursor = cursor.advance(ByteWidth::ONE),
+        }
+    }
+    cursor
+}
+
+/// The primitive numeric suffixes, each a word of its own.
+const NUMERIC_SUFFIXES: [&[u8]; 12] = [
+    b"u8", b"u16", b"u32", b"u64", b"usize", b"i8", b"i16", b"i32", b"i64", b"isize", b"f32",
+    b"f64",
+];
+
+/// Return the width of a primitive-numeric suffix at `pos` (`u8`, `f64`, …).
+///
+/// # Specification
+/// - ensures: returns the length of the primitive numeric suffix at `pos` that
+///   no word byte follows; otherwise none.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every suffix at end and before punctuation, every
+///   truncated prefix and an added word byte expose the optional width.
+///   Omitting a suffix, accepting a partial suffix or ignoring the word
+///   boundary changes that width.
+/// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
+#[spec(ensures: |ret| ret.map(usize::from) == NUMERIC_SUFFIXES.iter().find(|&&suffix| bytes.0.get(pos.0 .. pos.0.saturating_add(suffix.len())) == Some(suffix) && bytes.0.get(pos.0.saturating_add(suffix.len())).is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_')).map(|suffix| suffix.len()))]
+fn suffix_len(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> Option<ByteWidth>
+{
+    for suffix in NUMERIC_SUFFIXES {
+        let width = ByteWidth::from(suffix.len());
+        let end = pos.advance(width);
+        if bool::from(bytes.span_matches(pos, end, BytePattern(suffix))) {
+            // A suffix must not run into a longer word (`1u32x` is not typed).
+            if bytes
+                .byte(end)
+                .is_some_and(|byte| bool::from(byte.is_word_continue()))
+            {
+                continue;
+            }
+            return Some(width);
+        }
+    }
+    None
+}
+
+/// Scan a lexeme led by `.`: the `..` rest token, the `.@` as-pattern alias,
+/// the selectors `.#[`, `.#{` and `.*{`, or a bare `.`.
+///
+/// A dot before a digit stands alone too, so `.1` is the leading-dot label
+/// of a positional entry, `+{ .1 = b }`, rather than a number with no whole
+/// part: a fraction is written with its whole part, `0.5`, which is the only
+/// spelling the lowering ever read as one.
+///
+/// # Specification
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; a pair `..` or `.@` is one punctuation, so is
+///   a selector `.#[`, `.#{` or `.*{`, and every other dot, one before a digit
+///   included, stands alone.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; a pair `..` or `.@` is one
+///   punctuation and a dot before a digit stands alone.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'.'), ensures: |ret| ret.next > pos && ret.lexeme == Lexeme::Punct)]
+fn scan_dot(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    let second = bytes.byte(pos.advance(ByteWidth::ONE));
+    let third = bytes.byte(pos.advance(ByteWidth::TWO));
+    if (second == Some(SourceByte::from(b'#'))
+        && (third == Some(SourceByte::from(b'[')) || third == Some(SourceByte::from(b'{'))))
+        || (second == Some(SourceByte::from(b'*')) && third == Some(SourceByte::from(b'{')))
+    {
+        ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::THREE))
+    }
+    else if second == Some(SourceByte::from(b'.')) || second == Some(SourceByte::from(b'@')) {
+        ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO))
+    }
+    else {
+        ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE))
+    }
+}
+
+/// Return whether a run stops at `at`: the end of the source, whitespace, a
+/// delimiter, a Unicode blank or a comment's opener.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: true at the end of the source, at a byte
+///   [`SourceByte::is_run_end`] accepts, at a `//` or `/*`, and at a Unicode
+///   blank; false otherwise.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`scan_run`].
+/// - witness: `label::tests::a_run_is_one_token_cut_only_at_whitespace_and_delimiters`
+#[spec(ensures: |ret| bool::from(ret) == bytes.0.get(at.0 ..).is_none_or(|tail| tail.first().is_none_or(|byte| b" \t\r\n\x0b\x0c()[]{};,\".@".contains(byte)) || tail.starts_with(b"//") || tail.starts_with(b"/*") || ["\u{a0}", "\u{200b}", "\u{2060}", "\u{feff}"].into_iter().any(|blank| tail.starts_with(blank.as_bytes()))))]
+fn ends_run(
+    bytes: SourceBytes<'_>,
+    at: ByteOffset,
+) -> BytePredicate
+{
+    let Some(byte) = bytes.byte(at)
+    else {
+        return BytePredicate::from(true);
+    };
+    let comment = u8::from(byte) == b'/'
+        && matches!(
+            bytes.byte(at.advance(ByteWidth::ONE)).map(u8::from),
+            Some(b'/' | b'*')
+        );
+    BytePredicate::from(
+        bool::from(byte.is_run_end()) || comment || unicode_blank_len(bytes, at).is_some(),
+    )
+}
+
+/// `tile` spelled to be written into `text` at `at` as a token of its own: with
+/// a space before it where the run before `at` would take it in, and a space
+/// after it where it would take in the run from `at`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `tile`, led by one space when `tile` opens with no run end and
+///   the byte before `at` is none either, and followed by one space when `tile`
+///   closes with no run end and no run stops at `at`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `:` minted after a name and before another reads as its
+///   own tile only with a space each side; a closer needs neither.
+/// - witness: `parse::place::tests::a_tile_left_out_is_minted_where_the_rest_parses_2259`
+/// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+#[spec(ensures: |ret| ret.trim_matches(' ') == <&str>::from(tile) && ret.len() <= <&str>::from(tile).len().saturating_add(2))]
+pub fn cut_in(
+    text: gandr_surface_syntax::SourceText<'_>,
+    at: gandr_surface_syntax::ByteOffset,
+    tile: gandr_surface_syntax::SourceText<'_>,
+) -> String
+{
+    let (text, at, tile) = (<&str>::from(text), usize::from(at), <&str>::from(tile));
+    let (bytes, spelled) = (SourceBytes::from(text.as_bytes()), tile.as_bytes());
+    let opens = spelled
+        .first()
+        .is_some_and(|&first| !bool::from(SourceByte::from(first).is_run_end()));
+    let closes = spelled
+        .last()
+        .is_some_and(|&last| !bool::from(SourceByte::from(last).is_run_end()));
+    let before = opens
+        && at
+            .checked_sub(1)
+            .and_then(|previous| text.as_bytes().get(previous))
+            .is_some_and(|&previous| !bool::from(SourceByte::from(previous).is_run_end()));
+    let after = closes && !bool::from(ends_run(bytes, ByteOffset::from(at)));
+    let mut cut = String::with_capacity(tile.len().saturating_add(2));
+    if before {
+        cut.push(' ');
+    }
+    cut.push_str(tile);
+    if after {
+        cut.push(' ');
+    }
+    cut
+}
+
+/// The end of the run starting at `pos`: the first place [`ends_run`]
+/// accepts, stepping a whole UTF-8 scalar at a time.
+///
+/// # Specification
+/// - requires: `pos` is at most the source's length.
+/// - ensures: the least offset at or past `pos`, on a scalar boundary, where
+///   the run stops.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`scan_run`].
+/// - witness: `label::tests::a_run_is_one_token_cut_only_at_whitespace_and_delimiters`
+#[spec(requires: pos <= bytes.len(), ensures: |ret| ret >= pos && ret <= bytes.len() && bool::from(ends_run(bytes, ret)))]
+fn run_end(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ByteOffset
+{
+    let mut cursor = pos;
+    while !bool::from(ends_run(bytes, cursor)) {
+        let width = bytes.byte(cursor).map_or(ByteWidth::ONE, utf8_width);
+        cursor = cursor.advance(width).min(bytes.len());
+    }
+    cursor
+}
+
+/// Scan a run: the bytes from `pos` to the next whitespace or delimiter.
+///
+/// A connective's sign, `*`, `+` or `&`, written straight before `{` is one
+/// opener tile with the brace. A run the operator table holds whole is that
+/// operator's tile. Any other run that starts with `!`, `?` or `~` gives that
+/// sigil a tile of its own, and the rest is read as the next run. `type` with
+/// a `(` written straight after it is one tile with the parenthesis, a type
+/// quoted where an expression stands. Every other run is one word: an
+/// uppercase lead makes an upper word, and any other printable lead a lower
+/// word, `-x` and `\T` included. A run led by a control character or a prime
+/// names no tile.
+///
+/// # Specification
+/// - requires: `pos` starts a run.
+/// - ensures: scanning advances; a connective's opener is punctuation through
+///   the brace; an operator run is punctuation to its end; a sigil run is
+///   punctuation for its sigil alone; `type(` is punctuation through the
+///   parenthesis; a word ends where the run does.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the connectives' openers against a spaced or a glued
+///   sign, operators, an operator written against a name, an operator-led run
+///   the table lacks, sigils, a sigil before an operator, words of either case,
+///   a `_`-led word, the lone wildcard, a primed word, a lone prime, a
+///   non-ASCII word, `type(` against `type (`, and a run before each delimiter
+///   and a comment separate the decisions.
+/// - witness: `label::tests::a_run_is_one_token_cut_only_at_whitespace_and_delimiters`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && ret.next <= bytes.len() && matches!(ret.lexeme, Lexeme::LowerWord | Lexeme::UpperWord | Lexeme::Punct | Lexeme::Unknown))]
+fn scan_run(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    let end = run_end(bytes, pos).max(pos.advance(ByteWidth::ONE));
+    let text = bytes.span(pos, end).unwrap_or_else(SourceBytes::empty);
+    let Some(&lead) = text.0.first()
+    else {
+        return ScanResult::new(Lexeme::Unknown, end);
+    };
+    // A connective's sign written straight before `{` opens it: `*{`, `+{`
+    // and `&{` are one tile each.
+    if matches!(text.0, b"*" | b"+" | b"&") && bytes.byte(end) == Some(SourceByte::from(b'{')) {
+        return ScanResult::new(Lexeme::Punct, end.advance(ByteWidth::ONE));
+    }
+    // A word's lead is a letter, so only a run led otherwise, or one ending in
+    // a marked word's `+`, is read against the operator table.
+    if (!lead.is_ascii_alphanumeric() || text.0.ends_with(b"+"))
+        && OPERATORS
+            .iter()
+            .any(|operator| operator.as_bytes() == text.0)
+    {
+        return ScanResult::new(Lexeme::Punct, end);
+    }
+    if text.0 == b"type" && bytes.byte(end) == Some(SourceByte::from(b'(')) {
+        return ScanResult::new(Lexeme::Punct, end.advance(ByteWidth::ONE));
+    }
+    match lead {
+        b'!' | b'?' | b'~' => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
+        b'a' ..= b'z' | b'_' => ScanResult::new(Lexeme::LowerWord, end),
+        b'A' ..= b'Z' => ScanResult::new(Lexeme::UpperWord, end),
+        _ => {
+            let first = core::str::from_utf8(text.0)
+                .ok()
+                .and_then(|run| run.chars().next());
+            let lexeme = match first {
+                Some(letter) if letter.is_uppercase() => Lexeme::UpperWord,
+                Some(lead) if lead.is_control() || lead == '′' => Lexeme::Unknown,
+                Some(_) => Lexeme::LowerWord,
+                None => Lexeme::Unknown,
+            };
+            ScanResult::new(lexeme, end)
+        },
+    }
+}
+
+/// Scan a numeral: a number that ends its run, or a digit-led run no tile
+/// names.
+///
+/// # Specification
+/// - requires: `pos` holds an ASCII digit.
+/// - ensures: [`scan_number`]'s result when the run stops where the number
+///   does; the whole run as [`Lexeme::Unknown`] otherwise.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a number before whitespace, a delimiter and a
+///   projection's dot, a typed number, and a number written against a letter or
+///   an operator separate the decision.
+/// - witness: `label::tests::a_run_is_one_token_cut_only_at_whitespace_and_delimiters`
+#[spec(requires: bytes.0.get(pos.0).is_some_and(u8::is_ascii_digit), ensures: |ret| ret.next > pos && matches!(ret.lexeme, Lexeme::Number | Lexeme::TypedNumber | Lexeme::Unknown))]
+fn scan_numeral(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    let number = scan_number(bytes, pos);
+    if bool::from(ends_run(bytes, number.next)) {
+        number
+    }
+    else {
+        ScanResult::new(Lexeme::Unknown, run_end(bytes, number.next))
+    }
+}
+
+/// Scan the delimiter `@`: the openers `@[` and `@![`, or `@` alone.
+///
+/// # Specification
+/// - requires: `pos` holds `@`.
+/// - ensures: punctuation through `@![` or `@[` when one starts at `pos`, and
+///   the `@` alone otherwise.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — both openers, a lone `@` and `@!` before another byte
+///   separate the widths.
+/// - witness: `label::tests::a_run_is_one_token_cut_only_at_whitespace_and_delimiters`
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'@'), ensures: |ret| ret.lexeme == Lexeme::Punct && ret.next.0 == pos.0.saturating_add(match bytes.0.get(pos.0 ..) { Some(tail) if tail.starts_with(b"@![") => 3, Some(tail) if tail.starts_with(b"@[") => 2, _ => 1 }))]
+fn scan_at(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> ScanResult
+{
+    let width = if bool::from(bytes.span_matches(
+        pos,
+        pos.advance(ByteWidth::THREE),
+        BytePattern(b"@!["),
+    )) {
+        ByteWidth::THREE
+    }
+    else if bool::from(bytes.span_matches(pos, pos.advance(ByteWidth::TWO), BytePattern(b"@["))) {
+        ByteWidth::TWO
+    }
+    else {
+        ByteWidth::ONE
+    };
+    ScanResult::new(Lexeme::Punct, pos.advance(width))
+}
+
+/// The words [`scan_run`] reads led by an ASCII letter or an underscore, as a
+/// regular expression: the names an editor renames.
+///
+/// A word is an ASCII letter, or an underscore with at least one byte after
+/// it, then any bytes up to the next whitespace or delimiter; a lone `_` is
+/// the wildcard. A word led by an operator character, as `-x`, is outside it.
+/// The expression is in the syntax ECMAScript and the `regex` family share,
+/// so an editor can match a name's characters with it.
+pub const WORD_PATTERN: &str = r#"_[^\s()\[\]{};,".@]+|[A-Za-z][^\s()\[\]{};,".@]*"#;
+
+/// Return the UTF-8 byte width implied by a leading byte (1 on ASCII).
+///
+/// # Specification
+/// - ensures: C0–DF lead a two-byte step, E0–EF three bytes, F0–F7 four; every
+///   other byte advances one, including continuation and invalid leads.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the entire byte domain is partitioned into pinned width
+///   intervals; every boundary and its neighbor distinguishes shifted
+///   thresholds, wrong widths and nonprogress on invalid leading bytes.
+/// - witness: `label::tests::utf8_step_widths_cover_every_leading_byte`
+#[spec(ensures: |ret| ret.0 == match lead.0 { 0xc0 ..= 0xdf => 2, 0xe0 ..= 0xef => 3, 0xf0 ..= 0xf7 => 4, _ => 1 })]
+fn utf8_width(lead: SourceByte) -> ByteWidth
+{
+    match u8::from(lead) {
+        0xc0 ..= 0xdf => ByteWidth::TWO,
+        0xe0 ..= 0xef => ByteWidth::THREE,
+        0xf0 ..= 0xf7 => ByteWidth::FOUR,
+        // ASCII (`0x00..=0x7f`) and any continuation or invalid lead advance one
+        // byte, keeping the scan total.
+        _ => ByteWidth::ONE,
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::borrow::ToOwned as _;
+    use alloc::format;
+    use alloc::string::String;
+    use alloc::vec;
+    use alloc::vec::Vec;
+    use core::ops::Range;
+
+    use anodized::spec;
+    use gandr_surface_syntax::SourceFragment;
+    use proptest::prelude::*;
+
+    use super::ByteOffset;
+    use super::ByteWidth;
+    use super::Labeling;
+    use super::Lexeme;
+    use super::Token;
+    use super::label;
+
+    #[test]
+    fn token_observers_preserve_supplied_order()
+    {
+        let source = SourceFragment::from("a b");
+        let tokens = [
+            Token {
+                lexeme: Lexeme::LowerWord,
+                start: 2,
+                end: 3,
+            },
+            Token {
+                lexeme: Lexeme::Space,
+                start: 1,
+                end: 2,
+            },
+            Token {
+                lexeme: Lexeme::LowerWord,
+                start: 0,
+                end: 1,
+            },
+            Token {
+                lexeme: Lexeme::Unknown,
+                start: 3,
+                end: 3,
+            },
+        ];
+        assert_eq!(tiles(source, &tokens), vec![
+            (Lexeme::LowerWord, "b".to_owned()),
+            (Lexeme::LowerWord, "a".to_owned()),
+            (Lexeme::Unknown, String::new())
+        ]);
+        assert_eq!(reconstruct(source, &tokens), "b a");
+    }
+
+    #[test]
+    fn run_scanners_stop_at_the_first_excluded_byte()
+    {
+        type Run =
+            for<'source> fn(super::SourceBytes<'source>, super::ByteOffset) -> super::ByteOffset;
+        type Row<'source> = (&'source str, usize);
+        let cases: &[(Run, &[Row<'_>])] = &[
+            (super::scan_digits, &[
+                ("", 0),
+                ("x", 0),
+                ("123x", 3),
+                ("123", 3),
+            ]),
+            (super::scan_newlines, &[
+                ("", 0),
+                ("x", 0),
+                ("\r\n\nx", 3),
+                ("\r\n", 2),
+            ]),
+            (super::scan_line_comment_from, &[
+                ("", 0),
+                ("\n", 0),
+                ("éx\r\n", 3),
+                ("éx", 3),
+            ]),
+            (super::scan_horizontal_space, &[
+                ("", 0),
+                ("\n", 0),
+                ("x", 0),
+                (" \t\u{c}\u{b}\u{a0}\u{200b}\u{2060}\u{feff}\nx", 15),
+            ]),
+        ];
+        let mut input = alloc::string::String::new();
+        for &(scan, rows) in cases {
+            for &(source, end) in rows {
+                for prefix in ["", "?"] {
+                    input.clear();
+                    for part in [prefix, source] {
+                        input.push_str(part);
+                    }
+                    assert_eq!(
+                        usize::from(scan(
+                            super::SourceBytes::from(input.as_bytes()),
+                            super::ByteOffset::from(prefix.len())
+                        )),
+                        prefix.len().saturating_add(end),
+                        "{input:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn quoted_values_stop_only_at_an_unescaped_quote()
+    {
+        for (source, end) in [
+            ("\"\";", 2_usize),
+            ("\"a b\";", 5),
+            ("\"a\\\"b\";", 6),
+            ("\"tail", 5),
+        ] {
+            assert_eq!(
+                usize::from(super::scan_shell_quoted_value(
+                    super::SourceBytes::from(source.as_bytes()),
+                    super::ByteOffset::from(0_usize)
+                )),
+                end
+            );
+        }
+    }
+
+    /// #1070: a quoted value whose last byte is an escaping backslash ends at
+    /// the source's end, and the shell block it closes labels whole: the
+    /// escape stepped the cursor one byte past the source.
+    #[test]
+    fn a_quoted_value_ending_in_a_lone_backslash_ends_at_the_source_1070()
+    {
+        assert_eq!(
+            usize::from(super::scan_shell_quoted_value(
+                super::SourceBytes::from(b"\"\\".as_slice()),
+                super::ByteOffset::from(0_usize)
+            )),
+            2_usize
+        );
+        let source = super::SourceFragment::from("#!{NAME=\"\\");
+        assert_eq!(relabeled(source, source), Labeling::new(source));
+    }
+
+    #[test]
+    fn prefix_recognizers_respect_truncation_and_word_boundaries()
+    {
+        let zero = super::ByteOffset::from(0_usize);
+        for (source, expected) in [
+            ("", false),
+            ("#!", false),
+            ("#!{", true),
+            ("$!sh{", true),
+            ("#sh{", false),
+            ("#!sh}", false),
+        ] {
+            assert_eq!(
+                bool::from(super::is_shell_open(super::SourceBytes::from(
+                    source.as_bytes()
+                ))),
+                expected,
+                "{source}"
+            );
+        }
+        for (source, expected) in [
+            ("", false),
+            ("A=", true),
+            ("_a9=x", true),
+            ("9a=x", false),
+            ("--x=y", false),
+            ("a-b=x", false),
+            ("=x", false),
+        ] {
+            assert_eq!(
+                bool::from(super::is_env_assign_run(
+                    super::SourceBytes::from(source.as_bytes()),
+                    zero,
+                    super::ByteOffset::from(source.len())
+                )),
+                expected,
+                "{source}"
+            );
+        }
+        for suffix in [
+            "u8", "u16", "u32", "u64", "usize", "i8", "i16", "i32", "i64", "isize", "f32", "f64",
+        ] {
+            for (tail, expected) in [
+                ("", Some(suffix.len())),
+                ("!", Some(suffix.len())),
+                ("x", None),
+                ("_", None),
+                ("9", None),
+            ] {
+                let source = alloc::format!("{suffix}{tail}");
+                assert_eq!(
+                    super::suffix_len(super::SourceBytes::from(source.as_bytes()), zero)
+                        .map(usize::from),
+                    expected,
+                    "{source}"
+                );
+            }
+            for length in 0 .. suffix.len() {
+                let source = suffix.as_bytes().get(.. length).unwrap();
+                assert_eq!(
+                    super::suffix_len(super::SourceBytes::from(source), zero),
+                    None
+                );
+            }
+        }
+        for blank in ["\u{a0}", "\u{200b}", "\u{2060}", "\u{feff}"] {
+            assert_eq!(
+                super::unicode_blank_len(super::SourceBytes::from(blank.as_bytes()), zero)
+                    .map(usize::from),
+                Some(blank.len())
+            );
+            for length in 0 .. blank.len() {
+                assert_eq!(
+                    super::unicode_blank_len(
+                        super::SourceBytes::from(blank.as_bytes().get(.. length).unwrap()),
+                        zero
+                    ),
+                    None
+                );
+            }
+        }
+        for source in [" ", "é", "\u{200a}"] {
+            assert_eq!(
+                super::unicode_blank_len(super::SourceBytes::from(source.as_bytes()), zero),
+                None
+            );
+        }
+
+        for source in ["#!{", "$!{"] {
+            let result = super::scan_shell_start(
+                super::SourceBytes::from(source.as_bytes()),
+                zero,
+                super::SourceByte::from(b'{'),
+            );
+            assert_eq!(result.lexeme, Lexeme::Punct);
+            assert_eq!(usize::from(result.next), 3);
+        }
+    }
+
+    #[test]
+    fn scanner_decisions_preserve_class_and_end()
+    {
+        type Scanner =
+            for<'source> fn(super::SourceBytes<'source>, super::ByteOffset) -> super::ScanResult;
+        type Row<'source> = (&'source str, Lexeme, usize);
+        let cases: &[(Scanner, &[Row<'_>])] = &[
+            (super::scan_string_interior, &[
+                ("\"x", Lexeme::Quote, 1),
+                ("\\n", Lexeme::EscapeSequence, 2),
+                ("\\", Lexeme::Unknown, 1),
+                ("${x", Lexeme::Punct, 2),
+                ("a$b\"", Lexeme::StringFragment, 3),
+            ]),
+            (super::scan_single_quoted_interior, &[
+                ("'x", Lexeme::Punct, 1),
+                ("a\\n'", Lexeme::SingleQuotedContent, 3),
+                ("a\"b", Lexeme::SingleQuotedContent, 3),
+            ]),
+            (super::scan_variable_name, &[
+                ("_a9!", Lexeme::VariableName, 3),
+                ("9x", Lexeme::VariableName, 2),
+                ("!", Lexeme::Unknown, 1),
+            ]),
+            (super::scan_braced_shell_interior, &[
+                ("}x", Lexeme::Punct, 1),
+                ("a9_}", Lexeme::VariableName, 3),
+                (":x", Lexeme::ShellWord, 1),
+                ("éx", Lexeme::ShellWord, 2),
+                ("�x", Lexeme::ShellWord, 3),
+                ("\u{10000}x", Lexeme::ShellWord, 4),
+            ]),
+            (super::scan_shell_double_interior, &[
+                ("\"x", Lexeme::Punct, 1),
+                ("\\n", Lexeme::EscapeSequence, 2),
+                ("\\", Lexeme::Unknown, 1),
+                ("${x", Lexeme::Punct, 2),
+                ("a b$", Lexeme::ShellStringFragment, 3),
+            ]),
+            (super::scan_shell_interior, &[
+                ("[x", Lexeme::SubshellOpen, 1),
+                ("]x", Lexeme::SubshellClose, 1),
+                ("# q", Lexeme::Unknown, 1),
+                ("#[x", Lexeme::Unknown, 1),
+                ("#{x", Lexeme::Unknown, 1),
+                ("word=ok;", Lexeme::EnvAssign, 7),
+                (" \t", Lexeme::Space, 2),
+                ("2>x", Lexeme::FileDescriptor, 1),
+            ]),
+            (super::scan_one, &[
+                ("a9;", Lexeme::LowerWord, 2),
+                ("A9;", Lexeme::UpperWord, 2),
+                ("[", Lexeme::Punct, 1),
+                ("é", Lexeme::LowerWord, 2),
+                ("\r\nx", Lexeme::Space, 2),
+                ("/x", Lexeme::LowerWord, 2),
+                ("\u{a0}x", Lexeme::Space, 2),
+            ]),
+            (super::scan_slash, &[
+                ("//a\nx", Lexeme::Space, 3),
+                ("/*a/*b*/c*/x", Lexeme::Space, 11),
+                ("/*", Lexeme::Space, 2),
+                ("/\\x", Lexeme::Unknown, 1),
+                ("/", Lexeme::Unknown, 1),
+            ]),
+            (super::scan_hash, &[
+                ("#!/x\n", Lexeme::Space, 4),
+                ("#!sh{x", Lexeme::Punct, 5),
+                ("#{x", Lexeme::Unknown, 2),
+                ("# {x", Lexeme::Punct, 1),
+                ("#[x", Lexeme::Punct, 2),
+                ("#!bad", Lexeme::Unknown, 1),
+                ("#", Lexeme::Punct, 1),
+                ("# q", Lexeme::Punct, 1),
+            ]),
+            (super::scan_character, &[
+                ("'é'x", Lexeme::Character, 4),
+                ("'\\n'x", Lexeme::Character, 4),
+                ("''", Lexeme::Punct, 1),
+                ("'a", Lexeme::Punct, 1),
+                ("'", Lexeme::Punct, 1),
+            ]),
+            (super::scan_escape, &[
+                ("\\éx", Lexeme::EscapeSequence, 3),
+                ("\\n", Lexeme::EscapeSequence, 2),
+                ("\\", Lexeme::Unknown, 1),
+            ]),
+            (super::scan_dollar, &[
+                ("${x", Lexeme::Punct, 2),
+                ("$!sh{x", Lexeme::Punct, 5),
+                ("$!bad", Lexeme::Unknown, 1),
+                ("$x", Lexeme::Punct, 1),
+                ("$", Lexeme::Punct, 1),
+            ]),
+            (super::scan_shell_operator, &[
+                ("&&x", Lexeme::Punct, 2),
+                ("||x", Lexeme::Punct, 2),
+                ("|&x", Lexeme::Punct, 2),
+                ("&|", Lexeme::Punct, 1),
+                (";", Lexeme::Punct, 1),
+            ]),
+            (super::scan_shell_redirection, &[
+                ("<>x", Lexeme::Punct, 2),
+                ("<&x", Lexeme::Punct, 2),
+                (">&x", Lexeme::Punct, 2),
+                (">>x", Lexeme::Punct, 2),
+                ("><", Lexeme::Punct, 1),
+                (">", Lexeme::Punct, 1),
+            ]),
+            (super::scan_shell_fd_or_word, &[
+                ("12>x", Lexeme::FileDescriptor, 2),
+                ("12nd", Lexeme::ShellWord, 4),
+                ("12 ", Lexeme::ShellWord, 2),
+                ("2", Lexeme::ShellWord, 1),
+            ]),
+            (super::scan_number, &[
+                ("1", Lexeme::Number, 1),
+                ("1.", Lexeme::Number, 1),
+                ("1.5e-2!", Lexeme::Number, 6),
+                ("1e+", Lexeme::Number, 1),
+                ("0.5u32!", Lexeme::TypedNumber, 6),
+                ("1u32x", Lexeme::Number, 1),
+            ]),
+            (super::scan_shell_word, &[
+                ("a=b;", Lexeme::EnvAssign, 3),
+                ("A=\"a b\";", Lexeme::EnvAssign, 7),
+                ("--x=y;", Lexeme::ShellWord, 5),
+                ("=", Lexeme::ShellWord, 1),
+                (";", Lexeme::Unknown, 1),
+            ]),
+            (super::scan_dot, &[
+                (".5!", Lexeme::Punct, 1),
+                (".0 =", Lexeme::Punct, 1),
+                ("..x", Lexeme::Punct, 2),
+                (".@ x", Lexeme::Punct, 2),
+                (".x", Lexeme::Punct, 1),
+                (".#[i]", Lexeme::Punct, 3),
+                (".#{.a}", Lexeme::Punct, 3),
+                (".# q", Lexeme::Punct, 1),
+                (".*{x", Lexeme::Punct, 3),
+                (".* {", Lexeme::Punct, 1),
+                (".", Lexeme::Punct, 1),
+            ]),
+            (super::scan_run, &[
+                ("_", Lexeme::Punct, 1),
+                ("_a!", Lexeme::LowerWord, 3),
+                ("_′!", Lexeme::LowerWord, 5),
+                ("ω;", Lexeme::Punct, 2),
+                ("ωx", Lexeme::LowerWord, 3),
+                ("+U;", Lexeme::Punct, 2),
+                ("+U!", Lexeme::LowerWord, 3),
+                ("+Unit", Lexeme::LowerWord, 5),
+                ("-F)", Lexeme::Punct, 2),
+                ("-Foo", Lexeme::LowerWord, 4),
+                ("Type+;", Lexeme::Punct, 5),
+                ("Type+x", Lexeme::UpperWord, 6),
+                ("pi+ ", Lexeme::Punct, 3),
+                ("<=> x", Lexeme::Punct, 3),
+                ("<=>x", Lexeme::LowerWord, 4),
+                ("!=", Lexeme::Punct, 2),
+                ("~x", Lexeme::Punct, 1),
+                ("!x.", Lexeme::Punct, 1),
+                ("éx", Lexeme::LowerWord, 3),
+                ("Éx", Lexeme::UpperWord, 3),
+                ("^", Lexeme::LowerWord, 1),
+                ("′x", Lexeme::Unknown, 4),
+                ("\u{1}x", Lexeme::Unknown, 2),
+                ("x-y;", Lexeme::LowerWord, 3),
+                ("x:", Lexeme::LowerWord, 2),
+                ("x' ", Lexeme::LowerWord, 2),
+                ("x′y(", Lexeme::LowerWord, 5),
+                ("a//c", Lexeme::LowerWord, 1),
+                ("type(x", Lexeme::Punct, 5),
+                ("type (", Lexeme::LowerWord, 4),
+                ("*{x}", Lexeme::Punct, 2),
+                ("+{ .l", Lexeme::Punct, 2),
+                ("&{}", Lexeme::Punct, 2),
+                ("* {", Lexeme::Punct, 1),
+                ("x*{", Lexeme::LowerWord, 2),
+            ]),
+            (super::scan_numeral, &[
+                ("1;", Lexeme::Number, 1),
+                ("1.5)", Lexeme::Number, 3),
+                ("1.x", Lexeme::Number, 1),
+                ("0.5u32)", Lexeme::TypedNumber, 6),
+                ("1x", Lexeme::Unknown, 2),
+                ("1+2 ", Lexeme::Unknown, 3),
+            ]),
+            (super::scan_at, &[
+                ("@[x", Lexeme::Punct, 2),
+                ("@![x", Lexeme::Punct, 3),
+                ("@!x", Lexeme::Punct, 1),
+                ("@ x", Lexeme::Punct, 1),
+            ]),
+        ];
+        let mut input = alloc::string::String::new();
+        for &(scan, rows) in cases {
+            for &(source, class, end) in rows {
+                for prefix in ["", "?"] {
+                    input.clear();
+                    for part in [prefix, source] {
+                        input.push_str(part);
+                    }
+                    let result = scan(
+                        super::SourceBytes::from(input.as_bytes()),
+                        super::ByteOffset::from(prefix.len()),
+                    );
+                    assert_eq!(result.lexeme, class, "{input:?}");
+                    assert_eq!(
+                        usize::from(result.next),
+                        prefix.len().saturating_add(end),
+                        "{input:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cursor_arithmetic_saturates_at_both_boundaries()
+    {
+        for (start, width, forward, backward) in [
+            (0_usize, 0_usize, 0_usize, 0_usize),
+            (1, 2, 3, 0),
+            (0, usize::MAX, usize::MAX, 0),
+            (usize::MAX, 1, usize::MAX, usize::MAX.saturating_sub(1)),
+            (
+                usize::MAX.saturating_sub(1),
+                1,
+                usize::MAX,
+                usize::MAX.saturating_sub(2),
+            ),
+        ] {
+            let start = super::ByteOffset::from(start);
+            let width = super::ByteWidth::from(width);
+            assert_eq!(usize::from(start.advance(width)), forward);
+            assert_eq!(usize::from(start.retreat(width)), backward);
+        }
+    }
+
+    #[test]
+    fn byte_classes_match_the_complete_byte_domain()
+    {
+        for value in u8::MIN ..= u8::MAX {
+            let byte = super::SourceByte::from(value);
+            let letter = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".contains(&value);
+            let digit = b"0123456789".contains(&value);
+            assert_eq!(
+                bool::from(byte.is_var_name_start()),
+                letter || value == b'_'
+            );
+            assert_eq!(
+                bool::from(byte.is_word_continue()),
+                letter || digit || value == b'_'
+            );
+            assert_eq!(
+                bool::from(byte.is_dialect()),
+                letter || digit || b"_-".contains(&value)
+            );
+            assert_eq!(
+                bool::from(byte.is_shell_word()),
+                !b" \t\r\n\x0c\x0b;|&<>{}[]()`\"'$#".contains(&value)
+            );
+            assert_eq!(
+                bool::from(byte.is_run_end()),
+                b" \t\r\n\x0b\x0c()[]{};,\".@".contains(&value)
+            );
+        }
+    }
+
+    #[test]
+    fn utf8_step_widths_cover_every_leading_byte()
+    {
+        for (first, last, width) in [
+            (0_u8, 0xbf_u8, 1_usize),
+            (0xc0, 0xdf, 2),
+            (0xe0, 0xef, 3),
+            (0xf0, 0xf7, 4),
+            (0xf8, 0xff, 1),
+        ] {
+            for byte in first ..= last {
+                assert_eq!(
+                    usize::from(super::utf8_width(super::SourceByte::from(byte))),
+                    width
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn token_text_checks_ranges_and_character_boundaries()
+    {
+        let source = SourceFragment::from("éx");
+        for (start, end, expected) in [
+            (0_u32, 2_u32, "é"),
+            (2, 3, "x"),
+            (3, 3, ""),
+            (0, 0, ""),
+            (1, 2, ""),
+            (2, 1, ""),
+            (0, 4, ""),
+        ] {
+            let token = Token {
+                lexeme: Lexeme::Unknown,
+                start,
+                end,
+            };
+            assert_eq!(token.text(&source).as_ref(), expected);
+        }
+    }
+
+    #[test]
+    fn every_lexical_class_has_a_contextual_witness()
+    {
+        use Lexeme::*;
+        let cases: &[(&str, &[Lexeme])] = &[
+            ("a", &[LowerWord]),
+            ("A", &[UpperWord]),
+            ("1", &[Number]),
+            ("1u32", &[TypedNumber]),
+            ("'a'", &[Character]),
+            ("\"a\"", &[Quote, StringFragment, Quote]),
+            ("\"\\n\"", &[Quote, EscapeSequence, Quote]),
+            ("+", &[Punct]),
+            ("#!{hi}", &[Punct, ShellWord, Punct]),
+            ("#!{A=b}", &[Punct, EnvAssign, Punct]),
+            ("#!{'hi'}", &[
+                Punct,
+                Punct,
+                SingleQuotedContent,
+                Punct,
+                Punct,
+            ]),
+            ("#!{$A}", &[Punct, Punct, VariableName, Punct]),
+            ("#!{\"a\"}", &[
+                Punct,
+                Punct,
+                ShellStringFragment,
+                Punct,
+                Punct,
+            ]),
+            ("#!{[]}", &[Punct, SubshellOpen, SubshellClose, Punct]),
+            ("#!{2>f}", &[Punct, FileDescriptor, Punct, ShellWord, Punct]),
+            (" ", &[Space]),
+            ("\u{1}", &[Unknown]),
+            ("~a", &[Punct, LowerWord]),
+            ("{ | }", &[Punct, Space, ArmBar, Space, Punct]),
+        ];
+        for &(source, expected) in cases {
+            let tokens = label(SourceFragment::from(source));
+            assert!(
+                tokens
+                    .iter()
+                    .map(|token| token.lexeme)
+                    .eq(expected.iter().copied()),
+                "{source:?}: {tokens:?}"
+            );
+            assert_eq!(reconstruct(SourceFragment::from(source), &tokens), source);
+        }
+    }
+
+    #[test]
+    fn arm_bars_lead_lines_and_bar_braces()
+    {
+        let bars = |source: &str| {
+            label(SourceFragment::from(source))
+                .iter()
+                .filter(|token| {
+                    matches!(token.lexeme, Lexeme::Punct | Lexeme::ArmBar)
+                        && token.text(&SourceFragment::from(source)).as_ref() == "|"
+                })
+                .map(|token| token.lexeme == Lexeme::ArmBar)
+                .collect::<Vec<_>>()
+        };
+        let cases: &[(&str, &[bool])] = &[
+            // On one line in a bar brace, every bar is an arm's.
+            ("match b { | true => 1 | false => 0 }", &[true, true]),
+            // A union inside a bar brace stands in parentheses.
+            ("where { | C : (A | B) | D }", &[true, false, true]),
+            // A brace whose first token is no bar is plain.
+            ("{ A | B => x }", &[false]),
+            // A bar after a plain brace's comma opens the next arm.
+            ("match c { A | B => x, | C => y }", &[false, true]),
+            // A bar leading its line is an arm's wherever it stands.
+            ("f : T where\n  | x => a | b\n  | y => c", &[
+                true, false, true,
+            ]),
+            // A shell pipe is never an arm's, at a line's start or not.
+            ("#!{ a | b\n| c }", &[false, false]),
+            // A closed bar brace gives the bar after it back to the union.
+            ("({ | a } | b)", &[true, false]),
+            // A bar among a clause's patterns, before its `=>`, is an
+            // or-pattern's; the one after the body opens the next clause.
+            ("where { | Red | Green => 1 | Blue => 0 }", &[
+                true, false, true,
+            ]),
+            // A member whose `:` comes before any `=>` keeps its bar.
+            ("where { | K | D : Nat => Nat }", &[true, true]),
+            // A bar leading its line opens a clause even before a `=>`.
+            ("f : T where {\n  | Red\n  | Green => 1\n}", &[true, true]),
+        ];
+        for &(source, expected) in cases {
+            assert_eq!(bars(source), expected, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn span_tiling_is_total_and_gapless()
+    {
+        for src in [
+            "",
+            "   ",
+            "def f() -> -F Integer { return (x * x) }",
+            "// comment\n/* nested /* block */ */\n#!/usr/bin/env gandr\nx",
+            "1u32 + 2.5f64 - .5e-3 * 42",
+            "@[doc(\"d\")] def x = *{ .a = 1 };",
+            "match v { Inl(x) => x, Inr(y) => y }",
+            "\u{feff}def a = 1;",
+        ] {
+            let tokens = label(SourceFragment::from(src));
+            // Spans tile 0..len with no gap or overlap.
+            let mut cursor = 0_u32;
+            for token in &tokens {
+                assert_eq!(token.start, cursor, "no gap before {token:?} in {src:?}");
+                assert!(token.end > token.start || src.is_empty());
+                cursor = token.end;
+            }
+            assert_eq!(
+                usize::try_from(cursor).unwrap(),
+                src.len(),
+                "covers {src:?}"
+            );
+            assert_eq!(reconstruct(SourceFragment::from(src), &tokens), src);
+        }
+    }
+    #[test]
+    fn stray_bytes_are_unknown_never_a_panic()
+    {
+        // Byte soup never panics and always tiles the source.
+        for src in ["\u{0}\u{1}\u{2}", "```", "€¥£", "def \\ = ;"] {
+            let tokens = label(SourceFragment::from(src));
+            assert_eq!(reconstruct(SourceFragment::from(src), &tokens), src);
+        }
+        let tokens = label(SourceFragment::from("\u{1}"));
+        assert_eq!(1, tokens.len());
+        assert_eq!(Some(Lexeme::Unknown), tokens.first().map(|t| t.lexeme));
+    }
+    #[test]
+    fn string_interpolation_nests_braces_and_strings()
+    {
+        // A record inside an interpolation keeps its own `*{ … }` braces, and a
+        // nested string with its own interpolation re-enters string mode — the
+        // brace-depth stack resolves both to the correct closing `}`.
+        let record = "\"v=${ *{ .a = 1 } }\"";
+        assert_eq!(
+            tiles(
+                SourceFragment::from(record),
+                &label(SourceFragment::from(record))
+            ),
+            vec![
+                (Lexeme::Quote, "\"".to_owned()),
+                (Lexeme::StringFragment, "v=".to_owned()),
+                (Lexeme::Punct, "${".to_owned()),
+                (Lexeme::Punct, "*{".to_owned()),
+                (Lexeme::Punct, ".".to_owned()),
+                (Lexeme::LowerWord, "a".to_owned()),
+                (Lexeme::Punct, "=".to_owned()),
+                (Lexeme::Number, "1".to_owned()),
+                (Lexeme::Punct, "}".to_owned()),
+                (Lexeme::Punct, "}".to_owned()),
+                (Lexeme::Quote, "\"".to_owned()),
+            ]
+        );
+        let nested = "\"${ f(\"${x}\") }\"";
+        // Losslessness holds through the nested-string re-entry.
+        assert_eq!(
+            reconstruct(
+                SourceFragment::from(nested),
+                &label(SourceFragment::from(nested))
+            ),
+            nested
+        );
+        // A bare `$` not followed by `{` stays ordinary string content.
+        let dollar = "\"$5.00\"";
+        assert_eq!(
+            tiles(
+                SourceFragment::from(dollar),
+                &label(SourceFragment::from(dollar))
+            ),
+            vec![
+                (Lexeme::Quote, "\"".to_owned()),
+                (Lexeme::StringFragment, "$5.00".to_owned()),
+                (Lexeme::Quote, "\"".to_owned()),
+            ]
+        );
+    }
+    #[test]
+    fn shell_braced_parameter_lexes_distinctly_from_interpolation()
+    {
+        // `#!{ echo ${HOME}; }`: the shell `${` opens a braced parameter whose
+        // interior is a `variable_name` (VariableName), and the matching `}`
+        // closes the brace WITHOUT closing the shell block — the shell block's
+        // own `}` still follows. This is the shell-brace mode, distinct from
+        // the string-interpolation `${ E }` (whose interior is host tokens).
+        let src = "#!{ echo ${HOME}; }";
+        let tokens = label(SourceFragment::from(src));
+        assert_eq!(
+            reconstruct(SourceFragment::from(src), &tokens),
+            src,
+            "braced param is lossless"
+        );
+        assert_eq!(tiles(SourceFragment::from(src), &tokens), vec![
+            (Lexeme::Punct, "#!{".to_owned()),
+            (Lexeme::ShellWord, "echo".to_owned()),
+            (Lexeme::Punct, "${".to_owned()),
+            (Lexeme::VariableName, "HOME".to_owned()),
+            (Lexeme::Punct, "}".to_owned()),
+            (Lexeme::Punct, ";".to_owned()),
+            (Lexeme::Punct, "}".to_owned()),
+        ]);
+    }
+    #[test]
+    fn shell_file_descriptor_is_a_digit_run_before_a_redirection()
+    {
+        // A digit run immediately before `<` / `>` is a FileDescriptor (`2>`),
+        // while a bare digit word and a digit-led word stay ShellWords.
+        let src = "#!{ make 2>&1; }";
+        assert_eq!(
+            reconstruct(SourceFragment::from(src), &label(SourceFragment::from(src))),
+            src,
+            "fd is lossless"
+        );
+        assert_eq!(
+            tiles(SourceFragment::from(src), &label(SourceFragment::from(src))),
+            vec![
+                (Lexeme::Punct, "#!{".to_owned()),
+                (Lexeme::ShellWord, "make".to_owned()),
+                (Lexeme::FileDescriptor, "2".to_owned()),
+                (Lexeme::Punct, ">&".to_owned()),
+                (Lexeme::ShellWord, "1".to_owned()),
+                (Lexeme::Punct, ";".to_owned()),
+                (Lexeme::Punct, "}".to_owned()),
+            ]
+        );
+        // A bare digit word (`echo 2 things`) and a digit-led word (`2nd`) are
+        // NOT file descriptors — the lookahead requires an abutting
+        // redirection.
+        assert_eq!(
+            tiles(
+                SourceFragment::from("#!{ echo 2 2nd; }"),
+                &label(SourceFragment::from("#!{ echo 2 2nd; }"))
+            ),
+            vec![
+                (Lexeme::Punct, "#!{".to_owned()),
+                (Lexeme::ShellWord, "echo".to_owned()),
+                (Lexeme::ShellWord, "2".to_owned()),
+                (Lexeme::ShellWord, "2nd".to_owned()),
+                (Lexeme::Punct, ";".to_owned()),
+                (Lexeme::Punct, "}".to_owned()),
+            ]
+        );
+    }
+    #[test]
+    fn shell_subshell_brackets_are_distinct_from_host_brackets()
+    {
+        // A shell `[` / `]` classifies as SubshellOpen / SubshellClose (a
+        // shell-context bracket), while a host list literal keeps the ordinary
+        // `[` / `]` punctuation — the two never share a lexeme class, so the
+        // host `[` mold menu is untouched.
+        let shell = "#!{ [ echo a ]; }";
+        assert_eq!(
+            reconstruct(
+                SourceFragment::from(shell),
+                &label(SourceFragment::from(shell))
+            ),
+            shell,
+            "subshell lossless"
+        );
+        assert_eq!(
+            tiles(
+                SourceFragment::from(shell),
+                &label(SourceFragment::from(shell))
+            ),
+            vec![
+                (Lexeme::Punct, "#!{".to_owned()),
+                (Lexeme::SubshellOpen, "[".to_owned()),
+                (Lexeme::ShellWord, "echo".to_owned()),
+                (Lexeme::ShellWord, "a".to_owned()),
+                (Lexeme::SubshellClose, "]".to_owned()),
+                (Lexeme::Punct, ";".to_owned()),
+                (Lexeme::Punct, "}".to_owned()),
+            ]
+        );
+        // A host list literal keeps the plain `[` / `]` punctuation.
+        assert_eq!(
+            tiles(
+                SourceFragment::from("[1, 2]"),
+                &label(SourceFragment::from("[1, 2]"))
+            ),
+            vec![
+                (Lexeme::Punct, "[".to_owned()),
+                (Lexeme::Number, "1".to_owned()),
+                (Lexeme::Punct, ",".to_owned()),
+                (Lexeme::Number, "2".to_owned()),
+                (Lexeme::Punct, "]".to_owned()),
+            ]
+        );
+    }
+    #[test]
+    fn shell_single_and_double_quotes_do_not_cross()
+    {
+        // A `"` inside single quotes is verbatim content, and a `'` inside
+        // double quotes is a literal fragment byte — the two quote modes never
+        // toggle each other, and neither closes the shell block.
+        let src = "#!{ echo 'a \"b' \"c 'd\"; }";
+        let tokens = label(SourceFragment::from(src));
+        assert_eq!(
+            reconstruct(SourceFragment::from(src), &tokens),
+            src,
+            "mixed quotes are lossless"
+        );
+        assert_eq!(tiles(SourceFragment::from(src), &tokens), vec![
+            (Lexeme::Punct, "#!{".to_owned()),
+            (Lexeme::ShellWord, "echo".to_owned()),
+            (Lexeme::Punct, "'".to_owned()),
+            (Lexeme::SingleQuotedContent, "a \"b".to_owned()),
+            (Lexeme::Punct, "'".to_owned()),
+            (Lexeme::Punct, "\"".to_owned()),
+            (Lexeme::ShellStringFragment, "c 'd".to_owned()),
+            (Lexeme::Punct, "\"".to_owned()),
+            (Lexeme::Punct, ";".to_owned()),
+            (Lexeme::Punct, "}".to_owned()),
+        ]);
+    }
+
+    #[test]
+    fn labels_a_definition_losslessly()
+    {
+        let src = "def greeting = \"hi\";\npure greeting\n";
+        let tokens = label(SourceFragment::from(src));
+        assert_eq!(
+            reconstruct(SourceFragment::from(src), &tokens),
+            src,
+            "spans reconstruct the source"
+        );
+        let non_space = tiles(SourceFragment::from(src), &tokens);
+        assert_eq!(non_space, vec![
+            (Lexeme::LowerWord, "def".to_owned()),
+            (Lexeme::LowerWord, "greeting".to_owned()),
+            (Lexeme::Punct, "=".to_owned()),
+            (Lexeme::Quote, "\"".to_owned()),
+            (Lexeme::StringFragment, "hi".to_owned()),
+            (Lexeme::Quote, "\"".to_owned()),
+            (Lexeme::Punct, ";".to_owned()),
+            (Lexeme::LowerWord, "pure".to_owned()),
+            (Lexeme::LowerWord, "greeting".to_owned()),
+        ]);
+    }
+    #[test]
+    fn a_run_is_one_token_cut_only_at_whitespace_and_delimiters()
+    {
+        let lexed = |src: &str| tiles(SourceFragment::from(src), &label(SourceFragment::from(src)));
+        let punct = |text: &str| (Lexeme::Punct, text.to_owned());
+        let upper = |text: &str| (Lexeme::UpperWord, text.to_owned());
+        let lower = |text: &str| (Lexeme::LowerWord, text.to_owned());
+        let unknown = |text: &str| (Lexeme::Unknown, text.to_owned());
+        // Every operator the table holds is one tile where it stands whole, so
+        // a longer one never loses its first bytes to a shorter one.
+        let mut written = alloc::string::String::new();
+        for operator in super::OPERATORS {
+            written.clear();
+            written.push_str("a ");
+            written.push_str(operator);
+            written.push_str(" b");
+            assert_eq!(
+                lexed(&written),
+                vec![lower("a"), punct(operator), lower("b")],
+                "{operator:?}"
+            );
+        }
+        // Written against a name, an operator joins it: the run is one word.
+        for word in ["a-->b", "a<-b", "x-y", "a==b", "a--b", "x:", "pi+x", "pip+"] {
+            assert_eq!(lexed(word), vec![lower(word)], "{word:?}");
+        }
+        assert_eq!(lexed("Type+Unit"), vec![upper("Type+Unit")]);
+        // A run led by an operator character the table does not hold is one
+        // name, as `x-y` is.
+        assert_eq!(lexed("a -Foo +Unit <|> +U′"), vec![
+            lower("a"),
+            lower("-Foo"),
+            lower("+Unit"),
+            lower("<|>"),
+            lower("+U′"),
+        ]);
+        // A sigil is cut off the run it leads; an operator it begins is whole.
+        assert_eq!(lexed("!x. ?h ~t != ~>"), vec![
+            punct("!"),
+            lower("x"),
+            punct("."),
+            punct("?"),
+            lower("h"),
+            punct("~"),
+            lower("t"),
+            punct("!="),
+            punct("~>"),
+        ]);
+        // The delimiters cut a run wherever they stand.
+        assert_eq!(lexed("f(x,y)[z];{w} r.x a@[b] a@![c] a@b"), vec![
+            lower("f"),
+            punct("("),
+            lower("x"),
+            punct(","),
+            lower("y"),
+            punct(")"),
+            punct("["),
+            lower("z"),
+            punct("]"),
+            punct(";"),
+            punct("{"),
+            lower("w"),
+            punct("}"),
+            lower("r"),
+            punct("."),
+            lower("x"),
+            lower("a"),
+            punct("@["),
+            lower("b"),
+            punct("]"),
+            lower("a"),
+            punct("@!["),
+            lower("c"),
+            punct("]"),
+            lower("a"),
+            punct("@"),
+            lower("b"),
+        ]);
+        // The bridges, the marked words and `type(` are tiles where their run
+        // ends.
+        assert_eq!(lexed("+U[ω] (A -> -F B) -F(+U) pi+ (x) Type+;"), vec![
+            punct("+U"),
+            punct("["),
+            punct("ω"),
+            punct("]"),
+            punct("("),
+            upper("A"),
+            punct("->"),
+            punct("-F"),
+            upper("B"),
+            punct(")"),
+            punct("-F"),
+            punct("("),
+            punct("+U"),
+            punct(")"),
+            punct("pi+"),
+            punct("("),
+            lower("x"),
+            punct(")"),
+            punct("Type+"),
+            punct(";"),
+        ]);
+        // A connective's sign opens it only written straight before the
+        // brace, and a glued sign ends the name before it.
+        assert_eq!(lexed("*{a} + { x*{ r.*{ .a }"), vec![
+            punct("*{"),
+            lower("a"),
+            punct("}"),
+            punct("+"),
+            punct("{"),
+            lower("x*"),
+            punct("{"),
+            lower("r"),
+            punct(".*{"),
+            punct("."),
+            lower("a"),
+            punct("}"),
+        ]);
+        assert_eq!(lexed("type(Unit) type (x) types(x)"), vec![
+            punct("type("),
+            upper("Unit"),
+            punct(")"),
+            lower("type"),
+            punct("("),
+            lower("x"),
+            punct(")"),
+            lower("types"),
+            punct("("),
+            lower("x"),
+            punct(")"),
+        ]);
+        // A comment's opener ends a run; a number is a token only where its
+        // run ends with it; a word may lead with a letter outside ASCII.
+        assert_eq!(lexed("a// c\n b 1 1.5 1x 2+3 αβ Δ"), vec![
+            lower("a"),
+            lower("b"),
+            (Lexeme::Number, "1".to_owned()),
+            (Lexeme::Number, "1.5".to_owned()),
+            unknown("1x"),
+            unknown("2+3"),
+            lower("αβ"),
+            upper("Δ"),
+        ]);
+    }
+    #[test]
+    fn shell_env_assignment_is_one_token()
+    {
+        // `NAME=value` munches across the `=` into ONE token — the whole-token
+        // shape the tree-sitter `token(seq(…))` and the PBG's single-tile atom
+        // both expect. Splitting it left the `=` with no admissible
+        // shell mold at all.
+        let src = "#!{ FOO=1 echo }";
+        assert_eq!(
+            tiles(SourceFragment::from(src), &label(SourceFragment::from(src))),
+            vec![
+                (Lexeme::Punct, "#!{".to_owned()),
+                (Lexeme::EnvAssign, "FOO=1".to_owned()),
+                (Lexeme::ShellWord, "echo".to_owned()),
+                (Lexeme::Punct, "}".to_owned()),
+            ]
+        );
+    }
+    #[test]
+    fn shell_env_assignment_takes_a_quoted_value()
+    {
+        // A `"`-quoted value binds into the same token (the tree-sitter
+        // `choice(pattern_shell_word, /"([^"\\]|\\.)*"/)` value), so an
+        // assignment with an interior space is still ONE assignment.
+        let src = "#!{ FOO=\"a b\" echo }";
+        assert_eq!(
+            tiles(SourceFragment::from(src), &label(SourceFragment::from(src))),
+            vec![
+                (Lexeme::Punct, "#!{".to_owned()),
+                (Lexeme::EnvAssign, "FOO=\"a b\"".to_owned()),
+                (Lexeme::ShellWord, "echo".to_owned()),
+                (Lexeme::Punct, "}".to_owned()),
+            ]
+        );
+    }
+    #[test]
+    fn shell_words_containing_eq_are_not_assignments()
+    {
+        // The name part must be identifier-shaped, so a flag with an `=` is ONE
+        // ordinary shell word (it was three tiles, with an unmoldable `=`,
+        // before the environment-assignment munch) and a bare `=` — the
+        // `[ "$a" = "$b" ]` test operator — is a plain word rather than
+        // an `UnmoldedTok`.
+        let flag = "#!{ ls --color=auto }";
+        assert_eq!(
+            tiles(
+                SourceFragment::from(flag),
+                &label(SourceFragment::from(flag))
+            ),
+            vec![
+                (Lexeme::Punct, "#!{".to_owned()),
+                (Lexeme::ShellWord, "ls".to_owned()),
+                (Lexeme::ShellWord, "--color=auto".to_owned()),
+                (Lexeme::Punct, "}".to_owned()),
+            ]
+        );
+        let bare = "#!{ test a = b }";
+        assert_eq!(
+            tiles(
+                SourceFragment::from(bare),
+                &label(SourceFragment::from(bare))
+            ),
+            vec![
+                (Lexeme::Punct, "#!{".to_owned()),
+                (Lexeme::ShellWord, "test".to_owned()),
+                (Lexeme::ShellWord, "a".to_owned()),
+                (Lexeme::ShellWord, "=".to_owned()),
+                (Lexeme::ShellWord, "b".to_owned()),
+                (Lexeme::Punct, "}".to_owned()),
+            ]
+        );
+    }
+    #[test]
+    fn typed_numbers_and_suffix_boundaries()
+    {
+        assert_eq!(
+            tiles(
+                SourceFragment::from("1u32"),
+                &label(SourceFragment::from("1u32"))
+            ),
+            vec![(Lexeme::TypedNumber, "1u32".to_owned())]
+        );
+        // A suffix that runs into a longer word leaves a run no tile names.
+        assert_eq!(
+            tiles(
+                SourceFragment::from("1u32x"),
+                &label(SourceFragment::from("1u32x"))
+            ),
+            vec![(Lexeme::Unknown, "1u32x".to_owned())]
+        );
+        assert_eq!(
+            tiles(
+                SourceFragment::from("2.5f64"),
+                &label(SourceFragment::from("2.5f64"))
+            ),
+            vec![(Lexeme::TypedNumber, "2.5f64".to_owned())]
+        );
+    }
+    #[test]
+    fn projection_dot_is_not_a_number()
+    {
+        // `r.field`: the `.` after a word is a projection tile, not a fraction.
+        assert_eq!(
+            tiles(
+                SourceFragment::from("r.field"),
+                &label(SourceFragment::from("r.field"))
+            ),
+            vec![
+                (Lexeme::LowerWord, "r".to_owned()),
+                (Lexeme::Punct, ".".to_owned()),
+                (Lexeme::LowerWord, "field".to_owned()),
+            ]
+        );
+    }
+    #[test]
+    fn a_backslash_in_code_is_a_name_character_and_an_escape_in_a_string()
+    {
+        let lexed = |src: &str| tiles(SourceFragment::from(src), &label(SourceFragment::from(src)));
+        let punct = |text: &str| (Lexeme::Punct, text.to_owned());
+        let upper = |text: &str| (Lexeme::UpperWord, text.to_owned());
+        assert_eq!(
+            lexed(r"\T. T"),
+            vec![
+                (Lexeme::LowerWord, "\\T".to_owned()),
+                punct("."),
+                upper("T"),
+            ],
+            "in code a backslash is a name character, as in Agda"
+        );
+        assert_eq!(
+            lexed(r#""\T""#),
+            vec![
+                (Lexeme::Quote, "\"".to_owned()),
+                (Lexeme::EscapeSequence, "\\T".to_owned()),
+                (Lexeme::Quote, "\"".to_owned()),
+            ],
+            "inside a string the backslash still begins an escape"
+        );
+    }
+
+    #[test]
+    fn a_primed_word_is_one_word_and_a_lone_prime_is_not()
+    {
+        // `x′` is the circuit block form's spelling for a rewrite's target
+        // endpoint: one word, not a word plus a stray byte.
+        assert_eq!(
+            tiles(
+                SourceFragment::from("x′"),
+                &label(SourceFragment::from("x′"))
+            ),
+            vec![(Lexeme::LowerWord, "x′".to_owned())]
+        );
+        // Primes accumulate, and an uppercase-led word takes them too.
+        assert_eq!(
+            tiles(
+                SourceFragment::from("Nat′′"),
+                &label(SourceFragment::from("Nat′′"))
+            ),
+            vec![(Lexeme::UpperWord, "Nat′′".to_owned())]
+        );
+        // A prime never *starts* a word.
+        assert_eq!(
+            tiles(SourceFragment::from("′"), &label(SourceFragment::from("′"))),
+            vec![(Lexeme::Unknown, "′".to_owned())]
+        );
+        // ASCII `'` continues a word, as Agda's lexer reads it, though it never
+        // leads one: `x'` is one word.
+        assert_eq!(
+            tiles(
+                SourceFragment::from("x'"),
+                &label(SourceFragment::from("x'"))
+            ),
+            vec![(Lexeme::LowerWord, "x'".to_owned())]
+        );
+        // The prime continues a word rather than ending it, so an interior
+        // prime keeps one word — the alternative would make `x′y` two adjacent
+        // operands with no operator between them.
+        assert_eq!(
+            tiles(
+                SourceFragment::from("x′y"),
+                &label(SourceFragment::from("x′y"))
+            ),
+            vec![(Lexeme::LowerWord, "x′y".to_owned())]
+        );
+        // The prime reaches only the word scanner: strings, comments, and shell
+        // words all run their own scanners and are untouched.
+        assert_eq!(
+            tiles(
+                SourceFragment::from("\"a ′ b\""),
+                &label(SourceFragment::from("\"a ′ b\""))
+            ),
+            vec![
+                (Lexeme::Quote, "\"".to_owned()),
+                (Lexeme::StringFragment, "a ′ b".to_owned()),
+                (Lexeme::Quote, "\"".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_word_pattern_matches_what_the_scanner_reads_as_one_word()
+    {
+        let whole = regex_lite::Regex::new(&format!("^(?:{})$", super::WORD_PATTERN))
+            .expect("the word pattern compiles");
+        // Letters of both cases, a marked word's letters and its sign, a
+        // digit, the underscore, the prime and the apostrophe beside it, a
+        // sign, a letter outside ASCII, a dot and a space: every string of up
+        // to four.
+        let alphabet = [
+            'a', 'p', 'i', 'Z', '0', '_', '′', '\'', '-', '+', 'é', '.', ' ',
+        ];
+        let mut text = String::new();
+        let mut odometer: Vec<usize> = Vec::new();
+        while odometer.len() <= 4_usize {
+            text.clear();
+            text.extend(
+                odometer
+                    .iter()
+                    .filter_map(|&digit| alphabet.get(digit).copied()),
+            );
+            let source = SourceFragment::from(text.as_str());
+            let read = tiles(source, &label(source));
+            let one_word = matches!(
+                read.as_slice(),
+                [(Lexeme::LowerWord | Lexeme::UpperWord, word)] if *word == text
+            );
+            // The pattern reads a word led by an ASCII letter or `_`, and a
+            // marked word's run, which the scanner reads as its tile, is one
+            // name's letters.
+            let ascii = text
+                .chars()
+                .next()
+                .is_some_and(|lead| lead.is_ascii_alphabetic() || lead == '_');
+            let lettered = text
+                .chars()
+                .next()
+                .is_some_and(|lead| lead.is_ascii_alphabetic());
+            let marked = lettered && super::OPERATORS.contains(&text.as_str());
+            assert_eq!(
+                whole.is_match(&text),
+                (one_word && ascii) || marked,
+                "{text:?} lexes as {read:?}"
+            );
+            // The next string: the first place that can step steps, the
+            // places before it return to the first letter, and a string that
+            // has used every letter in every place grows by one.
+            let stepped = odometer
+                .iter()
+                .position(|&digit| digit.saturating_add(1_usize) < alphabet.len());
+            let reset = stepped.unwrap_or(odometer.len());
+            if let Some(before) = odometer.get_mut(.. reset) {
+                before.fill(0_usize);
+            }
+            if let Some(digit) = stepped.and_then(|place| odometer.get_mut(place)) {
+                *digit = digit.saturating_add(1_usize);
+            }
+            else {
+                odometer.push(0_usize);
+            }
+        }
+    }
+    #[test]
+    fn string_interpolation_segments_the_string()
+    {
+        // `"a ${ x } b"` lexes as an open fragment, the `${` opener, the host
+        // expression `x`, the `}` closer, and the closing fragment — the
+        // string-segment mode. The interior `x` is an ordinary LowerWord, not
+        // string content.
+        let src = "\"a ${ x } b\"";
+        let tokens = label(SourceFragment::from(src));
+        assert_eq!(
+            reconstruct(SourceFragment::from(src), &tokens),
+            src,
+            "interpolation is lossless"
+        );
+        assert_eq!(tiles(SourceFragment::from(src), &tokens), vec![
+            (Lexeme::Quote, "\"".to_owned()),
+            (Lexeme::StringFragment, "a ".to_owned()),
+            (Lexeme::Punct, "${".to_owned()),
+            (Lexeme::LowerWord, "x".to_owned()),
+            (Lexeme::Punct, "}".to_owned()),
+            (Lexeme::StringFragment, " b".to_owned()),
+            (Lexeme::Quote, "\"".to_owned()),
+        ]);
+    }
+    #[test]
+    fn shell_braced_parameters_nest_and_juxtapose()
+    {
+        // Adjacent and word-embedded braced parameters keep their own `}` and
+        // never leak into the shell block's brace accounting.
+        let adjacent = "#!{ echo ${x}${y}; }";
+        assert_eq!(
+            reconstruct(
+                SourceFragment::from(adjacent),
+                &label(SourceFragment::from(adjacent))
+            ),
+            adjacent
+        );
+        assert_eq!(
+            tiles(
+                SourceFragment::from(adjacent),
+                &label(SourceFragment::from(adjacent))
+            ),
+            vec![
+                (Lexeme::Punct, "#!{".to_owned()),
+                (Lexeme::ShellWord, "echo".to_owned()),
+                (Lexeme::Punct, "${".to_owned()),
+                (Lexeme::VariableName, "x".to_owned()),
+                (Lexeme::Punct, "}".to_owned()),
+                (Lexeme::Punct, "${".to_owned()),
+                (Lexeme::VariableName, "y".to_owned()),
+                (Lexeme::Punct, "}".to_owned()),
+                (Lexeme::Punct, ";".to_owned()),
+                (Lexeme::Punct, "}".to_owned()),
+            ]
+        );
+        // A word-embedded parameter `pre${x}post` splits into three shell
+        // atoms.
+        let embedded = "#!{ echo pre${x}post; }";
+        assert_eq!(
+            reconstruct(
+                SourceFragment::from(embedded),
+                &label(SourceFragment::from(embedded))
+            ),
+            embedded
+        );
+        assert_eq!(
+            tiles(
+                SourceFragment::from(embedded),
+                &label(SourceFragment::from(embedded))
+            ),
+            vec![
+                (Lexeme::Punct, "#!{".to_owned()),
+                (Lexeme::ShellWord, "echo".to_owned()),
+                (Lexeme::ShellWord, "pre".to_owned()),
+                (Lexeme::Punct, "${".to_owned()),
+                (Lexeme::VariableName, "x".to_owned()),
+                (Lexeme::Punct, "}".to_owned()),
+                (Lexeme::ShellWord, "post".to_owned()),
+                (Lexeme::Punct, ";".to_owned()),
+                (Lexeme::Punct, "}".to_owned()),
+            ]
+        );
+    }
+    #[test]
+    fn shell_double_quote_lexes_fragments_escapes_and_expansions()
+    {
+        // A shell double-quoted string keeps interior spaces as ONE
+        // `double_string_fragment` run, lexes `\.` escapes, and expands
+        // `$name` / `${name}` — never juxtaposed shell words. The interior `}`
+        // and space stay literal fragment content.
+        let src = "#!{ echo \"a $x ${y}\\tb\"; }";
+        let tokens = label(SourceFragment::from(src));
+        assert_eq!(
+            reconstruct(SourceFragment::from(src), &tokens),
+            src,
+            "shell dquote is lossless"
+        );
+        assert_eq!(tiles(SourceFragment::from(src), &tokens), vec![
+            (Lexeme::Punct, "#!{".to_owned()),
+            (Lexeme::ShellWord, "echo".to_owned()),
+            (Lexeme::Punct, "\"".to_owned()),
+            (Lexeme::ShellStringFragment, "a ".to_owned()),
+            (Lexeme::Punct, "$".to_owned()),
+            (Lexeme::VariableName, "x".to_owned()),
+            (Lexeme::ShellStringFragment, " ".to_owned()),
+            (Lexeme::Punct, "${".to_owned()),
+            (Lexeme::VariableName, "y".to_owned()),
+            (Lexeme::Punct, "}".to_owned()),
+            (Lexeme::EscapeSequence, "\\t".to_owned()),
+            (Lexeme::ShellStringFragment, "b".to_owned()),
+            (Lexeme::Punct, "\"".to_owned()),
+            (Lexeme::Punct, ";".to_owned()),
+            (Lexeme::Punct, "}".to_owned()),
+        ]);
+    }
+
+    /// Replace `before`'s bytes in `cut`, its start widened back and its end
+    /// forward to character boundaries, with `replacement`.
+    ///
+    /// # Specification
+    /// - requires: nothing; offsets past the end clamp to it, and an end before
+    ///   the start cuts nothing.
+    /// - ensures: `before` with the widened range replaced.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the relabel witnesses edit at every boundary of their
+    ///   sources; a range split inside a character would not be a source.
+    /// - witness: `label::tests::a_relabel_restarts_before_what_a_token_read`
+    #[spec(ensures: |ret| ret.contains(replacement.as_ref()))]
+    fn spliced(
+        before: SourceFragment<'_>,
+        cut: Range<ByteOffset>,
+        replacement: SourceFragment<'_>,
+    ) -> String
+    {
+        let text: &str = before.as_ref();
+        let mut from = usize::from(cut.start).min(text.len());
+        while !text.is_char_boundary(from) {
+            from = from.saturating_sub(1);
+        }
+        let mut to = usize::from(cut.end).max(from).min(text.len());
+        while !text.is_char_boundary(to) {
+            to = to.saturating_add(1);
+        }
+        let mut after = text.get(.. from).unwrap_or_default().to_owned();
+        after.push_str(replacement.as_ref());
+        after.push_str(text.get(to ..).unwrap_or_default());
+        after
+    }
+
+    /// The bytes from `start` for `length` bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    fn cut(
+        start: ByteOffset,
+        length: ByteWidth,
+    ) -> Range<ByteOffset>
+    {
+        start .. start.advance(length)
+    }
+
+    /// Relabel `after` from the labeling of `before`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn relabeled(
+        before: SourceFragment<'_>,
+        after: SourceFragment<'_>,
+    ) -> Labeling
+    {
+        Labeling::new(before).relabel(before, after).0
+    }
+
+    #[test]
+    fn a_relabel_restarts_before_what_a_token_read()
+    {
+        // A dialect run reads to the end of its line, far past the margin; a
+        // newline run reads the byte after it; a string, a shell block, an
+        // interpolation and a block comment hold their modes across lines.
+        let dialect = "a".repeat(96);
+        let before = format!(
+            "def x = 1;\ndef y = \"s ${{ f(\"${{x}}\") }} t\";\n#!{dialect} ;\n\n\n\
+             def z = #!{{ echo \"$HOME ${{X}}\" 'q' 2>&1; }};\n/* a /* b */\n*/ def w = '\\n';\n\
+             def v = 1.5e+3u32 +U x′y -->;\n"
+        );
+        for replacement in [
+            "", "{", "\n", "\"", "x", "*/", "/*", "'", "#!", "}", "${", "#!{",
+        ] {
+            let mut start = 0_usize;
+            while start <= before.len() {
+                for length in [0_usize, 1, 3] {
+                    let after = spliced(
+                        SourceFragment::from(before.as_str()),
+                        cut(ByteOffset::from(start), ByteWidth::from(length)),
+                        SourceFragment::from(replacement),
+                    );
+                    assert_eq!(
+                        relabeled(
+                            SourceFragment::from(before.as_str()),
+                            SourceFragment::from(after.as_str())
+                        ),
+                        Labeling::new(SourceFragment::from(after.as_str())),
+                        "{replacement:?} over {length} bytes at {start}"
+                    );
+                }
+                start = start.saturating_add(1);
+            }
+        }
+    }
+
+    /// Hostile text for an edit: fragments that open and close every lexical
+    /// mode and every layout block, cut anywhere, and byte soup.
+    ///
+    /// # Specification
+    /// - ensures: samples UTF-8 byte-soup renderings and whole or cut
+    ///   fragments, including empty text.
+    /// - executable: none — the opaque Strategy exposes a generated value only
+    ///   through a random value tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the relabel witness edits sources joined from these
+    ///   at random ranges; sampling does not exhaust the lexical modes'
+    ///   interleavings.
+    /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
+    fn lexical_text() -> impl Strategy<Value = String>
+    {
+        let fragments = vec![
+            "def x = 1;\n",
+            "\"a ${ f(\"${x}\") } b\"",
+            "#!{ echo \"$HOME ${X}\" 'q' [ a ] 2>&1; }",
+            "/* c /* n */ */",
+            "// line\n",
+            "'\\n' 'x' '",
+            "1.5e+3u32 .5 x.f",
+            "#!bash{ ls }",
+            "#!aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(",
+            "x′y +U -F +Unit",
+            "\n\n\n",
+            "\t \u{a0}\u{200b}",
+            "$!{ x }",
+            "NAME=\"v w\"",
+            "def f(x : A) -> A =\n  let y = x\n  y\n",
+            "\n  match x\n    | a => b\n",
+            "\n  match x where\n    | a => b\n",
+            "theory S where\n  sort A : Type\n",
+            "{\n  a\n  b }",
+            "\n    ",
+        ];
+        prop_oneof![
+            prop::collection::vec(any::<u8>(), 0 .. 24)
+                .prop_map(|bytes| String::from_utf8_lossy(&bytes).into_owned()),
+            (prop::sample::select(fragments), 0_usize .. 96).prop_map(|(fragment, cut)| {
+                let mut end = cut.min(fragment.len());
+                while !fragment.is_char_boundary(end) {
+                    end = end.saturating_sub(1);
+                }
+                fragment.get(.. end).unwrap_or(fragment).to_owned()
+            }),
+        ]
+    }
+
+    proptest! {
+        // Each enforced relabel labels both revisions whole again.
+        #![proptest_config(ProptestConfig::with_cases(if cfg!(anodized_panic) { 128 } else { 1000 }))]
+
+        #[test]
+        fn an_edit_relabels_as_the_edited_source_labels(
+            parts in prop::collection::vec(lexical_text(), 1 .. 16),
+            replacement in lexical_text(),
+            start in any::<prop::sample::Index>(),
+            length in 0_usize .. 80,
+        ) {
+            let before = parts.concat();
+            let after = spliced(
+                SourceFragment::from(before.as_str()),
+                cut(ByteOffset::from(start.index(before.len().saturating_add(1))), ByteWidth::from(length)),
+                SourceFragment::from(replacement.as_str()),
+            );
+            prop_assert_eq!(
+                relabeled(SourceFragment::from(before.as_str()), SourceFragment::from(after.as_str())),
+                Labeling::new(SourceFragment::from(after.as_str()))
+            );
+        }
+    }
+    /// The non-space classes and their texts, in order.
+    ///
+    /// # Specification
+    /// - ensures: returns each non-space token and its text in input order,
+    ///   including unknown and empty fragments.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — reversed spans, a space token and an empty unknown
+    ///   fragment expose filtering and order independently of the labeler.
+    ///   Sorting by source offset, dropping unknowns or retaining spaces
+    ///   changes the sequence.
+    /// - witness: `label::tests::token_observers_preserve_supplied_order`
+    #[spec(ensures: |ret| ret.len() == tokens.iter().filter(|token| token.lexeme != Lexeme::Space).count() && ret.iter().zip(tokens.iter().filter(|token| token.lexeme != Lexeme::Space)).all(|(observed, token)| observed.0 == token.lexeme && observed.1.as_str() == token.text(&src).as_ref()))]
+    fn tiles(
+        src: SourceFragment<'_>,
+        tokens: &[Token],
+    ) -> Vec<(Lexeme, String)>
+    {
+        let source = src;
+        tokens
+            .iter()
+            .filter(|token| token.lexeme != Lexeme::Space)
+            .map(|token| {
+                (
+                    token.lexeme,
+                    AsRef::<str>::as_ref(&token.text(&source)).to_owned(),
+                )
+            })
+            .collect()
+    }
+    /// Reconstruct the source from the token spans (the losslessness check).
+    ///
+    /// # Specification
+    /// - ensures: concatenates the text of every supplied token in supplied
+    ///   order, retaining spaces.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — reversed spans, a space and an empty fragment expose
+    ///   ordered reconstruction independently of tokenization. Reordering,
+    ///   omitting space or copying the whole source instead changes the
+    ///   reconstructed text.
+    /// - witness: `label::tests::token_observers_preserve_supplied_order`
+    #[spec(ensures: |ret| tokens.iter().try_fold(ret.as_str(), |remaining, token| remaining.strip_prefix(token.text(&src).as_ref())) == Some(""))]
+    fn reconstruct(
+        src: SourceFragment<'_>,
+        tokens: &[Token],
+    ) -> String
+    {
+        let mut out = String::new();
+        let source = src;
+        for token in tokens {
+            out.push_str(AsRef::<str>::as_ref(&token.text(&source)));
+        }
+        out
+    }
+}

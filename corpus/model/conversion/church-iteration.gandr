@@ -1,0 +1,33 @@
+//! Two products of one size count the same applications of a free successor.
+//!
+//! Grégoire and Leroy normalise Church numerals, whose normal forms
+//! apply a free
+//! successor many times. Comparing 256 times 64 with 64 times 256 needs a large
+//! readback.
+//!
+//! The iteration applies a free `s` to a free `z` as many times as a product
+//! counts. Both endpoints read back as 256 applications of `s`.
+//!
+//! - cites: [Gregoire-2002-a_compiled_implementation_of_strong_reduction], § 6
+//! - see: #2282 — the benchmark set
+//!
+//! [Gregoire-2002-a_compiled_implementation_of_strong_reduction]: https://doi.org/10.1145/581478.581501 "Grégoire and Leroy, A compiled implementation of strong reduction"
+
+// The free naturals and their addition.
+import "../data/data-base.gandr";
+
+// The products and the numerals eight and sixteen.
+import "./conversion-base.gandr";
+
+/// Apply `s` to `z` as many times as `n` counts.
+def rec iterate(n : Nat, s : Nat -> Nat, z : Nat) -> Nat =
+  match n where
+    | Zero => z
+    | Succ(m) => s (iterate[<] m s z)
+
+/// Sixteen sixteens count as many applications as two products of
+/// sixteen and eight.
+def countsCommute(s : Nat -> Nat, z : Nat) -> Path (iterate (times sixteen sixteen) s z) (
+  iterate (plus (times sixteen eight) (times eight sixteen)) s z
+) =
+  Path.here (iterate (times sixteen sixteen) s z)
