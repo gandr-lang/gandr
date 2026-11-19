@@ -59,8 +59,8 @@ object.workspace = true
 
 # A unix host maps the address space of a run's regions through the boot
 # crate, with no C library. The C library still reads the page size, the
-# physical memory and the process's usage, and gives the idle pages of a
-# region back. It maps the executable memory of emitted code and blocks too.
+# physical memory and the process's usage. It releases the idle pages of a
+# region. It maps the executable memory of emitted code and blocks too.
 [target."cfg(unix)".dependencies]
 gandr-boot-alloc.workspace = true
 libc.workspace = true

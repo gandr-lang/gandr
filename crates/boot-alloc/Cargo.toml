@@ -18,8 +18,8 @@ autotests = false
 name = "tests"
 path = "tests/lib.rs"
 
-# The count of the process's mapped pages reads the whole process, so its
-# one test runs in a target of its own, with no other test beside it.
+# The count of the process's mapped pages reads the whole process. So its
+# one test runs alone, in a target of its own.
 [[test]]
 name = "pages"
 path = "tests/pages.rs"
