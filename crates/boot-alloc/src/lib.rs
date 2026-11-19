@@ -1,4 +1,6 @@
 //! Memory for the bootstrap from the kernel's mapping calls, with no libc.
+//! The crate is of the layer `boot`, outside the integrity and the validity
+//! walls: it checks no term and keeps no value of the store.
 //!
 //! The parts of the bootstrap need memory before gandr has an allocator of
 //! its own. Rust's allocator takes its memory from libc, and the bootstrap
