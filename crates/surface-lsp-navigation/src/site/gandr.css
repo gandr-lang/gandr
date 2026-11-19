@@ -1,0 +1,243 @@
+:root {
+  color-scheme: light dark;
+  --bg: #fdfdfc;
+  --fg: #1f2328;
+  --muted: #59636e;
+  --border: #d1d9e0;
+  --code-bg: #f3f4f6;
+  --link: #0757c2;
+  --keyword: #a0287d;
+  --operator: #59636e;
+  --function: #6639ba;
+  --variable: #1f2328;
+  --parameter: #953800;
+  --member: #0550ae;
+  --constructor: #0a6a3f;
+  --type: #0b6e99;
+  --literal: #0550ae;
+  --string: #0a3069;
+  --comment: #6e7781;
+  --hole: #cf222e;
+  --label: #8250df;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1216;
+    --fg: #e6e9ee;
+    --muted: #9198a1;
+    --border: #2f353d;
+    --code-bg: #171b21;
+    --link: #6cb6ff;
+    --keyword: #f692ce;
+    --operator: #9198a1;
+    --function: #d2a8ff;
+    --variable: #e6e9ee;
+    --parameter: #ffa657;
+    --member: #79c0ff;
+    --constructor: #7ee2a8;
+    --type: #56d4dd;
+    --literal: #79c0ff;
+    --string: #a5d6ff;
+    --comment: #8b949e;
+    --hole: #ff7b72;
+    --label: #bc8cff;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+header {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  align-items: center;
+  padding: 0.6rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+header .package {
+  font-weight: 600;
+}
+
+#search {
+  flex: 1 1 16rem;
+  max-width: 28rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--code-bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+#results {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#results:empty {
+  display: none;
+}
+
+#results li {
+  padding: 0.15rem 0;
+  color: var(--muted);
+}
+
+main {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 1rem 1.5rem 3rem;
+}
+
+a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+code,
+pre {
+  font: 14px/1.5 ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, monospace;
+}
+
+:not(pre) > code {
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  background: var(--code-bg);
+}
+
+pre {
+  overflow-x: auto;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--code-bg);
+}
+
+.kind,
+.where {
+  color: var(--muted);
+}
+
+h1 .kind {
+  font-weight: 400;
+}
+
+table.items {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+table.items td {
+  padding: 0.3rem 0.75rem 0.3rem 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.view {
+  display: flex;
+  align-items: flex-start;
+}
+
+.view pre {
+  margin: 0;
+  border-radius: 0;
+}
+
+.view .lines {
+  flex: none;
+  text-align: right;
+  color: var(--muted);
+  border-right: none;
+  user-select: none;
+}
+
+.view .lines a {
+  color: inherit;
+}
+
+.view .lines a:target {
+  color: var(--fg);
+  font-weight: 700;
+}
+
+.view pre:last-child {
+  flex: 1;
+}
+
+.hl-keyword,
+.hl-directive {
+  color: var(--keyword);
+}
+
+.hl-operator {
+  color: var(--operator);
+}
+
+.hl-functionDef,
+.hl-functionCall {
+  color: var(--function);
+}
+
+.hl-variableDef,
+.hl-variable {
+  color: var(--variable);
+}
+
+.hl-variableParam {
+  color: var(--parameter);
+}
+
+.hl-member {
+  color: var(--member);
+}
+
+.hl-constructor {
+  color: var(--constructor);
+}
+
+.hl-type,
+.hl-typeBuiltin,
+.hl-typeVariable {
+  color: var(--type);
+}
+
+.hl-number,
+.hl-boolean,
+.hl-character,
+.hl-escape {
+  color: var(--literal);
+}
+
+.hl-stringLit,
+.hl-path {
+  color: var(--string);
+}
+
+.hl-comment {
+  color: var(--comment);
+  font-style: italic;
+}
+
+.hl-hole {
+  color: var(--hole);
+}
+
+.hl-label {
+  color: var(--label);
+}

@@ -1,0 +1,130 @@
+/// This source compares composites at stated lambda applications.
+///
+/// `along` applies its stated lambda at each path endpoint.
+/// A composite can use the lambda reduct or its written application.
+///
+/// The conversion walk substitutes the call argument into the lambda body.
+/// The kernel checks each composite by its own reading.
+/// Two composites written apart meet part by part.
+///
+/// - see: #4073 — stated lambda application
+/// - see: #4065 — call arguments
+/// - see: #3920 — repeated stated lambda
+
+/// The `along` function applies `F` to `p`.
+def along(A : Type, F : A -> A, x : A, y : A, p : Path x y) -> Path[.A = A] (F x) (F y) =
+  Path.ap F p
+
+/// The `composeHere` proof is reflexivity at a composite.
+def composeHere(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  p : Path[.A = A] x y,
+  q : Path y z
+) -> Path[.A = Path[.A = A] x z] (Path.step p q) (Path.step p q) =
+  Path.here (Path.step p q)
+
+/// The body writes the composite over `along` at the stated lambda.
+def composedAtLambda(
+  A : Type,
+  F : A -> A,
+  x : A,
+  y : A,
+  z : A,
+  r : Path x y,
+  s : Path (F y) z
+) -> Path[.A = Path[.A = A] (F x) z] (Path.step (along A (fun (q : A) { F q } : A -> A) x y r) s) (
+  Path.step (along A (fun (q : A) { F q } : A -> A) x y r) s
+) =
+  Path.here (Path.step (along A (fun (q : A) { F q } : A -> A) x y r) s)
+
+/// The `composeHere` call uses the lambda reduct at its start.
+def passedAtLambda(
+  A : Type,
+  F : A -> A,
+  x : A,
+  y : A,
+  z : A,
+  r : Path x y,
+  s : Path (F y) z
+) -> Path[.A = Path[.A = A] (F x) z] (Path.step (along A (fun (q : A) { F q } : A -> A) x y r) s) (
+  Path.step (along A (fun (q : A) { F q } : A -> A) x y r) s
+) =
+  composeHere A (F x) (F y) z (along A (fun (q : A) { F q } : A -> A) x y r) s
+
+/// The `composeHere` call uses the written lambda application at its start.
+def passedRedex(
+  A : Type,
+  F : A -> A,
+  x : A,
+  y : A,
+  z : A,
+  r : Path x y,
+  s : Path (F y) z
+) -> Path[.A = Path[.A = A] (F x) z] (Path.step (along A (fun (q : A) { F q } : A -> A) x y r) s) (
+  Path.step (along A (fun (q : A) { F q } : A -> A) x y r) s
+) =
+  composeHere A ((fun (q : A) { F q } : A -> A) x) (F y) z (along A (fun (q : A) {
+    F q
+  } : A -> A) x y r) s
+
+/// The `acrossCarriers` function applies `F` to `p` across two carriers.
+def acrossCarriers(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path x y) -> Path[.A = B] (
+  F x
+) (F y) =
+  Path.ap F p
+
+/// The body writes the composite over the lambda that composes.
+def composedAcross(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path(y, z),
+  k : Path(x, z),
+  s : Path[.A = Path[.A = A](x, z)](Path.step fp g, k)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, k)](
+  Path.step (acrossCarriers (type(Path(x, y))) (type(Path(x, z))) (fun (q : Path[.A = A](x, y)) {
+    Path.step q g
+  } : Path(x, y) -> Path(x, z)) fm fp fa) s,
+  Path.step (acrossCarriers (type(Path(x, y))) (type(Path(x, z))) (fun (q : Path[.A = A](x, y)) {
+    Path.step q g
+  } : Path(x, y) -> Path(x, z)) fm fp fa) s
+) =
+  Path.here (Path.step (acrossCarriers (type(Path(x, y))) (type(Path[.A = A](
+    x,
+    z
+  ))) (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path(x, y) -> Path(x, z)) fm fp fa) s)
+
+/// The `composeHere` call uses the separately written composite at its start.
+def passedComposite(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path(y, z),
+  k : Path(x, z),
+  s : Path[.A = Path[.A = A](x, z)](Path.step fp g, k)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, k)](
+  Path.step (acrossCarriers (type(Path(x, y))) (type(Path(x, z))) (fun (q : Path[.A = A](x, y)) {
+    Path.step q g
+  } : Path(x, y) -> Path(x, z)) fm fp fa) s,
+  Path.step (acrossCarriers (type(Path(x, y))) (type(Path(x, z))) (fun (q : Path[.A = A](x, y)) {
+    Path.step q g
+  } : Path(x, y) -> Path(x, z)) fm fp fa) s
+) =
+  composeHere (type(Path[.A = A](
+    x,
+    z
+  ))) (Path.step fm g) (Path.step fp g) k (acrossCarriers (type(Path(x, y))) (type(Path[.A = A](
+    x,
+    z
+  ))) (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path(x, y) -> Path(x, z)) fm fp fa) s

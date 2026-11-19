@@ -1,0 +1,2 @@
+offers [std.io.Console.Eff];
+offers [store = Echo];

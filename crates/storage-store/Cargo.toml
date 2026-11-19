@@ -1,0 +1,61 @@
+[package]
+name = "gandr-storage-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "One store for the storage tier: the value plane, the record plane, named roots and built outputs' entries under one directory"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["content-addressing", "gandr", "storage"]
+categories = ["data-structures", "filesystem"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The load of many files into one store at once: the rate and the latency of
+# its puts, its naming and the open after it. `cargo bench` prints one row for
+# each width; `cargo test` runs one short pass.
+[[bench]]
+harness = false
+name = "load"
+path = "benches/load.rs"
+
+# The extent size of a device, at which the store seals a segment.
+# `mise run store:profile` writes it into the user's configuration; `cargo
+# test` runs one short pass.
+[[bench]]
+harness = false
+name = "profile"
+path = "benches/profile.rs"
+
+# The pinned anodized facade supplies the specification attributes; arc-swap
+# holds the snapshot of the roots that readers load with no lock; blake3
+# digests each roots journal entry and each segment record's header; boxcar
+# holds each plane's segments and records at fixed slots, and papaya indexes
+# them by identity with no lock; the chunker supplies the committed cut
+# parameters; the value plane and the record plane are the two stores the
+# facade holds; the shape library supplies the typed absence a read names.
+[dependencies]
+anodized.workspace = true
+arc-swap.workspace = true
+blake3.workspace = true
+boxcar.workspace = true
+gandr-storage-chunker.workspace = true
+gandr-storage-records.workspace = true
+gandr-storage-values.workspace = true
+papaya.workspace = true
+quenchant-shape.workspace = true
+
+# The load bench reads the filesystem of its directory and the CPU and the
+# voluntary switches of each row.
+[dev-dependencies]
+nix.workspace = true
+
+[lints]
+workspace = true
