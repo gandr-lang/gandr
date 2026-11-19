@@ -165,17 +165,22 @@ on_trunk() {
   [[ $status == ahead || $status == identical ]]
 }
 
-# Verifies the record <commit> against <key>. Prints nothing. The status tells.
+# Verifies the record <commit> against <key>. The status tells. On a refusal
+# it prints the reason, so a job's log shows why its checks run again.
 verify() {
-  local commit=$1 key=$2 allowed=$3 parents body
-  [[ $(git cat-file -t "$commit") == commit ]] || return 1
+  local commit=$1 key=$2 allowed=$3 parents body signature
+  [[ $(git cat-file -t "$commit") == commit ]] || { echo 'it is not a commit'; return 1; }
   parents=$(git rev-list --parents -n 1 "$commit")
-  [[ $parents == "$commit" ]] || return 1
-  [[ $(git rev-parse "$commit^{tree}") == "$(jq -r .tree <<< "$key")" ]] || return 1
-  body=$(git log -1 --format=%b "$commit" | jq -c -S . 2> /dev/null) || return 1
-  [[ $body == "$key" ]] || return 1
-  git -c gpg.ssh.allowedSignersFile="$allowed" verify-commit "$commit" > /dev/null 2>&1
+  [[ $parents == "$commit" ]] || { echo 'it has a parent'; return 1; }
+  [[ $(git rev-parse "$commit^{tree}") == "$(jq -r .tree <<< "$key")" ]] || { echo "its tree is not the run's tree"; return 1; }
+  body=$(git log -1 --format=%b "$commit" | jq -c -S . 2> /dev/null) || { echo 'its body is not a key'; return 1; }
+  [[ $body == "$key" ]] || { echo "its body is not the run's key"; return 1; }
+  signature=$(git -c gpg.ssh.allowedSignersFile="$allowed" verify-commit "$commit" 2>&1) \
+    || { echo "its signature does not verify: $(tr '\n' ' ' <<< "$signature")"; return 1; }
 }
+
+# Says that the record <ref> of <check> does not hold, and why.
+refused() { echo "verdict: the record ${1##*/} of $2 does not hold: $3" >&2; }
 
 case ${1:-} in
   key)
@@ -244,14 +249,17 @@ case ${1:-} in
       held=
       while read -r _ ref; do
         [[ -n $ref ]] || continue
-        remote_git fetch --quiet --no-tags "$remote" "+$ref:$ref" 2> /dev/null || continue
+        remote_git fetch --quiet --no-tags "$remote" "+$ref:$ref" 2> /dev/null || { refused "$ref" "$check" 'the fetch failed'; continue; }
         commit=$(git rev-parse "$ref")
-        base=$(git log -1 --format=%b "$commit" | jq -r '.base // empty' 2> /dev/null) || continue
-        if [[ -z $base ]] || ! on_trunk "$base"; then continue; fi
-        scope=${GATE_VERDICT_SCOPE:-$(GATE_BASE=$base "$here/scope.bash" --lints 2> /dev/null)} || continue
+        base=$(git log -1 --format=%b "$commit" | jq -r '.base // empty' 2> /dev/null) || { refused "$ref" "$check" 'its body is not a key'; continue; }
+        [[ -n $base ]] || { refused "$ref" "$check" 'it names no base'; continue; }
+        on_trunk "$base" || { refused "$ref" "$check" "the trunk does not hold its base ${base:0:12}"; continue; }
+        scope=${GATE_VERDICT_SCOPE:-$(GATE_BASE=$base "$here/scope.bash" --lints 2> /dev/null)} \
+          || { refused "$ref" "$check" "the scope against its base ${base:0:12} did not read"; continue; }
         k=$(GATE_BASE=$base GATE_SCOPE=$scope key "$check")
-        [[ ${ref##*/} == "$(key_hash "$k")" ]] || continue
-        if verify "$commit" "$k" "$allowed"; then held=$commit; break; fi
+        [[ ${ref##*/} == "$(key_hash "$k")" ]] || { refused "$ref" "$check" "its key is not the run's key, $(key_hash "$k")"; continue; }
+        if reason=$(verify "$commit" "$k" "$allowed"); then held=$commit; break; fi
+        refused "$ref" "$check" "$reason"
       done < <(remote_git ls-remote "$remote" "refs/verdicts/$tree/$(ref_name "$check")/*")
       if [[ -n $held ]]; then
         echo "verdict: $check passed on ${tree:0:12}; the record ${held:0:12} holds, so the check does not run again" >&2

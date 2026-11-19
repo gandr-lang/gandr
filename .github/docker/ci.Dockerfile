@@ -28,11 +28,16 @@ ENV DEBIAN_FRONTEND=noninteractive
 # The coverage upload verifies the Codecov uploader's signature with gpg.
 # - see: `.cargo/config.toml`
 #
+# `git verify-commit` reads the SSH signature of a gate's record through
+# `ssh-keygen`, which openssh-client holds. `git` only recommends that
+# package, so the list names it.
+# - see: `.config/gate-scope/verdict.bash`
+#
 # The liburing crate of `gandr-runtime-uring` runs bindgen in its build.
 # Bindgen needs libclang-dev, until a later unit removes that crate.
 # - see: #7638
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl git build-essential mold pkg-config libssl-dev zstd gpg libclang-dev \
+    && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client build-essential mold pkg-config libssl-dev zstd gpg libclang-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Build tools as UID 1000. Job steps run as root to write runner-owned mounts.
