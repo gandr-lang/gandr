@@ -1,0 +1,5 @@
+/// `positional_path_carrier`: a path type that writes its carrier first, by
+/// position. The head takes its carrier by name, `Path[.A = A] a b`, and
+/// the reader refuses the carrier written first.
+@[refuses("RetiredSpelling.positional_path_carrier")]
+def p : Path Integer 4 4;
