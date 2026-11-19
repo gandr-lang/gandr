@@ -3531,6 +3531,12 @@ impl<'source> Respelling<'_, 'source>
                         out.fragment(text);
                         carrier = true;
                     },
+                    "]" => out.fragment(text),
+                    _ if carrier && !opened => {
+                        out.gap(Spelling(" "));
+                        out.fragment(text);
+                        carrier = false;
+                    },
                     _ => out.fragment(text),
                 },
                 Role::Operand(child) => {
@@ -3591,12 +3597,28 @@ impl<'source> Respelling<'_, 'source>
         let (owns, operands) = split(parts);
         let (&head, rest) = owns.split_first()?;
         let head_text = <&str>::from(head);
+        // The carrier between `=` and `]` is an operand, or a keyword the
+        // grammar spells as its own tile, `Path[.A = Type](X, Y)`.
+        let carried = rest.len().checked_sub(4_usize).and_then(|end| {
+            Some((
+                rest.get(.. 3_usize)?,
+                rest.get(3_usize .. end)?,
+                rest.get(end ..)?,
+            ))
+        });
         let supplied = matches!(head_text, "Path" | "Bridge")
-            && rest.len() == 7_usize
-            && rest
-                .iter()
-                .map(|&own| <&str>::from(own))
-                .eq(["[", ".", "=", "]", "(", ",", ")"]);
+            && carried.is_some_and(|(lead, carrier, tail)| {
+                lead.iter()
+                    .map(|&own| <&str>::from(own))
+                    .eq(["[", ".", "="])
+                    && tail
+                        .iter()
+                        .map(|&own| <&str>::from(own))
+                        .eq(["]", "(", ",", ")"])
+                    && carrier
+                        .iter()
+                        .all(|&own| !matches!(<&str>::from(own), "[" | "]" | "(" | ")" | ","))
+            });
         let opens = rest
             .iter()
             .filter(|&&own| <&str>::from(own) == OPEN_PAREN.0)
