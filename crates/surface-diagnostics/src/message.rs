@@ -293,7 +293,7 @@ fn lowered(
         LoweringRefusal::StagedBody { fault, .. } => f.write_str(match fault {
             StagedFault::Bodied => "a staged signature has a body",
             StagedFault::NoReader => "no reader of a Rust crate is installed",
-            StagedFault::Unanswered => "the `thir` mark's texts hold an escape",
+            StagedFault::Unanswered => "no staged answer matches the `thir` mark's file and function",
             StagedFault::Unread(_) => "the reader gives no body for the function",
             StagedFault::Outside(_) => "the staged body is outside the fragment",
             StagedFault::NotExpr => "the type of a staged signature is no `Expr` of an item type",

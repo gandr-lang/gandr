@@ -172,7 +172,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::StagedBody { fault, .. } => match fault {
             StagedFault::Bodied => "a staged signature with a body",
             StagedFault::NoReader => "a mark that no reader stages",
-            StagedFault::Unanswered => "a mark with an escape",
+            StagedFault::Unanswered => "a mark with no staged answer",
             StagedFault::Unread(_) => "a function that the reader does not read",
             StagedFault::Outside(_) => "a body outside the fragment",
             StagedFault::NotExpr => "a type that is no `Expr`",
@@ -765,7 +765,7 @@ mod tests
             LoweringRefusal::StagedBody { fault, .. } => match fault {
                 StagedFault::Bodied => "a staged signature with a body",
                 StagedFault::NoReader => "a mark that no reader stages",
-                StagedFault::Unanswered => "a mark with an escape",
+                StagedFault::Unanswered => "a mark with no staged answer",
                 StagedFault::Unread(_) => "a function that the reader does not read",
                 StagedFault::Outside(_) => "a body outside the fragment",
                 StagedFault::NotExpr => "a type that is no `Expr`",

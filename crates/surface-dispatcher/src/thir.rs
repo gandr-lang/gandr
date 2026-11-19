@@ -14,10 +14,12 @@
 use alloc::sync::Arc;
 use std::ffi::OsString;
 use std::path::Path;
+use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use gandr_runtime_rust_record::Answer;
 use gandr_runtime_rust_record::Cache;
+use gandr_runtime_rust_record::Function;
 use gandr_runtime_rust_record::FunctionPath;
 use gandr_runtime_rust_record::Identity;
 use gandr_runtime_rust_record::Outcome;
@@ -35,8 +37,8 @@ use crate::verdicts::AlreadyInstalled;
 // marks are read, as the hydration is read where each import resolves.
 static INSTALLED: OnceLock<Stager> = OnceLock::new();
 
-/// The text that opens a `thir` mark, before its two texts.
-const MARK: &str = "@[thir(";
+/// The text that opens a `thir` mark, before its tuple of two texts.
+const MARK: &str = "@[thir((";
 
 /// The command line of a crate of one file, before the file.
 const COMMAND: [&str; 4] = ["--crate-type", "lib", "--edition", "2024"];
@@ -56,18 +58,22 @@ pub struct Stager
 
 impl Stager
 {
-    /// The stager that reads with `program` and keeps each record in `cache`.
+    /// The stager that reads with the reader at `reader` and keeps each
+    /// record in the directory `records`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
     pub const fn new(
-        cache: Cache,
-        program: Program,
+        records: PathBuf,
+        reader: PathBuf,
     ) -> Self
     {
-        Self { cache, program }
+        Self {
+            cache: Cache::at(records),
+            program: Program(reader),
+        }
     }
 }
 
@@ -90,21 +96,59 @@ pub fn install_stager(stager: Stager) -> Result<(), AlreadyInstalled>
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: one answer for each mark whose two texts hold no escape. With no
+/// - ensures: one answer for each mark whose two texts hold no escape. The
+///   marks of one file make one request, which holds each function that they
+///   name, so a body may call another marked function of its file. With no
 ///   stager installed, each answer is [`Unstaged::NoReader`].
 /// - panics: none.
 ///
 /// # Cost
 /// - allocation: each mark's texts and its answer, growth within the marks of
 ///   the source
+/// - allocation: each file's request and record, growth within the files of the
+///   source
+// economy: a scan of the marks for each file, quadratic in the marks of one
+// source, which hold two in the corpus; a map waits for a source of many
+// marks (#327).
 pub(crate) fn staged(
     text: SourceText<'_>,
     directory: &Path,
 ) -> Vec<Staged>
 {
-    marks(text)
+    let written = marks(text);
+    let mut files: Vec<(Arc<str>, Result<Vec<Function>, Unstaged>)> = Vec::new();
+    for (file, _) in &written {
+        if files.iter().any(|(held, _)| held == file) {
+            continue;
+        }
+        let mut functions: Vec<FunctionPath> = Vec::new();
+        for (other, function) in &written {
+            if other == file && !functions.contains(function) {
+                functions.push(function.clone());
+            }
+        }
+        files.push((Arc::clone(file), read(directory, file, functions)));
+    }
+    written
         .into_iter()
-        .map(|(file, function)| stage(directory, file, function))
+        .map(|(file, function)| {
+            let staging = match files.iter().find(|(held, _)| *held == file) {
+                Some((_, Ok(read))) => read
+                    .iter()
+                    .find(|one| one.path == function)
+                    .map(|one| one.body.clone())
+                    .ok_or_else(|| {
+                        Unstaged::Unread(Arc::from("the record holds no such function"))
+                    }),
+                Some((_, Err(unstaged))) => Err(unstaged.clone()),
+                None => Err(Unstaged::NoReader),
+            };
+            Staged {
+                file,
+                function,
+                staging,
+            }
+        })
         .collect()
 }
 
@@ -149,64 +193,59 @@ fn quoted(rest: &str) -> Option<(&str, &str)>
     Some((inner, after))
 }
 
-/// The answer for the mark that names `function` of `file`.
+/// The functions `functions` of `file`, read beside `directory` in one
+/// request.
 ///
 /// # Specification
 /// trivial.
 ///
+/// # Errors
+/// [`Unstaged::NoReader`] with no stager installed, and the cause that the
+/// cache or the record states otherwise.
+///
 /// # Cost
-/// - allocation: the request and the answer, growth within the marks of the
+/// - allocation: the request and the record, growth within the files of the
 ///   source
-fn stage(
+fn read(
     directory: &Path,
-    file: Arc<str>,
-    function: FunctionPath,
-) -> Staged
+    file: &str,
+    functions: Vec<FunctionPath>,
+) -> Result<Vec<Function>, Unstaged>
 {
-    let staging = match INSTALLED.get() {
-        None => Err(Unstaged::NoReader),
-        Some(stager) => {
-            let mut arguments: Vec<OsString> = COMMAND.iter().map(OsString::from).collect();
-            arguments.push(directory.join(&*file).into_os_string());
-            let request = Request {
-                arguments,
-                functions: Vec::from([function.clone()]),
-            };
-            match stager
-                .cache
-                .read(&stager.program, &request, &Identity::of_build())
-            {
-                Err(unread) => Err(Unstaged::Unread(Arc::from(unread.to_string()))),
-                Ok(Answer {
-                    record:
-                        Record {
-                            outcome: Outcome::Read(functions),
-                            ..
-                        },
-                    ..
-                }) => functions
-                    .into_iter()
-                    .next()
-                    .map(|read| read.body)
-                    .ok_or_else(|| Unstaged::Unread(Arc::from("the record holds no function"))),
-                Ok(Answer {
-                    record:
-                        Record {
-                            outcome: Outcome::Refused(refusals),
-                            ..
-                        },
-                    ..
-                }) => Err(Unstaged::Refused(Arc::from(
-                    refusals
-                        .first()
-                        .map_or_else(String::new, |refusal| alloc::format!("{refusal:?}")),
-                ))),
-            }
-        },
+    let Some(stager) = INSTALLED.get()
+    else {
+        return Err(Unstaged::NoReader);
     };
-    Staged {
-        file,
-        function,
-        staging,
+    let mut arguments: Vec<OsString> = COMMAND.iter().map(OsString::from).collect();
+    arguments.push(directory.join(file).into_os_string());
+    let request = Request {
+        arguments,
+        functions,
+    };
+    match stager
+        .cache
+        .read(&stager.program, &request, &Identity::of_build())
+    {
+        Err(unread) => Err(Unstaged::Unread(Arc::from(unread.to_string()))),
+        Ok(Answer {
+            record:
+                Record {
+                    outcome: Outcome::Read(read),
+                    ..
+                },
+            ..
+        }) => Ok(read),
+        Ok(Answer {
+            record:
+                Record {
+                    outcome: Outcome::Refused(refusals),
+                    ..
+                },
+            ..
+        }) => Err(Unstaged::Refused(Arc::from(
+            refusals
+                .first()
+                .map_or_else(String::new, |refusal| alloc::format!("{refusal:?}")),
+        ))),
     }
 }

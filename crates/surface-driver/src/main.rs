@@ -1936,6 +1936,19 @@ fn main() -> ExitCode
                 String::from(gandr_surface_dispatcher::GITHUB),
             ));
     }
+    // A `thir` mark stages a Rust function's body through the reader beside
+    // this executable, and the user's cache keeps each record. With no reader
+    // there, each mark is refused by name.
+    if let Some(reader) = std::env::current_exe()
+        .ok()
+        .and_then(|driver| Some(driver.parent()?.join("gandr-rust-reader")))
+        .filter(|reader| reader.is_file())
+        && let Some(records) = config::rust_records()
+    {
+        let _installed = gandr_surface_dispatcher::install_stager(
+            gandr_surface_dispatcher::Stager::new(records, reader),
+        );
+    }
     // The one reading of the user's file, which the spelling and a check's
     // kernel policy both ask, on the first question asked of it.
     let configuration = config::Configuration::default();

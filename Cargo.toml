@@ -766,7 +766,9 @@ path = "crates/runtime-net"
 # consumers:
 # - surface-diagnostics
 # - surface-dispatcher
+# - surface-lowering (dev)
 # - surface-lowering-base
+# - surface-lowering-expression
 [workspace.dependencies.gandr-runtime-rust-record]
 path = "crates/runtime-rust-record"
 default-features = false

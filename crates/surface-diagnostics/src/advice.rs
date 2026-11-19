@@ -189,7 +189,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::StagedBody { fault, .. } => String::from(match fault {
             StagedFault::Bodied => "delete the body, and the staged THIR gives the value",
             StagedFault::NoReader => "install the reader of a Rust crate for the pinned toolchain",
-            StagedFault::Unanswered => "write the file and the path with no escape",
+            StagedFault::Unanswered => {
+                "write the file and the function as two texts with no escape"
+            },
             StagedFault::Unread(_) => "make the crate build, and name a public function of it",
             StagedFault::Outside(_) => "write the function in the fragment of the calculus",
             StagedFault::NotExpr => "declare the signature at `Expr` of the item type",
