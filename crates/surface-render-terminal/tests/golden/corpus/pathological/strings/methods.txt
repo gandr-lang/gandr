@@ -2,7 +2,7 @@ error[HeldConsumed]: a method whose receiver is `consumed` takes the held value 
    ╭▸ corpus/pathological/strings/methods.gandr:18:3
    │
 15 │ ┌ def readAfterTaken() -> Integer =
-16 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+16 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
    │ │   ─── checked against `-F Integer`; while checking the scope of this hold
 17 │ │   let bs = s.bytes ()
    │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds bs : List Integer
@@ -19,7 +19,7 @@ error[HeldCaptured]: the held value is used inside a thunk, which may run it oth
    ╭▸ corpus/pathological/strings/methods.gandr:25:27
    │
 23 │ ┌ def readInThunk() -> Integer =
-24 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+24 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
    │ │   ─── checked against `-F Integer`; while checking the scope of this hold
 25 │ │   let k : () -> Integer = thunk { s.len () };
    │ │   ┬──                     ━━━━━━━━━━━━━━━━━━ a held value that may be held other than once
@@ -44,7 +44,7 @@ error[HeldLent]: the held value is lent to an `access` here, which ends before i
    ╭▸ corpus/pathological/strings/methods.gandr:37:27
    │
 35 │ ┌ def readWhileLent() -> Unit =
-36 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+36 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
    │ │   ─── checked against `-F Unit`; while checking the scope of this hold
 37 │ │   access s as v { let n = s.len (); resume v v }
    │ │   ┬───────────────┬───────┯━━━━━━━─────────────│
@@ -61,7 +61,7 @@ error[HeldLent]: the held value is lent to an `access` here, which ends before i
    ╭▸ corpus/pathological/strings/methods.gandr:44:26
    │
 42 │ ┌ def pushedWhileRead() -> Integer =
-43 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+43 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
    │ │   ─── checked against `-F Integer`; while checking the scope of this hold
 44 │ │   access shared s as w { s.push 33; let bs = bytes w; count bs }
    │ │   ┬──────────────────────┯━━━━━━━━─────────────────────────────│
@@ -80,7 +80,7 @@ error[HeldConsumed]: a method whose receiver is `consumed` takes the held value 
    │   │                          ─ checked against `Repr -> -F Integer`; while checking the body of this function; binds t : Repr
    │ ┌─┘
    │ │
-50 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+50 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
    │ │   ─── checked against `-F Integer`; while checking the scope of this hold
 51 │ │   let xs = match t -> -F List Integer where
    │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds xs : List Integer
