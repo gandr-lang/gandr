@@ -22,12 +22,22 @@ jobs:
     permissions:
       packages: write
     steps:
+      - &read-budget
+        name: read GitHub budget wrapper
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: .config/gh/budget.bash
+          sparse-checkout-cone-mode: false
+          token: ""
       - &list
         name: list older weekly packages
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          source .config/gh/budget.bash
           owner=${GITHUB_REPOSITORY_OWNER:?}
           week=$(date -u +%Gw%V)
           page_file=$RUNNER_TEMP/cache-retention-page
@@ -36,7 +46,7 @@ jobs:
           : > "$candidate_data"
           stays=0
           for page in 1 2; do
-            gh api "orgs/$owner/packages?package_type=container&per_page=100&page=$page" \
+            GH_BUDGET_TTL=0 gh api "orgs/$owner/packages?package_type=container&per_page=100&page=$page" \
               --jq '.[] | .name' > "$page_file"
             while IFS= read -r package; do
               if [[ $package =~ ^gandr-kache-([0-9]{4}w[0-5][0-9])$ ]]; then
@@ -90,6 +100,7 @@ jobs:
     permissions:
       packages: read
     steps:
+      - *read-budget
       - *list
       - name: report older weekly packages
         env:

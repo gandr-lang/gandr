@@ -3,7 +3,7 @@
 # than eight. The dispatch path reads the same set and deletes no package.
 set -euo pipefail
 
-tree=$(cd "${BASH_SOURCE[0]%/*}/../.." && pwd)
+tree=$(git rev-parse --show-toplevel)
 workflow=$tree/.github/workflows/nightly-cache-retention.yml
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
@@ -21,6 +21,10 @@ chmod +x "$fake/date"
 cat > "$fake/gh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ $1 == api && $2 == rate_limit ]]; then
+  printf '0\n'
+  exit 0
+fi
 if [[ $1 == api && $2 == --method && $3 == DELETE ]]; then
   printf '%s\n' "$4" >> "$CACHE_RETENTION_DELETES"
   exit 0
@@ -54,8 +58,8 @@ gandr-kache-2026w07
 gandr-kache-2026w03
 EOF
 
-list=$(yq -r '.jobs.retention.steps[0].run' "$workflow")
-retain=$(yq -r '.jobs.retention.steps[1].run' "$workflow")
+list=$(yq -r '.jobs.retention.steps[] | select(.name == "list older weekly packages") | .run' "$workflow")
+retain=$(yq -r '.jobs.retention.steps[] | select(.name == "delete older weekly packages") | .run' "$workflow")
 run() {
   local dry_run=$1
   mkdir -p "$scratch/runner"
@@ -65,6 +69,7 @@ run() {
   PATH=$fake:$PATH \
     GITHUB_REPOSITORY_OWNER=gandr-lang \
     GITHUB_ENV=$scratch/env \
+    XDG_CACHE_HOME=$scratch/cache \
     RUNNER_TEMP=$scratch/runner \
     CACHE_RETENTION_PAGE_ONE=$scratch/page-one \
     CACHE_RETENTION_PAGE_TWO=$scratch/page-two \
