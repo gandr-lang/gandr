@@ -9,4 +9,4 @@ def same(b : Unit + Unit) -> Unit + Unit =
   b
 
 @[refuses("PointwiseDistinct")]
-def not_identity : Path(not, same) = Path.funext not same;
+def not_identity : Path not same = Path.funext not same;

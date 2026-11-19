@@ -43,14 +43,14 @@ def countedSteps() -> (Nat -> Nat) -> Nat =
   } with Counting
 
 /// The count of the steps is three.
-def costsThree : Path(countOf (countedSteps ()), (3 : Nat)) = Path.here (3 : Nat);
+def costsThree : Path (countOf (countedSteps ())) (3 : Nat) = Path.here (3 : Nat);
 
 /// Whether the count of the steps is at most `n`.
 def within(n : Nat) -> Bool =
   Count.le (countOf (countedSteps ())) n
 
 /// The bound three holds: conversion decides it, and the kernel replays it.
-def boundThree : Path(within (3 : Nat), true) = Path.here true;
+def boundThree : Path (within (3 : Nat)) true = Path.here true;
 
 /// The extensional reading at integer answers: every charge is the identity.
 module Erased : Model(Cost.Eff) with sort N = Nat -> Nat where
@@ -64,10 +64,9 @@ module Erased : Model(Cost.Eff) with sort N = Nat -> Nat where
   def plus(a : Nat -> Nat, b : Nat -> Nat) -> Nat -> Nat =
     fun (n) { let m = b n; a m }
   /// Charging nothing is the identity.
-  def chargeZero(k : Integer) -> Path(charge zero k, k) = Path.here k;
+  def chargeZero(k : Integer) -> Path (charge zero k) k = Path.here k;
   /// Two charges are one.
-  def chargeTwice(a : Nat -> Nat, b : Nat -> Nat, k : Integer) -> Path(
-    charge a (charge b k),
+  def chargeTwice(a : Nat -> Nat, b : Nat -> Nat, k : Integer) -> Path (charge a (charge b k)) (
     charge (plus a b) k
   ) =
     Path.here k
@@ -79,4 +78,4 @@ def erasedSteps() -> Integer =
   } with Erased
 
 /// Erased, the steps answer as the program does with no charge.
-def erasedAnswer : Path(erasedSteps (), 7) = Path.here 7;
+def erasedAnswer : Path (erasedSteps ()) 7 = Path.here 7;

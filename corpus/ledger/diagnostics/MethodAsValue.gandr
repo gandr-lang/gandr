@@ -1,4 +1,5 @@
-/// `MethodAsValue`: a method that writes through its receiver, named as a value.
+/// `MethodAsValue`: a method that writes through its receiver, named
+/// as a value.
 /// `Counter` holds the method.
 module Counter where
   /// `bump` adds one to its receiver.

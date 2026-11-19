@@ -34,10 +34,12 @@ def both : List Bool = cons (+{.0 = *{}}) (cons (+{.1 = *{}}) nil);
 
 /// Truth then falsity transported along negation is falsity then truth, by
 /// conversion.
-def flipped_beta : Path(
-  Path.walk (fun (X) { List X }) negation (cons (+{.0 = *{}}) (cons (+{.1 = *{}}) nil)),
-  cons (+{.1 = *{}}) (cons (+{.0 = *{}}) nil)
-) = Path.here (cons (+{.1 = *{}}) (cons (+{.0 = *{}}) nil));
+def flipped_beta : Path (Path.walk
+  (fun (X) { List X })
+  negation
+  (cons (+{.0 = *{}}) (cons (+{.1 = *{}}) nil))) (cons
+  (+{.1 = *{}})
+  (cons (+{.0 = *{}}) nil)) = Path.here (cons (+{.1 = *{}}) (cons (+{.0 = *{}}) nil));
 
 /// `both` transported along negation by a run, which negates every element.
 @[runs("cons +{.1 = *{}} (cons +{.0 = *{}} nil)")]
@@ -68,7 +70,7 @@ def keep(xs : List Bool) -> List Bool =
 def lists : Path[.A = Type](List Bool, List Bool) = equiv keep keep;
 
 /// A list transported along the identity's path is itself, by conversion.
-def kept_beta : Path(Path.walk (fun (X) { X }) lists both, both) = Path.here both;
+def kept_beta : Path (Path.walk (fun (X) { X }) lists both) both = Path.here both;
 
 /// A flag beside a list of booleans, negated, the list left as it is.
 def flip_flag(entry : Bool * List Bool) -> Bool * List Bool =

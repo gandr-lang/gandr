@@ -4,13 +4,13 @@ data Nat : Type where
   | Succ : (n : Nat) --> Nat
 rec {
   @[checks]
-  def rec even(n : Nat) -> -F Integer =
+  def rec even(n : Nat) -> Integer =
     match n where
-      | Zero => return 1
+      | Zero => 1
       | Succ(p) => odd[<] p
   @[checks]
-  def rec odd(n : Nat) -> -F Integer =
+  def rec odd(n : Nat) -> Integer =
     match n where
-      | Zero => return 0
+      | Zero => 0
       | Succ(p) => even[<] p
 }

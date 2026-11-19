@@ -11,7 +11,7 @@ def answer() -> Integer =
   m + one
 
 /// A name a `let` binds reads as the value itself.
-def three() -> Path(3, 3) =
+def three() -> Path 3 3 =
   let x = 3
   Path.here x
 

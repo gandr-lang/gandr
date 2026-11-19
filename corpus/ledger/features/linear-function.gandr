@@ -26,7 +26,7 @@ def seven() -> Integer = id 7;
 
 /// The result type reads the parameter through its shadow, and the body takes
 /// its copy once.
-def itself(x : Integer) ⊸ Path(x, x) = Path.here x;
+def itself(x : Integer) ⊸ Path x x = Path.here x;
 
 /// A function of linear type, applied once.
 def apply(f : (x : Integer) ⊸ Integer, a : Integer) -> Integer = f (a);
