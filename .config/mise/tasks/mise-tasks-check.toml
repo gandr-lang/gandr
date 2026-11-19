@@ -765,9 +765,10 @@ policy {{ env.GATE_SCOPE | default(value='--workspace') }} $features || status=$
 # starts no process.
 #
 # Then the task builds the driver and puts the reader beside it, where the
-# driver finds it. It settles `corpus/rust/thir` with them: each staged body
-# meets its specification, and each mark that stages no body is refused by
-# name. No other task walks that directory. So the main corpus task gives one
+# driver finds it. It settles the reader's staged corpus with them: each
+# staged body meets its specification, and each mark that stages no body is
+# refused by name. The corpus stands under the reader's tests, outside
+# `corpus/`. So no other task walks it, and the main corpus task gives one
 # result on a host with a reader and on a host with none.
 #
 # Last, the task refuses `rustc_private` in each other crate. So no other
@@ -788,7 +789,7 @@ rustup component add rustc-dev llvm-tools
 )
 .config/mise/scope cargo build --locked --quiet --release --package gandr-lang
 cp target/rust-reader/release/gandr-rust-reader target/release/gandr-rust-reader
-target/release/gandr --run-budget 16777216 test corpus/rust/thir
+target/release/gandr --run-budget 16777216 test crates/runtime-rust-reader/tests/corpus
 .config/rust-record/linked.bash
 .config/rust-record/linked-cases.bash
 '''

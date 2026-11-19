@@ -6,7 +6,7 @@
 //! - see: corpus/model/interop/thir/example.gandr — the bodies written by hand
 
 // `Item`, the specifications and the proofs over the bodies written by hand.
-import "../../model/interop/thir/example.gandr";
+import "../../../../../corpus/model/interop/thir/example.gandr";
 
 // The values, the expressions and the transformers.
 import std.thir (Value, Expr, wpFn);

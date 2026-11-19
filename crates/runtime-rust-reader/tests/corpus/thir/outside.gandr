@@ -2,7 +2,7 @@
 //! expression of its type is refused by name.
 
 // `Item`, whose item mark names `identity` and `example`.
-import "../../model/interop/thir/example.gandr";
+import "../../../../../corpus/model/interop/thir/example.gandr";
 
 // The expressions.
 import std.thir (Expr);
