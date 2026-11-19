@@ -2067,8 +2067,8 @@ quenchant_shape::reason_enum! {
 ///   and a stale member.
 /// - witness: `support::tests::the_read_binders_are_placed_by_index`
 #[spec(ensures: |ret| match (reads.indices(), &ret) {
-    (Maybe::Present(indices), &Maybe::Present(gathered)) => indices.collect::<Vec<_>>()
-        == gathered.iter().map(|&(index, _)| index).collect::<Vec<_>>()
+    (Maybe::Present(indices), &Maybe::Present(gathered)) => indices.collect::<SmallVec<_, 0, Global>>()
+        == gathered.iter().map(|&(index, _)| index).collect::<SmallVec<_, 0, Global>>()
         && gathered.iter().all(|&(index, entry)| usize::try_from(u32::from(index)).ok()
             .and_then(|index| context.len().checked_sub(index)?.checked_sub(1))
             .and_then(|position| context.get(position)) == Some(&entry)),

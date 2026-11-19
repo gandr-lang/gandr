@@ -293,11 +293,11 @@ impl Presentations
                 .map(|fields| FieldCount::from(fields.len()))
                 .collect()
         };
-        let table = Shared::make_mut(self.table.get_or_insert_with(Arc::default));
+        let table = Shared::make_mut(self.table.get_or_insert_with(Shared::default));
         if let Some(cells) = declaration.presentation().cells() {
             let words = table.words.entry(cells.sort()).or_default();
             let at = words.partition_point(|&(held, _)| held < rank);
-            words.insert(at, (rank, position));
+            words.insert(Count::from(at), (rank, position));
         }
         let _previous = table.types.insert(position, PresentedType {
             presentation: declaration.presentation().clone(),
@@ -419,7 +419,7 @@ impl Presentations
         self.table
             .as_deref()
             .and_then(|table| table.words.get(&sort))
-            .map_or(&[][..], Vec::as_slice)
+            .map_or(&[][..], |words| &words[..])
             .iter()
             .take_while(|&&(rank, _)| rank < self.horizon)
             .map(|&(_, words)| words)
