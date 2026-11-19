@@ -3212,9 +3212,12 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusalOf::AtomTransport { .. }, RefusalName::AtomTransport)
         | (CheckRefusalOf::BridgeAtSealedType { .. }, RefusalName::BridgeAtSealedType)
         | (CheckRefusalOf::SealSiteRepeated(_), RefusalName::SealSiteRepeated)
-        | (CheckRefusalOf::BuiltinRepeated { .. }, RefusalName::BuiltinMark(_))
-        | (CheckRefusalOf::BuiltinMisplaced(_), RefusalName::BuiltinMark(_))
-        | (CheckRefusalOf::BuiltinNotCanonical { .. }, RefusalName::BuiltinMark(_))
+        | (
+            CheckRefusalOf::BuiltinRepeated { .. }
+            | CheckRefusalOf::BuiltinMisplaced(_)
+            | CheckRefusalOf::BuiltinNotCanonical { .. },
+            RefusalName::BuiltinMark(_),
+        )
         | (CheckRefusalOf::DataArgumentArity(_), RefusalName::DataArgumentArity)
         | (CheckRefusalOf::UnknownConstructor { .. }, RefusalName::UnknownConstructor)
         | (CheckRefusalOf::ConstructorArity(_), RefusalName::ConstructorArity)
