@@ -1,0 +1,1956 @@
+//! The presentation printer: checked core types, normal-form values and
+//! elaborated bodies, laid out at a page width.
+//!
+//! A caller hands the printer a [`Source`] — a store that answers, for one
+//! handle, the [`Former`] the node carries — a root and a [`PageWidth`]. The
+//! printer walks the nodes into one layout document, every break point a
+//! choice between the byte the one-line spelling carries there and a line
+//! break, and the layout engine picks the layout for the page.
+//!
+//! | item                          | what it is                                               |
+//! | ----------------------------- | -------------------------------------------------------- |
+//! | [`present_type`]              | a value or computation type at a width                   |
+//! | [`present_type_line`]         | the same type on one line, never laid out                |
+//! | [`present_value`]             | a value at a width, bounded at [`DEPTH_LIMIT`]            |
+//! | [`present_value_line`]        | the same value on one line, never laid out               |
+//! | [`present_computation`]       | an elaborated body at a width, its exits elided           |
+//! | [`present_computation_line`]  | the same body on one line, never laid out                |
+//! | [`Form`]                      | sugared or explicit: which spelling a former takes       |
+//! | [`Spelling`], [`Style`]       | Unicode or ASCII glyphs; a form and a spelling together  |
+//! | [`Presentation`]              | the laid-out text, whether it says the whole node, its names |
+//! | [`WrittenName`]               | a declaration's name the text writes, and where          |
+//! | [`Source`], [`Former`]        | the one question the printer asks of its input           |
+//! | [`CoreSource`]                | the core arena as a source                               |
+//! | [`ContentSource`]             | a checkpoint's content table as a source                 |
+//! | [`PresentationError`]         | a layout ceiling reached on the way                      |
+//!
+//! # One walk, two composers
+//!
+//! The walk writes each leaf and join into a composer. The page faces compose
+//! a layout document and let the engine choose its breaks;
+//! [`present_computation_line`], [`present_type_line`] and
+//! [`present_value_line`] compose text directly, taking at each choice the
+//! side with fewer breaks, because building the document — not choosing among
+//! its layouts — is most of what a value a run prints would cost, and a type a
+//! diagnostic keeps only on one line need never be laid out. A derivation
+//! card's row shows only the one line of its goal, so it need never lay out a
+//! goal either.
+//!
+//! - **Alternatives.** Rendering the layout document without a break search
+//!   still builds and interns the document for every value.
+//! - **Reversal.** A one-line face whose text must follow a cost only the
+//!   resolver decides.
+//!
+//! # Two forms, one walk
+//!
+//! Every presentation entry point takes a [`Style`]: a [`Form`] and a
+//! [`Spelling`]. Both forms write only what the surface grammar parses, so a
+//! printed type reads back as the type it names.
+//!
+//! Every production spells a mold, every mold has a production: each spelling
+//! the printer writes is one the grammar molds and the lowering reads back to
+//! the node printed, and each node the core holds has a spelling or is the
+//! honest `?` below. The dispatcher's corpus census holds the contract over
+//! every printed type, run value and normal form the corpus states: a
+//! spelling that does not parse, that the lowering refuses or that the
+//! printer cannot lay out fails it by name, and so does a spelling whose
+//! reading prints otherwise, `print(parse(print(x))) = print(x)` up to
+//! layout. A parameterised constructor is written against its family,
+//! `(MkIx : Ix(3))`, except where its position states its type — a family's
+//! argument, `Vec(MkIx)` — whose parameter the lowering classifies it by. One
+//! at a type a definition computes is written against that type,
+//! `(Entry v e : modelType(T))`.
+//!
+//! **Explicit** gives every former one spelling: `Integer`, `String`, `Unit`,
+//! `Void`, `Bool`, `*{A, B, …}`, `*{l : A, …}`, `+{A, B, …}`, `&{C, D}`,
+//! `+U C`, `-F A`, `-F [I, …] A` over a row of interfaces, `A -> C`,
+//! `(x : A) -> C`, the static Pi `A -> B` between value types, a
+//! continuation's type `Stack(C, D)`, `Type`,
+//! `Type[-]`, `Type[+, l]`, `Type[-, l]`, an abstract
+//! type and a constant by name, and a decode as the code it reads; values are
+//! `*{}`, literals with their canonical digits and escapes, `*{a, b, …}`,
+//! `*{.l = v, …}`, a record update `*{b | .l = v, …}`, `+{.i = v}`,
+//! `Path.here(a)`, `Path.funext(f, g)`, `equiv(f, g)`, univalence at a stratum
+//! `ua[n, k](a, b, f, g)` with its two descriptions by name, the static
+//! abstraction `fun (a) { v }`, and a static application as its spine, `f(a,
+//! b)` for `f` applied to `a` and then to `b` (the type operators of
+//! `gandr-surface-grammar`). Every braced former is written between its
+//! delimiters at any arity from one, its labels in their declared order. The
+//! path operations `Path.step p q`, `Path.back p` and `Path.ap f p` are
+//! written as the operations in both forms, for the returned transport each
+//! derives, the carrier and the fixed endpoint naming no `y` (#754, #778): the
+//! printer never unfolds them (#5206). A transport standing as another
+//! transport's operand keeps its spelling, since nothing there states the
+//! operation's type (#815).
+//!
+//! **Sugared** writes, besides, every sugar the grammar parses where the
+//! core's shape is exactly the one the sugar stands for: the product `A * B`
+//! and the sum `A + B` of two components or more, `A * B * C` one product of
+//! three as the lowering flattens the chain; the binary lazy product `C & D`;
+//! the value-function alias `A -> C`, `() -> C` and `(A, B) -> C` for a thunk
+//! over a chain of non-dependent arrows ending in a pure returner. A tuple is
+//! the record `*{a, b}` in either
+//! form: a group is never a stored value (#4853). A dependent arrow, an
+//! effectful returner, a record, a sum or
+//! product of one component and the empty ones keep their explicit spelling.
+//! Sugared is what every reader-facing
+//! face shows — a hover, a diagnostic, the REPL, the terminal face and a
+//! run's value; explicit is what an editor's `gandr.presentation.form` asks
+//! for, and what the golden fixtures of the core's own spellings pin.
+//!
+//! Binding strength follows the grammar's bands, tightest first: atoms, every
+//! braced former among them, then the bridges `+U` and `-F` (built-in
+//! spellings in `gandr-surface-grammar`), then `*`, then `+`, then `&`, then
+//! the arrows `->` and `=>`; every band associates to the right. A product's
+//! operand is bare up to a bridge, a sum's up to a product, `&`'s left
+//! operand up to a sum and its right up to `&`, and an arrow's domain up to
+//! `&`, its codomain bare. A static abstraction binds as loosely as an arrow,
+//! its body running to the right, and an application is an atom whose
+//! operator is parenthesized unless it is one. A static redex prints as its
+//! reduct, each binder written as the argument it takes, so the type a
+//! classifier applied to an abstraction denotes reads as it is written plainly.
+//!
+//! A node the surface has no spelling for — a lift, the numeric atom, a linear
+//! or unbound variable, a term where a type stands — is written `?`, and a
+//! thunk value presented alone `<thunk>`; each makes the presentation
+//! approximate. Fidelity is recorded by the nodes the walk met, so a name that
+//! happens to contain `?` stays faithful. A page the one-line spelling fits
+//! selects it unchanged.
+//!
+//! The recorded design gave every former one spelling and printed none of the
+//! sugar, so that the printer wrote what the core holds: a thunked arrow read
+//! `+U (Integer -> -F String)` where its source read `Integer => String`, and
+//! a pair `*{1, "a"}` where it was written `(1, "a")`. The change keeps that
+//! spelling as the explicit form and adds the sugared one as the default,
+//! because the reader of a hover or a diagnostic reads the surface they write,
+//! and the sugar is no less exact: each sugared spelling lowers to the same
+//! core node, which the dispatcher's readback witness checks. The form is one
+//! flag on the walk — a former's sugared spelling is one more arm of its
+//! visit and join — so the two forms never diverge in what they admit.
+//!
+//! - **Alternatives.** One spelling with the sugar always, which hides the
+//!   formers a reader learning the core needs to see; one without it, the
+//!   recorded design, which a hover over a function shows as a thunk of an
+//!   arrow of a returner; a notation independent of the grammar, which would
+//!   print text the surface cannot read back; parenthesizing every compound
+//!   operand, simpler to state but longer at every chain.
+//! - **Reversal.** A ruled change to the grammar's spellings or bands; this
+//!   crate follows it, never leads it. A sugar the lowering stops reading back
+//!   to the shape it prints leaves the sugared form.
+//!
+//! # Two spellings
+//!
+//! Every construct has an ASCII spelling and may have a Unicode one
+//! (`gandr-surface-grammar` § Spellings). [`Spelling::Unicode`], the default,
+//! writes each glyph the grammar holds; [`Spelling::Ascii`] writes what the
+//! grammar's table pairs it with: `A <~> B` for `A ≃ B`, `A ~~> B` for `A ⇝
+//! B`, the call `Iso(A, B)` for `A ≅ B`, and `g :: p` for `g ∷ p`. A name
+//! holding the prime `′`, which has no ASCII spelling, is written `?` and the
+//! presentation is approximate, recorded [`Unspelled::Primed`]; a binder the
+//! source named so takes a generated name instead, as one that would capture
+//! does. The spelling is a second flag on the walk beside the form, read at
+//! the arms that write a glyph, so both spellings admit the same nodes.
+//!
+//! - **Alternatives.** Transliterating the Unicode text afterwards, which
+//!   cannot write `≅` as a call and would rewrite a glyph inside a string
+//!   literal; a spelling per glyph, which no reader asked for.
+//! - **Reversal.** A ruled ASCII spelling for the prime, at which point a
+//!   primed name is written with it instead of `?`.
+//!
+//! # A body prints in its canonical form, its exits elided
+//!
+//! [`present_computation`] is the canonical printer of an elaborated body: it
+//! writes the form the lowering reads back to the same term, with every exit
+//! the lowering would infer left out. A returner where a path through the
+//! body ends is written as its value, `n`, never `return n`; any other
+//! computation there bare, `f(n)`, never `become f(n)`; a returner anywhere
+//! else is `pure v`, since a written `return` there would leave the body. A
+//! bind is `let x = c ; rest`, its statements one per line when the body
+//! does not fit; a force is `force v`, and a force at a call's head is the
+//! value it forces, `f(a, b)`, as the surface writes a call; a lambda is
+//! `fun (x) { c }` and, inside a body, a thunk is `thunk { c }`. A value
+//! presented alone keeps its thunks opaque. Case analyses, splits,
+//! projections, fixpoints, native operations, transports and the effect and
+//! control operators are spelled as the surface writes them. What the core
+//! holds only by position — a constructor's name by its tag, a field label, an
+//! operation — comes from the [`Source`]: a data case's branch is written
+//! under the pattern [`Source::constructor`] names, and a source that cannot
+//! name it writes `?` there, approximate. A source as written is the
+//! formatter's (`gandr-surface-format`): it keeps every token, the exit
+//! keywords among them, so a source round-trips as written.
+//!
+//! - **Alternatives.** Printing every exit keyword, the form the surface
+//!   required before exits were inferred, which a module can still ask for
+//!   through the `explicit-exits` lint of `gandr-surface-diagnostics`; it is
+//!   the longer form for the same term, and a printer that writes it would
+//!   disagree with the shortest source the lowering reads back to that term.
+//! - **Reversal.** A ruled change that makes the written keywords canonical, or
+//!   a source that answers constructor, label and operation names, at which
+//!   point the case and projection forms gain their spellings.
+//!
+//! # Totality
+//!
+//! Nothing here panics or recurses. The walk drains an explicit task stack, a
+//! value deeper than [`DEPTH_LIMIT`] is written `<deep>`, a source that takes
+//! more node visits than one presentation makes — a cycle — is written `?`,
+//! and every layout failure is a [`PresentationError`].
+//!
+//! # Answers checked at compile time
+//!
+//! The corpus census above is the runtime half of the contract; the lint
+//! wall holds its static half (quenchant's `answer_totality` group, whose
+//! tables the workspace's `check:dylint` task configures):
+//!
+//! - every `?` the printer can build — a [`Former::Unreadable`], an
+//!   [`Unspelled`] reason, the unknown node kind, a `"?"` or a `'?'` — is built
+//!   only under an `expect` whose reason says why no spelling exists;
+//! - the walk's `visit` and `form` name every [`Former`] variant;
+//! - each arm that writes a grammar rule names it, `writes(Production("rule"),
+//!   …)`, and the rules named equal the rules the grammar builds, but for those
+//!   the configuration lists as unproduced, each with its reason: the
+//!   declarations, patterns and shell syntax no core node carries, and the
+//!   sugar the lowering elaborates away.
+//!
+//! The marker is read only by the lint; at run time `writes` is the identity.
+//!
+//! - **Alternatives.** The census alone, which finds a missing production only
+//!   when the corpus happens to print one; a lint level without `expect`'s
+//!   reason, which would let a residue stand unexplained; a production table
+//!   beside the walk, which would drift from the arms that write.
+//! - **Reversal.** A grammar built from data the lint cannot read, at which
+//!   point the production set returns to the census alone.
+//!
+//! # Tests and their limits
+//!
+//! The golden fixtures cover exact grammar spellings and their narrow and wide
+//! layouts; the README's Provided features names their observers. Boundary
+//! witnesses cover truncation across all four core-node families,
+//! admission-table endpoints, depth saturation, candidate rounds, binder
+//! exhaustion, error causes and layout refusals.
+//!
+//! Run `RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p
+//! gandr-surface-pretty` to execute the predicates as well as the independent
+//! assertions. Adequacy blocks state the finite input domains and the mutations
+//! each witness distinguishes; they do not claim exhaustive coverage.
+//!
+//! Executable exemptions remain at opaque observation boundaries: the abstract
+//! source reader, child-handle provenance without its source, admission-table
+//! correspondence to declarations not held by the adapter, and formatting into
+//! an opaque destination. Their source contracts name the missing observer;
+//! concrete reader, borrowed-key and error-chain obligations retain executable
+//! predicates.
+//!
+//! # References
+//!
+//! - Sorawee Porncharoenwase, Justin Pombrio, and Emina Torlak. "A Pretty
+//!   Expressive Printer." _Proceedings of the ACM on Programming Languages_ 7,
+//!   OOPSLA2, October 2023.
+//!   [doi:10.1145/3622837](https://doi.org/10.1145/3622837),
+//!   [arXiv:2310.01530](https://arxiv.org/abs/2310.01530) — the cost order and
+//!   the computation width the documents here are resolved under.
+//! - Jean-Philippe Bernardy. "A Pretty But Not Greedy Printer (Functional
+//!   Pearl)." _Proceedings of the ACM on Programming Languages_ 1, ICFP,
+//!   article 6, September 2017.
+//!   [doi:10.1145/3110250](https://doi.org/10.1145/3110250) — choosing a layout
+//!   over all candidates rather than the first that fits, which lets each break
+//!   point be an independent choice.
+//! - Phillip M. Yelland. "A New Approach to Optimal Code Formatting." Technical
+//!   report, Google, 2016. [research.google](https://research.google/pubs/a-new-approach-to-optimal-code-formatting/)
+//!   — formatting as least cost over alternative layouts with an overflow
+//!   penalty, the tradition the break-point choices belong to.
+//! - Philip Wadler. "A Prettier Printer." In Jeremy Gibbons and Oege de Moor
+//!   (editors), _The Fun of Programming_, Palgrave Macmillan, 2003.
+//!   [prettier.pdf](https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf)
+//!   — the document algebra the documents are written in.
+//! - `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — anchor: a call supplies its
+//!   implicits by name or by position in the written block, and the printer
+//!   writes each atom at the head of that block by position.
+
+// Module documentation that predates the shape lint: 17 headings outside the
+// vocabulary, 16 decision records, 8 issue references and 3 budgets exceeded.
+// Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        doc_issue_reference,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
+#![no_std]
+
+extern crate alloc;
+
+mod compose;
+
+mod content_source;
+
+mod core_source;
+
+mod error;
+
+mod former;
+
+mod scope;
+
+mod walk;
+
+use alloc::collections::BTreeSet;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
+
+use anodized::spec;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
+use gandr_kernel_term::ConstantIndex;
+pub use gandr_surface_grammar::Spelling;
+use gandr_surface_layout::ComputationWidth;
+use gandr_surface_layout::LayoutOptions;
+pub use gandr_surface_layout::PageWidth;
+use gandr_surface_layout::PhysicalLineEnding;
+use gandr_surface_layout::RenderError;
+use gandr_surface_layout::RenderLimits;
+use gandr_surface_layout::RenderMeter;
+use gandr_surface_layout::build::DocBuilder;
+use gandr_surface_layout::limits::BuildLimits;
+use gandr_surface_layout::limits::BuildMeter;
+use gandr_surface_layout::render::RenderedText;
+use gandr_surface_layout::render::render;
+use gandr_surface_layout::units::OutputBytes;
+use quenchant_shape::shape::Maybe;
+
+use crate::compose::Compose;
+use crate::compose::Glyphs;
+use crate::compose::OneLine;
+use crate::compose::Paged;
+pub use crate::content_source::ContentSource;
+pub use crate::core_source::Constructors;
+pub use crate::core_source::CoreNode;
+pub use crate::core_source::CoreSource;
+pub use crate::core_source::FamilyKey;
+pub use crate::core_source::ForgetMap;
+pub use crate::core_source::Forgetting;
+pub use crate::core_source::Modelled;
+pub use crate::core_source::Restoration;
+pub use crate::core_source::WrittenForms;
+pub use crate::core_source::WrittenStage;
+pub use crate::error::PresentationError;
+pub use crate::former::Answered;
+pub use crate::former::Arity;
+pub use crate::former::Component;
+pub use crate::former::Elided;
+pub use crate::former::ForgetCall;
+pub use crate::former::Forgotten;
+pub use crate::former::Former;
+pub use crate::former::Lift;
+pub use crate::former::Manifest;
+pub use crate::former::ModelSlot;
+pub use crate::former::Name;
+pub use crate::former::Notation;
+pub use crate::former::Placement;
+pub use crate::former::Recursion;
+pub use crate::former::Recursive;
+pub use crate::former::Returned;
+pub use crate::former::Source;
+pub use crate::former::Unreadable;
+pub use crate::former::Unspelled;
+pub use crate::scope::Binder;
+pub use crate::scope::BinderIndex;
+pub use crate::scope::ChildSlot;
+pub use crate::scope::Scopes;
+use crate::walk::Admits;
+use crate::walk::Bodies;
+use crate::walk::Tail;
+use crate::walk::Walked;
+use crate::walk::walk;
+pub use crate::walk::web_spelled;
+
+/// How many value formers enclose a node of a presentation.
+///
+/// Types do not count: a value nested in a type — the code a decode reads —
+/// stands at the depth of the value the type is nested in.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ValueDepth(u32);
+
+impl ValueDepth
+{
+    /// The depth of a presentation's root.
+    const ROOT: Self = Self(0_u32);
+
+    /// The depth one value former further in.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the next value depth, saturating at the maximum count.
+    /// - provides: bounded descent through value formers.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the root, penultimate count and maximum distinguish
+    ///   increment, premature saturation and wraparound; intervening counts are
+    ///   governed by the same arithmetic but not enumerated.
+    /// - witness: `tests::value_depth_saturates_without_wrapping`
+    #[spec(ensures: |ret| if self.0 == u32::MAX {
+        ret.0 == u32::MAX
+    } else { matches!(ret.0.checked_sub(self.0), Some(1_u32)) })]
+    const fn deeper(self) -> Self
+    {
+        Self(self.0.saturating_add(1_u32))
+    }
+}
+
+impl From<ValueDepth> for u32
+{
+    /// The depth as a count of enclosing value formers.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(depth: ValueDepth) -> Self
+    {
+        depth.0
+    }
+}
+
+/// The value depth at which the printer stops descending and writes `<deep>`.
+///
+/// A value of the depth a reader reads stays well inside it; a normal form
+/// nested deeper is shown as its outer formers around one `<deep>` leaf, so
+/// a presentation stays a size a page can hold.
+pub const DEPTH_LIMIT: ValueDepth = ValueDepth(32_u32);
+
+/// Whether a presentation says exactly the node it was made from.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Fidelity
+{
+    /// Every node was written as the surface writes it.
+    Faithful,
+    /// Some node has no surface spelling or exceeds the depth limit.
+    /// Diagnostic notation and placeholders are not round-trippable source.
+    Approximate,
+}
+
+/// Whether a presentation writes a wildcard `_`: a term the elaborator was
+/// asked to find and left unsolved, which reads back as itself only at the
+/// place it was written.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum Wildcards
+{
+    /// The text writes no wildcard.
+    #[default]
+    Unwritten,
+    /// The text writes a wildcard.
+    Written,
+}
+
+/// Which of the spellings the grammar parses a presentation writes where the
+/// core's shape admits more than one.
+///
+/// Both read back to the same core term; they differ only where the surface
+/// has a sugar for a shape (§ Two forms, one walk).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Form
+{
+    /// Every sugar the grammar parses where the core's shape is exactly the
+    /// sugar's: the value-function alias `(A, B) -> C` for `+U (A -> B -> -F
+    /// C)`, and the infix `A * B`, `A + B` and `C & D`. The form every face a
+    /// person reads takes by default.
+    Sugared,
+    /// What the core holds, former by former: `+U (A -> B -> -F C)`,
+    /// `*{A, B}`, `+{A, B}`, `&{C, D}` and `*{a, b}`. The path operations
+    /// keep their own spelling, as in the sugared form.
+    Explicit,
+}
+
+/// How a presentation is written: which of the grammar's spellings a former
+/// takes, and which glyphs.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Style
+{
+    /// Sugared or explicit (§ Two forms, one walk).
+    pub form: Form,
+    /// Unicode or ASCII (§ Two spellings).
+    pub spelling: Spelling,
+}
+
+impl From<Form> for Style
+{
+    /// `form` in the default spelling, Unicode.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(form: Form) -> Self
+    {
+        Self {
+            form,
+            spelling: Spelling::Unicode,
+        }
+    }
+}
+
+/// A declaration's name a presentation writes: the bytes of its text the name
+/// stands at, and the constant it names.
+///
+/// # Specification
+/// - requires: built by the printer from a [`Source::declaration`] answer.
+/// - ensures: `start .. end` are the bytes of the presentation's text that
+///   spell the name, on character boundaries.
+/// - provides: what links a written name to its declaration without matching
+///   its text, which a bound variable may share.
+/// - panics: none.
+/// - executable: none — a carrier; the presentation entry points state where
+///   each comes from.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a type naming a family, an abstract type and a declared
+///   value lists each name it writes at the bytes it wrote it, laid out at a
+///   page and on one line; a bound variable sharing a family's name lists
+///   nothing.
+/// - witness: `tests::goldens::each_written_constant_name_is_listed_where_it_stands_1441`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct WrittenName
+{
+    /// The byte of the text the name starts at.
+    start: OutputBytes,
+    /// The byte past the name's end.
+    end: OutputBytes,
+    /// The declaration the name stands for.
+    constant: ConstantIndex,
+}
+
+impl WrittenName
+{
+    /// A name of `constant` `length` bytes long, written from the byte
+    /// `start`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the name ends `length` past `start`, saturating.
+    /// - panics: none.
+    /// - executable: none — a constructor; the printer's witness reads its
+    ///   ranges back out of the text.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`WrittenName`].
+    /// - witness: `tests::goldens::each_written_constant_name_is_listed_where_it_stands_1441`
+    pub(crate) fn new(
+        start: OutputBytes,
+        length: OutputBytes,
+        constant: ConstantIndex,
+    ) -> Self
+    {
+        Self {
+            start,
+            end: past(start, length),
+            constant,
+        }
+    }
+
+    /// The byte of the text the name starts at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn start(&self) -> OutputBytes
+    {
+        self.start
+    }
+
+    /// The byte past the name's end.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn end(&self) -> OutputBytes
+    {
+        self.end
+    }
+
+    /// The declaration the name stands for.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn constant(&self) -> ConstantIndex
+    {
+        self.constant
+    }
+
+    /// This name, written `by` bytes further into a text.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: both ends moved `by`, saturating; the constant kept.
+    /// - panics: none.
+    /// - executable: none — the printer's witness reads each moved range back
+    ///   out of the text it moved into.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`WrittenName`].
+    /// - witness: `tests::goldens::each_written_constant_name_is_listed_where_it_stands_1441`
+    pub(crate) fn shifted(
+        self,
+        by: OutputBytes,
+    ) -> Self
+    {
+        Self {
+            start: past(self.start, by),
+            end: past(self.end, by),
+            constant: self.constant,
+        }
+    }
+}
+
+/// How many bytes `glyphs` take, saturating at the largest count.
+///
+/// # Specification
+/// trivial.
+pub(crate) fn written_bytes(glyphs: Glyphs<'_>) -> OutputBytes
+{
+    OutputBytes::from(u64::try_from(glyphs.0.len()).unwrap_or(u64::MAX))
+}
+
+/// The byte `by` bytes past `from`, saturating at the largest count.
+///
+/// # Specification
+/// trivial.
+fn past(
+    from: OutputBytes,
+    by: OutputBytes,
+) -> OutputBytes
+{
+    OutputBytes::from(u64::from(from).saturating_add(u64::from(by)))
+}
+
+/// A node laid out at a page width.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Presentation
+{
+    /// The laid-out text, line feeds between its lines.
+    text: RenderedText,
+    /// Whether the text says the whole node.
+    fidelity: Fidelity,
+    /// Why each `?` the text holds was written.
+    unspelled: BTreeSet<Unspelled>,
+    /// Whether the text writes a wildcard.
+    wildcards: Wildcards,
+    /// Each declaration's name the text writes, in the order written.
+    names: Vec<WrittenName>,
+}
+
+impl Presentation
+{
+    /// Whether the text says the whole node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn fidelity(&self) -> Fidelity
+    {
+        self.fidelity
+    }
+
+    /// Why the printer wrote each `?` the text holds, one entry per reason.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn unspelled(&self) -> &BTreeSet<Unspelled>
+    {
+        &self.unspelled
+    }
+
+    /// Whether the text writes a wildcard `_`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn wildcards(&self) -> Wildcards
+    {
+        self.wildcards
+    }
+
+    /// Each declaration's name the text writes, where it stands and the
+    /// constant it names, in the order written.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`WrittenName`].
+    /// - witness: `tests::goldens::each_written_constant_name_is_listed_where_it_stands_1441`
+    #[inline]
+    #[must_use]
+    pub fn names(&self) -> &[WrittenName]
+    {
+        &self.names
+    }
+}
+
+impl AsRef<str> for Presentation
+{
+    /// The laid-out text.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &str
+    {
+        self.text.as_ref()
+    }
+}
+
+impl fmt::Display for Presentation
+{
+    /// Writes the laid-out text unchanged.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        fmt::Display::fmt(&self.text, f)
+    }
+}
+
+/// The type at `root` of `source`, laid out at `page`.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the root, a value type or a computation type, written in its one
+///   spelling; at a page the one-line spelling fits, exactly that line, and
+///   otherwise the layout of least overflow, then fewest lines, breaking after
+///   an arrow, an infix symbol or a comma with the continuation two columns in.
+///   A term at the root, a child of the wrong sort and every former without a
+///   surface spelling are written `?`, and the presentation is then
+///   approximate. A source taking more visits than one presentation makes is
+///   written `?`. Successful output contains neither carriage returns nor tabs;
+///   layout-owned line endings are line feeds.
+/// - provides: the type a transcript line, a hover or a diagnostic names.
+/// - fails: a layout ceiling reached while building or rendering; width
+///   ordering is never invalid, including at saturated computation widths.
+/// - panics: none.
+///
+/// # Errors
+/// Returns [`PresentationError::Build`] or [`PresentationError::Render`] when
+/// the layout engine refuses, and [`PresentationError::Unbalanced`] on a
+/// defect in the walk's own bookkeeping.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact spellings cover every core type former, and
+///   dependent arrows and arrow chains distinguish both page widths. These
+///   observe wrong formers, grouping and line endings over fixed sources. A
+///   scanned leaf that becomes a cycle distinguishes the second-pass budget;
+///   other source mutations, page widths and layout ceilings are not exhausted.
+/// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+/// - witness: `tests::goldens::n_ary_products_and_sums_spell_between_their_braces`
+/// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
+/// - witness: `tests::goldens::dependent_function_type_breaks_before_codomain`
+/// - witness: `tests::goldens::long_dependent_function_type_breaks_at_the_narrow_page`
+/// - witness: `tests::goldens::arrow_chain_breaks_before_each_continuation`
+/// - witness: `tests::goldens::nullary_declared_data_uses_its_bare_name`
+/// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+/// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
+    Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
+    Err(_) => true,
+})]
+#[inline]
+pub fn present_type<S>(
+    source: &S,
+    root: S::Node,
+    page: PageWidth,
+    style: Style,
+) -> Result<Presentation, PresentationError>
+where
+    S: Source + ?Sized,
+{
+    present(
+        source,
+        root,
+        (Admits::Type, Bodies::Spelled),
+        style,
+        Layout::Page(page),
+    )
+}
+
+/// The type at `root` of `source` as [`present_type`] spells it, on as few
+/// lines as it admits.
+///
+/// The layout a page no line overflows selects, written by the same walk
+/// straight into text, with no layout document built and no break searched
+/// for.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the text [`present_type`] writes at a page wider than every line,
+///   the same fidelity and the same unspelled reasons.
+/// - provides: the one-line spelling of a type, read before any layout: where
+///   it fits a page, it is exactly what [`present_type`] writes there.
+/// - fails: as [`present_type`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`present_type`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — every core type former's spelling on one line equals its
+///   layout at a page it fits; a choice taken the wrong way or a soft break
+///   kept changes the text.
+/// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
+    Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
+    Err(_) => true,
+})]
+#[inline]
+pub fn present_type_line<S>(
+    source: &S,
+    root: S::Node,
+    style: Style,
+) -> Result<Presentation, PresentationError>
+where
+    S: Source + ?Sized,
+{
+    present(
+        source,
+        root,
+        (Admits::Type, Bodies::Spelled),
+        style,
+        Layout::Line,
+    )
+}
+
+/// The value at `root` of `source`, laid out at `page`.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the root written as [`present_type`] writes a type, a value's
+///   formers spelled `*{}`, as their literal, `*{a, b}`, `*{.l = v}` in label
+///   order, `*{b | .l = v}` in label order, `+{.i = v}` at any summand,
+///   `Path.here(a)`, `Path.funext(f, g)`, `equiv(f, g)`, `ua[n, k](a, b, f,
+///   g)`, a constant by its name and the code of a type as the type; a thunk is
+///   written `<thunk>`, and a value [`DEPTH_LIMIT`] value formers deep is
+///   written `<deep>` inside the formers around it, each making the
+///   presentation approximate. Output has the same line-ending and width
+///   guarantees as [`present_type`].
+/// - provides: the normal form a transcript line or a probe shows.
+/// - fails: as [`present_type`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`present_type`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — escaped strings, sum and pair notation, a pair broken
+///   after its comma, and the depth bound are asserted at both page widths over
+///   values read back from evaluation. These distinguish lost escaping,
+///   notation and depth boundaries, not every numeric magnitude or layout
+///   refusal.
+/// - witness: `tests::goldens::string_controls_stay_in_one_escaped_literal`
+/// - witness: `tests::goldens::pair_of_injections_pins_sum_notation`
+/// - witness: `tests::goldens::n_ary_tuples_and_injections_spell_between_their_braces`
+/// - witness: `tests::goldens::record_value_breaks_fields_at_the_narrow_page`
+/// - witness: `tests::goldens::beyond_the_depth_limit_renders_deep`
+/// - witness: `tests::goldens::fidelity_follows_nodes_not_the_characters_of_a_name`
+/// - witness: `tests::goldens::here_witness_pins_identity_notation`
+/// - witness: `tests::goldens::univalence_spells_its_stratum_and_descriptions`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
+    Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
+    Err(_) => true,
+})]
+#[inline]
+pub fn present_value<S>(
+    source: &S,
+    root: S::Node,
+    page: PageWidth,
+    style: Style,
+) -> Result<Presentation, PresentationError>
+where
+    S: Source + ?Sized,
+{
+    present(
+        source,
+        root,
+        (Admits::Value, Bodies::Opaque),
+        style,
+        Layout::Page(page),
+    )
+}
+
+/// The value at `root` of `source` as [`present_value`] spells it, on as few
+/// lines as it admits.
+///
+/// The layout a page no line overflows selects, written by the same walk
+/// straight into text, with no layout document built and no break searched
+/// for.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the text [`present_value`] writes at a page wider than every
+///   line, the same fidelity and the same unspelled reasons.
+/// - provides: the one-line spelling of a value, as a derivation card's row
+///   shows a goal that is a value.
+/// - fails: as [`present_type`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`present_type`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — each value leaf and each constructor of the golden,
+///   written on one line, equals its layout at a page no line overflows; a
+///   choice taken the wrong way or a soft break kept changes the text.
+/// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
+    Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
+    Err(_) => true,
+})]
+#[inline]
+pub fn present_value_line<S>(
+    source: &S,
+    root: S::Node,
+    style: Style,
+) -> Result<Presentation, PresentationError>
+where
+    S: Source + ?Sized,
+{
+    present(
+        source,
+        root,
+        (Admits::Value, Bodies::Opaque),
+        style,
+        Layout::Line,
+    )
+}
+
+/// The value at `root` of `source`, a definition's body under its stated
+/// type, laid out at `page` as source that reads back.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the root written as [`present_value`] writes a value, but for
+///   what a reader reads back: a thunk written `thunk { c }`, its body as
+///   [`present_computation`] writes one, and a parameterised constructor below
+///   the root written against its family, `(MkIx : Ix(3))`, or against the type
+///   a definition computes for it, where the root itself stands bare, its type
+///   the definition's. Output has the same line-ending and width guarantees as
+///   [`present_type`].
+/// - provides: the body of a `def name = …` the lowering reads back to the same
+///   term against the definition's stated type.
+/// - fails: as [`present_type`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`present_type`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a constructor of a parameterised family, bare at the root
+///   and inside a constructor's field, and a thunk below the root, distinguish
+///   a lost annotation, an annotation at the root and an opaque thunk.
+/// - witness: `tests::goldens::a_definition_writes_its_constructors_against_their_family_815`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
+    Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
+    Err(_) => true,
+})]
+#[inline]
+pub fn present_definition<S>(
+    source: &S,
+    root: S::Node,
+    page: PageWidth,
+    style: Style,
+) -> Result<Presentation, PresentationError>
+where
+    S: Source + ?Sized,
+{
+    present(
+        source,
+        root,
+        (Admits::Stated, Bodies::Spelled),
+        style,
+        Layout::Page(page),
+    )
+}
+
+/// The computation at `root` of `source`, an elaborated body, laid out at
+/// `page` in its canonical form: every exit a path through it ends in elided.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the root written as the body of a definition: a returner where a
+///   path through the body ends written as its value and any other computation
+///   there bare, never `return` or `become`; a returner anywhere else `pure v`;
+///   a bind `let x = c ; rest`, the computation it runs a block `{ … }` when it
+///   is itself a bind; a force `force v`, a call `f(a, b)` with a forced value
+///   at its head written as the value; a lambda `fun (x) { c }` and a thunk
+///   `thunk { c }`; binders named as a dependent arrow's are; values and types
+///   inside as [`present_value`] and [`present_type`] write them, but for
+///   thunks. Every computation without a surface spelling here is `?`,
+///   approximate. The body's statements break together: on one line when it
+///   fits the page, one per line otherwise, a block's body two columns in.
+///   Output has the same line-ending and width guarantees as [`present_type`].
+/// - provides: the canonical printer of an elaborated body, which the lowering
+///   reads back to the same term.
+/// - fails: as [`present_type`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`present_type`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — bodies built as the lowering builds them, with their
+///   exits written and elided, a bind run by a bind, a call of a forced
+///   constant and a call of a returner, at the wide and a narrow page,
+///   distinguish a written exit, a lost `pure`, a missing block and binder
+///   capture; case analyses are asserted approximate.
+/// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
+    Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
+    Err(_) => true,
+})]
+#[inline]
+pub fn present_computation<S>(
+    source: &S,
+    root: S::Node,
+    page: PageWidth,
+    style: Style,
+) -> Result<Presentation, PresentationError>
+where
+    S: Source + ?Sized,
+{
+    present(
+        source,
+        root,
+        (Admits::Computation(Tail::Ends), Bodies::Spelled),
+        style,
+        Layout::Page(page),
+    )
+}
+
+/// The computation at `root` of `source` as [`present_computation`] spells
+/// it, on as few lines as it admits.
+///
+/// The layout a page no line overflows selects, written by the same walk
+/// straight into text, with no layout document built and no break searched
+/// for.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the text [`present_computation`] writes at a page wider than
+///   every line, the same fidelity and the same unspelled reasons; a body's
+///   statements on one line, a break only where the document admits no other.
+/// - provides: the spelling of a value a run prints, read as one line and never
+///   laid out to a page.
+/// - fails: as [`present_type`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`present_type`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — the elaborated bodies of the golden, with binds, blocks
+///   and calls, written on one line equal their layout at a page no line
+///   overflows; a choice taken the wrong way or a soft break kept changes the
+///   text.
+/// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
+    Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
+    Err(_) => true,
+})]
+#[inline]
+pub fn present_computation_line<S>(
+    source: &S,
+    root: S::Node,
+    style: Style,
+) -> Result<Presentation, PresentationError>
+where
+    S: Source + ?Sized,
+{
+    present(
+        source,
+        root,
+        (Admits::Computation(Tail::Ends), Bodies::Spelled),
+        style,
+        Layout::Line,
+    )
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a definition is not written whole.
+    pub mod whole {
+        /// The reason no `def name(…) -> C { b }` is written.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Its type is no suspended function.
+            NotAFunction,
+            /// Its body is no suspended abstraction of a parameter.
+            NotAbstracted,
+            /// No names for its parameters avoid every name the definition
+            /// mentions.
+            Unnamed,
+            /// Its linear parameters are not exactly the ones its list writes,
+            /// or a linear arrow takes a multiplicity other than one: the
+            /// arrow before the result says one taking for the whole list.
+            Untaken,
+        }
+    }
+}
+
+/// The definition `name` of `source`, `(ty, body)`, laid out at `page` whole.
+///
+/// It is `def name(x₁ : A₁, …, xₙ : Aₙ) -> C = b;`, or `def rec` over a
+/// fixpoint, or `def name() -> B = b;` for a suspended computation; either
+/// form writes a result `-F B` as `B`, the returner the lowering inserts, as
+/// either leaves out the exit the lowering infers, unless `B` is a value at a
+/// world or a region.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: when `ty` is `+U (A₁ -> … -> Aₙ -> C)`, any arrow dependent, and
+///   `body` is `thunk { fun (x₁) { … fun (xₙ) { b } … } }` — or `fun (x₁) { …
+///   }` read as a value at an arrow, the thunk the checker inserts — `n` the
+///   abstractions the arrows run through and `n ≥ 1` unless `C` is a returner
+///   `-F B`: the header `def name(x₁ : A₁, …, xₙ : Aₙ) -> C` — `C` written `B`
+///   in the sugared form when it is `-F B` with no effect row — each type under
+///   the binders of the dependent arrows before it, then `b` as
+///   [`present_computation`] writes it at a page two columns narrower under the
+///   context binding `x₁` to `xₙ`: ` = b;` when `b` is one line with no `;`,
+///   otherwise ` = {`, each line of `b` two columns in, then `};`. When `body`
+///   is instead `thunk { fun (x₁) { … fun (xₖ) { rec f { fun (xₖ₊₁) { … fun
+///   (xₙ) { b } … } } } … } }`, `k ≥ 0` of them outside the fixpoint and at
+///   least one inside, the header opens `def rec` and `b` stands under the
+///   context binding `x₁` to `xₖ`, `name`, then `xₖ₊₁` to `xₙ`. Each occurrence
+///   of the fixpoint's own binder is written with its claim: `name[<]` where
+///   the fixpoint claims structural recursion on a parameter, `name[>]` where
+///   it claims nothing; each call of it passes the uniform parameters `x₁` to
+///   `xₖ` as themselves before its own arguments. `xᵢ` is its dependent arrow's
+///   binder where the source names it and neither the definition nor an earlier
+///   parameter takes it, otherwise the next generated name that neither `name`,
+///   the definition nor an earlier parameter takes. Where a header type or the
+///   body keeps a value at a region binder, the header writes `[r : Region, …]`
+///   before the parameters, one binder per ordinal up to the greatest kept at,
+///   each `r`, `r1`, … where the definition takes no such name and named as a
+///   parameter is otherwise, and every `at` names its binder. Where `source`
+///   records a telescope for `constant` ([`CoreSource::naming_implicits`]) of
+///   one entry per parameter, each implicit `xᵢ` is written after the region
+///   binders as `xᵢ : Aᵢ`, `[xᵢ : Aᵢ, …]`, under the name the telescope records
+///   where nothing earlier takes it, and only the explicit parameters stand in
+///   the parentheses. Where the returner's row labels an instance of a theory
+///   whose entry `source` records ([`CoreSource::manifesting`]) at a region
+///   binder past every other the header writes, and a parameter is a capability
+///   at that binder, the row's label is the parameter's name, `[st : T with
+///   sort C = A]`, and neither the binder nor the parameter is written: `Cap
+///   {…}` names a host interface's operations alone. The presentation is
+///   approximate, its unspelled reasons collected, when a header type or the
+///   body is. Absent for any other shape, when no names for the parameters are
+///   found, and when the body abstracts fewer parameters than the arrows run
+///   through, whose result arrow the header reads no spelling of (#5219).
+/// - provides: the declaration a function definition reads back as, written
+///   whole: a recursive one where `def name = body` would write a fixpoint the
+///   surface spells only in its declaration, a suspended computation as the
+///   function form of no parameter, and any other where its parameters' stated
+///   types are what its body's observations read.
+/// - fails: as [`present_type`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`present_type`].
+///
+/// # Cost
+/// - allocation: the header's text, its parts and the names of its parameters,
+///   growth within the definition's header and body.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a descending fixpoint over a case, of one parameter and
+///   of two, a staged fixpoint and one claiming nothing distinguish a lost or
+///   wrong claim, a parameter left in the body, a lost header, a lost indent
+///   and a body under the wrong context; a fixpoint under one and two uniform
+///   parameters distinguishes a call that drops or reorders them and a body
+///   under the wrong context; a body mentioning the first candidate name
+///   distinguishes a captured parameter; a function of one parameter and of two
+///   with no fixpoint distinguishes a `def rec` written for it and a body under
+///   the wrong context; a suspended returner is written with no parameter; a
+///   lambda read as a value is written as the thunk holding it is; a fixpoint
+///   that abstracts nothing of its own is written as the body's loop; a
+///   function whose implicit's type names the explicit parameter before it
+///   writes the implicit in its telescope and the explicit one in parentheses;
+///   a body that abstracts nothing at an arrow, a body that abstracts fewer
+///   parameters than its arrows run through, and a type that is no function are
+///   absent.
+/// - witness: `tests::goldens::a_recursive_definition_spells_as_written_941`
+/// - witness: `tests::goldens::a_recursive_parameter_skips_the_names_its_body_mentions_941`
+/// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
+/// - witness: `tests::goldens::a_function_definition_spells_whole_941`
+/// - witness: `tests::goldens::a_definition_over_a_region_spells_its_binder_1221`
+/// - witness: `tests::goldens::a_suspended_returner_spells_whole_1449`
+/// - witness: `tests::goldens::a_lambda_the_checker_thunks_spells_whole_2228`
+/// - witness: `tests::goldens::a_definition_writes_its_implicits_in_its_telescope_2267`
+/// - witness: `tests::goldens::a_labelled_theory_entry_spells_its_label_3230`
+/// - witness: `tests::goldens::a_body_short_of_its_arrows_is_written_in_halves_5219`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(Maybe::Present(ref presentation)) => presentation.as_ref().starts_with("def ")
+        && presentation.as_ref().ends_with(';')
+        && !presentation.as_ref().contains(['\r', '\t']),
+    Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
+    Ok(Maybe::Absent(_)) | Err(_) => true,
+})]
+#[inline]
+pub fn present_whole(
+    source: &CoreSource<'_>,
+    (name, constant): (Name<'_>, ConstantIndex),
+    (ty, body): (ValueTypeId, ValueId),
+    page: PageWidth,
+    style: Style,
+) -> Result<Maybe<Presentation, whole::Absent>, PresentationError>
+{
+    let Former::ThunkType(function) = source.read(CoreNode::ValueType(ty))
+    else {
+        return Ok(Maybe::Absent(whole::Absent::NotAFunction));
+    };
+    let read = source.read(CoreNode::Value(body));
+    let suspended = if let Former::Thunk(suspended) = read {
+        suspended
+    }
+    else {
+        // A lambda read as a value at a function: the checker thunks it.
+        let Former::Nested(nested) = read
+        else {
+            return Ok(Maybe::Absent(whole::Absent::NotAbstracted));
+        };
+        if !matches!(
+            (source.read(nested), source.read(function)),
+            (Former::Lambda(_), Former::Arrow { .. } | Former::Pi { .. })
+                | (Former::LinearLambda(_), Former::LinearArrow { .. })
+        ) {
+            return Ok(Maybe::Absent(whole::Absent::NotAbstracted));
+        }
+        nested
+    };
+    // Each parameter: its arrow, its domain, and whether the arrow binds it
+    // in what follows; then the codomain and the body under them all. A
+    // linear arrow always binds its parameter's shadow, and its lambda is
+    // the linear one. The fixpoint stands after the uniform parameters, and
+    // its own abstractions follow it. A fixpoint under a suspended returner,
+    // or one with no abstraction of its own, abstracts nothing: it is the
+    // body's loop.
+    let returner = matches!(
+        source.read(function),
+        Former::Returner(_) | Former::EffectfulReturner { .. }
+    );
+    let mut arrows: Vec<(CoreNode, CoreNode, bool)> = Vec::new();
+    // Which parameters the linear arrows take, one flag per arrow.
+    let mut linear: Vec<bool> = Vec::new();
+    let mut fixpoint: Option<(Recursive, CoreNode)> = None;
+    let (mut codomain, mut inner) = (function, suspended);
+    loop {
+        if fixpoint.is_none()
+            && !returner
+            && let Former::Fixpoint(abstraction) = source.read(inner)
+            && let Some(claim) = source.recursion(inner)
+        {
+            fixpoint = Some((
+                Recursive {
+                    claim,
+                    uniform: Arity::from(arrows.len()),
+                },
+                inner,
+            ));
+            inner = abstraction;
+            continue;
+        }
+        let former = source.read(codomain);
+        let (domain, rest, dependent, taken) = if let Former::Arrow { domain, codomain } = former {
+            (domain, codomain, false, false)
+        }
+        else if let Former::Pi { domain, codomain } = former {
+            (domain, codomain, true, false)
+        }
+        else if let Former::LinearArrow {
+            domain,
+            multiplicity,
+            codomain,
+        } = former
+        {
+            if walk::elided_multiplicity(source, multiplicity).is_some() {
+                return Ok(Maybe::Absent(whole::Absent::Untaken));
+            }
+            (domain, codomain, true, true)
+        }
+        else {
+            break;
+        };
+        // A body that abstracts fewer parameters than its arrows run through
+        // leaves an arrow as the header's result. The header reads no
+        // computation arrow there, so the signature and the body write such a
+        // definition instead (#5219).
+        let ((Former::Lambda(under), false) | (Former::LinearLambda(under), true)) =
+            (source.read(inner), taken)
+        else {
+            return Ok(Maybe::Absent(whole::Absent::NotAbstracted));
+        };
+        arrows.push((codomain, domain, dependent));
+        linear.push(taken);
+        (codomain, inner) = (rest, under);
+    }
+    // A suspended returner abstracts nothing and is written whole with no
+    // parameter, as the function form that declares it.
+    if arrows.is_empty() && !returner {
+        return Ok(Maybe::Absent(
+            if matches!(
+                source.read(function),
+                Former::Arrow { .. } | Former::Pi { .. } | Former::LinearArrow { .. }
+            ) {
+                whole::Absent::NotAbstracted
+            }
+            else {
+                whole::Absent::NotAFunction
+            },
+        ));
+    }
+    // A fixpoint abstracting no parameter of its own is the body's loop.
+    if let Some((own, node)) = fixpoint
+        && usize::from(own.uniform) >= arrows.len()
+    {
+        fixpoint = None;
+        inner = node;
+    }
+    let fixpoint = fixpoint.map(|(own, _)| own);
+    let mut roots: Vec<(CoreNode, Admits)> = arrows
+        .iter()
+        .map(|&(_, domain, _)| (domain, Admits::Type))
+        .collect();
+    roots.push((codomain, Admits::Type));
+    roots.push((inner, Admits::Computation(Tail::Ends)));
+    // The region binders the types and the body keep values at are named
+    // first, then the parameters, all distinct and none mentioned.
+    let Maybe::Present(regions) = walk::regioned(source, &roots)
+    else {
+        return Ok(Maybe::Absent(whole::Absent::Unnamed));
+    };
+    let wanted: Vec<String> = regions
+        .iter()
+        .map(|&binder| match u32::from(binder) {
+            0_u32 => String::from("r"),
+            ordinal => format!("r{ordinal}"),
+        })
+        .collect();
+    // An implicit is written under the name its uses supply it by.
+    let implicit = source.telescope(constant);
+    let implicit = if implicit.len() == arrows.len() {
+        implicit
+    }
+    else {
+        &[]
+    };
+    // A model implicit is written whole, `[s : Model(S)]`, and each of its
+    // components under the path a body reads it by, `s.x`.
+    let slots: Vec<&ModelSlot<'_, CoreNode>> = source
+        .slots(constant)
+        .iter()
+        .filter(|slot| slot.at.saturating_add(slot.components.len()) <= arrows.len())
+        .collect();
+    let paths: Vec<Option<String>> = (0_usize .. arrows.len())
+        .map(|at| {
+            slots.iter().find_map(|slot| {
+                let &(component, _) = slot.components.get(at.checked_sub(slot.at)?)?;
+                Some(format!("{}.{}", slot.name.as_ref(), component.as_ref()))
+            })
+        })
+        .collect();
+    let preferred: Vec<Option<Name<'_>>> = wanted
+        .iter()
+        .map(|region| Some(Name::from(region.as_str())))
+        .chain(
+            arrows
+                .iter()
+                .zip(
+                    implicit
+                        .iter()
+                        .copied()
+                        .map(Some)
+                        .chain(core::iter::repeat(None)),
+                )
+                .zip(&paths)
+                .map(|((&(arrow, _, dependent), resident), path)| {
+                    path.as_deref()
+                        .map(Name::from)
+                        .or_else(|| resident.flatten())
+                        .or_else(|| {
+                            if dependent {
+                                source.written_binder(arrow)
+                            }
+                            else {
+                                None
+                            }
+                        })
+                }),
+        )
+        .collect();
+    // A stage binder has no arrow, and the header writes it first, `[i :
+    // Size]`: no parameter takes its name.
+    let stages = source.stages(constant);
+    let taken: Vec<Name<'_>> = core::iter::once(name)
+        .chain(slots.iter().map(|slot| slot.name))
+        .chain(stages.iter().map(|stage| stage.name))
+        .collect();
+    let Some(mut binders) = walk::parameters(source, &roots, &taken, &preferred)
+    else {
+        return Ok(Maybe::Absent(whole::Absent::Unnamed));
+    };
+    let names = binders.split_off(regions.len());
+    // A row's labelled entry over a theory is written as its label, `[st : T
+    // with sort C = A]`: `Cap {…}` names a host interface's operations alone,
+    // so its capability and its region binder go unwritten, the row's label
+    // the capability's name. Each such entry pairs the first parameter that
+    // is a capability at its label's binder with that binder's position, and
+    // only where those binders are the header's last: a label's binder is
+    // opened after every one the header writes.
+    let labelled: Vec<(usize, usize)> = {
+        use gandr_core_term::effect::capability::Region;
+
+        let mut capabilities = alloc::collections::BTreeMap::new();
+        for (at, &(_, domain, _)) in arrows.iter().enumerate() {
+            if let Former::Capability {
+                region: Region::Bound(binder),
+                ..
+            } = source.read(domain)
+            {
+                let _first = capabilities.entry(binder).or_insert(at);
+            }
+        }
+        let mut labelled = Vec::new();
+        if let Former::EffectfulReturner { manifests, .. } = source.read(codomain) {
+            for manifest in manifests {
+                if let Region::Bound(binder) = manifest.region
+                    && let Ok(position) = regions.binary_search(&binder)
+                    && let Some(&at) = capabilities.get(&binder)
+                {
+                    labelled.push((at, position));
+                }
+            }
+        }
+        let mut positions: Vec<usize> = labelled.iter().map(|&(_, position)| position).collect();
+        positions.sort_unstable();
+        let last = regions.len().saturating_sub(positions.len());
+        if positions.iter().copied().eq(last .. regions.len()) {
+            labelled
+        }
+        else {
+            Vec::new()
+        }
+    };
+    let label_at = |position: usize| {
+        labelled
+            .iter()
+            .find(|&&(_, held)| held == position)
+            .and_then(|&(at, _)| names.get(at))
+    };
+    let bounding: Vec<Option<Name<'_>>> = binders
+        .iter()
+        .enumerate()
+        .map(|(position, region)| {
+            Some(Name::from(
+                label_at(position).map_or(region.as_str(), String::as_str),
+            ))
+        })
+        .collect();
+    let source = source.bounding(&bounding).staged(stages);
+    // A type stands under the binders of the dependent arrows before it;
+    // the body under the parameters, the definition's own binder among them
+    // where it recurses, after the uniform ones.
+    let mut bound: Vec<Option<Name<'_>>> = Vec::new();
+    let mut parts: Vec<Presentation> = Vec::with_capacity(arrows.len().saturating_add(2_usize));
+    // Each sort a slot's type fixes is read under the parameters before the
+    // slot.
+    let mut fixed: Vec<Vec<(Name<'_>, Presentation)>> = Vec::with_capacity(slots.len());
+    for (at, (&(_, domain, dependent), parameter)) in arrows.iter().zip(&names).enumerate() {
+        let within = source.within(&bound);
+        for slot in slots.iter().filter(|slot| slot.at == at) {
+            let mut sorts = Vec::with_capacity(slot.fixed.len());
+            for &(sort, ty) in &slot.fixed {
+                sorts.push((sort, present_type(&within, ty, page, style)?));
+            }
+            fixed.push(sorts);
+        }
+        let typed = present_type(&within, domain, page, style)?;
+        parts.push(typed);
+        if dependent {
+            bound.push(Some(Name::from(parameter.as_str())));
+        }
+    }
+    // Either form leaves the returner the lowering inserts unwritten, as
+    // either leaves out the exit it infers: the result is its value type
+    // alone, and a row the returner carries is written before it, `-> [E]
+    // A`. A value at a world or a region keeps it: `-> A at w` reads as a
+    // computation placed at `w`.
+    let inserted = |value| {
+        !matches!(
+            source.read(value),
+            Former::Located { .. } | Former::Kept { .. }
+        )
+    };
+    let read = source.read(codomain);
+    let (result, rowed) = if let Former::Returner(value) = read
+        && inserted(value)
+    {
+        (value, Rowed::No)
+    }
+    else if let Former::EffectfulReturner { result, .. } = read
+        && match result {
+            Returned::One(value) => inserted(value),
+            Returned::Group(_) => true,
+        }
+    {
+        (codomain, Rowed::Yes)
+    }
+    else {
+        (codomain, Rowed::No)
+    };
+    let returned = present_type(&source.within(&bound), result, page, style)?;
+    let own = fixpoint.map(|recursive| usize::from(recursive.uniform));
+    let context: Vec<Option<Name<'_>>> = names
+        .iter()
+        .enumerate()
+        .flat_map(|(at, parameter)| {
+            (Some(at) == own)
+                .then_some(Some(name))
+                .into_iter()
+                .chain(core::iter::once(Some(Name::from(parameter.as_str()))))
+        })
+        .collect();
+    let within = source.within(&context);
+    let (under, opener) = fixpoint.map_or((within, "def"), |recursive| {
+        (within.recursing(recursive, implicit), "def rec")
+    });
+    let narrower = PageWidth::from(u32::from(page).saturating_sub(2_u32).max(1_u32));
+    let spelled = present_computation(&under, inner, narrower, style)?;
+    // The header's entries, each once and in order, under one rule: the
+    // region binders no row's label carries, then each parameter where it is
+    // written. A capability a label names is written by the label, and a
+    // model slot's components past its first by the slot.
+    let mut header: Vec<Entry> = binders
+        .iter()
+        .enumerate()
+        .filter(|&(position, _)| label_at(position).is_none())
+        .map(|(position, _)| Entry::Region(position))
+        .collect();
+    let labels: alloc::collections::BTreeSet<usize> = labelled.iter().map(|&(at, _)| at).collect();
+    let mut starts = alloc::collections::BTreeMap::new();
+    for (index, slot) in slots.iter().enumerate() {
+        let _first = starts.entry(slot.at).or_insert(index);
+    }
+    for at in 0_usize .. names.len() {
+        if labels.contains(&at) {
+            continue;
+        }
+        if let Some(&index) = starts.get(&at) {
+            header.push(Entry::Model { at, index });
+        }
+        else if implicit.get(at).is_some_and(Option::is_some) {
+            header.push(Entry::Implicit(at));
+        }
+        else if paths.get(at).is_none_or(Option::is_none) {
+            header.push(Entry::Explicit(at));
+        }
+    }
+    // The arrow before the result takes the written list whole: `⊸` where
+    // every parameter it writes is linear and none other is, `->` where none
+    // is.
+    let taking: &str = if linear.iter().any(|&taken| taken) {
+        let taken = |at: usize| linear.get(at).copied().unwrap_or(false);
+        let written_linearly = header.iter().all(|&entry| match entry {
+            Entry::Explicit(at) => taken(at),
+            Entry::Implicit(at) | Entry::Model { at, .. } => !taken(at),
+            Entry::Region(_) => true,
+        }) && labels.iter().all(|&at| !taken(at))
+            && paths
+                .iter()
+                .enumerate()
+                .all(|(at, path)| path.is_none() || !taken(at));
+        if !written_linearly {
+            return Ok(Maybe::Absent(whole::Absent::Untaken));
+        }
+        gandr_surface_grammar::LINEAR_ARROW
+            .written(style.spelling)
+            .0
+    }
+    else {
+        "->"
+    };
+    let mut text = format!("{opener} {}", name.as_ref());
+    let mut written = Vec::new();
+    let mut telescope = header
+        .iter()
+        .filter(|entry| !matches!(entry, Entry::Explicit(_)))
+        .peekable();
+    if !stages.is_empty() || telescope.peek().is_some() {
+        text.push('[');
+        // Each stage, in stage order, then the bound of a stage below an
+        // earlier one, `[n : Size, i : Size, i < n]`.
+        for (place, stage) in stages.iter().enumerate() {
+            if place > 0_usize {
+                text.push_str(", ");
+            }
+            text.push_str(stage.name.as_ref());
+            text.push_str(" : Size");
+            if let gandr_kernel_term::StageBound::Below(over) = stage.bound
+                && let Some(over) = stages.get(usize::from(over))
+            {
+                for part in [", ", stage.name.as_ref(), " < ", over.name.as_ref()] {
+                    text.push_str(part);
+                }
+            }
+        }
+        for (place, &entry) in telescope.enumerate() {
+            if place > 0_usize || !stages.is_empty() {
+                text.push_str(", ");
+            }
+            let at = match entry {
+                Entry::Region(position) => {
+                    if let Some(region) = binders.get(position) {
+                        text.push_str(region);
+                        text.push_str(" : Region");
+                    }
+                    continue;
+                },
+                Entry::Model { at, index } => {
+                    if let (Some(slot), Some(sorts)) = (slots.get(index), fixed.get(index)) {
+                        for part in [slot.name.as_ref(), " : Model ", slot.theory.as_ref()] {
+                            text.push_str(part);
+                        }
+                        for &(sort, ref typed) in sorts {
+                            for part in [" with sort ", sort.as_ref(), " = "] {
+                                text.push_str(part);
+                            }
+                            appended(&mut text, &mut written, typed);
+                        }
+                        continue;
+                    }
+                    at
+                },
+                Entry::Implicit(at) | Entry::Explicit(at) => at,
+            };
+            if let (Some(parameter), Some(typed)) = (names.get(at), parts.get(at)) {
+                text.push_str(parameter);
+                text.push_str(" : ");
+                appended(&mut text, &mut written, typed);
+            }
+        }
+        text.push(']');
+    }
+    text.push('(');
+    let explicit = header.iter().filter_map(|&entry| match entry {
+        Entry::Explicit(at) => Some(at),
+        Entry::Region(_) | Entry::Model { .. } | Entry::Implicit(_) => None,
+    });
+    for (place, at) in explicit.enumerate() {
+        let (Some(parameter), Some(typed)) = (names.get(at), parts.get(at))
+        else {
+            continue;
+        };
+        if place > 0_usize {
+            text.push_str(", ");
+        }
+        text.push_str(parameter);
+        text.push_str(" : ");
+        appended(&mut text, &mut written, typed);
+    }
+    text.push_str(") ");
+    text.push_str(taking);
+    text.push(' ');
+    match rowed {
+        Rowed::Yes => appended_unreturned(&mut text, &mut written, &returned),
+        Rowed::No => appended(&mut text, &mut written, &returned),
+    }
+    // One line with no statement is the body alone after `=`. Any other
+    // body is a block after `=`, written a line at a time, two columns in: a
+    // name moves by where its line lands.
+    if spelled.as_ref().contains(['\n', ';']) {
+        text.push_str(" = {");
+        let mut line_from = 0_u64;
+        for line in spelled.as_ref().lines() {
+            text.push('\n');
+            if !line.is_empty() {
+                text.push_str("  ");
+            }
+            let line_end = line_from.saturating_add(u64::from(written_bytes(Glyphs(line))));
+            let moved = OutputBytes::from(
+                u64::from(written_bytes(Glyphs(&text))).saturating_sub(line_from),
+            );
+            written.extend(
+                spelled
+                    .names
+                    .iter()
+                    .filter(|name| (line_from .. line_end).contains(&u64::from(name.start())))
+                    .map(|name| name.shifted(moved)),
+            );
+            text.push_str(line);
+            line_from = line_end.saturating_add(1_u64);
+        }
+        text.push_str("\n};");
+    }
+    else {
+        text.push_str(" = ");
+        appended(&mut text, &mut written, &spelled);
+        text.push(';');
+    }
+    parts.push(returned);
+    parts.push(spelled);
+    Ok(Maybe::Present(Presentation {
+        text: RenderedText::from(text),
+        fidelity: if parts.iter().all(|part| part.fidelity == Fidelity::Faithful) {
+            Fidelity::Faithful
+        }
+        else {
+            Fidelity::Approximate
+        },
+        unspelled: parts
+            .iter()
+            .flat_map(|part| part.unspelled.iter().copied())
+            .collect(),
+        wildcards: if parts
+            .iter()
+            .any(|part| part.wildcards == Wildcards::Written)
+        {
+            Wildcards::Written
+        }
+        else {
+            Wildcards::Unwritten
+        },
+        names: written,
+    }))
+}
+
+/// Append `part`'s text to `text`, and its names, moved past what `text`
+/// held, to `names`.
+///
+/// # Specification
+/// trivial.
+fn appended(
+    text: &mut String,
+    names: &mut Vec<WrittenName>,
+    part: &Presentation,
+)
+{
+    let before = written_bytes(Glyphs(text));
+    names.extend(part.names.iter().map(|name| name.shifted(before)));
+    text.push_str(part.as_ref());
+}
+
+/// An entry of a whole definition's header, where [`present_whole`] writes
+/// it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Entry
+{
+    /// The region binder at the position, `r : Region` in the telescope.
+    Region(usize),
+    /// The model slot `index` whose first component is the parameter `at`,
+    /// `s : Model(S)` in the telescope.
+    Model
+    {
+        /// The parameter of the slot's first component.
+        at: usize,
+        /// The slot's place among the definition's slots.
+        index: usize,
+    },
+    /// The implicit parameter at the place, `x : A` in the telescope.
+    Implicit(usize),
+    /// The explicit parameter at the place, `x : A` in the parentheses.
+    Explicit(usize),
+}
+
+/// Whether a definition's result is written as the row of the returner the
+/// lowering inserts and the type after it, `-> [E] A`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Rowed
+{
+    /// `-> [E] A`, for `-> -F [E] A`.
+    Yes,
+    /// The result as it presents.
+    No,
+}
+
+/// Append `part`, a returner with its row, `-F [E] A`, to `text` as the row
+/// and the type the inserted returner leaves, `[E] A`, and its names, moved
+/// past what `text` held less the returner's tile, to `names`.
+///
+/// # Specification
+/// trivial.
+fn appended_unreturned(
+    text: &mut String,
+    names: &mut Vec<WrittenName>,
+    part: &Presentation,
+)
+{
+    let returner = "-F ";
+    let Some(rowed) = part.as_ref().strip_prefix(returner)
+    else {
+        appended(text, names, part);
+        return;
+    };
+    let before = u64::from(written_bytes(Glyphs(text)));
+    let moved =
+        OutputBytes::from(before.saturating_sub(u64::from(written_bytes(Glyphs(returner)))));
+    names.extend(part.names.iter().map(|name| name.shifted(moved)));
+    text.push_str(rowed);
+}
+
+/// Where a presentation is written: laid out at a page, or on as few lines
+/// as the document admits.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Layout
+{
+    /// Laid out at the page by the resolver.
+    Page(PageWidth),
+    /// Written straight into text, on as few lines as admitted.
+    Line,
+}
+
+/// The node at `root` of `source`, at a `position` admitting its [`Admits`]
+/// with thunks written as its [`Bodies`] says, written in `style` as `layout`
+/// asks.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the walk's document rendered at the page of a [`Layout::Page`],
+///   the computation width twice the page, saturating at its maximum, so the
+///   resolver can prove which candidates fit; for [`Layout::Line`], the walk
+///   written straight into text on as few lines as it admits, no layout
+///   document built. Over-budget walks produce `?`, approximate. Successful
+///   text has no carriage return or tab; layout-owned endings are line feeds.
+///   Computation width is never narrower than the page.
+/// - provides: the one path every entry point takes.
+/// - fails: as [`present_type`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`present_type`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact narrow and wide layouts distinguish the chosen
+///   breaks and line-ending policy; cyclic and deep sources distinguish
+///   approximation. A scanned leaf becoming a cycle observes the independent
+///   walk budget; other source mutations and meter refusals are not exhausted.
+/// - witness: `tests::goldens::arrow_chain_breaks_before_each_continuation`
+/// - witness: `tests::goldens::string_controls_stay_in_one_escaped_literal`
+/// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+/// - witness: `tests::goldens::beyond_the_depth_limit_renders_deep`
+/// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
+    Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
+    Err(_) => true,
+})]
+fn present<S>(
+    source: &S,
+    root: S::Node,
+    position: (Admits, Bodies),
+    style: Style,
+    layout: Layout,
+) -> Result<Presentation, PresentationError>
+where
+    S: Source + ?Sized,
+{
+    let spelled = |composer: &mut dyn Compose| {
+        Ok::<_, PresentationError>(match walk(source, root, position, style, composer)? {
+            Walked::Built {
+                doc,
+                fidelity,
+                unspelled,
+                wildcards,
+            } => (doc, fidelity, unspelled, wildcards),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a source taking more visits than one presentation makes, a cycle, \
+                              has no finite spelling"
+                )
+            )]
+            Walked::OverBudget => (
+                composer.text(Glyphs("?"))?,
+                Fidelity::Approximate,
+                BTreeSet::from([Unspelled::OverBudget]),
+                Wildcards::Unwritten,
+            ),
+        })
+    };
+    let (text, fidelity, unspelled, wildcards, names) = match layout {
+        Layout::Page(page) => {
+            let mut meter = BuildMeter::new(BuildLimits::default());
+            let mut builder = DocBuilder::try_new(&mut meter)?;
+            let mut paged = Paged::new(&mut builder);
+            let (doc, fidelity, unspelled, wildcards) = spelled(&mut paged)?;
+            let doc = paged.handle(doc)?;
+            let named = paged.into_names();
+            let arena = builder.finish()?;
+            let computation = ComputationWidth::from(u32::from(page).saturating_mul(2_u32));
+            let options = LayoutOptions::try_new(page, computation, PhysicalLineEnding::Lf)?;
+            let mut render_meter = RenderMeter::new(RenderLimits::default());
+            let rendered = render(&arena, doc, &options, &mut render_meter)?;
+            let names = named.placed(&rendered.marks);
+            (rendered.text, fidelity, unspelled, wildcards, names)
+        },
+        Layout::Line => {
+            let mut line = OneLine::new();
+            let (doc, fidelity, unspelled, wildcards) = spelled(&mut line)?;
+            let (text, names) = line.into_parts(doc)?;
+            (
+                RenderedText::from(text),
+                fidelity,
+                unspelled,
+                wildcards,
+                names,
+            )
+        },
+    };
+    Ok(Presentation {
+        text,
+        fidelity,
+        unspelled,
+        wildcards,
+        names,
+    })
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::ValueDepth;
+
+    #[test]
+    fn value_depth_saturates_without_wrapping()
+    {
+        assert_eq!(ValueDepth::ROOT.deeper(), ValueDepth(1_u32));
+        assert_eq!(
+            ValueDepth(u32::MAX.saturating_sub(1_u32)).deeper(),
+            ValueDepth(u32::MAX)
+        );
+        assert_eq!(ValueDepth(u32::MAX).deeper(), ValueDepth(u32::MAX));
+    }
+}

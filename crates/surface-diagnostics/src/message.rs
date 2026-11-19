@@ -1,0 +1,3179 @@
+//! The message a report leads with: what went wrong, in the words of the
+//! language a user writes.
+//!
+//! # The message is the user's; the title is the producer's
+//!
+//! Every producer words its refusals for whoever reads its own code: the
+//! lowering names the grammar's sorts (`` `thunk_expression` has an operand
+//! where it takes none ``), the checker names its rules and positions. A
+//! diagnostic keeps that text as its detail's
+//! [`title`](crate::DiagnosticDetail::title) and leads with its
+//! [`Message`](crate::Message) instead: one per refusal variant, chosen by an
+//! exhaustive match, naming forms in the words the source is written in, and
+//! naming no grammar sort, admission position or node. A refusal no source can
+//! reach — a run fault or a producer's broken invariant — says so, as an
+//! internal error.
+//!
+//! Each producer words its refusals for whoever reads its code: the lowering
+//! names the grammar's sorts (`` `hole` has an operand where it takes none ``),
+//! the checker its rules (`the rule here requires a thunk type`). A report
+//! keeps that text as `DiagnosticDetail::title` and leads with its `Message`
+//! instead: one plain message per refusal variant, chosen by an exhaustive
+//! match in `message.rs`, naming the source's own names and its forms in words
+//! (`this hole has an operand it does not take`, `expected a thunk type`, ``
+//! `missing` is not defined ``), and naming no grammar sort, node or admission
+//! position. A refusal only a producer's broken invariant reaches says
+//! `internal error:`. Every other report's message is its title, which is
+//! already the user's. The terminal and the language server both lead with the
+//! message; the title stays for a face that wants the producer's words, the
+//! verbosity levels in particular.
+//!
+//! The alternative was rewording each producer's `Display`, which would leave
+//! the implementer text nowhere: the lowering's and the checker's own tests,
+//! ledger lines and a detailed verbosity read it. Reversal: when no face reads
+//! the producer's text, the two collapse into one. Witness:
+//! `message::tests::every_refusal_name_has_a_plain_message`, which builds one
+//! refusal of every vocabulary name and holds each message to one line with no
+//! grammar sort.
+//!
+//! # References
+//!
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: the composite's
+//!   three refusals, each worded by what the stratum, the chain or a wire
+//!   lacks.
+
+use core::fmt;
+
+use gandr_core_checker::CheckRefusalOf;
+use gandr_core_checker::CheckingFormOf;
+use gandr_core_checker::ExpectedShape;
+use gandr_core_checker::Keyed;
+use gandr_core_checker::Naming;
+use gandr_core_checker::TacticFault;
+use gandr_core_checker::access::AccessDefect;
+use gandr_core_checker::codata::CodataFault;
+use gandr_core_checker::comonoid::Grade;
+use gandr_core_checker::session::ForkSide;
+use gandr_core_checker::session::LinearityDefectOf;
+use gandr_core_checker::session::ProtocolDefect;
+use gandr_core_checker::ua::StratumDefect;
+use gandr_core_checker::ua::UaDefect;
+use gandr_core_checker::worlds::Crossed;
+use gandr_core_checker::worlds::LocatedDefectOf;
+use gandr_core_checker::worlds::Predicate;
+use gandr_core_term::compose::Form;
+use gandr_surface_corpus::BoundaryClause;
+use gandr_surface_corpus::CorpusRefusal;
+use gandr_surface_corpus::RefusalOf;
+use gandr_surface_lowering::BuiltinFault;
+use gandr_surface_lowering::Ending;
+use gandr_surface_lowering::FormFault;
+use gandr_surface_lowering::FormName;
+use gandr_surface_lowering::FragmentBoundary;
+use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::MatchFault;
+use gandr_surface_lowering::Repair;
+use gandr_surface_lowering::Unexported;
+use gandr_surface_syntax::ClosingClass;
+use gandr_surface_syntax::GroutShape;
+use quenchant_shape::shape::Maybe;
+
+use crate::locus::Action;
+use crate::locus::Captor;
+use crate::locus::Former;
+use crate::locus::Shape;
+use crate::locus::Site;
+use crate::locus::Stood;
+
+/// A refusal's plain message. It names no node, so it reads a refusal under
+/// any naming of its nodes.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub struct Plain<'step, N = Keyed>(pub RefusalOf<'step, N>)
+where
+    N: Naming;
+
+impl<N> fmt::Display for Plain<'_, N>
+where
+    N: Naming,
+{
+    /// Writes the refusal's plain message.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes one message per refusal variant, naming the source's
+    ///   own names and forms and no grammar sort or node; propagates a write
+    ///   failure.
+    /// - provides: the message of every refusal report.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no output buffer or
+    ///   independent observation of the destination's failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one refusal of every vocabulary name writes a
+    ///   nonempty, single-line message with no underscore-joined grammar sort.
+    /// - witness: `message::tests::every_refusal_name_has_a_plain_message`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match self.0 {
+            RefusalOf::Lowering(refusal) => lowered(refusal, f),
+            RefusalOf::Checking(refusal) => checked(refusal, f),
+            RefusalOf::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { schema, .. }) => {
+                write!(
+                    f,
+                    "`{schema}` is an expectation only a fixture may state; outside the fixture \
+                     root a declaration states `checks` or `runs`"
+                )
+            },
+            RefusalOf::Corpus(CorpusRefusal::BoundaryUnrealised { clause, .. }) => {
+                f.write_str(match clause {
+                    BoundaryClause::Arity => {
+                        "a member of the block takes a different number of arguments than its row"
+                    },
+                    BoundaryClause::Members => {
+                        "the block declares a different number of members than its `boundary` \
+                         attribute names rows"
+                    },
+                    BoundaryClause::Size => {
+                        "a type a member of the block declares differs in size from its row's"
+                    },
+                    BoundaryClause::Align => {
+                        "a type a member of the block declares differs in alignment from its row's"
+                    },
+                    BoundaryClause::Niche => {
+                        "a type a member of the block declares keeps its discriminant in a niche \
+                         where its row's does not, or the reverse"
+                    },
+                    BoundaryClause::Destroy => {
+                        "a type a member of the block declares needs drop where its row's value is \
+                         handled bitwise"
+                    },
+                    BoundaryClause::Unanswered => {
+                        "the block's boundary check answered no admission"
+                    },
+                })
+            },
+        }
+    }
+}
+
+/// A form's name in the words a user reads: the grammar's kind with its
+/// underscores spaced, and a word of one letter, which names a type former
+/// (`F`, `U`), in capitals.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub struct Spoken(pub FormName);
+
+impl fmt::Display for Spoken
+{
+    /// Writes the form's kind with each underscore a space, and each word of
+    /// one letter in capitals.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        for word in self.0.as_ref().split('_').enumerate() {
+            if word.0 > 0_usize {
+                f.write_str(" ")?;
+            }
+            if word.1.len() == 1_usize {
+                f.write_str(&word.1.to_ascii_uppercase())?;
+            }
+            else {
+                f.write_str(word.1)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// A form's name with the indefinite article its spoken name takes: `an`
+/// before a vowel sound, `a` otherwise.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Indefinite(FormName);
+
+impl fmt::Display for Indefinite
+{
+    /// Writes `an ` before a name that opens on a vowel sound, `a ` before any
+    /// other, then the name as [`Spoken`] writes it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the article is `an` exactly when the name opens with a vowel
+    ///   letter and not with `uni` or `use`, which open on a `y` sound (`a
+    ///   unit`, `an unpack statement`), or with a word of one letter whose name
+    ///   opens on a vowel sound (`an F type`, `a U type`).
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no output buffer.
+    ///
+    /// # Errors
+    /// The formatter's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the wrong-sort refusal writes `an identifier`, `an
+    ///   instantiation expression`, `a unit`, `a hole`, `an F type` and `a U
+    ///   type`.
+    /// - witness: `message::tests::a_form_takes_the_article_its_name_is_spoken_with_417`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        let name = self.0.as_ref();
+        let first = name.split('_').next().unwrap_or(name);
+        let vowel = if first.len() == 1_usize {
+            first.starts_with(['a', 'e', 'f', 'h', 'i', 'l', 'm', 'n', 'o', 'r', 's', 'x'])
+        }
+        else {
+            name.starts_with(['a', 'e', 'i', 'o', 'u'])
+                && !name.starts_with("uni")
+                && !name.starts_with("use")
+        };
+        let article = if vowel { "an" } else { "a" };
+        write!(f, "{article} {}", Spoken(self.0))
+    }
+}
+
+/// Writes the plain message of a lowering refusal.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: writes one message per variant, the form a malformed or
+///   unadmitted form names spoken in words, and the ascription a number with a
+///   fraction needs where it states no type; propagates a write failure.
+/// - provides: the lowering half of [`Plain`].
+/// - fails: if the formatter rejects a write.
+/// - panics: none.
+/// - executable: none — the formatter exposes no output buffer.
+///
+/// # Errors
+/// The formatter's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one refusal of every lowering name writes a nonempty,
+///   single-line message with no grammar sort.
+/// - witness: `message::tests::every_refusal_name_has_a_plain_message`
+fn lowered(
+    refusal: LoweringRefusal<'_>,
+    f: &mut fmt::Formatter<'_>,
+) -> fmt::Result
+{
+    match refusal {
+        LoweringRefusal::UnresolvedName { name, .. } => write!(f, "`{name}` is not defined"),
+        LoweringRefusal::RetiredName { form, .. } => write!(
+            f,
+            "`{}` is a retired spelling, and `{}` replaces it",
+            form.written().0,
+            form.replaced_by().0
+        ),
+        LoweringRefusal::BuiltinMark { fault, .. } => f.write_str(match fault {
+            BuiltinFault::NoRow => "the `builtin` key names no row of the builtin table",
+            BuiltinFault::Bodied => "a declaration of a given row has no body",
+            BuiltinFault::Unbodied => "a declaration of a found row has a body",
+            BuiltinFault::OutsideToolchain => {
+                "only a package of the toolchain writes a `builtin` mark"
+            },
+            BuiltinFault::TypeDiffers => "the declared type is not the type of the builtin row",
+            BuiltinFault::Repeated => "an earlier declaration holds this builtin row",
+        }),
+        LoweringRefusal::UnresolvedDocLink { name, .. } => {
+            write!(
+                f,
+                "the documentation links to `{name}`, which is not defined"
+            )
+        },
+        LoweringRefusal::UnresolvedTypeHead { name, arity, .. } => {
+            write!(f, "no type named `{name}` is written {arity}")
+        },
+        LoweringRefusal::DuplicateSignature { name, .. } => {
+            write!(f, "`{name}` is given a type twice")
+        },
+        LoweringRefusal::DuplicateDefinition { name, .. } => {
+            write!(f, "`{name}` is defined twice")
+        },
+        LoweringRefusal::DuplicateImportAlias { alias, .. } => {
+            write!(f, "two imports are both named `{alias}`")
+        },
+        LoweringRefusal::ImportUnresolved { .. } => f.write_str(
+            "this import names no source the root holds, so this source's declarations are not read",
+        ),
+        LoweringRefusal::ImportCycle { .. } => f.write_str(
+            "this import leads back to this source, so its declarations are not read",
+        ),
+        LoweringRefusal::UnlockedDependency { alias, .. } => write!(
+            f,
+            "`{alias}` is no module of this package and no dependency its lock records: run `gandr lock` to lock the coordinate it imports"
+        ),
+        LoweringRefusal::SignatureMismatch {
+            signature,
+            member,
+            fault,
+            ..
+        } => match fault {
+            MatchFault::Missing => write!(
+                f,
+                "this import is read at `{signature}`, whose `{member}` it finds no `pub` declaration of, so this source's declarations are not read"
+            ),
+            MatchFault::Sort => write!(
+                f,
+                "this import is read at `{signature}`, whose `{member}` it finds at another type, so this source's declarations are not read"
+            ),
+            MatchFault::Unstated => write!(
+                f,
+                "this import is read at `{signature}`, whose `{member}` the match reads no type for, so this source's declarations are not read"
+            ),
+        },
+        LoweringRefusal::NotATranslation { name, .. } => write!(
+            f,
+            "this import is read via `{name}`, which names no flow declared before it or published by its source, so this source's declarations are not read"
+        ),
+        LoweringRefusal::ImportShadows { name, .. } => {
+            write!(f, "`{name}` is bound by an import and again in this source")
+        },
+        LoweringRefusal::UnexportedName {
+            name,
+            reason: Unexported::Undefined,
+            ..
+        } => {
+            write!(
+                f,
+                "`{name}` is declared in the imported source without a definition, so it is not exported"
+            )
+        },
+        LoweringRefusal::UnexportedName {
+            name,
+            reason: Unexported::Private,
+            ..
+        } => {
+            write!(
+                f,
+                "`{name}` is private to the imported source; write `pub` before its declaration there to export it"
+            )
+        },
+        LoweringRefusal::ShadowedBuiltin { name, .. } => {
+            write!(
+                f,
+                "`{name}` is a builtin name, which this source may not rebind"
+            )
+        },
+        LoweringRefusal::OutOfFragment {
+            form,
+            sort,
+            boundary,
+            ..
+        } => {
+            let spoken = Spoken(form);
+            let indefinite = Indefinite(form);
+            match boundary {
+                FragmentBoundary::Reserved(_) => {
+                    write!(f, "the {spoken} is reserved, and not available yet")
+                },
+                FragmentBoundary::Unadmitted(_) => write!(f, "the {spoken} is not supported yet"),
+                FragmentBoundary::Misplaced if form == FormName::VISIBILITY => f.write_str(
+                    "`pub` exports the declaration after it, and stands before a declaration alone",
+                ),
+                FragmentBoundary::Misplaced => write!(
+                    f,
+                    "the {spoken} classifies a theory's sort member, and stands nowhere else"
+                ),
+                FragmentBoundary::NotAtResult => f.write_str(
+                    "a row written before a type belongs to the returner a definition's result \
+                     inserts, and stands nowhere else",
+                ),
+                FragmentBoundary::WrongSort => {
+                    write!(f, "{indefinite} cannot stand where {sort} is expected")
+                },
+                FragmentBoundary::TopLevel => write!(
+                    f,
+                    "{indefinite} cannot stand at a source's top level, where only declarations \
+                     stand; a program runs the `main` it declares, so write it in `def main() -> \
+                     Unit {{ … }}`, or name it with a definition"
+                ),
+                FragmentBoundary::Arity(operands) => {
+                    write!(f, "the {spoken} cannot take {operands} operands")
+                },
+                FragmentBoundary::Indexed => write!(
+                    f,
+                    "the {spoken} reads a family at an index, which the fragment does not read here"
+                ),
+                FragmentBoundary::Unannotated => write!(f, "the {spoken} needs a type annotation"),
+                FragmentBoundary::NonUniform => f.write_str(
+                    "a recursive call must pass the parameters before the one it descends on \
+                     unchanged",
+                ),
+                FragmentBoundary::ForeignClaim => f.write_str(
+                    "a descent claim `[<]` heads a call of the recursive function it is written \
+                     in, or of a member of its mutual block; this one names another function",
+                ),
+                FragmentBoundary::NotAFunction => f.write_str(
+                    "`Path.ap` maps a path by a function, and a constructor is none; write `fun \
+                     (q) { e }`, or a function definition that applies the constructor",
+                ),
+                FragmentBoundary::NotInTail => write!(
+                    f,
+                    "{indefinite} leaves only the body of a function, a lambda, a thunk or a \
+                     copattern clause, and cannot stand here"
+                ),
+                FragmentBoundary::JoinsBlock => f.write_str(
+                    "an arm of this match exits, so its other arms continue the block and answer \
+                     what the block answers; remove the written answer",
+                ),
+                FragmentBoundary::EmptyList => f.write_str(
+                    "`()` is an empty list, never the unit; write the unit value as `*{}` and \
+                     its type as `Unit`",
+                ),
+                FragmentBoundary::Endpoint => f.write_str(
+                    "a session action acts on an endpoint: an end a `fork` binds, an endpoint a \
+                     `recv` binds, or a parameter at a session type, written or named",
+                ),
+                FragmentBoundary::NonContractive => f.write_str(
+                    "this recursive session type recurses before any action; put a send, a \
+                     receive or a choice under its `rec`",
+                ),
+                FragmentBoundary::Held => {
+                    f.write_str(
+                        "an `access` lends, and an assignment writes, a held value: a name a `var` \
+                         statement holds",
+                    )
+                },
+                FragmentBoundary::View => f.write_str(
+                    "`resume` and `abort` end a view: the name an `access` binds after `as`",
+                ),
+                FragmentBoundary::Unbound => f.write_str(
+                    "a receive gives its message and a fork its parent's end, each linear, and \
+                     no name holds this one",
+                ),
+                FragmentBoundary::ChainedArrow => f.write_str(
+                    "arrows do not chain: write `(A, B) -> C` for one function of two inputs, or \
+                     `A -> (B -> C)` for a function whose output is a function",
+                ),
+                FragmentBoundary::BareArms => f.write_str(
+                    "a match in layout form writes `where` after its scrutinee, `match e \
+                     where`, and its arms on the lines after it",
+                ),
+            }
+        },
+        LoweringRefusal::BareFeedback { .. } => f.write_str(
+            "this port is fed back from the rule's own output and read under no observation of \
+             its sort, so the loop the feed closes is not guarded",
+        ),
+        // The lowering states the description check's reason itself, naming
+        // the sort, port or rule as the declaration spells it.
+        ill_formed @ LoweringRefusal::IllFormedDescription { .. } => {
+            fmt::Display::fmt(&ill_formed, f)
+        },
+        LoweringRefusal::GradedBridge { grade, .. } => write!(
+            f,
+            "the grade `{grade}` is not supported; only the default grade `ω` is"
+        ),
+        LoweringRefusal::MalformedLiteral { form, .. } => {
+            write!(f, "this is not a well-formed {}", Spoken(form))
+        },
+        LoweringRefusal::NoUniverseAbove { level, .. } => write!(
+            f,
+            "the universe level `{level}` is at or past the greatest, which has no universe above \
+             it"
+        ),
+        LoweringRefusal::MalformedForm { form, fault, .. } => {
+            let form = Spoken(form);
+            match fault {
+                FormFault::Repaired(Repair::Grout(GroutShape::Convex)) => {
+                    write!(f, "a term is missing in this {form}")
+                },
+                FormFault::Repaired(Repair::Grout(GroutShape::Prefix | GroutShape::Postfix))
+                | FormFault::MissingOperand => write!(f, "an operand is missing in this {form}"),
+                FormFault::Repaired(Repair::Grout(GroutShape::Infix)) => {
+                    write!(f, "an operator is missing in this {form}")
+                },
+                FormFault::Repaired(Repair::Keyword(stray)) => write!(
+                    f,
+                    "`{}` is a keyword and cannot stand here in this {form}",
+                    stray.written.as_ref()
+                ),
+                FormFault::Repaired(Repair::ReservedName(word)) => write!(
+                    f,
+                    "`{}` is a reserved word and cannot stand as a name in this {form}",
+                    word.as_ref()
+                ),
+                FormFault::Repaired(Repair::GhostClose(close)) => {
+                    write!(f, "this {form} is missing its closing `{}`", match close {
+                        ClosingClass::Paren => ")",
+                        ClosingClass::Bracket => "]",
+                        ClosingClass::Brace => "}",
+                    })
+                },
+                FormFault::Repaired(Repair::Unended(Ending::Tile(tile))) => {
+                    write!(f, "this {form} is missing its closing `{}`", tile.as_ref())
+                },
+                FormFault::Repaired(Repair::Unended(Ending::Unnamed)) => {
+                    write!(f, "this {form} stops before it is finished")
+                },
+                FormFault::Repaired(Repair::Diverged(Ending::Tile(tile))) => {
+                    write!(f, "this {form} is missing its `{}` here", tile.as_ref())
+                },
+                FormFault::Repaired(Repair::Diverged(Ending::Unnamed)) => {
+                    write!(f, "this {form} has an operand it does not take here")
+                },
+                FormFault::ExtraOperand => {
+                    write!(f, "this {form} has an operand it does not take")
+                },
+                FormFault::MisplacedTile => {
+                    write!(f, "a keyword or symbol of this {form} is out of place")
+                },
+                FormFault::ExtraClose(close) => {
+                    write!(f, "one `{}` too many closes this {form} early", match close {
+                        ClosingClass::Paren => ")",
+                        ClosingClass::Bracket => "]",
+                        ClosingClass::Brace => "}",
+                    })
+                },
+                FormFault::ExtraOpen(close) => {
+                    write!(f, "one `{}` too many leaves this {form} open", match close {
+                        ClosingClass::Paren => "(",
+                        ClosingClass::Bracket => "[",
+                        ClosingClass::Brace => "{",
+                    })
+                },
+                FormFault::Misspelt(_) => write!(
+                    f,
+                    "this word reads as a name, and this {form} then holds an operand it does not \
+                     take"
+                ),
+                FormFault::MisspeltOperator(operator) => write!(
+                    f,
+                    "this run of symbols reads as a name that nothing declares, one edit from the \
+                     operator `{}`",
+                    operator.as_ref()
+                ),
+                FormFault::Retired(retired) | FormFault::Repaired(Repair::Retired(retired)) => write!(
+                    f,
+                    "this spelling is retired, and `{}` replaces it",
+                    retired.replaced_by().0
+                ),
+                FormFault::NotAName => {
+                    write!(f, "this {form} names its match with a name, and a pattern stands here")
+                },
+                FormFault::BareIndex => {
+                    f.write_str("this bracket after an operand indexes an element")
+                },
+                FormFault::PositionalAfterNamed => {
+                    f.write_str("this implicit is supplied by position after one supplied by name")
+                },
+                FormFault::PositionalPastBlock => {
+                    f.write_str("this positional implicit has no entry in the implicit block")
+                },
+                FormFault::CompoundPositional => {
+                    f.write_str("this positional implicit is a compound value, not an atom")
+                },
+                FormFault::SuppliedTwice => {
+                    f.write_str("this implicit is supplied a second time")
+                },
+                FormFault::MissingOpen(close) => {
+                    write!(f, "this {form} is missing the `{}` its `{}` closes", match close {
+                        ClosingClass::Paren => "(",
+                        ClosingClass::Bracket => "[",
+                        ClosingClass::Brace => "{",
+                    }, match close {
+                        ClosingClass::Paren => ")",
+                        ClosingClass::Bracket => "]",
+                        ClosingClass::Brace => "}",
+                    })
+                },
+            }
+        },
+        LoweringRefusal::UnknownAttribute {
+            name, suggestion, ..
+        } => match suggestion {
+            Maybe::Present(nearest) => {
+                write!(
+                    f,
+                    "there is no attribute `{name}`; did you mean `{nearest}`?"
+                )
+            },
+            Maybe::Absent(_) => write!(f, "there is no attribute `{name}`"),
+        },
+        LoweringRefusal::DuplicateAttribute { name, .. } => {
+            write!(f, "the attribute `{name}` is written twice")
+        },
+        LoweringRefusal::MissingPayload { name, expected, .. } => {
+            write!(f, "the attribute `{name}` needs {expected}")
+        },
+        LoweringRefusal::NonValuePayload { name, .. } => {
+            write!(f, "the argument of the attribute `{name}` must be a value")
+        },
+        LoweringRefusal::IllTypedPayload {
+            name,
+            expected,
+            written,
+            ..
+        } => write!(f, "the attribute `{name}` takes {expected}, not {written}"),
+        LoweringRefusal::ForwardMemberReference { name, .. } => {
+            write!(f, "the member `{name}` is used before it is declared")
+        },
+        LoweringRefusal::PhaseDependence { member, reached, .. } => write!(
+            f,
+            "the type `{member}` depends on the value `{reached}`; a type depends only on types"
+        ),
+        LoweringRefusal::InertRead { member, reached, .. } => write!(
+            f,
+            "`{member}` reads the inert `{reached}`; only another inert declaration reads one"
+        ),
+        LoweringRefusal::UnknownMember { module, member, .. } => {
+            write!(f, "the module `{module}` has no member `{member}`")
+        },
+        LoweringRefusal::PartialField {
+            field, constructor, ..
+        } => write!(
+            f,
+            "the constructor `{constructor}` declares no field `{field}`, so `{field}` is not \
+             read off every value of the type"
+        ),
+        LoweringRefusal::NotAFunctor { name, .. } => {
+            write!(f, "`{name}` is not a functor declared before this binding")
+        },
+        LoweringRefusal::NotAModel { name, .. } => {
+            write!(
+                f,
+                "`{name}` is no binder or definition declared at a model type, so it has no \
+                 members to open"
+            )
+        },
+        LoweringRefusal::ProjectionFromApplication { functor, .. } => write!(
+            f,
+            "an application of `{functor}` is read before it is bound; bind it with `module A = \
+             {functor}(…) ;` and read `A`"
+        ),
+        LoweringRefusal::UnreadAscription { name, form, .. } => {
+            write!(f, "`{name}` {form}, which is not supported yet")
+        },
+        LoweringRefusal::UnreadCells { kind, .. } => {
+            write!(f, "`{kind}` is written over named cells, which is not supported yet")
+        },
+        LoweringRefusal::UnstatedComponent { name, fault, .. } => {
+            write!(
+                f,
+                "the model signature cannot state `{name}`, which {fault}"
+            )
+        },
+        LoweringRefusal::UndescribedMember { fault, .. } => write!(f, "this member {fault}"),
+        LoweringRefusal::FamilyTelescope { name, fault, .. } => {
+            write!(f, "the type member `{name}` {fault}")
+        },
+        LoweringRefusal::NonUniformResult { .. } => f.write_str(
+            "this generator's result does not apply its family to the family's parameters, then \
+             one term for each index",
+        ),
+        LoweringRefusal::UninterfacedMember { name, fault, .. } => write!(
+            f,
+            "the theory cannot stand as the interface its handler reads at `{name}`, which {fault}"
+        ),
+        LoweringRefusal::UnlabelledRequirement { name, .. } => write!(
+            f,
+            "the world requires `{name}` under no label, so its code cannot perform it"
+        ),
+        LoweringRefusal::UnfixedParameter {
+            constructor,
+            parameter,
+            ..
+        } => write!(
+            f,
+            "no field of `{constructor}` fixes the parameter `{parameter}`, and the `let` states \
+             no type"
+        ),
+        LoweringRefusal::ImplicitTelescope { .. } => f.write_str(
+            "this implicit telescope `[…]` is out of shape: an entry is not `a : Type`, `i : Size` \
+             or `i < n`, or the declaration is no function",
+        ),
+        LoweringRefusal::TelescopeCycle { first, second, .. } => write!(
+            f,
+            "`{first}` and `{second}` mention each other in their types, so neither can come \
+             first"
+        ),
+        LoweringRefusal::ImplicitUnsupplied {
+            function, implicit, ..
+        } => write!(
+            f,
+            "`{function}` needs its implicit `{implicit}`; supply it by name, \
+             `{function}[{implicit} = …](…)`"
+        ),
+        LoweringRefusal::ImplicitInParentheses {
+            function, implicit, ..
+        } => write!(
+            f,
+            "`{function}`'s implicit `{implicit}` is supplied by name, \
+             `{function}[{implicit} = …](…)`, not among the parentheses"
+        ),
+        LoweringRefusal::InstanceUnanswered {
+            function,
+            instance,
+            interface,
+            ..
+        } => write!(
+            f,
+            "`{function}` performs `{interface}` through its instance `{instance}`, and no \
+             instance of `{interface}` is handled where this call stands: handle one around the \
+             call, `handle c : {interface} {{ … }}`, or supply one by name, \
+             `{function}[{instance} = c](…)`"
+        ),
+        LoweringRefusal::InstanceAmbiguous {
+            function,
+            instance,
+            interface,
+            first,
+            second,
+            ..
+        } => write!(
+            f,
+            "`{function}`'s instance `{instance}` could be `{first}` or `{second}`, each an \
+             instance of `{interface}` handled where this call stands: name the one it means, \
+             `{function}[{instance} = {first}](…)`"
+        ),
+        LoweringRefusal::ModelImplicitValue { implicit, .. } => write!(
+            f,
+            "the model implicit `{implicit}` is its components, never a value; read them as \
+             `{implicit}.x`, and supply the slot by a module's name or a model implicit's, \
+             `f[{implicit} = M]`"
+        ),
+        LoweringRefusal::EntryType { .. } => f.write_str(
+            "`main` is the program's entry; declare it `def main() -> -F Integer` or `def main() \
+             -> -F Unit`, `def main(args : List(String)) -> -F Integer` to read the arguments, \
+             or `def main(authority : Authority) -> -F Unit` to be handed the ambient authority",
+        ),
+        LoweringRefusal::RegionAsValue { name, .. } => write!(
+            f,
+            "`{name}` is a region, never a value; name it only where a type keeps a value in it, \
+             `A at {name}`"
+        ),
+        LoweringRefusal::MethodAsValue { method, .. } => write!(
+            f,
+            "`{method}` needs its caller's hold on the receiver, which no value carries; call it, \
+             `s.{method}(…)`, never name it as a value"
+        ),
+        LoweringRefusal::StrayReceiverMode { mode, .. } => write!(
+            f,
+            "`{mode}` is a receiver's mode: only a module member's first parameter is written \
+             with it, `self : {mode} T`"
+        ),
+        LoweringRefusal::AmbiguousMethod {
+            method,
+            first,
+            second,
+            more,
+            ..
+        } => {
+            if usize::from(more) == 0_usize {
+                write!(
+                    f,
+                    "`{method}` is a method of both `{first}` and `{second}`; a call selects \
+                     exactly one"
+                )
+            }
+            else {
+                write!(
+                    f,
+                    "`{method}` is a method of `{first}`, `{second}` and {more} more modules; a \
+                     call selects exactly one"
+                )
+            }
+        },
+        LoweringRefusal::AmbiguousConstructor {
+            name,
+            first,
+            second,
+            more,
+            ..
+        } => {
+            if usize::from(more) == 0_usize {
+                write!(
+                    f,
+                    "`{name}` is a constructor of both `{first}` and `{second}`; a bare name \
+                     selects exactly one"
+                )
+            }
+            else {
+                write!(
+                    f,
+                    "`{name}` is a constructor of `{first}`, `{second}` and {more} more \
+                     families; a bare name selects exactly one"
+                )
+            }
+        },
+        LoweringRefusal::ViewNotPlace { .. } => f.write_str(
+            "a method whose receiver's mode is a variable answers a place of its receiver: write \
+             its result `-F View[m](a)` at that mode and its body as the place, `{ self.#[i] }`",
+        ),
+        LoweringRefusal::ViewOfNoPlace { .. } => f.write_str(
+            "`as w { … }` lends a view only after a call of a method that answers a place of its \
+             receiver",
+        ),
+        LoweringRefusal::NonExhaustiveMatch { .. } => {
+            f.write_str("this match does not cover every value it can be given")
+        },
+        LoweringRefusal::MismatchedPattern { .. } => f.write_str(
+            "this pattern matches another type than the first arm's pattern at its place",
+        ),
+        LoweringRefusal::UnmarkedSelfReference { name, .. } => write!(
+            f,
+            "`{name}` calls itself without saying how it recurses; write `{name}[<](…)`"
+        ),
+        LoweringRefusal::UnguardedCorecursion { name, .. } => write!(
+            f,
+            "`{name}[>](…)` must be the whole arm of a copattern block, so each observation \
+             yields before `{name}` runs again"
+        ),
+        LoweringRefusal::DescentOnSeveralParameters {
+            staged, claimed, ..
+        } => write!(
+            f,
+            "this call descends on `{claimed}`, and an earlier one on `{staged}`; a recursive \
+             definition descends on one parameter, the one its matches take apart"
+        ),
+        LoweringRefusal::Unreachable { .. } => {
+            f.write_str("this code never runs: every path before it leaves the body")
+        },
+        LoweringRefusal::OutsideLoop { exit, .. } => write!(
+            f,
+            "{exit} leaves a loop, and no loop runs here; a function, a lambda or a thunk \
+             inside a loop has a body of its own"
+        ),
+        LoweringRefusal::AcrossHandler { exit, .. } => write!(
+            f,
+            "{exit} would leave a handler's subject while its handler is still running; \
+             `return` leaves past the handler, or end the subject with its result"
+        ),
+        LoweringRefusal::WithoutK { .. } => f.write_str(
+            "a path cannot be matched against `here`; use it by `Path.walk`, through \
+             `Path.back`, `Path.step` or `Path.ap`",
+        ),
+        LoweringRefusal::DirectedCell { .. } => f.write_str(
+            "a cell between two terms is written `<->`; a directed cell `-->` between terms is \
+             not supported yet",
+        ),
+        LoweringRefusal::CellNotALoop { .. } => f.write_str(
+            "a cell `<->` is a loop: write the same term on both sides; a cell between two \
+             distinct terms is not supported yet",
+        ),
+        LoweringRefusal::RulesUnoriented { .. } => f.write_str(
+            "this rule may rewrite forever: its right side is not smaller than its left in the \
+             order the block's calls induce, so the block's rules are refused",
+        ),
+        LoweringRefusal::RulesNonLinear { .. } => f.write_str(
+            "this rule's left side names one variable twice: a rule matches each variable once, \
+             since copying a matched value needs a comonoid its sort may not have, so the rule \
+             is refused",
+        ),
+        LoweringRefusal::RulesDiverge { .. } => f.write_str(
+            "this rule and an earlier one rewrite one term to two different constructor terms, \
+             so the block's rules are refused",
+        ),
+        LoweringRefusal::RulesOverlapSecondOrder { .. } => f.write_str(
+            "this rule and an earlier one rewrite overlapping terms, one of them applies a \
+             variable a binding port binds, and the overlap rewrites to two different normal \
+             forms, so the block's rules are refused",
+        ),
+        LoweringRefusal::RulesOverlapCondition { .. } => f.write_str(
+            "this rule and an earlier one rewrite overlapping terms, one of them fires only under \
+             a row or where its instance names no atom it may not, and under the condition the \
+             overlap composes it rewrites to two different normal forms, so the block's rules are \
+             refused",
+        ),
+        LoweringRefusal::RulesUncompleted { .. } => f.write_str(
+            "this rule and an earlier one rewrite one term to two normal forms, and no rule the \
+             order can orient joins them, so the block's rules are refused",
+        ),
+        LoweringRefusal::RulesNeverComplete { .. } => f.write_str(
+            "this rule and an earlier one rewrite one term to two normal forms, and each rule \
+             completion derives to join them wraps the one before, so completion never ends and \
+             the block's rules are refused",
+        ),
+        LoweringRefusal::RulesUndecided { .. } => f.write_str(
+            "whether this rule and an earlier one agree was not decided within the check's \
+             budget, so the block's rules are refused",
+        ),
+        LoweringRefusal::UnderivedRule {
+            rule,
+            theory,
+            fault,
+            ..
+        } => write!(
+            f,
+            "the theory `{theory}` does not derive `{rule}`: {fault}"
+        ),
+        LoweringRefusal::DerivedComponent { member, theory, .. } => write!(
+            f,
+            "the theory `{theory}` derives `{member}`, so a model of it writes no component of \
+             that name"
+        ),
+        LoweringRefusal::GenericMisplaced { .. }
+        | LoweringRefusal::GenericUncovered { .. }
+        | LoweringRefusal::UnknownTactic { .. }
+        | LoweringRefusal::OutputsAsOneValue { .. } => {
+            fmt::Display::fmt(&refusal, f)
+        },
+        LoweringRefusal::BudgetExceeded { budget } => write!(
+            f,
+            "the source is too large to read within the allowance of {budget} steps"
+        ),
+        LoweringRefusal::GrammarMismatch { .. } => f.write_str(
+            "internal error: the source was parsed under a different grammar than it was read \
+             with",
+        ),
+        LoweringRefusal::UnknownMold { .. } => {
+            f.write_str("internal error: the parser produced a form its grammar does not hold")
+        },
+        LoweringRefusal::HostConflict { .. } => f.write_str(
+            "internal error: the host's capability table is in conflict with itself, so no \
+             capability's names can be read",
+        ),
+        LoweringRefusal::Unminted { name, .. } => write!(
+            f,
+            "internal error: the reader produced neither a type nor a body for `{name}`, and \
+             reported nothing wrong with it"
+        ),
+    }
+}
+
+/// Writes the plain message of a checker refusal.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: writes one message per variant, naming no node and no admission
+///   position; a refusal only a producer fault reaches is an internal error;
+///   propagates a write failure.
+/// - provides: the checker half of [`Plain`].
+/// - fails: if the formatter rejects a write.
+/// - panics: none.
+/// - executable: none — the formatter exposes no output buffer.
+///
+/// # Errors
+/// The formatter's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one refusal of every checker name writes a nonempty,
+///   single-line message with no admission position.
+/// - witness: `message::tests::every_refusal_name_has_a_plain_message`
+fn checked<N>(
+    refusal: CheckRefusalOf<N>,
+    f: &mut fmt::Formatter<'_>,
+) -> fmt::Result
+where
+    N: Naming,
+{
+    match refusal {
+        CheckRefusalOf::NotADataType(_) => f.write_str("this is not a datatype"),
+        CheckRefusalOf::DataKindNotUniverse(_) => f.write_str("a datatype's kind must be a universe"),
+        CheckRefusalOf::DataFieldLevel { .. } => {
+            f.write_str("a constructor field lives in a larger universe than its datatype")
+        },
+        CheckRefusalOf::RuleNotPresentable { .. } => {
+            f.write_str("these rules do not present the datatype")
+        },
+        CheckRefusalOf::RuleNotRespected { .. } => {
+            f.write_str("this case might tell apart terms its datatype's rules identify")
+        },
+        CheckRefusalOf::NotApart { .. } => {
+            f.write_str("this case has no arm, but its path's endpoints are not shown apart")
+        },
+        CheckRefusalOf::LoopNotRespected {
+            reason: gandr_core_checker::LoopRespect::Apart,
+            ..
+        } => f.write_str(
+            "this case might tell a loop apart from staying put: carried along the loop, its \
+             answer at the loop's point is not that answer",
+        ),
+        CheckRefusalOf::LoopNotRespected {
+            reason: gandr_core_checker::LoopRespect::NotPresentedSet,
+            ..
+        } => f.write_str(
+            "this case answers at its loop's point by a case over another looped point, and \
+             the fibre it answers in is not presented as a set: the square between the two \
+             loops is owed, and nothing here supplies it",
+        ),
+        CheckRefusalOf::LoopUndecided { .. } => f.write_str(
+            "deciding whether this case respects its sort's loops ran past the checker's \
+             budget: unfolding what the loop's obligation calls did not settle it",
+        ),
+        CheckRefusalOf::AbstractKindNotUniverse(_) => {
+            f.write_str("an abstract type's kind must be a universe")
+        },
+        CheckRefusalOf::RepresentationAboveKind { .. } => {
+            f.write_str("the type sealed here lives in a larger universe than its abstract type")
+        },
+        CheckRefusalOf::NotAnAbstractType(_) => {
+            f.write_str("this names an abstract type that was not admitted")
+        },
+        CheckRefusalOf::AtomTransport { .. } => f.write_str(
+            "this abstract type's identity attribute names no transport law, so its relation \
+             cannot stand for its identity",
+        ),
+        CheckRefusalOf::BridgeAtSealedType { .. } => f.write_str(
+            "this bridge reaches an abstract type with no identity attribute, so it has no \
+             relation to read",
+        ),
+        CheckRefusalOf::SealSiteRepeated(_) => {
+            f.write_str("internal error: one abstract component was sealed twice")
+        },
+        CheckRefusalOf::BuiltinRepeated { role, .. } => {
+            write!(f, "an earlier declaration holds the built-in role `{}`", role.word())
+        },
+        CheckRefusalOf::BuiltinMisplaced(role) if role.holder() == gandr_kernel_term::Holder::Data => write!(
+            f,
+            "the built-in role `{}` marks a datatype, and this declaration is no datatype",
+            role.word()
+        ),
+        CheckRefusalOf::BuiltinMisplaced(role) => write!(
+            f,
+            "the built-in role `{}` marks a definition, and this declaration is no definition",
+            role.word()
+        ),
+        CheckRefusalOf::BuiltinNotCanonical { role, departure } => {
+            write!(
+                f,
+                "this declaration departs from the canonical form of the built-in role `{}` at ",
+                role.word()
+            )?;
+            match departure {
+                gandr_kernel_term::Departure::Parameters => f.write_str("its parameters"),
+                gandr_kernel_term::Departure::Indices => f.write_str("its indices"),
+                gandr_kernel_term::Departure::Constructors => f.write_str("its constructors"),
+                gandr_kernel_term::Departure::Arity(tag) => {
+                    write!(f, "the fields of constructor {}", usize::from(tag))
+                },
+                gandr_kernel_term::Departure::Field { tag, field } => write!(
+                    f,
+                    "field {} of constructor {}",
+                    usize::from(field),
+                    usize::from(tag)
+                ),
+                gandr_kernel_term::Departure::Reads(read) => write!(
+                    f,
+                    "the role `{}` that its canonical form reads, which no earlier declaration holds",
+                    read.word()
+                ),
+                gandr_kernel_term::Departure::Answer(tag) => {
+                    write!(f, "its answer at constructor {} of the signature type", usize::from(tag))
+                },
+            }
+        },
+        CheckRefusalOf::DataArgumentArity(_) => {
+            f.write_str("the datatype is given the wrong number of arguments")
+        },
+        CheckRefusalOf::UnknownConstructor { .. } => {
+            f.write_str("the datatype has no such constructor")
+        },
+        CheckRefusalOf::ConstructorArity(_) => {
+            f.write_str("the constructor is given the wrong number of fields")
+        },
+        CheckRefusalOf::NonExhaustiveDataCase(_) => {
+            f.write_str("the case must handle every constructor exactly once")
+        },
+        CheckRefusalOf::UndecidedCoverage(_) => {
+            f.write_str("a pattern hole leaves which arm runs undecided")
+        },
+        CheckRefusalOf::AbsentRecordField(_) => f.write_str("the record has no such field"),
+        CheckRefusalOf::AbsentTupleComponent(_) => f.write_str("the tuple has no such component"),
+        CheckRefusalOf::MissingRecordField { .. } => f.write_str("the record is missing a field"),
+        CheckRefusalOf::PatchOutsideBase { .. } => {
+            f.write_str("the base record has no field of this name to fix")
+        },
+        CheckRefusalOf::FixedFieldDiffers { .. } => {
+            f.write_str("the field is not the value its type fixes")
+        },
+        CheckRefusalOf::UnknownOperation { .. } => f.write_str("the interface has no such operation"),
+        CheckRefusalOf::HandlerCoverage { .. } => {
+            f.write_str("the handler must handle every operation of its interface exactly once")
+        },
+        CheckRefusalOf::HandlerUnlawful { rule, .. } => write!(
+            f,
+            "this handler is not shown to satisfy law {} of the theory it handles",
+            usize::from(rule)
+        ),
+        CheckRefusalOf::ShiftWithoutReset { .. } => f.write_str("`shift` needs an enclosing `reset`"),
+        CheckRefusalOf::DependentStack { .. } => {
+            f.write_str("the stack's result type depends on the value it consumes")
+        },
+        CheckRefusalOf::EffectSignatureConflict { .. } => {
+            f.write_str("two effects give the same operation different types")
+        },
+        CheckRefusalOf::PathCode(_) => {
+            f.write_str("a universe path needs a quoted, closed, first-order code at each end")
+        },
+        CheckRefusalOf::EndpointMismatch { .. } => {
+            f.write_str("`Path.here` needs both endpoints of the path to equal its point")
+        },
+        CheckRefusalOf::CompoundEndpoint { .. } => {
+            f.write_str("a path endpoint must compute a value without effects")
+        },
+        CheckRefusalOf::FunextUnsupported { .. } => f.write_str(
+            "`Path.funext` needs two closed pure functions between types built from units, \
+             integers, strings, pairs, two-way sums and data types that do not hold \
+             themselves; an argument may itself be a function between such types",
+        ),
+        CheckRefusalOf::PointwiseDistinct { .. } => f.write_str(
+            "`Path.funext` needs both functions to agree at every input: return the same value, \
+             or apply their function argument at the same input",
+        ),
+        CheckRefusalOf::EquivUnsupported { .. } => f.write_str(
+            "`equiv` needs two closed pure translators between types built from units, \
+             integers, strings, tuples, sums, lists and data types that do not hold themselves",
+        ),
+        CheckRefusalOf::UncertifiedStratum { .. } => f.write_str(
+            "`equiv` needs each list cell's round trip to return the cell, its tail unread",
+        ),
+        CheckRefusalOf::OutsideFold { .. } => f.write_str(
+            "a bridge is read at units, integers, strings, the universe, pairs, binary sums, \
+             lists, pure functions, abstract types with a relation and closed data types",
+        ),
+        CheckRefusalOf::RoundTripDistinct { .. } => {
+            f.write_str("`equiv` needs each round trip to return its input")
+        },
+        CheckRefusalOf::NotOver { .. } => f.write_str(
+            "`Path.walk` needs its identity over the path to start from the start transported \
+             along the path",
+        ),
+        CheckRefusalOf::UaUncertified { stratum, .. } => match stratum {
+            StratumDefect::Degree { .. } => {
+                f.write_str("`ua` is certified from degree 1 to the catalogue's largest degree")
+            },
+            StratumDefect::Condition { .. } => f.write_str(
+                "`ua` needs a catalogue whose site meets the corolla and Segal conditions",
+            ),
+            StratumDefect::Allowance { .. } => f.write_str(
+                "`ua` enumerates catalogues of bound 64 at most, the most vertices a shape holds",
+            ),
+            StratumDefect::Budget { .. } => {
+                f.write_str("`ua` enumerates catalogues within its budget of shape classes")
+            },
+        },
+        CheckRefusalOf::UaInequivalent { defect, .. } => match defect {
+            UaDefect::UnknownGenerator { .. } => {
+                f.write_str("a `ua` translator record must name the generators of its description")
+            },
+            UaDefect::PastTheBound { .. } => {
+                f.write_str("a generator stands at a corolla past the `ua` catalogue bound")
+            },
+            UaDefect::Cardinality { .. } => f.write_str(
+                "the two descriptions have different numbers of generators at a corolla",
+            ),
+            UaDefect::Tables { .. } => {
+                f.write_str("`ua` needs exactly one translator per corolla on each side")
+            },
+            UaDefect::NotInverse { .. } => {
+                f.write_str("the `ua` translators are not inverse to each other")
+            },
+            UaDefect::NotNatural { .. } => {
+                f.write_str("the `ua` translators do not commute with the symmetries of a corolla")
+            },
+            UaDefect::Stuck { .. } => {
+                f.write_str("a `ua` translator returns no element of its target code")
+            },
+        },
+        CheckRefusalOf::ComposeUncertified { .. } => {
+            f.write_str("`compose` needs a stratum the chain sub-site certifies")
+        },
+        CheckRefusalOf::ComposeNotAShape { pasting, .. } => f.write_str(match pasting.form() {
+            Form::Chain(_) => {
+                "`compose` needs a chain within the degree and the bound of its stratum"
+            },
+            Form::Columns(_) => {
+                "`compose` needs a level-two shape the wreath holds within the degree and the \
+                 bound of its stratum"
+            },
+            Form::Tree { level, .. } if usize::from(level) <= 4 => {
+                "`compose` needs a pasting its level's wreath holds within the degree and the \
+                 bound of its stratum"
+            },
+            Form::Tree { .. } => "`compose` needs a pasting at level four or below",
+        }),
+        CheckRefusalOf::ComposeDoesNotFill {
+            seam: gandr_core_term::compose::Seam::Outer,
+            ..
+        } => f.write_str("a composite needs its cells to meet end to end along the chain"),
+        CheckRefusalOf::ComposeDoesNotFill {
+            seam: gandr_core_term::compose::Seam::Column(_),
+            defect: gandr_theory_sites::Unfilled::Profile { .. },
+            ..
+        } => f.write_str("a composite needs a 2-cell at each place of a column of 2-cells"),
+        CheckRefusalOf::ComposeDoesNotFill {
+            seam: gandr_core_term::compose::Seam::Column(_),
+            ..
+        } => f.write_str("a composite needs each column's 2-cells to meet end to end"),
+        CheckRefusalOf::FillUncertified { .. } => {
+            f.write_str("`fill` needs a stratum the chain sub-site certifies")
+        },
+        CheckRefusalOf::NoFiller { .. } => f.write_str(
+            "`fill` needs a generator whose sides compose its cells, a cell that is a path between \
+             two cells, and the square that generator makes",
+        ),
+        CheckRefusalOf::GeneratorFamilyUnsupported { .. } => {
+            f.write_str("`fill` lifts its generator along paths only")
+        },
+        CheckRefusalOf::UnenclosedRun { .. } => f.write_str(
+            "a computation read as a value that performs effects runs before the computation \
+             around it, and none stands around this one",
+        ),
+        CheckRefusalOf::ImplicitUnsolved { reason, .. } => match unsolved(reason) {
+            Maybe::Present(why) => write!(
+                f,
+                "this call omits an implicit argument the solver cannot determine: {why}"
+            ),
+            Maybe::Absent(()) => f.write_str(
+                "this call omits an implicit argument that neither its arguments nor the type it \
+                 is checked against determine",
+            ),
+        },
+        CheckRefusalOf::ModelUnanswered { .. } => f.write_str(
+            "this call omits a model implicit no module in scope answers at the types its \
+             arguments force; declare a module of the theory, or supply one by name in brackets \
+             before the parentheses",
+        ),
+        CheckRefusalOf::ModelAmbiguous { .. } => f.write_str(
+            "this call omits a model implicit more than one module in scope answers at the types \
+             its arguments force; supply the one meant by name in brackets before the parentheses",
+        ),
+        CheckRefusalOf::TacticRefused { tactic, fault, .. } => match fault {
+            TacticFault::NoHypothesis => write!(
+                f,
+                "the tactic `{tactic}` reaches a goal whose type no binder in scope has"
+            ),
+            TacticFault::NoFunction => write!(
+                f,
+                "the tactic `{tactic}` introduces a binder where the goal is no function"
+            ),
+            TacticFault::Forged => write!(
+                f,
+                "the tactic `{tactic}` answered a term its goal refuses"
+            ),
+            TacticFault::Unplaced => write!(
+                f,
+                "the splice running `{tactic}` stands where no type is known to check it \
+                 against; state the type it stands at"
+            ),
+        },
+        CheckRefusalOf::SessionNotEquivalent { .. } => {
+            f.write_str("`Path.bisim` needs the two protocols to behave alike at every step")
+        },
+        CheckRefusalOf::SessionNotSubtype { .. } => f.write_str(
+            "`Flow.sim` needs its first protocol to select no more and offer no less than its second",
+        ),
+        CheckRefusalOf::SessionCodeExpected { .. } => {
+            f.write_str("a session identity relates two session types")
+        },
+        CheckRefusalOf::OpenSessionPayload { .. } => f.write_str(
+            "a session type's payload names a variable bound outside it, which only a run's \
+             protocol may",
+        ),
+        CheckRefusalOf::UnassertedLaw { .. } => f.write_str(
+            "the host asserts no law with this statement: a law is admitted only as one the host \
+             asserts of its primitive, and any other is proved",
+        ),
+        CheckRefusalOf::UndischargedLaw { .. } => f.write_str(
+            "the module omits this law, and its sides do not convert, so nothing discharges it",
+        ),
+        CheckRefusalOf::NonCovariantMotive { .. } => f.write_str(
+            "a flow runs one way: `Flow.ride` may use the moving endpoint only where a run of it \
+             would be produced",
+        ),
+        CheckRefusalOf::RideUnsupported { .. } => f.write_str(
+            "`Flow.ride` moves a run of the moving endpoint, a value whose type does not depend \
+             on it, or a value the flow's translator computes",
+        ),
+        CheckRefusalOf::MultiplicityUnsupported { .. } => {
+            f.write_str("a linear function admits the multiplicity one alone for now")
+        },
+        CheckRefusalOf::RunNotAdmitted { .. } => f.write_str("the protocol does not admit this run"),
+        CheckRefusalOf::DialogueUnmatched { .. } => {
+            f.write_str("this dialogue's message is not received as it was sent")
+        },
+        CheckRefusalOf::DialogueInverted { .. } => {
+            f.write_str("this dialogue is logged out of its causal order")
+        },
+        CheckRefusalOf::ForwardUnsupported { .. } => {
+            f.write_str("`Flow.into` cannot image this translator at every input")
+        },
+        CheckRefusalOf::Boundary { .. } => {
+            f.write_str("this boundary flow runs against the variance of its position")
+        },
+        CheckRefusalOf::TypeMismatch(_) => {
+            f.write_str("the type of this term does not match the type it is checked against")
+        },
+        CheckRefusalOf::ShapeMismatch {
+            wanted: ExpectedShape::EmptySum,
+            ..
+        } => f.write_str("the empty sum `+{}` has no summand for this injection to name"),
+        CheckRefusalOf::ShapeMismatch {
+            wanted: ExpectedShape::Summand,
+            ..
+        } => f.write_str("this injection names a summand its sum does not have"),
+        CheckRefusalOf::ShapeMismatch {
+            wanted: ExpectedShape::Positional,
+            ..
+        } => f.write_str("a record that a call computes has no written order"),
+        CheckRefusalOf::ShapeMismatch { wanted, .. } => write!(f, "expected {}", Shape(wanted)),
+        CheckRefusalOf::NotSynthesisable { form } => write!(
+            f,
+            "the type of {} cannot be inferred where it stands",
+            match form {
+                CheckingFormOf::Reify(_) => "a stack literal",
+                CheckingFormOf::Handle(_) => "a handler",
+                CheckingFormOf::Reset(_) => "a reset",
+                CheckingFormOf::Shift(_) => "a shift",
+                CheckingFormOf::With(_) => "a lazy product",
+                CheckingFormOf::Injection(_) => "an injection",
+                CheckingFormOf::List(_) => "a list",
+                CheckingFormOf::Case(_) => "a case",
+                CheckingFormOf::Thunk(_) => "a thunk",
+                CheckingFormOf::Lambda(_) => "a function",
+                CheckingFormOf::Hole(_) => "a hole",
+                CheckingFormOf::StaticLambda(_) => "a type operator",
+                CheckingFormOf::Fixpoint(_) => "a recursive definition",
+                CheckingFormOf::Nested(_) => "a computation written where a value is read",
+                CheckingFormOf::Offer(_) => "an offer",
+                CheckingFormOf::Scope(_) => "a capability scope",
+                CheckingFormOf::Run(_) => "a recorded run",
+                CheckingFormOf::Decimal(_) => "a decimal literal",
+            }
+        ),
+        CheckRefusalOf::UnknownConstant { .. } => {
+            f.write_str("this names a declaration whose type is not known")
+        },
+        CheckRefusalOf::OutOfFragment { former, .. } => {
+            write!(f, "{} is not supported here", Former(former))
+        },
+        CheckRefusalOf::UnboundIndex { .. } => {
+            f.write_str("internal error: a variable refers past every binder around it")
+        },
+        CheckRefusalOf::BudgetExceeded { budget } => write!(
+            f,
+            "checking this ran out of its allowance of {budget} steps"
+        ),
+        CheckRefusalOf::DanglingNode { .. } => {
+            f.write_str("internal error: a term refers to something the checker cannot find")
+        },
+        CheckRefusalOf::AdmissionOrder { .. } => {
+            f.write_str("internal error: the declarations were checked out of order")
+        },
+        CheckRefusalOf::MachineInvariant => {
+            f.write_str("internal error: the checker's bookkeeping disagreed with itself")
+        },
+        CheckRefusalOf::SortMismatch { .. } => {
+            f.write_str("a value type's code and a computation type's code are confused here")
+        },
+        CheckRefusalOf::LevelMismatch { .. } => {
+            f.write_str("this code lives in a larger universe than the one expected")
+        },
+        CheckRefusalOf::DependentBind { .. } => {
+            f.write_str("the result type of this `let` depends on the value it binds")
+        },
+        CheckRefusalOf::Undecided { .. } => {
+            f.write_str("the checker could not decide what this code unfolds to")
+        },
+        CheckRefusalOf::FamilyArity {
+            expected, actual, ..
+        } => write!(
+            f,
+            "the type operator takes {} arguments but is given {}",
+            u32::from(expected),
+            u32::from(actual)
+        ),
+        CheckRefusalOf::FamilyArgumentClassifier { position, .. } => write!(
+            f,
+            "argument {} of the type operator has the wrong kind",
+            u32::from(position)
+        ),
+        CheckRefusalOf::StaticLambdaArgument { .. } => {
+            f.write_str("a type operator is given where a value is needed")
+        },
+        CheckRefusalOf::StaticClassifierExpected { .. } => {
+            f.write_str("a type operator's parameter must range over a universe or a kind")
+        },
+        CheckRefusalOf::NegativeOccurrence(site) => write!(
+            f,
+            "the datatype occurs to the left of an arrow in its {} where no stage reaches it",
+            Site(site)
+        ),
+        CheckRefusalOf::NestedOccurrence(site) => write!(
+            f,
+            "the datatype occurs nested inside another type in its {}, at a place that type does not hold strictly positively",
+            Site(site)
+        ),
+        CheckRefusalOf::IndexOccurrence(site) => {
+            write!(f, "the datatype occurs inside a term in its {}", Site(site))
+        },
+        CheckRefusalOf::NonUniformOccurrence(site) => write!(
+            f,
+            "the datatype is applied to other arguments than its parameters in its {}",
+            Site(site)
+        ),
+        CheckRefusalOf::CrossBlockReference { site, .. } => write!(
+            f,
+            "the datatype's {} refers to a declaration written after it",
+            Site(site)
+        ),
+        CheckRefusalOf::StageNotBelow { found, .. } => {
+            write!(f, "the recursion is not structural: {}", Stood(found))
+        },
+        CheckRefusalOf::StagesDisagree { .. } => f.write_str(
+            "the call's arguments stand at stages that no single stage of the callee's stage \
+             parameter fits",
+        ),
+        CheckRefusalOf::StageNotCarried { .. } => f.write_str(
+            "the transport moves a value of the recursion along a path whose type is not a set, \
+             so the value loses its stage",
+        ),
+        CheckRefusalOf::SessionMismatch { defect, .. } => match defect {
+            ProtocolDefect::Action { expected, observed } => write!(
+                f,
+                "the endpoint's protocol expects {} here, not {}",
+                Action(expected),
+                Action(observed)
+            ),
+            ProtocolDefect::Label => {
+                f.write_str("the endpoint's protocol offers no such label here")
+            },
+            ProtocolDefect::Arms => {
+                f.write_str("`offer` must handle every label of its protocol exactly once")
+            },
+        },
+        CheckRefusalOf::Linearity { defect, .. } => match defect {
+            LinearityDefectOf::Residue { endpoint, .. } => match endpoint.side {
+                ForkSide::Placed => f.write_str(
+                    "the endpoint is not closed before the body of the function that takes it ends",
+                ),
+                ForkSide::Child | ForkSide::Parent | ForkSide::Received => f.write_str(
+                    "the endpoint is not closed before the fork half or receive body that bound it \
+                     ends",
+                ),
+            },
+            LinearityDefectOf::Closed { .. } => f.write_str("the endpoint is used after `close`"),
+            LinearityDefectOf::UsedTwice { .. } => f.write_str("one action names the endpoint twice"),
+            LinearityDefectOf::Captured { by, .. } => write!(
+                f,
+                "the endpoint is used inside {}, which may run it other than once",
+                Captor(by)
+            ),
+            LinearityDefectOf::AsValue { .. } => {
+                f.write_str("an endpoint can be used only by a session action")
+            },
+            LinearityDefectOf::ArmsDisagree { .. } => {
+                f.write_str("the arms of this `offer` or case leave the endpoints in different states")
+            },
+            LinearityDefectOf::Unrestricted => f.write_str(
+                "a declaration cannot have a session type; an endpoint is opened by `fork` or `recv`",
+            ),
+            LinearityDefectOf::Unbound { .. } => {
+                f.write_str("internal error: a session action names an endpoint no `fork` or `recv` opened")
+            },
+            LinearityDefectOf::BufferUnreturned { .. } => f.write_str(
+                "the buffer placed live here is not handed back before its body ends",
+            ),
+            LinearityDefectOf::BufferReturnedTwice { .. } => {
+                f.write_str("the buffer is handed back a second time")
+            },
+            LinearityDefectOf::BufferRead { .. } => f.write_str(
+                "a buffer can be used only by the `send`, the operation or the resumption that hands it back",
+            ),
+            LinearityDefectOf::ContinuationUnspent { .. } => f.write_str(
+                "the operation's continuation holds something that must end, so the clause must `resume` it or `abandon` it exactly once",
+            ),
+            LinearityDefectOf::ContinuationUsedTwice { .. } => {
+                f.write_str("the continuation is resumed or abandoned a second time")
+            },
+            LinearityDefectOf::ContinuationCaptured { by, .. } => write!(
+                f,
+                "the continuation is used inside {}, which may end it other than once",
+                Captor(by)
+            ),
+            LinearityDefectOf::ContinuationAsValue { .. } => f.write_str(
+                "this continuation holds something that must end, so it can be used only by `resume` or `abandon`",
+            ),
+            LinearityDefectOf::LinearSlotConsumed { .. } => f.write_str(
+                "the linear parameter is used a second time, and the function holds one copy of it",
+            ),
+            LinearityDefectOf::LinearSlotUnconsumed { .. } => f.write_str(
+                "the linear parameter is not used, or one branch uses it where another does not",
+            ),
+            LinearityDefectOf::ShadowCaptured { by, .. } => write!(
+                f,
+                "the linear parameter is used inside {}, which may use it other than once",
+                Captor(by)
+            ),
+            LinearityDefectOf::ComonoidAbsent {
+                grade: Grade::Many, ..
+            } => f.write_str(
+                "this binder may use its value any number of times (grade ω), but its type holds a qubit, which has no copy and no discard",
+            ),
+            LinearityDefectOf::ComonoidAbsent {
+                grade: Grade::Zero, ..
+            } => f.write_str(
+                "this binder holds its value in types only (grade 0), but its type holds a qubit, which has no discard",
+            ),
+        },
+        CheckRefusalOf::Access { defect, .. } => match defect {
+            AccessDefect::NotHeld => {
+                f.write_str("`access` needs a value opened by `var`; this names something else")
+            },
+            AccessDefect::Lent => f.write_str(
+                "the held value is lent to an `access` here, which ends before it can be read",
+            ),
+            AccessDefect::HeldCaptured { by } => write!(
+                f,
+                "the held value is used inside {}, which may run it other than once",
+                Captor(by)
+            ),
+            AccessDefect::Escaped { by } => write!(
+                f,
+                "the view is used inside {}, which may outlive its `access`",
+                Captor(by)
+            ),
+            AccessDefect::Unended => {
+                f.write_str("the body of this `access` must end its view with `resume` or `abort`")
+            },
+            AccessDefect::Spent => f.write_str("the view is used after its `resume` or `abort`"),
+            AccessDefect::NotAView => {
+                f.write_str("`resume` and `abort` need the view an `access` opened")
+            },
+            AccessDefect::ReadOnly => f.write_str(
+                "`resume` and `abort` end an exclusive view; a shared view is read-only and \
+                 ends with its body",
+            ),
+            AccessDefect::UnwindEffect => {
+                f.write_str("an `unwind` runs under the empty row and cannot perform an effect")
+            },
+            AccessDefect::Unindexed => f.write_str(
+                "an access at a place reads an element at an index; the held value is no list",
+            ),
+            AccessDefect::HeldShared => f.write_str(
+                "`var[1]` enters a value made in place — a constructor, a literal, a tuple, a \
+                 record or a list; this one may have another holder",
+            ),
+            AccessDefect::HeldCopied => f.write_str(
+                "a value held with `var[1]` is never copied: read it once through an exclusive \
+                 `access` and write it back with `resume`",
+            ),
+            AccessDefect::Moved => f.write_str(
+                "the view's value was read out, so the view ends with `resume`, which writes a \
+                 value back; `abort` would leave the held slot empty",
+            ),
+            AccessDefect::Kept => f.write_str(
+                "a shared view of this value is kept in a region whose scope is still running; \
+                 an exclusive `access` waits until that scope ends",
+            ),
+            AccessDefect::KeptEscaped => f.write_str(
+                "a value kept `at c` lives only as long as the scope binding `c`; the scope \
+                 cannot answer it",
+            ),
+            AccessDefect::Consumed => f.write_str(
+                "a method whose receiver is `consumed` takes the held value and ends its hold; \
+                 the value cannot be read, accessed or consumed after that call",
+            ),
+        },
+        CheckRefusalOf::Codata { fault, .. } => match fault {
+            CodataFault::Undeclared => f.write_str("this names no codata declaration"),
+            CodataFault::KindNotUniverse => {
+                f.write_str("a codata declaration's kind must be a computation universe")
+            },
+            CodataFault::WithoutObservations => {
+                f.write_str("a codata declaration needs at least one observation")
+            },
+            CodataFault::Occurrence => f.write_str(
+                "a codata type may name itself only as an observation's result, at its own \
+                 parameters in order",
+            ),
+            CodataFault::ObservationLevel => f.write_str(
+                "an observation's type lives above the universe the codata declaration names",
+            ),
+            CodataFault::Arity => f.write_str(
+                "this codata type is applied to another number of arguments than its \
+                 declaration has parameters",
+            ),
+        },
+        CheckRefusalOf::Located { defect, .. } => match defect {
+            LocatedDefectOf::Immobile {
+                crossed: Crossed::Result | Crossed::Constant,
+                predicate: Predicate::Mobile,
+                ..
+            } => f.write_str("this value crosses to another world, but its type is not mobile"),
+            LocatedDefectOf::Immobile {
+                crossed: Crossed::Result | Crossed::Constant,
+                predicate: Predicate::Open,
+                ..
+            } => f.write_str(
+                "this handle crosses to another world, but the value it holds is not open",
+            ),
+            LocatedDefectOf::Immobile {
+                crossed: Crossed::Capture,
+                predicate: Predicate::Mobile,
+                ..
+            } => f.write_str(
+                "a thunk crossing to another world captures this, but its type is not mobile",
+            ),
+            LocatedDefectOf::Immobile {
+                crossed: Crossed::Capture,
+                predicate: Predicate::Open,
+                ..
+            } => f.write_str(
+                "a thunk crossing to another world captures this, but its type is not open",
+            ),
+            LocatedDefectOf::Immobile {
+                crossed: Crossed::Homed,
+                predicate: Predicate::Mobile,
+                ..
+            } => f.write_str(
+                "a thunk crossing to another world reads this declaration away from its home, \
+                 and its type is not mobile",
+            ),
+            LocatedDefectOf::Immobile {
+                crossed: Crossed::Homed,
+                predicate: Predicate::Open,
+                ..
+            } => f.write_str(
+                "a thunk crossing to another world reads this declaration away from its home, \
+                 and its type is not open",
+            ),
+            LocatedDefectOf::CapabilityMissing { .. } => f.write_str(
+                "this `migrate` has no capability left for its world: an entry is granted one, and a migration spends it",
+            ),
+            LocatedDefectOf::CapabilityCaptured { by, .. } => write!(
+                f,
+                "this `migrate` stands inside {}, which may spend its capability other than once",
+                Captor(by)
+            ),
+            LocatedDefectOf::Elsewhere { .. } => {
+                f.write_str("this value lives at another world; open it there with `let x at w`")
+            },
+            LocatedDefectOf::HoldElsewhere { .. } => f.write_str(
+                "`hold` makes a handle at the world it runs at; migrate there to hold a value of that world",
+            ),
+            LocatedDefectOf::OpenedElsewhere { .. } => f.write_str(
+                "`let x at w` opens a handle at the world it stands at; write that world after `at`",
+            ),
+            LocatedDefectOf::Unlocated => f.write_str(
+                "this stands at the host's own world, where no handle is made or opened: state \
+                 the declaration's world with `@[ entry(w) ]`",
+            ),
+            LocatedDefectOf::UndeclaredWorld { .. } => {
+                f.write_str("this names no world; declare one with `world w ;`")
+            },
+            LocatedDefectOf::HostWorldUndeclared => {
+                f.write_str("the host enters at a world this source does not declare")
+            },
+            LocatedDefectOf::MarkUnfounded { .. } => f.write_str(
+                "this type is marked `mobile`, but its representation cannot cross to another world",
+            ),
+            LocatedDefectOf::EntryNamed { .. } => f.write_str(
+                "this declaration is an entry, which only the host runs; it cannot be named here",
+            ),
+            LocatedDefectOf::EntryUngranted { .. } => {
+                f.write_str("this entry is not one the host grants")
+            },
+            LocatedDefectOf::NotAHandle { .. } => {
+                f.write_str("`let x at w` opens a handle at a world, and this value is none")
+            },
+        },
+        CheckRefusalOf::CapabilityForged { .. } => f.write_str(
+            "a capability cannot be made from a term; only one held or granted can stand here",
+        ),
+        CheckRefusalOf::LiteralAmbiguous { .. } => f.write_str(
+            "more than one model of `FromNat`, `FromNeg` or `FromDecimal` reads a literal at this \
+             type; apply the meant model's reader to it by name",
+        ),
+        CheckRefusalOf::CapabilityAmplified(_) => {
+            f.write_str("this capability grants less than the one expected here")
+        },
+        CheckRefusalOf::CapabilityOutsideAuthority { .. } => {
+            f.write_str("the capability does not grant this operation")
+        },
+        CheckRefusalOf::CapabilityEscaped { .. } => {
+            f.write_str("a capability its scope introduced would outlive the scope here")
+        },
+        CheckRefusalOf::CapabilityConsumable(_) => {
+            f.write_str("a consumable capability is not supported")
+        },
+        CheckRefusalOf::CapabilityUngranted { .. } => {
+            f.write_str("this capability claims authority the host did not grant")
+        },
+        CheckRefusalOf::FootprintsOverlap { .. } => f.write_str(
+            "both halves of this fork may use the authority found here, and one of them may \
+             change it",
+        ),
+    }
+}
+
+/// Why the solver could not determine an omitted implicit, as a clause of
+/// the message that names it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub struct Undetermined(&'static str);
+
+impl fmt::Display for Undetermined
+{
+    /// Writes the clause.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(self.0)
+    }
+}
+
+/// Why the solver could not determine an omitted implicit; absent when
+/// nothing constrained it.
+///
+/// # Specification
+/// trivial.
+pub const fn unsolved(reason: gandr_core_checker::Unsolved) -> Maybe<Undetermined, ()>
+{
+    use gandr_core_checker::Unsolved;
+    Maybe::Present(Undetermined(match reason {
+        Unsolved::Unforced => return Maybe::Absent(()),
+        Unsolved::Unfolding => "it is compared with a definition, which only unfolding decides",
+        Unsolved::Gradual => "it is compared only with a type left unknown",
+        Unsolved::Spine => "it stands applied to arguments",
+        Unsolved::Outside => "it is compared with a former the solver does not decompose",
+        Unsolved::Families => "it is compared with a term of another family",
+        Unsolved::Neutral => "it is compared with a variable or a stuck elimination",
+        Unsolved::Levels => "it is compared with a decode at another level",
+        Unsolved::Pruning => "its solution would mention an implicit of a wider scope",
+        Unsolved::Escape => "its solution would name a binder the call does not stand under",
+        Unsolved::Occurs => "its solution would mention itself",
+        Unsolved::Scope => "it stands under fewer binders than its scope holds",
+        Unsolved::Linear => "it is compared with a linear variable",
+        Unsolved::Dangling => "internal error: it is compared with a node the arena does not hold",
+        Unsolved::Budget => "the solver spent its steps before deciding it",
+        Unsolved::Rows => {
+            "its row is compared with another open row, each holding an interface the other lacks"
+        },
+    }))
+}
+
+/// Every refusal name's message, read through one constructed refusal each.
+#[cfg(test)]
+pub mod tests
+{
+    use gandr_core_checker::ArgumentPosition;
+    use gandr_core_checker::CheckBudget;
+    use gandr_core_checker::CheckRefusal;
+    use gandr_core_checker::CheckingForm;
+    use gandr_core_checker::ComponentOrdinal;
+    use gandr_core_checker::CoreNode;
+    use gandr_core_checker::ExpectedShape;
+    use gandr_core_checker::Mismatch;
+    use gandr_core_checker::SealSite;
+    use gandr_core_checker::SealingSite;
+    use gandr_core_checker::StaticArity;
+    use gandr_core_checker::TermNode;
+    use gandr_core_checker::TypeNode;
+    use gandr_core_checker::UnadmittedFormer;
+    use gandr_core_checker::access::AccessDefect;
+    use gandr_core_checker::codata::CodataFault;
+    use gandr_core_checker::session::Capture;
+    use gandr_core_checker::session::Endpoint;
+    use gandr_core_checker::session::ForkSide;
+    use gandr_core_checker::session::LinearityDefect;
+    use gandr_core_checker::session::ProtocolDefect;
+    use gandr_core_checker::ua::StratumDefect;
+    use gandr_core_checker::ua::UaDefect;
+    use gandr_core_checker::ua::Way;
+    use gandr_core_checker::worlds::Crossed;
+    use gandr_core_checker::worlds::LocatedDefect;
+    use gandr_core_checker::worlds::Predicate;
+    use gandr_core_term::BinderDepth;
+    use gandr_core_term::CoreArena;
+    use gandr_core_term::Zone;
+    use gandr_core_term::session::ActionKind;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::ConstructorTag;
+    use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::OccurrenceSite;
+    use gandr_kernel_term::ParameterPosition;
+    use gandr_kernel_term::Stage;
+    use gandr_kernel_term::StageId;
+    use gandr_kernel_term::Standing;
+    use gandr_surface_corpus::BoundaryClause;
+    use gandr_surface_corpus::CorpusRefusal;
+    use gandr_surface_corpus::ExpectationSchema;
+    use gandr_surface_corpus::RefusalName;
+    use gandr_surface_corpus::RefusalOf;
+    use gandr_surface_lowering::AscriptionForm;
+    use gandr_surface_lowering::AttributeRegistry;
+    use gandr_surface_lowering::AttributeSchema;
+    use gandr_surface_lowering::CandidateCount;
+    use gandr_surface_lowering::CrossedExit;
+    use gandr_surface_lowering::FormFault;
+    use gandr_surface_lowering::FormName;
+    use gandr_surface_lowering::FragmentBoundary;
+    use gandr_surface_lowering::FragmentSort;
+    use gandr_surface_lowering::HeadArity;
+    use gandr_surface_lowering::LoopExit;
+    use gandr_surface_lowering::LoweringRefusal;
+    use gandr_surface_lowering::MatchFault;
+    use gandr_surface_lowering::OperandCount;
+    use gandr_surface_lowering::PayloadForm;
+    use gandr_surface_lowering::SurfaceName;
+    use gandr_surface_lowering::TelescopeFault;
+    use gandr_surface_lowering::Unexported;
+    use gandr_surface_lowering::model::InterfaceFault;
+    use gandr_surface_lowering::model::ModelFault;
+    use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::ByteSpan;
+    use gandr_surface_syntax::CellsKind;
+    use gandr_surface_syntax::GrammarFingerprint;
+    use gandr_surface_syntax::MoldId;
+    use gandr_theory_sites::Degree;
+    use gandr_theory_sites::ElementIndex;
+    use gandr_theory_sites::PortCount;
+    use gandr_theory_sites::Profile;
+    use gandr_theory_sites::ShapeIndex;
+    use gandr_theory_sites::ShapeSize;
+
+    use super::Plain;
+
+    /// A refusal as the checker gives it, its nodes named by place.
+    type Refusal<'source> = RefusalOf<'source, gandr_core_checker::Arena>;
+
+    /// One refusal of every vocabulary name, the corpus's last.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every name of [`RefusalName::VOCABULARY`] names one of them.
+    /// - provides: the refusals each name's template is read through.
+    /// - fails: never.
+    /// - panics: on a vocabulary name no refusal here names.
+    /// - executable: none — the builder's own assertion checks the clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name added to the vocabulary with no refusal here
+    ///   fails every test that reads them.
+    /// - witness: `message::tests::every_refusal_name_has_a_plain_message`
+    pub fn one_of_every_name() -> Vec<Refusal<'static>>
+    {
+        let mut arena = CoreArena::new();
+        let value = arena.value_unit();
+        let computation = arena.computation_return(value);
+        let value_type = arena.value_type_unit();
+        let comp_type = arena.comp_type_returner(value_type);
+        let span = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(1_usize))
+            .expect("an ordered span");
+        let name = SurfaceName::from("x");
+        let form = FormName::HOLE;
+        let registered = AttributeRegistry::names()
+            .first()
+            .copied()
+            .expect("the registry holds a name");
+        let site = OccurrenceSite::Parameter(ParameterPosition::from(0_usize));
+        let corolla = ShapeIndex::from(0_usize);
+        let element = ElementIndex::from(0_usize);
+        let endpoint = Endpoint {
+            fork: computation,
+            side: ForkSide::Child,
+        };
+        let node = CoreNode::Term(TermNode::Computation(computation));
+        let lowering = [
+            LoweringRefusal::UnresolvedName { span, name },
+            LoweringRefusal::UnresolvedDocLink { span, name },
+            LoweringRefusal::UnresolvedTypeHead {
+                span,
+                head: span,
+                name,
+                arity: HeadArity::Nullary,
+            },
+            LoweringRefusal::DuplicateSignature {
+                span,
+                name,
+                first: span,
+            },
+            LoweringRefusal::DuplicateDefinition {
+                span,
+                name,
+                first: span,
+            },
+            LoweringRefusal::DuplicateImportAlias {
+                span,
+                alias: name,
+                first: span,
+            },
+            LoweringRefusal::ImportUnresolved {
+                span,
+                refused: span,
+            },
+            LoweringRefusal::ImportCycle {
+                span,
+                refused: span,
+            },
+            LoweringRefusal::UnlockedDependency { span, alias: name },
+            LoweringRefusal::SignatureMismatch {
+                span,
+                signature: name,
+                member: name,
+                fault: MatchFault::Sort,
+                refused: span,
+            },
+            LoweringRefusal::ImportShadows {
+                span,
+                name,
+                import: span,
+                other: span,
+            },
+            LoweringRefusal::UnexportedName {
+                span,
+                name,
+                declared: span,
+                reason: Unexported::Private,
+            },
+            LoweringRefusal::ShadowedBuiltin { span, name },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::WrongSort,
+            },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Arity(OperandCount::from(0_usize)),
+            },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Held,
+            },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Unannotated,
+            },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::ForeignClaim,
+            },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Misplaced,
+            },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::NonContractive,
+            },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::NotAFunction,
+            },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::TopLevel,
+            },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::EmptyList,
+            },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::JoinsBlock,
+            },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::NonUniform,
+            },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::NotAtResult,
+            },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::NotInTail,
+            },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::View,
+            },
+            LoweringRefusal::BareFeedback { span, rule: span },
+            LoweringRefusal::IllFormedDescription {
+                span,
+                fault: span,
+                kind: gandr_surface_lowering::WfKind::DuplicateSortName,
+                subjects: [
+                    quenchant_shape::shape::Maybe::Present(name),
+                    quenchant_shape::shape::Maybe::Absent(
+                        gandr_surface_lowering::description_subject::Absent::Unnamed,
+                    ),
+                ],
+            },
+            LoweringRefusal::GradedBridge { span, grade: name },
+            LoweringRefusal::MalformedLiteral { span, form },
+            LoweringRefusal::NoUniverseAbove { span, level: name },
+            LoweringRefusal::MalformedForm {
+                span,
+                form,
+                fault: FormFault::ExtraOperand,
+            },
+            LoweringRefusal::UnknownAttribute {
+                span,
+                name,
+                suggestion: AttributeRegistry::suggestion(SurfaceName::from("check")),
+            },
+            LoweringRefusal::DuplicateAttribute {
+                span,
+                name,
+                first: span,
+            },
+            LoweringRefusal::MissingPayload {
+                span,
+                name: registered,
+                expected: AttributeSchema::Integer,
+            },
+            LoweringRefusal::NonValuePayload {
+                span,
+                name: registered,
+                form,
+            },
+            LoweringRefusal::IllTypedPayload {
+                span,
+                name: registered,
+                expected: AttributeSchema::Integer,
+                written: PayloadForm::Text,
+            },
+            LoweringRefusal::ForwardMemberReference {
+                span,
+                name,
+                declared: span,
+            },
+            LoweringRefusal::PhaseDependence {
+                span,
+                member: name,
+                reached: name,
+            },
+            LoweringRefusal::InertRead {
+                span,
+                member: name,
+                reached: name,
+            },
+            LoweringRefusal::UnknownMember {
+                span,
+                module: name,
+                member: name,
+            },
+            LoweringRefusal::PartialField {
+                span,
+                field: name,
+                constructor: name,
+            },
+            LoweringRefusal::NotAFunctor { span, name },
+            LoweringRefusal::NotAModel { span, name },
+            LoweringRefusal::NotATranslation {
+                span,
+                name,
+                refused: span,
+            },
+            LoweringRefusal::ProjectionFromApplication {
+                span,
+                functor: name,
+            },
+            LoweringRefusal::UnreadAscription {
+                span,
+                name,
+                form: AscriptionForm::Kinded,
+            },
+            LoweringRefusal::UnreadCells {
+                span,
+                kind: CellsKind::Fill,
+            },
+            LoweringRefusal::UnstatedComponent {
+                span,
+                name,
+                fault: ModelFault::Arity,
+            },
+            LoweringRefusal::UnstatedComponent {
+                span,
+                name,
+                fault: ModelFault::IllSorted,
+            },
+            LoweringRefusal::UnstatedComponent {
+                span,
+                name,
+                fault: ModelFault::UnknownHead,
+            },
+            LoweringRefusal::UnstatedComponent {
+                span,
+                name,
+                fault: ModelFault::Unsorted,
+            },
+            LoweringRefusal::UnstatedComponent {
+                span,
+                name,
+                fault: ModelFault::Unbound,
+            },
+            LoweringRefusal::FamilyTelescope {
+                span,
+                name,
+                fault: TelescopeFault::Index(OperandCount::from(1_usize)),
+            },
+            LoweringRefusal::NonUniformResult { span },
+            LoweringRefusal::UninterfacedMember {
+                span,
+                name,
+                fault: InterfaceFault::Unfixed,
+            },
+            LoweringRefusal::UnlabelledRequirement { span, name },
+            LoweringRefusal::UnfixedParameter {
+                span,
+                constructor: name,
+                parameter: name,
+            },
+            LoweringRefusal::ImplicitTelescope { span },
+            LoweringRefusal::TelescopeCycle {
+                span,
+                first: name,
+                second: name,
+            },
+            LoweringRefusal::ImplicitUnsupplied {
+                span,
+                function: name,
+                implicit: name,
+            },
+            LoweringRefusal::ImplicitInParentheses {
+                span,
+                function: name,
+                implicit: name,
+            },
+            LoweringRefusal::InstanceUnanswered {
+                span,
+                function: name,
+                instance: name,
+                interface: name,
+            },
+            LoweringRefusal::InstanceAmbiguous {
+                span,
+                function: name,
+                instance: name,
+                interface: name,
+                first: name,
+                second: name,
+            },
+            LoweringRefusal::ModelImplicitValue {
+                span,
+                implicit: name,
+            },
+            LoweringRefusal::RegionAsValue { span, name },
+            LoweringRefusal::MethodAsValue {
+                span,
+                method: name,
+                mode: gandr_surface_lowering::ReceiverMode::Deduced,
+            },
+            LoweringRefusal::EntryType { span },
+            LoweringRefusal::StrayReceiverMode { span, mode: name },
+            LoweringRefusal::AmbiguousMethod {
+                span,
+                method: name,
+                first: name,
+                second: name,
+                more: CandidateCount::from(0_usize),
+            },
+            LoweringRefusal::AmbiguousConstructor {
+                span,
+                name,
+                first: name,
+                second: name,
+                more: CandidateCount::from(0_usize),
+            },
+            LoweringRefusal::ViewNotPlace { span },
+            LoweringRefusal::ViewOfNoPlace { span },
+            LoweringRefusal::NonExhaustiveMatch { span },
+            LoweringRefusal::MismatchedPattern { span, first: span },
+            LoweringRefusal::UnmarkedSelfReference { span, name },
+            LoweringRefusal::UnguardedCorecursion { span, name },
+            LoweringRefusal::DescentOnSeveralParameters {
+                span,
+                staged: name,
+                claimed: name,
+            },
+            LoweringRefusal::Unreachable { span },
+            LoweringRefusal::OutsideLoop {
+                span,
+                exit: LoopExit::Break,
+            },
+            LoweringRefusal::AcrossHandler {
+                span,
+                exit: CrossedExit::Continue,
+            },
+            LoweringRefusal::WithoutK { span },
+            LoweringRefusal::DirectedCell { span },
+            LoweringRefusal::CellNotALoop { span },
+            LoweringRefusal::RulesUnoriented { span },
+            LoweringRefusal::RulesNonLinear { span, copy: span },
+            LoweringRefusal::UndescribedMember {
+                span,
+                fault: gandr_surface_lowering::description::MemberFault::HigherCell,
+            },
+            LoweringRefusal::UndescribedMember {
+                span,
+                fault: gandr_surface_lowering::description::MemberFault::LhsNotOperation,
+            },
+            LoweringRefusal::UndescribedMember {
+                span,
+                fault: gandr_surface_lowering::description::MemberFault::ResultArity,
+            },
+            LoweringRefusal::UndescribedMember {
+                span,
+                fault: gandr_surface_lowering::description::MemberFault::IllSorted,
+            },
+            LoweringRefusal::UndescribedMember {
+                span,
+                fault: gandr_surface_lowering::description::MemberFault::NoUniverse,
+            },
+            LoweringRefusal::RulesDiverge { span, first: span },
+            LoweringRefusal::RulesUncompleted { span, first: span },
+            LoweringRefusal::RulesNeverComplete { span, first: span },
+            LoweringRefusal::RulesUndecided { span, first: span },
+            LoweringRefusal::UnderivedRule {
+                span,
+                rule: name,
+                theory: name,
+                fault: gandr_surface_lowering::derive::DeriveFault::Apart,
+            },
+            LoweringRefusal::DerivedComponent {
+                span,
+                member: name,
+                theory: name,
+                derivation: span,
+            },
+            LoweringRefusal::RulesOverlapSecondOrder { span, first: span },
+            LoweringRefusal::RulesOverlapCondition { span, first: span },
+            LoweringRefusal::BudgetExceeded {
+                budget: 0_usize.into(),
+            },
+            LoweringRefusal::GrammarMismatch {
+                tree: GrammarFingerprint::from(1_u64),
+                grammar: GrammarFingerprint::from(2_u64),
+            },
+            LoweringRefusal::UnknownMold {
+                span,
+                mold: MoldId::from(0_u32),
+            },
+            LoweringRefusal::HostConflict { span },
+            LoweringRefusal::Unminted {
+                span,
+                name: SurfaceName::from("windHom"),
+            },
+            LoweringRefusal::GenericMisplaced { span },
+            LoweringRefusal::UnknownTactic { span },
+            LoweringRefusal::OutputsAsOneValue { span, callee: name },
+            LoweringRefusal::GenericUncovered {
+                span,
+                data: name,
+                fault: gandr_core_term::generic::Uncovered::Applied(ConstantIndex::from(0_usize)),
+            },
+        ]
+        .map(Refusal::Lowering);
+        let checking = [
+            CheckRefusal::NotADataType(ConstantIndex::from(0_usize)),
+            CheckRefusal::DataKindNotUniverse(value_type),
+            CheckRefusal::DataFieldLevel {
+                field: value_type,
+                kind: value_type,
+            },
+            CheckRefusal::RuleNotPresentable {
+                kind: value_type,
+                refusal: gandr_kernel_term::RuleRefusal {
+                    rule: gandr_kernel_term::RuleIndex::from(0_usize),
+                    fault: gandr_kernel_term::RuleFault::NotDecreasing,
+                },
+            },
+            CheckRefusal::RuleNotRespected {
+                at: computation,
+                rule: gandr_kernel_term::RuleIndex::from(0_usize),
+                left: value,
+                right: value,
+            },
+            CheckRefusal::NotApart {
+                at: computation,
+                reason: gandr_kernel_term::Apartness::Agree,
+            },
+            CheckRefusal::LoopNotRespected {
+                at: computation,
+                cell: gandr_kernel_term::CellIndex::from(0_usize),
+                left: computation,
+                right: computation,
+                reason: gandr_core_checker::LoopRespect::NotPresentedSet,
+            },
+            CheckRefusal::LoopUndecided {
+                at: computation,
+                cell: gandr_kernel_term::CellIndex::from(0_usize),
+            },
+            CheckRefusal::AbstractKindNotUniverse(value_type),
+            CheckRefusal::RepresentationAboveKind {
+                representation: value_type,
+                kind: value_type,
+            },
+            CheckRefusal::NotAnAbstractType(ConstantIndex::from(0_usize)),
+            CheckRefusal::AtomTransport {
+                at: value,
+                atom: ConstantIndex::from(0_usize),
+            },
+            CheckRefusal::BridgeAtSealedType {
+                at: value_type,
+                atom: ConstantIndex::from(0_usize),
+            },
+            CheckRefusal::SealSiteRepeated(SealSite::new(
+                SealingSite::from(0_usize),
+                ComponentOrdinal::from(0_usize),
+            )),
+            CheckRefusal::BuiltinRepeated {
+                role: gandr_kernel_term::Builtin::IrArgs,
+                holder: ConstantIndex::from(0_usize),
+            },
+            CheckRefusal::BuiltinMisplaced(gandr_kernel_term::Builtin::IrSignature),
+            CheckRefusal::BuiltinMisplaced(gandr_kernel_term::Builtin::IrDecode),
+            CheckRefusal::BuiltinNotCanonical {
+                role: gandr_kernel_term::Builtin::IrSignature,
+                departure: gandr_kernel_term::Departure::Field {
+                    tag: ConstructorTag::from(1_usize),
+                    field: gandr_kernel_term::FieldPosition::from(1_usize),
+                },
+            },
+            CheckRefusal::DataArgumentArity(value_type),
+            CheckRefusal::UnknownConstructor {
+                at: value,
+                tag: ConstructorTag::from(0_usize),
+            },
+            CheckRefusal::ConstructorArity(value),
+            CheckRefusal::NonExhaustiveDataCase(computation),
+            CheckRefusal::UndecidedCoverage(computation),
+            CheckRefusal::AbsentRecordField(computation),
+            CheckRefusal::AbsentTupleComponent(computation),
+            CheckRefusal::MissingRecordField {
+                at: value,
+                expected: value_type,
+            },
+            CheckRefusal::PatchOutsideBase {
+                at: value_type,
+                value,
+            },
+            CheckRefusal::FixedFieldDiffers {
+                at: value,
+                fixed: value,
+            },
+            CheckRefusal::UnknownOperation { at: computation },
+            CheckRefusal::HandlerCoverage { at: computation },
+            CheckRefusal::HandlerUnlawful {
+                at: computation,
+                rule: gandr_kernel_term::RuleIndex::from(0_usize),
+                left: computation,
+                right: computation,
+            },
+            CheckRefusal::ShiftWithoutReset { at: computation },
+            CheckRefusal::DependentStack {
+                at: value,
+                synthesised: comp_type,
+            },
+            CheckRefusal::PathCode(value),
+            CheckRefusal::TypeMismatch(Mismatch::Value {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            }),
+            CheckRefusal::EffectSignatureConflict {
+                at: computation,
+                first: comp_type,
+                second: comp_type,
+            },
+            CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(value),
+                wanted: ExpectedShape::Thunk,
+                found: TypeNode::Value(value_type),
+                unfolded: TypeNode::Value(value_type),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Thunk(value),
+            },
+            CheckRefusal::UnknownConstant {
+                at: value,
+                constant: ConstantIndex::from(0_usize),
+            },
+            CheckRefusal::OutOfFragment {
+                at: CoreNode::Term(TermNode::Computation(computation)),
+                former: UnadmittedFormer::Shift,
+            },
+            CheckRefusal::OutOfFragment {
+                at: CoreNode::Term(TermNode::Computation(computation)),
+                former: UnadmittedFormer::Stage,
+            },
+            CheckRefusal::UnboundIndex {
+                at: value,
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(0_u32),
+                depth: BinderDepth::from(0_usize),
+            },
+            CheckRefusal::BudgetExceeded {
+                budget: CheckBudget::from(0_usize),
+            },
+            CheckRefusal::DanglingNode {
+                node: CoreNode::Type(TypeNode::Computation(comp_type)),
+            },
+            CheckRefusal::AdmissionOrder {
+                constant: ConstantIndex::from(0_usize),
+                admitted: ConstantIndex::from(1_usize),
+            },
+            CheckRefusal::MachineInvariant,
+            CheckRefusal::SortMismatch {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            },
+            CheckRefusal::LevelMismatch {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            },
+            CheckRefusal::DependentBind {
+                at: computation,
+                synthesised: comp_type,
+            },
+            CheckRefusal::Undecided { at: value },
+            CheckRefusal::FamilyArity {
+                at: value,
+                expected: StaticArity::from(1_u32),
+                actual: StaticArity::from(2_u32),
+            },
+            CheckRefusal::FamilyArgumentClassifier {
+                at: value,
+                position: ArgumentPosition::from(0_u32),
+                synthesised: value_type,
+                expected: value_type,
+            },
+            CheckRefusal::StaticLambdaArgument { at: value },
+            CheckRefusal::StaticClassifierExpected {
+                at: value_type,
+                found: value_type,
+            },
+            CheckRefusal::NegativeOccurrence(site),
+            CheckRefusal::NestedOccurrence(site),
+            CheckRefusal::IndexOccurrence(site),
+            CheckRefusal::NonUniformOccurrence(site),
+            CheckRefusal::CrossBlockReference {
+                site,
+                index: ConstantIndex::from(1_usize),
+            },
+            CheckRefusal::StageNotBelow {
+                at: value,
+                found: Standing::Top,
+                bound: Stage::At(StageId::from(0_usize)),
+            },
+            CheckRefusal::StagesDisagree {
+                at: value,
+                binder: gandr_kernel_term::StageBinder::from(0_usize),
+            },
+            CheckRefusal::StageNotCarried { at: computation },
+            CheckRefusal::EndpointMismatch {
+                at: value,
+                left: value,
+                right: value,
+                miss: gandr_core_checker::EndpointMiss::Unshown,
+            },
+            CheckRefusal::CompoundEndpoint {
+                at: value,
+                synthesised: comp_type,
+            },
+            CheckRefusal::FunextUnsupported {
+                at: value,
+                classifier: value_type,
+            },
+            CheckRefusal::PointwiseDistinct { at: value },
+            CheckRefusal::EquivUnsupported {
+                at: value,
+                classifier: value_type,
+            },
+            CheckRefusal::UncertifiedStratum {
+                at: value,
+                code: value_type,
+            },
+            CheckRefusal::OutsideFold {
+                at: value,
+                code: value_type,
+            },
+            CheckRefusal::RoundTripDistinct { at: value },
+            CheckRefusal::NotOver {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            },
+            CheckRefusal::UaUncertified {
+                at: value,
+                stratum: StratumDefect::Degree {
+                    degree: Degree::from(2_usize),
+                },
+            },
+            CheckRefusal::UaUncertified {
+                at: value,
+                stratum: StratumDefect::Condition {
+                    degree: Degree::from(1_usize),
+                },
+            },
+            CheckRefusal::UaUncertified {
+                at: value,
+                stratum: StratumDefect::Allowance {
+                    bound: ShapeSize::from(65_usize),
+                },
+            },
+            CheckRefusal::UaUncertified {
+                at: value,
+                stratum: StratumDefect::Budget {
+                    bound: ShapeSize::from(8_usize),
+                    counted: gandr_theory_sites::ClassCount::from(1001_usize),
+                },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::UnknownGenerator { way: Way::Forward },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::PastTheBound {
+                    profile: Profile {
+                        inputs: PortCount::from(2_usize),
+                        outputs: PortCount::from(1_usize),
+                    },
+                },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::Cardinality { corolla },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::Tables { corolla },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::NotInverse { corolla, element },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::NotNatural { corolla, element },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::Stuck { corolla, element },
+            },
+            CheckRefusal::ComposeUncertified {
+                at: value,
+                stratum: StratumDefect::Degree {
+                    degree: Degree::from(0_usize),
+                },
+            },
+            CheckRefusal::ComposeNotAShape {
+                at: value,
+                pasting: gandr_core_term::compose::Pasting::chain(
+                    gandr_core_term::compose::CellCount::from(4_usize),
+                )
+                .expect("the 4-chain packs"),
+            },
+            CheckRefusal::ComposeDoesNotFill {
+                at: value,
+                seam: gandr_core_term::compose::Seam::Outer,
+                defect: gandr_theory_sites::Unfilled::Wire {
+                    wire: 1_usize.into(),
+                },
+            },
+            CheckRefusal::SessionMismatch {
+                at: computation,
+                endpoint,
+                state: value_type,
+                defect: ProtocolDefect::Action {
+                    expected: ActionKind::Send,
+                    observed: ActionKind::Close,
+                },
+            },
+            CheckRefusal::SessionMismatch {
+                at: computation,
+                endpoint,
+                state: value_type,
+                defect: ProtocolDefect::Label,
+            },
+            CheckRefusal::SessionMismatch {
+                at: computation,
+                endpoint,
+                state: value_type,
+                defect: ProtocolDefect::Arms,
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::Residue {
+                    endpoint,
+                    state: value_type,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::Closed { endpoint },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::UsedTwice { endpoint },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::Captured {
+                    endpoint,
+                    by: Capture::Thunk,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::AsValue { endpoint },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::ArmsDisagree {
+                    endpoint,
+                    first: computation,
+                    other: computation,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::Unrestricted,
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::Unbound {
+                    index: DeBruijnIndex::from(0_u32),
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::BufferUnreturned { site: computation },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::BufferReturnedTwice { site: computation },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::BufferRead { site: computation },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::ContinuationUnspent {
+                    clause: computation,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::ContinuationUsedTwice {
+                    clause: computation,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::ContinuationCaptured {
+                    clause: computation,
+                    by: Capture::Task,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::ContinuationAsValue {
+                    clause: computation,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::LinearSlotConsumed {
+                    lambda: computation,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::LinearSlotUnconsumed {
+                    lambda: computation,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::ShadowCaptured {
+                    lambda: computation,
+                    by: Capture::Task,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::ComonoidAbsent {
+                    ty: value_type,
+                    grade: gandr_core_checker::comonoid::Grade::Many,
+                },
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::NotHeld,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Lent,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::HeldCaptured { by: Capture::Thunk },
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Escaped { by: Capture::Thunk },
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Unended,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Spent,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::NotAView,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::ReadOnly,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::UnwindEffect,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Unindexed,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::HeldShared,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::HeldCopied,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Moved,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Kept,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::KeptEscaped,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Consumed,
+            },
+            CheckRefusal::Codata {
+                at: node,
+                fault: CodataFault::Undeclared,
+            },
+            CheckRefusal::Codata {
+                at: node,
+                fault: CodataFault::KindNotUniverse,
+            },
+            CheckRefusal::Codata {
+                at: node,
+                fault: CodataFault::WithoutObservations,
+            },
+            CheckRefusal::Codata {
+                at: node,
+                fault: CodataFault::Occurrence,
+            },
+            CheckRefusal::Codata {
+                at: node,
+                fault: CodataFault::ObservationLevel,
+            },
+            CheckRefusal::Codata {
+                at: node,
+                fault: CodataFault::Arity,
+            },
+            CheckRefusal::CapabilityForged {
+                at: value,
+                expected: value_type,
+            },
+            CheckRefusal::LiteralAmbiguous {
+                at: value,
+                expected: value_type,
+            },
+            CheckRefusal::CapabilityAmplified(Mismatch::Value {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            }),
+            CheckRefusal::CapabilityOutsideAuthority {
+                at: computation,
+                capability: value_type,
+            },
+            CheckRefusal::CapabilityEscaped {
+                at: TermNode::Value(value),
+                found: TypeNode::Value(value_type),
+            },
+            CheckRefusal::CapabilityConsumable(value_type),
+            CheckRefusal::CapabilityUngranted {
+                constant: ConstantIndex::from(0_usize),
+                declared: value_type,
+            },
+            CheckRefusal::FootprintsOverlap {
+                at: computation,
+                child: value_type,
+                parent: value_type,
+                shared: value_type,
+            },
+            CheckRefusal::ComposeUncertified {
+                at: value,
+                stratum: StratumDefect::Degree {
+                    degree: gandr_theory_sites::Degree::from(0_usize),
+                },
+            },
+            CheckRefusal::ComposeNotAShape {
+                at: value,
+                pasting: gandr_core_term::compose::Pasting::chain(
+                    gandr_core_term::compose::CellCount::from(4_usize),
+                )
+                .expect("the 4-chain packs"),
+            },
+            CheckRefusal::ComposeDoesNotFill {
+                at: value,
+                seam: gandr_core_term::compose::Seam::Outer,
+                defect: gandr_theory_sites::Unfilled::Wire {
+                    wire: 1_usize.into(),
+                },
+            },
+            CheckRefusal::FillUncertified {
+                at: value,
+                stratum: StratumDefect::Degree {
+                    degree: gandr_theory_sites::Degree::from(0_usize),
+                },
+            },
+            CheckRefusal::NoFiller {
+                at: value,
+                left: value,
+                right: value,
+                stratum: gandr_core_term::ua::Stratum {
+                    degree: gandr_theory_sites::Degree::from(5_usize),
+                    bound: gandr_theory_sites::ShapeSize::from(7_usize),
+                },
+            },
+            CheckRefusal::GeneratorFamilyUnsupported {
+                at: value,
+                cell: value,
+                family: gandr_core_checker::fill::UnsupportedFamily::Bridge,
+            },
+            CheckRefusal::UnenclosedRun { at: value },
+            CheckRefusal::ImplicitUnsolved {
+                at: value,
+                reason: gandr_core_checker::Unsolved::Unforced,
+            },
+            CheckRefusal::ModelUnanswered {
+                at: value,
+                forced: gandr_core_checker::Forced::Unforced,
+            },
+            CheckRefusal::ModelAmbiguous {
+                at: value,
+                survivors: gandr_core_term::model::Survivors::default(),
+            },
+            CheckRefusal::TacticRefused {
+                at: value,
+                tactic: gandr_core_term::tactic::Tactic::ASSUMPTION,
+                fault: gandr_core_checker::TacticFault::NoHypothesis,
+            },
+            CheckRefusal::SessionNotEquivalent { at: value },
+            CheckRefusal::SessionNotSubtype { at: value },
+            CheckRefusal::SessionCodeExpected { at: value },
+            CheckRefusal::OpenSessionPayload { at: value_type },
+            CheckRefusal::UnassertedLaw { at: value_type },
+            CheckRefusal::UndischargedLaw { at: value_type },
+            CheckRefusal::NonCovariantMotive { at: computation },
+            CheckRefusal::RideUnsupported { at: computation },
+            CheckRefusal::MultiplicityUnsupported {
+                at: comp_type,
+                multiplicity: value,
+            },
+            CheckRefusal::RunNotAdmitted {
+                at: value,
+                fault: gandr_core_checker::RunFault::WrongLabel(gandr_core_checker::RunStep::from(
+                    1_u32,
+                )),
+            },
+            CheckRefusal::DialogueUnmatched {
+                at: value,
+                step: gandr_core_checker::RunStep::from(1_u32),
+            },
+            CheckRefusal::DialogueInverted {
+                at: value,
+                earlier: gandr_core_checker::RunStep::from(0_u32),
+                later: gandr_core_checker::RunStep::from(1_u32),
+            },
+            CheckRefusal::ForwardUnsupported { at: value },
+            CheckRefusal::Boundary { at: value },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Result,
+                    ty: value_type,
+                    former: value_type,
+                    predicate: Predicate::Mobile,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Result,
+                    ty: value_type,
+                    former: value_type,
+                    predicate: Predicate::Open,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Capture,
+                    ty: value_type,
+                    former: value_type,
+                    predicate: Predicate::Mobile,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Capture,
+                    ty: value_type,
+                    former: value_type,
+                    predicate: Predicate::Open,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Homed,
+                    ty: value_type,
+                    former: value_type,
+                    predicate: Predicate::Mobile,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Homed,
+                    ty: value_type,
+                    former: value_type,
+                    predicate: Predicate::Open,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::CapabilityMissing {
+                    world: gandr_core_term::world::World::Host,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::CapabilityCaptured {
+                    world: gandr_core_term::world::World::Host,
+                    by: Capture::Thunk,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::Elsewhere {
+                    bound: gandr_core_term::world::World::Host,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::HoldElsewhere {
+                    wanted: gandr_core_term::world::World::Host,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::OpenedElsewhere {
+                    written: ConstantIndex::from(0_usize),
+                    handle: ConstantIndex::from(1_usize),
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::Unlocated,
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::UndeclaredWorld {
+                    world: ConstantIndex::from(0_usize),
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::HostWorldUndeclared,
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::MarkUnfounded {
+                    atom: ConstantIndex::from(0_usize),
+                    former: value_type,
+                    predicate: gandr_core_checker::worlds::Predicate::Open,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::EntryNamed {
+                    constant: ConstantIndex::from(0_usize),
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::EntryUngranted {
+                    constant: ConstantIndex::from(0_usize),
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::NotAHandle { found: value_type },
+            },
+        ]
+        .map(Refusal::Checking);
+        let corpus = [
+            Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot {
+                span,
+                schema: ExpectationSchema::Owes,
+            }),
+            Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+                clause: BoundaryClause::Size,
+                span,
+            }),
+            Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+                clause: BoundaryClause::Align,
+                span,
+            }),
+            Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+                clause: BoundaryClause::Arity,
+                span,
+            }),
+            Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+                clause: BoundaryClause::Members,
+                span,
+            }),
+            Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+                clause: BoundaryClause::Niche,
+                span,
+            }),
+        ];
+        let refusals: Vec<Refusal<'_>> =
+            lowering.into_iter().chain(checking).chain(corpus).collect();
+        let named: Vec<RefusalName> = refusals.iter().map(Refusal::name).collect();
+        let missing: Vec<RefusalName> = RefusalName::VOCABULARY
+            .into_iter()
+            .filter(|vocabulary| !named.contains(vocabulary))
+            .collect();
+        assert!(missing.is_empty(), "every name is exercised: {missing:?}");
+        refusals
+    }
+
+    #[test]
+    fn every_refusal_name_has_a_plain_message()
+    {
+        let mut message = String::new();
+        for refusal in one_of_every_name() {
+            message.clear();
+            core::fmt::Write::write_fmt(&mut message, format_args!("{}", Plain(refusal)))
+                .expect("a message writes");
+            assert!(!message.is_empty(), "{:?} has a message", refusal.name());
+            assert!(!message.contains('\n'), "one line: {message}");
+            assert!(
+                !message
+                    .split(|character: char| character.is_whitespace() || character == '`')
+                    .any(|word| word.contains('_')),
+                "no grammar sort: {message}"
+            );
+            assert!(
+                !message.contains("admission position") && !message.contains("node "),
+                "no producer bookkeeping: {message}"
+            );
+        }
+    }
+
+    /// A refusal that names a form with an article writes the one its name is
+    /// spoken with (#417).
+    #[test]
+    fn a_form_takes_the_article_its_name_is_spoken_with_417()
+    {
+        let span = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(1_usize))
+            .expect("an ordered span");
+        let refused = |form: FormName, boundary: FragmentBoundary| {
+            Plain(Refusal::Lowering(LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary,
+            }))
+            .to_string()
+        };
+        for (form, opening) in [
+            (FormName::IDENTIFIER, "an identifier "),
+            (FormName::INSTANTIATION, "an instantiation expression "),
+            (FormName::MODULE_STATEMENT, "a module statement "),
+            (FormName::UNIT, "a unit "),
+            (FormName::HOLE, "a hole "),
+            (
+                FormName::from(gandr_surface_grammar::NamedKind("f_type")),
+                "an F type ",
+            ),
+            (
+                FormName::from(gandr_surface_grammar::NamedKind("u_type")),
+                "a U type ",
+            ),
+        ] {
+            for boundary in [FragmentBoundary::WrongSort, FragmentBoundary::NotInTail] {
+                let message = refused(form, boundary);
+                assert!(message.starts_with(opening), "{opening:?}: {message}");
+            }
+        }
+    }
+}

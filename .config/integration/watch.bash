@@ -1,0 +1,494 @@
+# shellcheck shell=bash
+# The head watcher of `landing` (#6587), sourced by `landing:watch`. Each
+# interval it reads `landing` and `main` by `git fetch` alone. A new head
+# of `landing` runs the landing's gate, `mise run check`, over the whole
+# move since the last green head. A red check gets an owner: the search
+# over the first parents (`search.jq`) names the first commit where it
+# fails, GitHub names the pull request of that commit, and `owner.jq`
+# writes the defect, the lane and the `FIX` page. Each interval also reads
+# how long `main` stands behind `landing` (`gap.jq`), and a gap past
+# `watch_limit` minutes pages the fixer once for each head of `main`. The
+# gate and the search run in the background, so that reading goes on each
+# interval while they run (#6944).
+#
+# The gate runs in a clone of its own, `watch-landing` under the state
+# directory, whose objects link those of this checkout's repository. So
+# the gate holds the lock of the lane `watch` and one of the host's gate
+# slots (`.config/mise/gate.bash`), never a seat's lane. The clone reads
+# `landing` and `main` into `refs/watch/`. Its `origin/landing` holds the
+# last green head, so the gate reads the move since that head as its
+# change, as `pr:open` reads a branch's change against its fork. A move of
+# `landing` during a run waits for the run to end, and the next run checks
+# the newest head alone. A red check runs on the green head first: a check
+# that fails there fails for the host, and the watcher pages the fixer and
+# files nothing.
+#
+# After a green head, the next reading fills the records cache of
+# `check:deletes` for it (#6861, `watch_fill`). The fill runs
+# `.config/deletes/records.bash` of the head over each package that the move
+# since the last filled head touches, in a worktree of its own,
+# `watch-records`, at niceness 19. Then the first check of a pull request on
+# that head reads its base from the cache. The cache is on this host alone.
+# Its state is `watch_fill_state`: `filled`, the last head whose fill ends,
+# and beside it the process of the fill that runs.
+#
+# The watcher calls GitHub only for a red head: one read of the culprit's
+# pull request, one read of the open `landing:` defects, and the writes of
+# one defect, its claim and its page. A green head and an unmoved one call
+# nothing.
+#
+# The state is `watch_state`: `green`, the last head where the gate passes;
+# `checked`, the last head the gate ran on; `gap`, the last reading of the
+# gap; and `paged`, the head of `main` at the last page of the gap.
+#
+# The service runs from a checkout of its own, `watch_home` under the state
+# directory (#6653). No sweep of a lane's worktrees removes it, since it is a
+# clone and no worktree. Before each reading the service sets it to
+# `origin/landing`, and the reading sources `watch.bash` from it in a fresh
+# shell. So the service runs landing's own watcher, with no restart. The
+# gate's clone, `watch_tree`, holds a head under test, which can be red, so
+# the service never runs its own code from there.
+
+watch_dir="$(git rev-parse --show-toplevel)/.config/integration"
+watch_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/landing-watch.json"
+watch_tree="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch-landing"
+watch_home="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch-service"
+watch_records="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch-records"
+watch_fill_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/landing-fill.json"
+watch_limit=45
+watch_interval=60
+source "$watch_dir/../stall/stall.bash"
+
+# The state, `{}` when there is none.
+watch_memory() {
+  if [[ -f "$watch_state" ]]; then jq -c . "$watch_state"; else echo '{}'; fi
+}
+
+# Writes the state `$1`.
+watch_remember() {
+  mkdir -p "$(dirname "$watch_state")"
+  printf '%s\n' "$1" > "$watch_state.tmp"
+  mv "$watch_state.tmp" "$watch_state"
+}
+
+# One reading of the repository `$1` in a fresh shell (#6653). The shell
+# sources this script from the checkout again, so a change to the checkout
+# takes effect at the next reading, with no restart of the service. The
+# shell keeps the options that a command substitution of the loop holds.
+watch_reading() {
+  bash -c 'set -uo pipefail; source "$1/watch.bash" && watch_once "$2"' _ "$watch_dir" "$1"
+}
+
+# A seat's gate runs with `GH_TOKEN` set (#6644). With none, a host's wrapper
+# of gh asks the next gh on `PATH` for a token, and in a case over a gh stub
+# that is the stub, which refuses. So the watcher's gate runs with the token
+# that `gh auth token` gives. A token already set stays, and a failed read
+# leaves it unset, as before.
+watch_token() {
+  local token
+  if [[ -z ${GH_TOKEN:-} ]] && token=$(gh auth token 2> /dev/null) && [[ -n $token ]]; then
+    export GH_TOKEN=$token
+  fi
+}
+
+# Makes the clone when it is absent, then reads `landing`, `main` and
+# `integration` into its `refs/$1/`, `refs/watch/` by default. A local
+# clone links the objects of this checkout's repository, so it copies no
+# object. A clone of a shallow repository is shallow too, and a check that
+# clones the clone again then reads it through a pack of its refs alone: a
+# commit that the check wrote is not in that pack (#6587). So the first
+# fetch deepens the clone to the whole history, and each later one keeps it
+# whole.
+watch_fetch() {
+  local space=${1:-watch}
+  local -a deepen=()
+  if [[ ! -d "$watch_tree/.git" ]]; then
+    mkdir -p "$(dirname "$watch_tree")"
+    git clone --quiet --no-checkout "$(git rev-parse --path-format=absolute --git-common-dir)" "$watch_tree"
+    git -C "$watch_tree" remote set-url origin "$(git remote get-url origin)"
+  fi
+  if [[ $(git -C "$watch_tree" rev-parse --is-shallow-repository) == true ]]; then deepen=(--unshallow); fi
+  git -C "$watch_tree" fetch --quiet "${deepen[@]}" origin "+refs/heads/landing:refs/$space/landing" \
+    "+refs/heads/main:refs/$space/main" "+refs/heads/integration:refs/$space/integration"
+}
+
+# Pages the seat of lane `$1` with the line `$2`, the triage seat for a
+# lane with no seat, through the page script of the stall detector's
+# configuration. With `$3` = `coordinator`, it pages the coordinator with
+# the same line too.
+watch_page() {
+  local page
+  local -a command seat coordinator
+  page=$(stall_configuration | jq -c '.page // empty')
+  [[ -n $page ]] || { echo "landing:watch: no page configuration; the line is: $2" >&2; return 1; }
+  mapfile -t command < <(jq -r '.command[]' <<< "$page")
+  mapfile -t seat < <(jq -r --arg lane "$1" '(.seats[$lane] // .triage)[]' <<< "$page")
+  mapfile -t coordinator < <(jq -r '.coordinator[]' <<< "$page")
+  "${command[@]}" "${seat[@]}" "$2" || :
+  if [[ ${3:-} == coordinator && "${seat[*]}" != "${coordinator[*]}" ]]; then "${command[@]}" "${coordinator[@]}" "$2" || :; fi
+}
+
+# Reads the gap from the refs of namespace `$2` and pages the fixer when
+# `gap.jq` says so, and the coordinator too when no cycle runs; prints the
+# reading.
+watch_gap() {
+  local memory=$1 space=$2 oldest main integration reading
+  oldest=$(git -C "$watch_tree" log --first-parent --format=%ct "refs/$space/main..refs/$space/landing" | tail -n 1)
+  main=$(git -C "$watch_tree" rev-parse "refs/$space/main")
+  integration=$(git -C "$watch_tree" rev-parse "refs/$space/integration")
+  reading=$(jq -n -c --argjson now "$(date +%s)" --argjson oldest "${oldest:-null}" --arg main "$main" \
+    --arg integration "$integration" --argjson limit "$watch_limit" --argjson paged "$(jq -c '.paged // null' <<< "$memory")" \
+    '{now: $now, oldest: $oldest, main: $main, integration: $integration, limit: $limit, paged: $paged}' | jq -c -f "$watch_dir/gap.jq")
+  if [[ $(jq -r .page <<< "$reading") == true ]]; then
+    watch_page triage "GAP $(jq -r .line <<< "$reading"), past $watch_limit minutes: read #5469 and the newest landing:watch defect" \
+      "$(jq -r 'if .coordinator then "coordinator" else "" end' <<< "$reading")"
+  fi
+  printf '%s\n' "$reading"
+}
+
+# Checks out `$1` in the clone, detached, with no change of its own.
+watch_checkout() {
+  git -C "$watch_tree" checkout --quiet --force --detach "$1"
+  git -C "$watch_tree" clean --quiet --force -d
+  mise trust --quiet "$watch_tree" > /dev/null 2>&1 || :
+}
+
+# Runs the line `$2` of a reading (`watch_failed`), or the whole gate when it
+# is `check`, on commit `$1` against the green head, writing its log to `$3`;
+# exits as the run exits. The run is a background gate (#6638): at niceness
+# 19 and in no host slot, so a lane's gate beside it loses neither CPU nor a
+# slot to it. Its enforcing suite runs over the whole workspace, where a
+# lane's runs the touched packages and the dispatcher (#6812), and past its
+# first red (`GATE_TEST_EVERY_RED`, #6750). A line that names one test runs
+# each test of that name (`watch_test`). A line of one check runs the gate
+# code of commit `$1`, and a commit before #6638 knows no background gate. So
+# the run exports `GANDR_GATE_SLOT`, and `.config/mise/gated` of each commit
+# since #4911 takes no lock and no slot for it (#6699).
+watch_run() {
+  local commit=$1 check=$2 log=$3
+  watch_checkout "$commit"
+  if [[ $check == check ]]; then
+    (cd "$watch_tree" && GATE_TEST_EVERY_RED=1 GANDR_GATE_BACKGROUND=1 nice -n 19 mise run check) > "$log" 2>&1
+  elif [[ $check == *' '* ]]; then
+    watch_test "$check" "$log"
+  else
+    (cd "$watch_tree" \
+      && GATE_SCOPE=$(.config/gate-scope/scope.bash 2> /dev/null) \
+      && GATE_WITNESS_SCOPE=$(.config/gate-scope/scope.bash --touched 2> /dev/null) \
+      && GATE_WITNESS_LISTED=$(.config/gate-scope/scope.bash --listed 2> /dev/null) \
+      && GATE_TEST_SCOPE=$(GATE_TEST_EVERY_RED=1 .config/gate-scope/test-scope.bash 2> /dev/null) \
+      && export GATE_SCOPE GATE_WITNESS_SCOPE GATE_WITNESS_LISTED GATE_TEST_SCOPE \
+      && GANDR_GATE_SLOT=background nice -n 19 mise run "$check") > "$log" 2>&1
+  fi
+}
+
+# Runs the red test of the line `$1`, `check:tests-enforcing <binary>
+# <test>`, in the watcher's checkout, writing the log to `$2` (#6750). The
+# suite runs each test of that name. nextest refuses a filter that names an
+# absent binary, so the filter names the test alone. The run fails when the
+# log holds a failure of `<binary> <test>`, or when the suite runs no test
+# at all (a build that fails). It passes when the test passes, when the
+# commit lacks it, and when only a test of the same name in another binary
+# fails.
+watch_test() {
+  local check binary test line ran=0
+  read -r check binary test <<< "$1"
+  (cd "$watch_tree" \
+    && GATE_TEST_SCOPE="--workspace --no-tests=pass -E 'test(=$test)'" \
+    && export GATE_TEST_SCOPE \
+    && GANDR_GATE_SLOT=background nice -n 19 mise run "$check") > "$2" 2>&1 && return 0
+  while IFS= read -r line; do
+    line=${line%"${line##*[! ]}"}
+    if [[ $line =~ (FAIL|TIMEOUT|ABORT|SIG[A-Z]+)\ +\[ && $line == *" $binary $test" ]]; then
+      return 1
+    fi
+    [[ $line == *' Starting '* ]] && ran=1
+  done < "$2"
+  (( ran == 1 ))
+}
+
+# The red lines of a gate's log `$1`, one per line (#6750): for the enforcing
+# suite, `check:tests-enforcing <binary> <test>` for each red test that the
+# log names; for every other failing check, and for a suite that names no
+# red test (a build that fails), the check alone.
+watch_failed() {
+  local check tests
+  while IFS= read -r check; do
+    if [[ $check == check:tests-enforcing ]]; then
+      tests=$(sed -nE 's/^\[check:tests-enforcing\] +(TRY [0-9]+ )?(FAIL|TIMEOUT|ABORT|SIG[A-Z]+) +\[ *[0-9.]+s\] +(\( *[0-9]+\/[0-9]+\) +)?([^ ]+) +([^ ]+) *$/check:tests-enforcing \4 \5/p' "$1" | sort -u)
+      if [[ -n $tests ]]; then
+        printf '%s\n' "$tests"
+        continue
+      fi
+    fi
+    printf '%s\n' "$check"
+  done < <(sed -n 's/^\[\(check:[a-z0-9:-]*\)\] ERROR task failed.*/\1/p' "$1" | sort -u)
+}
+
+# Searches the first parents between the green head `$1` and the red head
+# `$2` for the first commit where the red line `$3` fails; prints it.
+watch_search() {
+  local green=$1 head=$2 check=$3 commits results step probe
+  commits=$(git -C "$watch_tree" rev-list --first-parent --reverse "$green..$head" | jq -R . | jq -s -c .)
+  results='{}'
+  while :; do
+    step=$(jq -n -c --slurpfile commits <(printf '%s\n' "$commits") --slurpfile results <(printf '%s\n' "$results") \
+      '{commits: $commits[0], results: $results[0]}' \
+      | jq -c -f "$watch_dir/search.jq") || return 1
+    if probe=$(jq -er '.culprit' <<< "$step"); then
+      printf '%s\n' "$probe"
+      return 0
+    fi
+    probe=$(jq -r .probe <<< "$step")
+    echo "landing:watch: \`$check\` on ${probe::9}" >&2
+    if watch_run "$probe" "$check" "$(mktemp)"; then
+      results=$(jq -c --arg c "$probe" '.[$c] = "pass"' <<< "$results")
+    else
+      results=$(jq -c --arg c "$probe" '.[$c] = "fail"' <<< "$results")
+    fi
+  done
+}
+
+# Whether a newer head of `landing` repairs the red check `$2` of head `$1`
+# (#6679). The watcher fetches, and when `landing` stands past `$1`, it runs
+# the check on the newest head. A pass there prints that head and exits 0,
+# and the search does not run: its culprit names a red that `landing` no
+# longer holds. A red check there, an unmoved head or a failed fetch exits 1,
+# and the search runs as before.
+watch_repaired() {
+  local head=$1 check=$2 newest log status=0
+  watch_fetch || return 1
+  newest=$(git -C "$watch_tree" rev-parse refs/watch/landing) || return 1
+  [[ $newest != "$head" ]] || return 1
+  git -C "$watch_tree" merge-base --is-ancestor "$head" "$newest" || return 1
+  log=$(mktemp)
+  watch_run "$newest" "$check" "$log" || status=$?
+  rm -f "$log"
+  (( status == 0 )) || return 1
+  printf '%s\n' "$newest"
+}
+
+# The culprit of the red line `$4` of head `$2`: the first commit after the
+# green head `$3` where the line fails (`watch_search`), printed. A line that
+# fails on the green head too fails for the host, not for the move: the
+# watcher pages the fixer, prints nothing and returns 1.
+watch_own() {
+  local head=$2 green=$3 check=$4 log=$5
+  if ! watch_run "$green" "$check" "$(mktemp)"; then
+    watch_page triage "LANDING \`$check\` fails on the green head ${green::9} too, so the watcher files nothing: read $log"
+    return 1
+  fi
+  watch_search "$green" "$head" "$check" || { echo "landing:watch: the search for \`$check\` failed" >&2; return 1; }
+}
+
+# Files one defect for the culprit `$4` of head `$2`, which names each of its
+# red lines `$6`…, or comments on the open one (`owner.jq`); claims it for
+# the lane of the culprit's pull request and pages that lane.
+watch_file() {
+  local repo=$1 head=$2 green=$3 culprit=$4 log=$5 pr open input owner number observation
+  shift 5
+  pr=$(gh api "repos/$repo/commits/$culprit/pulls" --jq '[.[] | {number, branch: .head.ref, title}] | first // null') || pr=null
+  open=$(gh issue list -R "$repo" --state open --label kind:defect --search '"landing:" in:title' --limit 100 --json number,title) || return 1
+  # The defect holds each line's own last lines, by its prefix alone (#6659,
+  # `lines.jq`). The log reaches jq on standard input, never as one argument.
+  input=$(jq -R . "$log" | jq -s -c --arg head "$head" --arg green "$green" --arg culprit "$culprit" \
+    --argjson pr "$pr" --argjson open "$open" --args \
+    '{checks: $ARGS.positional, head: $head, green: $green, culprit: $culprit, pr: $pr, log: ., open: $open}' "$@")
+  owner=$(jq -c -L "$watch_dir" -f "$watch_dir/owner.jq" <<< "$input")
+  observation=$(mktemp)
+  jq -r .observation <<< "$owner" > "$observation"
+  number=$(jq -r '.number // empty' <<< "$owner")
+  if [[ -z $number ]]; then
+    number=$(mise run --quiet issue:file "$(jq -r .title <<< "$owner")" "$observation" kind:defect area:workflow priority:high effort:easy \
+      --template landing --fields "$(jq -c '{check: (.checks | join(", ")), head: .head[0:9], culprit: .culprit[0:9], pr: ((.pr.number // "none") | tostring)}' <<< "$input")" \
+      | sed -n 's|.*/issues/\([0-9][0-9]*\)$|\1|p' | tail -n 1)
+  else
+    gh issue comment "$number" -R "$repo" --body-file "$observation" > /dev/null || :
+  fi
+  rm -f "$observation"
+  [[ -n $number ]] || { echo "landing:watch: the defect for ${culprit::9} was not filed" >&2; return 1; }
+  mise run --quiet claim:take "$number" --lane "$(jq -r .lane <<< "$owner")" || :
+  watch_page "$(jq -r .lane <<< "$owner")" "$(jq -r --arg n "$number" '.page | gsub("\\{n\\}"; $n)' <<< "$owner")"
+}
+
+# Reads the heads into the refs of namespace `$2` and the gap from them, and
+# prints the state `$1` with that gap. A failed fetch prints `$1` as it is,
+# and fails.
+watch_heads() {
+  local memory=$1 gap
+  watch_fetch "$2" || { printf '%s\n' "$memory"; return 1; }
+  gap=$(watch_gap "$memory" "$2")
+  jq -c --argjson gap "$gap" '.gap = ($gap | del(.paged)) | if $gap.page then .paged = $gap.paged else . end' <<< "$memory"
+}
+
+# Waits at most `watch_interval` seconds for the process `$1`, and succeeds
+# when it ends.
+watch_hold() {
+  local second
+  for (( second = 0; second < watch_interval; second++ )); do
+    kill -0 "$1" 2> /dev/null || return 0
+    sleep 1
+  done
+  ! kill -0 "$1" 2> /dev/null
+}
+
+# The gate on the head `$2`, and the search and the defect of each red line,
+# from the state `$3`. Prints the new state.
+watch_gate() {
+  local repo=$1 head=$2 memory=$3 green log status check newest culprit
+  local -a failed
+  local -A caused=()
+  # The first green head is `main`'s: the integration cycle passed on it.
+  green=$(jq -r '.green // empty' <<< "$memory")
+  if [[ -z $green ]] || ! git -C "$watch_tree" merge-base --is-ancestor "$green" "$head" 2> /dev/null; then
+    green=$(git -C "$watch_tree" rev-parse refs/watch/main)
+  fi
+  git -C "$watch_tree" update-ref refs/remotes/origin/landing "$green"
+  git -C "$watch_tree" update-ref refs/remotes/origin/main "$(git -C "$watch_tree" rev-parse refs/watch/main)"
+  log="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/landing-watch.log"
+  watch_token
+  SECONDS=0
+  watch_run "$head" check "$log" && status=0 || status=$?
+  echo "landing:watch: the gate on ${head::9} ran ${SECONDS}s and exited $status" >&2
+  if (( status == 0 )); then
+    jq -c --arg head "$head" '.green = $head | .checked = $head' <<< "$memory"
+    return 0
+  fi
+  mapfile -t failed < <(watch_failed "$log")
+  if (( ${#failed[@]} == 0 )); then
+    echo "landing:watch: the gate on ${head::9} failed with no check named (see $log); reading again" >&2
+    printf '%s\n' "$memory"
+    return 0
+  fi
+  # Each red line is read alone (#6750): a newer head that repairs it, the
+  # green head that holds it too, or the culprit that brings it. The lines
+  # of one culprit share one defect.
+  for check in "${failed[@]}"; do
+    if newest=$(watch_repaired "$head" "$check"); then
+      echo "landing:watch: \`$check\` red on ${head::9} is green on ${newest::9}; no search" >&2
+      continue
+    fi
+    culprit=$(watch_own "$repo" "$head" "$green" "$check" "$log") || continue
+    [[ -n $culprit ]] || continue
+    caused[$culprit]+="$check"$'\n'
+  done
+  for culprit in "${!caused[@]}"; do
+    mapfile -t failed < <(printf '%s' "${caused[$culprit]}")
+    watch_file "$repo" "$head" "$green" "$culprit" "$log" "${failed[@]}" || :
+  done
+  jq -c --arg head "$head" '.checked = $head' <<< "$memory"
+}
+
+# The packages whose directories the move from `$2` to `$3` touches in the
+# tree `$1`, one `<package>=crates/<directory>` pair a line. A directory with
+# no `Cargo.toml` holds no package.
+watch_touched() {
+  local tree=$1 dir name
+  git -C "$tree" diff --no-renames --name-only "$2" "$3" -- crates/ | awk -F/ 'NF > 2 { print $2 }' | sort -u | while IFS= read -r dir; do
+    [[ -f $tree/crates/$dir/Cargo.toml ]] || continue
+    name=$(awk -F'"' '/^\[/ { package = ($0 == "[package]"); next } package && /^name *=/ { print $2; exit }' "$tree/crates/$dir/Cargo.toml")
+    if [[ -n $name ]]; then echo "$name=crates/$dir"; fi
+  done
+}
+
+# Fills the records cache of `check:deletes` for the green head `$1` (#6861).
+# The fill runs `records.bash` over each package that the move from `$2`
+# touches, one package at a time. It runs in the worktree `watch_records` at
+# the head, so a checkout of the gate never moves the tree under a run. It
+# runs at niceness 19 and in no gate slot, as the gate of the watcher runs
+# (#6638). A newer green head in the state stops the fill before its next
+# package, and the next fill starts from the last filled head. A package that
+# does not build leaves its miss to the checks. A head whose tree holds no
+# `records.bash` fills nothing.
+watch_fill() {
+  local head=$1 from=$2 pair out
+  if [[ -e $watch_records/.git ]]; then
+    git -C "$watch_records" checkout --quiet --force --detach "$head" || return 1
+    git -C "$watch_records" clean --quiet --force -d || return 1
+  else
+    git -C "$watch_tree" worktree add --quiet --detach "$watch_records" "$head" || return 1
+  fi
+  mise trust --quiet "$watch_records" > /dev/null 2>&1 || :
+  if [[ -x $watch_records/.config/deletes/records.bash ]]; then
+    out=$(mktemp -d)
+    while IFS= read -r pair; do
+      if [[ $(jq -r '.green // empty' <<< "$(watch_memory)") != "$head" ]]; then
+        echo "landing:watch: a newer green head stops the fill of ${head::9}" >&2
+        rm -rf "$out"
+        return 0
+      fi
+      (cd "$watch_records" && nice -n 19 mise exec -- .config/deletes/records.bash "$watch_records" "$watch_records/target/deletes" "$out" "$pair") >&2 \
+        || echo "landing:watch: the records of ${pair%%=*} at ${head::9} do not build" >&2
+    done < <(watch_touched "$watch_records" "$from" "$head")
+    rm -rf "$out"
+  fi
+  jq -n -c --arg head "$head" '{filled: $head}' > "$watch_fill_state.tmp"
+  mv "$watch_fill_state.tmp" "$watch_fill_state"
+}
+
+# Starts the fill of the green head `$1` in the background, when no fill runs
+# and the last fill holds another head (#6861). The move starts at the last
+# filled head when that head comes before `$1`, and else at the first parent
+# of `$1`. The fill writes its log to `landing-fill.log` beside the state.
+watch_prefill() {
+  local green=$1 filled pid=
+  [[ -n $green ]] || return 0
+  if [[ -f $watch_fill_state.pid ]]; then pid=$(< "$watch_fill_state.pid"); fi
+  if [[ -n $pid ]] && kill -0 "$pid" 2> /dev/null; then return 0; fi
+  filled=$(jq -r '.filled // empty' "$watch_fill_state" 2> /dev/null) || filled=
+  [[ $filled != "$green" ]] || return 0
+  if [[ -z $filled ]] || ! git -C "$watch_tree" merge-base --is-ancestor "$filled" "$green" 2> /dev/null; then
+    filled=$(git -C "$watch_tree" rev-parse --verify --quiet "$green^") || return 0
+  fi
+  mkdir -p "$(dirname "$watch_fill_state")"
+  nohup bash -c 'source "$1/watch.bash" && watch_fill "$2" "$3"' _ "$watch_dir" "$green" "$filled" \
+    >> "$(dirname "$watch_fill_state")/landing-fill.log" 2>&1 < /dev/null &
+  echo "$!" > "$watch_fill_state.pid"
+}
+
+# One reading: the gap, then the gate on the newest head when it moved.
+# Prints the new state.
+watch_once() {
+  local repo=$1 memory head gate state
+  memory=$(watch_memory)
+  if ! memory=$(watch_heads "$memory" watch); then
+    echo "landing:watch: the fetch failed; reading again" >&2
+    printf '%s\n' "$memory"
+    return 0
+  fi
+  head=$(git -C "$watch_tree" rev-parse refs/watch/landing)
+  # The fill of the last green head runs beside the gate of the next one.
+  watch_prefill "$(jq -r '.green // empty' <<< "$memory")"
+  if [[ $(jq -r '.checked // empty' <<< "$memory") == "$head" ]]; then printf '%s\n' "$memory"; return 0; fi
+  # A gate and the search of a red head can run an hour (#6944). So they run
+  # in the background, and each interval meanwhile reads the gap again, pages
+  # on it, and writes it to the state (#6675). These readings fetch into
+  # `refs/gap/`, so they never move a ref that the gate or the search reads.
+  watch_remember "$(jq -c --argjson read "$(date +%s)" '.read = $read' <<< "$memory")"
+  state=$(mktemp)
+  watch_gate "$repo" "$head" "$memory" > "$state" &
+  gate=$!
+  until watch_hold "$gate"; do
+    memory=$(watch_heads "$memory" gap) || echo "landing:watch: the fetch failed while the gate runs; reading again" >&2
+    watch_remember "$(jq -c --argjson read "$(date +%s)" '.read = $read' <<< "$memory")"
+  done
+  wait "$gate" || :
+  # The gate's state keeps its heads, and takes the newest gap and page.
+  if [[ -s $state ]]; then
+    jq -c --argjson now "$memory" '.gap = $now.gap | if $now.paged then .paged = $now.paged else . end' "$state"
+  else
+    printf '%s\n' "$memory"
+  fi
+  rm -f "$state"
+}
+
+# Install (`$1` = install) or remove (`$1` = remove) the service that keeps
+# `landing:watch` running, in the background (#6638). An install sets the
+# service's checkout to `origin/landing` first, and the service runs from
+# there (#6653).
+watch_service() {
+  if [[ $1 == install ]]; then
+    service_home_sync "$watch_home" || { echo "landing:watch --install: $watch_home cannot take origin/landing" >&2; return 1; }
+  fi
+  (cd "$watch_home" 2> /dev/null || :; service_unit "$1" landing-watch landing:watch 'gandr head watcher of landing (landing:watch)' background)
+}
