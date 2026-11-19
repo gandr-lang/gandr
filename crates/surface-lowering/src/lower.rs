@@ -8581,6 +8581,44 @@ mod tests
         );
     }
 
+    /// #8071: the attribute `native`, and a `builtin` mark whose payload is a
+    /// bare word, are each refused by the name of their retired spelling at
+    /// the attribute.
+    #[test]
+    fn a_retired_builtin_spelling_is_refused_by_name_8071()
+    {
+        use gandr_surface_grammar::RetiredForm;
+        use gandr_surface_syntax::ByteOffset;
+        use gandr_surface_syntax::ByteSpan;
+
+        use crate::error::FormFault;
+        use crate::form::FormName;
+
+        for (text, end, form) in [
+            (
+                "@[ native(\"string.append\") ] def a = 3 ;",
+                26_usize,
+                RetiredForm::NativeAttribute,
+            ),
+            (
+                "@[ builtin(irPair) ] def a = 3 ;",
+                18_usize,
+                RetiredForm::BuiltinWord,
+            ),
+        ] {
+            assert_eq!(
+                refusal(SourceText::from(text)),
+                LoweringRefusal::MalformedForm {
+                    span: ByteSpan::new(ByteOffset::from(3_usize), ByteOffset::from(end))
+                        .expect("the attribute's span"),
+                    form: FormName::ATTRIBUTE,
+                    fault: FormFault::Retired(form),
+                },
+                "{text}"
+            );
+        }
+    }
+
     /// #2077: `decomposes` takes one form unquoted, read as its spelling: the
     /// web's node names are no declared names, and the spelling joins a form
     /// written across lines into one. A text is refused at the payload.

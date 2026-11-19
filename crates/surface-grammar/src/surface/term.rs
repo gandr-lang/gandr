@@ -1646,6 +1646,16 @@ fn attributes_parameters_externs(
         SurfaceForm("parameter"),
         AdaptationReason("folded away: the `id : T?` parameter is inlined in the parameter list, not a standalone form-first identifier competing with a bare variable"),
     ));
+    attribute_block.adaptations.push(Adaptation::refused(
+        RuleName("attribute_block"),
+        RetiredForm::NativeAttribute,
+        AdaptationReason("a native value is a row of the builtin table: `@[builtin(\"key\")]` binds it, and the reader refuses `native` by name"),
+    ));
+    attribute_block.adaptations.push(Adaptation::refused(
+        RuleName("attribute_block"),
+        RetiredForm::BuiltinWord,
+        AdaptationReason("a `builtin` mark names its row by a key in quotes, as each row of the builtin table: the reader refuses a bare word by name"),
+    ));
     out.push(attribute_block);
     out.push(r(
         RuleName("inner_attribute_block"),

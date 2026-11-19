@@ -92,7 +92,8 @@
 //! kept because the payload is a closed choice, not a string, and the
 //! formatter reads it off the tree before anything lowers. Reversal: a second
 //! closed-choice attribute whose words collide with declared names would read
-//! better as a text.
+//! better as a text. A `builtin` key is a text, since the table's keys are
+//! names with dots, and the key's text is filed as the entry's spelling.
 //!
 //! Executable predicates preserve the registry inventory, exact lookup, the
 //! payload decision table, distance bounds and the borrowed identity of a filed
@@ -196,6 +197,10 @@ quenchant_shape::reason_enum! {
             /// as a value: [`super::AttributeSchema::Spelled`]. The spelling
             /// is filed beside the entry.
             Spelled,
+            /// The payload is the text key of a `builtin` mark, which names a
+            /// row of the builtin table, never a value. The key's text is
+            /// filed beside the entry.
+            Key,
         }
     }
 }
@@ -540,14 +545,11 @@ impl RegisteredAttribute
     /// member's declared types, printed by Rust's default layout, realise its
     /// row, or the block is refused by the first clause a member breaks.
     pub const BOUNDARY: Self = Self("boundary");
-    /// `builtin`: the declaration it decorates takes the built-in role its
-    /// word names, which a core former reads by role
-    /// ([`gandr_kernel_term::Builtin`]).
+    /// `builtin`: the declaration it decorates holds the row of the builtin
+    /// table that its text names ([`gandr_core_term::builtin::Row`]). A
+    /// given row's declaration is a signature that states the row's type, and
+    /// a found row's declaration has the body that a core former reads.
     pub const BUILTIN: Self = Self("builtin");
-    /// `native`: the signature it decorates is a declaration of the row of
-    /// the native table that its text names. The row gives the value, and
-    /// the declared type states the row's type.
-    pub const NATIVE: Self = Self("native");
     /// `traces`: the run of the declaration it decorates is recorded, and the
     /// payload states the web one channel's play decomposes to. It is the one
     /// attribute written more than once on a name, once per channel.
@@ -770,7 +772,7 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 21_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 20_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
@@ -801,12 +803,8 @@ const REGISTRY: [(&str, AttributeSchema); 21_usize] = [
         AttributeSchema::MarkerOrRecord(RegisteredAttribute::DEPRECATION_FIELDS),
     ),
     (RegisteredAttribute::BOUNDARY.0, AttributeSchema::Names),
-    (
-        RegisteredAttribute::BUILTIN.0,
-        AttributeSchema::Word(gandr_kernel_term::Builtin::WORDS),
-    ),
+    (RegisteredAttribute::BUILTIN.0, AttributeSchema::Text),
     (RegisteredAttribute::INERT.0, AttributeSchema::Marker),
-    (RegisteredAttribute::NATIVE.0, AttributeSchema::Text),
 ];
 
 impl AttributeRegistry
@@ -1976,12 +1974,8 @@ mod tests
                 AttributeSchema::MarkerOrRecord(&["since", "note"]),
             ),
             ("boundary", AttributeSchema::Names),
-            (
-                "builtin",
-                AttributeSchema::Word(&["irSignature", "irPair", "irArgs", "irDecode"]),
-            ),
+            ("builtin", AttributeSchema::Text),
             ("inert", AttributeSchema::Marker),
-            ("native", AttributeSchema::Text),
         ];
 
         for (spelling, schema) in expected {
@@ -2044,7 +2038,6 @@ mod tests
             ("boundary", "boundary"),
             ("builtins", "builtin"),
             ("inrt", "inert"),
-            ("natives", "native"),
         ];
 
         for (written, nearest) in expected {

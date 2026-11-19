@@ -1088,7 +1088,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         self.refuse_imports();
         self.declare();
         self.mark_generic();
-        self.read_natives();
+        self.read_builtins();
         self.seed()?;
         Exits::new(self.host()).survey()?;
         self.classify()?;
@@ -2373,8 +2373,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             payloads.push(payload.node);
             payloads.extend(attribute.key.map(|key| key.node));
             // A named payload is never a value: its schema reads its spelling,
-            // or refuses it.
+            // or refuses it. A `builtin` key is read as its text.
             let worded = attribute.key.is_some()
+                || attribute.name.as_ref() == RegisteredAttribute::BUILTIN.as_ref()
                 || matches!(
                     AttributeRegistry::lookup(attribute.name),
                     Maybe::Present((_, AttributeSchema::Word(_) | AttributeSchema::Spelled))
@@ -19847,12 +19848,15 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     ///   declarations, an `identity` payload only when it names two or three,
     ///   which the filing carries, and a `deprecated` record only when its
     ///   fields are texts among those its schema names, and each is ill-typed
-    ///   as another value otherwise.
+    ///   as another value otherwise; a `builtin` key is filed with no value and
+    ///   its text.
     /// - provides: the per-attribute half of the attribute pass.
-    /// - fails: yields the unknown-attribute refusal with its bounded
-    ///   suggestion, the duplicate refusal naming the first spelling for a name
-    ///   other than `traces` written again, the non-value-payload refusal, the
-    ///   missing-payload refusal, or the ill-typed-payload refusal.
+    /// - fails: yields the retired-spelling refusal for the attribute `native`
+    ///   and for a `builtin` mark whose payload is a bare word, the
+    ///   unknown-attribute refusal with its bounded suggestion, the duplicate
+    ///   refusal naming the first spelling for a name other than `traces`
+    ///   written again, the non-value-payload refusal, the missing-payload
+    ///   refusal, or the ill-typed-payload refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -19870,6 +19874,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - witness: `gandr-surface-lowering::lower::tests::a_spelled_payload_is_read_back_where_it_was_filed`
     /// - witness: `gandr-surface-lowering::lower::tests::a_named_payload_is_spelled_with_its_name_2077`
     /// - witness: `gandr-surface-lowering::lower::tests::traces_is_written_once_per_channel_3338`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_retired_builtin_spelling_is_refused_by_name_8071`
     /// - witness: `gandr-surface-lowering::tests::modules::a_sealed_atom_reads_the_identity_its_type_member_states`
     #[spec(
         captures: before = seen.len(),
@@ -19888,6 +19893,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                         | (Payload::Written(_), Maybe::Absent(payload::Absent::Spelled)) => {
                             entry.schema() == AttributeSchema::Spelled
                         },
+                        | (Payload::Written(_), Maybe::Absent(payload::Absent::Key)) => {
+                            entry.name() == RegisteredAttribute::BUILTIN
+                        },
                         | (Payload::Written(placed), Maybe::Present(value)) => {
                             self.cx().value_at(placed.node) == Maybe::Present(value)
                         },
@@ -19896,7 +19904,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                     && named.is_empty() == (entry.schema() != AttributeSchema::Names)
                     && members.is_empty() == (entry.schema() != AttributeSchema::Interface)
                     && (members.is_empty() || (2_usize ..= 3_usize).contains(&members.len()))
-                    && spelled.is_some() == matches!(entry.schema(), AttributeSchema::Spelled | AttributeSchema::Word(_))
+                    && spelled.is_some() == (matches!(entry.schema(), AttributeSchema::Spelled | AttributeSchema::Word(_)) || (entry.name() == RegisteredAttribute::BUILTIN && matches!(written.payload, Payload::Written(_))))
             },
             | Ok(&Filing::Unlowered) => {
                 seen.len() == before
@@ -19912,6 +19920,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
         arena: &CoreArena,
     ) -> Result<Filing, LoweringRefusal<'source>>
     {
+        if written.name.as_ref() == RetiredForm::NativeAttribute.written().0 {
+            return Err(LoweringRefusal::MalformedForm {
+                span: written.span,
+                form: FormName::ATTRIBUTE,
+                fault: FormFault::Retired(RetiredForm::NativeAttribute),
+            });
+        }
         let Maybe::Present((name, schema)) = AttributeRegistry::lookup(written.name)
         else {
             return Err(LoweringRefusal::UnknownAttribute {
@@ -19951,6 +19966,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             },
             (_, form, _) => form,
         };
+        if name == RegisteredAttribute::BUILTIN && form == PayloadForm::Word {
+            return Err(LoweringRefusal::MalformedForm {
+                span: written.span,
+                form: FormName::ATTRIBUTE,
+                fault: FormFault::Retired(RetiredForm::BuiltinWord),
+            });
+        }
         match payload_verdict(schema, form) {
             PayloadVerdict::Admitted => {},
             PayloadVerdict::Missing => {
@@ -19983,10 +20005,24 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                 Vec::new(),
             ),
             Payload::Written(placed) if matches!(schema, AttributeSchema::Word(_)) => {
-                // The word as written. A `builtin` mark is read back by its
-                // word.
+                // The word as written.
                 spelled = Some(String::from(self.cx().text_at(placed).as_ref()));
                 (Maybe::Absent(payload::Absent::Word), Vec::new(), Vec::new())
+            },
+            Payload::Written(placed) if name == RegisteredAttribute::BUILTIN => {
+                // The key as its text: the module reads the row back by it.
+                let Maybe::Present(Literal::Text(key)) =
+                    parse_literal(Former::Text, self.cx().text_at(placed))
+                else {
+                    return Err(LoweringRefusal::IllTypedPayload {
+                        span: placed.span,
+                        name,
+                        expected: schema,
+                        written: form,
+                    });
+                };
+                spelled = Some(String::from(key.as_ref()));
+                (Maybe::Absent(payload::Absent::Key), Vec::new(), Vec::new())
             },
             Payload::Written(placed) if schema == AttributeSchema::Spelled => {
                 // The payload as written, its layout one space and none just

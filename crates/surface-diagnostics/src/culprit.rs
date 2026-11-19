@@ -75,13 +75,13 @@ use gandr_core_checker::worlds::Predicate;
 use gandr_core_term::compose::Form;
 use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::RefusalOf;
+use gandr_surface_lowering::BuiltinFault;
 use gandr_surface_lowering::Ending;
 use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
-use gandr_surface_lowering::NativeFault;
 use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::TelescopeFault;
 use gandr_surface_lowering::Unexported;
@@ -160,12 +160,13 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
     Culprit(match refusal {
         LoweringRefusal::UnresolvedName { .. } => "not found in this scope",
         LoweringRefusal::RetiredName { .. } => "a retired spelling",
-        LoweringRefusal::NativeMark { fault, .. } => match fault {
-            NativeFault::NoRow => "names no row of the native table",
-            NativeFault::Bodied => "a native declaration with a body",
-            NativeFault::OutsideStd => "a native mark outside std",
-            NativeFault::TypeDiffers => "a type that is not the row's",
-            NativeFault::SecondDeclaration => "a row declared again",
+        LoweringRefusal::BuiltinMark { fault, .. } => match fault {
+            BuiltinFault::NoRow => "names no row of the builtin table",
+            BuiltinFault::Bodied => "a given row's declaration with a body",
+            BuiltinFault::Unbodied => "a found row's declaration with no body",
+            BuiltinFault::OutsideToolchain => "a builtin mark outside the toolchain",
+            BuiltinFault::TypeDiffers => "a type that is not the row's",
+            BuiltinFault::Repeated => "a row held again",
         },
         LoweringRefusal::UnresolvedDocLink { .. } => "links to no declared name",
         LoweringRefusal::UnresolvedTypeHead { .. } => "no type head of this name and arity",
@@ -654,6 +655,7 @@ mod tests
     use gandr_surface_corpus::Refusal;
     use gandr_surface_lowering::AscriptionForm;
     use gandr_surface_lowering::AttributeSchema;
+    use gandr_surface_lowering::BuiltinFault;
     use gandr_surface_lowering::CandidateCount;
     use gandr_surface_lowering::CrossedExit;
     use gandr_surface_lowering::Ending;
@@ -666,7 +668,6 @@ mod tests
     use gandr_surface_lowering::LoweringBudget;
     use gandr_surface_lowering::LoweringRefusal;
     use gandr_surface_lowering::MatchFault;
-    use gandr_surface_lowering::NativeFault;
     use gandr_surface_lowering::Offer;
     use gandr_surface_lowering::OperandCount;
     use gandr_surface_lowering::PayloadForm;
@@ -741,12 +742,13 @@ mod tests
         Culprit(match refusal {
             LoweringRefusal::UnresolvedName { .. } => "not found in this scope",
             LoweringRefusal::RetiredName { .. } => "a retired spelling",
-            LoweringRefusal::NativeMark { fault, .. } => match fault {
-                NativeFault::NoRow => "names no row of the native table",
-                NativeFault::Bodied => "a native declaration with a body",
-                NativeFault::OutsideStd => "a native mark outside std",
-                NativeFault::TypeDiffers => "a type that is not the row's",
-                NativeFault::SecondDeclaration => "a row declared again",
+            LoweringRefusal::BuiltinMark { fault, .. } => match fault {
+                BuiltinFault::NoRow => "names no row of the builtin table",
+                BuiltinFault::Bodied => "a given row's declaration with a body",
+                BuiltinFault::Unbodied => "a found row's declaration with no body",
+                BuiltinFault::OutsideToolchain => "a builtin mark outside the toolchain",
+                BuiltinFault::TypeDiffers => "a type that is not the row's",
+                BuiltinFault::Repeated => "a row held again",
             },
             LoweringRefusal::UnresolvedDocLink { .. } => "links to no declared name",
             LoweringRefusal::UnresolvedTypeHead { .. } => "no type head of this name and arity",

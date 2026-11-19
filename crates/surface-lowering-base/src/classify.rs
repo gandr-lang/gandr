@@ -242,7 +242,7 @@ impl LoweringRefusal<'_>
             | Self::IllFormedDescription { .. }
             | Self::UnresolvedName { .. }
             | Self::RetiredName { .. }
-            | Self::NativeMark { .. }
+            | Self::BuiltinMark { .. }
             | Self::UnresolvedDocLink { .. }
             | Self::UnresolvedTypeHead { .. }
             | Self::DuplicateSignature { .. }
@@ -325,7 +325,7 @@ impl LoweringRefusal<'_>
             } => FailureClass::Unimplemented(TrackingIssue::UNDECIDED_CONDITION),
             Self::UnresolvedName { .. }
             | Self::RetiredName { .. }
-            | Self::NativeMark { .. }
+            | Self::BuiltinMark { .. }
             | Self::UnresolvedDocLink { .. }
             | Self::UnresolvedTypeHead { .. }
             | Self::DuplicateSignature { .. }

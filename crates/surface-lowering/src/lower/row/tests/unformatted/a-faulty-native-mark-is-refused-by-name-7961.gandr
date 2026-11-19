@@ -1,14 +1,14 @@
-@[native("string.join")]
+@[builtin("string.join")]
 def unrowed : (a : String, b : String) -> String;
 
-@[native("string.append")]
+@[builtin("string.append")]
 def bodied(a : String, b : String) -> String = a
 
-@[native("string.append")]
+@[builtin("string.append")]
 def narrow : (a : String) -> String;
 
-@[native("string.append")]
+@[builtin("string.append")]
 def first : (a : String, b : String) -> String;
 
-@[native("string.append")]
+@[builtin("string.append")]
 def second : (a : String, b : String) -> String;

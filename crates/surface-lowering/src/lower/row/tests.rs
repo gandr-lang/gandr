@@ -76,11 +76,11 @@ fn a_native_signature_lowers_to_its_row_7961()
 fn a_faulty_native_mark_is_refused_by_name_7961()
 {
     let text = include_str!("tests/unformatted/a-faulty-native-mark-is-refused-by-name-7961.gandr");
-    // The span of the `n`-th `native` mark of a text, from its name through
+    // The span of the `n`-th `builtin` mark of a text, from its name through
     // its closing parenthesis.
     let mark = |text: &str, n| {
         let start = text
-            .match_indices("native(")
+            .match_indices("builtin(")
             .nth(n)
             .map_or(0_usize, |(at, _)| at);
         let end = text

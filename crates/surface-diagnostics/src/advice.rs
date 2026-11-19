@@ -54,6 +54,7 @@ use gandr_core_term::effect::host;
 use gandr_surface_corpus::BoundaryClause;
 use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::RefusalOf;
+use gandr_surface_lowering::BuiltinFault;
 use gandr_surface_lowering::Ending;
 use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FormName;
@@ -61,7 +62,6 @@ use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::FragmentSort;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
-use gandr_surface_lowering::NativeFault;
 use gandr_surface_lowering::Offer;
 use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::WfKind;
@@ -177,12 +177,13 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
                 form.replaced_by().0
             )
         },
-        LoweringRefusal::NativeMark { fault, .. } => String::from(match fault {
-            NativeFault::NoRow => "name a row of the native table, as `string.append`",
-            NativeFault::Bodied => "delete the body, and the row gives the value",
-            NativeFault::OutsideStd => "delete the mark. Call the declaration of `std`",
-            NativeFault::TypeDiffers => "write the type of the row, its arguments then its result",
-            NativeFault::SecondDeclaration => "delete this declaration. Call the earlier one",
+        LoweringRefusal::BuiltinMark { fault, .. } => String::from(match fault {
+            BuiltinFault::NoRow => "name a row of the builtin table by its key, as `string.append`",
+            BuiltinFault::Bodied => "delete the body, and the row gives the value",
+            BuiltinFault::Unbodied => "write the body that the row reads",
+            BuiltinFault::OutsideToolchain => "delete the mark. Use the declaration of `std`",
+            BuiltinFault::TypeDiffers => "write the type of the row, its arguments then its result",
+            BuiltinFault::Repeated => "delete this declaration. Use the earlier one",
         }),
         LoweringRefusal::UnresolvedDocLink { name, .. } => {
             format!("declare `{name}`, or link to a name this source declares")

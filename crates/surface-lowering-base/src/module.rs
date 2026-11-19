@@ -14064,10 +14064,12 @@ impl<'source> LoweredModule<'source>
     ///
     /// # Specification
     /// - requires: `declaration` is one of this module's declarations.
-    /// - ensures: the role whose word the `builtin` entry filed under the
-    ///   declaration's definition form, else under its signature form, was
-    ///   written with; [`gandr_kernel_term::builtin_role::Absent::Unmarked`]
-    ///   for a declaration that no `builtin` attribute decorates.
+    /// - ensures: the role of the row whose key the `builtin` entry filed under
+    ///   the declaration's definition form, else under its signature form, was
+    ///   written with; [`gandr_kernel_term::builtin_role::Absent::Unnamed`] for
+    ///   a key that names a native value or no row, and
+    ///   [`gandr_kernel_term::builtin_role::Absent::Unmarked`] for a
+    ///   declaration that no `builtin` attribute decorates.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the answer is the receiver's attribute table read
@@ -14098,7 +14100,15 @@ impl<'source> LoweredModule<'source>
             })
             .map_or(
                 Maybe::Absent(gandr_kernel_term::builtin_role::Absent::Unmarked),
-                |word| gandr_kernel_term::Builtin::named(gandr_kernel_term::RoleWord(word)),
+                |key| match gandr_core_term::builtin::Row::named(gandr_core_term::builtin::Key(key))
+                {
+                    Maybe::Present(gandr_core_term::builtin::Row::Role(role)) => {
+                        Maybe::Present(role)
+                    },
+                    Maybe::Present(gandr_core_term::builtin::Row::Native(_)) | Maybe::Absent(_) => {
+                        Maybe::Absent(gandr_kernel_term::builtin_role::Absent::Unnamed)
+                    },
+                },
             )
     }
 
