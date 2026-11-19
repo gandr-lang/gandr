@@ -655,6 +655,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
     /// - witness: `gandr-surface-lowering::tests::modules::functors::an_instance_can_be_an_argument`
     /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_type_3080`
+    ///
+    /// # Cost
+    /// - allocation: the type the arena mints and its origin, durable by the
+    ///   arena
+    /// - allocation: a refusal, error path
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
     fn argument_type(
         &self,
@@ -749,6 +754,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   argument's type at each instance, a computation type too.
     /// - witness: `gandr-surface-lowering::tests::modules::functors::a_transparent_result_reads_the_argument_through`
     /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_type_3080`
+    ///
+    /// # Cost
+    /// - allocation: the type of each instance it reads, durable by the
+    ///   lowering
+    /// - allocation: the message of a broken clause, diagnostic
     #[spec(
         captures: before = self.cx().instance_types.len(),
         ensures: self.cx().instance_types.len() >= before,
@@ -852,6 +862,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::tests::modules::functors::two_applications_mint_distinct_atoms`
     /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
     /// - witness: `gandr-surface-lowering::tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
+    ///
+    /// # Cost
+    /// - allocation: each instance it renames, durable by the lowering
+    /// - allocation: the message of a broken clause, diagnostic
     #[spec(
         captures: before = self.cx().instantiated.len(),
         ensures: self.cx().instantiated.len() >= before,

@@ -275,6 +275,10 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the listed head that the expression lowering reads,
+    ///   durable by the lowering
     #[inline]
     fn atom(
         &self,

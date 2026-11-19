@@ -1282,6 +1282,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   mints, beside three bases written by that name; a record written in
     ///   place keeps no name.
     /// - witness: `gandr-surface-lowering::lower::patched::tests::a_base_named_by_a_type_member_keeps_the_name`
+    ///
+    /// # Cost
+    /// - allocation: the members a source defines, durable by the lowering
     #[spec(ensures: self.cx().defining.len() <= self.cx().collected.top_types.len())]
     fn define_members(
         &mut self,
@@ -1524,6 +1527,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
     /// - witness: `gandr-surface-lowering::tests::namespace::an_import_list_binds_only_the_names_it_lists_2687`
     /// - witness: `gandr-surface-lowering::tests::namespace::a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378`
+    ///
+    /// # Cost
+    /// - allocation: the tables it rebinds, durable by the lowering
+    /// - allocation: the message of a broken clause, diagnostic
     #[spec(
         captures: before = self.cx().collected.slots.len(),
         ensures: self.cx().collected.slots.len() == before,
@@ -5433,6 +5440,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::identity::tests::session_statements_lower_to_their_formers`
     /// - witness: `gandr-surface-lowering::lower::tests::an_unknown_capital_where_a_value_is_read_is_unresolved_2653`
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_module_named_where_a_value_is_read_is_its_model_4485`
+    ///
+    /// # Cost
+    /// - allocation: the plan of the head it records, durable by the lowering
+    /// - allocation: a refusal, error path
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -5914,6 +5925,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::tests::a_decimal_reads_as_its_exact_value_4807`
     /// - witness: `gandr-surface-lowering::lower::natural::tests::a_numeral_at_nat_is_its_binary_constructor_term_3287`
     /// - witness: `gandr-surface-lowering::lower::natural::tests::a_numeral_at_a_source_s_own_nat_stays_an_integer_3287`
+    ///
+    /// # Cost
+    /// - allocation: the plan of the head it records, durable by the lowering
+    /// - allocation: a refusal, error path
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -10537,6 +10552,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::tests::modules::a_manifest_type_component_expands_in_later_components`
     /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
     /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_is_named_only_after_it_is_written`
+    ///
+    /// # Cost
+    /// - allocation: the manifest and the plan it records, durable by the
+    ///   lowering
+    /// - allocation: a refusal, error path
     #[spec(
         captures: before = self.cx().manifests.len(),
         ensures: |ret| {
@@ -10645,6 +10665,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
     /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_type_3080`
     /// - witness: `gandr-surface-lowering::tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
+    ///
+    /// # Cost
+    /// - allocation: the manifest and the plan it records, durable by the
+    ///   lowering
+    /// - allocation: a refusal, error path
     #[spec(
         captures: before = self.cx().manifests.len(),
         ensures: |ret| {
@@ -11312,6 +11337,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   applied through its name expands as it does applied bare.
     /// - witness: `gandr-surface-lowering::lower::tests::a_qualified_type_argument_is_the_code_its_alias_is_1126`
     /// - witness: `gandr-surface-lowering::tests::modules::a_module_s_family_is_applied_through_its_name_3051`
+    ///
+    /// # Cost
+    /// - allocation: the expansion it records and the plan of the stated type,
+    ///   durable by the lowering
+    /// - allocation: a refusal, error path
     fn module_type(
         &mut self,
         site: Site,
@@ -11957,6 +11987,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::tests::a_thunk_binder_called_in_a_type_unquotes_its_call`
     /// - witness: `gandr-surface-lowering::lower::tests::a_forward_member_applied_as_a_type_is_refused_at_its_head`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_carried_path_head_takes_its_endpoints_by_juxtaposition_6121`
+    ///
+    /// # Cost
+    /// - allocation: the plan and the reading it records, durable by the
+    ///   lowering
+    /// - allocation: a refusal, error path
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -12263,6 +12298,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     ///   `std.buffer` lowers to the native buffer, and one in a source that
     ///   does not is an unresolved head.
     /// - witness: `gandr-surface-lowering::lower::tests::a_buffer_type_resolves_only_through_its_listing_4522`
+    ///
+    /// # Cost
+    /// - allocation: the plan of the head and its resolution, durable by the
+    ///   lowering
+    /// - allocation: a refusal, error path
     #[spec(
         ensures: |ret| match type_atom(name) {
             | Maybe::Present(ambient) => ret == Maybe::Present(ambient),
@@ -12494,6 +12534,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - hypothesis: L3 — a member abbreviating a stack, read from a
     ///   declaration classified before the member is, states the stack.
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_stated_stack_is_resumed_as_a_clause_resumes_1387`
+    ///
+    /// # Cost
+    /// - allocation: the stated stack it reads, durable by the lowering
+    /// - allocation: the message of a broken clause, diagnostic
     #[spec(
         captures: before = (self.cx().plans.count(), self.cx().resolutions.len(), self.cx().operands.entries().len()),
         ensures: |_| self.cx().plans.count() == before.0
@@ -14824,6 +14868,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::tests::modules::nested_member_signature_constrains_the_parent_binding`
     /// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_data_field_is_the_case_returning_it_1106`
+    ///
+    /// # Cost
+    /// - allocation: each node the arena mints and each plan it carries out,
+    ///   durable by the lowering
+    /// - allocation: a refusal, error path
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -21423,6 +21472,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
     /// - witness: `gandr-surface-lowering::tests::modules::a_signed_member_of_a_sealed_module_exports_its_witness`
     /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_type_3080`
+    ///
+    /// # Cost
+    /// - allocation: the lowered structures and their components, durable by
+    ///   the lowered module
+    /// - allocation: the message of a broken clause, diagnostic
     #[spec(
         ensures: |ret| {
             ret.len() == self.cx().collected.structures.len()
