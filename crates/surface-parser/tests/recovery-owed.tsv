@@ -2069,7 +2069,6 @@ fixture/model/higher-cells/cat-shape.gandr	46	5	8031
 fixture/model/higher-cells/cat-shape.gandr	107	2	7881
 fixture/model/higher-cells/cat-shape.gandr	108	3	7881
 fixture/model/higher-cells/cat-shape.gandr	116	5	8030
-fixture/model/higher-cells/cat-shape.gandr	117	4	8030
 fixture/model/higher-cells/cat-shape.gandr	493	4	7881
 fixture/model/higher-cells/cat-shape.gandr	561	0	8031
 fixture/model/higher-cells/cat-shape.gandr	589	0	7881
@@ -5093,13 +5092,11 @@ fixture/pathological/desc/relative-monad.gandr	104	3	8031
 fixture/pathological/desc/relative-monad.gandr	105	1	7881
 fixture/pathological/desc/relative-monad.gandr	106	3	8031
 fixture/pathological/desc/relative-monad.gandr	107	1	8031
-fixture/pathological/desc/relative-monad.gandr	129	1	8030
 fixture/pathological/desc/relative-monad.gandr	139	3	8031
 fixture/pathological/desc/relative-monad.gandr	140	4	8031
 fixture/pathological/desc/relative-monad.gandr	143	2	8031
 fixture/pathological/desc/relative-monad.gandr	145	3	8031
 fixture/pathological/desc/relative-monad.gandr	146	3	8031
-fixture/pathological/desc/relative-monad.gandr	173	1	8030
 fixture/pathological/desc/rules-diverge.gandr	18	4	8031
 fixture/pathological/desc/rules-diverge.gandr	22	3	8031
 fixture/pathological/desc/rules-never-complete.gandr	41	5	8031
@@ -6250,7 +6247,6 @@ fixture/surface/higher-cells/cat-shape.gandr	46	5	8031
 fixture/surface/higher-cells/coherence.gandr	9	10	7881
 fixture/surface/higher-cells/coherence.gandr	12	8	7881
 fixture/surface/higher-cells/coherence.gandr	13	8	7881
-fixture/surface/kinded-type-component.gandr	23	1	8030
 fixture/surface/n-ary-products.gandr	6	2	8031
 fixture/surface/n-ary-products.gandr	24	2	8031
 fixture/surface/n-ary-products.gandr	39	2	8031
