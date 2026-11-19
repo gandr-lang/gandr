@@ -2,11 +2,12 @@
 # The verdict of a check on a tree. A pass of a check is a record, a commit
 # with no parent. Its tree is the tree of the check's pass, and its
 # message holds the key of the pass. The writer signs the commit with the key
-# that signs its commits. The record's ref is
-# `refs/verdicts/<tree>/<check>/<hash>`, where <hash> is the first 16 digits
-# of the SHA-256 of the key. A check whose inputs `verdicts.json` lists binds
-# their digest in place of the tree, and its record's ref is
-# `refs/verdicts/inputs/<check>/<hash>`.
+# that signs its commits.
+#
+# The record's ref is `refs/verdicts/<tree>/<check>/<hash>`, where <hash> is
+# the first 16 digits of the SHA-256 of the key. A check whose inputs
+# `verdicts.json` lists binds their digest in place of the tree. Its record's
+# ref is `refs/verdicts/inputs/<check>/<hash>`.
 # - see: #7684, `inputs.bash`
 #
 # A lane's gate writes the record, `pr:open` pushes it, and the jobs of the
@@ -267,7 +268,7 @@ case ${1:-} in
     (( $# == 2 )) || { echo 'usage: verdict.bash publish <commit>' >&2; exit 2; }
     tree=$(git rev-parse "$2^{tree}")
     # The refs under the tree, and each record of inputs whose commit holds
-    # the tree: the gate wrote it on this tree.
+    # the tree. The gate writes such a record on this tree.
     mapfile -t refs < <(git for-each-ref --format='%(refname)' "refs/verdicts/$tree/"
       git for-each-ref --format='%(refname) %(tree)' refs/verdicts/inputs/ | awk -v tree="$tree" '$2 == tree { print $1 }')
     if (( ${#refs[@]} == 0 )); then

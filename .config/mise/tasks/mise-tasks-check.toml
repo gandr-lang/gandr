@@ -748,8 +748,9 @@ trap 'rm -f "$stamp"' EXIT
 policy {{ env.GATE_SCOPE | default(value='--workspace') }} $features || status=$?
 .config/policy/held.bash target/allocation-base target/evidence/records "${GATE_BASE:-}" >&2
 (( status == 0 )) || exit "$status"
-# Each file of the tree that the run read is an input of its scope, so the
-# record of this pass binds each file that its verdict reads (#7684).
+# Each file of the tree that the run reads must be an input of its scope. So
+# the record of this pass binds each file that its verdict reads.
+# - see: #7684
 .config/gate-scope/inputs.bash depinfo "$stamp" '{{ env.GATE_SCOPE | default(value='--workspace') }}' target/dylint/target
 .config/policy/scope-cases.bash
 .config/policy/trait-object-cases.bash

@@ -98,7 +98,7 @@ list() {
   objects "$commit" < "$paths_file"
   # The task's own definition: what it runs, its environment, its tools and
   # its dependencies, as `mise` reads them in this checkout. The source path
-  # and the directory name the checkout, so they stay out.
+  # and the directory name the checkout, so the definition omits them.
   task=${GATE_INPUTS_TASK:-$(mise tasks info "$check" --json | jq -c -S '{run, env, tools, depends}')}
   task=$(printf '%s' "$task" | sha256sum | cut -c1-64)
   printf 'task:%s\t%s\n' "$check" "$task"
@@ -120,10 +120,10 @@ case ${1:-} in
     shift 3
     crates=$(crates)
     allowed=$(paths "$scope" none <<< "$crates")
-    # Each path that a unit of a workspace crate read, from the files that
-    # this run wrote: rustc's dep-info, and the `rerun-if-changed` lines of a
-    # build script's run. A relative path of the dep-info is relative to the
-    # root, where cargo runs rustc. A relative path of a build script is
+    # Two kinds of file of this run name the files that a unit of a workspace
+    # crate reads. They are rustc's dep-info and the `rerun-if-changed` lines
+    # of a build script's run. A relative path of the dep-info is relative to
+    # the root, where cargo runs rustc. A relative path of a build script is
     # relative to its crate. A path that the tree does not hold is no input of
     # the tree: a case builds its own scratch crate there.
     refused=$(for directory in "$@"; do
@@ -147,10 +147,10 @@ case ${1:-} in
           n = split(line, parts, " ")
           for (i = 1; i <= n; i++) { p = parts[i]; gsub("\001", " ", p); emit("root", p) }
         }' \
-      | jq -R -r --argjson crates "$crates" --rawfile allowed <(printf '%s\n' "$allowed") '
+      | jq -R -r --slurpfile crates <(printf '%s\n' "$crates") --rawfile allowed <(printf '%s\n' "$allowed") '
         def norm: reduce (split("/")[]) as $s ([];
           if $s == ".." and length > 0 and .[-1] != ".." then .[:-1] elif $s == "." or $s == "" then . else . + [$s] end) | join("/");
-        ($crates | map({(.name): .dir}) | add) as $dir
+        ($crates[0] | map({(.name): .dir}) | add) as $dir
         | ($allowed | split("\n") | map(select(length > 0))) as $allowed
         | split("\t") as [$file, $kind, $raw]
         | ($file | capture("/build/(?<crate>[^/]+)/[^/]+/(out/[a-z0-9_]+-[0-9a-f]{16}\\.d|run/stdout)$")) as $unit

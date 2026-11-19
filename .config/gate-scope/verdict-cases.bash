@@ -2,7 +2,7 @@
 # The cases of the records of a check's pass. `check:gate-scope` runs them.
 # Each case builds a scratch repository with a bare remote. It writes a record
 # of `check:clippy-plain-only` on the tree of HEAD, pushes it and reads it as
-# a runner does. The cases at the end read a record of the inputs of
+# a runner does. The last cases take a record of the inputs of
 # `check:dylint`, in a scratch workspace of three crates.
 # - see: #7684, `verdict.bash`
 #
@@ -243,8 +243,8 @@ gate_inputs() {
   "$verdict" publish HEAD 2> /dev/null
 }
 
-# Merges the change onto a base that moved by `$1` at the path `$2`, as a
-# merge group does, and names that base as the group's.
+# Merges the change onto a moved base, as a merge group does. The base moves
+# by the text `$1` at the path `$2`, and it becomes the group's base.
 group() {
   git switch --quiet --detach "$GATE_BASE"
   commit "$2" "$1" moved > /dev/null
