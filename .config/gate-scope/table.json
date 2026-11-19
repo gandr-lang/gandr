@@ -291,9 +291,13 @@
         "ledger/"
       ],
       "check:recovery-counts": [
+        ".config/cases/scratch.bash",
         ".config/mise/tasks/mise-tasks-check.toml",
         ".config/mise/tasks/mise-tasks-ci.toml",
-        ".config/recovery/"
+        ".config/recovery/",
+        "crates/surface-grammar/",
+        "crates/surface-parser/",
+        "crates/surface-syntax/"
       ],
       "check:references": [
         ".config/bodies/",
