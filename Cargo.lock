@@ -2073,6 +2073,7 @@ dependencies = [
  "gandr-kernel-data",
  "gandr-kernel-strata",
  "gandr-kernel-term",
+ "gandr-runtime-rust-record",
  "gandr-surface-grammar",
  "gandr-surface-lowering",
  "gandr-surface-lowering-base",

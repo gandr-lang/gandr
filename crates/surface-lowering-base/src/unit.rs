@@ -240,8 +240,8 @@ pub enum ImportTarget
 }
 
 /// One source of a unit: where its text starts, what its imports resolved
-/// to, the `std` module it is, when it is one, and the name its caller gives
-/// it.
+/// to, what each of its `thir` marks staged, the `std` module it is, when it
+/// is one, and the name its caller gives it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UnitSource
 {
@@ -251,6 +251,9 @@ pub struct UnitSource
     /// the source writes them; an import whose address has a scheme takes no
     /// entry.
     imports: Vec<ImportTarget>,
+    /// What the caller read for each `thir` mark of the source: a Rust
+    /// function's staged body, or why it read none.
+    staged: Vec<Staged>,
     /// The module path of the standard library's source this source is,
     /// `std.io`: the module whose host interfaces it names without importing
     /// it (#4523).
@@ -260,6 +263,35 @@ pub struct UnitSource
     /// source's items from another source's items of the same name, in every
     /// unit that lays the source (#6522).
     name: Option<Arc<str>>,
+}
+
+/// What the caller read for one `thir` mark: the Rust file and the function
+/// that the mark names, and the function's staging.
+///
+/// The lowering lowers no file and runs no process. So the caller reads each
+/// mark's file through the reader of a Rust crate before the lowering runs,
+/// as it resolves each import's path.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Staged
+{
+    /// The Rust file, as the mark writes it.
+    pub file: Arc<str>,
+    /// The function's path inside its crate, as the mark writes it.
+    pub function: gandr_runtime_rust_record::FunctionPath,
+    /// The function's staging, or why the caller read none.
+    pub staging: Result<gandr_runtime_rust_record::Staging, Unstaged>,
+}
+
+/// Why the caller read no staging for a `thir` mark.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Unstaged
+{
+    /// The host holds no reader of a Rust crate for the pinned toolchain.
+    NoReader,
+    /// The reader read no record: its cause, as the cache states it.
+    Unread(Arc<str>),
+    /// The record refuses the function: its cause, as the record states it.
+    Refused(Arc<str>),
 }
 
 quenchant_shape::reason_enum! {
@@ -305,9 +337,35 @@ impl UnitSource
         Self {
             start,
             imports,
+            staged: Vec::new(),
             home: None,
             name: None,
         }
+    }
+
+    /// The source, with `staged` read for its `thir` marks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn staged(
+        self,
+        staged: Vec<Staged>,
+    ) -> Self
+    {
+        Self { staged, ..self }
+    }
+
+    /// What the caller read for each `thir` mark, laid by [`Self::staged`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn marks(&self) -> &[Staged]
+    {
+        &self.staged
     }
 
     /// The source, laid as the standard library's module `module`.
