@@ -2297,6 +2297,10 @@ corpus/pending/pathological/modules/dotted-in-nested.gandr STE-3.5 2e7b091499446
 corpus/pending/pathological/modules/dotted-in-nested.gandr STE-3.5 8563eb9fea13453c
 corpus/pending/pathological/modules/dotted-in-nested.gandr STE-3.5 e9f9df6f02e037af
 corpus/pending/pathological/modules/dotted-in-nested.gandr STE-6.4 7ffeb0f63edb2700
+corpus/rust/thir/example.gandr STE-3.2 1c678696471ba75f
+corpus/rust/thir/example.gandr STE-3.2 200db78bced9f276
+corpus/rust/thir/example.gandr STE-6.4 7ffeb0f63edb2700
+corpus/rust/thir/outside.gandr STE-6.4 7ffeb0f63edb2700
 corpus/sketch/abi-and-boundaries/computed-row.gandr STE-3.2 e02c7b0a8c39a78b
 corpus/sketch/abi-and-boundaries/per-language.gandr STE-3.2 35447964014648ea
 corpus/sketch/abi-and-boundaries/per-language.gandr STE-3.5 0bef4ef1a9e827e1
