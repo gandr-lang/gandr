@@ -1685,6 +1685,7 @@ INSERT INTO purpose VALUES('kernel-core-base','error::replay::ReplayRefusal','en
 INSERT INTO purpose VALUES('kernel-core-base','error::replay::TracePosition','struct','Where a decision stands in a trace, counted from zero.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','error::ruled::OperationBodyFault','enum','Why a ruled definition''s body is not its rules'' decision tree.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','error::session::SessionError','enum','A finite session formation or replay refusal.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core-base','fork::ForkHandle','type_alias','The fork that the embedding program gives as a shared handle, which the kernel allocates none of.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','fork::ForkWidth','struct','How many jobs a fork runs at once, which the forked drain splits its obligations by.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','fork::Forking','struct','Whether one check forks its independent obligations, and through which fork.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','fork::Job','trait','One part of a declaration''s check that a fork runs apart, which keeps its answer in itself.','fork','fits','sound',NULL);
@@ -1761,6 +1762,7 @@ INSERT INTO purpose VALUES('kernel-core-base','verdict::RecallCount','struct','C
 INSERT INTO purpose VALUES('kernel-core-base','verdict::Receipt','struct','Holds a kernel''s signature over the records it checked, and the identity that signed.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','verdict::ReceiptSignature','struct','Holds the Ed25519 signature a receipt carries over its records'' digest.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','verdict::RecordCount','struct','Counts the admissions a receipt records, each once whether its verdict is kept under one key or two.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core-base','verdict::SourceHandle','type_alias','The source of recorded verdicts that the embedding program gives as a shared handle, which the kernel allocates none of.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','verdict::StoredReceipt','struct','Holds a receipt beside the records it attests, as a store keeps and answers them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','verdict::StratumBytes','struct','Holds the canonical image of a stratum the checker certified, as a stratum receipt signs it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','verdict::StratumKey','struct','Names a stored stratum by the digest of the theory build, its bound and its degree, which a stratum receipt signs.',NULL,'fits','sound',NULL);
