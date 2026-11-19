@@ -1,0 +1,397 @@
+//! Which root a source sits under, decided by its path.
+//!
+//! # Membership is location
+//!
+//! A source is gated or asserted by the directory it sits in, never by what it
+//! says about itself: a declaration under the strict root cannot describe its
+//! way out of the gate, because moving it is a change to its path that a
+//! reviewer sees. The innermost root directory a source sits under decides.
+//!
+//! `classify` decides a source's root from the directories containing it, never
+//! from its own name or text: the innermost directory named `strict`,
+//! `fixture`, `corpus` or `ledger` decides, a directory named `pending`
+//! directly inside a `fixture` or `corpus` directory marks the pending set, and
+//! a path under none of them is strict.
+//! The walk classifies each source by its canonical path, so a relative path
+//! and a symbolic link to the same directory classify alike. The strict root
+//! settles under `CorpusRoot::Strict`, where `owes` and `refuses` are
+//! themselves refusals; the fixture root and the pending set settle under
+//! `CorpusRoot::Fixture`.
+//!
+//! A `ledger` directory is a fixture root because the ledgers' exemplars
+//! show the surface as the checker meets it today: an exemplar of a form the
+//! checker does not reach yet states the refusal it meets, and that
+//! expectation breaks when the checker grows to reach it. The alternative was a
+//! `fixture` directory inside the ledger, a second name for one place. The
+//! choice reverses if a project's own `ledger` directory must be strict, at
+//! which point the configured mapping below replaces the names.
+//!
+//! The alternative was a root named on the command line, which lets one
+//! invocation run a fixture source as strict. The choice reverses if a
+//! project's layout cannot use the directory names, at which point a configured
+//! mapping from directories to roots replaces the names, still by location.
+//!
+//! # The pending set
+//!
+//! A source under `pending/` carries a refusal no expectation can state: the
+//! lowering refused it as a whole, or refused one of its declarations with no
+//! form of the declaration keyed — a slot held for a module component or a
+//! module member — so no attribute can be read off it. `Composed::Settled`
+//! carries such refusals as `unstatable`. A pending source carrying either is
+//! `Standing::Pending`: counted, its declarations not settled, and printed by
+//! `test`. A pending source carrying neither is `Standing::Lowered` and
+//! unsettles the run, because every expectation it needs can be written and it
+//! belongs under the fixture root. `gandr-surface-corpus`'s `root` module
+//! describes the set it holds.
+//!
+//! The alternative was a `pending` attribute, which the lowering could not read
+//! for either kind of refusal. The choice reverses when every refusal can carry
+//! an expectation; the pending set then empties.
+//!
+//! # The sketch set
+//!
+//! A directory named `sketch` directly inside a `fixture` or `corpus`
+//! directory holds sketch sources: forms the grammar has not chosen yet,
+//! which no gate parses. A walk leaves the directory out when it meets it
+//! among a directory's children, so `gandr test corpus` reads none of it. A
+//! path that names it, or a source in it, is walked as any other path, and a
+//! probe reads the sketches that way. `gandr-surface-corpus`'s `root` module
+//! describes the set it holds.
+
+use std::ffi::OsStr;
+use std::path::Path;
+
+use anodized::spec;
+use gandr_surface_corpus::CorpusRoot;
+
+/// The directory name of the strict root.
+const STRICT: &str = "strict";
+
+/// The directory name of the fixture root.
+const FIXTURE: &str = "fixture";
+
+/// The directory name of the corpus root, the fixture root at the repository's
+/// top.
+const CORPUS: &str = "corpus";
+
+/// The directory name of the ledgers, a fixture root of its own.
+const LEDGER: &str = "ledger";
+
+/// The directory name of the pending set, directly inside a fixture root.
+const PENDING: &str = "pending";
+
+/// The directory name of the sketch set, directly inside a fixture root.
+const SKETCH: &str = "sketch";
+
+/// The root a source sits under.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SourceRoot
+{
+    /// Under a `strict` directory, or under no root at all: every declaration
+    /// is held to *checks, owing nothing*, and `owes` and `refuses` are
+    /// refused.
+    Strict,
+    /// Under a `fixture`, `corpus` or `ledger` directory: the five expectation
+    /// schemas are admitted.
+    Fixture,
+    /// Under the `pending` directory directly inside a fixture root: the
+    /// lowering is expected to refuse the source as a whole, as outside the
+    /// fragment, before any declaration exists to carry an expectation.
+    Pending,
+}
+
+impl SourceRoot
+{
+    /// The corpus root the source's declarations are settled under.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the strict root settles under [`CorpusRoot::Strict`]; the
+    ///   fixture root and its pending set under [`CorpusRoot::Fixture`].
+    /// - provides: the root `settle` reads, so a pending source the lowering
+    ///   does read is settled as a fixture source would be.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — three roots, enumerated against their corpus roots.
+    /// - witness: `root::tests::each_root_settles_under_its_corpus_root`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| matches!((self, ret),
+        (Self::Strict, CorpusRoot::Strict)
+            | (Self::Fixture | Self::Pending, CorpusRoot::Fixture),
+    ))]
+    pub const fn corpus_root(self) -> CorpusRoot
+    {
+        match self {
+            Self::Strict => CorpusRoot::Strict,
+            Self::Fixture | Self::Pending => CorpusRoot::Fixture,
+        }
+    }
+}
+
+impl core::fmt::Display for SourceRoot
+{
+    /// Writes `strict`, `fixture` or `pending`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Strict => STRICT,
+            Self::Fixture => FIXTURE,
+            Self::Pending => PENDING,
+        })
+    }
+}
+
+/// Classify the source at `path` by the innermost root directory it sits
+/// under.
+///
+/// # Specification
+/// - requires: `path` names the source itself; a relative path is read as
+///   written, so a caller wanting the location a source really has passes its
+///   canonical path.
+/// - ensures: only the directories containing the source are read, never its
+///   own file name. The innermost directory named `strict`, `fixture`, `corpus`
+///   or `ledger` decides, and a directory named `pending` decides when its own
+///   parent directory is named `fixture` or `corpus`; a path under none of them
+///   is [`SourceRoot::Strict`].
+/// - provides: the membership the walk settles each source under.
+/// - fails: never; every path classifies.
+/// - panics: none.
+/// - intension: reads the path's components once, front to back, and touches no
+///   file.
+///
+/// # Adequacy
+/// - hypothesis: L3 — default membership, both root nestings, the ledger root,
+///   adjacent pending membership and root-like filenames have exact expected
+///   roots. Parent-directory components establish lexical rather than
+///   filesystem resolution. These fixtures do not enumerate every native path
+///   spelling.
+/// - witness: `root::tests::a_path_under_no_root_is_strict`
+/// - witness: `root::tests::the_innermost_root_decides`
+/// - witness: `root::tests::pending_counts_only_directly_inside_a_fixture_root`
+/// - witness: `root::tests::the_file_name_never_classifies`
+/// - witness: `root::tests::parent_components_are_classified_lexically`
+#[inline]
+#[must_use]
+#[spec(ensures: |ret| ret == path.ancestors().skip(1).find_map(|directory| {
+    let name = directory.file_name()?;
+    if name == STRICT { Some(SourceRoot::Strict) }
+    else if name == FIXTURE || name == CORPUS || name == LEDGER { Some(SourceRoot::Fixture) }
+    else if name == PENDING
+        && matches!(directory.parent().and_then(Path::file_name), Some(parent) if parent == OsStr::new(FIXTURE) || parent == OsStr::new(CORPUS))
+    { Some(SourceRoot::Pending) }
+    else { None }
+}).unwrap_or(SourceRoot::Strict))]
+pub fn classify(path: &Path) -> SourceRoot
+{
+    let mut root = SourceRoot::Strict;
+    let mut parent = OsStr::new("");
+    for directory in path.parent().into_iter().flat_map(Path::iter) {
+        if directory == STRICT {
+            root = SourceRoot::Strict;
+        }
+        else if directory == FIXTURE || directory == CORPUS || directory == LEDGER {
+            root = SourceRoot::Fixture;
+        }
+        else if directory == PENDING && (parent == FIXTURE || parent == CORPUS) {
+            root = SourceRoot::Pending;
+        }
+        parent = directory;
+    }
+    root
+}
+
+/// What a walk does with a directory it meets among a directory's children.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Descent
+{
+    /// The walk descends into it.
+    Walked,
+    /// The sketch set: the walk leaves it out.
+    Sketch,
+}
+
+/// Whether `directory` is the sketch set, which a walk leaves out unless it is
+/// named.
+///
+/// # Specification
+/// - requires: `directory` names a directory.
+/// - ensures: [`Descent::Sketch`] exactly when its own name is `sketch` and its
+///   parent's name is `fixture` or `corpus`, [`Descent::Walked`] otherwise.
+/// - provides: the directory a walk does not descend into.
+/// - fails: never.
+/// - panics: none.
+/// - intension: reads the last two components of the path, and touches no file.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sketch set inside each fixture root name, a sketch
+///   directory deeper in a root and one under the strict root have exact
+///   answers; native path spellings are outside the witness.
+/// - witness: `root::tests::the_sketch_set_is_only_directly_inside_a_fixture_root`
+#[inline]
+#[must_use]
+#[spec(ensures: |ret| (ret == Descent::Sketch) == (directory.file_name() == Some(OsStr::new(SKETCH))
+    && directory.parent().and_then(Path::file_name).is_some_and(|parent| parent == FIXTURE || parent == CORPUS)))]
+pub fn descent(directory: &Path) -> Descent
+{
+    let sketch = directory.file_name() == Some(OsStr::new(SKETCH))
+        && directory
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|parent| parent == FIXTURE || parent == CORPUS);
+    if sketch {
+        Descent::Sketch
+    }
+    else {
+        Descent::Walked
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use std::path::Path;
+
+    use gandr_surface_corpus::CorpusRoot;
+
+    use super::Descent;
+    use super::SourceRoot;
+    use super::classify;
+    use super::descent;
+
+    #[test]
+    fn the_sketch_set_is_only_directly_inside_a_fixture_root()
+    {
+        let rows = [
+            ("corpus/sketch", Descent::Sketch),
+            ("fixture/sketch", Descent::Sketch),
+            ("/work/corpus/sketch", Descent::Sketch),
+            ("corpus/model/sketch", Descent::Walked),
+            ("strict/sketch", Descent::Walked),
+            ("sketch", Descent::Walked),
+            ("corpus/sketches", Descent::Walked),
+            ("corpus/sketch/cells", Descent::Walked),
+        ];
+        for (path, walked) in rows {
+            assert_eq!(descent(Path::new(path)), walked, "{path}");
+        }
+    }
+
+    #[test]
+    fn each_root_settles_under_its_corpus_root()
+    {
+        assert_eq!(
+            SourceRoot::Strict.corpus_root(),
+            CorpusRoot::Strict,
+            "the strict root gates"
+        );
+        assert_eq!(
+            SourceRoot::Fixture.corpus_root(),
+            CorpusRoot::Fixture,
+            "the fixture root asserts"
+        );
+        assert_eq!(
+            SourceRoot::Pending.corpus_root(),
+            CorpusRoot::Fixture,
+            "the pending set is part of the fixture root"
+        );
+    }
+
+    #[test]
+    fn a_path_under_no_root_is_strict()
+    {
+        for path in [
+            "a.gandr",
+            "src/a.gandr",
+            "/tmp/work/a.gandr",
+            "pending/a.gandr",
+        ] {
+            assert_eq!(
+                classify(Path::new(path)),
+                SourceRoot::Strict,
+                "{path} sits under no root"
+            );
+        }
+    }
+
+    #[test]
+    fn the_innermost_root_decides()
+    {
+        let rows = [
+            ("corpus/strict/a.gandr", SourceRoot::Strict),
+            ("corpus/fixture/a.gandr", SourceRoot::Fixture),
+            ("corpus/model/a.gandr", SourceRoot::Fixture),
+            ("corpus/fixture/deep/er/a.gandr", SourceRoot::Fixture),
+            ("corpus/strict/fixture/a.gandr", SourceRoot::Fixture),
+            ("corpus/fixture/strict/a.gandr", SourceRoot::Strict),
+            ("corpus/fixture/pending/model/a.gandr", SourceRoot::Pending),
+            ("corpus/fixture/pending/strict/a.gandr", SourceRoot::Strict),
+            ("corpus/ledger/syntax/a.gandr", SourceRoot::Fixture),
+            ("corpus/ledger/features/a.gandr", SourceRoot::Fixture),
+            ("corpus/strict/ledger/a.gandr", SourceRoot::Fixture),
+            ("corpus/ledger/strict/a.gandr", SourceRoot::Strict),
+        ];
+        for (path, root) in rows {
+            assert_eq!(classify(Path::new(path)), root, "{path}");
+        }
+    }
+
+    #[test]
+    fn pending_counts_only_directly_inside_a_fixture_root()
+    {
+        let rows = [
+            ("fixture/pending/a.gandr", SourceRoot::Pending),
+            ("fixture/model/pending/a.gandr", SourceRoot::Fixture),
+            ("strict/pending/a.gandr", SourceRoot::Strict),
+            ("pending/fixture/a.gandr", SourceRoot::Fixture),
+            ("ledger/pending/a.gandr", SourceRoot::Fixture),
+            ("corpus/pending/a.gandr", SourceRoot::Pending),
+            ("corpus/model/pending/a.gandr", SourceRoot::Fixture),
+        ];
+        for (path, root) in rows {
+            assert_eq!(classify(Path::new(path)), root, "{path}");
+        }
+    }
+
+    #[test]
+    fn the_file_name_never_classifies()
+    {
+        assert_eq!(
+            classify(Path::new("strict/fixture")),
+            SourceRoot::Strict,
+            "a file named `fixture` sits under the strict root"
+        );
+        assert_eq!(
+            classify(Path::new("fixture/strict")),
+            SourceRoot::Fixture,
+            "a file named `strict` sits under the fixture root"
+        );
+        assert_eq!(
+            classify(Path::new("fixture")),
+            SourceRoot::Strict,
+            "a bare file named `fixture` sits under no root"
+        );
+    }
+
+    #[test]
+    fn parent_components_are_classified_lexically()
+    {
+        assert_eq!(
+            SourceRoot::Fixture,
+            classify(Path::new("fixture/../a.gandr"))
+        );
+        assert_eq!(
+            SourceRoot::Pending,
+            classify(Path::new("fixture/pending/../a.gandr"))
+        );
+    }
+}
