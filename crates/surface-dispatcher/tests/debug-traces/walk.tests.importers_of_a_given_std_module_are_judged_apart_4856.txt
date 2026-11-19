@@ -1,0 +1,125 @@
+test: walk::tests::importers_of_a_given_std_module_are_judged_apart_4856
+package: gandr-surface-dispatcher
+command: mise run debug:test gandr-surface-dispatcher walk::tests::importers_of_a_given_std_module_are_judged_apart_4856 --break component::group$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-dispatcher/51c246b4e78324f3/out/gandr_surface_dispatcher-51c246b4e78324f3"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-dispatcher/51c246b4e78324f3/out/gandr_surface_dispatcher-51c246b4e78324f3' (arm64).
+(lldb) settings set -- target.run-args  "walk::tests::importers_of_a_given_std_module_are_judged_apart_4856" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex component::group$
+Breakpoint 1: where = gandr_surface_dispatcher-51c246b4e78324f3`gandr_surface_dispatcher::component::group + 60 at component.rs:1255:1, address = 0x00000001009b7d14
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_dispatcher-51c246b4e78324f3`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x000000010414a128
+(lldb) run
+
+running 1 test
+test walk::tests::importers_of_a_given_std_module_are_judged_apart_4856 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 58296 launched: 'target/debug-trace/debug/build/gandr-surface-dispatcher/51c246b4e78324f3/out/gandr_surface_dispatcher-51c246b4e78324f3' (arm64)
+Process 58296 stopped
+* thread #2, name = 'walk::tests::importers_of_a_given_std_module_are_judged_apart_4', stop reason = breakpoint 1.1
+       frame #0: 0x00000001009b7d14 gandr_surface_dispatcher-51c246b4e78324f3`gandr_surface_dispatcher::component::group(grammar={dag:{names:size=24, assocs:size=24, edges:size=21, reachability:size=24, linear_extension:size=24}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:28, alloc:{value:{0:{}}}, _marker:{}}, rules:size=171, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:171, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=65, molds:{molds:size=2898, rctxs:size=2898, bounds:size=2898, owners:size=2898, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:27, items:197}, alloc:{}, marker:{}}}, menus:size=197, mold_labels:size=2898, adjacencies:size=6490, successor_starts:size=2899, has_pred:size=2898, has_succ:size=2898, form_first:size=207, is_first:size=2898, form_last:size=261, complete_last:size=222, is_complete_last:size=2898, required_tail:size=39, is_required_tail:size=2898, closing:size=2898, twins:size=2898, fingerprint:{0:17471447431724878607}}, automaton:{kinds:size=2898, observations:size=2898, width:46, sets:size=828}}, given=size=3, reading=ImportForms, apart={map:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}) at component.rs:1255:1
+   1252	/// - witness: `component::tests::an_importer_s_forms_are_read_as_its_parse_reads_them`
+   1253	/// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
+   1254	/// - witness: `walk::tests::a_source_refused_whole_refuses_only_itself_and_its_importers_1027`
+-> 1255	#[spec(
+    	^
+   1256	    captures: [offered = given.len()],
+   1257	    ensures: |ref ret| ret.placed.len() == offered
+   1258	        && ret.placed.iter().all(|placed| ret.components.get(placed.component)
+(lldb) bt 24
+* thread #2, name = 'walk::tests::importers_of_a_given_std_module_are_judged_apart_4', stop reason = breakpoint 1.1
+   * frame #0: 0x00000001009b7d14 gandr_surface_dispatcher-51c246b4e78324f3`gandr_surface_dispatcher::component::group(grammar={dag:{names:size=24, assocs:size=24, edges:size=21, reachability:size=24, linear_extension:size=24}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:28, alloc:{value:{0:{}}}, _marker:{}}, rules:size=171, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:171, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=65, molds:{molds:size=2898, rctxs:size=2898, bounds:size=2898, owners:size=2898, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:27, items:197}, alloc:{}, marker:{}}}, menus:size=197, mold_labels:size=2898, adjacencies:size=6490, successor_starts:size=2899, has_pred:size=2898, has_succ:size=2898, form_first:size=207, is_first:size=2898, form_last:size=261, complete_last:size=222, is_complete_last:size=2898, required_tail:size=39, is_required_tail:size=2898, closing:size=2898, twins:size=2898, fingerprint:{0:17471447431724878607}}, automaton:{kinds:size=2898, observations:size=2898, width:46, sets:size=828}}, given=size=3, reading=ImportForms, apart={map:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}) at component.rs:1255:1
+     frame #1: 0x0000000100942250 gandr_surface_dispatcher-51c246b4e78324f3`<gandr_surface_dispatcher::walk::Walk>::visiting::<core::convert::Infallible, <gandr_surface_dispatcher::walk::Walk>::visit<core::convert::Infallible, gandr_surface_dispatcher::walk::tests::importers_of_a_given_std_module_are_judged_apart_4856::{closure#0}>::{closure#0}>(self={grammar:Ok(strong=1, weak=0), traversal:{arguments:size=0, count:2, given:size=2, argument:"library/std/src/string.gandr", answered:Yes, entries:size=0, path:""}, report:{sources:{strict:{0:0}, fixture:{0:0}, pending:{0:0}, refused:{0:0}, lowered_pending:{0:0}, faulted:{0:0}}, tally:{declarations:{settled:{0:0}, unsettled:{0:0}}, fixtures:{settled:{0:0}, unsettled:{0:0}}, ledger:{0:0}, surviving:{undeclared:{0:0}, unproduced:{0:0}}, refusals:{user_absence:{0:0}, unimplemented:{0:0}, malformed_source:{0:0}, engine_fault:{0:0}}}, exercised:{lambda_checks:{0:0}, return_checks:{0:0}, force_synthesises:{0:0}, application_synthesises:{0:0}, subsumption_bridge:{0:0}, undefined_term_name:{0:0}, undefined_type_head:{0:0}, shape_refusal:{0:0}, non_synthesisable_head:{0:0}, non_synthesisable_definition:{0:0}, reserved_form:{0:0}, addressable_obligation:{0:0}}, lowerings:{0:0}, parsed:{0:0}, spellings:{0:0}, goals:{0:0}}, grant:{operations:Unbounded, worlds:size=0}, reader:{crossover:{0:1048576}, held:{inner:{pal:{ptr:{…}}}, poison:{failed:{v:{…}}}, data:{value:size=3}}}, positioning:Unpositioned}, pool={width:Threads({0:1}), started:{once:{inner:{state_and_queue:{v:{…}}}}, value:{value:{None:(), value:{value:{…}}}}, _marker:{}}}, keeping=Composed, visitor={_ref__visitor:{_ref__judged:size=0}}) at walk.rs:843:23
+     frame #2: 0x00000001009367c0 gandr_surface_dispatcher-51c246b4e78324f3`<gandr_surface_dispatcher::walk::Walk>::visit::<core::convert::Infallible, gandr_surface_dispatcher::walk::tests::importers_of_a_given_std_module_are_judged_apart_4856::{closure#0}>(self=<unavailable>, pool={width:Threads({0:1}), started:{once:{inner:{state_and_queue:{v:{…}}}}, value:{value:{None:(), value:{value:{…}}}}, _marker:{}}}, visitor={_ref__judged:size=0}) at walk.rs:736:14
+     frame #3: 0x0000000100a32b6c gandr_surface_dispatcher-51c246b4e78324f3`gandr_surface_dispatcher::walk::tests::importers_of_a_given_std_module_are_judged_apart_4856 at walk.rs:2967:76
+     frame #4: 0x0000000100a0be90 gandr_surface_dispatcher-51c246b4e78324f3`gandr_surface_dispatcher::walk::tests::importers_of_a_given_std_module_are_judged_apart_4856::{closure#0}((null)={_ref__judged:size=0}) at walk.rs:2944:63
+     frame #5: 0x0000000100564bdc gandr_surface_dispatcher-51c246b4e78324f3`<gandr_surface_dispatcher::walk::tests::importers_of_a_given_std_module_are_judged_apart_4856::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={_ref__judged:size=0}, (null)=<unavailable>) at function.rs:250:5
+     frame #6: 0x0000000100b0c518 gandr_surface_dispatcher-51c246b4e78324f3`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #7: 0x0000000100b0c510 gandr_surface_dispatcher-51c246b4e78324f3`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #8: 0x0000000100b17a34 gandr_surface_dispatcher-51c246b4e78324f3`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #9: 0x0000000100b17a28 gandr_surface_dispatcher-51c246b4e78324f3`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #10: 0x0000000100b17a28 gandr_surface_dispatcher-51c246b4e78324f3`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #11: 0x0000000100b17a24 gandr_surface_dispatcher-51c246b4e78324f3`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #12: 0x0000000100b17a24 gandr_surface_dispatcher-51c246b4e78324f3`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #13: 0x0000000100b17a24 gandr_surface_dispatcher-51c246b4e78324f3`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #14: 0x0000000100b17a18 gandr_surface_dispatcher-51c246b4e78324f3`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #15: 0x0000000100b12428 gandr_surface_dispatcher-51c246b4e78324f3`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+     frame #16: 0x0000000100b123c4 gandr_surface_dispatcher-51c246b4e78324f3`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #17: 0x0000000100b19ef8 gandr_surface_dispatcher-51c246b4e78324f3`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #18: 0x0000000100b19ee8 gandr_surface_dispatcher-51c246b4e78324f3`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #19: 0x0000000100b19ee8 gandr_surface_dispatcher-51c246b4e78324f3`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [opt] [inlined]
+     frame #20: 0x0000000100b19ee4 gandr_surface_dispatcher-51c246b4e78324f3`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #21: 0x0000000100b19ee4 gandr_surface_dispatcher-51c246b4e78324f3`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [opt] [inlined]
+     frame #22: 0x0000000100b19ee4 gandr_surface_dispatcher-51c246b4e78324f3`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [opt] [inlined]
+     frame #23: 0x0000000100b19ed4 gandr_surface_dispatcher-51c246b4e78324f3`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5 [opt]
+(lldb) frame variable --depth 3
+(gandr_surface_grammar::model::Pbg *) grammar = 0x000000010dfca430 {dag:{names:size=24, assocs:size=24, edges:size=21, reachability:size=24, linear_extension:size=24}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:28, alloc:{value:{0:{}}}, _marker:{}}, rules:size=171, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:171, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=65, molds:{molds:size=2898, rctxs:size=2898, bounds:size=2898, owners:size=2898, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:27, items:197}, alloc:{}, marker:{}}}, menus:size=197, mold_labels:size=2898, adjacencies:size=6490, successor_starts:size=2899, has_pred:size=2898, has_succ:size=2898, form_first:size=207, is_first:size=2898, form_last:size=261, complete_last:size=222, is_complete_last:size=2898, required_tail:size=39, is_required_tail:size=2898, closing:size=2898, twins:size=2898, fingerprint:{0:17471447431724878607}}, automaton:{kinds:size=2898, observations:size=2898, width:46, sets:size=828}}
+(alloc::vec::Vec<gandr_surface_dispatcher::component::Given, alloc::alloc::Global>) given = size=3 {
+  [0] = {path:"/private/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-dispatcher-std-importers-58296/fixture/left.gandr", root:Fixture, text:"import std.string (concat) ;\n\n@[ checks ]\ndef left : Integer ;\ndef left = 1 ;\n"}
+  [1] = {path:"/private/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-dispatcher-std-importers-58296/fixture/right.gandr", root:Fixture, text:"import std.string (concat) ;\n\n@[ checks ]\ndef right : Integer ;\ndef right = 1 ;\n"}
+  [2] = {path:"library/std/src/string.gandr", root:Strict, text:"// `std.string`: the native string's everyday functions, each over the native\n// `string` namespace, and the laws of joining beside them. Equality and order\n// are the prelude's `==` and `<`, through its `Eq` and `Ord` models of\n// strings. A rule names only its own block's operations, so the laws are\n// stated over joining presented as an operation (#525 admits a law over the\n// definition itself). Scanning a string waits on its primitives (#318).\n\n/// The empty string, the unit of joining.\npub def empty : String = \"\";\n\n/// The string `a` followed by the string `b`.\npub def concat(a : String, b : String) -> String {\n  string.append(a, b)\n}\n\n/// Whether `s` is the empty string.\npub def isEmpty(s : String) -> Bool {\n  s == empty\n}\n\n/// The laws of `concat` and `empty`: joining is associative and the empty\n/// string is its unit on both sides, so strings under joining are a monoid.\n/// The coincidence check certifies the three rules, and the row fires them.\n@[ normalizes(\"concat(concat(empty, empty), concat(empty, empty)) ~> empty\") ]\npub theory Strings where {\n  /// The strings, as the sort the laws range over.\n  sort S : Type;\n\n  /// The empty string, `std.string`'s `empty`.\n  oper empty : S;\n  /// Joining, `std.string`'s `concat`.\n  oper concat : (a : S, b : S) --> S;\n\n  /// The empty string on the left of a join leaves the other string.\n  rule unitLeft : concat(empty(), s) <=> s;\n  /// The empty string on the right of a join leaves the other string.\n  rule unitRight : concat(s, empty()) <=> s;\n  /// Joining is associative: a join of three strings is one string.\n  rule assoc : concat(concat(x, y), z) <=> concat(x, concat(y, z));\n}\n"}
+}
+(gandr_surface_dispatcher::component::Reading) reading = ImportForms
+(alloc::collections::btree::set::BTreeSet<std::path::PathBuf, alloc::alloc::Global> *) apart = 0x0000000170005128 {map:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x0000000100942250 gandr_surface_dispatcher-51c246b4e78324f3`<gandr_surface_dispatcher::walk::Walk>::visiting::<core::convert::Infallible, <gandr_surface_dispatcher::walk::Walk>::visit<core::convert::Infallible, gandr_surface_dispatcher::walk::tests::importers_of_a_given_std_module_are_judged_apart_4856::{closure#0}>::{closure#0}>(self={grammar:Ok(strong=1, weak=0), traversal:{arguments:size=0, count:2, given:size=2, argument:"library/std/src/string.gandr", answered:Yes, entries:size=0, path:""}, report:{sources:{strict:{0:0}, fixture:{0:0}, pending:{0:0}, refused:{0:0}, lowered_pending:{0:0}, faulted:{0:0}}, tally:{declarations:{settled:{0:0}, unsettled:{0:0}}, fixtures:{settled:{0:0}, unsettled:{0:0}}, ledger:{0:0}, surviving:{undeclared:{0:0}, unproduced:{0:0}}, refusals:{user_absence:{0:0}, unimplemented:{0:0}, malformed_source:{0:0}, engine_fault:{0:0}}}, exercised:{lambda_checks:{0:0}, return_checks:{0:0}, force_synthesises:{0:0}, application_synthesises:{0:0}, subsumption_bridge:{0:0}, undefined_term_name:{0:0}, undefined_type_head:{0:0}, shape_refusal:{0:0}, non_synthesisable_head:{0:0}, non_synthesisable_definition:{0:0}, reserved_form:{0:0}, addressable_obligation:{0:0}}, lowerings:{0:0}, parsed:{0:0}, spellings:{0:0}, goals:{0:0}}, grant:{operations:Unbounded, worlds:size=0}, reader:{crossover:{0:1048576}, held:{inner:{pal:{ptr:{…}}}, poison:{failed:{v:{…}}}, data:{value:size=3}}}, positioning:Unpositioned}, pool={width:Threads({0:1}), started:{once:{inner:{state_and_queue:{v:{…}}}}, value:{value:{None:(), value:{value:{…}}}}, _marker:{}}}, keeping=Composed, visitor={_ref__visitor:{_ref__judged:size=0}}) at walk.rs:843:23
+   840 	        };
+   841 	        let grant = &self.grant;
+   842 	        let positioning = self.positioning;
+-> 843 	        let grouped = group(grammar, given, Reading::ImportForms, &BTreeSet::new());
+    	                      ^
+   844 	        self.report.parsed_mut().absorb(grouped.parsed);
+   845 	        // The prelude every component lays first, parsed and lowered here once
+   846 	        // and judged once under each root it is asked for.
+(lldb) frame variable --depth 3
+(gandr_surface_dispatcher::walk::Walk) self = {grammar:Ok(strong=1, weak=0), traversal:{arguments:size=0, count:2, given:size=2, argument:"library/std/src/string.gandr", answered:Yes, entries:size=0, path:""}, report:{sources:{strict:{0:0}, fixture:{0:0}, pending:{0:0}, refused:{0:0}, lowered_pending:{0:0}, faulted:{0:0}}, tally:{declarations:{settled:{0:0}, unsettled:{0:0}}, fixtures:{settled:{0:0}, unsettled:{0:0}}, ledger:{0:0}, surviving:{undeclared:{0:0}, unproduced:{0:0}}, refusals:{user_absence:{0:0}, unimplemented:{0:0}, malformed_source:{0:0}, engine_fault:{0:0}}}, exercised:{lambda_checks:{0:0}, return_checks:{0:0}, force_synthesises:{0:0}, application_synthesises:{0:0}, subsumption_bridge:{0:0}, undefined_term_name:{0:0}, undefined_type_head:{0:0}, shape_refusal:{0:0}, non_synthesisable_head:{0:0}, non_synthesisable_definition:{0:0}, reserved_form:{0:0}, addressable_obligation:{0:0}}, lowerings:{0:0}, parsed:{0:0}, spellings:{0:0}, goals:{0:0}}, grant:{operations:Unbounded, worlds:size=0}, reader:{crossover:{0:1048576}, held:{inner:{pal:{ptr:{…}}}, poison:{failed:{v:{…}}}, data:{value:size=3}}}, positioning:Unpositioned}
+(gandr_surface_dispatcher::pool::Pool *) pool = 0x0000000170006298 {width:Threads({0:1}), started:{once:{inner:{state_and_queue:{v:{…}}}}, value:{value:{None:(), value:{value:{…}}}}, _marker:{}}}
+(gandr_surface_dispatcher::compose::Keeping) keeping = Composed
+(gandr_surface_dispatcher::walk::{impl#3}::visit::{closure_env#0}<core::convert::Infallible, gandr_surface_dispatcher::walk::tests::importers_of_a_given_std_module_are_judged_apart_4856::{closure_env#0}>) visitor = {_ref__visitor:{_ref__judged:size=0}}
+(gandr_surface_dispatcher::compose::kept::Absent) unkept = Unasked
+(alloc::vec::Vec<std::path::PathBuf, alloc::alloc::Global>) paths = size=3 {
+  [0] = "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-dispatcher-std-importers-58296/fixture/left.gandr" {
+    inner = "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-dispatcher-std-importers-58296/fixture/left.gandr" {
+      inner = {inner:size=104} {...}
+    }
+  }
+  [1] = "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-dispatcher-std-importers-58296/fixture/right.gandr" {
+    inner = "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-dispatcher-std-importers-58296/fixture/right.gandr" {
+      inner = {inner:size=105} {...}
+    }
+  }
+  [2] = "library/std/src/string.gandr" {
+    inner = "library/std/src/string.gandr" {
+      inner = {inner:size=99} {...}
+    }
+  }
+}
+(alloc::vec::Vec<gandr_surface_dispatcher::walk::Slot, alloc::alloc::Global>) slots = size=3 {
+  [0] = Given{given:0, root:Fixture} {
+    given = 0
+    root = Fixture
+  }
+  [1] = Given{given:1, root:Fixture} {
+    given = 1
+    root = Fixture
+  }
+  [2] = Given{given:2, root:Strict} {
+    given = 2
+    root = Strict
+  }
+}
+(alloc::vec::Vec<gandr_surface_dispatcher::component::Given, alloc::alloc::Global>) given = size=3 {
+  [0] = {path:"/private/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-dispatcher-std-importers-58296/fixture/left.gandr", root:Fixture, text:"import std.string (concat) ;\n\n@[ checks ]\ndef left : Integer ;\ndef left = 1 ;\n"}
+  [1] = {path:"/private/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-dispatcher-std-importers-58296/fixture/right.gandr", root:Fixture, text:"import std.string (concat) ;\n\n@[ checks ]\ndef right : Integer ;\ndef right = 1 ;\n"}
+  [2] = {path:"library/std/src/string.gandr", root:Strict, text:"// `std.string`: the native string's everyday functions, each over the native\n// `string` namespace, and the laws of joining beside them. Equality and order\n// are the prelude's `==` and `<`, through its `Eq` and `Ord` models of\n// strings. A rule names only its own block's operations, so the laws are\n// stated over joining presented as an operation (#525 admits a law over the\n// definition itself). Scanning a string waits on its primitives (#318).\n\n/// The empty string, the unit of joining.\npub def empty : String = \"\";\n\n/// The string `a` followed by the string `b`.\npub def concat(a : String, b : String) -> String {\n  string.append(a, b)\n}\n\n/// Whether `s` is the empty string.\npub def isEmpty(s : String) -> Bool {\n  s == empty\n}\n\n/// The laws of `concat` and `empty`: joining is associative and the empty\n/// string is its unit on both sides, so strings under joining are a monoid.\n/// The coincidence check certifies the three rules, and the row fires them.\n@[ normalizes(\"concat(concat(empty, empty), concat(empty, empty)) ~> empty\") ]\npub theory Strings where {\n  /// The strings, as the sort the laws range over.\n  sort S : Type;\n\n  /// The empty string, `std.string`'s `empty`.\n  oper empty : S;\n  /// Joining, `std.string`'s `concat`.\n  oper concat : (a : S, b : S) --> S;\n\n  /// The empty string on the left of a join leaves the other string.\n  rule unitLeft : concat(empty(), s) <=> s;\n  /// The empty string on the right of a join leaves the other string.\n  rule unitRight : concat(s, empty()) <=> s;\n  /// Joining is associative: a join of three strings is one string.\n  rule assoc : concat(concat(x, y), z) <=> concat(x, concat(y, z));\n}\n"}
+}
+(alloc::sync::Arc<gandr_surface_grammar::model::Pbg, alloc::alloc::Global> *) grammar = 0x0000000170005818 strong=1, weak=0
+(gandr_core_checker::capability::HostGrant *) grant = 0x0000000170005750 {operations:Unbounded, worlds:size=0}
+(gandr_surface_dispatcher::compose::Positioning) positioning = Unpositioned

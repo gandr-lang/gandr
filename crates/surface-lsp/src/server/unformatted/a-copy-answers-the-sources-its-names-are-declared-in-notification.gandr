@@ -1,0 +1,2 @@
+{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":
+                {{"uri":"{following}","languageId":"gandr","version":1,"text":{}}}}}}}
