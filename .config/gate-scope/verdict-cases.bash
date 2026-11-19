@@ -6,13 +6,13 @@
 # - see: #7684, `verdict.bash`
 #
 # A stub compiler and a fixed policy revision stand for the toolchain, so no
-# case builds or reaches the network. The image of the format job holds no
-# `ssh-keygen`, and there the cases do not run.
+# case builds or reaches the network. Each case signs through `ssh-keygen`,
+# which each host and the CI image hold. An image without it fails here, as
+# each read of a job's records fails there.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 verdict=$here/verdict.bash
 source "$here/../cases/scratch.bash"
-command -v ssh-keygen > /dev/null || { echo "verdict cases: no ssh-keygen signs here, so no case runs"; exit 0; }
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 failed=0
@@ -181,6 +181,18 @@ got=$(setup "$scratch/trunk" && gate && GATE_BASE=000000000000000000000000000000
 got=$(setup "$scratch/off-trunk" && gate && GATE_VERDICT_TRUNK_OK=none reads)
 [[ $got == runs ]] || fail "#7684: a record whose base the trunk does not hold is refused" "$got"
 
+# A record whose signature does not verify, as in an image with no
+# `ssh-keygen`. The read states the reason, and the job runs the check.
+got=$(
+  setup "$scratch/unverified"
+  gate
+  GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=gpg.ssh.program GIT_CONFIG_VALUE_0="$scratch/no-ssh-keygen" \
+    "$verdict" read check:dylint 2>&1 || true
+)
+[[ $got == *"of check:dylint does not hold: its signature does not verify: "*"$scratch/no-ssh-keygen"*"No such file or directory"* \
+  && $got == *"no record holds check:dylint on "* ]] \
+  || fail "#7684: a record whose signature does not verify states why" "$got"
+
 # An edit that keeps the size and the stamp of a file. Before it, git writes
 # an index in the same second as the file. Git reads the entry again by
 # content only while the copy of the index keeps the index's stamp.
@@ -203,4 +215,4 @@ got=$(
 [[ $got == work ]] || fail "#7740: an edit that keeps a file's size and stamp is the tree of the work" "$got"
 
 (( failed == 0 )) || exit 1
-echo "verdict OK: 14 cases read, refuse and write records as recorded"
+echo "verdict OK: 15 cases read, refuse and write records as recorded"
