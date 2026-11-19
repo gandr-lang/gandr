@@ -1,0 +1,46 @@
+// Stratified families admit lower-stage function fields.
+//
+// A `Link` holds a function from `Chain` at a lower stage.
+// A case reads each link field at a lower or fresh stage.
+//
+// A test reads the chain before its link.
+// It does not read the link itself.
+//
+// - see: #517
+// - see: `../../pathological/data/curry.gandr`
+
+// This source uses naturals for lengths and `Two` for test results.
+import "./data-base.gandr";
+
+/// `Chain` links each chain to its predecessor.
+/// Its test receives `Chain` at a lower stage.
+data Chain : Type where
+  | Start : Chain
+  | Link : (prev : Chain, test : Chain -> Two) --> Chain
+
+/// `linked` returns `R` for a link and `L` for the start.
+def linked(c : Chain) -> Two = match c -> -F Two { | Start => L | Link(p, t) => R };
+
+/// Two links over the start, each holding `linked`.
+def twice : Chain = Link (Link Start linked) linked;
+
+/// The test a link holds, applied to the chain before it: the chain stands
+/// at the stage the test takes.
+def judge(c : Chain) -> Two =
+  match c where
+    | Start => L
+    | Link(prev, test) => test prev
+
+/// The links of a chain, by recursion one stage below each link.
+def rec chainLength(c : Chain) -> Nat =
+  match c where
+    | Start => Zero
+    | Link(prev, test) => Succ (chainLength[<] prev)
+
+/// The outer link's test of the inner link.
+@[runs("R")]
+def judged : () -> Two = judge twice;
+
+/// The chain's two links.
+@[runs("Succ (Succ Zero)")]
+def measured : () -> Nat = chainLength twice;
