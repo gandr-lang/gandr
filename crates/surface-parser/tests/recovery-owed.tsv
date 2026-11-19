@@ -361,11 +361,9 @@ fixture/model/modules/model-laws.gandr	18	1	2440
 fixture/model/modules/model-laws.gandr	20	1	2440
 fixture/model/modules/model-laws.gandr	24	1	2440
 fixture/model/modules/model-laws.gandr	25	1	2440
-fixture/model/modules/model-laws.gandr	48	1	2440
 fixture/model/modules/model-laws.gandr	49	1	2440
 fixture/model/modules/model-laws.gandr	78	1	2440
 fixture/model/modules/model-laws.gandr	79	1	2440
-fixture/model/modules/model-laws.gandr	80	1	2440
 fixture/model/modules/model-manifest.gandr	11	1	2440
 fixture/model/modules/model-manifest.gandr	16	1	2440
 fixture/model/modules/model-manifest.gandr	19	1	2440
@@ -633,7 +631,6 @@ fixture/pathological/desc/second-order-rules.gandr	103	6	2440
 fixture/pathological/desc/second-order-rules.gandr	107	6	2440
 fixture/pathological/desc/second-order-rules.gandr	123	1	2440
 fixture/pathological/desc/second-order-rules.gandr	174	1	2440
-fixture/pathological/desc/second-order-rules.gandr	224	5	2440
 fixture/pathological/desc/second-order-rules.gandr	228	5	2440
 fixture/pathological/desc/second-order-rules.gandr	248	1	2440
 fixture/pathological/desc/second-order-rules.gandr	324	1	2440
@@ -654,7 +651,6 @@ fixture/pathological/desc/shaped-signature.gandr	82	4	2440
 fixture/pathological/desc/shaped-signature.gandr	100	6	2440
 fixture/pathological/desc/shaped-signature.gandr	109	1	2440
 fixture/pathological/desc/shaped-signature.gandr	110	4	2440
-fixture/pathological/desc/shaped-signature.gandr	128	8	2440
 fixture/pathological/desc/shaped-signature.gandr	139	1	2440
 fixture/pathological/desc/shaped-signature.gandr	140	6	2440
 fixture/pathological/desc/shaped-signature.gandr	147	1	2440
