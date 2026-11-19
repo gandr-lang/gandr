@@ -152,6 +152,10 @@ fn main() -> ExitCode
 /// - witness: `tests::cli::fetched_runs_are_stored_and_read_back`
 /// - witness: `tests::cli::an_empty_store_is_refused`
 /// - witness: `tests::cli::times_print_each_test_by_its_slowest_lane`
+///
+/// # Cost
+/// - allocation: the report text and the fetched run list, growth within the
+///   stored runs
 fn report(cli: Cli) -> Result<(), TimingError>
 {
     let repository = Repository::from(held!(cli.repo.as_str()));
