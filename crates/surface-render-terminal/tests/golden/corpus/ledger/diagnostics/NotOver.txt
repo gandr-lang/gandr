@@ -1,15 +1,15 @@
 error[NotOver]: `Path.walk` needs its identity over the path to start from the start transported along the path
    ╭▸ corpus/ledger/diagnostics/NotOver.gandr:26:6
    │
-21 │    def astray(a : Nat, b : Nat, q : Path(a, b), v : Nat) -> Nat =
-   │    │          ┬        ┬        ┬               ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds v : Nat
+21 │    def astray(a : Nat, b : Nat, q : Path a b, v : Nat) -> Nat =
+   │    │          ┬        ┬        ┬             ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds v : Nat
    │    │          │        │        │
    │    │          │        │        checked against `Path[.A = Nat] a b -> Nat -> -F Nat`; while checking the body of this function; binds q : Path[.A = Nat] a b
    │    │          │        checked against `(b : Nat) -> Path[.A = Nat] a b -> Nat -> -F Nat`; while checking the body of this function; binds b : Nat
    │ ┌──┘          checked against `(a : Nat) -> (b : Nat) -> Path[.A = Nat] a b -> Nat -> -F Nat`; while checking the body of this function; binds a : Nat
    │ │
 22 │ │┌   Path.walk
-23 │ ││     ((y : Nat, Path[.A = Nat](a, y)) -> Nat)
+23 │ ││     ((y : Nat, Path[.A = Nat] a y) -> Nat)
 24 │ ││     q
 25 │ ││     (Path.here a)
 26 │ ││     (Path.here (Path.here a))

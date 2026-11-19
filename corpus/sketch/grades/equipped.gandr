@@ -24,7 +24,7 @@ module Cache(g : Model Grade) where {
     | Make : (key : String, value : String) --> Entry
 
   /// Loads the value for `key` once.
-  pub def load(loader : +U[1] (String -> String), key : String) : Entry = Make(key, loader(key))
+  pub def load(loader : +U[1] (String -> String), key : String) : Entry = Make key (loader key)
 
   /// Loads the value, then loads it again to refresh it.
   pub def refreshed(loader : +U[1 + 1] (String -> String), key : String) : Entry = {

@@ -9,4 +9,4 @@ module Point :> *{type T, origin : T, other : T} where {
   def other = *{};
 }
 @[refuses("AtomTransport")]
-def origin_other : Path(Point.origin, Point.other) = *{};
+def origin_other : Path Point.origin Point.other = *{};

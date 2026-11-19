@@ -1,7 +1,7 @@
 error[MethodAsValue]: `bump` needs its caller's hold on the receiver, which no value carries; call it, `s.bump(…)`, never name it as a value
-   ╭▸ corpus/ledger/diagnostics/MethodAsValue.gandr:12:11
+   ╭▸ corpus/ledger/diagnostics/MethodAsValue.gandr:13:11
    │
-12 │   let f = Counter.bump
+13 │   let f = Counter.bump
    │           ━━━━━━━━━━━━ a method named as a value
    │
    ├ note: `named` is refused with MethodAsValue, as its expectation states

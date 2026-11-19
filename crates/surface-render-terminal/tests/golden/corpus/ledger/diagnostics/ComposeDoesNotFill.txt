@@ -1,8 +1,8 @@
 error[ComposeDoesNotFill]: a composite needs its cells to meet end to end along the chain
   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:7:3
   │
-6 │   def apart(A : Type, x : A, y : A, z : A, p : Path(x, y), q : Path(x, z)) -> Path(x, z) =
-  │   │         ┬         ┬      ┬      ┬      ┬               ─ checked against `Path[.A = A] x z -> -F Path[.A = A] x z`; while checking the body of this function; binds q : Path[.A = A] x z
+6 │   def apart(A : Type, x : A, y : A, z : A, p : Path x y, q : Path x z) -> Path x z =
+  │   │         ┬         ┬      ┬      ┬      ┬             ─ checked against `Path[.A = A] x z -> -F Path[.A = A] x z`; while checking the body of this function; binds q : Path[.A = A] x z
   │   │         │         │      │      │      │
   │   │         │         │      │      │      checked against `Path[.A = A] x y -> Path[.A = A] x z -> -F Path[.A = A] x z`; while checking the body of this function; binds p : Path[.A = A] x y
   │   │         │         │      │      checked against `(a : A) -> Path[.A = A] x y -> Path[.A = A] x a -> -F Path[.A = A] x a`; while checking the body of this function; binds z : A
@@ -29,19 +29,19 @@ error[ComposeDoesNotFill]: a composite needs each column's 2-cells to meet end t
    │ │   ─ checked; while checking the body of this function; binds x : A
 25 │ │   y : A,
    │ │   ─ checked; while checking the body of this function; binds y : A
-26 │ │   f : Path(x, y),
+26 │ │   f : Path x y,
    │ │   ─ checked; while checking the body of this function; binds f : Path[.A = A] x y
-27 │ │   g : Path(x, y),
+27 │ │   g : Path x y,
    │ │   ─ checked; while checking the body of this function; binds g : Path[.A = A] x y
-28 │ │   h : Path(x, y),
+28 │ │   h : Path x y,
    │ │   ─ checked; while checking the body of this function; binds h : Path[.A = A] x y
-29 │ │   k : Path(x, y),
+29 │ │   k : Path x y,
    │ │   ─ checked; while checking the body of this function; binds k : Path[.A = A] x y
-30 │ │   a : Path[.A = Path[.A = A](x, y)](f, g),
+30 │ │   a : Path[.A = Path[.A = A] x y] f g,
    │ │   ─ checked; while checking the body of this function; binds a : Path[.A = Path[.A = A] x y] f g
-31 │ │   b : Path[.A = Path[.A = A](x, y)](h, k)
+31 │ │   b : Path[.A = Path[.A = A] x y] h k
    │ │   ─ checked against `Path[.A = Path[.A = A] x y] h k -> -F Path[.A = Path[.A = A] x y] f k`; while checking the body of this function; binds b : Path[.A = Path[.A = A] x y] h k
-32 │ │ ) -> Path[.A = Path[.A = A](x, y)](f, k) =
+32 │ │ ) -> Path[.A = Path[.A = A] x y] f k =
 33 │ │   compose[4, 9] (chain 1 2) (a, b)
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
    │ └───│──────────────────────────────┤
@@ -63,15 +63,15 @@ error[ComposeDoesNotFill]: a composite needs a 2-cell at each place of a column 
    │ │   ─ checked; while checking the body of this function; binds y : A
 44 │ │   z : A,
    │ │   ─ checked; while checking the body of this function; binds z : A
-45 │ │   f : Path(x, y),
+45 │ │   f : Path x y,
    │ │   ─ checked; while checking the body of this function; binds f : Path[.A = A] x y
-46 │ │   g : Path(x, y),
+46 │ │   g : Path x y,
    │ │   ─ checked against `(a : Path[.A = A] x y) -> Path[.A = Path[.A = A] x y] f a -> Path[.A = A] y z -> -F Path[.A = A] x z`; while checking the body of this function; binds g : Path[.A = A] x y
-47 │ │   a : Path[.A = Path[.A = A](x, y)](f, g),
+47 │ │   a : Path[.A = Path[.A = A] x y] f g,
    │ │   ─ checked against `Path[.A = Path[.A = A] x y] f g -> Path[.A = A] y z -> -F Path[.A = A] x z`; while checking the body of this function; binds a : Path[.A = Path[.A = A] x y] f g
-48 │ │   h : Path(y, z)
+48 │ │   h : Path y z
    │ │   ─ checked against `Path[.A = A] y z -> -F Path[.A = A] x z`; while checking the body of this function; binds h : Path[.A = A] y z
-49 │ │ ) -> Path[.A = A](x, z) =
+49 │ │ ) -> Path[.A = A] x z =
 50 │ │   compose[5, 11] (chain 2 (1, 1)) (a, h)
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
    │ └───│────────────────────────────────────┤
@@ -93,15 +93,15 @@ error[ComposeDoesNotFill]: a composite needs a 2-cell at each place of a column 
    │ │   ─ checked; while checking the body of this function; binds y : A
 61 │ │   z : A,
    │ │   ─ checked; while checking the body of this function; binds z : A
-62 │ │   f : Path(x, y),
+62 │ │   f : Path x y,
    │ │   ─ checked; while checking the body of this function; binds f : Path[.A = A] x y
-63 │ │   g : Path(x, y),
+63 │ │   g : Path x y,
    │ │   ─ checked against `(a : Path[.A = A] x y) -> Path[.A = Path[.A = A] x y] f a -> Path[.A = A] y z -> -F Path[.A = A] x z`; while checking the body of this function; binds g : Path[.A = A] x y
-64 │ │   a : Path[.A = Path[.A = A](x, y)](f, g),
+64 │ │   a : Path[.A = Path[.A = A] x y] f g,
    │ │   ─ checked against `Path[.A = Path[.A = A] x y] f g -> Path[.A = A] y z -> -F Path[.A = A] x z`; while checking the body of this function; binds a : Path[.A = Path[.A = A] x y] f g
-65 │ │   h : Path(y, z)
+65 │ │   h : Path y z
    │ │   ─ checked against `Path[.A = A] y z -> -F Path[.A = A] x z`; while checking the body of this function; binds h : Path[.A = A] y z
-66 │ │ ) -> Path[.A = A](x, z) =
+66 │ │ ) -> Path[.A = A] x z =
 67 │ │   compose[4, 9] (chain 2 (0, 1)) (a, h)
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
    │ └───│───────────────────────────────────┤

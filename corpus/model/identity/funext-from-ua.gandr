@@ -52,12 +52,12 @@ def roundTrip(
   b : Type,
   x : Type,
   y : Type,
-  p : Path[.A = Type](x, y)
+  p : Path[.A = Type] x y
 ) -> (u : y -> b) -> Path[.A = y -> b] (
   Path.walk (fun (Z) { Z -> b }) p (Path.walk (fun (Z) { Z -> b }) (Path.back p) u)
 ) u =
   Path.walk
-    ((w : Type, z : Path[.A = Type](x, w)) -> ((v : w -> b) -> Path[.A = w -> b] (Path.walk
+    ((w : Type, z : Path[.A = Type] x w) -> ((v : w -> b) -> Path[.A = w -> b] (Path.walk
       (fun (Z) { Z -> b })
       z
       (Path.walk (fun (Z) { Z -> b }) (Path.back z) v)) v))
@@ -71,7 +71,7 @@ def carryPath(
   b : Type,
   x : Type,
   y : Type,
-  p : Path[.A = Type](x, y),
+  p : Path[.A = Type] x y,
   u : x -> b,
   v : x -> b,
   e : Path[.A = x -> b] u v
@@ -105,7 +105,7 @@ def carryInjective(
   b : Type,
   x : Type,
   y : Type,
-  p : Path[.A = Type](x, y),
+  p : Path[.A = Type] x y,
   u : y -> b,
   v : y -> b,
   e : Path[.A = x -> b] (Path.walk (fun (Z) { Z -> b }) (Path.back p) u) (Path.walk

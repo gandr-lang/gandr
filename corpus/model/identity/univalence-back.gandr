@@ -31,7 +31,7 @@ def backBeta(
 
 /// Transport back along a path from the loops at the point to the integers.
 def loopsBack(
-  p : Path[.A = Type](Path[.A = Circle] Base Base, Int),
+  p : Path[.A = Type] (Path[.A = Circle] Base Base) Int,
   y : Int
 ) -> Path[.A = Circle] Base Base =
   Path.walk (fun (X) { X }) (Path.back p) y
@@ -41,10 +41,8 @@ def loopsBack(
 def backRun : () -> Path[.A = Circle] Base Base = loopsBack loopsAreIntegers (S (S Z));
 
 /// The `integersAreLoops` path reverses `loopsAreIntegers`.
-def integersAreLoops : Path[.A = Type](
-  Int,
-  Path[.A = Circle] Base Base
-) = Path.back loopsAreIntegers;
+def integersAreLoops : Path[.A = Type] Int (Path[.A = Circle] Base Base) = Path.back
+  loopsAreIntegers;
 
 /// Two carried along the named reversal is the word of two loops, by a run.
 @[runs("loop ∷ loop ∷ Path.here Base")]

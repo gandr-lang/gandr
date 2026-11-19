@@ -1,7 +1,7 @@
 error[LoopUndecided]: deciding whether this case respects its sort's loops ran past the checker's budget: unfolding what the loop's obligation calls did not settle it
    ╭▸ corpus/ledger/diagnostics/LoopUndecided.gandr:23:3
    │
-22 │    def costly(x : Circle) -> Path[.A = Circle](x, x) =
+22 │    def costly(x : Circle) -> Path[.A = Circle] x x =
    │    │          ─ checked against `(x : Circle) -> -F Path[.A = Circle] x x`; while checking the body of this function; binds x : Circle
    │ ┌──┘
    │ │

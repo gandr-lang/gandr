@@ -61,7 +61,7 @@ def tag(b : Bool) -> Bool * Unit =
   *{b, *{}}
 
 /// The `tagging` equivalence relates tagged Booleans with Booleans.
-def tagging : Path[.A = Type](Bool * Unit, Bool) = equiv untag tag;
+def tagging : Path[.A = Type] (Bool * Unit) Bool = equiv untag tag;
 
 /// The `readTagged` function reads the first pair component.
 def readTagged(p : Bool * Unit) -> Bool =

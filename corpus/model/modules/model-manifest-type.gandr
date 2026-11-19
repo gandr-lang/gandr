@@ -31,17 +31,16 @@ def toRight(c : (Unit + Unit) + Unit) -> Unit + (Unit + Unit) =
 
 /// `nestings` proves that the two sum types are equivalent. The two maps are
 /// inverse by computation.
-def nestings : Path[.A = Type](Unit + (Unit + Unit), (Unit + Unit) + Unit) = equiv toLeft toRight;
+def nestings : Path[.A = Type] (Unit + (Unit + Unit)) ((Unit + Unit) + Unit) = equiv toLeft toRight;
 
 /// `countersOn` fixes a counter carrier.
 def countersOn(x : Type) -> Type =
   return type(Model Counter with sort C = x)
 
 /// `oneSharing` transports a manifest model type.
-def oneSharing() -> Path[.A = Type](
-  Model Counter with sort C = Unit + (Unit + Unit),
-  Model Counter with sort C = (Unit + Unit) + Unit
-) = Path.ap countersOn nestings;
+def oneSharing() -> Path[.A = Type] (Model Counter with sort C = Unit + (Unit + Unit)) (Model Counter with sort C = (Unit + Unit) + Unit) = Path.ap
+  countersOn
+  nestings;
 
 /// `onward` advances a three-state counter.
 def onward(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =

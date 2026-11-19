@@ -1,8 +1,8 @@
 error[ComposeUncertified]: `compose` needs a stratum the chain sub-site certifies
   ╭▸ corpus/ledger/diagnostics/ComposeUncertified.gandr:8:3
   │
-7 │   def uncertified(A : Type, x : A, y : A, z : A, p : Path(x, y), q : Path(y, z)) -> Path(x, z) =
-  │   │               ┬         ┬      ┬      ┬      ┬               ─ checked against `Path[.A = A] y z -> -F Path[.A = A] x z`; while checking the body of this function; binds q : Path[.A = A] y z
+7 │   def uncertified(A : Type, x : A, y : A, z : A, p : Path x y, q : Path y z) -> Path x z =
+  │   │               ┬         ┬      ┬      ┬      ┬             ─ checked against `Path[.A = A] y z -> -F Path[.A = A] x z`; while checking the body of this function; binds q : Path[.A = A] y z
   │   │               │         │      │      │      │
   │   │               │         │      │      │      checked against `Path[.A = A] x y -> Path[.A = A] y z -> -F Path[.A = A] x z`; while checking the body of this function; binds p : Path[.A = A] x y
   │   │               │         │      │      checked against `(a : A) -> Path[.A = A] x y -> Path[.A = A] y a -> -F Path[.A = A] x a`; while checking the body of this function; binds z : A

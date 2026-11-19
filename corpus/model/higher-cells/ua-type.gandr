@@ -21,13 +21,13 @@ pub module AtStratum where
   type Tel = Unit * (+{Unit} * Bool);
 
   /// `opposite` is the magma swap path at degree one.
-  def opposite : Path[.A = Type](Tel, Tel) = ua[
+  def opposite : Path[.A = Type] Tel Tel = ua[
     1,
     4
   ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
 
   /// `atTel` gives univalence at the stratum code.
-  def atTel() -> Path[.A = Type](Tel, Tel) ≃ (Tel ≃ Tel) =
+  def atTel() -> Path[.A = Type] Tel Tel ≃ (Tel ≃ Tel) =
     univalence Tel Tel
 
   /// `swapped` packages the stratum path as an equivalence.

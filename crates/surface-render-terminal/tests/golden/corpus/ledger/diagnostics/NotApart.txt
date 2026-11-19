@@ -1,7 +1,7 @@
 error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
    ╭▸ corpus/ledger/diagnostics/NotApart.gandr:15:3
    │
-14 │   def agree(e : Path(S (P Z), Z)) -> Empty =
+14 │   def agree(e : Path (S (P Z)) Z) -> Empty =
    │   │         ─ checked against `Path[.A = Int] (S (P Z)) Z -> -F Empty`; while checking the body of this function; binds e : Path[.A = Int] (S (P Z)) Z
    │ ┌─┘
    │ │

@@ -1,8 +1,8 @@
 error[PathCode]: a universe path needs a quoted, closed, first-order code at each end
   ╭▸ corpus/ledger/diagnostics/PathCode.gandr:4:15
   │
-3 │   def thunked : Path[.A = Type]((() -> Integer) * Unit, (() -> Integer) * Unit) = Path.product
-  │ ┌─────────────────────────────────────────────────────────────────────────────────┘
+3 │   def thunked : Path[.A = Type] ((() -> Integer) * Unit) ((() -> Integer) * Unit) = Path.product
+  │ ┌───────────────────────────────────────────────────────────────────────────────────┘
 4 │ │   (Path.here (+U (-F Integer)))
   │ │               ━━━━━━━━━━━━━━━ not a quoted closed first-order code
 5 │ │   (Path.here Unit);

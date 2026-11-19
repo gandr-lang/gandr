@@ -5,10 +5,7 @@ def reflexive(a : Unit) -> related(a, a) = *{};
 def contraction(a : Unit, b : Unit, r : related(a, b)) -> Path[.A = *{
   y : Unit,
   s : related(a, y)
-}](
-  *{b, r},
-  *{a, reflexive a}
-) =
+}] *{b, r} *{a, reflexive a} =
   *{*{}, *{}}
 module Point :> *{type T, origin : T} where {
   @[identity(*{related, reflexive, contraction})]

@@ -1,5 +1,5 @@
 /// `positional_bridge_carrier`: a bridge type that writes its carrier first,
-/// by position. The head takes its carrier by name, `Bridge[.A = A](a, b)`,
+/// by position. The head takes its carrier by name, `Bridge[.A = A] a b`,
 /// and the reader refuses the carrier written first.
 @[refuses("RetiredSpelling.positional_bridge_carrier")]
-def p : Bridge(Integer, 4, 4);
+def p : Bridge Integer 4 4;

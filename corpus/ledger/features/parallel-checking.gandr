@@ -48,19 +48,19 @@ def sideBySide(
   x : A,
   y : A,
   z : A,
-  f0 : Path[.A = A](x, y),
-  f1 : Path(x, y),
-  a : Path[.A = Path[.A = A](x, y)](f0, f1),
-  g0 : Path(y, z),
-  g1 : Path(y, z),
-  b : Path[.A = Path[.A = A](y, z)](g0, g1)
-) -> Path[.A = Path[.A = A](x, z)](Path.step f0 g0, Path.step f1 g1) =
+  f0 : Path[.A = A] x y,
+  f1 : Path x y,
+  a : Path[.A = Path[.A = A] x y] f0 f1,
+  g0 : Path y z,
+  g1 : Path y z,
+  b : Path[.A = Path[.A = A] y z] g0 g1
+) -> Path[.A = Path[.A = A] x z] (Path.step f0 g0) (Path.step f1 g1) =
   cylinderComposite2 A x y f0 x y f1 (Path.here x) (Path.here y) a z g0 z g1 (Path.here z) b
 
 /// The numbers below 100, beside two reflexivities. The check of the list
 /// expands more than 256 goals before it reaches the reflexivities. A check on
 /// more than one thread forks the two reflexivities, one part each.
-def numbersBesideTwo(A : Type, x : A, z : A) -> List Integer * Path(x, x) * Path(z, z) =
+def numbersBesideTwo(A : Type, x : A, z : A) -> List Integer * Path x x * Path z z =
   *{
     #[
       0,

@@ -22,7 +22,7 @@ import "./atom-identity.gandr";
 import std.list (List);
 
 /// The unit-string bridge has the total relation.
-def unitString : Bridge[.A = Type](Unit, String) = thunk {
+def unitString : Bridge[.A = Type] Unit String = thunk {
   fun (x : Unit) { fun (y : String) { return Unit } }
 };
 

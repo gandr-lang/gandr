@@ -29,5 +29,5 @@ pub def satToSmt : sim(Sat, Smt) = Flow.reduce (fun (c) { Query.sat (Formula.ofC
 pub def encodings : bisim(SmtBitBlast, SmtLazy) = Path.oracle bitBlastIsLazy;
 
 /// A certificate recorded under SAT, carried to SMT along the reduction.
-def replayed(c : Clauses, cert : Certificate(Sat, c)) -> Certificate(Smt, Query.sat(Formula.ofClauses c)) =
-  Flow.walk(satToSmt, cert)
+def replayed(c : Clauses, cert : Certificate Sat c) -> Certificate Smt (Query.sat (Formula.ofClauses c)) =
+  Flow.walk satToSmt cert

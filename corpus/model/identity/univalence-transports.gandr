@@ -17,14 +17,14 @@ import "./univalence.gandr";
 
 /// `ua` after `idtoequiv` transports forward as the path does: one function,
 /// at every path.
-def uaEtaForward(a : Type, b : Type, p : Path[.A = Type](a, b)) -> Path[.A = a -> b] (fun (x) {
+def uaEtaForward(a : Type, b : Type, p : Path[.A = Type] a b) -> Path[.A = a -> b] (fun (x) {
   fwdAlong a b (ua (idtoequiv a b p)) x
 }) (fun (x) { fwdAlong a b p x }) =
   Path.here (fun (x) { fwdAlong a b p x })
 
 /// `ua` after `idtoequiv` transports back as the path does: one function, at
 /// every path.
-def uaEtaBackward(a : Type, b : Type, p : Path[.A = Type](a, b)) -> Path[.A = b -> a] (fun (y) {
+def uaEtaBackward(a : Type, b : Type, p : Path[.A = Type] a b) -> Path[.A = b -> a] (fun (y) {
   bwdAlong a b (ua (idtoequiv a b p)) y
 }) (fun (y) { bwdAlong a b p y }) =
   Path.here (fun (y) { bwdAlong a b p y })

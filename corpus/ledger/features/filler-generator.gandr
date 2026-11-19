@@ -40,7 +40,7 @@
 import std.math.path (assoc);
 
 /// One cell, its own reflexivity: the generator over the 1-chain.
-def selfLoop(A : Type, x : A, y : A) -> (f : Path(x, y)) -> Path[.A = Path[.A = A](x, y)](f, f) =
+def selfLoop(A : Type, x : A, y : A) -> (f : Path x y) -> Path[.A = Path[.A = A] x y] f f =
   fun (f) { Path.here f }
 
 /// The 1-chain's cell lifts along `fa`, and its sides compose the generator's
@@ -49,28 +49,23 @@ def oneCell(
   A : Type,
   x : A,
   y : A,
-  fm : Path(x, y),
-  fp : Path(x, y),
-  fa : Path[.A = Path[.A = A](x, y)](fm, fp)
-) -> Path[.A = Path[.A = Path[.A = A](x, y)](fm, fp)](
-  Path.step (Path.here fm) fa,
+  fm : Path x y,
+  fp : Path x y,
+  fa : Path[.A = Path[.A = A] x y] fm fp
+) -> Path[.A = Path[.A = Path[.A = A] x y] fm fp] (Path.step (Path.here fm) fa) (
   Path.step fa (Path.here fp)
 ) =
   fill[1, 3] (chain 1) (selfLoop A x y) fa
 
 /// Two cells' composite, answered by its declared type.
-def composite(A : Type, x : A, y : A, z : A, f : Path(x, y), g : Path(y, z)) -> Path(
-  x,
-  z
-) =
+def composite(A : Type, x : A, y : A, z : A, f : Path x y, g : Path y z) -> Path x z =
   Path.step f g
 
 /// Two cells, the reflexivity of their composite: the generator
 /// over the 2-chain.
-def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path(x, y)) -> ((g : Path[.A = A](
-  y,
-  z
-)) -> Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step f g)) =
+def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path x y) -> (
+  (g : Path[.A = A] y z) -> Path[.A = Path[.A = A] x z] (Path.step f g) (Path.step f g)
+) =
   fun (f) { fun (g) { Path.here (composite A x y z f g) } }
 
 /// The right whisker of `fa` by `g`: the transport along `fa` the generator
@@ -80,13 +75,13 @@ def rightWhisker(
   x : A,
   y : A,
   z : A,
-  fm : Path[.A = A](x, y),
-  fp : Path(x, y),
-  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
-  g : Path(y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g) =
+  fm : Path[.A = A] x y,
+  fp : Path x y,
+  fa : Path[.A = Path[.A = A] x y] fm fp,
+  g : Path y z
+) -> Path[.A = Path[.A = A] x z] (Path.step fm g) (Path.step fp g) =
   Path.walk
-    (fun (a) { type(Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step a g)) })
+    (fun (a) { type(Path[.A = Path[.A = A] x z] (Path.step fm g) (Path.step a g)) })
     fa
     (Path.here (Path.step fm g))
 
@@ -97,13 +92,13 @@ def leftWhisker(
   x : A,
   y : A,
   z : A,
-  f : Path[.A = A](x, y),
-  gm : Path(y, z),
-  gp : Path(y, z),
-  ga : Path[.A = Path[.A = A](y, z)](gm, gp)
-) -> Path[.A = Path[.A = A](x, z)](Path.step f gm, Path.step f gp) =
+  f : Path[.A = A] x y,
+  gm : Path y z,
+  gp : Path y z,
+  ga : Path[.A = Path[.A = A] y z] gm gp
+) -> Path[.A = Path[.A = A] x z] (Path.step f gm) (Path.step f gp) =
   Path.walk
-    (fun (a) { type(Path[.A = Path[.A = A](x, z)](Path.step f gm, Path.step f a)) })
+    (fun (a) { type(Path[.A = Path[.A = A] x z] (Path.step f gm) (Path.step f a)) })
     ga
     (Path.here (Path.step f gm))
 
@@ -114,14 +109,13 @@ def firstLifted(
   x : A,
   y : A,
   z : A,
-  fm : Path[.A = A](x, y),
-  fp : Path[.A = A](x, y),
-  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
-  g : Path(y, z)
-) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g)](
-  Path.step (Path.here (Path.step fm g)) (rightWhisker A x y z fm fp fa g),
-  Path.step (rightWhisker A x y z fm fp fa g) (Path.here (Path.step fp g))
-) =
+  fm : Path[.A = A] x y,
+  fp : Path[.A = A] x y,
+  fa : Path[.A = Path[.A = A] x y] fm fp,
+  g : Path y z
+) -> Path[.A = Path[.A = Path[.A = A] x z] (Path.step fm g) (Path.step fp g)] (
+  Path.step (Path.here (Path.step fm g)) (rightWhisker A x y z fm fp fa g)
+) (Path.step (rightWhisker A x y z fm fp fa g) (Path.here (Path.step fp g))) =
   fill[5, 7] (chain 2) (selfComposite A x y z) (fa, g)
 
 /// The 2-chain's second cell lifts along `ga`, and each side whiskers
@@ -131,14 +125,13 @@ def secondLifted(
   x : A,
   y : A,
   z : A,
-  f : Path[.A = A](x, y),
-  gm : Path(y, z),
-  gp : Path(y, z),
-  ga : Path[.A = Path[.A = A](y, z)](gm, gp)
-) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f gm, Path.step f gp)](
-  Path.step (Path.here (Path.step f gm)) (leftWhisker A x y z f gm gp ga),
-  Path.step (leftWhisker A x y z f gm gp ga) (Path.here (Path.step f gp))
-) =
+  f : Path[.A = A] x y,
+  gm : Path y z,
+  gp : Path y z,
+  ga : Path[.A = Path[.A = A] y z] gm gp
+) -> Path[.A = Path[.A = Path[.A = A] x z] (Path.step f gm) (Path.step f gp)] (
+  Path.step (Path.here (Path.step f gm)) (leftWhisker A x y z f gm gp ga)
+) (Path.step (leftWhisker A x y z f gm gp ga) (Path.here (Path.step f gp))) =
   fill[5, 7] (chain 2) (selfComposite A x y z) (f, ga)
 
 /// The horizontal composite of `fa` and `ga`: `fa` whiskered by `gm`, then `ga`
@@ -148,21 +141,19 @@ def horizontal(
   x : A,
   y : A,
   z : A,
-  fm : Path[.A = A](x, y),
-  fp : Path(x, y),
-  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
-  gm : Path(y, z),
-  gp : Path(y, z),
-  ga : Path[.A = Path[.A = A](y, z)](gm, gp)
-) -> Path[.A = Path[.A = A](x, z)](Path.step fm gm, Path.step fp gp) =
+  fm : Path[.A = A] x y,
+  fp : Path x y,
+  fa : Path[.A = Path[.A = A] x y] fm fp,
+  gm : Path y z,
+  gp : Path y z,
+  ga : Path[.A = Path[.A = A] y z] gm gp
+) -> Path[.A = Path[.A = A] x z] (Path.step fm gm) (Path.step fp gp) =
   Path.step (rightWhisker A x y z fm fp fa gm) (leftWhisker A x y z fp gm gp ga)
 
 /// The associator as the generator over the 3-chain.
-def associated(A : Type, x : A, y : A, z : A, w : A) -> (f : Path(x, y)) -> ((g : Path[.A = A](
-  y,
-  z
-)) -> ((h : Path[.A = A](z, w)) -> Path[.A = Path[.A = A](x, w)](
-  Path.step (Path.step f g) h,
+def associated(A : Type, x : A, y : A, z : A, w : A) -> (f : Path x y) -> ((
+  g : Path[.A = A] y z
+) -> ((h : Path[.A = A] z w) -> Path[.A = Path[.A = A] x w] (Path.step (Path.step f g) h) (
   Path.step f (Path.step g h)
 ))) =
   fun (f) { fun (g) { fun (h) { assoc A x y z w f g h } } }
@@ -177,45 +168,22 @@ def associatorNatural(
   y : A,
   z : A,
   w : A,
-  fm : Path[.A = A](x, y),
-  fp : Path[.A = A](x, y),
-  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
-  gm : Path[.A = A](y, z),
-  gp : Path[.A = A](y, z),
-  ga : Path[.A = Path[.A = A](y, z)](gm, gp),
-  hm : Path(z, w),
-  hp : Path(z, w),
-  ha : Path[.A = Path[.A = A](z, w)](hm, hp)
-) -> Path[.A = Path[.A = Path[.A = A](x, w)](
-  Path.step (Path.step fm gm) hm,
-  Path.step fp (Path.step gp hp)
-)](
-  Path.step (assoc A x y z w fm gm hm)
-    (horizontal
-      A
-      x
-      y
-      w
-      fm
-      fp
-      fa
-      (Path.step gm hm)
-      (Path.step gp hp)
-      (horizontal A y z w gm gp ga hm hp ha)),
-  Path.step
-    (horizontal
-      A
-      x
-      z
-      w
-      (Path.step fm gm)
-      (Path.step fp gp)
-      (horizontal A x y z fm fp fa gm gp ga)
-      hm
-      hp
-      ha)
-    (assoc A x y z w fp gp hp)
-) =
+  fm : Path[.A = A] x y,
+  fp : Path[.A = A] x y,
+  fa : Path[.A = Path[.A = A] x y] fm fp,
+  gm : Path[.A = A] y z,
+  gp : Path[.A = A] y z,
+  ga : Path[.A = Path[.A = A] y z] gm gp,
+  hm : Path z w,
+  hp : Path z w,
+  ha : Path[.A = Path[.A = A] z w] hm hp
+) -> Path[
+  .A = Path[.A = Path[.A = A] x w] (Path.step (Path.step fm gm) hm) (Path.step fp (Path.step gp hp))
+] (Path.step (assoc A x y z w fm gm hm) (horizontal A x y w fm fp fa (Path.step gm hm) (
+  Path.step gp hp
+) (horizontal A y z w gm gp ga hm hp ha))) (Path.step (horizontal A x z w (Path.step fm gm) (
+  Path.step fp gp
+) (horizontal A x y z fm fp fa gm gp ga) hm hp ha) (assoc A x y z w fp gp hp)) =
   fill[5, 7] (chain 3) (associated A x y z w) (fa, ga, ha)
 
 /// The same lift at level two: the whisker `[2](1, 0)` names `fa` as the column
@@ -225,14 +193,13 @@ def firstLiftedColumns(
   x : A,
   y : A,
   z : A,
-  fm : Path[.A = A](x, y),
-  fp : Path[.A = A](x, y),
-  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
-  g : Path(y, z)
-) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g)](
-  Path.step (Path.here (Path.step fm g)) (rightWhisker A x y z fm fp fa g),
-  Path.step (rightWhisker A x y z fm fp fa g) (Path.here (Path.step fp g))
-) =
+  fm : Path[.A = A] x y,
+  fp : Path[.A = A] x y,
+  fa : Path[.A = Path[.A = A] x y] fm fp,
+  g : Path y z
+) -> Path[.A = Path[.A = Path[.A = A] x z] (Path.step fm g) (Path.step fp g)] (
+  Path.step (Path.here (Path.step fm g)) (rightWhisker A x y z fm fp fa g)
+) (Path.step (rightWhisker A x y z fm fp fa g) (Path.here (Path.step fp g))) =
   fill[4, 9] (chain 2 (1, 0)) (selfComposite A x y z) (fa, g)
 
 /// The first cell's fill along `Path.here(fm)` reduces to the reflexivity of
@@ -242,26 +209,18 @@ def walkAtHere(
   x : A,
   y : A,
   z : A,
-  fm : Path[.A = A](x, y),
-  g : Path(y, z)
-) -> Path[.A = Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fm g)](
-  Path.here (Path.step fm g),
+  fm : Path[.A = A] x y,
+  g : Path y z
+) -> Path[.A = Path[.A = Path[.A = Path[.A = A] x z] (Path.step fm g) (Path.step fm g)] (
   Path.here (Path.step fm g)
-)](
-  firstLifted A x y z fm fm (Path.here fm) g,
+) (Path.here (Path.step fm g))] (firstLifted A x y z fm fm (Path.here fm) g) (
   Path.here (Path.here (Path.step fm g))
 ) =
   Path.here (Path.here (Path.here (Path.step fm g)))
 
 /// Two cells' composite as a curried function: the generator of dimension one
 /// over the 2-chain.
-def composed(A : Type, x : A, y : A, z : A) -> Path(x, y) -> (Path[.A = A](
-  y,
-  z
-) -> Path[.A = A](
-  x,
-  z
-)) =
+def composed(A : Type, x : A, y : A, z : A) -> Path x y -> (Path[.A = A] y z -> Path[.A = A] x z) =
   fun (f) { fun (g) { composite A x y z f g } }
 
 /// Example 1.1: the composite is natural in its first cell, `(f ∗ g) ↑ {f}`.
@@ -272,22 +231,18 @@ def naturalInFirst(
   x : A,
   y : A,
   z : A,
-  fm : Path(x, y),
-  fp : Path(x, y),
-  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
-  g : Path(y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g) =
+  fm : Path x y,
+  fp : Path x y,
+  fa : Path[.A = Path[.A = A] x y] fm fp,
+  g : Path y z
+) -> Path[.A = Path[.A = A] x z] (Path.step fm g) (Path.step fp g) =
   fill[5, 7] (chain 2) (composed A x y z) (fa, g)
 
 /// The 2-chain's pasting context into its composite: the generator of dimension
 /// one over `x, y, f, z, g`.
-def composedOver(A : Type) -> (x : A) -> ((y : A) -> ((f : Path[.A = A](
-  x,
-  y
-)) -> ((z : A) -> (Path[.A = A](
-  y,
-  z
-) -> Path[.A = A](x, z))))) =
+def composedOver(A : Type) -> (x : A) -> ((y : A) -> ((f : Path[.A = A] x y) -> ((z : A) -> (
+  Path[.A = A] y z -> Path[.A = A] x z
+)))) =
   fun (x) {
     fun (y) {
       fun (f) { fun (z) { fun (g) { composite A x y z f g } } }
@@ -302,40 +257,31 @@ def naturalInContext(
   A : Type,
   xm : A,
   xp : A,
-  xa : Path(xm, xp),
+  xa : Path xm xp,
   ym : A,
   yp : A,
-  ya : Path(ym, yp),
+  ya : Path ym yp,
   zm : A,
   zp : A,
-  za : Path(zm, zp),
-  fm : Path(xm, ym),
-  fp : Path(xp, yp),
-  fa : Path[.A = Path[.A = A](xm, yp)](Path.step fm ya, Path.step xa fp),
-  gm : Path(ym, zm),
-  gp : Path(yp, zp),
-  ga : Path[.A = Path[.A = A](ym, zp)](Path.step gm za, Path.step ya gp)
-) -> Path[.A = Path[.A = A](xm, zp)](
-  Path.step (Path.step fm gm) za,
+  za : Path zm zp,
+  fm : Path xm ym,
+  fp : Path xp yp,
+  fa : Path[.A = Path[.A = A] xm yp] (Path.step fm ya) (Path.step xa fp),
+  gm : Path ym zm,
+  gp : Path yp zp,
+  ga : Path[.A = Path[.A = A] ym zp] (Path.step gm za) (Path.step ya gp)
+) -> Path[.A = Path[.A = A] xm zp] (Path.step (Path.step fm gm) za) (
   Path.step xa (Path.step fp gp)
 ) =
   fill[5, 7] (chain 2) (composedOver A) (xa, ya, fa, za, ga)
 
 /// The horizontal composite of two 2-cells as a curried function: the generator
 /// over the pasting context of `[2](1, 1)`, its points fixed.
-def horizontalOver(A : Type, x : A, y : A, z : A) -> (f : Path(x, y)) -> ((p : Path[.A = A](
-  x,
-  y
-)) -> ((a : Path[.A = Path[.A = A](x, y)](
-  f,
-  p
-)) -> ((g : Path[.A = A](y, z)) -> ((q : Path[.A = A](y, z)) -> (Path[.A = Path[.A = A](y, z)](
-  g,
-  q
-) -> Path[.A = Path[.A = A](x, z)](
-  Path.step f g,
-  Path.step p q
-)))))) =
+def horizontalOver(A : Type, x : A, y : A, z : A) -> (f : Path x y) -> ((p : Path[.A = A] x y) -> ((
+  a : Path[.A = Path[.A = A] x y] f p
+) -> ((g : Path[.A = A] y z) -> ((q : Path[.A = A] y z) -> (
+  Path[.A = Path[.A = A] y z] g q -> Path[.A = Path[.A = A] x z] (Path.step f g) (Path.step p q)
+))))) =
   fun (f) {
     fun (p) {
       fun (a) {
@@ -355,26 +301,25 @@ def cylinderComposite3(
   x : A,
   y : A,
   z : A,
-  fm : Path[.A = A](x, y),
-  fp : Path(x, y),
-  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
-  pm : Path(x, y),
-  pp : Path[.A = A](x, y),
-  pa : Path[.A = Path[.A = A](x, y)](pm, pp),
-  am : Path[.A = Path[.A = A](x, y)](fm, pm),
-  ap : Path[.A = Path[.A = A](x, y)](fp, pp),
-  aa : Path[.A = Path[.A = Path[.A = A](x, y)](fm, pp)](Path.step am pa, Path.step fa ap),
-  gm : Path(y, z),
-  gp : Path(y, z),
-  ga : Path[.A = Path[.A = A](y, z)](gm, gp),
-  qm : Path(y, z),
-  qp : Path(y, z),
-  qa : Path[.A = Path[.A = A](y, z)](qm, qp),
-  bm : Path[.A = Path[.A = A](y, z)](gm, qm),
-  bp : Path[.A = Path[.A = A](y, z)](gp, qp),
-  bb : Path[.A = Path[.A = Path[.A = A](y, z)](gm, qp)](Path.step bm qa, Path.step ga bp)
-) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm gm, Path.step pp qp)](
-  Path.step (horizontal A x y z fm pm am gm qm bm) (horizontal A x y z pm pp pa qm qp qa),
-  Path.step (horizontal A x y z fm fp fa gm gp ga) (horizontal A x y z fp pp ap gp qp bp)
-) =
+  fm : Path[.A = A] x y,
+  fp : Path x y,
+  fa : Path[.A = Path[.A = A] x y] fm fp,
+  pm : Path x y,
+  pp : Path[.A = A] x y,
+  pa : Path[.A = Path[.A = A] x y] pm pp,
+  am : Path[.A = Path[.A = A] x y] fm pm,
+  ap : Path[.A = Path[.A = A] x y] fp pp,
+  aa : Path[.A = Path[.A = Path[.A = A] x y] fm pp] (Path.step am pa) (Path.step fa ap),
+  gm : Path y z,
+  gp : Path y z,
+  ga : Path[.A = Path[.A = A] y z] gm gp,
+  qm : Path y z,
+  qp : Path y z,
+  qa : Path[.A = Path[.A = A] y z] qm qp,
+  bm : Path[.A = Path[.A = A] y z] gm qm,
+  bp : Path[.A = Path[.A = A] y z] gp qp,
+  bb : Path[.A = Path[.A = Path[.A = A] y z] gm qp] (Path.step bm qa) (Path.step ga bp)
+) -> Path[.A = Path[.A = Path[.A = A] x z] (Path.step fm gm) (Path.step pp qp)] (
+  Path.step (horizontal A x y z fm pm am gm qm bm) (horizontal A x y z pm pp pa qm qp qa)
+) (Path.step (horizontal A x y z fm fp fa gm gp ga) (horizontal A x y z fp pp ap gp qp bp)) =
   fill[5, 11] (chain 2 (1, 1)) (horizontalOver A x y z) (fa, pa, aa, ga, qa, bb)

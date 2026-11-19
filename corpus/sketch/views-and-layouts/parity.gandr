@@ -19,7 +19,7 @@ def doubleSucc(n : Nat) -> Nat = double n + 1;
 
 /// Every natural is twice a half or one more. The two injections are apart,
 /// and the remainder by two decides which one reaches a natural.
-def parityCover() -> Cover(Nat, [double, doubleSucc]) =
+def parityCover() -> Cover Nat [double, doubleSucc] =
   Cover.decide (fun (n) { n % 2 == 0 })
 
 /// A natural read as even or odd, each with its half.

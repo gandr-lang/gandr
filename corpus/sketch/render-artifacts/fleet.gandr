@@ -54,7 +54,7 @@ pub def plan(now : Aws.State, fleet : Fleet) -> List Change =
 
 /// The plan as the API's change set.
 pub def changeSet(now : Aws.State, fleet : Fleet) -> Json =
-  List(Change).json.encode (plan (now, fleet))
+  (List Change).json.encode (plan (now, fleet))
 
 /// Reading back what the plan deployed gives the fleet again.
 pub def deploysAsStated(now : Aws.State, fleet : Fleet) -> resources(apply(
