@@ -6705,8 +6705,8 @@ fn empty_choices_refuse_instead_of_producing_a_refutation()
             left: super::Slot::Ready(crate::Glued::Value(unit)),
             right: super::Slot::Ready(crate::Glued::Value(unit)),
             depth: crate::BinderLevel::from(0_u32),
-            frozen: super::Frozen::default(),
-            chain: super::Chain::default(),
+            frozen: super::Snapshot::from(super::Frozen::default()),
+            chain: super::Snapshot::from(super::Chain::default()),
             next: super::Next::Classify,
         };
         let root = scheduler
@@ -6722,8 +6722,8 @@ fn empty_choices_refuse_instead_of_producing_a_refutation()
         left: super::Slot::Ready(crate::Glued::Value(unit)),
         right: super::Slot::Ready(crate::Glued::Value(unit)),
         depth: crate::BinderLevel::from(0_u32),
-        frozen: super::Frozen::default(),
-        chain: super::Chain::default(),
+        frozen: super::Snapshot::from(super::Frozen::default()),
+        chain: super::Snapshot::from(super::Chain::default()),
         next: super::Next::Classify,
     };
     let root = scheduler
@@ -7021,8 +7021,8 @@ fn missing_processes_refuse_without_creating_waits()
             left: super::Slot::Ready(crate::Glued::Value(unit)),
             right: super::Slot::Ready(crate::Glued::Value(unit)),
             depth: crate::BinderLevel::FLOOR,
-            frozen: super::Frozen::default(),
-            chain: super::Chain::default(),
+            frozen: super::Snapshot::from(super::Frozen::default()),
+            chain: super::Snapshot::from(super::Chain::default()),
             next: super::Next::Classify,
         })
         .expect("a pending goal is admitted");
@@ -7100,8 +7100,8 @@ fn combinators_preserve_answer_and_decline_precedence()
             left: super::Slot::Ready(pair.0),
             right: super::Slot::Ready(pair.1),
             depth: crate::BinderLevel::FLOOR,
-            frozen: super::Frozen::default(),
-            chain: super::Chain::default(),
+            frozen: super::Snapshot::from(super::Frozen::default()),
+            chain: super::Snapshot::from(super::Chain::default()),
             next: super::Next::Classify,
         };
         let mut scheduler = super::Scheduler::<NullMemo>::new(
@@ -7929,8 +7929,8 @@ fn bare_goal(unit: crate::DomainValueId) -> super::Goal
         left: super::Slot::Ready(crate::Glued::Value(unit)),
         right: super::Slot::Ready(crate::Glued::Value(unit)),
         depth: crate::BinderLevel::FLOOR,
-        frozen: super::Frozen::default(),
-        chain: super::Chain::default(),
+        frozen: super::Snapshot::from(super::Frozen::default()),
+        chain: super::Snapshot::from(super::Chain::default()),
         next: super::Next::Classify,
     }
 }

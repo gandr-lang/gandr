@@ -1046,7 +1046,7 @@ fn substitution_laws()
         );
         for (position, sort) in fixture.binding.context.iter().enumerate() {
             let term = BindingJudgement {
-                context: fixture.binding.context.iter().cloned().collect(),
+                context: fixture.binding.context.clone(),
                 sort: sort.clone(),
                 term: BindingTerm::variable(VariableIndex::from(
                     fixture.binding.context.len() - position - 1,
@@ -1108,7 +1108,7 @@ fn substitution_laws()
             weaken(
                 &semantics,
                 &BindingJudgement {
-                    context: target.iter().cloned().collect(),
+                    context: target.clone(),
                     sort: sort.clone(),
                     term: term.clone(),
                 },
