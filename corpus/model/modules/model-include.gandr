@@ -1,0 +1,34 @@
+// This source shows an included model.
+//
+// `GradeInteger` includes `EqInteger` as its equality reduct.
+//
+// The checker treats equal model components as one elaboration.
+//
+// - see: #2333
+// - see: #739
+/// `Graded` adds an order operation to `Eq`.
+theory Graded where
+  include Eq;
+  oper below : (a : Carrier, b : Carrier) --> Bool;
+
+/// `GradeInteger` includes integer equality and order.
+module GradeInteger : Model(Graded) with sort Carrier = Integer where
+  include EqInteger;
+  /// `below` compares two integer grades.
+  def below(a : Integer, b : Integer) -> Bool = a < b;
+
+/// `atMost` compares values through an implicit model.
+def atMost[g : Model Graded](a : g.Carrier, b : g.Carrier) -> Bool =
+  if g.below a b { true } else { g.eq a b }
+
+/// `reflexive` compares a grade with itself.
+@[runs("+{.0 = *{}}")]
+def reflexive() -> Bool = atMost 3 3;
+
+/// `descending` rejects a descending order.
+@[runs("+{.1 = *{}}")]
+def descending() -> Bool = atMost 4 3;
+
+/// `gradesEqual` resolves one integer equality model.
+@[runs("+{.0 = *{}}")]
+def gradesEqual() -> Bool = 3 == 3;

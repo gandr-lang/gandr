@@ -1,0 +1,3 @@
+{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/open.gandr","languageId":"gandr","version":1,
+                     "text":"def id : Integer -> Integer ;\ndef id = thunk { fun (y) { return y } } ;\n"}}}

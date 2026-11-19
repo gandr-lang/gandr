@@ -1,0 +1,64 @@
+/// This source gives circle elimination and transport along its loop.
+///
+/// A dependent case carries its point result around the loop.
+/// A non-dependent case maps the loop to reflexivity without a loop arm.
+///
+/// The checker reads each path type from the words of its operation.
+/// Transport computes by the family that contains the point.
+/// In a family of paths, transport composes on the side where the endpoint
+/// varies. In a constant family it is the identity. Through a map, it is the
+/// map's image of the word.
+///
+/// - see: corpus/model/identity/circle-base.gandr
+
+// The circle, the integers, every point's loop and reflexivity, and the flip.
+import "./circle-base.gandr";
+
+/// The flip is involutive because its loop image is the loop.
+def involutive(x : Circle) -> Path[.A = Circle] (invLooper (invLooper x)) x =
+  match x where
+    | Base => Path.here Base
+
+/// The collapse maps the loop to reflexivity.
+def collapse(x : Circle) -> Circle =
+  match x where
+    | Base => Base
+
+/// The collapse maps the loop to reflexivity through `Path.ap`.
+def collapsed_loop : Path[.A = Path[.A = Circle] Base Base] (Path.ap collapse loop) (Path.here
+  Base) = Path.here (Path.here Base);
+
+/// The composite gives a loop path from `Base` to `Base`.
+def two : Path Base Base = Path.step loop loop;
+
+/// The inverse reads the composite path type.
+def undone : Path Base Base = Path.back (Path.step loop loop);
+
+/// The composite of the loop and the empty word converts to the loop.
+def joined : Path[.A = Path[.A = Circle] Base Base] (Path.step
+  loop
+  (Path.here Base)) loop = Path.here loop;
+
+/// The inverse of the stated word converts to the inverse loop.
+def unwound_word : Path[.A = Path[.A = Circle] Base Base] (Path.back
+  (loop ∷ Path.here Base)) (Path.back loop) = Path.here (Path.back loop);
+
+/// The point family transports each path by the loop.
+def moved : Path[.A = Path[.A = Circle] Base Base] (Path.step
+  (Path.here Base)
+  loop) loop = Path.here loop;
+
+/// Transport in the loop family conjugates the loop and leaves it fixed.
+def conjugated : Path[.A = Path[.A = Circle] Base Base] (Path.walk
+  (fun (x) { type(Path[.A = Circle] x x) })
+  loop
+  loop) loop = Path.here loop;
+
+/// Transport in the constant family is the identity.
+def constant : Path (Path.walk (fun (x) { Int }) loop Z) Z = Path.here Z;
+
+/// Transport through the flip uses `Path.ap` and maps the loop to its inverse.
+def flipped : Path[.A = Path[.A = Circle] Base Base] (Path.walk
+  (fun (x) { type(Path[.A = Circle] Base (invLooper x)) })
+  loop
+  (Path.here Base)) (back loop ∷ Path.here Base) = Path.here (back loop ∷ Path.here Base);
