@@ -554,9 +554,10 @@ impl RegisteredAttribute
     /// staged THIR of a Rust function. The payload names the Rust file beside
     /// the source and the function's path inside that crate, both texts.
     pub const THIR: Self = Self("thir");
-    /// `item`: the constructor it decorates stands for the Rust item whose
-    /// path its text names, so a staged call of that item is this
-    /// constructor.
+    /// `item`: the data type it decorates stands for Rust items. Each text
+    /// of its payload is the path of a Rust item, a space, and the name of
+    /// the constructor that stands for that item, so a staged call of the
+    /// item is that constructor.
     pub const ITEM: Self = Self("item");
     /// `traces`: the run of the declaration it decorates is recorded, and the
     /// payload states the web one channel's play decomposes to. It is the one
@@ -813,7 +814,7 @@ const REGISTRY: [(&str, AttributeSchema); 22_usize] = [
     (RegisteredAttribute::BOUNDARY.0, AttributeSchema::Names),
     (RegisteredAttribute::BUILTIN.0, AttributeSchema::Text),
     (RegisteredAttribute::THIR.0, AttributeSchema::Texts),
-    (RegisteredAttribute::ITEM.0, AttributeSchema::Text),
+    (RegisteredAttribute::ITEM.0, AttributeSchema::Texts),
     (RegisteredAttribute::INERT.0, AttributeSchema::Marker),
 ];
 
@@ -1986,7 +1987,7 @@ mod tests
             ("boundary", AttributeSchema::Names),
             ("builtin", AttributeSchema::Text),
             ("thir", AttributeSchema::Texts),
-            ("item", AttributeSchema::Text),
+            ("item", AttributeSchema::Texts),
             ("inert", AttributeSchema::Marker),
         ];
 
