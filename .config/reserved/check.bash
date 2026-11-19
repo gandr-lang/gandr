@@ -11,7 +11,11 @@ set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 config=$1
 shift
-asked=$(find "$@" -path '*/tests/*' -name '*.rs' -print0 | xargs -0 -r awk -f "$here/requests.awk" | sort -u)
+asked=$(
+  while IFS= read -r -d '' file; do
+    awk -f "$here/requests.awk" "$file"
+  done < <(find "$@" -path '*/tests/*' -name '*.rs' -print0) | sort -u
+)
 filters=$(yq -p toml -o json -I 0 '[.profile[]?.overrides[]? | select(has("threads-required")) | .filter // ""]' "$config")
 terms=$(jq -r '.[] | split(" or ")[] | gsub("^\\s+|\\s+$"; "")' <<< "$filters")
 failed=0

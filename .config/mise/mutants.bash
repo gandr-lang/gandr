@@ -104,7 +104,7 @@ mutants_keyed() {
     git hash-object "${settings[@]}"
     git ls-files --stage -- "${dirs[@]}"
     git diff --binary HEAD -- "${dirs[@]}"
-    git ls-files -z --others --exclude-standard -- "${dirs[@]}" | xargs -0 -r git hash-object
+    while IFS= read -r -d '' file; do git hash-object "$file"; done < <(git ls-files -z --others --exclude-standard -- "${dirs[@]}")
   } | git hash-object --stdin)
   jq -c --slurpfile list "$output/list.json" '
     ($list[0] | to_entries | map({key: .value.name, value: {id: (.key + 1), replacement: .value.replacement}}) | from_entries) as $by
