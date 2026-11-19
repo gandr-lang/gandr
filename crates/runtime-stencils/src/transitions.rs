@@ -2219,6 +2219,9 @@ type Block = extern "C" fn(words: *mut Word) -> Word;
 /// - executable: none — a stencil runs only inside a chain of tail calls whose
 ///   state no predicate can observe.
 ///
+/// # Cost
+/// - allocation: none in steady state
+///
 /// # Adequacy
 /// - hypothesis: L3 — a block that adds its two words answers their sum as one
 ///   fresh integer of three heap words, and a block that answers nothing moves
