@@ -1114,6 +1114,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// # Errors
     /// [`Missing`].
     ///
+    /// # Cost
+    /// - allocation: the minted nodes of the type and their scratch, durable by
+    ///   the arena.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Models::mint_models`].
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_signature_states_what_the_written_one_does`
@@ -2687,6 +2691,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// # Errors
     /// As the fails clause.
     ///
+    /// # Cost
+    /// - allocation: the derived signature, durable by the returned signature.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Models::bundled`].
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_type_is_the_record_its_theory_derives`
@@ -3916,6 +3923,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// # Errors
     /// [`Missing::Unlowered`].
     ///
+    /// # Cost
+    /// - allocation: the minted fields and their nodes, durable by the arena.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::bundle_type`], and a model implicit's
     ///   components bound one parameter each, every link binding.
@@ -4362,6 +4372,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     ///
     /// # Errors
     /// [`Missing`].
+    ///
+    /// # Cost
+    /// - allocation: the minted index types and their nodes, durable by the
+    ///   arena.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `Hom(dom : Ob, cod : Ob)` states `Ob` twice.

@@ -482,6 +482,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the minted operation type and its nodes, durable by the
+    ///   arena.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — `State`'s `get` and `put` at an integer state and a
     ///   state-passing carrier, as the module's members are declared.

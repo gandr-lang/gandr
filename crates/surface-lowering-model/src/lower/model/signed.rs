@@ -402,6 +402,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     ///   over the derived signature and the target's slots; a clause would
     ///   restate it whole.
     ///
+    /// # Cost
+    /// - allocation: the derived signature and the expected types it mints,
+    ///   diagnostic.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Models::match_signatures`].
     /// - witness: `gandr-surface-lowering::tests::namespace::an_import_at_a_wider_signature_refuses_its_source_3098`
@@ -490,6 +494,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — as [`Self::unmatched`].
+    ///
+    /// # Cost
+    /// - allocation: the two derived signatures and the types they mint,
+    ///   diagnostic.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Models::match_signatures`].
