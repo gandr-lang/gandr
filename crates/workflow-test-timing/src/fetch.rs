@@ -154,6 +154,9 @@ impl From<RunLimit> for usize
 ///   turn; a fake that prints a non-number is refused.
 /// - witness: `tests::cli::fetched_runs_are_stored_and_read_back`
 /// - witness: `tests::cli::a_failing_gh_is_reported_with_its_message`
+///
+/// # Cost
+/// - allocation: the command text and the run list, growth within the limit
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |runs| runs.len() <= usize::from(limit)))]
 #[inline]
 pub fn recent_runs(
@@ -218,6 +221,9 @@ pub enum Stored
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the run directory name, growth within the run identifier
 #[inline]
 fn destination_of(
     store: &Path,
@@ -239,6 +245,9 @@ fn destination_of(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the scratch directory name, growth within the run identifier
 #[inline]
 fn scratch_of(
     store: &Path,
@@ -279,6 +288,10 @@ fn scratch_of(
 ///   report fetches nothing. A download left under a scratch name or repeated
 ///   for a stored run changes what the fake records.
 /// - witness: `tests::cli::fetched_runs_are_stored_and_read_back`
+///
+/// # Cost
+/// - allocation: the destination path and the download command, growth within
+///   the store
 #[spec(ensures: |ref ret| ret.is_err() || destination_of(store, run).is_dir())]
 #[inline]
 pub fn download(
@@ -341,6 +354,9 @@ pub fn download(
 ///   ascending order changes the report.
 /// - witness: `tests::cli::a_report_reads_the_newest_stored_runs`
 /// - witness: `tests::cli::an_empty_store_is_refused`
+///
+/// # Cost
+/// - allocation: the listed run identifiers, growth within the store
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |runs| runs.is_sorted_by(|newer, older| newer > older)))]
 #[inline]
 pub fn stored_runs(store: &Path) -> Result<SmallVec<RunId, 0, Global>, TimingError>
@@ -393,6 +409,9 @@ pub fn stored_runs(store: &Path) -> Result<SmallVec<RunId, 0, Global>, TimingErr
 ///   from the wrong directory level or a report skipped changes the printed
 ///   table.
 /// - witness: `tests::cli::a_report_reads_the_newest_stored_runs`
+///
+/// # Cost
+/// - allocation: the artifact paths, growth within the stored reports
 #[inline]
 pub fn read_run(
     store: &Path,

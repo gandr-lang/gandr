@@ -259,6 +259,10 @@ impl Overrides
     ///   a swallowed refusal changes the asserted value.
     /// - witness: `priority::tests::the_configured_overrides_read_in_order`
     /// - witness: `priority::tests::an_unreadable_override_is_refused_by_name`
+    ///
+    /// # Cost
+    /// - allocation: the override list and a refusal path, growth within the
+    ///   configuration
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |overrides| overrides.0.iter().all(|rule| !rule.terms.is_empty())))]
     #[inline]
     pub fn parse(
@@ -402,6 +406,9 @@ pub struct Proposal
 ///   one and a slow unprioritized one are kept, and the order follows the
 ///   median; keeping every test or sorting by name changes the asserted rows.
 /// - witness: `priority::tests::the_table_lists_every_prioritized_test`
+///
+/// # Cost
+/// - allocation: the proposal rows, growth within the timings
 #[must_use]
 #[spec(ensures: |ref ret| ret.iter().all(|proposal| proposal.current != Priority::DEFAULT || proposal.proposed != Priority::DEFAULT)
     && ret.is_sorted_by(|left, right| left.timing.median >= right.timing.median))]
@@ -525,6 +532,10 @@ impl fmt::Display for Generated<'_>
     ///   default, an unsorted filter or a missing `or` changes the asserted
     ///   text.
     /// - witness: `priority::tests::overrides_render_one_table_per_level`
+    ///
+    /// # Cost
+    /// - allocation: the names of one priority level, growth within the
+    ///   proposals
     #[inline]
     fn fmt(
         &self,

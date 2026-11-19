@@ -269,6 +269,9 @@ pub struct Sample
 ///   asserted value or variant.
 /// - witness: `report::tests::a_report_reads_every_case_in_order`
 /// - witness: `report::tests::an_unreadable_case_is_refused_by_name`
+///
+/// # Cost
+/// - allocation: the sample list and a refusal path, growth within the report
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |samples| samples.len() == text.0.matches("<testcase").count()))]
 #[inline]
 pub fn samples(
@@ -406,6 +409,9 @@ impl Timing
     ///   set; an upper median, an averaged median or a swapped extreme changes
     ///   the asserted durations.
     /// - witness: `report::tests::the_median_is_a_sample_some_run_took`
+    ///
+    /// # Cost
+    /// - allocation: the sorted samples, growth within the sample count
     #[inline]
     #[spec(ensures: |ref ret| match *ret {
         Maybe::Present(ref timing) => timing.fastest <= timing.median && timing.median <= timing.slowest
@@ -513,6 +519,9 @@ impl History
     ///   binaries, keep four separate sample lists; merging lanes or binaries
     ///   changes the asserted summaries.
     /// - witness: `report::tests::each_test_is_summarised_by_its_slowest_lane`
+    ///
+    /// # Cost
+    /// - allocation: the sample lists, growth within the recorded samples
     #[inline]
     pub fn record(
         &mut self,
@@ -547,6 +556,9 @@ impl History
     ///   slower binary's; choosing the first lane, the mean, or the fastest
     ///   changes the asserted summary.
     /// - witness: `report::tests::each_test_is_summarised_by_its_slowest_lane`
+    ///
+    /// # Cost
+    /// - allocation: the summary rows, growth within the recorded tests
     #[inline]
     #[must_use]
     #[spec(ensures: |ref ret| ret.len() == self.0.len() && ret.is_sorted_by(|left, right| left.0 < right.0))]

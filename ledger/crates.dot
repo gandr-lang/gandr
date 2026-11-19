@@ -648,6 +648,7 @@ digraph crates {
   "workflow-sweep" -> "surface-grammar";
   "workflow-sweep" -> "surface-parser";
   "workflow-sweep" -> "surface-syntax";
+  "workflow-test-timing" -> "kernel-data";
   "workflow-test-timing" -> "workflow-github";
   "theory-cellular-sheaves" -> "theory-coherent-resolutions" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
   "theory-coherent-resolutions" -> "theory-deep-inference" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
