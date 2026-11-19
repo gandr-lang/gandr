@@ -1,5 +1,5 @@
 # Written by `gandr check` from the package's `Package` model: edit the model, not this file.
-# blake3: ade88766a7cc2eaec367a0d1d3a875f4e5313faccee08b01f5ef8605532c7eea
+# blake3: eb52d0e95f51722acd681a02f7d2cb5362738f50ee328b08a8652cd363aa4045
 
 [package]
 name = "std"
@@ -34,6 +34,7 @@ modules = [
   "secret",
   "session",
   "string",
+  "thir",
 ]
 
 [toolchain]

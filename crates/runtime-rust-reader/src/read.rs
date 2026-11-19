@@ -4,7 +4,8 @@
 //! the build copies into each caller has no symbol, and its linkage states
 //! that. The convention is `fn_abi_of_instance`, and each LLVM type is
 //! spelled as rustc's LLVM backend spells it for that passage. Each layout
-//! is `layout_of` the operand's type.
+//! is `layout_of` the operand's type. The body is the staging that
+//! [`crate::stage`] read before the build of MIR.
 
 use std::collections::HashMap;
 
@@ -22,12 +23,15 @@ use gandr_runtime_rust_record::Layout;
 use gandr_runtime_rust_record::Linkage;
 use gandr_runtime_rust_record::LlvmType;
 use gandr_runtime_rust_record::Niche;
+use gandr_runtime_rust_record::NodeName;
 use gandr_runtime_rust_record::Operand;
 use gandr_runtime_rust_record::Outcome;
+use gandr_runtime_rust_record::Outside;
 use gandr_runtime_rust_record::Part;
 use gandr_runtime_rust_record::Passage;
 use gandr_runtime_rust_record::Refusal;
 use gandr_runtime_rust_record::Shape;
+use gandr_runtime_rust_record::Staging;
 use gandr_runtime_rust_record::Symbol;
 use gandr_runtime_rust_record::TypeName;
 use gandr_runtime_rust_record::Unstatable;
@@ -56,11 +60,8 @@ use rustc_target::callconv::CastTarget;
 use rustc_target::callconv::IndirectMode;
 use rustc_target::callconv::PassMode;
 
-/// The record of each requested path: each function, or each refusal.
-pub(crate) fn outcome(
-    tcx: TyCtxt<'_>,
-    paths: &[FunctionPath],
-) -> Outcome
+/// Each function that the crate defines, by its path inside the crate.
+pub(crate) fn locals(tcx: TyCtxt<'_>) -> HashMap<String, LocalDefId>
 {
     let mut local = HashMap::new();
     for def_id in tcx.hir_crate_items(()).definitions() {
@@ -70,10 +71,22 @@ pub(crate) fn outcome(
             local.insert(path, def_id);
         }
     }
+    local
+}
+
+/// The record of each requested path: each function, or each refusal. Each
+/// function takes its staging out of `bodies`.
+pub(crate) fn outcome(
+    tcx: TyCtxt<'_>,
+    paths: &[FunctionPath],
+    bodies: &mut HashMap<FunctionPath, Staging>,
+) -> Outcome
+{
+    let local = locals(tcx);
     let mut functions = Vec::with_capacity(paths.len());
     let mut refusals = Vec::new();
     for path in paths {
-        match function(tcx, &local, path) {
+        match function(tcx, &local, path, bodies) {
             Ok(function) => functions.push(function),
             Err(refusal) => refusals.push(refusal),
         }
@@ -109,6 +122,7 @@ fn function(
     tcx: TyCtxt<'_>,
     local: &HashMap<String, LocalDefId>,
     path: &FunctionPath,
+    bodies: &mut HashMap<FunctionPath, Staging>,
 ) -> Result<Function, Refusal>
 {
     let Some(&def_id) = local.get(path.as_ref())
@@ -143,11 +157,15 @@ fn function(
         arguments.push(operand(tcx, path, argument)?);
     }
     let result = operand(tcx, path, &abi.ret)?;
+    let body = bodies
+        .remove(path)
+        .unwrap_or_else(|| Staging::Outside(Outside::Node(NodeName::from("Body"))));
     Ok(Function {
         path: path.clone(),
         linkage,
         arguments,
         result,
+        body,
     })
 }
 

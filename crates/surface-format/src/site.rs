@@ -247,6 +247,36 @@ impl Sites
         }
     }
 
+    /// The extent, in the text before the pass, of each respelled form whose
+    /// leaves in the candidate meet `candidate`, a span of the candidate.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each extent whose leaves start at or before `candidate`'s end
+    ///   and end at or after its start, in the order of the extents' starts. An
+    ///   empty span meets the leaves that it touches.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a filter of the map, which a
+    ///   predicate over the answer would filter again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an obligation inside one respelled form names that
+    ///   form alone, and a form elsewhere in the source is not named.
+    /// - witness: `tests::rewrite::an_obligation_withdraws_only_the_form_that_holds_it_8085`
+    pub fn respelled_at(
+        &self,
+        candidate: ByteSpan,
+    ) -> impl Iterator<Item = ByteSpan> + '_
+    {
+        self.starts
+            .iter()
+            .filter(move |&&(_, leaves)| {
+                leaves.start() <= candidate.end() && candidate.start() <= leaves.end()
+            })
+            .map(|&(form, _)| form)
+    }
+
     /// Whether `before`, a span of a report on the text before the pass, and
     /// `candidate`, a span of the candidate's report, are one site. Both are
     /// spans of a unit's text in which each text starts at `base`, absent

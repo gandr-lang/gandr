@@ -2266,17 +2266,31 @@ fn verify_rewritten(
     let base = ByteOffset::from(<&str>::from(before).len());
     let sites = Sites::new(written, &again.leaves);
     // The parser reads the text alone, so its obligations stand in the text's
-    // own offsets.
-    let obliged = parsed.obligations().len() == reparsed.obligations().len()
-        && parsed
-            .obligations()
-            .iter()
-            .zip(reparsed.obligations())
-            .all(|(left, right)| {
-                left.class == right.class && sites.spanned(left.span, right.span) == Placement::Same
-            });
-    if !obliged {
-        let forms: Vec<_> = respelled
+    // own offsets. Each obligation of the text before the pass pairs with one
+    // of the candidate's at the same site. An obligation that pairs with none
+    // is lost or gained.
+    let after = reparsed.obligations();
+    let mut paired: Vec<bool> = alloc::vec![false; after.len()];
+    let mut lost: Vec<ByteSpan> = Vec::new();
+    for left in parsed.obligations() {
+        let partner = after.iter().zip(&paired).position(|(right, &taken)| {
+            !taken
+                && left.class == right.class
+                && sites.spanned(left.span, right.span) == Placement::Same
+        });
+        match partner.and_then(|at| paired.get_mut(at)) {
+            Some(taken) => *taken = true,
+            None => lost.push(left.span),
+        }
+    }
+    let gained: Vec<ByteSpan> = after
+        .iter()
+        .zip(&paired)
+        .filter(|&(_, &taken)| !taken)
+        .map(|(right, _)| right.span)
+        .collect();
+    if !lost.is_empty() || !gained.is_empty() {
+        let forms: Vec<(NodeKey, ByteSpan)> = respelled
             .iter()
             .filter_map(|&form| {
                 parsed.tree().key(form).zip(
@@ -2287,6 +2301,34 @@ fn verify_rewritten(
                 )
             })
             .collect();
+        // Only a form that holds a lost or a gained obligation differs. An
+        // obligation that no respelled form holds withdraws them all.
+        let touches =
+            |form: ByteSpan, at: ByteSpan| form.start() <= at.end() && at.start() <= form.end();
+        let attributed = lost
+            .iter()
+            .all(|&at| forms.iter().any(|&(_, form)| touches(form, at)))
+            && gained
+                .iter()
+                .all(|&at| sites.respelled_at(at).next().is_some());
+        let holding: Vec<(NodeKey, ByteSpan)> = forms
+            .iter()
+            .copied()
+            .filter(|&(_, form)| {
+                lost.iter().any(|&at| touches(form, at))
+                    || gained.iter().any(|&at| {
+                        sites
+                            .respelled_at(at)
+                            .any(|held| form.start() <= held.start() && held.end() <= form.end())
+                    })
+            })
+            .collect();
+        let forms = if attributed && !holding.is_empty() {
+            holding
+        }
+        else {
+            forms
+        };
         let differing = meaning::parser_obligations(lowered, base, &forms);
         if differing.is_empty() {
             return Err(FormatError::Changed(Change::Meaning));

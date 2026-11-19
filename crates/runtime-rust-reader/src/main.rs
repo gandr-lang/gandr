@@ -20,6 +20,7 @@
 #![feature(rustc_private)]
 
 extern crate rustc_abi;
+extern crate rustc_ast;
 extern crate rustc_driver;
 extern crate rustc_hir;
 extern crate rustc_interface;
@@ -28,7 +29,9 @@ extern crate rustc_span;
 extern crate rustc_target;
 
 mod read;
+mod stage;
 
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io;
@@ -49,6 +52,7 @@ use gandr_runtime_rust_record::Identity;
 use gandr_runtime_rust_record::Record;
 use gandr_runtime_rust_record::SourceFile;
 use gandr_runtime_rust_record::SourcePath;
+use gandr_runtime_rust_record::Staging;
 use gandr_runtime_rust_record::Target;
 use rustc_driver::Compilation;
 use rustc_interface::interface::Compiler;
@@ -142,6 +146,9 @@ struct Reader
     sources: Sources,
     /// Whether the analysis ran and the entry was written.
     written: Option<io::Result<()>>,
+    /// Each requested function's body, read before the build of MIR takes
+    /// its THIR away.
+    bodies: HashMap<FunctionPath, Staging>,
 }
 
 impl rustc_driver::Callbacks for Reader
@@ -161,13 +168,25 @@ impl rustc_driver::Callbacks for Reader
         config.output_file = None;
     }
 
+    /// Reads each requested body after the type check, while its THIR
+    /// stands.
+    fn after_expansion(
+        &mut self,
+        _compiler: &Compiler,
+        tcx: TyCtxt<'_>,
+    ) -> Compilation
+    {
+        self.bodies = stage::bodies(tcx, &read::locals(tcx), &self.functions);
+        Compilation::Continue
+    }
+
     fn after_analysis(
         &mut self,
         _compiler: &Compiler,
         tcx: TyCtxt<'_>,
     ) -> Compilation
     {
-        let outcome = read::outcome(tcx, &self.functions);
+        let outcome = read::outcome(tcx, &self.functions, &mut self.bodies);
         let identity = Identity {
             commit: Identity::of_build().commit,
             target: Target::from(tcx.sess.opts.target_triple.tuple()),
@@ -194,6 +213,7 @@ fn main() -> ExitCode
         entry: PathBuf::from(entry),
         sources: Arc::default(),
         written: None,
+        bodies: HashMap::new(),
     };
     let arguments: Vec<String> = env::args().collect();
     let status =

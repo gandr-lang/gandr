@@ -1,8 +1,8 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/identity/univalence.gandr:27:31
    │
-25 │   def collapsedPath : Path[.A = Type](Two, One) = ua (*{
-   │ ┌─────────────────────────────────────────────────┘
+25 │   def collapsedPath : Path[.A = Type] Two One = ua (*{
+   │ ┌───────────────────────────────────────────────┘
 26 │ │   collapse,
 27 │ │   *{*{pick, thunk { fun (x) { Path.here x } }}, *{pick, single}}
    │ │   ┬─────────┬───────┬─────────┯━━━━━━━━━━───────────────────────
@@ -70,7 +70,7 @@ error[ShapeMismatch]: expected a dependent record `#{x : A, y : B(x)}`
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/identity/univalence.gandr:61:3
    │
-58 │   def uaEtaByConversion(a : Type) -> Path[.A = Path[.A = Type](a, a)] (
+58 │   def uaEtaByConversion(a : Type) -> Path[.A = Path[.A = Type] a a] (
    │   │                     ─ checked against `(a : Type) -> -F (Path[.A = Path[.A = Type] a a] (ua (idtoequiv a a (Path.here a))) (Path.here a))`; while checking the body of this function; binds a : Type
    │ ┌─┘
    │ │
