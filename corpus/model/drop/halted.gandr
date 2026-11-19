@@ -24,22 +24,22 @@ theory Halt.Eff where
   /// Halt with `code`.
   oper halt : (code : R) --> C;
 
-/// A run reports blame when it calls the owed `later` declaration.
+/// A run reports blame when it calls the owed `afterHalt` declaration.
 @[owes(1)]
-def later : Integer -> Unit;
+def afterHalt : Integer -> Unit;
 
 /// Halt with the code 1. The site stands at `Integer`, the type that it is
 /// checked against.
 def halting() -> [h : Halt.Eff with sort R = Integer] Integer =
   h.halt 1
 
-/// Cleanup calls `later` after a halt inside an open access.
+/// Cleanup calls `afterHalt` after a halt inside an open access.
 /// The blame shows that the abandonment runs the cleanup.
-@[runs("blame: `later` is owed its body")]
+@[runs("blame: `afterHalt` is owed its body")]
 def halted() -> Integer =
   var x = 1
   let r : Integer = handle h : Halt.Eff with sort R = Integer {
-    access x as v { let _ = halting (); resume v 5 } unwind { later 1 };
+    access x as v { let _ = halting (); resume v 5 } unwind { afterHalt 1 };
     pure 0
   } with {
     | pure(y) => pure y
@@ -48,11 +48,11 @@ def halted() -> Integer =
   pure x
 
 /// The same access across an exit whose clause abandons `k` itself.
-@[runs("blame: `later` is owed its body")]
+@[runs("blame: `afterHalt` is owed its body")]
 def abandoned() -> Integer =
   var x = 1
   let r : Integer = handle c : std.process.Exit.Eff {
-    access x as v { let _ = c.exit 1; resume v 5 } unwind { later 1 };
+    access x as v { let _ = c.exit 1; resume v 5 } unwind { afterHalt 1 };
     pure 0
   } with {
     | pure(y) => pure y
@@ -61,14 +61,14 @@ def abandoned() -> Integer =
   pure x
 
 /// The function creates a two-element list with its argument first.
-def built(a : Integer) -> List Integer =
+def pairOf(a : Integer) -> List Integer =
   pure cons a (cons 2 nil)
 
 /// Cleanup reads a list before the enclosing scope reads it again, after a
 /// halt. Both retain the list.
 @[runs("cons 9 (cons 1 (cons 2 nil))")]
 def haltedKept() -> List Integer =
-  let ys = built 1
+  let ys = pairOf 1
   var x = 1
   let r : Integer = handle h : Halt.Eff with sort R = Integer {
     access x as v { let _ = halting (); resume v 5 } unwind { let _ = ys; pure *{} };
@@ -82,7 +82,7 @@ def haltedKept() -> List Integer =
 /// The same list across an exit whose clause abandons `k` itself.
 @[runs("cons 9 (cons 1 (cons 2 nil))")]
 def abandonedKept() -> List Integer =
-  let ys = built 1
+  let ys = pairOf 1
   var x = 1
   let r : Integer = handle c : std.process.Exit.Eff {
     access x as v { let _ = c.exit 1; resume v 5 } unwind { let _ = ys; pure *{} };
