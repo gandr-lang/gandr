@@ -851,6 +851,12 @@ impl Environment
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the mark that the staging registers, growth within the
+    ///   outstanding marks
+    /// - allocation: the names of the constants admitted since the last
+    ///   staging, growth within the environment's entries
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the surface is the registration and its release,
     ///   separated by an abandoned session (which leaves nothing outstanding,
@@ -905,6 +911,10 @@ impl Environment
     ///   executions.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: a copy of a chunk of the arena that a clone shares, when
+    ///   the truncation cuts it, growth within the arena's nodes
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the surfaces are the resolution and the
@@ -4474,6 +4484,11 @@ impl Environment
     /// - panics: none.
     /// - executable: none — the key is a digest, which a predicate would
     ///   restate.
+    ///
+    /// # Cost
+    /// - allocation: the marked copy of each member and its keyed segment, the
+    ///   positions that the block reaches, its manifest and its registry of
+    ///   words, growth within the block's members
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::content_key`], and a key computed on
