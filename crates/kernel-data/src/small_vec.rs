@@ -2075,6 +2075,55 @@ where
     }
 }
 
+impl<T, A> From<Vec<T, A>> for SmallVec<T, 0, A>
+where
+    A: Allocator,
+{
+    /// The vector's block, as a small vector of capacity zero.
+    ///
+    /// The two blocks have one layout: an array of the capacity, from the same
+    /// allocator. The crossing hands that block across and copies no item. A
+    /// zero-sized item has no block, so the crossing keeps the count alone.
+    ///
+    /// # Specification
+    /// - ensures: the result holds the items, in order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block crosses both ways with the same pointer and
+    ///   no new block, and an empty value draws none.
+    /// - witness: `tests::small_vec::a_block_of_capacity_zero_crosses_with_no_copy`
+    #[spec(captures: before = vec.len(), ensures: |ret| ret.as_slice().len() == before)]
+    #[inline]
+    fn from(vec: Vec<T, A>) -> Self
+    {
+        let mut vec = ManuallyDrop::new(vec);
+        let len = vec.len();
+        // SAFETY: `vec` never drops, so its allocator moves out once.
+        let alloc = unsafe { ptr::read(core::ptr::from_ref(vec.allocator())) };
+        if size_of::<T>() == 0 {
+            return Self {
+                tagged: len,
+                raw: Raw {
+                    inline: ManuallyDrop::new(MaybeUninit::uninit()),
+                },
+                alloc,
+                items: PhantomData,
+            };
+        }
+        let capacity = vec.capacity();
+        let block = NonNull::new(vec.as_mut_ptr()).unwrap_or(NonNull::dangling());
+        Self {
+            tagged: SPILLED | len,
+            raw: Raw {
+                heap: (block, capacity),
+            },
+            alloc,
+            items: PhantomData,
+        }
+    }
+}
+
 impl<T, const N: usize, A> Default for SmallVec<T, N, A>
 where
     A: Allocator + Default,

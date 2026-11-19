@@ -795,3 +795,47 @@ fn an_empty_vector_at_n_zero_holds_a_dangling_block_8124()
         "an empty array, box and vector keep the dangling block"
     );
 }
+
+/// A block of capacity zero crosses both ways with the same pointer and no
+/// new block, and an empty value draws none.
+#[test]
+fn a_block_of_capacity_zero_crosses_with_no_copy()
+{
+    let drawn = Cell::new(0_usize);
+    let alloc = Counting {
+        drawn: &drawn,
+        limit: 4,
+    };
+    let mut vec = alloc::vec::Vec::with_capacity_in(4, alloc);
+    vec.extend([1_u32, 2, 3, 4]);
+    let pointer = vec.as_ptr();
+    let draws = drawn.get();
+    let small = SmallVec::<u32, 0, Counting<'_>>::from(vec);
+    assert_eq!(small.as_slice(), &[1, 2, 3, 4]);
+    assert_eq!(
+        small.as_slice().as_ptr(),
+        pointer,
+        "the block keeps its pointer"
+    );
+    assert_eq!(drawn.get(), draws, "the crossing draws no block");
+    let back = alloc::vec::Vec::from(small);
+    assert_eq!(back.as_slice(), &[1, 2, 3, 4]);
+    assert_eq!(back.as_ptr(), pointer, "the return keeps the pointer");
+    assert_eq!(drawn.get(), draws, "the return draws no block");
+
+    let empty_draws = Cell::new(0_usize);
+    let empty_alloc = Counting {
+        drawn: &empty_draws,
+        limit: 0,
+    };
+    let empty: alloc::vec::Vec<u32, Counting<'_>> = alloc::vec::Vec::new_in(empty_alloc);
+    let crossed = SmallVec::<u32, 0, Counting<'_>>::from(empty);
+    assert!(
+        crossed.as_slice().is_empty(),
+        "an empty crossing holds no item"
+    );
+    assert_eq!(empty_draws.get(), 0, "an empty crossing draws no block");
+    let returned = alloc::vec::Vec::from(crossed);
+    assert_eq!(returned.len(), 0, "an empty return holds no item");
+    assert_eq!(empty_draws.get(), 0, "an empty return draws no block");
+}

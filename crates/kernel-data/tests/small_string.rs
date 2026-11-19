@@ -254,3 +254,39 @@ fn the_string_is_24_bytes_and_compares_as_its_text()
     assert_eq!(order, expected, "strings order as their texts");
     assert_eq!(format!("{fixed}"), "name", "a string displays as its text");
 }
+
+/// A text whose block is its exact length crosses both ways with the same
+/// pointer and no new block. A short text takes the inline form. An inline
+/// text takes one new block on the way back.
+#[test]
+fn a_text_in_a_block_crosses_with_no_copy()
+{
+    let mut exact = String::with_capacity(24);
+    exact.push_str("0123456789abcdefghijklmn");
+    assert_eq!(
+        exact.capacity(),
+        exact.len(),
+        "the block is the text's length"
+    );
+    let pointer = exact.as_ptr();
+    let small = SmallString::<Global>::from(exact);
+    assert_eq!(&*small, "0123456789abcdefghijklmn");
+    assert_eq!(small.as_ptr(), pointer, "the block keeps its pointer");
+    let back = String::from(small);
+    assert_eq!(back, "0123456789abcdefghijklmn");
+    assert_eq!(back.as_ptr(), pointer, "the return keeps the pointer");
+
+    let short = String::from("region");
+    let inline = SmallString::<Global>::from(short);
+    assert_eq!(&*inline, "region");
+    let taken = String::from(inline);
+    assert_eq!(taken, "region", "an inline text takes one block");
+
+    let empty = SmallString::<Global>::from(String::new());
+    assert_eq!(
+        empty.is_empty(),
+        Emptiness::Empty,
+        "an empty text takes the inline form"
+    );
+    assert_eq!(String::from(empty), "");
+}
