@@ -1407,8 +1407,14 @@ impl<A: Allocator + Clone> Names<A>
     {
         let allocator = self.column.allocator().clone();
         RecordNames {
-            column: core::mem::replace(&mut self.column, SmallVec::<_, 0, _>::new_in(allocator.clone())),
-            positions: core::mem::replace(&mut self.positions, SmallVec::<_, 0, _>::new_in(allocator.clone())),
+            column: core::mem::replace(
+                &mut self.column,
+                SmallVec::<_, 0, _>::new_in(allocator.clone()),
+            ),
+            positions: core::mem::replace(
+                &mut self.positions,
+                SmallVec::<_, 0, _>::new_in(allocator.clone()),
+            ),
             ends: core::mem::replace(&mut self.ends, SmallVec::<_, 0, _>::new_in(allocator)),
         }
     }
@@ -2106,7 +2112,9 @@ impl<A: Allocator + Clone> PlacementColumn<A>
         if self.pages.len() <= number {
             let allocator = self.pages.allocator().clone();
             self.pages
-                .resize_with(Count::from(number.saturating_add(1)), || SmallVec::<_, 0, _>::new_in(allocator.clone()));
+                .resize_with(Count::from(number.saturating_add(1)), || {
+                    SmallVec::<_, 0, _>::new_in(allocator.clone())
+                });
         }
         let Some(page) = self.pages.get_mut(number)
         else {
@@ -4644,7 +4652,10 @@ impl<A: Allocator + Clone> ContentTable<A>
                 &mut self.stream,
                 ContentEncoding::new_in(allocator.clone()),
             ),
-            spans: core::mem::replace(&mut self.spans, SmallVec::<_, 0, _>::new_in(allocator.clone())),
+            spans: core::mem::replace(
+                &mut self.spans,
+                SmallVec::<_, 0, _>::new_in(allocator.clone()),
+            ),
             interned: core::mem::replace(&mut self.interned, HashIndex::new_in(allocator)),
             names,
             columns,
@@ -4816,7 +4827,10 @@ impl<A: Allocator + Clone> ContentTable<A>
             return;
         };
         let base = ContentId(base);
-        let mut map = SmallVec::<_, 0, _>::with_capacity_in(Count::from(spans.len()), self.spans.allocator().clone());
+        let mut map = SmallVec::<_, 0, _>::with_capacity_in(
+            Count::from(spans.len()),
+            self.spans.allocator().clone(),
+        );
         let mut start = 0_usize;
         for (index, &span) in spans.iter().enumerate() {
             let end = names.ends.get(index).map_or(start, |&RunEnd(end)| {
@@ -4989,8 +5003,11 @@ impl<A: Allocator + Clone> ContentTable<A>
         now: ArenaWatermark,
     )
     {
-        let Some(newer) = (lower.saturating_add(1) < self.placed.layers.len())
-            .then(|| self.placed.layers.remove(Count::from(lower.saturating_add(1))))
+        let Some(newer) = (lower.saturating_add(1) < self.placed.layers.len()).then(|| {
+            self.placed
+                .layers
+                .remove(Count::from(lower.saturating_add(1)))
+        })
         else {
             return;
         };
@@ -8159,7 +8176,12 @@ mod tests
             assert_eq!(record.as_ref(), &[0xff_u32, u32::from(family)]);
             assert_eq!(
                 content_digest(&arena, node),
-                ContentEncoding(SmallVec::<_, 0, Global>::from_iter([2_u32, 0xff, u32::from(family)])).digest()
+                ContentEncoding(SmallVec::<_, 0, Global>::from_iter([
+                    2_u32,
+                    0xff,
+                    u32::from(family)
+                ]))
+                .digest()
             );
             key
         });
@@ -9016,7 +9038,10 @@ mod tests
         );
         assert_eq!(
             widest.digest(),
-            ContentEncoding(SmallVec::<_, 0, Global>::from_iter(widest.as_ref().iter().copied())).digest(),
+            ContentEncoding(SmallVec::<_, 0, Global>::from_iter(
+                widest.as_ref().iter().copied()
+            ))
+            .digest(),
             "a key's digest is the digest of its words as an encoding"
         );
         let mut longer = SmallVec::<u32, 0, Global>::from_iter(widest.as_ref().iter().copied());

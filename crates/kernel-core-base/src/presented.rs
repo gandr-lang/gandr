@@ -287,12 +287,13 @@ impl Presentations
         else {
             return;
         };
-        let arities = |table: &[SmallVec<ValueTypeId, 0, Global>]| -> ThinShared<(), FieldCount, Global> {
-            table
-                .iter()
-                .map(|fields| FieldCount::from(fields.len()))
-                .collect()
-        };
+        let arities =
+            |table: &[SmallVec<ValueTypeId, 0, Global>]| -> ThinShared<(), FieldCount, Global> {
+                table
+                    .iter()
+                    .map(|fields| FieldCount::from(fields.len()))
+                    .collect()
+            };
         let table = Shared::make_mut(self.table.get_or_insert_with(Shared::default));
         if let Some(cells) = declaration.presentation().cells() {
             let words = table.words.entry(cells.sort()).or_default();

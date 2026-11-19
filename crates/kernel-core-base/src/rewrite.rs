@@ -61,9 +61,8 @@
 //! make a comparison finish earlier and can never change a verdict; the trusted
 //! base still takes no interning table of *decoded* values.
 
-use alloc::collections::BTreeSet;
 use alloc::alloc::Global;
-use gandr_kernel_data::SmallVec;
+use alloc::collections::BTreeSet;
 use core::alloc::Allocator;
 
 use anodized::spec;
@@ -75,6 +74,7 @@ use gandr_kernel_check_memo::MemoActivity;
 use gandr_kernel_check_memo::MemoKey;
 use gandr_kernel_check_memo::MemoRecord;
 use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_data::ThinShared;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::CompType;
@@ -4027,7 +4027,9 @@ fn close_computation(
                 let result = popped(results, AnyNode::Value(original)).value_or(original);
                 if result != original
                     && let Some(slot) = rewritten
-                        .get_or_insert_with(|| SmallVec::<_, 0, Global>::from_iter(values.iter().cloned()))
+                        .get_or_insert_with(|| {
+                            SmallVec::<_, 0, Global>::from_iter(values.iter().cloned())
+                        })
                         .get_mut(index)
                 {
                     *slot = result;
@@ -4042,7 +4044,9 @@ fn close_computation(
                     popped(results, AnyNode::Computation(original)).computation_or(original);
                 if result != original
                     && let Some(slot) = rewritten
-                        .get_or_insert_with(|| SmallVec::<_, 0, Global>::from_iter(components.iter().cloned()))
+                        .get_or_insert_with(|| {
+                            SmallVec::<_, 0, Global>::from_iter(components.iter().cloned())
+                        })
                         .get_mut(index)
                 {
                     *slot = result;
@@ -4399,7 +4403,9 @@ fn close_comp_type(
                 let result = popped(results, AnyNode::ValueType(original)).value_type_or(original);
                 if result != original
                     && let Some(slot) = rewritten
-                        .get_or_insert_with(|| SmallVec::<_, 0, Global>::from_iter(outcomes.iter().cloned()))
+                        .get_or_insert_with(|| {
+                            SmallVec::<_, 0, Global>::from_iter(outcomes.iter().cloned())
+                        })
                         .get_mut(index)
                 {
                     *slot = result;
@@ -4449,7 +4455,9 @@ fn close_comp_type(
                 let result = popped(results, AnyNode::CompType(original)).comp_type_or(original);
                 if result != original
                     && let Some(slot) = rewritten
-                        .get_or_insert_with(|| SmallVec::<_, 0, Global>::from_iter(components.iter().cloned()))
+                        .get_or_insert_with(|| {
+                            SmallVec::<_, 0, Global>::from_iter(components.iter().cloned())
+                        })
                         .get_mut(index)
                 {
                     *slot = result;

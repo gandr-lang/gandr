@@ -202,7 +202,8 @@ fn operation() -> impl Strategy<Value = Operation>
         prop::collection::vec(any::<u16>(), 0_usize .. 12_usize)
             .prop_map(Operation::ExtendFromSlice),
         (0_usize .. 24_usize, 0_u16 .. 4_u16).prop_map(|(len, item)| Operation::Resize(len, item)),
-        (0_usize .. 24_usize, any::<u16>()).prop_map(|(len, item)| Operation::ResizeWith(len, item)),
+        (0_usize .. 24_usize, any::<u16>())
+            .prop_map(|(len, item)| Operation::ResizeWith(len, item)),
         (
             0_usize .. 24_usize,
             0_usize .. 24_usize,

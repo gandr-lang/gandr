@@ -83,14 +83,14 @@ use alloc::alloc::Global;
 use alloc::collections::BTreeSet;
 
 use anodized::spec;
-use gandr_kernel_data::SmallVec;
-use gandr_kernel_data::ThinShared;
 use gandr_kernel_check_memo::CheckMemo;
 use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_check_memo::DigestWord;
 use gandr_kernel_check_memo::MemoEntryCount;
 use gandr_kernel_check_memo::MemoKey;
+use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::Binders;
@@ -2122,9 +2122,9 @@ mod tests
 {
     use alloc::alloc::Global;
 
-    use gandr_kernel_data::SmallVec;
     use gandr_kernel_check_memo::ContentAgreement;
     use gandr_kernel_check_memo::MemoKey as _;
+    use gandr_kernel_data::SmallVec;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::DeBruijnIndex;

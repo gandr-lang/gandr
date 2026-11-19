@@ -7,6 +7,7 @@
 //! its variables read binders of its own and binders past it.
 
 use alloc::alloc::Global;
+
 use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::ComputationId;
@@ -44,7 +45,10 @@ pub fn program() -> impl proptest::strategy::Strategy<Value = Program>
         proptest::collection::vec(step(), 0 .. 40),
         proptest::collection::vec(head(), 1 .. 4),
     )
-        .prop_map(|(steps, heads)| Program { steps: steps.into_iter().collect(), heads: heads.into_iter().collect() })
+        .prop_map(|(steps, heads)| Program {
+            steps: steps.into_iter().collect(),
+            heads: heads.into_iter().collect(),
+        })
 }
 
 /// One step of a generated term's construction: an operation over a stack of

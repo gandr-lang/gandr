@@ -122,7 +122,8 @@ impl Support
     {
         let length = usize::from(length);
         if length > self.stamps.len() {
-            self.stamps.resize_with(Count::from(length), AtomicU32::default);
+            self.stamps
+                .resize_with(Count::from(length), AtomicU32::default);
         }
         self.last = match self.last.checked_add(1) {
             Some(next) if next <= LAST_CHECK => next,

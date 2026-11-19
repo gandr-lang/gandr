@@ -6,8 +6,8 @@
 //! them.
 
 use alloc::alloc::Global;
-use gandr_kernel_data::SmallVec;
 
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ParameterPosition;
 use gandr_kernel_term::StagedPosition;

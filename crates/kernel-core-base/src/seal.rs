@@ -58,11 +58,11 @@
 //! see through an open atom, the substitution moves into the rewrite engine as
 //! a third rewrite beside shifting and substitution.
 
-use alloc::collections::BTreeMap;
 use alloc::alloc::Global;
-use gandr_kernel_data::SmallVec;
+use alloc::collections::BTreeMap;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::ConstantIndex;

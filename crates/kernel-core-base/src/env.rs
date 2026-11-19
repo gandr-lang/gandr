@@ -12,9 +12,9 @@ use alloc::collections::BTreeSet;
 use anodized::spec;
 use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_data::Count;
-use gandr_kernel_data::SmallVec;
 use gandr_kernel_data::Identity;
 use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_data::ThinShared;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::ArenaWatermark;
@@ -4196,14 +4196,20 @@ mod tests
             view.open(core::iter::empty(), (super::SourceRank::ABOVE, end));
             let _outside = view.close();
         }
-        let mut given =
-            [&first, &second].map(|view| view.support.as_ref().map(|support| core::ptr::from_ref(&**support)));
+        let mut given = [&first, &second].map(|view| {
+            view.support
+                .as_ref()
+                .map(|support| core::ptr::from_ref(&**support))
+        });
         entries.restore(first);
         entries.restore(second);
         let third = entries.view();
         let fourth = entries.view();
-        let mut taken =
-            [&third, &fourth].map(|view| view.support.as_ref().map(|support| core::ptr::from_ref(&**support)));
+        let mut taken = [&third, &fourth].map(|view| {
+            view.support
+                .as_ref()
+                .map(|support| core::ptr::from_ref(&**support))
+        });
         assert!(
             taken.iter().all(Option::is_some),
             "each view beside an open one takes a support back"
