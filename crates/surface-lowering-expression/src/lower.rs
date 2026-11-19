@@ -21462,7 +21462,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                                 lowered.name == component.name
                                     && usize::from(lowered.atom) == usize::from(component.held)
                             }),
-                            | TypeMeaning::Family(_) => true,
+                            | TypeMeaning::Builtin(_) | TypeMeaning::Family(_) => true,
                         });
                         stated
                             && lowered.stratum() == structure.stratum
@@ -21526,7 +21526,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                             });
                         }
                     },
-                    TypeMeaning::Family(_) => {},
+                    TypeMeaning::Builtin(_) | TypeMeaning::Family(_) => {},
                 }
             }
             lowered.push(LoweredStructure::new(
@@ -21597,7 +21597,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                     None => unlowered,
                 }
             },
-            TypeMeaning::Sealed | TypeMeaning::Family(_) => unlowered,
+            TypeMeaning::Sealed | TypeMeaning::Builtin(_) | TypeMeaning::Family(_) => unlowered,
         }
     }
 

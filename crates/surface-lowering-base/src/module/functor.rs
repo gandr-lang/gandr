@@ -1658,11 +1658,13 @@ impl<'source> Collector<'_, 'source>
                 },
                 held: slot_image(stated.held),
             }),
-            TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } => Some(TypeComponent {
-                name: stated.name,
-                meaning: stated.meaning,
-                held: slot_image(stated.held),
-            }),
+            TypeMeaning::Sealed | TypeMeaning::Builtin(_) | TypeMeaning::Instantiated { .. } => {
+                Some(TypeComponent {
+                    name: stated.name,
+                    meaning: stated.meaning,
+                    held: slot_image(stated.held),
+                })
+            },
         };
         for (&template_module, &image) in &instance.images {
             let Some(entry) = self.collected.structures.get(template_module.0).cloned()

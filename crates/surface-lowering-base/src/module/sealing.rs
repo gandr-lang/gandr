@@ -191,6 +191,9 @@ pub enum TypeMeaning
     Manifest(Placed),
     /// The atom the abstract slot holding the component declares.
     Sealed,
+    /// The atom of the row that the member's `@[builtin("key")]` names: a
+    /// type signature with no body, whose kind is written at this node.
+    Builtin(Placed),
     /// The type family member at this place of the collection's family list,
     /// expanded at each application.
     Family(super::FamilyIndex),
@@ -635,15 +638,34 @@ impl<'source> Collector<'_, 'source>
             return Err(misplaced_in(FormName::MODULE, cursor.here()));
         };
         let parameters = Self::family_parameters(&mut cursor)?;
-        if let Maybe::Absent(_) = cursor.tile(TileName::EQUALS) {
-            return Err(misplaced_in(FormName::MODULE, cursor.here()));
-        }
-        let defined = one_in(FormName::MODULE, cursor.operands())?;
-        let written = match cursor.tile(TileName::WHERE) {
-            Maybe::Present(_) => Some(Self::written_faces(&mut cursor)?),
-            Maybe::Absent(_) => {
+        // A signature with no body, `type T : K ;`, binds a row of the
+        // toolchain, so `@[builtin]` alone admits it, at the top level of a
+        // source and with no parameters.
+        let (defined, written, builtin) = match cursor.tile(TileName::COLON) {
+            Maybe::Present(colon) => {
+                let marked = attributes.iter().any(|attribute| {
+                    attribute.name.as_ref() == crate::attribute::RegisteredAttribute::BUILTIN.as_ref()
+                });
+                if !marked || !parameters.is_empty() || !matches!(container, Container::TopLevel(_)) {
+                    return Err(misplaced_in(FormName::MODULE, colon.span));
+                }
+                let kind = one_in(FormName::MODULE, cursor.operands())?;
                 let _semicolon = cursor.tile(TileName::SEMICOLON);
-                None
+                (kind, None, true)
+            },
+            Maybe::Absent(_) => {
+                if let Maybe::Absent(_) = cursor.tile(TileName::EQUALS) {
+                    return Err(misplaced_in(FormName::MODULE, cursor.here()));
+                }
+                let defined = one_in(FormName::MODULE, cursor.operands())?;
+                let written = match cursor.tile(TileName::WHERE) {
+                    Maybe::Present(_) => Some(Self::written_faces(&mut cursor)?),
+                    Maybe::Absent(_) => {
+                        let _semicolon = cursor.tile(TileName::SEMICOLON);
+                        None
+                    },
+                };
+                (defined, written, false)
             },
         };
         if let Maybe::Present(_) = cursor.peek() {
@@ -690,7 +712,10 @@ impl<'source> Collector<'_, 'source>
         for parameter in &parameters {
             self.collected.own(parameter.classifier.node, held);
         }
-        let meaning = if parameters.is_empty() {
+        let meaning = if builtin {
+            super::TypeMeaning::Builtin(defined)
+        }
+        else if parameters.is_empty() {
             super::TypeMeaning::Manifest(defined)
         }
         else {
@@ -962,6 +987,7 @@ impl<'source> Collector<'_, 'source>
                 held: member.held,
             }),
             super::TypeMeaning::Sealed
+            | super::TypeMeaning::Builtin(_)
             | super::TypeMeaning::Family(_)
             | super::TypeMeaning::Instantiated { .. } => None,
         });

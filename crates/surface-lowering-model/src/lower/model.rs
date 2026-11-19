@@ -784,7 +784,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
                             .is_some_and(|member| {
                                 self.cx().computation_members.contains(&member.defined.node)
                             }),
-                        TypeMeaning::Sealed => false,
+                        TypeMeaning::Sealed | TypeMeaning::Builtin(_) => false,
                     };
                     if computation {
                         let _fresh = self.cx_mut().computation_members.insert(defined);
@@ -1516,6 +1516,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                 TypeMeaning::Manifest(_) | TypeMeaning::Sealed | TypeMeaning::Instantiated { .. },
                 false,
             )
+            | (TypeMeaning::Builtin(_), _)
             | (TypeMeaning::Family(_), true) => Err(Missing::Unlowered),
         }
     }
@@ -3386,7 +3387,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
                             Maybe::Present(
                                 TypeMeaning::Manifest(_) | TypeMeaning::Instantiated { .. },
                             ) => {},
-                            Maybe::Present(TypeMeaning::Sealed | TypeMeaning::Family(_)) => {
+                            Maybe::Present(
+                                TypeMeaning::Sealed | TypeMeaning::Builtin(_) | TypeMeaning::Family(_),
+                            ) => {
                                 return Err(
                                     site.out(FragmentBoundary::Unadmitted(Unbuilt::PackModel))
                                 );
@@ -3760,7 +3763,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                     Some(&InstanceType::Computation(_)) | None => return None,
                 }
             },
-            TypeMeaning::Sealed | TypeMeaning::Family(_) => return None,
+            TypeMeaning::Sealed | TypeMeaning::Builtin(_) | TypeMeaning::Family(_) => return None,
         };
         let id = sink.arena.value_quote(stated);
         sink.origins.record_value(id, origin);

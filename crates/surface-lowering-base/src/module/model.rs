@@ -1298,9 +1298,10 @@ impl<'source> Collector<'_, 'source>
         };
         let family = match member.meaning {
             TypeMeaning::Family(family) => Some(family),
-            TypeMeaning::Manifest(_) | TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } => {
-                None
-            },
+            TypeMeaning::Manifest(_)
+            | TypeMeaning::Sealed
+            | TypeMeaning::Builtin(_)
+            | TypeMeaning::Instantiated { .. } => None,
         };
         let written = OperandCount::from(family.map_or(0_usize, |family| {
             self.collected
