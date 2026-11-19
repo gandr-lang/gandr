@@ -1,0 +1,5 @@
+/// `NativeMark.NoRow`: a `native` mark whose text names no row of the native
+/// table.
+@[refuses("NativeMark.NoRow")]
+@[native("string.join")]
+def join : (a : String, b : String) -> String;
