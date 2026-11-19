@@ -6,12 +6,9 @@
 // A binder of a recursion's stage moves along its equation and keeps its stage.
 // The model source `injective-index` holds `tail` and `zip`.
 //
-// The checker refuses each declaration below by the name its attribute
-// states. Each turns to `checks` as its rung lands, and the source then moves
-// to the model root.
+// The checker refuses `headOfEmpty` by the name its attribute states. The
+// length of the empty vector is apart from the length that `head` takes.
 //
-// - owes: #3516 — an implicit under a constructor, for
-//   `firstOfPair`
 // - owes: #3517 — an implicit block on `def rec`, for `zip`
 // - see: #3481 — the spike that wrote these programs
 
@@ -27,7 +24,12 @@ def head[a : Type, n : Nat](v : Vec a (Succ n)) -> a =
   match v where
     | VCons(_, h, _) => h
 
-/// The head of the vector two long. The solver does not take apart the `Succ`
-/// that `n` stands under in `head`'s parameter.
-@[refuses("TypeMismatch")]
+/// The head of the vector two long. The checker splits `Succ` against
+/// `Succ (Succ Zero)`, so `n` stands at `Succ Zero`.
+@[runs("1")]
 def firstOfPair() -> Integer = head (pair ());
+
+/// The head of the empty vector. `Zero` and `Succ` are two constructors, so
+/// the empty vector's length is apart from `Succ n`.
+@[refuses("TypeMismatch")]
+def headOfEmpty() -> Integer = head (VNil : Vec Integer Zero);

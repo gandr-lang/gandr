@@ -2035,6 +2035,33 @@ fn convert(
                     // a quoted type reads by reduction too (#5381). It
                     // compares every other side as syntax.
                     let arena = context.arena();
+                    // Two applications of one constructor convert exactly when
+                    // their fields do, so a metavariable under a constructor
+                    // meets the field that stands at its place.
+                    if let (
+                        Some(&Value::Constructor {
+                            tag: one,
+                            fields: ref one_fields,
+                            ..
+                        }),
+                        Some(&Value::Constructor {
+                            tag: other,
+                            fields: ref other_fields,
+                            ..
+                        }),
+                    ) = (arena.value(left), arena.value(right))
+                    {
+                        if one != other || one_fields.len() != other_fields.len() {
+                            return Ok(Agreement::Apart);
+                        }
+                        pending.extend(
+                            one_fields
+                                .iter()
+                                .zip(other_fields.iter())
+                                .map(|(&a, &b)| Pairing::Terms(a, b)),
+                        );
+                        continue;
+                    }
                     let code = |side: ValueId| {
                         matches!(
                             arena.value(side),
