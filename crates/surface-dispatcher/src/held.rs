@@ -81,6 +81,10 @@ impl Index
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the receipt's place under each key of its records and in
+    ///   the order, growth within the held receipts
     fn hold(
         &mut self,
         receipt: Shared<StoredReceipt, Global>,
@@ -166,6 +170,12 @@ impl Held
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared block of the receipt and a copy of the small
+    ///   index that a snapshot shares, growth within the held receipts
+    /// - allocation: the merged copy of the large index, growth within the held
+    ///   receipts
     fn add(
         &mut self,
         receipt: StoredReceipt,

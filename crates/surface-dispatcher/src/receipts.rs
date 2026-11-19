@@ -246,6 +246,10 @@ impl StoredVerdicts
     /// # Errors
     /// [`VerdictStoreError::Unopened`].
     ///
+    /// # Cost
+    /// - allocation: the store, the index of the receipts that it names and the
+    ///   shared block of each receipt, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`StoredVerdicts`].
     /// - witness: `receipts::tests::a_kept_receipt_is_answered_after_reopening`
