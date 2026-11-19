@@ -1451,6 +1451,10 @@ fn rule_json(row: &RuleRow) -> Value
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the JSON object of the row, its payload and its texts, growth
+///   within the registry's attributes
 fn attribute_json(row: &AttributeRow) -> Value
 {
     let payload = match row.schema {

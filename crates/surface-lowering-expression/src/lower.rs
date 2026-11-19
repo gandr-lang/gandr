@@ -19224,6 +19224,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// # Errors
     /// As [`Self::attribute`].
     ///
+    /// # Cost
+    /// - allocation: the name, span and standing of each attribute in a
+    ///   module's seen list, growth within the module's attributes
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a decorated module of two members and an undecorated
     ///   declaration after it, the attribute reaching the members only; a
@@ -19311,6 +19315,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///
     /// # Errors
     /// As [`Self::attribute`].
+    ///
+    /// # Cost
+    /// - allocation: the name, span and standing of each attribute in a slot's
+    ///   seen list, growth within the slot's attributes
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each written attribute spends one step, successful

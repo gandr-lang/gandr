@@ -1187,6 +1187,11 @@ impl<'source> Collector<'_, 'source>
     /// [`LoweringRefusal::MalformedForm`] and
     /// [`LoweringRefusal::OutOfFragment`].
     ///
+    /// # Cost
+    /// - allocation: the parameters, the indices, the generators, the
+    ///   operations, the cells and each member with its attribute blocks,
+    ///   growth within the declaration's body
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the witnesses below read each member shape the
     ///   pending corpus writes, pass over the description route's members,
@@ -1708,6 +1713,10 @@ impl<'source> Collector<'_, 'source>
     /// [`LoweringRefusal::MalformedForm`] and
     /// [`LoweringRefusal::OutOfFragment`].
     ///
+    /// # Cost
+    /// - allocation: the entries and the grades of the telescope, growth within
+    ///   the generator's fields
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — nullary, single-port and telescoped generators read
     ///   their fields, and a header reads its named indices; a missing result
@@ -1760,6 +1769,10 @@ impl<'source> Collector<'_, 'source>
     /// # Errors
     /// [`LoweringRefusal::MalformedForm`] and
     /// [`LoweringRefusal::OutOfFragment`].
+    ///
+    /// # Cost
+    /// - allocation: the outputs of a group and their grades, growth within the
+    ///   generator's outputs
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::generator_signature`].
