@@ -27,6 +27,7 @@ An arrow is one category's dependencies on another, labelled with the count of `
 <!-- crate-map:begin -->
 ```mermaid
 flowchart BT
+  boot
   theory
   kernel
   core
@@ -39,6 +40,7 @@ flowchart BT
   core -->|43| kernel
   storage -->|6| theory
   storage -->|1| kernel
+  runtime -->|1| boot
   runtime -->|1| theory
   runtime -->|2| kernel
   runtime -->|7| core
