@@ -68,7 +68,7 @@ fn malformed_arenas_are_refused()
         );
     }
     assert_eq!(
-        Session::new([Node::End].into_iter().collect(), NodeId(9)).err(),
+        Session::new(core::iter::once(Node::End).collect(), NodeId(9)).err(),
         Some(TypeError::MissingNode(NodeId(9)))
     );
 }
