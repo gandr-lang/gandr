@@ -3,10 +3,6 @@
 //! compiler gave and the emitter's table of blocks mapped. The program reads
 //! the answer's object, the heap's top and the words that the block left.
 
-use std::boxed::Box;
-use std::vec;
-use std::vec::Vec;
-
 use gandr_runtime_emitter::block::Answer;
 use gandr_runtime_emitter::block::Assembler;
 use gandr_runtime_emitter::block::Blocks;
@@ -185,7 +181,9 @@ extern "C" fn refusing(
 ) -> Word
 {
     // SAFETY: the runtime record is live for the call.
-    unsafe { (*runtime).refuse(gandr_runtime_stencils::Refusal::Operands) };
+    unsafe {
+        (*runtime).refuse(gandr_runtime_stencils::Refusal::Operands);
+    }
     Word::ZERO
 }
 

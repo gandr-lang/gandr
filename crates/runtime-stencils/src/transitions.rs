@@ -2200,8 +2200,10 @@ type Block = extern "C" fn(words: *mut Word) -> Word;
 /// first, with [`layout::BLOCK_ANSWERS`] set when the block answers. The
 /// field of each integer becomes the block's word in place of its pushed
 /// word, and the block reads and writes the words through the address of the
-/// first. An answering block's word becomes a fresh machine integer in hand;
-/// any other block leaves the value in hand as it was.
+/// first. An answering block's word becomes a fresh machine integer in hand.
+/// Any other block leaves the value in hand as it was. The unit value is a
+/// constant object, and the stencil holds no operand for its address, so the
+/// lowering reads no value after a block that answers nothing.
 ///
 /// # Specification
 /// - requires: B's count of machine integers lie just below the frame region's
@@ -2239,7 +2241,11 @@ pub extern "rust-preserve-none" fn stencil_block(
         // SAFETY: the lowering pushed a machine integer at each word.
         let integer = unsafe { *word }.to_pointer::<Word>();
         // SAFETY: a machine integer's one field follows its header.
-        unsafe { *word = *integer.wrapping_add(1) };
+        let field = unsafe { *integer.wrapping_add(1) };
+        // SAFETY: the word lies below the frame region's top.
+        unsafe {
+            *word = field;
+        }
         index = index.wrapping_add(1);
     }
     let entry = address!(runtime, A).to_pointer::<()>().cast_const();
@@ -2285,9 +2291,13 @@ pub extern "rust-preserve-none" fn stencil_block(
     )]
     let answer = block(base);
     // SAFETY: the object's block is the run's.
-    unsafe { *object = layout::INTEGER_HEADER };
+    unsafe {
+        *object = layout::INTEGER_HEADER;
+    }
     // SAFETY: as above.
-    unsafe { *object.wrapping_add(1) = answer };
+    unsafe {
+        *object.wrapping_add(1) = answer;
+    }
     become hole_next(runtime, next, base, environment, Word::from_pointer(object))
 }
 

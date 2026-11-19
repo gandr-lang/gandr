@@ -440,7 +440,7 @@ impl Region
     ///
     /// # Specification
     /// - ensures: a readable, executable `MAP_JIT` mapping, write-protected for
-    ///   the calling thread.
+    ///   the calling thread, so no thread writes it outside a write.
     /// - executable: none — the mapping's protection is the host's state, which
     ///   no predicate reads.
     ///
@@ -449,8 +449,10 @@ impl Region
     ///
     /// # Adequacy
     /// - hypothesis: L2 — every named program runs from a region this maps; a
-    ///   mapping without execute permission faults on the first copy.
+    ///   mapping without execute permission faults on the first copy, and a
+    ///   mapping writable outside a write lets the child's write pass.
     /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `executable::tests::no_view_is_writable_and_executable`
     #[inline]
     pub fn map(capacity: Offset) -> Result<Self, MapFailure>
     {
@@ -493,7 +495,8 @@ impl Region
     ///
     /// # Specification
     /// - ensures: a writable view and a readable, executable view of one
-    ///   anonymous file, the executable one below 2 GiB on x86-64.
+    ///   anonymous file, the executable one below 2 GiB on x86-64; neither view
+    ///   is writable and executable.
     /// - executable: none — the mappings' protection and placement are the
     ///   host's state, which no predicate reads.
     ///
@@ -503,8 +506,10 @@ impl Region
     /// # Adequacy
     /// - hypothesis: L2 — every named program runs from a region this maps; a
     ///   view above 2 GiB fails the absolute patch, a missing execute
-    ///   permission faults on the first copy.
+    ///   permission faults on the first copy, and a view with both permissions
+    ///   shows them in the process's map.
     /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `executable::tests::no_view_is_writable_and_executable`
     #[inline]
     pub fn map(capacity: Offset) -> Result<Self, MapFailure>
     {
@@ -609,6 +614,83 @@ impl Drop for Region
             unsafe {
                 libc::munmap(self.write.cast(), self.capacity);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+#[cfg(gandr_executable)]
+mod tests
+{
+    use std::os::unix::process::ExitStatusExt as _;
+    use std::process::Command;
+
+    use super::Offset;
+    use super::Region;
+
+    /// The signal of a write to a page that is not writable.
+    #[cfg(target_os = "macos")]
+    const FAULT: libc::c_int = libc::SIGBUS;
+    /// The signal of a write to a page that is not writable.
+    #[cfg(target_os = "linux")]
+    const FAULT: libc::c_int = libc::SIGSEGV;
+
+    /// No view of a region is writable and executable at one time. A write
+    /// to the executable view outside a write ends its process by the fault
+    /// signal. On Linux the process's map shows each view with one of the
+    /// two permissions.
+    #[test]
+    fn no_view_is_writable_and_executable()
+    {
+        let ran = Command::new(std::env::current_exe().expect("the test binary is named"))
+            .args([
+                "--exact",
+                "executable::tests::a_write_to_the_executable_view_child",
+                "--ignored",
+                "--test-threads=1",
+            ])
+            .output()
+            .expect("the child runs");
+        assert_eq!(
+            Some(FAULT),
+            ran.status.signal(),
+            "{}",
+            String::from_utf8_lossy(&ran.stderr)
+        );
+        #[cfg(target_os = "linux")]
+        {
+            let region = Region::map(Offset(1 << 16_u32)).expect("the host maps a region");
+            let maps = std::fs::read_to_string("/proc/self/maps").expect("the map reads");
+            for view in [region.write.addr(), region.code.addr()] {
+                let line = maps
+                    .lines()
+                    .find(|line| {
+                        let range = line.split_whitespace().next().unwrap_or_default();
+                        let (start, end) = range.split_once('-').unwrap_or_default();
+                        let bound = |hex| usize::from_str_radix(hex, 16).unwrap_or_default();
+                        (bound(start) .. bound(end)).contains(&view)
+                    })
+                    .expect("the map holds each view");
+                let permissions = line.split_whitespace().nth(1).unwrap_or_default();
+                assert!(
+                    !(permissions.contains('w') && permissions.contains('x')),
+                    "{line}"
+                );
+            }
+        }
+    }
+
+    /// A write to the executable view of a fresh region, outside a write.
+    /// The parent test reads the signal that ends this process.
+    #[test]
+    #[ignore = "run by `no_view_is_writable_and_executable` as a child process"]
+    fn a_write_to_the_executable_view_child()
+    {
+        let region = Region::map(Offset(1 << 16_u32)).expect("the host maps a region");
+        // SAFETY: none is claimed; the write is meant to fault, and the
+        // parent reads the fault.
+        unsafe {
+            region.code.write_volatile(0);
         }
     }
 }

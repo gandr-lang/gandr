@@ -183,15 +183,14 @@ pub fn address(key: Key) -> Result<Word, Unentered>
         return Ok(Word::from(at));
     }
     runs_here(entry.target)?;
-    let mut regions = MACHINE
-        .regions
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    if let Some(&Address(at)) = entry.address.get() {
-        return Ok(Word::from(at));
-    }
-    let placed = place(&mut regions, &entry.code).map_err(Unentered::Map)?;
-    let &Address(at) = entry.address.get_or_init(|| placed);
+    let Address(at) = place(
+        &mut MACHINE
+            .regions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner),
+        entry,
+    )
+    .map_err(Unentered::Map)?;
     Ok(Word::from(at))
 }
 
@@ -227,22 +226,38 @@ fn runs_here(target: Target) -> Result<(), Unentered>
     Err(Unentered::Target(target))
 }
 
-/// Copy `code` into the last region with room for it, or into a region
-/// mapped for it, and give its executable address.
+/// The executable address of `entry`'s bytes: the address of an earlier
+/// request, else a copy into the last region with room for the bytes or into
+/// a region mapped for them.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the caller holds the lock of `regions`, so one request at a time
+///   places a block.
+/// - ensures: the bytes of one entry are copied one time, and each request
+///   gives that copy's address.
+/// - executable: none — the address is the host's mapping, observable only by
+///   entering it.
 ///
 /// # Cost
 /// - allocation: the slot of a new region, durable by the key
 ///
 /// # Errors
 /// The host's [`MapFailure`] when a region is needed and refused.
+///
+/// # Adequacy
+/// - hypothesis: L2 — each tier enters the bytes of one key and answers the
+///   sum; a copy that missed its region or a lost address faults or answers
+///   another sum.
+/// - witness: `machine::tests::a_block_answers_alike_on_each_tier`
 fn place(
     regions: &mut Vec<Region>,
-    code: &Code,
+    entry: &Entry,
 ) -> Result<Address, MapFailure>
 {
+    if let Some(&address) = entry.address.get() {
+        return Ok(address);
+    }
+    let code = &entry.code;
     let length = Offset(code.0.len());
     let room = regions
         .last_mut()
@@ -261,10 +276,11 @@ fn place(
         return Err(MapFailure(0));
     };
     region.write(reservation, |bytes| bytes.0.copy_from_slice(&code.0));
-    Ok(region.address(reservation))
+    Ok(*entry.address.get_or_init(|| region.address(reservation)))
 }
 
-#[cfg(all(test, gandr_executable))]
+#[cfg(test)]
+#[cfg(gandr_executable)]
 mod tests
 {
     use alloc::boxed::Box;
@@ -492,7 +508,7 @@ mod tests
             tier,
             &lowered,
             (&CommandArena::new(), &Definitions::new()),
-            Budget::from(1_usize << 20),
+            Budget::from(1_usize << 20_u32),
             RunInputs::new(&mut store),
         )?;
         let Ran::Ended(Outcome::Halted(value)) = ran
@@ -525,7 +541,7 @@ mod tests
         let adds = compiled(&adding(HOST));
         let nothing = compiled(&empty(HOST));
         for &tier in tiers() {
-            for (first, second) in [(0, 0), (2, 40), (i64::MAX, 1), (-7, 3)] {
+            for (first, second) in [(0_i64, 0_i64), (2, 40), (i64::MAX, 1), (-7, 3)] {
                 assert_eq!(
                     Ok(integer(Word::from(first.wrapping_add(second)))),
                     run(
@@ -564,7 +580,9 @@ mod tests
             .find(|&target| target != HOST)
             .expect("a target other than this host's");
         let elsewhere = compiled(&adding(foreign));
-        let unknown = Key(blake3::hash(b"no compile gave this key"));
+        let mut never = empty(HOST);
+        never.template = "nop".into();
+        let unknown = Blocks::new(Assembler::pinned(), Cache::Process).key(&never);
         for &tier in tiers() {
             assert_eq!(
                 Err(Declined::Block(Unentered::Target(foreign))),

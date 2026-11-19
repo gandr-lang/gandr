@@ -606,12 +606,19 @@ pub enum Unbound
 #[cfg(test)]
 mod tests
 {
+    use alloc::boxed::Box;
     use alloc::vec::Vec;
 
     use super::BlockRow;
     use super::Function;
     use super::Stub;
-    use crate::block::Key;
+    use crate::block::Answer;
+    use crate::block::Assembler;
+    use crate::block::Blocks;
+    use crate::block::Cache;
+    use crate::block::Description;
+    use crate::block::Options;
+    use crate::block::Target;
 
     /// Every stub runs a stencil of its own: two stubs sharing one would
     /// resume each other's frames.
@@ -630,8 +637,19 @@ mod tests
     #[test]
     fn a_key_entered_twice_takes_one_row()
     {
-        let first = Key(blake3::hash(b"the first block"));
-        let second = Key(blake3::hash(b"the second block"));
+        let blocks = Blocks::new(Assembler::pinned(), Cache::Process);
+        let key = |template: &str| {
+            blocks.key(&Description {
+                target: Target::LinuxX86_64,
+                template: template.into(),
+                operands: Box::new([]),
+                answer: Answer::Zero,
+                clobbers: Box::new([]),
+                options: Options::DEFAULT,
+            })
+        };
+        let first = key("nop");
+        let second = key("");
         let mut function = Function::default();
         let rows = [
             function.block(first),

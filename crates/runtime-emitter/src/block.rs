@@ -517,7 +517,7 @@ impl core::error::Error for Refusal
 /// trivial.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Key(pub(crate) blake3::Hash);
+pub struct Key(blake3::Hash);
 
 impl fmt::Display for Key
 {
@@ -733,7 +733,7 @@ impl Blocks
     /// - hypothesis: L3 — two descriptions that differ in the template alone
     ///   give two different blocks.
     /// - witness: `tests::block::a_class_operand_and_an_output_take_their_words`
-    fn key(
+    pub(crate) fn key(
         &self,
         description: &Description,
     ) -> Key
