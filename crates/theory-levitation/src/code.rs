@@ -610,6 +610,9 @@ impl Attrs
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the marker array, durable by the returned attributes.
     #[inline]
     #[must_use]
     pub fn empty() -> Self
@@ -623,6 +626,9 @@ impl Attrs
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the marker array, durable by the returned attributes.
     #[inline]
     #[must_use]
     pub fn new<M>(markers: M) -> Self
