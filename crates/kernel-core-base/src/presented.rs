@@ -420,7 +420,7 @@ impl Presentations
         self.table
             .as_deref()
             .and_then(|table| table.words.get(&sort))
-            .map_or(&[][..], |words| &words[..])
+            .map_or(&[][..], |words| &**words)
             .iter()
             .take_while(|&&(rank, _)| rank < self.horizon)
             .map(|&(_, words)| words)

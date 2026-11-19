@@ -4028,7 +4028,7 @@ fn close_computation(
                 if result != original
                     && let Some(slot) = rewritten
                         .get_or_insert_with(|| {
-                            SmallVec::<_, 0, Global>::from_iter(values.iter().cloned())
+                            SmallVec::<_, 0, Global>::from_iter(values.iter().copied())
                         })
                         .get_mut(index)
                 {
@@ -4045,7 +4045,7 @@ fn close_computation(
                 if result != original
                     && let Some(slot) = rewritten
                         .get_or_insert_with(|| {
-                            SmallVec::<_, 0, Global>::from_iter(components.iter().cloned())
+                            SmallVec::<_, 0, Global>::from_iter(components.iter().copied())
                         })
                         .get_mut(index)
                 {
@@ -4404,7 +4404,7 @@ fn close_comp_type(
                 if result != original
                     && let Some(slot) = rewritten
                         .get_or_insert_with(|| {
-                            SmallVec::<_, 0, Global>::from_iter(outcomes.iter().cloned())
+                            SmallVec::<_, 0, Global>::from_iter(outcomes.iter().copied())
                         })
                         .get_mut(index)
                 {
@@ -4456,7 +4456,7 @@ fn close_comp_type(
                 if result != original
                     && let Some(slot) = rewritten
                         .get_or_insert_with(|| {
-                            SmallVec::<_, 0, Global>::from_iter(components.iter().cloned())
+                            SmallVec::<_, 0, Global>::from_iter(components.iter().copied())
                         })
                         .get_mut(index)
                 {
