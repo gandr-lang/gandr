@@ -1,0 +1,3 @@
+import "./base.gandr" as old : Older via downgrade;
+def relayed : Integer = old.answer;
+def tagged : Integer = old.tag;

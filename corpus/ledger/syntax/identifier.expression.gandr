@@ -1,0 +1,3 @@
+/// `identifier.expression`: a name.
+def answer = 42;
+def same = answer;
