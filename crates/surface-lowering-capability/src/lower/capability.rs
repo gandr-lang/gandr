@@ -960,6 +960,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     /// # Errors
     /// The row's refusal.
     ///
+    /// # Cost
+    /// - allocation: the row's interfaces, labels, fixed types and named
+    ///   theories, growth within the row's entries
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a row of two interfaces and an undeclared one, each
     ///   asserted as the minted returner or the exact refusal, a row open
@@ -1102,6 +1106,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     ///
     /// # Errors
     /// As `- fails:`.
+    ///
+    /// # Cost
+    /// - allocation: the label's pieces, growth within the operand's pieces
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::returner_row`].
@@ -1662,6 +1669,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// # Errors
     /// [`LoweringRefusal::UnknownMold`].
     ///
+    /// # Cost
+    /// - allocation: the call's pieces and the operation's name, growth within
+    ///   the call's pieces
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — `let b = r.alloc(n) ;` places `b`, a run of any other
     ///   exercise names its reply.
@@ -1941,6 +1952,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///
     /// # Errors
     /// The scope's refusal.
+    ///
+    /// # Cost
+    /// - allocation: the scope's manifest, its clauses and its plan, growth
+    ///   within the scope's clauses
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a scope whose subject exercises its capability and

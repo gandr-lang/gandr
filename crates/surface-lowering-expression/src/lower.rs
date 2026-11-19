@@ -10014,6 +10014,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// # Errors
     /// The selection's refusal.
     ///
+    /// # Cost
+    /// - allocation: the selection's path, its links and its plan, growth
+    ///   within the module's plans
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a path to an exported component at depth two and at
     ///   depth nine, to a hidden member, to an absent member at each depth, to
