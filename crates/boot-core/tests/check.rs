@@ -15,8 +15,7 @@ use crate::harness::SUBJECTS;
 #[test]
 fn the_check_of_utf8_gives_the_first_fault()
 {
-    let cases: [(&[u8], Utf8); 10] = [
-        (&[0x61, 0x62, 0xFF], Utf8::Fault(Position(2))),
+    let cases: [(&[u8], Utf8); 9] = [
         (&[0x61], Utf8::Valid),
         (&[0xC3, 0xA9], Utf8::Valid),
         (&[0xE2, 0x82, 0xAC], Utf8::Valid),
@@ -29,9 +28,13 @@ fn the_check_of_utf8_gives_the_first_fault()
     ];
     for subject in &SUBJECTS {
         let name = subject.name;
+        let bytes = [0x61_u8, 0x62, 0xFF];
+        // SAFETY: the range is a live array.
+        let fault = unsafe { (subject.check_utf8)(Range::from(bytes.as_slice())) };
+        assert_eq!(Utf8::Fault(Position(2)), fault, "{name}: 61 62 FF");
         // SAFETY: an empty range is read as no bytes.
         let empty = unsafe { (subject.check_utf8)(NOWHERE) };
-        assert_eq!(Utf8::Valid, empty, "{name}");
+        assert_eq!(Utf8::Valid, empty, "{name}: empty");
         for (bytes, answer) in cases {
             // SAFETY: the range is a live array.
             let checked = unsafe { (subject.check_utf8)(Range::from(bytes)) };
