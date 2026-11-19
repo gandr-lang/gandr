@@ -22,7 +22,7 @@ import "../../model/identity/circle.gandr";
 /// inverse's round trip: `pick(collapse(x))` is `Yes` at every `x`, so
 /// reflexivity at `x` does not reach it.
 @[refuses("EndpointMismatch")]
-def collapsedPath : Path[.A = Type](Two, One) = ua (*{
+def collapsedPath : Path[.A = Type] Two One = ua (*{
   collapse,
   *{*{pick, thunk { fun (x) { Path.here x } }}, *{pick, single}}
 });
@@ -55,7 +55,7 @@ def alongLiteral(
 /// reflexivity: no rule relates `ua` of the packaged transport to the path it
 /// packages, so the model source owes it as `uaEta`.
 @[refuses("EndpointMismatch")]
-def uaEtaByConversion(a : Type) -> Path[.A = Path[.A = Type](a, a)] (
+def uaEtaByConversion(a : Type) -> Path[.A = Path[.A = Type] a a] (
   ua (idtoequiv a a (Path.here a))
 ) (Path.here a) =
   Path.here (Path.here a)
