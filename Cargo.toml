@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
   "crates/boot-alloc",
+  "crates/boot-core",
   "crates/core-checker",
   "crates/core-checker-base",
   "crates/core-checker-bridge",
