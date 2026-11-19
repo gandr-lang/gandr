@@ -34,15 +34,21 @@
 //!   Rust function comes from the toolchain that compiles it (§
 //!   io-direction-interop).
 
+#![no_std]
+
 extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
 
 mod bytes;
+#[cfg(feature = "std")]
 mod cache;
 mod names;
 mod record;
+#[cfg(feature = "std")]
 mod request;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests;
 
 pub use crate::bytes::Canonical;
@@ -51,13 +57,21 @@ pub use crate::bytes::Encoded;
 pub use crate::bytes::Entry;
 pub use crate::bytes::SourceFile;
 pub use crate::bytes::Undecoded;
+#[cfg(feature = "std")]
 pub use crate::cache::Answer;
+#[cfg(feature = "std")]
 pub use crate::cache::Cache;
+#[cfg(feature = "std")]
 pub use crate::cache::ENTRY;
+#[cfg(feature = "std")]
 pub use crate::cache::Exit;
+#[cfg(feature = "std")]
 pub use crate::cache::FUNCTIONS;
+#[cfg(feature = "std")]
 pub use crate::cache::Origin;
+#[cfg(feature = "std")]
 pub use crate::cache::Program;
+#[cfg(feature = "std")]
 pub use crate::cache::Unread;
 pub use crate::names::Available;
 pub use crate::names::Bytes;
@@ -100,4 +114,5 @@ pub use crate::record::Shape;
 pub use crate::record::Sign;
 pub use crate::record::Staging;
 pub use crate::record::Unstatable;
+#[cfg(feature = "std")]
 pub use crate::request::Request;
