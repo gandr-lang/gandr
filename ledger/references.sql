@@ -779,6 +779,7 @@ INSERT INTO reference VALUES('vault:01a1d8c5-08cb-7e12-a5d5-9a2ad3279160','stora
 INSERT INTO reference VALUES('vault:01a1d8c5-08cb-7e12-a5d5-9a2ad3279160','storage-store','plane::index','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d90b-b64a-7248-8f6e-e792b6e8cb9f','storage-store','plane','background','484c1e84c9b09f8a7b9c2b5df2bdccffcd8234f4','2026-11-14','050e6297abe82c557307369b30f3a9e4023f2fdb');
 INSERT INTO reference VALUES('vault:01a1dbb1-8f03-73b2-bbab-a82afed5f02f','workflow-prose','','newest',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1e7b4-8c77-7a81-9165-ff37ea870424','boot-alloc','','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1e7b4-8c77-7a81-9165-ff37ea870424','core-content','','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1e7b4-8c77-7a81-9165-ff37ea870424','runtime-emitter','block','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1e7b4-8c77-7a81-9165-ff37ea870424','runtime-emitter','image','lineage',NULL,NULL,NULL);
@@ -786,6 +787,7 @@ INSERT INTO reference VALUES('vault:01a1e7b4-8c77-7a81-9165-ff37ea870424','runti
 INSERT INTO reference VALUES('vault:01a1e7b4-8c77-7a81-9165-ff37ea870424','runtime-emitter','machine','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1e7b4-8c77-7a81-9165-ff37ea870424','runtime-rust-record','','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1e7b4-8c77-7a81-9165-ff37ea870424','runtime-stencils','transitions','newest',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1ebc5-2ff2-7833-b871-85901e734925','boot-alloc','','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1ebc5-2ff2-7833-b871-85901e734925','surface-lowering-expression','lower::row','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1f320-0881-7ed1-9a54-c0c713ccf7cf','core-term','builtin','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1f320-0881-7ed1-9a54-c0c713ccf7cf','surface-lowering-expression','lower::row','anchor',NULL,NULL,NULL);
