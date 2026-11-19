@@ -2245,13 +2245,13 @@ impl OriginTable
         self.labels.push(label);
     }
 
-    /// Carry every label naming `from` over to `to`, which a rewrite put in
-    /// its place.
+    /// Carry every value label naming `from` over to `to`, which a rewrite put
+    /// in its place.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: no label names `from` unless `from == to`; every label that
-    ///   named it names `to`; the count is unchanged.
+    /// - ensures: no value label names `from` unless `from == to`; every value
+    ///   label that named it names `to`; the count is unchanged.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2263,21 +2263,23 @@ impl OriginTable
     /// - witness: `gandr-surface-lowering::lower::session::tests::each_endpoint_answers_at_its_action`
     ///
     /// # Cost
-    /// - allocation: the copied label, growth within the module's labels
+    /// - allocation: none in steady state
     #[spec(
         captures: before = self.labels.len(),
         ensures: self.labels.len() == before,
     )]
     #[inline]
-    pub fn relabel(
+    pub fn relabel_value(
         &mut self,
-        from: &Labelled,
-        to: &Labelled,
+        from: ValueId,
+        to: ValueId,
     )
     {
         for label in &mut self.labels {
-            if label.labelled == *from {
-                label.labelled = to.clone();
+            if let Labelled::Value(ref mut labelled) = label.labelled
+                && *labelled == from
+            {
+                *labelled = to;
             }
         }
     }

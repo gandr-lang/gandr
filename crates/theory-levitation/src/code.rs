@@ -601,7 +601,7 @@ impl Attr
 pub struct Attrs
 {
     /// The markers, in declaration order.
-    pub markers: Box<[Attr]>,
+    pub markers: Arc<[Attr]>,
 }
 
 impl Attrs
@@ -615,7 +615,7 @@ impl Attrs
     pub fn empty() -> Self
     {
         Self {
-            markers: Box::default(),
+            markers: Arc::from([]),
         }
     }
 
@@ -630,7 +630,7 @@ impl Attrs
         M: Into<Box<[Attr]>>,
     {
         Self {
-            markers: markers.into(),
+            markers: Arc::from(markers.into()),
         }
     }
 

@@ -3788,33 +3788,38 @@ pub fn misspelt_keyword(
     let bytes = written.as_bytes();
     let mut edits: Vec<Vec<u8>> = Vec::new();
     for &letter in letters {
-        let mut appended = bytes.to_vec();
+        let mut appended = Vec::with_capacity(bytes.len().saturating_add(1));
+        appended.extend_from_slice(bytes);
         appended.push(letter);
         edits.push(appended);
     }
     for at in (0 .. bytes.len().saturating_sub(1)).rev() {
-        let mut swapped = bytes.to_vec();
+        let mut swapped = Vec::with_capacity(bytes.len());
+        swapped.extend_from_slice(bytes);
         swapped.swap(at, at.saturating_add(1));
         edits.push(swapped);
     }
     for at in (0 .. bytes.len()).rev() {
-        let mut shorter = bytes.to_vec();
-        let _dropped = shorter.remove(at);
+        let mut shorter = Vec::with_capacity(bytes.len().saturating_sub(1));
+        shorter.extend_from_slice(&bytes[.. at]);
+        shorter.extend_from_slice(&bytes[at.saturating_add(1) ..]);
         edits.push(shorter);
     }
     for at in 0 .. bytes.len() {
         for &letter in letters {
-            let mut changed = bytes.to_vec();
-            if let Some(byte) = changed.get_mut(at) {
-                *byte = letter;
-            }
+            let mut changed = Vec::with_capacity(bytes.len());
+            changed.extend_from_slice(&bytes[.. at]);
+            changed.push(letter);
+            changed.extend_from_slice(&bytes[at.saturating_add(1) ..]);
             edits.push(changed);
         }
     }
     for at in 0 .. bytes.len() {
         for &letter in letters {
-            let mut longer = bytes.to_vec();
-            longer.insert(at, letter);
+            let mut longer = Vec::with_capacity(bytes.len().saturating_add(1));
+            longer.extend_from_slice(&bytes[.. at]);
+            longer.push(letter);
+            longer.extend_from_slice(&bytes[at ..]);
             edits.push(longer);
         }
     }

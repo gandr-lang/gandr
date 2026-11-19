@@ -77,6 +77,7 @@
 //!   family with parameters needs its words at each instance.
 
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -285,7 +286,7 @@ pub struct GeneratorForm
     /// output group: the output's name tile.
     pub port: Maybe<Placed, port::Absent>,
     /// Each field, in order.
-    pub fields: Vec<FieldForm>,
+    pub fields: Arc<[FieldForm]>,
     /// Each index the result states, in order; none for a parameterised
     /// family.
     pub indices: Vec<Placed>,
@@ -1602,12 +1603,13 @@ impl<'source> Collector<'_, 'source>
                 Unbuilt::GeneratorAttribute,
             ));
         }
+        let fields: Arc<[FieldForm]> = Arc::from(fields);
         let mut generators = Vec::with_capacity(results.len());
         for (port, result) in results {
             generators.push(GeneratorForm {
                 named,
                 port,
-                fields: fields.clone(),
+                fields: Arc::clone(&fields),
                 indices: self.uniform(result, (parameters, kinds))?,
             });
         }
