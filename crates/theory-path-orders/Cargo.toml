@@ -1,0 +1,27 @@
+[package]
+name = "gandr-theory-path-orders"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Path orders over second-order algebraic terms, generic over a term view and a precedence, each returning a replayable derivation of the comparison it decides"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "path-order", "rewriting", "termination"]
+categories = ["algorithms", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled in this no_std library.
+[dependencies]
+anodized.workspace = true
+
+[lints]
+workspace = true

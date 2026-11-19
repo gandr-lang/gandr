@@ -1,0 +1,15 @@
+/// `StagesDisagree`: two arguments of a call show stages for one stage binder
+/// that no stage satisfies together.
+data Nat : Type where
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+
+def applyAt[i : Size](f : Nat[< i] -> Nat, x : Nat[< i]) -> Nat =
+  f x
+
+def boundedAt[j : Size, k : Size, k < j](x : Nat[j], y : Nat[k]) -> Nat[< j] =
+  y
+
+@[refuses("StagesDisagree")]
+def suppliedApart[j : Size, k : Size](f : Nat[< j] -> Nat, x : Nat[< j]) -> Nat =
+  applyAt[.i = k] f x
