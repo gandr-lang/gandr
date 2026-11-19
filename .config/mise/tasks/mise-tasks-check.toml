@@ -3128,9 +3128,10 @@ run = ".config/recovery/change-cases.bash"
 
 # The five counts of recovery in a pull request's body. A harness commits a
 # base and a head in a scratch repository, with `ledger:recovery` stubbed. It
-# runs `counts.bash` on five cases. A change outside the parser and stated
-# counts pass. Other counts and a fall of two points are refused. A fall that
-# the owner admits passes.
+# runs `counts.bash` on five cases.
+#
+# A change outside the parser and stated counts pass. Other counts and a fall
+# of two points are refused. A fall that the owner admits passes.
 #
 # - see: #8152, `.config/recovery/counts-cases.bash`
 ["check:recovery-counts"]
