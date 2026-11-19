@@ -1,0 +1,52 @@
+//! This source transports values backward along `ua`.
+//!
+//! Backward transport applies the left inverse of the equivalence record.
+//! The examples transport integers to circle loops.
+//!
+//! The checker expands the backward `ua` transport.
+//! The runtime evaluates each named reverse path.
+//! It reads the case table of § 4.5 of the cited work at the universe.
+//!
+//! - cites: [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom]
+//!
+//! [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom]: https://arxiv.org/abs/1611.02108 "Cohen, Coquand, Huber and Mörtberg, Cubical Type Theory: a constructive interpretation of the univalence axiom"
+
+// This import supplies the circle, integers, winding and spin.
+import "./circle-base.gandr";
+// Transport forward and back along a path between types.
+import "./univalence.gandr";
+
+/// Transport back along `ua` applies the record's left inverse.
+def backBeta(
+  a : Type,
+  b : Type,
+  t : a -> b,
+  g : b -> a,
+  s : (x : a) -> Path[.A = a] (g (t x)) x,
+  h : b -> a,
+  r : (y : b) -> Path[.A = b] (t (h y)) y,
+  y : b
+) -> Path[.A = a] (bwdAlong a b (ua (*{t, *{*{g, s}, *{h, r}}})) y) (g y) =
+  Path.here (g y)
+
+/// Transport back along a path from the loops at the point to the integers.
+def loopsBack(
+  p : Path[.A = Type](Path[.A = Circle] Base Base, Int),
+  y : Int
+) -> Path[.A = Circle] Base Base =
+  Path.walk (fun (X) { X }) (Path.back p) y
+
+/// Two carried back along the loops' path is the word of two loops, by a run.
+@[runs("loop ∷ loop ∷ Path.here Base")]
+def backRun : () -> Path[.A = Circle] Base Base = loopsBack loopsAreIntegers (S (S Z));
+
+/// The `integersAreLoops` path reverses `loopsAreIntegers`.
+def integersAreLoops : Path[.A = Type](
+  Int,
+  Path[.A = Circle] Base Base
+) = Path.back loopsAreIntegers;
+
+/// Two carried along the named reversal is the word of two loops, by a run.
+@[runs("loop ∷ loop ∷ Path.here Base")]
+def namedBackRun() -> Path[.A = Circle] Base Base =
+  Path.walk (fun (X) { X }) integersAreLoops (S (S Z))
