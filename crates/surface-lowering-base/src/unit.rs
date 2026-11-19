@@ -370,6 +370,8 @@ quenchant_shape::reason_enum! {
 ///   at its place. Otherwise, or with no such mark or node, an absence with its
 ///   reason.
 /// - panics: none.
+/// - executable: none — the name borrows from the marks, and a predicate would
+///   repeat the match that computes it.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — each fault that names a mark gives its name, and an index
@@ -500,6 +502,9 @@ impl UnitSource
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the module's name, setup
     #[inline]
     #[must_use]
     pub fn homed(
@@ -517,6 +522,9 @@ impl UnitSource
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the source's name, setup
     #[inline]
     #[must_use]
     pub fn named(

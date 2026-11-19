@@ -2077,6 +2077,10 @@ impl Graph
     /// - hypothesis: L3 — the witnesses of [`lay_out`] and [`group`].
     /// - witness: `component::tests::an_importer_is_laid_after_what_it_imports`
     /// - witness: `component::tests::a_component_lays_each_source_once`
+    ///
+    /// # Cost
+    /// - allocation: the unit's text, its sources and each source's staged
+    ///   marks, growth within the laying's sources
     #[spec(ensures: |ref ret| match *ret {
         Maybe::Present(ref component) => component.members.len() == laying.0.len()
             && component.unit.sources().len() == laying.0.len().saturating_add(1_usize),

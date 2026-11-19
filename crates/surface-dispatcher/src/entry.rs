@@ -133,6 +133,9 @@ impl Line<'_>
     ///   names bytes inside its own file.
     /// - witness: `tests::entry::each_verb_prints_its_entries`
     /// - witness: `tests::entry::an_importer_s_ledger_line_names_its_own_bytes`
+    ///
+    /// # Cost
+    /// - allocation: the ledger line and its diagnostic, diagnostic
     #[spec(ensures: |ref ret| ret.severity == Severity::Ledger)]
     fn diagnostic(
         self,
@@ -1121,6 +1124,9 @@ where
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the diagnostic and the repair that it checks, diagnostic
     fn build(
         &mut self,
         printed: Printed<'_>,
@@ -1248,6 +1254,9 @@ where
     /// - witness: `tests::entry::counted_declarations_preserve_visible_order_and_exhaustion`
     /// - witness: `tests::entry::faults_and_empty_sources_stay_exhausted`
     /// - witness: `tests::entry::an_inferred_exit_is_reported_where_a_lint_reaches`
+    ///
+    /// # Cost
+    /// - allocation: the next diagnostic, diagnostic
     #[spec(
         captures: [before = match self.cursor {
             Cursor::Done => 0_usize,
@@ -1295,6 +1304,9 @@ where
     /// - witness: `tests::entry::each_verb_prints_its_entries`
     /// - witness: `tests::entry::an_inferred_exit_is_reported_where_a_lint_reaches`
     /// - witness: `tests::entry::an_inferred_run_is_reported_where_a_lint_reaches`
+    ///
+    /// # Cost
+    /// - allocation: the diagnostic of the entry reached, diagnostic
     #[spec(ensures: |ref ret| ret.as_ref().is_none_or(|diagnostic| diagnostic.path.as_path() == self.path))]
     fn reached(&mut self) -> Option<Diagnostic>
     {

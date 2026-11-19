@@ -5463,6 +5463,9 @@ fn attributed(
 ///   package sources sharing an import each write their own.
 /// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
 /// - witness: `tests::cli::a_workspace_checks_each_member_it_names_2687`
+///
+/// # Cost
+/// - allocation: the package's manifest, growth within the packages of the run
 fn read_manifest(
     step: &mut Step<'_>,
     packages: &[Packaged<'_>],
@@ -5510,6 +5513,9 @@ fn read_manifest(
 /// - hypothesis: L3 — a manifold checked is judged as a deployment, and a site
 ///   beside it is not.
 /// - witness: `tests::cli::a_manifold_s_deployment_is_judged_at_its_check_3523`
+///
+/// # Cost
+/// - allocation: the manifold's path, growth within the manifolds of the run
 fn read_manifold(
     step: &Step<'_>,
     manifolds: &mut Vec<PathBuf>,

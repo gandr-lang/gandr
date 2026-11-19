@@ -11,6 +11,8 @@
 //! `--crate-type lib --edition 2024`. A process with no reader installed
 //! stages nothing, and each mark is refused by name.
 
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use std::ffi::OsString;
 use std::path::Path;
@@ -26,6 +28,7 @@ use gandr_runtime_rust_record::Outcome;
 use gandr_runtime_rust_record::Program;
 use gandr_runtime_rust_record::Record;
 use gandr_runtime_rust_record::Request;
+use gandr_runtime_rust_record::Staging;
 use gandr_surface_lowering::Staged;
 use gandr_surface_lowering::Unstaged;
 use gandr_surface_syntax::SourceText;
@@ -85,18 +88,28 @@ impl Stager
 ///
 /// # Errors
 /// [`AlreadyInstalled`].
+///
+/// # Cost
+/// - allocation: the installed stager, setup
 #[inline]
 pub fn install_stager(stager: Stager) -> Result<(), AlreadyInstalled>
 {
     INSTALLED.set(stager).map_err(|_refused| AlreadyInstalled)
 }
 
-/// One file of a source's marks and what its request read: the functions,
-/// or why the reader read none.
+/// One `thir` mark as the text writes it: the Rust file and the path of the
+/// function in that file.
 ///
 /// # Specification
 /// trivial.
-type FileRead = (Arc<str>, Result<Vec<Function>, Unstaged>);
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Mark
+{
+    /// The Rust file, beside the source.
+    file: Arc<str>,
+    /// The function's path inside its crate.
+    function: FunctionPath,
+}
 
 /// The answer for each `thir` mark that `text` writes, its file read beside
 /// `directory`, in the order that `text` writes the marks.
@@ -108,58 +121,63 @@ type FileRead = (Arc<str>, Result<Vec<Function>, Unstaged>);
 ///   name, so a body may call another marked function of its file. With no
 ///   stager installed, each answer is [`Unstaged::NoReader`].
 /// - panics: none.
+/// - executable: none — each answer comes from a process and a cache, which no
+///   predicate reads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — with no stager installed, each mark with no escape is
+///   answered in written order, across two files, and a mark with an escape
+///   takes no answer.
+/// - witness: `thir::tests::with_no_stager_each_mark_is_answered_in_order`
 ///
 /// # Cost
 /// - allocation: each mark's texts and its answer, growth within the marks of
 ///   the source
 /// - allocation: each file's request and record, growth within the files of the
 ///   source
-// economy: a scan of the marks for each file, quadratic in the marks of one
-// source, which hold two in the corpus; a map waits for a source of many
-// marks (#327).
 pub fn staged(
     text: SourceText<'_>,
     directory: &Path,
 ) -> Vec<Staged>
 {
     let written = marks(text);
-    let mut files: Vec<FileRead> = Vec::new();
-    for &(ref file, _) in &written {
-        if files.iter().any(|&(ref held, _)| held == file) {
-            continue;
-        }
-        let mut functions: Vec<FunctionPath> = Vec::new();
-        for &(ref other, ref function) in &written {
-            if other == file && !functions.contains(function) {
-                functions.push(function.clone());
-            }
-        }
-        files.push((Arc::clone(file), read(directory, file, functions)));
+    let mut requests: BTreeMap<&str, (&Mark, BTreeSet<FunctionPath>)> = BTreeMap::new();
+    for mark in &written {
+        let _new = requests
+            .entry(mark.file.as_ref())
+            .or_insert_with(|| (mark, BTreeSet::new()))
+            .1
+            .insert(mark.function.clone());
     }
-    written
+    let reads: BTreeMap<&str, Result<BTreeMap<FunctionPath, Staging>, Unstaged>> = requests
         .into_iter()
-        .map(|(file, function)| {
-            let staging = match files.iter().find(|&&(ref held, _)| *held == file) {
-                Some(&(_, Ok(ref read))) => read
-                    .iter()
-                    .find(|one| one.path == function)
-                    .map(|one| one.body.clone())
-                    .ok_or_else(|| {
-                        Unstaged::Unread(Arc::from("the record holds no such function"))
-                    }),
-                Some(&(_, Err(ref unstaged))) => Err(unstaged.clone()),
+        .map(|(file, (mark, functions))| {
+            let bodies = read(directory, mark, functions.into_iter().collect())
+                .map(|read| read.into_iter().map(|one| (one.path, one.body)).collect());
+            (file, bodies)
+        })
+        .collect();
+    written
+        .iter()
+        .map(|mark| {
+            let staging = match reads.get(mark.file.as_ref()) {
+                Some(&Ok(ref bodies)) => bodies.get(&mark.function).cloned().ok_or_else(|| {
+                    Unstaged::Unread(Arc::from("the record holds no such function"))
+                }),
+                Some(&Err(ref unstaged)) => Err(unstaged.clone()),
                 None => Err(Unstaged::NoReader),
             };
             Staged {
-                file,
-                function,
+                file: Arc::clone(&mark.file),
+                function: mark.function.clone(),
                 staging,
             }
         })
         .collect()
 }
 
-/// Each mark's file and function, in the order that `text` writes them.
+/// Each mark's file and function, in the order that `text` writes them. A
+/// mark whose texts hold an escape is left out.
 ///
 /// # Specification
 /// trivial.
@@ -169,8 +187,15 @@ pub fn staged(
 // economy: a scan of the text, as `paths_formed` reads the import forms. A
 // mark inside a comment stages too, and the lowering reads only the marks
 // that it collects.
-fn marks(text: SourceText<'_>) -> Vec<(Arc<str>, FunctionPath)>
+fn marks(text: SourceText<'_>) -> Vec<Mark>
 {
+    // The text of the string literal at the start of `rest`, past its
+    // whitespace, and the bytes after it; none for a literal with an escape.
+    let quoted: fn(&str) -> Option<(&str, &str)> = |rest| {
+        let open = rest.trim_start().strip_prefix('"')?;
+        let (inner, after) = open.split_once('"')?;
+        (!inner.contains('\\')).then_some((inner, after))
+    };
     let source = text.as_ref();
     source
         .match_indices(MARK)
@@ -180,28 +205,16 @@ fn marks(text: SourceText<'_>) -> Vec<(Arc<str>, FunctionPath)>
             let rest = rest.trim_start().strip_prefix(',')?;
             let (function, rest) = quoted(rest)?;
             rest.trim_start().strip_prefix(')')?;
-            Some((Arc::from(file), FunctionPath::from(function)))
+            Some(Mark {
+                file: Arc::from(file),
+                function: FunctionPath::from(function),
+            })
         })
         .collect()
 }
 
-/// The text of the string literal at the start of `rest`, past its
-/// whitespace, and the bytes after it; none for a literal with an escape.
-///
-/// # Specification
-/// trivial.
-fn quoted(rest: &str) -> Option<(&str, &str)>
-{
-    let open = rest.trim_start().strip_prefix('"')?;
-    let (inner, after) = open.split_once('"')?;
-    if inner.contains('\\') {
-        return None;
-    }
-    Some((inner, after))
-}
-
-/// The functions `functions` of `file`, read beside `directory` in one
-/// request.
+/// The functions `functions` of the file of `mark`, read beside `directory`
+/// in one request.
 ///
 /// # Specification
 /// trivial.
@@ -215,7 +228,7 @@ fn quoted(rest: &str) -> Option<(&str, &str)>
 ///   source
 fn read(
     directory: &Path,
-    file: &str,
+    mark: &Mark,
     functions: Vec<FunctionPath>,
 ) -> Result<Vec<Function>, Unstaged>
 {
@@ -224,7 +237,7 @@ fn read(
         return Err(Unstaged::NoReader);
     };
     let mut arguments: Vec<OsString> = COMMAND.iter().map(OsString::from).collect();
-    arguments.push(directory.join(file).into_os_string());
+    arguments.push(directory.join(&*mark.file).into_os_string());
     let request = Request {
         arguments,
         functions,
@@ -254,5 +267,44 @@ fn read(
                 .first()
                 .map_or_else(String::new, |refusal| alloc::format!("{refusal:?}")),
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec::Vec;
+    use std::path::Path;
+
+    use gandr_surface_lowering::Unstaged;
+    use gandr_surface_syntax::SourceText;
+
+    use super::staged;
+
+    #[test]
+    fn with_no_stager_each_mark_is_answered_in_order()
+    {
+        let text = SourceText::from(include_str!(
+            "thir/unformatted/with-no-stager-each-mark-is-answered-in-order.gandr"
+        ));
+        let answers = staged(text, Path::new("."));
+        let read: Vec<_> = answers
+            .iter()
+            .map(|one| {
+                (
+                    one.file.as_ref(),
+                    one.function.as_ref(),
+                    one.staging.clone(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            read,
+            Vec::from([
+                ("a.rs", "f", Err(Unstaged::NoReader)),
+                ("b.rs", "h", Err(Unstaged::NoReader)),
+                ("a.rs", "k", Err(Unstaged::NoReader)),
+            ])
+        );
     }
 }

@@ -48,41 +48,23 @@ fn homed(marks: Vec<Staged>) -> Unit
     .expect("one source starts at zero")
 }
 
-/// The mark of `function` in `file`, staged as `staging`.
-///
-/// # Specification
-/// trivial.
-fn mark(
-    file: &str,
-    function: &str,
-    staging: Result<Staging, Unstaged>,
-) -> Staged
-{
-    Staged {
-        file: Arc::from(file),
-        function: function.into(),
-        staging,
-    }
-}
-
-/// The integer literal `n`, with no sign.
-///
-/// # Specification
-/// trivial.
-fn literal(n: u128) -> Node
-{
-    Node::Literal(Literal {
-        sign: Sign::Plus,
-        magnitude: Magnitude::from(n),
-    })
-}
-
 /// #8117: a signature that a `thir` mark gives `example`'s staged body takes
 /// the body as constructors of `Expr`. It is the value of the same body
 /// written by hand, and the checker accepts both.
 #[test]
 fn a_staged_body_lowers_to_its_constructors_8117()
 {
+    let mark = |file: &str, function: &str, staging| Staged {
+        file: Arc::from(file),
+        function: function.into(),
+        staging,
+    };
+    let literal = |n: u128| {
+        Node::Literal(Literal {
+            sign: Sign::Plus,
+            magnitude: Magnitude::from(n),
+        })
+    };
     let text =
         include_str!("tests/unformatted/a-staged-body-lowers-to-its-constructors-8117.gandr");
     let at = |place: u32| NodeIndex::from(place);
@@ -138,6 +120,11 @@ fn a_staged_body_lowers_to_its_constructors_8117()
 #[test]
 fn each_fault_of_a_thir_mark_is_refused_by_name_8117()
 {
+    let mark = |file: &str, function: &str, staging| Staged {
+        file: Arc::from(file),
+        function: function.into(),
+        staging,
+    };
     let text =
         include_str!("tests/unformatted/each-fault-of-a-thir-mark-is-refused-by-name-8117.gandr");
     // The span of the `n`-th `thir` mark of the text, from its name through

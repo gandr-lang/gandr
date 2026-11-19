@@ -624,17 +624,15 @@ pub fn checkouts() -> Option<PathBuf>
 }
 
 /// The directory the records of Rust functions are kept under,
-/// `gandr/rust-record` under the cache directory [`checkpoints`] sits in.
+/// `gandr/rust-record` under the cache directory [`checkpoints`] sits in by
+/// [`directory`]'s rule, absent when neither `$XDG_CACHE_HOME` nor `$HOME`
+/// names a directory. A record kept there lets a second run start no reader.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: `<home>/gandr/rust-record` under `$XDG_CACHE_HOME` and `$HOME` by
-///   [`directory`]'s rule; absent when neither names a directory.
-/// - provides: where a `thir` mark's staged body is kept, so that a second run
-///   starts no reader.
-/// - fails: never.
-/// - panics: none.
-/// - executable: none — the result depends on the environment.
+/// trivial.
+///
+/// # Cost
+/// - allocation: the directory's path, setup
 pub fn rust_records() -> Option<PathBuf>
 {
     Some(
