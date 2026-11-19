@@ -1,5 +1,6 @@
 /// `binary_expression.cons`: path cons: a step before the rest of a path,
 /// written with its glyph and in ASCII.
+/// - see: #8050
 data Circle : Type where
   | Base : Circle
   | loop : Base <-> Base
