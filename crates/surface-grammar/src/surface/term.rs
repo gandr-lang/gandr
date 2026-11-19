@@ -104,6 +104,9 @@ use crate::model::Sym;
 /// # Errors
 /// [`PbgError::MissingPrec`] naming the absent group.
 ///
+/// # Cost
+/// - allocation: the surface rules and their adaptation records, setup
+///
 /// # Adequacy
 /// - hypothesis: For complete and missing-band tables, L2 error-order
 ///   observations and L3 grammar identity catch silent omission, reordered
