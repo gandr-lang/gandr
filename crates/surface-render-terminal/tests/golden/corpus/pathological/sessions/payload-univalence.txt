@@ -1,7 +1,7 @@
 error[ShapeMismatch]: expected a universe-path classifier `Path_U a b`
    ╭▸ corpus/pathological/sessions/payload-univalence.gandr:15:37
    │
-14 │   def anyProtocol(e : Bit ≃ Answer) -> Path[.A = Type](Ask.Coded, Ask.Decoded) =
+14 │   def anyProtocol(e : Bit ≃ Answer) -> Path[.A = Type] Ask.Coded Ask.Decoded =
    │   │               ─ checked against `(Bit ≃ Answer) -> -F (Path[.A = Type] (Bit >? end) (Answer >? end))`; while checking the body of this function; binds e : Bit ≃ Answer
    │ ┌─┘
    │ │

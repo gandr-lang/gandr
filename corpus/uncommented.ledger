@@ -1448,7 +1448,7 @@ pathological/higher-cells/ua-by-hand-unnatural.gandr:Rig:c90288f71828a561 uncomm
 pathological/higher-cells/ua-by-hand-unnatural.gandr:Unnatural.Tel:d5ec5561ab8fd330 uncommented
 pathological/higher-cells/ua-by-hand-unnatural.gandr:Unnatural.cross:596a1f96a441fa82 uncommented
 pathological/higher-cells/ua-by-hand-unnatural.gandr:Unnatural.crossed:4602507cbc92b87a uncommented
-pathological/higher-cells/ua-by-hand-unnatural.gandr:Unnatural.crossed_by_hand:3f9d60d3d45e84d9 uncommented
+pathological/higher-cells/ua-by-hand-unnatural.gandr:Unnatural.crossed_by_hand:4be29e68c3f6732f uncommented
 pathological/holes/owed-decode-beside-include.gandr:Base.Carrier:ad5b0e673c29ec75 uncommented
 pathological/holes/owed-decode-beside-include.gandr:Base.test:c8fcda924198520a uncommented
 pathological/holes/owed-decode-beside-include.gandr:Wider.Base:7b53ae4cf9eb3572 uncommented
@@ -1697,8 +1697,8 @@ pathological/sessions/seat-prefix.gandr:Seat.SeatEnd:babca5f37460f440 uncommente
 pathological/sessions/session-identity-non-equivalent.gandr:<file> uncommented
 pathological/sessions/session-identity-non-equivalent.gandr:Evolution.SeatEnd:babca5f37460f440 uncommented
 pathological/sessions/session-identity-non-equivalent.gandr:Evolution.SeatEnd′:bf5d4374078d0aad uncommented
-pathological/sessions/session-identity-non-equivalent.gandr:Evolution.same:fa8ac246dfc45f70 uncommented
-pathological/sessions/session-identity-non-equivalent.gandr:Evolution:7cda67e2c4d36233 uncommented
+pathological/sessions/session-identity-non-equivalent.gandr:Evolution.same:38c176f2bdbc83dc uncommented
+pathological/sessions/session-identity-non-equivalent.gandr:Evolution:8916e083a63ca60c uncommented
 pathological/sessions/session-identity-non-subtype.gandr:<file> uncommented
 pathological/sessions/session-identity-non-subtype.gandr:Evolution.SeatEnd:babca5f37460f440 uncommented
 pathological/sessions/session-identity-non-subtype.gandr:Evolution.SeatEnd′:bf5d4374078d0aad uncommented
@@ -1949,8 +1949,8 @@ surface/control-flow.gandr:held:64926005bd64a1ce uncommented
 surface/control-flow.gandr:skip:ecaaf56b6e318b66 uncommented
 surface/control-flow.gandr:stray:675980297e1e6c10 uncommented
 surface/control-flow.gandr:tick:3fcb47058cba6c89 uncommented
-surface/data-field-decorations.gandr:Expr.Add:b1b735242bbdc3f4 uncommented
-surface/data-field-decorations.gandr:Expr.Lit:2bf38f07746268a8 uncommented
+surface/data-field-decorations.gandr:Expr.Add:0615b67d1f496487 uncommented
+surface/data-field-decorations.gandr:Expr.Lit:ff9b611cc2ca1322 uncommented
 surface/data-field-decorations.gandr:Vec.Cons:4b49f51c239388f6 uncommented
 surface/data-field-decorations.gandr:Vec.Nil:e7ea57ffe09c2fd1 uncommented
 surface/def-rec-and-copatterns.gandr:<file> uncommented
