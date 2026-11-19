@@ -142,9 +142,10 @@ common() {
      target_features: (($on | split("\n")) as $on | [$read | split("\n")[] | select(length > 0) | {(.): IN($on[])}] | add // {})}'
 }
 
-# Whether the record of <check> binds the digest of its inputs, which
-# `verdicts.json` lists for the check, in place of the tree.
-digested() { jq -e --arg check "$1" '.checks[$check].inputs != null' "$table" > /dev/null; }
+# Whether the record of <check> binds the digest of its inputs in place of
+# the tree. `verdicts.json` lists the inputs for the check, or takes them from
+# its row of `table.json`.
+digested() { jq -e --arg check "$1" '.checks[$check] | .inputs != null or .table == true' "$table" > /dev/null; }
 
 # The key of <check>: the run's common part, the check, its profile and the
 # scope `GATE_SCOPE`. A check of inputs binds their digest at HEAD in place of

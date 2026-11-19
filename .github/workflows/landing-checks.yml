@@ -2714,6 +2714,24 @@ jobs:
       - *git-checkout
       # Repository gates read Git metadata inside the job container.
       - *trust-workspace
+      # A lane's gate that passed on this change writes a signed record of
+      # `check:format` and of `check:purposes`. The job reads each record with
+      # git and the signature check alone, before it installs its tools. A
+      # record that holds skips its check.
+      # - see: #7684, `.config/gate-scope/verdict.bash`
+      - name: read the records of the lane's gate
+        id: verdict
+        if: ${{ github.event_name == 'merge_group' || github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GATE_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        shell: bash
+        run: |
+          for check in check:format check:purposes; do
+            if mise exec jq@1.8.1 -- .config/gate-scope/verdict.bash read "$check"; then
+              echo "${check#check:}=held" >> "$GITHUB_OUTPUT"
+            fi
+          done
       # The pinned toolchain for treefmt's rustfmt pass; restore-only.
       # Unscoped: `mise install` here pulls the full mise.toml tool list, not
       # just the formatters treefmt invokes. Measured why scoping is wrong:
@@ -2731,10 +2749,10 @@ jobs:
       # state holds what they build. Each check runs whatever an earlier
       # check gives, so one run names every red (#5440).
       - name: treefmt --ci
-        if: &keep-going ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.verdict.outputs.format != 'held' }}
         run: mise run check:format
       - name: markdown allowlist and budgets
-        if: *keep-going
+        if: &keep-going ${{ !cancelled() }}
         run: mise run check:markdown
       - name: the root README matches the owner's pin
         if: *keep-going
@@ -2760,7 +2778,7 @@ jobs:
       # The purposes ledger documents only the crates it rows, so its rustdoc
       # build grows with the ledger rather than with the workspace.
       - name: check the purposes ledger
-        if: *keep-going
+        if: ${{ !cancelled() && steps.verdict.outputs.purposes != 'held' }}
         run: mise run check:purposes
       - name: check the positions ledger
         if: *keep-going

@@ -20,6 +20,8 @@
       "inputs": [".config/policy/", ".config/mise/gated", ".config/mise/scope"],
       "base": true
     },
-    "check:clippy-arch": { "profile": "test" }
+    "check:clippy-arch": { "profile": "test" },
+    "check:format": { "profile": "dev" },
+    "check:purposes": { "profile": "dev", "table": true }
   }
 }
