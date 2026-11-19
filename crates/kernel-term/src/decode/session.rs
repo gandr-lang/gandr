@@ -64,6 +64,13 @@ fn state(reader: &mut ByteReader<'_>) -> Result<State, DecodeError>
     Ok(ref graph) => reader.position.0.saturating_sub(start) >= graph.nodes.len().saturating_add(2),
     Err(_) => true,
 })]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        std_container,
+        reason = "a branch label is `session::Label`, a `String` that crates outside `kernel-term` build"
+    )
+)]
 pub fn graph(reader: &mut ByteReader<'_>) -> Result<Graph, DecodeError>
 {
     let root = state(reader)?;
@@ -87,13 +94,14 @@ pub fn graph(reader: &mut ByteReader<'_>) -> Result<Graph, DecodeError>
                 let mut branches = BTreeMap::new();
                 for _ in 0 .. u64::from(count) {
                     let count = reader.read_uvarint()?;
-                    let mut bytes = alloc::vec::Vec::new();
+                    let mut bytes = SmallVec::<u8, 0, Global>::new();
                     for _ in 0 .. u64::from(count) {
                         let word = reader.read_uvarint()?;
                         let byte = u8::try_from(u64::from(word)).map_err(|_invalid| malformed())?;
                         bytes.push(byte);
                     }
-                    let label = String::from_utf8(bytes).map_err(|_invalid| malformed())?;
+                    let label =
+                        String::from(core::str::from_utf8(&bytes).map_err(|_invalid| malformed())?);
                     let next = state(reader)?;
                     if branches.insert(Label(label), next).is_some() {
                         return Err(malformed());

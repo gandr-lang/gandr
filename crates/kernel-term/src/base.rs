@@ -215,8 +215,22 @@ pub enum Sign
 /// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        std_container,
+        reason = "about 70 files in about 25 crates outside `kernel-term` build a magnitude from their own `String`"
+    )
+)]
 pub struct Magnitude(String);
 
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        std_container,
+        reason = "about 70 files in about 25 crates outside `kernel-term` build a magnitude from their own `String`"
+    )
+)]
 impl Magnitude
 {
     /// The canonical zero magnitude.
@@ -352,8 +366,22 @@ impl AsRef<str> for Magnitude
 /// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        std_container,
+        reason = "crates outside `kernel-term` build fraction digits from their own `String`"
+    )
+)]
 pub struct FractionDigits(String);
 
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        std_container,
+        reason = "crates outside `kernel-term` build fraction digits from their own `String`"
+    )
+)]
 impl FractionDigits
 {
     /// The canonical empty fraction, denoting an integral value.
@@ -585,8 +613,22 @@ impl IntegerLiteral
 /// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        std_container,
+        reason = "crates outside `kernel-term` build a string literal from their own `String`"
+    )
+)]
 pub struct StringLiteral(String);
 
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        std_container,
+        reason = "crates outside `kernel-term` build a string literal from their own `String`"
+    )
+)]
 impl StringLiteral
 {
     /// Wrap string content as a literal.
@@ -708,6 +750,13 @@ impl CharacterLiteral
     #[spec(ensures: |ret| ret.chars().eq(core::iter::once(self.0)))]
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            std_container,
+            reason = "crates outside `kernel-term` take a character's text as their own `String`"
+        )
+    )]
     pub fn to_text(&self) -> String
     {
         String::from(self.0)
@@ -740,6 +789,13 @@ impl From<CharacterLiteral> for char
     }
 }
 
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        std_container,
+        reason = "crates outside `kernel-term` read a character literal from their own `String`"
+    )
+)]
 impl TryFrom<String> for CharacterLiteral
 {
     type Error = NotOneCharacter;
@@ -940,6 +996,13 @@ impl FixedInteger
     )]
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            std_container,
+            reason = "crates outside `kernel-term` take a fixed integer's decimal text as their own `String`"
+        )
+    )]
     pub fn to_decimal(&self) -> String
     {
         match *self {
