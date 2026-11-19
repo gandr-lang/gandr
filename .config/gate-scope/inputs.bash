@@ -35,9 +35,14 @@
 #     Reads each dep-info file under each <directory> that is newer than the
 #     file <stamp>. Exits 1 and names each file of the tree that a unit of a
 #     workspace crate read and that the inputs of <scope> do not hold.
+#
+# `GATE_INPUTS_TABLE` names another table than `inputs.json`, and
+# `GATE_INPUTS_TASK` gives the task's definition, for the cases
+# (`verdict-cases.bash`), whose scratch repository holds no task.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 root=$(git rev-parse --show-toplevel)
+table=${GATE_INPUTS_TABLE:-$here/inputs.json}
 
 # The crates of the workspace, each with its directory and the crates of the
 # workspace that it depends on, by any kind of dependency.
@@ -55,7 +60,7 @@ crates() {
 # directory.
 paths() {
   local scope=$1 check=$2
-  jq -r --arg scope "$scope" --arg check "$check" --slurpfile table "$here/inputs.json" --slurpfile checks "$here/verdicts.json" '
+  jq -r --arg scope "$scope" --arg check "$check" --slurpfile table "$table" --slurpfile checks "$here/verdicts.json" '
     . as $crates
     | ($crates | map({(.name): .}) | add) as $by
     | ([$scope | splits(" +")] | . as $words
@@ -94,7 +99,8 @@ list() {
   # The task's own definition: what it runs, its environment, its tools and
   # its dependencies, as `mise` reads them in this checkout. The source path
   # and the directory name the checkout, so they stay out.
-  task=$(mise tasks info "$check" --json | jq -c -S '{run, env, tools, depends}' | sha256sum | cut -c1-64)
+  task=${GATE_INPUTS_TASK:-$(mise tasks info "$check" --json | jq -c -S '{run, env, tools, depends}')}
+  task=$(printf '%s' "$task" | sha256sum | cut -c1-64)
   printf 'task:%s\t%s\n' "$check" "$task"
 }
 
@@ -151,11 +157,11 @@ case ${1:-} in
         | select($dir[$unit.crate] != null)
         | (if $kind == "crate" then $dir[$unit.crate] + "/" + $raw else $raw end | norm) as $path
         | select(($path | startswith("target/") or startswith("../")) | not)
-        | select(any($allowed[]; . == $path or . == $path + "/" or (endswith("/") and ($path | startswith(.)))) | not)
+        | select(any($allowed[]; . as $a | $a == $path or $a == $path + "/" or (($a | endswith("/")) and ($path | startswith($a)))) | not)
         | "\($unit.crate)\t\($path)"' \
       | LC_ALL=C sort -u \
       | while IFS=$'\t' read -r crate path; do
-          [[ -e $root/$path ]] && printf '%s\t%s\n' "$crate" "$path"
+          if [[ -e $root/$path ]]; then printf '%s\t%s\n' "$crate" "$path"; fi
         done)
     if [[ -n $refused ]]; then
       while IFS=$'\t' read -r crate path; do

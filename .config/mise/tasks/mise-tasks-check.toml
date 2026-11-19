@@ -742,9 +742,15 @@ if [[ -n ${GATE_BASE:-} ]]; then .config/mise/gated .config/policy/base-records.
 features=$(cargo metadata --no-deps --locked --format-version 1 | .config/policy/required.bash {{ env.GATE_SCOPE | default(value='--workspace') }})
 # shellcheck disable=SC2086 # `$features` is `--features` and its list, or nothing.
 status=0
+# The stamp of this run: the dep-info files newer than it are this run's.
+stamp=$(mktemp)
+trap 'rm -f "$stamp"' EXIT
 policy {{ env.GATE_SCOPE | default(value='--workspace') }} $features || status=$?
 .config/policy/held.bash target/allocation-base target/evidence/records "${GATE_BASE:-}" >&2
 (( status == 0 )) || exit "$status"
+# Each file of the tree that the run read is an input of its scope, so the
+# record of this pass binds each file that its verdict reads (#7684).
+.config/gate-scope/inputs.bash depinfo "$stamp" '{{ env.GATE_SCOPE | default(value='--workspace') }}' target/dylint/target
 .config/policy/scope-cases.bash
 .config/policy/trait-object-cases.bash
 .config/policy/held-cases.bash
