@@ -13,11 +13,15 @@
 //!   could not be read, the store held no run, or the output could not be
 //!   written; also a malformed invocation.
 
+extern crate alloc;
+use alloc::alloc::Global;
 use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anodized::spec;
+use gandr_kernel_data::SmallString;
+use gandr_kernel_data::SmallVec;
 use gandr_workflow_test_timing::ConfigText;
 use gandr_workflow_test_timing::Generated;
 use gandr_workflow_test_timing::History;
@@ -33,8 +37,21 @@ use gandr_workflow_test_timing::read_run;
 use gandr_workflow_test_timing::recent_runs;
 use gandr_workflow_test_timing::stored_runs;
 
-/// The exit code of a refusal or a malformed invocation.
+macro_rules! held {
+    ($text:expr) => {
+        gandr_kernel_data::SmallString::try_from($text).expect("the allocator holds the text")
+    };
+}
+
 const REFUSED: u8 = 2;
+#[cfg_attr(
+    all(dylint_lib = "quenchant_dylints", not(test)),
+    expect(
+        std_container,
+        reason = "clap builds a String, and this field is the value it parses"
+    )
+)]
+type ParsedName = String;
 
 /// Proposes nextest priority levels from recent merge-queue runs.
 #[derive(Debug, clap::Parser)]
@@ -46,7 +63,7 @@ struct Cli
     runs: RunLimit,
     /// The repository the runs belong to, as OWNER/NAME.
     #[arg(long, default_value = "gandr-lang/gandr")]
-    repo: String,
+    repo: ParsedName,
     /// The nextest configuration whose priorities the proposal is compared
     /// with.
     #[arg(long, default_value = ".config/nextest.toml")]
@@ -135,13 +152,13 @@ fn main() -> ExitCode
 /// - witness: `tests::cli::times_print_each_test_by_its_slowest_lane`
 fn report(cli: Cli) -> Result<(), TimingError>
 {
-    let repository = Repository::from(cli.repo);
+    let repository = Repository::from(held!(cli.repo.as_str()));
     if !cli.offline {
         for run in recent_runs(&repository, cli.runs)? {
             download(&repository, run, &cli.store)?;
         }
     }
-    let runs: Vec<RunId> = stored_runs(&cli.store)?
+    let runs: SmallVec<RunId, 0, Global> = stored_runs(&cli.store)?
         .into_iter()
         .take(cli.runs.into())
         .collect();
@@ -152,8 +169,18 @@ fn report(cli: Cli) -> Result<(), TimingError>
     for &run in &runs {
         read_run(&cli.store, run, &mut history)?;
     }
-    let output = |error: std::io::Error| TimingError::Output {
-        message: error.to_string(),
+    let output = |error: std::io::Error| {
+        #[cfg_attr(
+            all(dylint_lib = "quenchant_dylints", not(test)),
+            expect(
+                std_container,
+                reason = "the call builds a String of alloc, and no local format stands"
+            )
+        )]
+        let built = error.to_string();
+        TimingError::Output {
+            message: held!(built.as_str()),
+        }
     };
     if cli.times {
         let mut stdout = std::io::stdout().lock();
@@ -171,14 +198,31 @@ fn report(cli: Cli) -> Result<(), TimingError>
     }
     let text = std::fs::read_to_string(&cli.config).map_err(|error| TimingError::Io {
         path: cli.config.clone(),
-        message: error.to_string(),
+        message: {
+            #[cfg_attr(
+                all(dylint_lib = "quenchant_dylints", not(test)),
+                expect(
+                    std_container,
+                    reason = "the call builds a String of alloc, and no local format stands"
+                )
+            )]
+            let built = error.to_string();
+            held!(built.as_str())
+        },
     })?;
     let overrides = Overrides::parse(ConfigText::from(text.as_str()), &cli.config)?;
     let rows = proposals(history.timings(), &overrides);
+    #[cfg_attr(
+        all(dylint_lib = "quenchant_dylints", not(test)),
+        expect(
+            std_container,
+            reason = "the call builds a String of alloc, and no local format stands"
+        )
+    )]
     let listed = runs
         .iter()
         .map(ToString::to_string)
-        .collect::<Vec<_>>()
+        .collect::<SmallVec<_, 0, Global>>()
         .join(", ");
     let mut stdout = std::io::stdout().lock();
     write!(

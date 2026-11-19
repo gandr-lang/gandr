@@ -6,6 +6,9 @@
 //! a test's current priority is the priority of the first matching override
 //! that sets one.
 
+use alloc::alloc::Global;
+
+use gandr_kernel_data::SmallVec;
 extern crate alloc;
 
 use alloc::borrow::ToOwned as _;
@@ -199,7 +202,7 @@ struct Rule
     /// The priority it sets.
     priority: Priority,
     /// Its filter: the union of the terms.
-    terms: Vec<Term>,
+    terms: SmallVec<Term, 0, Global>,
 }
 
 /// The text of a nextest configuration file.
@@ -228,7 +231,7 @@ impl<'text> From<&'text str> for ConfigText<'text>
 ///   priority are left out, since they never decide one.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Overrides(Vec<Rule>);
+pub struct Overrides(SmallVec<Rule, 0, Global>);
 
 impl Overrides
 {
@@ -268,7 +271,7 @@ impl Overrides
             defect,
         };
         let table = toml::from_str::<toml::Table>(text.0)
-            .map_err(|error| refuse(ConfigDefect::Toml(error.message().to_owned())))?;
+            .map_err(|error| refuse(ConfigDefect::Toml(crate::error::held!(error.message()))))?;
         let Some(overrides) = table
             .get("profile")
             .and_then(|profile| profile.get("default"))
@@ -279,7 +282,7 @@ impl Overrides
         let overrides = overrides
             .as_array()
             .ok_or_else(|| refuse(ConfigDefect::Overrides))?;
-        let mut rules = Vec::new();
+        let mut rules = SmallVec::<_, 0, Global>::new();
         for entry in overrides {
             let entry = entry
                 .as_table()
@@ -288,14 +291,16 @@ impl Overrides
             else {
                 continue;
             };
-            let described = || match *priority {
-                toml::Value::Integer(value) => format!("`{value}`"),
-                ref other @ (toml::Value::String(_)
-                | toml::Value::Float(_)
-                | toml::Value::Boolean(_)
-                | toml::Value::Datetime(_)
-                | toml::Value::Array(_)
-                | toml::Value::Table(_)) => format!("a {}", other.type_str()),
+            let described = || {
+                crate::error::held_built!(match *priority {
+                    toml::Value::Integer(value) => format!("`{value}`"),
+                    ref other @ (toml::Value::String(_)
+                    | toml::Value::Float(_)
+                    | toml::Value::Boolean(_)
+                    | toml::Value::Datetime(_)
+                    | toml::Value::Array(_)
+                    | toml::Value::Table(_)) => format!("a {}", other.type_str()),
+                })
             };
             let priority = priority
                 .as_integer()
@@ -305,14 +310,14 @@ impl Overrides
                 .get("filter")
                 .and_then(toml::Value::as_str)
                 .ok_or_else(|| refuse(ConfigDefect::Filter))?;
-            let mut terms = Vec::new();
+            let mut terms = SmallVec::<_, 0, Global>::new();
             for term in filter.split(" or ") {
                 let term = term.trim();
                 let inner = term
                     .strip_prefix("test(")
                     .and_then(|rest| rest.strip_suffix(')'))
                     .filter(|inner| !inner.contains(['(', ')', ' ']))
-                    .ok_or_else(|| refuse(ConfigDefect::Term(term.to_owned())))?;
+                    .ok_or_else(|| refuse(ConfigDefect::Term(crate::error::held!(term))))?;
                 terms.push(inner.strip_prefix('=').map_or_else(
                     || Term::Contains(TestName::from(inner)),
                     |name| Term::Exact(TestName::from(name)),
@@ -402,11 +407,11 @@ pub struct Proposal
     && ret.is_sorted_by(|left, right| left.timing.median >= right.timing.median))]
 #[inline]
 pub fn proposals(
-    timings: Vec<(TestName, Timing)>,
+    timings: SmallVec<(TestName, Timing), 0, Global>,
     overrides: &Overrides,
-) -> Vec<Proposal>
+) -> SmallVec<Proposal, 0, Global>
 {
-    let mut proposals: Vec<Proposal> = timings
+    let mut proposals: SmallVec<Proposal, 0, Global> = timings
         .into_iter()
         .filter_map(|(test, timing)| {
             let current = overrides.current(&test);
@@ -527,7 +532,7 @@ impl fmt::Display for Generated<'_>
     ) -> fmt::Result
     {
         for level in &LEVELS {
-            let mut names: Vec<&TestName> = self
+            let mut names: SmallVec<&TestName, 0, Global> = self
                 .0
                 .iter()
                 .filter(|proposal| proposal.proposed == level.priority)
@@ -553,8 +558,11 @@ impl fmt::Display for Generated<'_>
 #[cfg(test)]
 mod tests
 {
+    use alloc::alloc::Global;
     use core::time::Duration;
     use std::path::Path;
+
+    use gandr_kernel_data::SmallVec;
 
     use super::ConfigText;
     use super::Generated;
@@ -647,19 +655,19 @@ mod tests
                     [profile.ci]\nfail-fast = false\n";
         assert_eq!(
             Overrides::parse(ConfigText::from(text), Path::new("n.toml")),
-            Ok(Overrides(vec![
+            Ok(Overrides(SmallVec::<_, 0, Global>::from_iter([
                 Rule {
                     priority: Priority(90),
-                    terms: vec![
+                    terms: SmallVec::<_, 0, Global>::from_iter([
                         Term::Exact(TestName::from("a::slow")),
                         Term::Contains(TestName::from("corpus")),
-                    ],
+                    ]),
                 },
                 Rule {
                     priority: Priority(-5),
-                    terms: vec![Term::Exact(TestName::from("c"))],
+                    terms: SmallVec::<_, 0, Global>::from_iter([Term::Exact(TestName::from("c")),]),
                 },
-            ])),
+            ]))),
             "two prioritized overrides in file order; the timeout override sets no priority"
         );
         assert_eq!(
@@ -707,24 +715,26 @@ mod tests
         );
         assert_eq!(
             refused("[[profile.default.overrides]]\nfilter = \"package(x)\"\npriority = 1\n"),
-            defect(ConfigDefect::Term("package(x)".into())),
+            defect(ConfigDefect::Term(crate::error::held!("package(x)"))),
             "another predicate"
         );
         assert_eq!(
             refused(
                 "[[profile.default.overrides]]\nfilter = \"test(a) and test(b)\"\npriority = 1\n"
             ),
-            defect(ConfigDefect::Term("test(a) and test(b)".into())),
+            defect(ConfigDefect::Term(crate::error::held!(
+                "test(a) and test(b)"
+            ))),
             "another operator"
         );
         assert_eq!(
             refused("[[profile.default.overrides]]\nfilter = \"test(=a)\"\npriority = 101\n"),
-            defect(ConfigDefect::Priority("`101`".into())),
+            defect(ConfigDefect::Priority(crate::error::held!("`101`"))),
             "out of range"
         );
         assert_eq!(
             refused("[[profile.default.overrides]]\nfilter = \"test(=a)\"\npriority = \"high\"\n"),
-            defect(ConfigDefect::Priority("a string".into())),
+            defect(ConfigDefect::Priority(crate::error::held!("a string"))),
             "not an integer"
         );
     }
@@ -732,20 +742,26 @@ mod tests
     #[test]
     fn a_filter_matches_exactly_or_by_containment()
     {
-        let overrides = Overrides(vec![
+        let overrides = Overrides(SmallVec::<_, 0, Global>::from_iter([
             Rule {
                 priority: Priority(100),
-                terms: vec![Term::Exact(TestName::from("corpus::every_source"))],
+                terms: SmallVec::<_, 0, Global>::from_iter([Term::Exact(TestName::from(
+                    "corpus::every_source",
+                ))]),
             },
             Rule {
                 priority: Priority(80),
-                terms: vec![Term::Contains(TestName::from("corpus"))],
+                terms: SmallVec::<_, 0, Global>::from_iter([Term::Contains(TestName::from(
+                    "corpus",
+                ))]),
             },
             Rule {
                 priority: Priority(70),
-                terms: vec![Term::Exact(TestName::from("corpus::every"))],
+                terms: SmallVec::<_, 0, Global>::from_iter([Term::Exact(TestName::from(
+                    "corpus::every",
+                ))]),
             },
-        ]);
+        ]));
         let current = |name: &str| overrides.current(&TestName::from(name));
         assert_eq!(
             current("corpus::every_source"),
@@ -783,12 +799,12 @@ mod tests
             runs: crate::report::RunCount::from(3_usize),
         };
         let secs = Duration::from_secs;
-        let overrides = Overrides(vec![Rule {
+        let overrides = Overrides(SmallVec::<_, 0, Global>::from_iter([Rule {
             priority: Priority(90),
-            terms: vec![Term::Exact(TestName::from("was_slow"))],
-        }]);
+            terms: SmallVec::<_, 0, Global>::from_iter([Term::Exact(TestName::from("was_slow"))]),
+        }]));
         let rows = proposals(
-            vec![
+            SmallVec::<_, 0, Global>::from_iter([
                 (TestName::from("fast"), timing(secs(1), secs(1), secs(1))),
                 (
                     TestName::from("now_slow"),
@@ -798,17 +814,17 @@ mod tests
                     TestName::from("was_slow"),
                     timing(secs(2), secs(2), secs(2)),
                 ),
-            ],
+            ]),
             &overrides,
         );
         assert_eq!(
             rows.iter()
                 .map(|row| (row.test.clone(), row.current, row.proposed))
-                .collect::<Vec<_>>(),
-            vec![
+                .collect::<SmallVec<_, 0, Global>>(),
+            SmallVec::<_, 0, Global>::from_iter([
                 (TestName::from("now_slow"), Priority::DEFAULT, Priority(100)),
                 (TestName::from("was_slow"), Priority(90), Priority::DEFAULT),
-            ],
+            ]),
             "the unprioritized fast test is left out; slowest first"
         );
         assert_eq!(

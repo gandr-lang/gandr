@@ -14,8 +14,12 @@
 //! The process-level cases, in a `cfg(test)` module so the crate's lint wall
 //! reads them as test code rather than as shipping code.
 
+extern crate alloc;
+use alloc::alloc::Global;
 use std::path::PathBuf;
 use std::process::Command;
+
+use gandr_kernel_data::SmallVec;
 
 /// One report holding `slow::t`, `parse::was_slow` and `fast::t`, with
 /// `slow::t` taking the placeholder's seconds.
@@ -295,7 +299,7 @@ fn fetched_runs_are_stored_and_read_back()
         stdout.ends_with("filter = \"test(=slow::t)\"\npriority = 90\n\n"),
         "a median of 140 s enters 90 and falls short of 100's 150 s: {stdout}"
     );
-    let mut stored: Vec<String> = std::fs::read_dir(fake.root.join("store"))
+    let mut stored: SmallVec<_, 0, Global> = std::fs::read_dir(fake.root.join("store"))
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
@@ -312,7 +316,7 @@ fn fetched_runs_are_stored_and_read_back()
         "the same report from the stored runs"
     );
     let log = std::fs::read_to_string(fake.root.join("gh.log")).unwrap();
-    let invocations: Vec<&str> = log
+    let invocations: SmallVec<&str, 0, Global> = log
         .lines()
         .map(|line| {
             line.match_indices(' ')
