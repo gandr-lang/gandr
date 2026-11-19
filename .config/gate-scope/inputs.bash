@@ -17,7 +17,10 @@
 #   - each file outside its crate that a crate of the closure reads, as
 #     `inputs.json` names it;
 #   - each path of the check's own definition, as `verdicts.json` names it,
-#     and the task's definition as `mise` reads it.
+#     and the task's definition as `mise` reads it;
+#   - for each grep of the check that `verdicts.json` names, the list of the
+#     files that hold its pattern. A task that greps each crate reads only
+#     that list, so a change of another file keeps its record.
 # A path that a commit does not hold stands as `absent`.
 #
 # Cargo writes the files that each unit read, in its dep-info. After a check
@@ -102,6 +105,13 @@ list() {
   task=${GATE_INPUTS_TASK:-$(mise tasks info "$check" --json | jq -c -S '{run, env, tools, depends}')}
   task=$(printf '%s' "$task" | sha256sum | cut -c1-64)
   printf 'task:%s\t%s\n' "$check" "$task"
+  jq -r --arg check "$check" '(.checks[$check].greps // [])[] | "\(.pattern)\t\(.in)"' "$here/verdicts.json" \
+    | while IFS=$'\t' read -r pattern within; do
+        found=$({ git grep -l -e "$pattern" "$commit" -- "$within" || true; } \
+          | awk -v prefix="$commit:" 'index($0, prefix) == 1 { $0 = substr($0, length(prefix) + 1) } { print }' \
+          | sha256sum | cut -c1-64)
+        printf 'grep:%s:%s\t%s\n' "$within" "$pattern" "$found"
+      done
 }
 
 case ${1:-} in
