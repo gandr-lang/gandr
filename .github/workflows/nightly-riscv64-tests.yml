@@ -180,9 +180,12 @@ jobs:
       # The machine blocks start `llc` at the assembler path of the archive.
       # The toolchain file names `llvm-tools`, so the runner's own toolchain
       # holds an `llc` for riscv64. The fetch above runs that toolchain, so
-      # it stands installed here.
+      # it stands installed here. The log names the release that the link
+      # reaches.
       - name: link the runner's llc at the assembler path of the archive
-        run: ln -sfn "$(rustc --print sysroot)/lib/rustlib/$GANDR_RISCV64_TARGET/bin/llc" "$GANDR_RISCV64_LLC"
+        run: |
+          ln -sfn "$(rustc --print sysroot)/lib/rustlib/$GANDR_RISCV64_TARGET/bin/llc" "$GANDR_RISCV64_LLC"
+          "$GANDR_RISCV64_LLC" --version
       # The riscv64 host also runs timed measures, each under the host lock
       # `par` (`bench:scaling`, #6879). A test run beside a measure loads the
       # host past the tests' timeouts, and the measure times the run's load
