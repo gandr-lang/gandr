@@ -18,10 +18,9 @@ def swapFirstTwo(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
     | +{.1 = +{.1 = u}} => +{.1 = +{.1 = u}}
 
 /// The relabelling has itself as its inverse.
-def relabelling : Path[.A = Type](
-  Unit + (Unit + Unit),
-  Unit + (Unit + Unit)
-) = equiv swapFirstTwo swapFirstTwo;
+def relabelling : Path[.A = Type] (Unit + (Unit + Unit)) (Unit + (Unit + Unit)) = equiv
+  swapFirstTwo
+  swapFirstTwo;
 
 /// The `nextABC` ring allocates `a`, then `b`, then `c`.
 def nextABC(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) = match i {

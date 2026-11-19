@@ -29,11 +29,11 @@ def negNeg(b : Bool) -> Path[.A = Bool] (negBool (negBool b)) b =
 def negEquiv : Bool ≃ Bool = *{negBool, *{*{negBool, negNeg}, *{negBool, negNeg}}};
 
 /// The `negPath` path is cctt's `negPath`, negation as a path in the universe.
-def negPath : Path[.A = Type](Bool, Bool) = ua negEquiv;
+def negPath : Path[.A = Type] Bool Bool = ua negEquiv;
 
 /// The `boolPathN` path composes `n + 1` negation paths, each new one on the
 /// right, as cctt's `BoolPathN` iterates.
-def rec boolPathN(n : Nat) -> Path[.A = Type](Bool, Bool) =
+def rec boolPathN(n : Nat) -> Path[.A = Type] Bool Bool =
   match n where
     | Zero => negPath
     | Succ(k) => Path.step (boolPathN[<] k) negPath

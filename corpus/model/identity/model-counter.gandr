@@ -73,10 +73,9 @@ def negateCount(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
     | +{.1 = +{.1 = u}} => +{.1 = +{.0 = u}}
 
 /// The `countsNegated` path makes negation its own inverse.
-pub def countsNegated : Path[.A = Type](
-  Unit + (Unit + Unit),
-  Unit + (Unit + Unit)
-) = equiv negateCount negateCount;
+pub def countsNegated : Path[.A = Type] (Unit + (Unit + Unit)) (Unit + (Unit + Unit)) = equiv
+  negateCount
+  negateCount;
 
 /// The `stepNegated` path maps the up step to the down step.
 def stepNegated : Path (Path.walk

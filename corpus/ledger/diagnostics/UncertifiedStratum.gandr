@@ -16,7 +16,7 @@ def not_not(b : Unit + Unit) -> Unit + Unit =
 def same(b : Unit + Unit) -> Unit + Unit =
   b
 
-def negation : Path[.A = Type](Bool, Bool) = equiv not not;
+def negation : Path[.A = Type] Bool Bool = equiv not not;
 
 @[runs("cons +{.0 = *{}} (cons +{.1 = *{}} nil)")]
 def both : List Bool = cons (+{.0 = *{}}) (cons (+{.1 = *{}}) nil);
@@ -28,7 +28,7 @@ def flip_flag(entry : Bool * List Bool) -> Bool * List Bool =
   match entry where
     | *{b, xs} => { let c = not b; *{c, xs} }
 
-def flagged : Path[.A = Type](Bool * List Bool, Bool * List Bool) = equiv flip_flag flip_flag;
+def flagged : Path[.A = Type] (Bool * List Bool) (Bool * List Bool) = equiv flip_flag flip_flag;
 
 def emptied(xs : List Bool) -> List Bool =
   nil

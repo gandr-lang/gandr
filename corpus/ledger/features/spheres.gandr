@@ -57,7 +57,7 @@ def hopfFamily(x : S2) -> Type =
 /// The transport of a point along a 2-cell of the universe at the circle.
 def walkAlong(
   y : Circle,
-  c : Path[.A = Path[.A = Type](Circle, Circle)] (Path.here Circle) (Path.here Circle)
+  c : Path[.A = Path[.A = Type] Circle Circle] (Path.here Circle) (Path.here Circle)
 ) -> Path[.A = Circle] y y =
   Path.ap (fun (r) { Path.walk (fun (X) { X }) r y }) c
 
