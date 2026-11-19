@@ -63,7 +63,9 @@ use anodized::spec;
 const LENGTH: usize = isize::MAX.cast_unsigned();
 
 /// The tag: the high bit of the length word, set while the block holds the
-/// items.
+/// items. A vector that only ever holds a block, at `N` of zero with items of
+/// a size, sets no tag: its length word is its length, and a read of the
+/// length is a plain load.
 const SPILLED: usize = !LENGTH;
 
 /// The capacity of the first block of items of `T`, unless a grow asks for
@@ -278,7 +280,7 @@ where
         };
         if Self::BLOCK_ONLY {
             return Self {
-                tagged: SPILLED,
+                tagged: 0,
                 raw: Raw {
                     heap: (NonNull::dangling(), 0),
                 },
@@ -352,7 +354,12 @@ where
     #[inline]
     const fn count(&self) -> Count
     {
-        Count(self.tagged & LENGTH)
+        if Self::BLOCK_ONLY {
+            Count(self.tagged)
+        }
+        else {
+            Count(self.tagged & LENGTH)
+        }
     }
 
     /// The items the vector holds before it grows: `N` in place, the block's
@@ -494,7 +501,12 @@ where
         len: Count,
     )
     {
-        self.tagged = len.0 | (self.tagged & SPILLED);
+        self.tagged = if Self::BLOCK_ONLY {
+            len.0
+        }
+        else {
+            len.0 | (self.tagged & SPILLED)
+        };
     }
 
     /// Room for `additional` more items, or the refusal of the grow.
@@ -580,7 +592,7 @@ where
         self.raw = Raw {
             heap: (block.cast(), grown),
         };
-        self.tagged = len | SPILLED;
+        self.tagged = if Self::BLOCK_ONLY { len } else { len | SPILLED };
         Ok(())
     }
 
@@ -1350,11 +1362,8 @@ where
                 self.raw = Raw {
                     heap: (NonNull::dangling(), 0),
                 };
-                self.tagged = SPILLED;
             }
-            else {
-                self.tagged = 0;
-            }
+            self.tagged = 0;
             if capacity > 0
                 && let Ok(layout) = Layout::array::<T>(capacity)
             {
@@ -2114,7 +2123,7 @@ where
         let capacity = vec.capacity();
         let block = NonNull::new(vec.as_mut_ptr()).unwrap_or(NonNull::dangling());
         Self {
-            tagged: SPILLED | len,
+            tagged: len,
             raw: Raw {
                 heap: (block, capacity),
             },
