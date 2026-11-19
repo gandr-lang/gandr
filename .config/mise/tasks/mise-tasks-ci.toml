@@ -665,7 +665,7 @@ gh cache list --repo "${GITHUB_REPOSITORY:?}" --ref "${GITHUB_REF:?}" --key "${u
   --jq 'def created: .createdAt | sub("\\.[0-9]+"; "") | fromdate;
     (map(select(.key == env.usage_key)) | first | if . == null then null else created end) as $own
     | .[] | select($own != null and created < $own) | .id' |
-  xargs -r -n1 gh cache delete --repo "$GITHUB_REPOSITORY"
+  while IFS= read -r id; do gh cache delete --repo "$GITHUB_REPOSITORY" "$id"; done
 {% endraw %}'''
 
 # One hotpath series, run under the profiler and uploaded twice: as
@@ -4035,7 +4035,7 @@ if (( ${#units[@]} == 0 )); then
 fi
 mkdir "$scratch/facts" "$scratch/dates"
 # xargs gives each file after the fixed arguments: `$1` the rules, `$2` the
-# directory written, `$3` the file.
+# directory written, `$3` the file. The unit list is nonempty above.
 printf '%s\0' "${units[@]}" | xargs -0 -P "$(nproc)" -n 1 bash -c '
   unit=$(basename "$3" .jsonl)
   jq -s -c --arg unit "$unit" -f "$1/facts.jq" "$3" > "$2/$unit.json"' _ "$rules" "$scratch/facts"
@@ -4046,13 +4046,17 @@ jq -n -c --rawfile kept "$rules/kept.txt" '{units: [inputs], kept: $kept}' "$scr
 # the directory written, `$3` the revision or nothing, `$4` the file and `$5`
 # its ranges.
 jq -r 'group_by(.file)[] | [.[0].file, (map([.start, .end]) | unique | tojson)] | @tsv' "$scratch/verdicts.json" \
-  | while IFS=$'\t' read -r file ranges; do printf '%s\0%s\0' "$file" "$ranges"; done \
-  | xargs -0 -r -P "$(nproc)" -n 2 bash -c '
-      mapfile -t flags < <(jq -r ".[] | \"-L\", \"\(.[0]),\(.[1])\"" <<< "$5")
-      git blame --porcelain ${3:+"$3"} "${flags[@]}" -- "$4" > "$2/$$.porcelain"
-      jq -n -c --rawfile porcelain "$2/$$.porcelain" --argjson ranges "$5" "{porcelain: \$porcelain, ranges: \$ranges}" \
-        | jq -c -f "$1/blame.jq" | jq -c --arg file "$4" "with_entries(.key = \"\(\$file):\(.key)\")" > "$2/$$.json"
-      rm -- "$2/$$.porcelain"' _ "$rules" "$scratch/dates" "$rev"
+  | while IFS=$'\t' read -r file ranges; do printf '%s\0%s\0' "$file" "$ranges"; done > "$scratch/blame-requests"
+if [[ -s $scratch/blame-requests ]]; then
+  xargs -0 -P "$(nproc)" -n 2 bash -c '
+    ranges_file=$2/$$.ranges.json
+    printf '%s' "$5" > "$ranges_file"
+    mapfile -t flags < <(jq -r ".[] | \"-L\", \"\(.[0]),\(.[1])\"" "$ranges_file")
+    git blame --porcelain ${3:+"$3"} "${flags[@]}" -- "$4" > "$2/$$.porcelain"
+    jq -n -c --rawfile porcelain "$2/$$.porcelain" --slurpfile ranges "$ranges_file" "{porcelain: \$porcelain, ranges: \$ranges[0]}" \
+      | jq -c -f "$1/blame.jq" | jq -c --arg file "$4" "with_entries(.key = \"\(\$file):\(.key)\")" > "$2/$$.json"
+    rm -- "$2/$$.porcelain" "$ranges_file"' _ "$rules" "$scratch/dates" "$rev" < "$scratch/blame-requests"
+fi
 jq -s -c 'add // {}' "$scratch"/dates/*.json < /dev/null > "$scratch/dates.json"
 # The crates that no other crate names (#6817), each with the epics that its
 # README's `## References` names: the report gives such a crate one row that
@@ -4540,7 +4544,7 @@ build() {
     crate=$(jq -r .crate <<< "$member")
     sources=(":(glob)crates/$crate/src/**/*.rs" ':(exclude,glob)**/tests.rs' ':(exclude,glob)**/tests/**')
     specs=$({ git grep -h -o -e '#\[spec(' -- "${sources[@]}" || true; } | wc -l)
-    lines=$(git ls-files -z -- "${sources[@]}" | xargs -0 -r cat | wc -l)
+    lines=$(while IFS= read -r -d '' file; do cat "$file"; done < <(git ls-files -z -- "${sources[@]}") | wc -l)
     jq -c -f "$census/surface.jq" "target/purposes/doc/$(jq -r .library <<< "$member").json" > "$scratch/surface.json"
     jq -n -c --argjson member "$member" --argjson specs "$specs" --argjson lines "$lines" \
       --slurpfile surface "$scratch/surface.json" --slurpfile items "$scratch/items.json" --slurpfile hotpath "$scratch/hotpath.json" \

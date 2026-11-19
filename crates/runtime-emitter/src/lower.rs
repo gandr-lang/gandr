@@ -1042,6 +1042,14 @@ pub enum Callee
     /// Resume a clause's stack whose frames stand where its operation left
     /// them: pop the marker above them; answers the argument.
     Rejoin(CommandId),
+    /// Abandon a clause's stack whose frames stand where its operation left
+    /// them, with the abandonment's continuation above the marker: pop the
+    /// marker, give up what each frame owns except an access's, which its
+    /// unwind takes, and leave the continuation's frame where the handler's
+    /// stood with a frame per access above it, innermost on top; answers the
+    /// argument, the stand-in the clause holds for its stack, which the
+    /// continuation binds in the place of the unit.
+    AbandonStanding(CommandId),
     /// Leave a clause whose frames stand beneath the marker the run just
     /// popped: give up what they own and pop them with their handler's frame;
     /// answers the argument.
@@ -1205,12 +1213,19 @@ pub enum Path
 ///
 /// # Specification
 /// - ensures: [`Path::Return`] when the stack occurs nowhere and the body holds
-///   no command but cuts, no destructor and no fold; [`Path::Resume`] with
-///   every resumption of the stack when, besides, the stack occurs only as the
-///   stack of resumptions in tail position, each answering the clause's return
-///   covariable; [`Path::Capture`] with no resumption otherwise.
+///   no command but cuts, no destructor and no fold; [`Path::Return`] too with
+///   each abandonment of the stack when, besides, the stack occurs only as the
+///   stack of abandonments in tail position; [`Path::Resume`] with every
+///   resumption and abandonment of the stack when, besides, the stack occurs
+///   only as the stack of resumptions in tail position, each answering the
+///   clause's return covariable; [`Path::Capture`] with no resumption
+///   otherwise.
 /// - executable: none — the path is the walk's one computation; a predicate
 ///   would restate it.
+///
+/// # Cost
+/// - allocation: the worklist of the body's nodes and the list of rejoins,
+///   growth within the clause's body
 ///
 /// # Errors
 /// [`Form::Dangling`] for a node the arena does not hold.
@@ -1227,6 +1242,7 @@ fn clause_path(
 ) -> Result<(Path, Vec<CommandId>), Form>
 {
     let mut rejoins = Vec::new();
+    let mut resumes = false;
     // Each node, the depths of the clause's stack and covariable beneath it,
     // and whether it is in tail position.
     let mut pending = Vec::from([(NodeAddress::Command(body), (0_usize, 0_usize), true)]);
@@ -1310,12 +1326,31 @@ fn clause_path(
                         return Ok((Path::Capture, Vec::new()));
                     }
                     rejoins.push(id);
+                    resumes = true;
                     command_children(resume, |child, opens| {
                         if child == NodeAddress::Producer(resumed) {
                             return Ok(());
                         }
                         under(child, opens, false)
                     })?;
+                },
+                // An abandonment in tail position whose continuation binds its
+                // unit gives the standing frames up in place, so it neither
+                // captures nor reads them. One that answers the clause with
+                // its unit keeps the capture, whose abandonment gives a unit.
+                CommandNode::Abandon {
+                    stack: abandoned,
+                    continuation,
+                } if is_stack(abandoned) => {
+                    let answers = matches!(
+                        arena.consumer(continuation),
+                        Some(&ConsumerNode::Covariable(_))
+                    );
+                    if !tail || answers {
+                        return Ok((Path::Capture, Vec::new()));
+                    }
+                    rejoins.push(id);
+                    under(NodeAddress::Consumer(continuation), Opens::default(), false)?;
                 },
                 CommandNode::Perform { .. }
                 | CommandNode::Handle { .. }
@@ -1329,11 +1364,11 @@ fn clause_path(
             },
         }
     }
-    Ok(if rejoins.is_empty() {
-        (Path::Return, rejoins)
+    Ok(if resumes {
+        (Path::Resume, rejoins)
     }
     else {
-        (Path::Resume, rejoins)
+        (Path::Return, rejoins)
     })
 }
 
@@ -2785,6 +2820,10 @@ impl Lowering<'_>
     /// # Errors
     /// As [`Self::step`].
     ///
+    /// # Cost
+    /// - allocation: the tasks that the command pushes and the entries of its
+    ///   handler, growth within the function's commands
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — the named programs that handle, delimit, capture,
     ///   resume and abandon answer as they state on both tiers.
@@ -2974,7 +3013,13 @@ impl Lowering<'_>
                 stack,
                 continuation,
             } => {
-                let call = self.call(&Callee::Abandon(id), Immediate::from(1_u32))?;
+                let callee = if self.rejoins.contains(&id) {
+                    Callee::AbandonStanding(id)
+                }
+                else {
+                    Callee::Abandon(id)
+                };
+                let call = self.call(&callee, Immediate::from(1_u32))?;
                 self.tasks
                     .push(Task::Emit(StencilId::Pop, Operand::Unused, Operand::Unused));
                 self.tasks.push(call);
@@ -6420,11 +6465,14 @@ mod tests
     /// #3166: a clause resuming its stack from its root leaves the frames
     /// standing, and one never naming it returns over them; one resuming
     /// beneath a frame of its own, one answering its stack as a value and one
-    /// performing before it resumes capture.
+    /// performing before it resumes capture. #7968: one abandoning its stack
+    /// from its root and binding the unit returns over the frames it gives up
+    /// in place; one whose abandonment answers the clause captures, so the
+    /// abandonment gives the unit it answers.
     #[test]
     fn a_clause_takes_the_path_its_stack_allows_3166()
     {
-        let cases: [(&str, BuildClause, Path); 5] = [
+        let cases: [(&str, BuildClause, Path); 7] = [
             (
                 "resume(x0, return x1)",
                 |core, _| {
@@ -6481,9 +6529,143 @@ mod tests
                 },
                 Path::Capture,
             ),
+            (
+                "_ <- abandon(x0); return x2",
+                |core, _| {
+                    let k = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+                    let abandoned = core.computation_abandon(k);
+                    let payload = core.value_variable(Zone::Intuitionistic, 2_u32.into());
+                    let returned = core.computation_return(payload);
+                    core.computation_bind(abandoned, returned)
+                },
+                Path::Return,
+            ),
+            (
+                "abandon(x0)",
+                |core, _| {
+                    let k = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+                    core.computation_abandon(k)
+                },
+                Path::Capture,
+            ),
         ];
         for (clause, build, path) in cases {
             assert_eq!(path, path_of(build), "{clause}");
+        }
+    }
+
+    /// The value that `(commands, root)` halts with on `tier`; the run leaves
+    /// the words it allocates in [`crate::run::ALLOCATED`].
+    ///
+    /// # Specification
+    /// trivial.
+    fn ran(
+        tier: crate::Tier,
+        &(ref commands, root): &(CommandArena, CommandId),
+    ) -> gandr_core_sequent::HeapValue
+    {
+        let mut store = gandr_core_sequent::Store::new();
+        let outcome = crate::run::evaluate_on(
+            tier,
+            commands,
+            &Definitions::new(),
+            root,
+            crate::Budget::from(1_usize << 20_u32),
+            crate::RunInputs::new(&mut store),
+        )
+        .expect("the program runs");
+        let gandr_core_sequent::Outcome::Halted(value) = outcome
+        else {
+            panic!("the program halts on {tier:?}");
+        };
+        store
+            .value(value)
+            .expect("the store holds the answer")
+            .clone()
+    }
+
+    /// What the subject of the handler that [`abandoning`] builds does.
+    #[derive(Clone, Copy)]
+    enum Subject
+    {
+        /// It performs `op`.
+        Performs,
+        /// It returns the unit at once.
+        Returns,
+    }
+
+    /// The handler of `op` whose one clause abandons its stack from its root
+    /// and answers its payload, over the subject `subject`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn abandoning(subject: Subject) -> (CommandArena, CommandId)
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let payload = core.value_type_unit();
+        let signature = EffectSig::new(EffectName::from("E"), [EffectOp {
+            name: OperationName::from("op"),
+            payload,
+            reply: payload,
+        }])
+        .expect("one operation");
+        let subject = match subject {
+            Subject::Performs => {
+                core.computation_perform(signature.clone(), OperationName::from("op"), unit)
+            },
+            Subject::Returns => core.computation_return(unit),
+        };
+        let on_return = core.computation_return(unit);
+        let k = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let abandoned = core.computation_abandon(k);
+        let answer = core.value_variable(Zone::Intuitionistic, 2_u32.into());
+        let returned = core.computation_return(answer);
+        let body = core.computation_bind(abandoned, returned);
+        let root = core.computation_handle(
+            signature,
+            subject,
+            on_return,
+            alloc::sync::Arc::from([EffectClause {
+                operation: OperationName::from("op"),
+                body,
+            }]),
+        );
+        let mut commands = CommandArena::new();
+        let root = focus_computation(
+            &core,
+            root,
+            &mut commands,
+            &mut Provenance::new(),
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("the program focuses");
+        (commands, root)
+    }
+
+    /// #7968: an operation whose clause abandons its stack from its root
+    /// copies no frame and allocates no word, on each tier. Its run allocates
+    /// what the run of a subject that returns at once allocates, and both
+    /// answer the unit. A capture of the frames adds the words of its stack,
+    /// and an abandonment that answers a fresh unit adds two.
+    #[test]
+    fn an_abandoning_clause_copies_no_frame_and_allocates_no_word_7968()
+    {
+        let tiers: &[crate::Tier] = if crate::PATCHER {
+            &[crate::Tier::Native, crate::Tier::Executor]
+        }
+        else {
+            &[crate::Tier::Executor]
+        };
+        let performed = abandoning(Subject::Performs);
+        let returned = abandoning(Subject::Returns);
+        for &tier in tiers {
+            let answer = ran(tier, &performed);
+            let words = crate::run::ALLOCATED.get();
+            let unperformed = ran(tier, &returned);
+            let base = crate::run::ALLOCATED.get();
+            assert_eq!(unperformed, answer, "both answer the unit on {tier:?}");
+            assert_eq!(base, words, "the operation adds no word on {tier:?}");
         }
     }
 }

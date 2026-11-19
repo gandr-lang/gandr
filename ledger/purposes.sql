@@ -3761,6 +3761,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::Written',
 INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::WrittenRow','struct','Holds a returner''s row as the classification reads it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::answered::Answering','struct','Holds the model that answers a capability scope over a theory.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::tail','module','Names the reason none is held: the row is closed: it names its interfaces alone.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::theory::Continuation','enum','Names whether an operation of a theory passes a continuation and its reply, so a clause either resumes it or abandons it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::theory::Operations','struct','Holds a theory''s effect operations apart from its value operations.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::theory::TheoryInterface','struct','Holds a theory read as an effect interface, so a capability scope and a row entry read its operations, its laws and its rules.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::theory::TheoryLaw','struct','Holds a law of a theory read for the clauses of a scope that handles it.',NULL,'fits','sound',NULL);
@@ -3916,6 +3917,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','lower::unread_pattern','func
 INSERT INTO purpose VALUES('surface-lowering-base','lower::world::Worlded','enum','Names a located form or type, as the classification read it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','model::Binder','struct','Holds a binder a model''s component binds, so the component''s binder is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','model::BuiltinSort','enum','Names the host builtin a sort term names, so a model''s sort is checked against the host.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','model::ContinuationCount','struct','Counts the inputs of an operation at its carrier, so the refusal of two or more continuations names the count.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','model::Dependent','struct','Names whether a telescope binder binds, so a component''s type keeps only its dependent binders.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','model::Hypothesis','struct','Holds a hypothesis a model''s component states, so the component''s hypothesis is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','model::Included','struct','Holds an included component, so the component''s inclusion is read.',NULL,'fits','sound',NULL);

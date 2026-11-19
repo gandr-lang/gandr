@@ -73,6 +73,7 @@ use gandr_theory_levitation::RuleTurn;
 use gandr_theory_levitation::TermView;
 
 use crate::form::Placed;
+use crate::model::ContinuationCount;
 use crate::model::InterfaceFault;
 use crate::model::Members;
 use crate::model::Port;
@@ -136,7 +137,7 @@ impl TheoryInterface
 }
 
 /// An operation of a theory read as an effect operation: the type of each
-/// value its payload carries and its reply returns, each the manifest's
+/// value its payload carries and its continuation binds, each the manifest's
 /// written type for the value's sort.
 ///
 /// # Specification
@@ -146,10 +147,27 @@ pub struct TheoryOperation
 {
     /// The operation's name.
     pub name: OperationName,
-    /// The type of each input before the continuation, in order.
+    /// The type of each input before the continuation, in order: each input
+    /// of an operation with no continuation.
     pub payload: Vec<NodeIndex>,
-    /// The type of each value the continuation binds, in order.
-    pub reply: Vec<NodeIndex>,
+    /// The continuation that the operation passes its handler, if any.
+    pub continuation: Continuation,
+}
+
+/// What an effect operation passes its handler after its payload.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Continuation
+{
+    /// One continuation, its last input: the type of each value it binds, in
+    /// order.
+    Resumable(Vec<NodeIndex>),
+    /// No continuation. No handler resumes the operation, so its clause
+    /// abandons the computation after it, and its site stands at each answer
+    /// type.
+    Abandoned,
 }
 
 /// A value operation of a theory: every input and its output at a sort the
@@ -425,19 +443,27 @@ pub fn rules(
         .collect()
 }
 
-/// The payload and reply count of each of `operations`, by name.
+/// The payload and reply count of each of `operations` that passes a
+/// continuation, by name. A law cannot name the continuation of an operation
+/// that passes none, so a law that names one reads no subject.
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the map of the arities, growth within the theory's operations
 fn arities(operations: &[TheoryOperation]) -> BTreeMap<Name, Arity>
 {
     operations
         .iter()
-        .map(|operation| {
-            (Name::from(operation.name.as_ref()), Arity {
-                payload: ComponentCount::from(operation.payload.len()),
-                reply: ComponentCount::from(operation.reply.len()),
-            })
+        .filter_map(|operation| match operation.continuation {
+            Continuation::Resumable(ref reply) => {
+                Some((Name::from(operation.name.as_ref()), Arity {
+                    payload: ComponentCount::from(operation.payload.len()),
+                    reply: ComponentCount::from(reply.len()),
+                }))
+            },
+            Continuation::Abandoned => None,
         })
         .collect()
 }
@@ -475,18 +501,26 @@ fn value_operation(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the operation's name, the fixed type of each input before its
-///   last, and the fixed type of each binder of its last.
+/// - ensures: the operation's name and its continuation: for one input at the
+///   carrier, its last, the fixed type of each input before it and of each
+///   binder of it; for no input at the carrier, the fixed type of each input
+///   and no continuation.
 /// - fails: as [`operations`] for one operation, except that a value operation
 ///   fails [`InterfaceFault::Carrier`] too: [`operations`] reads it before.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the payload and the reply, growth within the operation's
+///   inputs
 ///
 /// # Errors
 /// The operation's fault.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`operations`].
+/// - hypothesis: L3 — as [`operations`], and an operation with no input at the
+///   carrier read with no continuation, apart from one with two.
 /// - witness: `lower::capability::theory::tests::each_member_out_of_shape_is_refused_by_its_fault_2272`
+/// - witness: `lower::capability::theory::tests::an_operation_with_no_continuation_is_read_as_abandoned_7968`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| read.name.as_ref() == operation.name.as_ref()))]
 fn effect_operation(
     operation: &PresentedOperation,
@@ -505,19 +539,31 @@ fn effect_operation(
     {
         return Err(InterfaceFault::Carrier);
     }
-    let Some((continuation, payload)) = operation.inputs.split_last()
-    else {
-        return Err(InterfaceFault::Continuation);
-    };
-    if !at_carrier(continuation) || !continuation.abstractions.is_empty() {
-        return Err(InterfaceFault::Continuation);
-    }
-    let reply = continuation
-        .binders
+    let continuations = operation
+        .inputs
         .iter()
-        .map(|binder| fixed.get(&binder.sort.sort).copied())
-        .collect::<Option<Vec<NodeIndex>>>()
-        .ok_or(InterfaceFault::Continuation)?;
+        .filter(|port| at_carrier(port))
+        .count();
+    if continuations > 1 {
+        return Err(InterfaceFault::Continuations(ContinuationCount::from(
+            continuations,
+        )));
+    }
+    let (continuation, payload) = match operation.inputs.split_last() {
+        Some((last, before)) if continuations == 1 => {
+            if !at_carrier(last) || !last.abstractions.is_empty() {
+                return Err(InterfaceFault::Continuation);
+            }
+            let reply = last
+                .binders
+                .iter()
+                .map(|binder| fixed.get(&binder.sort.sort).copied())
+                .collect::<Option<Vec<NodeIndex>>>()
+                .ok_or(InterfaceFault::Continuation)?;
+            (Continuation::Resumable(reply), before)
+        },
+        Some(_) | None => (Continuation::Abandoned, operation.inputs.as_slice()),
+    };
     let payload = payload
         .iter()
         .map(|port| {
@@ -533,6 +579,6 @@ fn effect_operation(
     Ok(TheoryOperation {
         name: OperationName::from(operation.name.as_ref()),
         payload,
-        reply,
+        continuation,
     })
 }

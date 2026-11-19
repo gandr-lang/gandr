@@ -1598,6 +1598,9 @@ pub enum InterfaceFault
     /// carrier, abstracting no atom, whose binders read sorts the manifest
     /// fixes.
     Continuation,
+    /// An operation with more than one input at the carrier: it takes one
+    /// continuation or none.
+    Continuations(ContinuationCount),
     /// An operation one of whose inputs before its continuation is no value
     /// of a sort the manifest fixes.
     Payload,
@@ -1633,9 +1636,16 @@ impl core::fmt::Display for InterfaceFault
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result
     {
-        f.write_str(match *self {
+        let reason = match *self {
             Self::Carrier => "is no operation returning the sort every operation returns",
             Self::Continuation => "takes no continuation at that sort as its last input",
+            Self::Continuations(count) => {
+                return write!(
+                    f,
+                    "takes {} inputs at the sort the operations return, and an operation takes one continuation or none",
+                    count.0
+                );
+            },
             Self::Payload => "takes an input before its continuation at no sort the manifest fixes",
             Self::Indexed => "is an indexed sort, which no one type fixes",
             Self::Unfixed => {
@@ -1644,7 +1654,29 @@ impl core::fmt::Display for InterfaceFault
             Self::Fixed => "is the sort the operations return, which the handler's answer fixes",
             Self::Law => "is a law no handler's clauses read",
             Self::Value => "is a value operation, which only a model the scope names answers",
-        })
+        };
+        f.write_str(reason)
+    }
+}
+
+/// The count of the inputs of an operation at its theory's carrier.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ContinuationCount(usize);
+
+impl From<usize> for ContinuationCount
+{
+    /// Wrap a count of inputs.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: usize) -> Self
+    {
+        Self(count)
     }
 }
 
