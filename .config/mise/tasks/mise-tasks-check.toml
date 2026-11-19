@@ -4156,9 +4156,9 @@ echo "stall check OK: $(jq length .config/stall/cases.json) cases read as record
 # crate of the list is a row of the crate's list, with the same reason. The
 # night refuses a crate whose skips and list differ, before it runs Miri.
 #
-# This check reads the list and the crates alone and runs no test. So a skip
-# with no row fails before the landing. Each case holds a crate's reasons and
-# the verdict that `skips.jq` must give.
+# This check reads the list and the crates alone and runs no test. The
+# portable scanner case gives a Miri attribute to a grep that refuses GNU-only
+# options.
 # - see: #7777
 # - see: `.config/unsafe/crates.json`
 # - see: `.config/unsafe/skips.json`
@@ -4169,8 +4169,9 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 .config/cases/run.bash unsafe-skips .config/unsafe/skips.json --program .config/unsafe/skips.jq --mode r
+.config/unsafe/run-cases.bash
 .config/unsafe/run.bash skips
-echo "unsafe-skips check OK: $(jq length .config/unsafe/skips.json) cases read as recorded, and each crate's skips are rows of its list"
+echo "unsafe-skips check OK: $(jq length .config/unsafe/skips.json) cases read as recorded, the scanner reads a multiline skip with portable grep, and each crate's skips are rows of its list"
 '''
 
 # The host service that keeps a task running (#4167): `service.jq` writes the

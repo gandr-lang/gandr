@@ -19,7 +19,8 @@
 # reason, and `careful` runs it natively. The list holds one skip for each such
 # attribute, with the same reason, and the check refuses a crate whose skips
 # and list differ. rustfmt puts an attribute with a long reason on four lines,
-# so the check reads the attribute across lines.
+# so the check reads the attribute across lines. A POSIX awk scan gives macOS
+# and Linux the same reading.
 # - see: `.config/unsafe/skips.jq`
 set -euo pipefail
 check=${1:?the check: skips, miri-tree, miri-stacked or careful}
@@ -40,7 +41,24 @@ for crate in "${crates[@]}"; do
   fi
   if ! jq -n --arg crate "$crate" --arg list "$list" \
     --slurpfile stated <(jq -c --arg crate "$crate" '[.crates[] | select(.package == $crate) | .skips[].why]' "$list") \
-    --slurpfile found <({ grep -rhzoP 'cfg_attr\(\s*miri,\s*ignore = "[^"]*",?\s*\)' "$root/$path" || true; } | tr '\0' '\n' | sed -nE 's/^.*ignore = "(.*)".*$/\1/p' | jq -Rsc 'split("\n") | map(select(. != ""))') \
+    --slurpfile found <(find "$root/$path" -type f -name '*.rs' -exec awk '
+      /cfg_attr[[:space:]]*\(/ {
+        attribute = 1
+        miri = 0
+        ignored = 0
+      }
+      attribute && !ignored && /(^|[^[:alnum:]_])miri([^[:alnum:]_]|$)/ { miri = 1 }
+      attribute && /ignore[[:space:]]*=/ {
+        if (miri) {
+          reason = $0
+          sub(/^.*ignore[[:space:]]*=[[:space:]]*"/, "", reason)
+          sub(/".*$/, "", reason)
+          print reason
+        }
+        ignored = 1
+      }
+      attribute && /\)/ { attribute = 0 }
+    ' {} + | jq -Rsc 'split("\n") | map(select(. != ""))') \
     '{crate: $crate, list: $list, stated: $stated[0], found: $found[0]}' | jq -r -f "$root/.config/unsafe/skips.jq"; then
     echo "unsafe:$check: refused" >&2
     exit 1
