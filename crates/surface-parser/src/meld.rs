@@ -1232,7 +1232,7 @@ primitive_copy_wrapper!(
 ///   no group refuses the entry, and reading no argument refuses the `as`.
 /// - witness: `tests::grammar::an_observation_s_type_applies_a_parenthesized_argument_6093`
 /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
-/// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+/// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
 #[spec(ensures: |ret| bool::from(ret) != (pbg.mold(open).is_ok_and(|left| pbg.mold(next).is_ok_and(|right| ClosingClass::opening(DelimSpelling::from(right.label)).is_some() && pbg.step(left.rctx, Dir::Right).is_ok_and(|steps| steps.iter().any(|step| step.crossed == StepSym::Tile(right.label)) && steps.iter().any(|step| step.crossed == StepSym::Sort(head))) && !pbg.step(right.rctx, Dir::Left).is_ok_and(|steps| steps.iter().any(|step| matches!(step.crossed, StepSym::Sort(_)))))) && pbg.application_in(head).is_some() && pbg.mold_label(next).is_some_and(|label| pbg.label_candidates(label).iter().any(|&tile| pbg.mold(tile).is_ok_and(|def| def.sort == head) && matches!(pbg.tile_kind(tile), Ok(TileKind::Operand | TileKind::Start))))))]
 pub fn continues_past_operand(
     pbg: &Pbg,
@@ -3609,7 +3609,7 @@ impl<'pbg> MeldState<'pbg>
     ///   nests the module in the open member; no close lets the window prefer
     ///   the open type.
     /// - witness: `tests::acceptance::a_pub_at_the_margin_closes_the_open_declaration_6101`
-    /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+    /// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
     #[inline]
     #[spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before)]
     pub fn settle_top_level_boundary(
@@ -5232,7 +5232,7 @@ impl<'pbg> MeldState<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — a window that reaches reads a reading cheaper than
     ///   the stream pays for it.
-    /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+    /// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
     #[spec(captures: before = self.reach, ensures: |ret| ret == before && self.reach == on)]
     pub(crate) fn set_reach(
         &mut self,
@@ -5305,7 +5305,7 @@ impl<'pbg> MeldState<'pbg>
     ///   bracketed form, across two forms, or above an outer group of its
     ///   family stays stray. The recovery sweep's rows read the change.
     /// - witness: `tests::acceptance::a_closer_reaches_its_open_partner_6323`
-    /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+    /// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
     #[spec(ensures: |ret| ret.is_none_or(|index| self.frontiers.len().checked_sub(2).and_then(|at| self.frontiers.get(at)) == Some(&index.0)))]
     fn reach_partner(
         &self,
@@ -7220,7 +7220,7 @@ impl<'pbg> MeldState<'pbg>
     ///   then meets. A search that reads only the buffer keeps the copy with
     ///   the `)` after the `;`, and the `;` then reads inside the bracket.
     /// - witness: `parse::place::tests::a_try_stopped_at_its_first_repair_answers_as_a_whole_parse`
-    /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+    /// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| bool::from(ret) == (!self.obligations.is_empty() || self.ended_applications > 0))]
