@@ -2,4 +2,4 @@
 /// table.
 @[refuses("NativeMark.NoRow")]
 @[native("string.join")]
-def join : (String, String) -> String;
+def join : (a : String, b : String) -> String;
