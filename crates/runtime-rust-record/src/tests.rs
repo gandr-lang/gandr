@@ -14,6 +14,7 @@ use crate::Absence;
 use crate::Answer;
 use crate::Arm;
 use crate::Available;
+use crate::Body;
 use crate::Bytes;
 use crate::Cache;
 use crate::Commit;
@@ -28,14 +29,20 @@ use crate::FieldName;
 use crate::Function;
 use crate::FunctionPath;
 use crate::Identity;
+use crate::ItemPath;
 use crate::Layout;
 use crate::Linkage;
+use crate::Literal;
 use crate::LlvmType;
+use crate::Magnitude;
 use crate::Niche;
+use crate::Node;
+use crate::NodeIndex;
 use crate::Offset;
 use crate::Operand;
 use crate::Origin;
 use crate::Outcome;
+use crate::Outside;
 use crate::Part;
 use crate::Passage;
 use crate::Program;
@@ -43,8 +50,10 @@ use crate::Record;
 use crate::Refusal;
 use crate::Request;
 use crate::Shape;
+use crate::Sign;
 use crate::SourceFile;
 use crate::SourcePath;
+use crate::Staging;
 use crate::Status;
 use crate::Symbol;
 use crate::Target;
@@ -315,6 +324,31 @@ fn every_read() -> Entry
             passage: Passage::Indirect(part(Label("ptr"), Extension::Plain)),
             layout: wide,
         },
+        // `return each(if x { 1 } else { return -0 })`, each kind of node.
+        body: Staging::Staged(Body {
+            nodes: vec![
+                Node::Parameter,
+                Node::Literal(Literal {
+                    sign: Sign::Plus,
+                    magnitude: Magnitude::from(1_u128),
+                }),
+                Node::Literal(Literal {
+                    sign: Sign::Minus,
+                    magnitude: Magnitude::from(0_u128),
+                }),
+                Node::Return(NodeIndex::from(2_u32)),
+                Node::If {
+                    condition: NodeIndex::from(0_u32),
+                    then: NodeIndex::from(1_u32),
+                    otherwise: NodeIndex::from(3_u32),
+                },
+                Node::Call {
+                    callee: FunctionPath::from("inner::each"),
+                    argument: NodeIndex::from(4_u32),
+                },
+                Node::Return(NodeIndex::from(5_u32)),
+            ],
+        }),
     };
     let leaf = Function {
         path: FunctionPath::from("inner::leaf"),
@@ -327,6 +361,7 @@ fn every_read() -> Entry
                 ..scalar(Label("()"), zero)
             },
         },
+        body: Staging::Outside(Outside::Callee(ItemPath::from("std::process::exit"))),
     };
     Entry {
         sources: vec![SourceFile {

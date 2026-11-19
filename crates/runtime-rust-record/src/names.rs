@@ -201,3 +201,38 @@ text! {
     /// The path of a source file that the reader read, as UTF-8.
     pub struct SourcePath;
 }
+
+text! {
+    /// The name of a kind of THIR node, as rustc's `ExprKind` spells it:
+    /// `Binary`, `Match` or `Loop`.
+    pub struct NodeName;
+}
+
+text! {
+    /// An item's path as rustc prints it, the crate name first.
+    pub struct ItemPath;
+}
+
+number! {
+    /// The magnitude of an integer literal, with no sign.
+    pub struct Magnitude(u128);
+}
+
+number! {
+    /// The place of a node in its body, counted from the first node.
+    pub struct NodeIndex(u32);
+}
+
+impl NodeIndex
+{
+    /// The place as an index into the body's nodes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn place(self) -> usize
+    {
+        usize::try_from(self.0).unwrap_or(usize::MAX)
+    }
+}

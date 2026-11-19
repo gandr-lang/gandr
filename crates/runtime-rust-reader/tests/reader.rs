@@ -2,7 +2,8 @@
 //! record is a symbol of the built object, the record agrees with the
 //! `define` line that rustc emits for each function, each layout equals
 //! what `std.layout` computes, a leaf function has no symbol, each refusal
-//! names its cause, and a second request starts no process.
+//! names its cause, a second request starts no process, and each body
+//! stages as THIR of the fragment or names what stops it.
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -13,6 +14,7 @@ use std::process::Command;
 
 use gandr_runtime_rust_record::Absence;
 use gandr_runtime_rust_record::Answer;
+use gandr_runtime_rust_record::Body;
 use gandr_runtime_rust_record::Cache;
 use gandr_runtime_rust_record::Discriminant;
 use gandr_runtime_rust_record::Extension;
@@ -20,16 +22,25 @@ use gandr_runtime_rust_record::Field;
 use gandr_runtime_rust_record::Function;
 use gandr_runtime_rust_record::FunctionPath;
 use gandr_runtime_rust_record::Identity;
+use gandr_runtime_rust_record::ItemPath;
 use gandr_runtime_rust_record::Layout;
 use gandr_runtime_rust_record::Linkage;
+use gandr_runtime_rust_record::Literal;
+use gandr_runtime_rust_record::Magnitude;
+use gandr_runtime_rust_record::Node;
+use gandr_runtime_rust_record::NodeIndex;
+use gandr_runtime_rust_record::NodeName;
 use gandr_runtime_rust_record::Origin;
 use gandr_runtime_rust_record::Outcome;
+use gandr_runtime_rust_record::Outside;
 use gandr_runtime_rust_record::Part;
 use gandr_runtime_rust_record::Passage;
 use gandr_runtime_rust_record::Program;
 use gandr_runtime_rust_record::Refusal;
 use gandr_runtime_rust_record::Request;
 use gandr_runtime_rust_record::Shape;
+use gandr_runtime_rust_record::Sign;
+use gandr_runtime_rust_record::Staging;
 use gandr_runtime_rust_record::TypeName;
 use gandr_runtime_rust_record::Unstatable;
 
@@ -532,4 +543,58 @@ fn a_second_request_starts_no_process()
         record: first.record,
         origin: Origin::Cache
     });
+}
+
+/// A literal of the fragment, unsigned.
+fn literal(value: u128) -> Node
+{
+    Node::Literal(Literal {
+        sign: Sign::Plus,
+        magnitude: Magnitude::from(value),
+    })
+}
+
+#[test]
+fn each_body_stages_as_thir_of_the_fragment_or_names_what_stops_it()
+{
+    let (cache, directory) = cache("corten");
+    let out = directory.join("out");
+    let request = request(
+        "corten",
+        &["identity", "example", "outside", "escapes"],
+        &out,
+    );
+    let answer = cache
+        .read(&program(), &request, &Identity::of_build())
+        .expect("the bodies read");
+    let bodies: Vec<&Staging> = read(&answer)
+        .iter()
+        .map(|function| &function.body)
+        .collect();
+    let index = NodeIndex::from;
+    assert_eq!(bodies, [
+        &Staging::Staged(Body {
+            nodes: vec![Node::Parameter],
+        }),
+        &Staging::Staged(Body {
+            nodes: vec![
+                Node::Parameter,
+                literal(1),
+                literal(0),
+                Node::Return(index(2)),
+                Node::If {
+                    condition: index(0),
+                    then: index(1),
+                    otherwise: index(3),
+                },
+                Node::Call {
+                    callee: FunctionPath::from("identity"),
+                    argument: index(4),
+                },
+                Node::Return(index(5)),
+            ],
+        }),
+        &Staging::Outside(Outside::Node(NodeName::from("Binary"))),
+        &Staging::Outside(Outside::Callee(ItemPath::from("std::convert::identity"))),
+    ]);
 }

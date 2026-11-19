@@ -3,15 +3,17 @@
 //! An [`Entry`] is a [`Record`] beside the digest of each source file that
 //! the reader read. The form is the header, then each source, then the
 //! identity, then the outcome. Each integer is little-endian at a fixed
-//! width: a tag is one byte, a count or a length eight bytes, a size eight
-//! bytes and a niche's count sixteen bytes. A text is its length, then its
-//! UTF-8 bytes.
+//! width: a tag is one byte, a node's index four bytes, a count or a length
+//! eight bytes, a size eight bytes, and a niche's count or a literal's
+//! magnitude sixteen bytes. A text is its length, then its UTF-8 bytes.
 //!
 //! [`Entry::decode`] reads the form back. Each count and each length is
 //! bounded by the bytes that remain, so a hostile count allocates nothing
 //! past the input. Each tag names one variant, each text is UTF-8, a refused
-//! outcome names at least one refusal, and no byte follows the entry. So one
-//! entry has one form, and a decode then an encode gives the same bytes.
+//! outcome names at least one refusal, a staged body holds one to
+//! [`Body::CEILING`] nodes and each node names only children before it, and
+//! no byte follows the entry. So one entry has one form, and a decode then an
+//! encode gives the same bytes.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -24,7 +26,11 @@ use crate::names::Bytes;
 use crate::names::Commit;
 use crate::names::FieldName;
 use crate::names::FunctionPath;
+use crate::names::ItemPath;
 use crate::names::LlvmType;
+use crate::names::Magnitude;
+use crate::names::NodeIndex;
+use crate::names::NodeName;
 use crate::names::Offset;
 use crate::names::SourcePath;
 use crate::names::Symbol;
@@ -33,6 +39,7 @@ use crate::names::TypeName;
 use crate::names::VariantName;
 use crate::record::Absence;
 use crate::record::Arm;
+use crate::record::Body;
 use crate::record::Discriminant;
 use crate::record::Extension;
 use crate::record::Field;
@@ -40,18 +47,23 @@ use crate::record::Function;
 use crate::record::Identity;
 use crate::record::Layout;
 use crate::record::Linkage;
+use crate::record::Literal;
 use crate::record::Niche;
+use crate::record::Node;
 use crate::record::Operand;
 use crate::record::Outcome;
+use crate::record::Outside;
 use crate::record::Part;
 use crate::record::Passage;
 use crate::record::Record;
 use crate::record::Refusal;
 use crate::record::Shape;
+use crate::record::Sign;
+use crate::record::Staging;
 use crate::record::Unstatable;
 
 /// The first bytes of each entry: the name of the form and its version.
-const HEADER: &[u8] = b"gandr-rust-record\x01";
+const HEADER: &[u8] = b"gandr-rust-record\x02";
 
 /// A borrowed run of bytes that a decoder reads.
 #[repr(transparent)]
@@ -132,6 +144,10 @@ pub enum Undecoded
     Text(Offset),
     /// The refused outcome at the offset names no refusal.
     Empty(Offset),
+    /// The staged body at the offset holds no node or more than
+    /// [`Body::CEILING`], or a node at the offset names a child that does not
+    /// stand before it.
+    Body(Offset),
     /// Bytes follow the entry, from the offset.
     Trailing(Offset),
     /// Another toolchain wrote the record.
@@ -158,6 +174,7 @@ impl fmt::Display for Undecoded
             Self::Tag(at) => write!(f, "the tag at byte {at} names no variant"),
             Self::Text(at) => write!(f, "the text at byte {at} is not UTF-8"),
             Self::Empty(at) => write!(f, "the refused outcome at byte {at} names no refusal"),
+            Self::Body(at) => write!(f, "the staged body at byte {at} is not one tree"),
             Self::Trailing(at) => write!(f, "bytes follow the record from byte {at}"),
             Self::Toolchain(ref commit) => {
                 write!(f, "the toolchain at commit {commit} wrote the record")
@@ -441,6 +458,101 @@ impl Writer
             self.operand(argument);
         }
         self.operand(&function.result);
+        self.staging(&function.body);
+    }
+
+    /// Appends a function's staging: its nodes in order, or the cause that
+    /// stages nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    fn staging(
+        &mut self,
+        staging: &Staging,
+    )
+    {
+        match *staging {
+            Staging::Staged(ref body) => {
+                self.tag(Tag(0));
+                self.count(Count(body.nodes.len()));
+                for node in &body.nodes {
+                    self.node(node);
+                }
+            },
+            Staging::Outside(ref outside) => {
+                self.tag(Tag(1));
+                match *outside {
+                    Outside::Node(ref name) => {
+                        self.tag(Tag(0));
+                        self.text(Text(name.as_ref()));
+                    },
+                    Outside::Callee(ref path) => {
+                        self.tag(Tag(1));
+                        self.text(Text(path.as_ref()));
+                    },
+                    Outside::Large => self.tag(Tag(2)),
+                }
+            },
+        }
+    }
+
+    /// Appends one node: its tag, then its literal, its callee and its
+    /// children.
+    ///
+    /// # Specification
+    /// trivial.
+    fn node(
+        &mut self,
+        node: &Node,
+    )
+    {
+        match *node {
+            Node::Literal(Literal { sign, magnitude }) => {
+                self.tag(Tag(0));
+                self.tag(match sign {
+                    Sign::Plus => Tag(0),
+                    Sign::Minus => Tag(1),
+                });
+                self.bytes
+                    .extend_from_slice(&u128::from(magnitude).to_le_bytes());
+            },
+            Node::Parameter => self.tag(Tag(1)),
+            Node::If {
+                condition,
+                then,
+                otherwise,
+            } => {
+                self.tag(Tag(2));
+                self.index(condition);
+                self.index(then);
+                self.index(otherwise);
+            },
+            Node::Return(value) => {
+                self.tag(Tag(3));
+                self.index(value);
+            },
+            Node::Call {
+                ref callee,
+                argument,
+            } => {
+                self.tag(Tag(4));
+                self.text(Text(callee.as_ref()));
+                self.index(argument);
+            },
+        }
+    }
+
+    /// Appends a node's index.
+    ///
+    /// # Specification
+    /// trivial.
+    fn index(
+        &mut self,
+        index: NodeIndex,
+    )
+    {
+        self.bytes
+            .extend_from_slice(&u32::from(index).to_le_bytes());
     }
 
     /// Appends one operand: its passage, then its layout.
@@ -776,12 +888,117 @@ impl Reader<'_>
             arguments.push(self.operand()?);
         }
         let result = self.operand()?;
+        let body = self.staging()?;
         Ok(Function {
             path,
             linkage,
             arguments,
             result,
+            body,
         })
+    }
+
+    /// The next staging.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the nodes of a staged body, growth within the length of
+    ///   the bytes
+    fn staging(&mut self) -> Result<Staging, Undecoded>
+    {
+        let at = self.offset();
+        match self.tag()? {
+            Tag(0) => {
+                let counted = self.offset();
+                let count = self.count()?;
+                if count.0 == 0 || count.0 > Body::CEILING {
+                    return Err(Undecoded::Body(counted));
+                }
+                let mut nodes = Vec::new();
+                for place in 0 .. count.0 {
+                    nodes.push(self.node(place)?);
+                }
+                Ok(Staging::Staged(Body { nodes }))
+            },
+            Tag(1) => {
+                let at = self.offset();
+                let outside = match self.tag()? {
+                    Tag(0) => Outside::Node(NodeName::from(self.text()?)),
+                    Tag(1) => Outside::Callee(ItemPath::from(self.text()?)),
+                    Tag(2) => Outside::Large,
+                    Tag(_) => return Err(Undecoded::Tag(at)),
+                };
+                Ok(Staging::Outside(outside))
+            },
+            Tag(_) => Err(Undecoded::Tag(at)),
+        }
+    }
+
+    /// The next node, which stands at `place` and names only children
+    /// before it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn node(
+        &mut self,
+        place: usize,
+    ) -> Result<Node, Undecoded>
+    {
+        let at = self.offset();
+        let node = match self.tag()? {
+            Tag(0) => {
+                let signed = self.offset();
+                let sign = match self.tag()? {
+                    Tag(0) => Sign::Plus,
+                    Tag(1) => Sign::Minus,
+                    Tag(_) => return Err(Undecoded::Tag(signed)),
+                };
+                let magnitude = Magnitude::from(u128::from_le_bytes(self.take::<16>()?.0));
+                Node::Literal(Literal { sign, magnitude })
+            },
+            Tag(1) => Node::Parameter,
+            Tag(2) => {
+                let condition = self.index(place, at)?;
+                let then = self.index(place, at)?;
+                Node::If {
+                    condition,
+                    then,
+                    otherwise: self.index(place, at)?,
+                }
+            },
+            Tag(3) => Node::Return(self.index(place, at)?),
+            Tag(4) => {
+                let callee = FunctionPath::from(self.text()?);
+                Node::Call {
+                    callee,
+                    argument: self.index(place, at)?,
+                }
+            },
+            Tag(_) => return Err(Undecoded::Tag(at)),
+        };
+        Ok(node)
+    }
+
+    /// The next index of a child of the node at `place`, which begins at
+    /// `at`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn index(
+        &mut self,
+        place: usize,
+        at: Offset,
+    ) -> Result<NodeIndex, Undecoded>
+    {
+        let index = NodeIndex::from(u32::from_le_bytes(self.take::<4>()?.0));
+        if index.place() < place {
+            Ok(index)
+        }
+        else {
+            Err(Undecoded::Body(at))
+        }
     }
 
     /// The next operand.
