@@ -306,6 +306,7 @@ mod tests
     use super::Key;
     use super::Kind;
     use super::Row;
+    use super::TypeAtom;
     use super::row;
     use crate::primitive::PRELUDE;
 
@@ -321,7 +322,10 @@ mod tests
             );
             assert_eq!(Row::named(row.key()), Maybe::Present(row));
         }
-        assert_eq!(keys.len(), PRELUDE.len() + Builtin::ALL.len());
+        assert_eq!(
+            keys.len(),
+            PRELUDE.len() + TypeAtom::ALL.len() + Builtin::ALL.len()
+        );
         let append = Row::named(Key("string.append"));
         assert!(
             matches!(append, Maybe::Present(Row::Native(primitive)) if primitive.name().as_ref() == "string.append")
@@ -330,10 +334,14 @@ mod tests
             Row::named(Key("irPair")),
             Maybe::Present(Row::Role(Builtin::IrPair))
         );
+        assert_eq!(
+            Row::named(Key("integer")),
+            Maybe::Present(Row::Atom(TypeAtom::Integer))
+        );
     }
 
     #[test]
-    fn a_native_row_is_given_and_a_role_is_found()
+    fn a_native_row_and_an_atom_are_given_and_a_role_is_found()
     {
         for row in Row::all() {
             match row {
@@ -341,6 +349,12 @@ mod tests
                     assert_eq!(
                         (row.kind(), row.direction()),
                         (Kind::Native, Direction::Given)
+                    );
+                },
+                Row::Atom(_) => {
+                    assert_eq!(
+                        (row.kind(), row.direction()),
+                        (Kind::Atom, Direction::Given)
                     );
                 },
                 Row::Role(_) => {
@@ -356,7 +370,15 @@ mod tests
     #[test]
     fn a_key_that_no_row_holds_names_none()
     {
-        for key in ["string.join", "String.append", "irpair", "", "irElim"] {
+        for key in [
+            "string.join",
+            "String.append",
+            "irpair",
+            "",
+            "irElim",
+            "Integer",
+            "int",
+        ] {
             assert_eq!(
                 Row::named(Key(key)),
                 Maybe::Absent(row::Absent::Unkeyed),
@@ -393,6 +415,7 @@ mod tests
             .map(|row| {
                 let kind = match row.kind() {
                     Kind::Native => "value",
+                    Kind::Atom => "atom",
                     Kind::Role => "role",
                 };
                 let direction = match row.direction() {

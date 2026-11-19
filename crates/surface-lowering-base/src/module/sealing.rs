@@ -575,7 +575,11 @@ impl<'source> Collector<'_, 'source>
     ///   name in the same container is refused naming the first. A faces
     ///   block's faces are filed by the held slot, read over the record's
     ///   labels ([`Self::record_faces`]); a face it refuses refuses the slot,
-    ///   which keeps the member's attributes.
+    ///   which keeps the member's attributes. A member reading `type T : K ;`
+    ///   is filed as [`super::TypeMeaning::Builtin`] when a `builtin`
+    ///   attribute, written in it or in `decorations`, marks it at the top
+    ///   level of a source with no parameters, and is refused at its `:`
+    ///   otherwise.
     /// - provides: the type-member half of [`Self::member`] and of a source's
     ///   top level.
     /// - fails: a member out of shape, or with an attribute block out of shape,
@@ -597,6 +601,8 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `gandr-surface-lowering::tests::modules::a_component_check_carries_its_members_expectation`
     /// - witness: `gandr-surface-lowering::tests::modules::a_record_type_names_its_faces_over_its_labels`
     /// - witness: `gandr-surface-lowering::tests::modules::a_face_past_a_record_s_labels_is_refused_over_the_record_and_the_label`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_type_signature_with_no_body_is_refused_outside_its_place_8073`
+    /// - witness: `gandr-surface-lowering::lower::row::tests::a_type_signature_under_builtin_reads_its_atom_8073`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.top_types.len()),
         ensures: |_| {

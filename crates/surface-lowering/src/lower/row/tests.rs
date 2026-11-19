@@ -134,3 +134,32 @@ fn each_fault_of_a_builtin_mark_is_refused_by_name_8071()
         );
     }
 }
+
+/// #8073: a type signature of `std` with no body, which a `builtin` mark binds
+/// to the row of an atom, reads the atom of that row. A value at the declared
+/// name checks at the name that the table answers, in each direction, and it
+/// does not check at another atom.
+#[test]
+fn a_type_signature_under_builtin_reads_its_atom_8073()
+{
+    let text =
+        include_str!("tests/unformatted/a-type-signature-under-builtin-reads-its-atom-8073.gandr");
+    let mut arena = CoreArena::new();
+    let module = preluded(SourceText::from(text), &homed(), &mut arena);
+    let report = judged(&module, &mut arena);
+    let verdicts: Vec<bool> = report
+        .judged()
+        .iter()
+        .map(|judged| {
+            matches!(
+                judged.verdict(),
+                gandr_core_checker::Verdict::Checked { .. }
+            )
+        })
+        .collect();
+    assert_eq!(
+        verdicts,
+        vec![true, true, false],
+        "`onward` and `back` check, and `wide` is refused: {report:?}"
+    );
+}
