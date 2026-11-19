@@ -33,10 +33,10 @@ def nestings : Path[.A = Type] (Unit + (Unit + Unit)) ((Unit + Unit) + Unit) = e
 /// `Judge` defines protocols with one or two verdicts.
 /// It writes each protocol with either verdict nesting.
 module Judge where
-  type Right = ?(Unit + (Unit + Unit)). !Unit. end;
-  type Left = ?((Unit + Unit) + Unit). !Unit. end;
-  type RightTwice = ?(Unit + (Unit + Unit)). ?(Unit + (Unit + Unit)). end;
-  type LeftTwice = ?((Unit + Unit) + Unit). ?((Unit + Unit) + Unit). end;
+  type Right = (Unit + (Unit + Unit)) >? Unit >! end;
+  type Left = ((Unit + Unit) + Unit) >? Unit >! end;
+  type RightTwice = (Unit + (Unit + Unit)) >? (Unit + (Unit + Unit)) >? end;
+  type LeftTwice = ((Unit + Unit) + Unit) >? ((Unit + Unit) + Unit) >? end;
 
 /// `renested` proves that the `Judge` protocols have one type.
 /// `nestings` converts their verdict payloads.

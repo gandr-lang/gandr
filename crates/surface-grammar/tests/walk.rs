@@ -48,9 +48,8 @@ use crate::failure::Failure;
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
-/// the protocol step `! T >> S` and the recursive protocol `rec X => S`, read
-/// beside the dotted forms until the corpus moves, then by the block's own
-/// sort, which every block after a tile reaches through one hole, then by a
+/// the recursive protocol `rec X => S`, then by the block's own sort, which
+/// every block after a tile reaches through one hole, then by a
 /// module member taking the top level's definition family (#4145), then by a
 /// record type's faces block (#4453), then by the lambda keyword `fun` (#4484),
 /// then by the static abstraction folding into `fun` (#4508),
@@ -88,22 +87,23 @@ use crate::failure::Failure;
 /// body after `=` (#6318), then by the six machine width atoms, `u8` to
 /// `isize` (#7960), then by the shell block leaving the grammar with its
 /// words, quotes, expansions and operators (#1057), then by a type signature
-/// with no body, `type T : K;` (#8073).
-const BUILT_IN_FINGERPRINT: u64 = 0x3ad2_f303_0abb_0fbf;
+/// with no body, `type T : K;` (#8073), then by the protocol steps `T >! S`
+/// and `T >? S` and the recursion `rec X => S`.
+const BUILT_IN_FINGERPRINT: u64 = 0x89dc_d73b_0c01_fa71;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3124);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3117);
 
 /// How many labels the walk index projects to more than one mold.
-const BUILT_IN_MULTI_MOLD_LABELS: usize = 94;
+const BUILT_IN_MULTI_MOLD_LABELS: usize = 92;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     (" ", 2),
-    ("!", 2),
+    ("!", 1),
     ("!=", 1),
     ("\"", 12),
     ("#", 1),
@@ -128,7 +128,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("-=", 16),
     ("->", 13),
     ("-F", 3),
-    (".", 99),
+    (".", 96),
     (".#[", 2),
     (".#{", 1),
     (".*{", 1),
@@ -146,9 +146,10 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("==>", 27),
     ("=>", 36),
     (">", 3),
+    (">!", 1),
     (">=", 1),
-    (">>", 2),
-    ("?", 4),
+    (">?", 1),
+    ("?", 3),
     ("@", 1),
     ("@![", 3),
     ("@[", 4),
@@ -233,7 +234,6 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("migrate", 1),
     ("mobile", 10),
     ("module", 18),
-    ("mu", 1),
     ("node", 3),
     ("number", 58),
     ("obs", 1),
@@ -269,7 +269,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("type", 23),
     ("type(", 1),
     ("type_identifier", 221),
-    ("type_variable", 93),
+    ("type_variable", 92),
     ("typed_number", 2),
     ("u16", 1),
     ("u32", 1),

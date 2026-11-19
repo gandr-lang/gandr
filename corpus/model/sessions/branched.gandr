@@ -15,7 +15,7 @@ def closing(seat : end, early : Bool) -> Unit =
 
 /// Each arm of a match sends its own number, and the close after the match
 /// acts on the seat as both arms leave it.
-def reportsByMatch(seat : !Integer. end, early : Bool) -> Unit =
+def reportsByMatch(seat : Integer >! end, early : Bool) -> Unit =
   match early where
     | true => send seat 1
     | false => send seat 2
@@ -23,7 +23,7 @@ def reportsByMatch(seat : !Integer. end, early : Bool) -> Unit =
 
 /// A seat that reports until it has nothing more to say. The test of a
 /// `while` is a case, and what follows the loop runs in its false branch.
-def draining(seat : mu open. +{more : !Integer. open, done : end}, more : Bool) -> Unit =
+def draining(seat : rec open => +{more : Integer >! open, done : end}, more : Bool) -> Unit =
   while more {
     select seat more;
     send seat 1
@@ -36,13 +36,13 @@ def draining(seat : mu open. +{more : !Integer. open, done : end}, more : Bool) 
 def hearsOneReport() -> Integer =
   let seat = fork (desk : end) { closing desk false };
   close seat
-  let desk = fork (report : !Integer. end) { reportsByMatch report false };
+  let desk = fork (report : Integer >! end) { reportsByMatch report false };
   let heard = recv desk
   close desk
   pure heard
 
 /// A desk that hears a seat's reports until the seat selects `done`.
-def hearing(desk : mu open. &{more : ?Integer. open, done : end}) -> Unit =
+def hearing(desk : rec open => &{more : Integer >? open, done : end}) -> Unit =
   loop {
     offer desk {
       | more => { let heard = recv desk; continue }
@@ -53,7 +53,7 @@ def hearing(desk : mu open. &{more : ?Integer. open, done : end}) -> Unit =
 /// A desk that follows a seat which has nothing more to report.
 @[runs("*{}")]
 def drained() -> Unit =
-  let desk = fork (seat : mu open. +{more : !Integer. open, done : end}) {
+  let desk = fork (seat : rec open => +{more : Integer >! open, done : end}) {
     draining seat false
   };
   hearing desk

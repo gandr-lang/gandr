@@ -5339,7 +5339,7 @@ mod tests
                     .expect("the protocol is well formed"),
             )
         };
-        // !Integer. mu t. ?String. t, past its send.
+        // Integer >! rec t => String >? t, past its send.
         let whole = protocol(
             alloc::vec![
                 ProtocolSyntax::Send {
@@ -5359,7 +5359,8 @@ mod tests
             .and_then(|session| session.at(state(1_usize)))
             .expect("the state is a node of the protocol");
         let past = arena.value_type_session(past);
-        // mu t. ?A. t, and its unfolding ?A. mu t. ?A. t, each at its root.
+        // rec t => A >? t, and its unfolding A >? rec t => A >? t, each at its
+        // root.
         let rest = protocol(
             alloc::vec![
                 ProtocolSyntax::Mu(state(1_usize)),

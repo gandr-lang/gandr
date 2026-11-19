@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x3ad2f3030abb0fbf`
+- Grammar fingerprint: `0x89dcd73b0c01fa71`
 - Rules: 161 — 160 committed, 1 internal
-- Molds: 3124
+- Molds: 3117
 - Attributes: 22
 
 ## Reading a form
@@ -175,12 +175,12 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`extension_type`](../corpus/ledger/syntax/extension-type.gandr) | `TYPE .#{ ⦅ ‹identifier› ↦ EXPRESSION ⦅ , ‹identifier› ↦ EXPRESSION ⦆* ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ⦆ }` or `TYPE .#{ ⦅ ‹identifier› \|-> EXPRESSION ⦅ , ‹identifier› \|-> EXPRESSION ⦆* ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ⦆ }` | `type.path` | `extension_type` * | admitted | Other, VariableParam, Operator |
 | [`parenthesized_type`](../corpus/ledger/syntax/parenthesized-type.gandr) | `( TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? )` | `type.atom` | `parenthesized_type` | admitted | Other |
 | [`telescope_type`](../corpus/ledger/syntax/telescope-type.gandr) | `*{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `telescope_type` * | admitted | Other |
-| [`send_session_type`](../corpus/ledger/syntax/send-session-type.gandr) | `! TYPE ⦅ >> ‖ . ⦆ TYPE` | `type.arrow` | `send_session_type` | admitted | Operator, Other |
-| [`receive_session_type`](../corpus/ledger/syntax/receive-session-type.gandr) | `? TYPE ⦅ >> ‖ . ⦆ TYPE` | `type.arrow` | `receive_session_type` | admitted | Operator, Other |
+| [`send_session_type`](../corpus/ledger/syntax/send-session-type.gandr) | `TYPE >! TYPE` | `type.arrow` | `send_session_type` | admitted | Operator |
+| [`receive_session_type`](../corpus/ledger/syntax/receive-session-type.gandr) | `TYPE >? TYPE` | `type.arrow` | `receive_session_type` | admitted | Operator |
 | [`end_session_type`](../corpus/ledger/syntax/end-session-type.gandr) | `end` | `type.atom` | `end_session_type` | admitted | Keyword |
 | [`labelled_sum_type`](../corpus/ledger/syntax/labelled-sum-type.gandr) | `+{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `labelled_sum_type` * | admitted | Other |
 | [`lazy_record_type`](../corpus/ledger/syntax/lazy-record-type.gandr) | `&{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `lazy_record_type` * | admitted | Other |
-| [`mu_session_type`](../corpus/ledger/syntax/mu-session-type.gandr) | `⦅ rec ‹type_variable› => ‖ mu ‹type_variable› . ⦆ TYPE` | `type.arrow` | `mu_session_type` | admitted | Keyword, TypeVariable, Operator, Other |
+| [`mu_session_type`](../corpus/ledger/syntax/mu-session-type.gandr) | `rec ‹type_variable› => TYPE` | `type.arrow` | `mu_session_type` | admitted | Keyword, TypeVariable, Operator |
 | [`primitive_type`](../corpus/ledger/syntax/primitive-type.gandr) | `Any ‖ Unknown ‖ Never ‖ Boolean ‖ Integer ‖ u32 ‖ u64 ‖ i32 ‖ i64 ‖ u8 ‖ u16 ‖ i8 ‖ i16 ‖ usize ‖ isize ‖ f32 ‖ f64 ‖ Char ‖ String ‖ Symbol ‖ Unit ‖ Void ‖ Buf` | `type.atom` | `primitive_type` | admitted | TypeBuiltin |
 | [`unknown_type`](../corpus/ledger/syntax/unknown-type.gandr) | `?` | `type.atom` | `unknown_type` * | unadmitted | TypeBuiltin |
 | [`type_identifier`](../corpus/ledger/syntax/type-identifier.gandr) | `‹type_identifier›` | `type.atom` | `type_identifier` | admitted | Type |
@@ -282,7 +282,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`item`](../corpus/ledger/attributes/item.gandr) | a text or a tuple of texts |
 | [`inert`](../corpus/ledger/attributes/inert.gandr) | no payload |
 
-## Decisions — 107 of 161 rules decided at every token
+## Decisions — 109 of 161 rules decided at every token
 
 Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
 
@@ -428,14 +428,14 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `extension_type` | type | 15 | `.#{` | — | 2 |
 | `parenthesized_type` | type | 6 | `(` | — | 4 |
 | `telescope_type` | type | 6 | `*{` | — | 4 |
-| `send_session_type` | type | 3 | `!` | — | 0 |
-| `receive_session_type` | type | 3 | `?` | `unknown_type` | 0 |
+| `send_session_type` | type | 1 | `>!` | — | 0 |
+| `receive_session_type` | type | 1 | `>?` | — | 0 |
 | `end_session_type` | type | 1 | `end` | — | 0 |
 | `labelled_sum_type` | type | 6 | `+{` | — | 4 |
 | `lazy_record_type` | type | 6 | `&{` | — | 4 |
-| `mu_session_type` | type | 6 | `mu` `rec` | — | 0 |
+| `mu_session_type` | type | 3 | `rec` | — | 0 |
 | `primitive_type` | type | 23 | `Any` `Boolean` `Buf` `Char` `Integer` `Never` `String` `Symbol` `Unit` `Unknown` `Void` `f32` `f64` `i16` `i32` `i64` `i8` `isize` `u16` `u32` `u64` `u8` `usize` | — | 0 |
-| `unknown_type` | type | 1 | `?` | `receive_session_type` | 0 |
+| `unknown_type` | type | 1 | `?` | — | 0 |
 | `type_identifier` | type | 1 | `type_identifier` | `type_application` | 0 |
 | `type_variable` | type | 1 | `type_variable` | `moded_type`, `type_application` | 0 |
 | `moded_type` | type | 1 | `type_variable` | `type_application`, `type_variable` | 0 |
@@ -464,8 +464,8 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `;` | 137 | 25 | 0 |
 | `)` | 131 | 32 | 0 |
 | `(` | 127 | 31 | 5 |
-| `.` | 99 | 47 | 3 |
-| `type_variable` | 93 | 15 | 3 |
+| `.` | 96 | 44 | 3 |
+| `type_variable` | 92 | 15 | 3 |
 | `}` | 80 | 40 | 0 |
 | `]` | 79 | 40 | 0 |
 | `{` | 61 | 29 | 2 |
@@ -511,7 +511,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `escape_sequence` | 6 | 5 | 0 |
 | `string_fragment` | 6 | 5 | 0 |
 | `rec` | 5 | 5 | 2 |
-| `?` | 4 | 4 | 4 |
 | `@[` | 4 | 3 | 2 |
 | `Type` | 4 | 4 | 1 |
 | `def` | 4 | 4 | 2 |
@@ -521,6 +520,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `-F` | 3 | 3 | 3 |
 | `..` | 3 | 2 | 1 |
 | `>` | 3 | 3 | 2 |
+| `?` | 3 | 3 | 3 |
 | `@![` | 3 | 3 | 2 |
 | `at` | 3 | 3 | 1 |
 | `else` | 3 | 1 | 0 |
@@ -535,13 +535,11 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `via` | 3 | 2 | 0 |
 | `~>` | 3 | 2 | 0 |
 | ` ` | 2 | 2 | 2 |
-| `!` | 2 | 2 | 1 |
 | `#[` | 2 | 2 | 2 |
 | `&{` | 2 | 2 | 2 |
 | `*` | 2 | 2 | 2 |
 | `.#[` | 2 | 2 | 1 |
 | `:>` | 2 | 2 | 0 |
-| `>>` | 2 | 2 | 0 |
 | `break` | 2 | 2 | 2 |
 | `from` | 2 | 2 | 0 |
 | `hole_name` | 2 | 2 | 0 |
@@ -550,6 +548,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `⇝` | 2 | 2 | 1 |
 | `∷` | 2 | 2 | 1 |
 | `≃` | 2 | 2 | 1 |
+| `!` | 1 | 1 | 0 |
 | `!=` | 1 | 1 | 1 |
 | `#` | 1 | 1 | 0 |
 | `${` | 1 | 1 | 0 |
@@ -562,7 +561,9 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `.@` | 1 | 1 | 1 |
 | `<=` | 1 | 1 | 1 |
 | `==` | 1 | 1 | 1 |
+| `>!` | 1 | 1 | 1 |
 | `>=` | 1 | 1 | 1 |
+| `>?` | 1 | 1 | 1 |
 | `@` | 1 | 1 | 1 |
 | `Any` | 1 | 1 | 1 |
 | `Boolean` | 1 | 1 | 1 |
@@ -617,7 +618,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `loop` | 1 | 1 | 1 |
 | `match` | 1 | 1 | 1 |
 | `migrate` | 1 | 1 | 1 |
-| `mu` | 1 | 1 | 1 |
 | `obs` | 1 | 1 | 0 |
 | `offer` | 1 | 1 | 1 |
 | `offers` | 1 | 1 | 1 |

@@ -52,7 +52,7 @@ fn equivalence_sees_through_unfolding_and_payloads()
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
     let string = arena.value_type_base(BaseType::String);
-    // mu t. !Integer. t
+    // rec t => Integer >! t
     let folded = |arena: &mut CoreArena, payload| {
         session(
             arena,
@@ -70,7 +70,7 @@ fn equivalence_sees_through_unfolding_and_payloads()
     };
     let left = folded(&mut arena, integer);
     let right = folded(&mut arena, string);
-    // !Integer. mu t. !Integer. t, past its first send
+    // Integer >! rec t => Integer >! t, past its first send
     let unfolded = session(
         &mut arena,
         alloc::vec![

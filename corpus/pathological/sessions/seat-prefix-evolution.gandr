@@ -11,11 +11,11 @@ import std.session (Prefix);
 /// The seat's protocol and one that no longer offers `retire`, related by
 /// simulation.
 module Evolution where {
-  type SeatEnd = ?String. mu turn. +{
-    report : !String. &{next : turn, retire : end},
-    handoff : !String. end
+  type SeatEnd = String >? rec turn => +{
+    report : String >! &{next : turn, retire : end},
+    handoff : String >! end
   };
-  type Kept = ?String. mu turn. +{report : !String. &{next : turn}, handoff : !String. end};
+  type Kept = String >? rec turn => +{report : String >! &{next : turn}, handoff : String >! end};
   @[checks]
   def keep : Flow[.A = Type](SeatEnd, Kept) = Flow.sim SeatEnd Kept;
 }

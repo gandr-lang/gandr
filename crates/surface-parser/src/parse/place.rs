@@ -2688,9 +2688,9 @@ mod tests
             ),
             (
                 inner,
-                after(inner, "-> Run (?(Seat.Dispatch"),
-                "the inner `(` of a result type takes the `)`, though the outer `(` is the first \
-                 bracket left open",
+                after(inner, "-> Run ((Seat.Dispatch >? end)"),
+                "the outer `(` of a result type takes the `)` after its inner group, though the \
+                 inner group's payload could close first",
             ),
         ] {
             let parsed = parse(&pbg, SourceText::from(source)).unwrap();

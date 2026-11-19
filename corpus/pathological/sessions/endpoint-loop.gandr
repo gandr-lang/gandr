@@ -14,9 +14,9 @@
 
 /// A desk that runs its next pass before it receives the report.
 @[refuses("TypeMismatch")]
-def hasty(operator : mu open. &{
-  report : ?Integer. open,
-  retire : ?Integer. end
+def hasty(operator : rec open => &{
+  report : Integer >? open,
+  retire : Integer >? end
 }) -> [Partial] Unit =
   loop {
     offer operator {
@@ -27,9 +27,9 @@ def hasty(operator : mu open. &{
 
 /// A desk that leaves the loop with the endpoint open.
 @[refuses("ArmsDisagree")]
-def abandoned(operator : mu open. &{
-  report : ?Integer. open,
-  retire : ?Integer. end
+def abandoned(operator : rec open => &{
+  report : Integer >? open,
+  retire : Integer >? end
 }) -> [Partial] Unit =
   loop {
     offer operator {
@@ -41,9 +41,9 @@ def abandoned(operator : mu open. &{
 /// A desk that runs its next pass without acting on the endpoint when told
 /// to wait.
 @[refuses("TypeMismatch")]
-def idle(waiting : Bool, operator : mu open. &{
-  report : ?Integer. open,
-  retire : ?Integer. end
+def idle(waiting : Bool, operator : rec open => &{
+  report : Integer >? open,
+  retire : Integer >? end
 }) -> Unit =
   loop {
     match waiting where

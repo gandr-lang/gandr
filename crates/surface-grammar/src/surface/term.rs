@@ -4432,8 +4432,8 @@ fn primary_expressions(
     out.push(paren);
     // A type quoted where an expression stands, `type(T)`: the code of `T`.
     // No other expression opens with `type(`, so the quote reads the types an
-    // expression would misread — a receive `?(S). T`, where `?` opens a hole,
-    // and a labelled sum `+{ … }`, where `+{` opens an injection. The opener
+    // expression would misread, such as a labelled sum `+{ … }`, where `+{`
+    // opens an injection. The opener
     // is one tile, as `*{` and `${` are: the keyword `type` alone molds no
     // expression, so where a classifier is read it stays the stray keyword
     // that offers `Type`.

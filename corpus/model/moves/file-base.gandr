@@ -16,8 +16,8 @@
 /// `File` defines a handle protocol with a closer, a writer, and a line.
 module File :> *{
   type Handle = end,
-  type Closer = ?Handle. end,
-  type Writer = ?Handle. !Handle. end,
+  type Closer = Handle >? end,
+  type Writer = Handle >? Handle >! end,
   type Line,
   line : Line
 } where

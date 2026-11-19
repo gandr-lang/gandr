@@ -759,13 +759,16 @@ impl Band
                 Self::Application
             },
             ("u_type" | "at_type", _)
-            | ("send_session_type" | "receive_session_type", Position::First)
             | ("application_expression" | "type_application.juxtaposed", Position::Later) => {
                 Self::Atom
             },
             ("product_type", _) => Self::Bridge,
             ("sum_type", _) => Self::Product,
-            ("function_type", Position::First) => Self::Lazy,
+            // A protocol step's payload stands left of `>!` or `>?` as an
+            // arrow's domain stands left of `->`.
+            ("function_type" | "send_session_type" | "receive_session_type", Position::First) => {
+                Self::Lazy
+            },
             _ => Self::Loose,
         }
     }

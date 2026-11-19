@@ -699,7 +699,7 @@ fn a_session_is_a_code_only_at_its_root()
     );
 }
 
-/// The quote of `?P. end` at its root, for the payload type `payload`.
+/// The quote of `P >? end` at its root, for the payload type `payload`.
 ///
 /// # Specification
 /// trivial.

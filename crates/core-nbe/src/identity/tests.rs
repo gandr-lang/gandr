@@ -1068,7 +1068,7 @@ fn run_motive(
 #[test]
 fn a_recorded_run_moves_its_payloads_along_a_universe_path()
 {
-    // In the motive `y. Run(!El y. ?String. end)`, the sent payload is
+    // In the motive `y. Run(El y >! String >? end)`, the sent payload is
     // negated and the received string, whose type never reads the binder,
     // is kept.
     let mut core = CoreArena::new();
@@ -1214,7 +1214,7 @@ fn a_recorded_run_keeps_its_choices_and_moves_its_payloads()
 #[test]
 fn a_dialogue_and_its_web_read_back_as_written()
 {
-    // `!Bool. end` against its dual: the send, the receipt and both closes.
+    // `Bool >! end` against its dual: the send, the receipt and both closes.
     // A dialogue compares endpoint by endpoint, so the logs that close in
     // either order are one dialogue; a payload or an endpoint that differs is
     // another. A web is data and compares as the decomposition it is.
@@ -1311,7 +1311,7 @@ fn a_dialogue_and_its_web_read_back_as_written()
 #[test]
 fn a_decomposition_converts_with_the_web_it_reads_back_as()
 {
-    // `!Bool. end` against its dual, as above. A dialogue decomposes to the
+    // `Bool >! end` against its dual, as above. A dialogue decomposes to the
     // web its moves give: the logs that close in either order to one web, and
     // a dialogue that hears another payload to that web too, since a web reads
     // no payload. Two queued sends leave another web, and only a dialogue

@@ -7,9 +7,9 @@ import std.session (Run, Prefix);
 /// The seat's protocol over plain strings: a dispatch received, then reports
 /// and the choice to continue or retire, or a handoff that ends it.
 module Seat where
-  type SeatEnd = ?String. mu turn. +{
-    report : !String. &{next : turn, retire : end},
-    handoff : !String. end
+  type SeatEnd = String >? rec turn => +{
+    report : String >! &{next : turn, retire : end},
+    handoff : String >! end
   };
 
 /// The seat that took its task and reported has not finished: no run.

@@ -42,7 +42,10 @@ def miscounted() -> Unit =
 
 /// A recursive protocol followed by calling itself on the same endpoint.
 @[refuses("StageNotBelow")]
-def rec follow(operator : mu open. &{report : ?Integer. open, retire : ?Integer. end}) -> Unit =
+def rec follow(operator : rec open => &{
+  report : Integer >? open,
+  retire : Integer >? end
+}) -> Unit =
   offer operator {
     | report => { let next = recv operator; become follow[<] operator }
     | retire => { let last = recv operator; close operator }

@@ -2986,7 +2986,7 @@ fn run_motive(
 #[test]
 fn a_run_moves_its_payloads_along_a_path()
 {
-    // The motive `y. Run(+{ left: !El y. ?El y. end, right: !Int. end })`.
+    // The motive `y. Run(+{ left: El y >! El y >? end, right: Int >! end })`.
     let mut core = CoreArena::new();
     let five = integer(&mut core, Digits("5"));
     let six = integer(&mut core, Digits("6"));
@@ -3057,7 +3057,7 @@ fn a_run_moves_its_payloads_along_a_path()
         "the right run's payload never reads the binder and is kept"
     );
 
-    // `y. Run(mu t. !El y. t)`, `y. Run(y)` and `y. Prefix(y)` have no row.
+    // `y. Run(rec t => El y >! t)`, `y. Run(y)` and `y. Prefix(y)` have no row.
     let recursive = run_motive(
         &mut core,
         alloc::vec![

@@ -19,9 +19,9 @@
 //! # Session shape
 //!
 //! The message set is the projection of one binary session,
-//! `?Attach . !Hello . μX. (!Frame . X & !Stack . X & !Derivation . X &
-//! !Opened . X & !Activity . X & !Store . X & ?Trace . X & ?Open . X &
-//! ?Resync . X & ?Detach . end)`, so a typed endpoint can carry the same
+//! `Attach >? Hello >! rec X => (Frame >! X & Stack >! X & Derivation >! X &
+//! Opened >! X & Activity >! X & Store >! X & Trace >? X & Open >? X &
+//! Resync >? X & Detach >? end)`, so a typed endpoint can carry the same
 //! frames as its messages.
 //!
 //! # The frame

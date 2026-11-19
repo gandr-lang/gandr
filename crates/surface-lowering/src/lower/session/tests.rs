@@ -311,8 +311,8 @@ fn a_session_type_lowers_to_its_protocol()
 #[test]
 fn each_state_answers_where_it_is_written()
 {
-    let text = "def seat : ?String >> rec turn => +{ report : !String >> &{ next : turn, retire : end }, \
-                handoff : !Integer >> end } ;\n";
+    let text = "def seat : String >? rec turn => +{ report : String >! &{ next : turn, retire : end }, \
+                handoff : Integer >! end } ;\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(text), &mut arena);
     let written = |start: usize, end: usize| text.get(start .. end).unwrap_or_default();
@@ -343,11 +343,11 @@ fn each_state_answers_where_it_is_written()
             .map(|&(_, at)| at)
     };
     for continuation in [
-        "rec turn => +{ report : !String >> &{ next : turn, retire : end }, handoff : !Integer >> end }",
-        "+{ report : !String >> &{ next : turn, retire : end }, handoff : !Integer >> end }",
-        "!String >> &{ next : turn, retire : end }",
+        "rec turn => +{ report : String >! &{ next : turn, retire : end }, handoff : Integer >! end }",
+        "+{ report : String >! &{ next : turn, retire : end }, handoff : Integer >! end }",
+        "String >! &{ next : turn, retire : end }",
         "&{ next : turn, retire : end }",
-        "!Integer >> end",
+        "Integer >! end",
         "turn",
         "end",
     ] {
@@ -384,7 +384,7 @@ fn each_state_answers_where_it_is_written()
     };
     assert_eq!(
         named("report"),
-        at("!String >> &{ next : turn, retire : end }"),
+        at("String >! &{ next : turn, retire : end }"),
         "a select's label answers at the state it continues with"
     );
     assert_eq!(
@@ -395,7 +395,7 @@ fn each_state_answers_where_it_is_written()
     assert_eq!(
         named("turn"),
         at(
-            "rec turn => +{ report : !String >> &{ next : turn, retire : end }, handoff : !Integer >> end }"
+            "rec turn => +{ report : String >! &{ next : turn, retire : end }, handoff : Integer >! end }"
         ),
         "a `rec`'s variable answers at the state it binds"
     );
@@ -429,8 +429,8 @@ fn a_malformed_protocol_is_refused_where_it_is_written()
         LoweringRefusal::OutOfFragment {
             span: spelled_within(
                 source,
-                SourceText::from("nested : !Integer >> rec t => rec u => !Integer >> t"),
-                SourceText::from("rec t => rec u => !Integer >> t")
+                SourceText::from("nested : Integer >! rec t => rec u => Integer >! t"),
+                SourceText::from("rec t => rec u => Integer >! t")
             ),
             form: mu,
             sort: FragmentSort::ValueType,
@@ -439,8 +439,8 @@ fn a_malformed_protocol_is_refused_where_it_is_written()
         "nor one whose body is a `rec`, refused at the outer one"
     );
     for (name, written, continuation) in [
-        ("typed", "typed : !Integer >> Integer", "Integer"),
-        ("free", "free : !Integer >> t", "t"),
+        ("typed", "typed : Integer >! Integer", "Integer"),
+        ("free", "free : Integer >! t", "t"),
     ] {
         assert!(
             matches!(
@@ -456,7 +456,7 @@ fn a_malformed_protocol_is_refused_where_it_is_written()
         LoweringRefusal::MalformedForm {
             span: spelled_within(
                 source,
-                SourceText::from("positional : !Integer >> +{ end,"),
+                SourceText::from("positional : Integer >! +{ end,"),
                 SourceText::from("end")
             ),
             form: FormName::SELECT_SESSION_TYPE,
@@ -469,7 +469,7 @@ fn a_malformed_protocol_is_refused_where_it_is_written()
             refusal_of(&module, SurfaceName::from("twice")),
             LoweringRefusal::DuplicateDefinition { name, span, .. }
                 if name == SurfaceName::from("go")
-                    && span == spelled_within(source, SourceText::from("twice : !Integer >> &{ go : end, go"), SourceText::from("go"))
+                    && span == spelled_within(source, SourceText::from("twice : Integer >! &{ go : end, go"), SourceText::from("go"))
         ),
         "a label is offered once"
     );

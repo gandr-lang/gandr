@@ -404,7 +404,7 @@ fn add_type_rules(
     //
     // Where the supplied carrier is spelled as a universe — `Type`,
     // `Type[+, 1]` — the endpoints are codes of types, and they parse at the
-    // **type** sort: `Path[.A = Type](Unit + Unit, ?String. end)` reads its
+    // **type** sort: `Path[.A = Type](Unit + Unit, String >? end)` reads its
     // endpoints as the sum and the session type they spell, where the
     // expression sort would read `+` as addition and refuse the session type.
     // Any other carrier — a name, an application, a code — keeps expression
@@ -616,15 +616,10 @@ fn add_type_rules(
     // name and a session's continuation, a lowercase recursion variable after
     // its `.`, never reads as one.
     //
-    // A postfix `.` rather than a lead-tile path `T (. T)*` is what keeps a
-    // session payload unambiguous. In `!Seat.Report. end` the send's open `!`
-    // continues at the first `.`, so the bare spelling reads `Seat` alone as
-    // the payload and fails where the second `.` meets `end`;
-    // `!(Seat.Report). end` reads the path inside its parentheses, where no
-    // open form takes a `.`. A lead-tile path would claim that first `.`
-    // itself and read the bare spelling as a path payload, a second parse of
-    // the same text. The lowering refuses an operand that is not a module
-    // name or a path.
+    // A postfix `.` rather than a lead-tile path `T (. T)*` keeps a path one
+    // parse. A lead-tile path would claim the first `.` itself, and the same
+    // text would read two ways. The lowering refuses an operand that is not a
+    // module name or a path.
     //
     // An argument list after the type name applies the member, a module's
     // family reached through its name, `M.F(Integer)`, as a bare family's
@@ -851,31 +846,19 @@ fn add_type_rules(
         ),
     ));
     rules.push(telescope_type);
-    // A protocol step and the rest: `! T >> S` and `? T >> S`. The dotted
-    // spelling `! T . S` is read beside it until the corpus moves.
-    let step = || Regex::alt([tile(TileLabel(">>")), tile(TileLabel("."))]);
-    rules.push(rule(
-        RuleName("send_session_type"),
-        ty,
-        type_arrow,
-        Regex::seq([
-            tile(TileLabel("!")),
-            Regex::sort(ty),
-            step(),
-            Regex::sort(ty),
-        ]),
-    ));
-    rules.push(rule(
-        RuleName("receive_session_type"),
-        ty,
-        type_arrow,
-        Regex::seq([
-            tile(TileLabel("?")),
-            Regex::sort(ty),
-            step(),
-            Regex::sort(ty),
-        ]),
-    ));
+    // A protocol step and the rest: `T >! S` sends `T`, and `T >? S` receives
+    // it. Each is infix in the band of the arrow and groups to the right, so
+    // `Integer >! String >? end` reads the send first.
+    let step = |name: RuleName, infix: &'static str| {
+        rule(
+            name,
+            ty,
+            type_arrow,
+            Regex::seq([Regex::sort(ty), tile(TileLabel(infix)), Regex::sort(ty)]),
+        )
+    };
+    rules.push(step(RuleName("send_session_type"), ">!"));
+    rules.push(step(RuleName("receive_session_type"), ">?"));
     rules.push(rule(
         RuleName("end_session_type"),
         ty,
@@ -928,25 +911,15 @@ fn add_type_rules(
         AdaptationReason("read, not repeated: the session offer is the lazy record over labels `&{ … }` whose entries are session types, one former read in the zone its type is written in"),
     ));
     rules.push(lazy_record);
-    // The recursive protocol `rec X => S`; `mu X . S` is read beside it until
-    // the corpus moves.
+    // The recursive protocol `rec X => S`.
     rules.push(rule(
         RuleName("mu_session_type"),
         ty,
         type_arrow,
         Regex::seq([
-            Regex::alt([
-                Regex::seq([
-                    tile(TileLabel("rec")),
-                    tile(TileLabel("type_variable")),
-                    tile(TileLabel("=>")),
-                ]),
-                Regex::seq([
-                    tile(TileLabel("mu")),
-                    tile(TileLabel("type_variable")),
-                    tile(TileLabel(".")),
-                ]),
-            ]),
+            tile(TileLabel("rec")),
+            tile(TileLabel("type_variable")),
+            tile(TileLabel("=>")),
             Regex::sort(ty),
         ]),
     ));
@@ -988,15 +961,12 @@ fn add_type_rules(
     // `?`. The tree-sitter grammar produces no type atom here, so its
     // provenance is in `PBG_ONLY_KINDS`.
     //
-    // The tile is shared with two forms the sort menus and continuation
-    // discipline keep disjoint: the Expression-sort typed hole (`?` / `?name`)
-    // never competes at a Type slot, and the receive-session `?T.S` — whose
-    // `?` also molds at a Type frontier — wins exactly when a type, `.`, and a
-    // session tail follow, while a bare `?` (or one closed by `;`, `)`, `,`,
-    // or an infix operator) molds as this atom. This is the chosen alternative
-    // to overloading the term-hole spelling for the computation sort: the atom
-    // is structurally distinct from `hole`, so host escapes and nested
-    // conditional bodies keep their existing CST fields.
+    // The tile is shared with a form that the sort menus keep apart: the
+    // Expression-sort typed hole (`?` / `?name`) never competes at a Type
+    // slot, so a `?` at a Type slot molds as this atom. This is the chosen
+    // alternative to overloading the term-hole spelling for the computation
+    // sort: the atom is structurally distinct from `hole`, so host escapes
+    // and nested conditional bodies keep their existing CST fields.
     rules.push(rule(
         RuleName("unknown_type"),
         ty,

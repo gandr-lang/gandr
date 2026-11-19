@@ -1317,11 +1317,11 @@ fn a_session_entry_reads_the_select_and_the_offer()
     );
     for (source, form) in [
         (
-            "def menu : +U &{get : ! Integer . end, put : ? Integer . end} ;",
+            "def menu : +U &{get : Integer >! end, put : Integer >? end} ;",
             "offer_session_type",
         ),
         (
-            "def pick : +U +{ok : ! Integer . end} ;",
+            "def pick : +U +{ok : Integer >! end} ;",
             "select_session_type",
         ),
     ] {

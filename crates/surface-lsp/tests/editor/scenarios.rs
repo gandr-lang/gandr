@@ -2096,34 +2096,12 @@ mod sweeps
                         row.ancestor = 1_usize;
                     }
                     // A `?` the printer writes for an unknown stands alone; one
-                    // opening a word, or a parenthesised type the action's `.`
-                    // follows, `?(Seat.Dispatch). end`, is a session type's
-                    // receive.
-                    let receives = |rest: &str| match rest.chars().next() {
-                        Some('(') => {
-                            let mut depth = 0_usize;
-                            let closed = rest.char_indices().find(|&(_, glyph)| {
-                                if glyph == '(' {
-                                    depth = depth.saturating_add(1);
-                                }
-                                else if glyph == ')' {
-                                    depth = depth.saturating_sub(1);
-                                }
-                                depth == 0
-                            });
-                            closed.is_some_and(|(at, _)| {
-                                rest.get(at.saturating_add(1) ..)
-                                    .is_some_and(|after| after.starts_with('.'))
-                            })
-                        },
-                        Some(glyph) => glyph.is_alphabetic(),
-                        None => false,
-                    };
+                    // after `>` is a session type's receive step `A >? S`.
                     if hover.shown["contents"]["value"]
                         .as_str()
                         .is_some_and(|value| {
                             value.match_indices('?').any(|(at, _)| {
-                                !value.get(at.saturating_add(1) ..).is_some_and(receives)
+                                !value.get(.. at).is_some_and(|before| before.ends_with('>'))
                             })
                         })
                     {

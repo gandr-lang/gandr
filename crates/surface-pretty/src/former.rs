@@ -595,7 +595,8 @@ pub enum Former<'source, Node>
     },
     /// A session type: the protocol it reads, the state it stands at, and how
     /// many payload types its sends and receives read, which the source
-    /// answers by [`Source::component`] in slot order: `?A. mu t. +{l : S}`.
+    /// answers by [`Source::component`] in slot order:
+    /// `A >? rec t => +{l : S}`.
     Session
     {
         /// The protocol, shared by the session type and its peer's.

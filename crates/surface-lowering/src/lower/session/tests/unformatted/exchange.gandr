@@ -1,5 +1,5 @@
 def exchange(n : Integer) -> -F Unit = {
-let peer = fork (c : ?String >> rec turn => +{ report : !String >> &{ next : turn, retire : end }, handoff : !String >> end }) {
+let peer = fork (c : String >? rec turn => +{ report : String >! &{ next : turn, retire : end }, handoff : String >! end }) {
 let task = recv c;
 select c report;
 send c "progress";

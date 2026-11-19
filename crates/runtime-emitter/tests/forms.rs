@@ -802,7 +802,7 @@ fn forms() -> Vec<Form>
     ])
 }
 
-/// The web of one message on `!Integer. end` and both closes, as the IL
+/// The web of one message on `Integer >! end` and both closes, as the IL
 /// renders its pieces in preorder: the send, then the left's close beside the
 /// right's receipt and close, whichever endpoint the log closes first.
 const EXCHANGED: &str = "⟨web[series(2), event(left, 0), parallel(2), event(left, 1), series(2), \

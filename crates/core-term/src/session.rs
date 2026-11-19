@@ -8,11 +8,11 @@
 //!
 //! |former|written|the endpoint that holds it|
 //! |---|---|---|
-//! |send|`!A. S`|sends a value of type `A`, continues as `S`|
-//! |receive|`?A. S`|receives a value of type `A`, continues as `S`|
+//! |send|`A >! S`|sends a value of type `A`, continues as `S`|
+//! |receive|`A >? S`|receives a value of type `A`, continues as `S`|
 //! |select|`+{ l : S, … }`|chooses one label, continues as its branch|
 //! |offer|`&{ l : S, … }`|the peer chooses; every label is handled|
-//! |recursion|`mu t. S`|the fixed point, unfolded explicitly|
+//! |recursion|`rec t => S`|the fixed point, unfolded explicitly|
 //! |end|`end`|closed|
 //!
 //! [`ValueType::Session`] is the endpoint type: a [`Protocol`] graph, the
@@ -44,7 +44,7 @@
 //! # Contractivity at construction
 //!
 //! [`Protocol::new`] refuses a recursion whose body is another recursion or a
-//! variable (`mu t. t`), a variable that names no enclosing binder, an edge
+//! variable (`rec t => t`), a variable that names no enclosing binder, an edge
 //! that names no node, a node reached twice and a node never reached, as
 //! `gandr-core-session`'s engine does for its own syntax; a validated
 //! protocol's head is therefore found in at most three steps.
@@ -220,7 +220,7 @@ impl From<RecursionIndex> for usize
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ProtocolSyntax
 {
-    /// `!A. S`: send the payload in `payload`, continue at `next`.
+    /// `A >! S`: send the payload in `payload`, continue at `next`.
     Send
     {
         /// The payload type's slot.
@@ -228,7 +228,7 @@ pub enum ProtocolSyntax
         /// The continuation.
         next: ProtocolState,
     },
-    /// `?A. S`: receive the payload in `payload`, continue at `next`.
+    /// `A >? S`: receive the payload in `payload`, continue at `next`.
     Receive
     {
         /// The payload type's slot.
@@ -242,7 +242,7 @@ pub enum ProtocolSyntax
     Offer(BTreeMap<FieldLabel, ProtocolState>),
     /// `end`: closed.
     End,
-    /// `mu t. S`: the fixed point of its body.
+    /// `rec t => S`: the fixed point of its body.
     Mu(ProtocolState),
     /// `t`: the enclosing `mu` the index counts out to.
     Recur(RecursionIndex),
@@ -290,7 +290,7 @@ pub enum ProtocolError
     RepeatedNode(ProtocolState),
     /// A recursion variable counts past every enclosing `mu`.
     UnboundRecursion(ProtocolState),
-    /// A `mu` whose body is a `mu` or a recursion variable: `mu t. t`.
+    /// A `mu` whose body is a `mu` or a recursion variable: `rec t => t`.
     NonContractive(ProtocolState),
     /// A node the root does not reach.
     UnreachableNode(ProtocolState),

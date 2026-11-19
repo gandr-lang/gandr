@@ -12,7 +12,7 @@
 /// A protocol that sends one string and ends.
 module Ask where
   /// The protocol sends one string and ends.
-  type Asking = !String. end;
+  type Asking = String >! end;
 
 /// A run of the protocol, the run type unimported.
 @[refuses("UnresolvedTypeHead")]

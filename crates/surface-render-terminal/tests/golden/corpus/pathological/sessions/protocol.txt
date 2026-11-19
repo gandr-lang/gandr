@@ -2,13 +2,13 @@ error[SessionMismatch]: the endpoint's protocol expects a send here, not a recei
   ╭▸ corpus/pathological/sessions/protocol.gandr:4:3
   │
 2 │ ┌ def desk_receives_first() -> Unit =
-3 │ │   let desk = fork (seat : ?String. end) { let task = recv seat; close seat };
+3 │ │   let desk = fork (seat : String >? end) { let task = recv seat; close seat };
   │ │   ┬──
   │ │   │
   │ │   the endpoint was opened by this fork
   │ │   checked against `-F Unit`; while checking the rest of this fork's parent
 4 │ │   let task = recv desk
-  │ │   ━━━ an action the endpoint's state does not admit: found `!String >> end`
+  │ │   ━━━ an action the endpoint's state does not admit: found `String >! end`
 5 │ │   close desk
   │ └────────────┘ checked against `() -> Unit`; while checking the body of this thunk
   │

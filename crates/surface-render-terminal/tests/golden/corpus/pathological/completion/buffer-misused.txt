@@ -94,7 +94,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
 76 │ ││     r.free b
 77 │ ││   } with {
    ┆ ┆┆
-80 │ ││       let ring = fork (kernel : ?Buf. end) {
+80 │ ││       let ring = fork (kernel : Buf >? end) {
    │ ││       ─── checked against `-F Unit`; while checking the child this forks
 81 │ ││         let held = recv kernel;
    │ ││         ━━━ a buffer never handed back
@@ -118,7 +118,7 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
  95 │ ││     r.free b
  96 │ ││   } with {
     ┆ ┆┆
- 99 │ ││       let ring = fork (kernel : ?Buf. !Buf. !Buf. end) {
+ 99 │ ││       let ring = fork (kernel : Buf >? Buf >! Buf >! end) {
     │ ││       ─── checked against `-F Unit`; while checking the child this forks
 100 │ ││         let held = recv kernel;
     │ ││         ─── checked against `-F Unit`; while checking the rest of this receive's block

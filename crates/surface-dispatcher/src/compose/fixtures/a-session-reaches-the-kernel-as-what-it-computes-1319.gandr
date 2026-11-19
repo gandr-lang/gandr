@@ -3,7 +3,7 @@ def finished() -> Unit = {
   close desk
 };
 def delivered() -> Unit = {
-  let desk = fork (seat : !Integer. end) { send seat 1; close seat };
+  let desk = fork (seat : Integer >! end) { send seat 1; close seat };
   let n = recv desk;
   close desk
 };

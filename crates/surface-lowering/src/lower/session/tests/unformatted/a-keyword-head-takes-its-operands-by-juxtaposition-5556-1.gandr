@@ -1,5 +1,5 @@
 def spoken() -> -F Unit = {
-  let desk = fork (seat : ?Integer >> !Integer >> end) {
+  let desk = fork (seat : Integer >? Integer >! end) {
     let asked = recv(seat);
     send seat (asked + 1);
     close(seat)

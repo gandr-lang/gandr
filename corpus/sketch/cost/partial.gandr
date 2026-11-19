@@ -22,7 +22,7 @@ import "./amortised.gandr";
 
 /// A seat's reports until it retires: a report or a retirement, then the
 /// recursion point again.
-type Reports = mu open. &{report : ?Integer. open, retire : ?Integer. end};
+type Reports = rec open => &{report : Integer >? open, retire : Integer >? end};
 
 /// A desk queues each report for a worker until the seat retires. Each pass
 /// costs at most two, amortised over the queue's back list.

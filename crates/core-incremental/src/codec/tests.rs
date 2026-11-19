@@ -1069,8 +1069,8 @@ fn session_nodes_persist_their_protocol_and_children()
     let index = NodeIndex::from;
     let state = ProtocolState::from;
     let label = |text: &str| gandr_core_term::FieldLabel::from(alloc::string::String::from(text));
-    // ?A. mu t. +{ report : !B. &{ next : t, retire : end }, handoff : !A. end
-    // }
+    // A >? rec t => +{ report : B >! &{ next : t, retire : end }, handoff :
+    // A >! end }
     let protocol = Protocol::new(
         vec![
             ProtocolSyntax::Receive {
@@ -1156,7 +1156,7 @@ fn session_nodes_persist_their_protocol_and_children()
         assert_eq!(reader.finish(), Ok(()));
     }
 
-    // mu t. t, written by hand: the reader validates and refuses it.
+    // rec t => t, written by hand: the reader validates and refuses it.
     let mut bytes = CheckpointBytes::default();
     let mut writer = Writer { sink: &mut bytes };
     writer.tag(Tag(0x60));

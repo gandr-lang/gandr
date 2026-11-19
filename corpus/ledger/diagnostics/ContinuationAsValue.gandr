@@ -6,7 +6,7 @@ import std.process;
 
 /// A task's join protocol and the path it reads.
 module Cancel :> *{
-  type Join = !String. end,
+  type Join = String >! end,
   notes : String
 } where {
   /// The path a task reads.

@@ -4,15 +4,15 @@ def parameter_as_endpoint(rounds : Integer) -> Unit =
 
 @[refuses("OutOfFragment.NonContractive")]
 def recursion_before_any_action() -> Unit =
-  let desk = fork (seat : mu turn. turn) { close seat };
+  let desk = fork (seat : rec turn => turn) { close seat };
   close desk
 
 @[refuses("OutOfFragment.WrongSort")]
 def value_type_as_continuation() -> Unit =
-  let desk = fork (seat : !Integer. Integer) { close seat };
+  let desk = fork (seat : Integer >! Integer) { close seat };
   close desk
 
 @[refuses("MalformedForm")]
 def branch_without_label() -> -F Unit =
-  let desk = fork (seat : !Integer. +{end, end}) { close seat };
+  let desk = fork (seat : Integer >! +{end, end}) { close seat };
   close desk

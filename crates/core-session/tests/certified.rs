@@ -70,7 +70,7 @@ fn codes(arena: &mut TermArena) -> PayloadCodes
     )
 }
 
-/// `SeatEnd` with `pause : !Report.turn` added to the recursive selection.
+/// `SeatEnd` with `pause : Report >! turn` added to the recursive selection.
 ///
 /// # Specification
 /// trivial.

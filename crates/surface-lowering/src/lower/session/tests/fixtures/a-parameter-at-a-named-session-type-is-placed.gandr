@@ -1,6 +1,6 @@
-module Base where { type Ask = ?Integer >> end; }
+module Base where { type Ask = Integer >? end; }
 module Gate :> *{type T} where { type T = end; }
-type Local = !Integer >> end;
+type Local = Integer >! end;
 type Again = Local;
 type Count = Integer;
 def asked(seat : Base.Ask) -> Unit = { let n = recv seat; close seat };
