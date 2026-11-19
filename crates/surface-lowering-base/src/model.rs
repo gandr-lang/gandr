@@ -499,6 +499,27 @@ pub struct Presentation
     /// them. Each sort carries a special commutative Frobenius algebra. A
     /// circuit rule may merge and split its wires.
     pub frobenius: BTreeSet<Name>,
+    /// Each port whose sort names no sort of the signature and no index, in
+    /// written order: a name that the scope of the declaring source resolves
+    /// once it stands (#8139).
+    pub ported: Vec<PortedName>,
+}
+
+/// A port's sort that a theory's signature does not declare, kept as written
+/// until the scope of the declaring source resolves it: `Integer` in `oper
+/// read : () --> Integer`.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PortedName
+{
+    /// The operation whose port it is.
+    pub operation: Name,
+    /// The sort as written.
+    pub sort: Name,
+    /// Where the sort is written.
+    pub span: ByteSpan,
 }
 
 /// A law a theory states as the path type a model proves it at: `law sym :

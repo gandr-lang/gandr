@@ -10775,8 +10775,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ) -> Result<Maybe<TypeComponent<'source>, named::Absent>, LoweringRefusal<'source>>
     {
         let unresolved = Maybe::Absent(named::Absent::Unresolved);
-        if let Some(&Maybe::Present(seen)) = self.cx().scopes.get(site.at.node) {
-            return Ok(self
+        if let Some(&Maybe::Present(seen)) = self.cx().scopes.get(site.at.node)
+            && let Some(stated) = self
                 .cx()
                 .collected
                 .structures
@@ -10784,7 +10784,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 .and_then(|structure| structure.types.get(.. seen.before))
                 .and_then(|visible| visible.iter().rev().find(|stated| stated.name == name))
                 .copied()
-                .map_or(unresolved, Maybe::Present));
+        {
+            return Ok(Maybe::Present(stated));
         }
         let cx = self.cx_mut();
         if let Maybe::Present(_) = cx.scope.resolve(site.reading.frame(), name, &mut cx.fuel)? {
