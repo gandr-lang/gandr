@@ -1,0 +1,89 @@
+test: encoding::tests::the_widest_rewrite_key_fills_its_bound_7414
+package: gandr-kernel-core-base
+command: mise run debug:test gandr-kernel-core-base encoding::tests::the_widest_rewrite_key_fills_its_bound_7414 --break RewriteKey>::from_encoding$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-kernel-core-base/7f25ed07b400104b/out/gandr_kernel_core_base-7f25ed07b400104b"
+Current executable set to 'target/debug-trace/debug/build/gandr-kernel-core-base/7f25ed07b400104b/out/gandr_kernel_core_base-7f25ed07b400104b' (arm64).
+(lldb) settings set -- target.run-args  "encoding::tests::the_widest_rewrite_key_fills_its_bound_7414" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex RewriteKey>::from_encoding$
+Breakpoint 1: where = gandr_kernel_core_base-7f25ed07b400104b`<gandr_kernel_core_base::encoding::RewriteKey>::from_encoding + 40 at encoding.rs:6488:5, address = 0x00000001000417b0
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_kernel_core_base-7f25ed07b400104b`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x0000000100313ea8
+(lldb) run
+
+running 1 test
+test encoding::tests::the_widest_rewrite_key_fills_its_bound_7414 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 21221 launched: 'target/debug-trace/debug/build/gandr-kernel-core-base/7f25ed07b400104b/out/gandr_kernel_core_base-7f25ed07b400104b' (arm64)
+Process 21221 stopped
+* thread #2, name = 'encoding::tests::the_widest_rewrite_key_fills_its_bound_7414', stop reason = breakpoint 1.1
+       frame #0: 0x00000001000417b0 gandr_kernel_core_base-7f25ed07b400104b`<gandr_kernel_core_base::encoding::RewriteKey>::from_encoding(encoding={__0:size=27}) at encoding.rs:6488:5
+   6485	    /// - hypothesis: L3 — the widest key of the form fills the bound exactly,
+   6486	    ///   and one word more is refused.
+   6487	    /// - witness: `encoding::tests::the_widest_rewrite_key_fills_its_bound_7414`
+-> 6488	    #[spec(ensures: |ret| match ret {
+    	    ^
+   6489	        Maybe::Present(ref key) => key.as_ref() == encoding.as_ref(),
+   6490	        Maybe::Absent(rewrite_key::Absent::Overlong) => encoding.0.len() > REWRITE_KEY_WORDS,
+   6491	        Maybe::Absent(rewrite_key::Absent::Off | rewrite_key::Absent::Unrecorded) => false,
+(lldb) bt 24
+* thread #2, name = 'encoding::tests::the_widest_rewrite_key_fills_its_bound_7414', stop reason = breakpoint 1.1
+   * frame #0: 0x00000001000417b0 gandr_kernel_core_base-7f25ed07b400104b`<gandr_kernel_core_base::encoding::RewriteKey>::from_encoding(encoding={__0:size=27}) at encoding.rs:6488:5
+     frame #1: 0x000000010003ab14 gandr_kernel_core_base-7f25ed07b400104b`gandr_kernel_core_base::encoding::encode_rewrite::{closure#0} at encoding.rs:6616:15
+     frame #2: 0x00000001000420d0 gandr_kernel_core_base-7f25ed07b400104b`anodized::__::eval_once::<quenchant_shape::shape::Maybe<gandr_kernel_core_base::encoding::RewriteKey, gandr_kernel_core_base::encoding::rewrite_key::Absent>, gandr_kernel_core_base::encoding::encode_rewrite::{closure#0}>(closure={_ref__table:{base:0, stream:{0:size=3}, spans:size=1, interned:{slots:size=16, len:1}, placed:{values:{pages:size=1}, computations:{pages:size=0}, value_types:{pages:size=0}, comp_types:{pages:size=0}, count:{0:1}, layers:size=0}, seen:{0:0}, forked:{0:0}, forked_at:{values:0, computations:0, value_types:0, comp_types:0}, records:1, floor:0, scratch:{0:size=0}, members:size=0, tasks:size=0, constants:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=1}, naming:On({column:size=1, payload:{0:size=2}, members:size=0, at:size=0, positions:size=0, ends:size=0, key:{0:"-l\xf7\xf2k\n\x81\xe1p\U00000016\x82\xde\a\xe5\b\xab\xbe\x94\xa9\U00000011\x83hY\U00000006\x98K\xfa\xd9D\xb8\xb3\xf1"}})}, _ref__arena:{values:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=1}, value_supports:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=1}, computations:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=0}, computation_supports:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=0}, value_types:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=0}, value_type_supports:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=0}, comp_types:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=0}, comp_type_supports:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=0}, unrelated:strong=1, weak=0, truncations:{stamp:{0:0}, values:{0:size=0}, computations:{0:size=0}, value_types:{0:size=0}, comp_types:{0:size=0}}}, _ref__goal:Abstract{subject:Value({0:0}), depth:{0:4294967295}, constant:{0:0}, index:{0:4294967295}}}) at __.rs:32:5 [inlined]
+     frame #3: 0x00000001000420b0 gandr_kernel_core_base-7f25ed07b400104b`gandr_kernel_core_base::encoding::encode_rewrite(table={base:0, stream:{0:size=3}, spans:size=1, interned:{slots:size=16, len:1}, placed:{values:{pages:size=1}, computations:{pages:size=0}, value_types:{pages:size=0}, comp_types:{pages:size=0}, count:{0:1}, layers:size=0}, seen:{0:0}, forked:{0:0}, forked_at:{values:0, computations:0, value_types:0, comp_types:0}, records:1, floor:0, scratch:{0:size=0}, members:size=0, tasks:size=0, constants:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=1}, naming:On({column:size=1, payload:{0:size=2}, members:size=0, at:size=0, positions:size=0, ends:size=0, key:{0:"-l\xf7\xf2k\n\x81\xe1p\U00000016\x82\xde\a\xe5\b\xab\xbe\x94\xa9\U00000011\x83hY\U00000006\x98K\xfa\xd9D\xb8\xb3\xf1"}})}, arena={values:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=1}, value_supports:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=1}, computations:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=0}, computation_supports:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=0}, value_types:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=0}, value_type_supports:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=0}, comp_types:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=0}, comp_type_supports:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=0}, unrelated:strong=1, weak=0, truncations:{stamp:{0:0}, values:{0:size=0}, computations:{0:size=0}, value_types:{0:size=0}, comp_types:{0:size=0}}}, goal=Abstract{subject:Value({0:0}), depth:{0:4294967295}, constant:{0:0}, index:{0:4294967295}}) at encoding.rs:6548:1
+     frame #4: 0x00000001001972a4 gandr_kernel_core_base-7f25ed07b400104b`gandr_kernel_core_base::encoding::tests::the_widest_rewrite_key_fills_its_bound_7414 at encoding.rs:8727:22
+     frame #5: 0x000000010018acc0 gandr_kernel_core_base-7f25ed07b400104b`gandr_kernel_core_base::encoding::tests::the_widest_rewrite_key_fills_its_bound_7414::{closure#0}((null)={}) at encoding.rs:8692:53
+     frame #6: 0x00000001000cccb0 gandr_kernel_core_base-7f25ed07b400104b`<gandr_kernel_core_base::encoding::tests::the_widest_rewrite_key_fills_its_bound_7414::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #7: 0x00000001001bb2d8 gandr_kernel_core_base-7f25ed07b400104b`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #8: 0x00000001001bb2d0 gandr_kernel_core_base-7f25ed07b400104b`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #9: 0x00000001001c67f4 gandr_kernel_core_base-7f25ed07b400104b`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #10: 0x00000001001c67e8 gandr_kernel_core_base-7f25ed07b400104b`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #11: 0x00000001001c67e8 gandr_kernel_core_base-7f25ed07b400104b`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #12: 0x00000001001c67e4 gandr_kernel_core_base-7f25ed07b400104b`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #13: 0x00000001001c67e4 gandr_kernel_core_base-7f25ed07b400104b`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #14: 0x00000001001c67e4 gandr_kernel_core_base-7f25ed07b400104b`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #15: 0x00000001001c67d8 gandr_kernel_core_base-7f25ed07b400104b`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #16: 0x00000001001c11e8 gandr_kernel_core_base-7f25ed07b400104b`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+     frame #17: 0x00000001001c1184 gandr_kernel_core_base-7f25ed07b400104b`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #18: 0x00000001001c8cb8 gandr_kernel_core_base-7f25ed07b400104b`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #19: 0x00000001001c8ca8 gandr_kernel_core_base-7f25ed07b400104b`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #20: 0x00000001001c8ca8 gandr_kernel_core_base-7f25ed07b400104b`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [opt] [inlined]
+     frame #21: 0x00000001001c8ca4 gandr_kernel_core_base-7f25ed07b400104b`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #22: 0x00000001001c8ca4 gandr_kernel_core_base-7f25ed07b400104b`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [opt] [inlined]
+     frame #23: 0x00000001001c8ca4 gandr_kernel_core_base-7f25ed07b400104b`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [opt] [inlined]
+(lldb) frame variable --depth 3
+(gandr_kernel_core_base::encoding::ContentEncoding *) encoding = 0x00000001700058c8 {__0:size=27}
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x000000010003ab14 gandr_kernel_core_base-7f25ed07b400104b`gandr_kernel_core_base::encoding::encode_rewrite::{closure#0} at encoding.rs:6616:15
+   6613	            words.put_word(EncodedWord(u64::from(u32::from(index))));
+   6614	        },
+   6615	    }
+-> 6616	    let key = RewriteKey::from_encoding(&words);
+    	              ^
+   6617	    table.scratch = words;
+   6618	    key
+   6619	}
+(lldb) frame variable --depth 3
+(gandr_kernel_core_base::encoding::ContentTable) table = {base:0, stream:{0:size=3}, spans:size=1, interned:{slots:size=16, len:1}, placed:{values:{pages:size=1}, computations:{pages:size=0}, value_types:{pages:size=0}, comp_types:{pages:size=0}, count:{0:1}, layers:size=0}, seen:{0:0}, forked:{0:0}, forked_at:{values:0, computations:0, value_types:0, comp_types:0}, records:1, floor:0, scratch:{0:size=0}, members:size=0, tasks:size=0, constants:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=1}, naming:On({column:size=1, payload:{0:size=2}, members:size=0, at:size=0, positions:size=0, ends:size=0, key:{0:"-l\xf7\xf2k\n\x81\xe1p\U00000016\x82\xde\a\xe5\b\xab\xbe\x94\xa9\U00000011\x83hY\U00000006\x98K\xfa\xd9D\xb8\xb3\xf1"}})}
+(gandr_kernel_term::arena::TermArena) arena = {values:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=1}, value_supports:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=1}, computations:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=0}, computation_supports:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=0}, value_types:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=0}, value_type_supports:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=0}, comp_types:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=0}, comp_type_supports:{frozen:None, tail:size=0, ends:"\xff\xff\xff\xff\xff", frozen_len:0, own:size=0}, unrelated:strong=1, weak=0, truncations:{stamp:{0:0}, values:{0:size=0}, computations:{0:size=0}, value_types:{0:size=0}, comp_types:{0:size=0}}}
+(gandr_kernel_core_base::encoding::RewriteGoal) goal = Abstract{subject:Value({0:0}), depth:{0:4294967295}, constant:{0:0}, index:{0:4294967295}} {
+  subject = Value({0:0}) {
+    0 = {0:0}
+  }
+  depth = {0:4294967295}
+  constant = {0:0}
+  index = {0:4294967295}
+}
+(gandr_kernel_core_base::encoding::ContentId) subject = {0:0}
+(core::option::Option<gandr_kernel_core_base::encoding::ContentId>) replacement = None
+(gandr_kernel_core_base::encoding::RecordName<gandr_kernel_core_base::encoding::Exact>) subject = {0:"\U00000018\xb9\x9a\x97Kӽ\xd3\xdb\xeao?\xa7\U0000000e\xfb\U0000001e\xfe܌\U00000018\xacd\x98~\xfd\U0000001d\xe4h\xe5\xc699", 1:{}}
+(core::option::Option<gandr_kernel_core_base::encoding::RecordName<gandr_kernel_core_base::encoding::Exact>>) replacement = None
+(gandr_kernel_core_base::encoding::ContentEncoding) words = {0:size=27}
