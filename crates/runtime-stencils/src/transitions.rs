@@ -33,6 +33,9 @@
 //! - `vault:01a1813c-69c4-7402-97c9-fd16b5893f9f` — exemplar: chapter 10's
 //!   `ACCU` (Figure 10.2): a force or an application of an accumulator answers
 //!   the longer accumulator, which `stencil_accumulate` allocates.
+//! - `vault:01a1e7b4-8c77-7a81-9165-ff37ea870424` — newest: the IO direction (§
+//!   io-direction-block) decides one transition that enters a block of machine
+//!   code on both tiers, which `stencil_block` is.
 
 use crate::Runtime;
 use crate::Word;
