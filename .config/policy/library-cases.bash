@@ -28,6 +28,28 @@ fail() {
   echo "  got: $2"
   exit 1
 }
+
+# A revision root can survive an interrupted cache restore without its
+# checkout. The library script must replace that root before it returns it.
+fixture=$scratch/library-fixture
+git init --quiet "$fixture"
+git -C "$fixture" config user.email test@example.invalid
+git -C "$fixture" config user.name test
+mkdir -p "$fixture/crates/quenchant-dylints"
+: > "$fixture/Cargo.toml"
+: > "$fixture/crates/quenchant-dylints/Cargo.toml"
+git -C "$fixture" add .
+git -C "$fixture" commit --quiet -m fixture
+revision=$(git -C "$fixture" rev-parse HEAD)
+origin=$scratch/quenchant.git
+git clone --quiet --bare "$fixture" "$origin"
+cache=$scratch/library-cache
+mkdir -p "$cache/gandr/quenchant/$revision"
+global=$scratch/gitconfig
+git config --file "$global" url."file://$origin".insteadOf https://github.com/gandr-lang/quenchant
+fixture_library=$(GIT_CONFIG_GLOBAL="$global" XDG_CACHE_HOME="$cache" "$PWD/.config/policy/library.bash" "$revision")
+[[ -d "$fixture_library/crates/quenchant-dylints" ]] \
+  || fail "#8068: the library replaces an incomplete revision root" "$fixture_library has no crates/quenchant-dylints"
 shopt -s nullglob
 names=("${CARGO_HOME:-$HOME/.cargo}"/git/checkouts/quenchant-*)
 shopt -u nullglob
