@@ -1716,6 +1716,37 @@ fn a_pub_at_the_margin_closes_a_broken_container_6323() -> Result<(), Failure>
     Ok(())
 }
 
+/// A layout separator that no form takes falls away, and the members after a
+/// lost `where` owe nothing for it.
+///
+/// A `module` that lost its `where` reads its members after the brace. Each
+/// member whose body a layout block ends takes a separator that no form
+/// continues, and each such separator owed a tile of its own at the line
+/// break after the body (#7881). The module still owes its own repair: at
+/// its name, at its brace and at its close.
+#[test]
+fn a_layout_separator_that_no_form_takes_owes_nothing_7881() -> Result<(), Failure>
+{
+    let damaged = include_str!(
+        "acceptance/unformatted/a-layout-separator-that-no-form-takes-owes-nothing-7881.gandr"
+    );
+    let result = parse(built(), SourceText::from(damaged))?;
+    let name = damaged.find("Counts").ok_or("the module writes its name")?;
+    let brace = damaged.find('{').ok_or("the module writes its brace")?;
+    let close = damaged.rfind('}').ok_or("the module writes its close")?;
+    let owed: Vec<usize> = result
+        .obligations()
+        .iter()
+        .map(|obligation| usize::from(obligation.span.start()))
+        .collect();
+    assert_eq!(
+        owed,
+        [name, brace, close],
+        "the members' separators owe nothing, and the module owes its own repair"
+    );
+    Ok(())
+}
+
 /// A closer reaches its open partner across one free form, and a bracketed
 /// form of its family further down keeps the closer it owns.
 ///

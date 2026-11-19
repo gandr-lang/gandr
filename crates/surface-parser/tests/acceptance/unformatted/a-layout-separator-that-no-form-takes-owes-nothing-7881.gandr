@@ -1,0 +1,7 @@
+module Counts {
+  def one() -> Integer =
+    1
+  def two() -> Integer =
+    2
+  def three() -> Integer = 3;
+}
