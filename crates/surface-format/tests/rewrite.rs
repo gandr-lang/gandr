@@ -1568,6 +1568,34 @@ fn a_rewrite_with_parser_obligations_is_withdrawn_6681()
     assert_eq!(formatted.into_text(), source);
 }
 
+/// A rewrite that gains a parser obligation withdraws only the declaration
+/// whose form holds the obligation. The declaration beside it keeps its
+/// rewrite.
+#[test]
+fn an_obligation_withdraws_only_the_form_that_holds_it_8085()
+{
+    let grammar = grammar();
+    let source = include_str!(
+        "rewrite/unformatted/an-obligation-withdraws-only-the-form-that-holds-it-8085.gandr"
+    );
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Sugared,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(formatted.withdrawn(), [Withdrawal {
+        declaration: String::from("second"),
+        span: ByteSpan::new(ByteOffset::from(60_usize), ByteOffset::from(141_usize))
+            .expect("a span"),
+        reason: Withdrawn::Obligations,
+    }]);
+    assert_eq!(
+        formatted.into_text(),
+        "def first(a : Type, x : a, p : Path[.A = a] x x) -> a = x;\n\ndef second(a : Type, x : a, p : Path[.A = Type](Path[.A = a](x, x), _)) -> a = x;\n"
+    );
+}
+
 /// The explicit form writes the refused declaration as a signature and a
 /// definition, so its refusal moves from `24..37` to `37..50`. Both copy the
 /// one leaf `selfComposite` of the source, so the refusal keeps its site, and
