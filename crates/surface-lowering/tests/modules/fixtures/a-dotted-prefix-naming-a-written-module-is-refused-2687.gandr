@@ -1,0 +1,7 @@
+module Gandr where {
+  def x : Integer;
+  def x = 1;
+}
+theory Gandr.Shape where {
+  oper label : String;
+}
