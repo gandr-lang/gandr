@@ -16,6 +16,7 @@
 //! | an accumulator observed | `accumulate` |
 //! | an observation's continuation loaded | `pushf`, `push_apply`, `push_force`, `push_fields`, `shrink`, `shrink_top`, `mark` |
 //! | a loop | `jump` |
+//! | a block of machine code entered | `block` |
 //! | an exit | `heap_exhausted`, `frames_exhausted`, `fuel_exhausted`, `stuck` |
 //!
 //! An observation checks that it observes a closure: an opaque constant, or
@@ -32,6 +33,9 @@
 //! - `vault:01a1813c-69c4-7402-97c9-fd16b5893f9f` — exemplar: chapter 10's
 //!   `ACCU` (Figure 10.2): a force or an application of an accumulator answers
 //!   the longer accumulator, which `stencil_accumulate` allocates.
+//! - `vault:01a1e7b4-8c77-7a81-9165-ff37ea870424` — newest: the IO direction (§
+//!   io-direction-block) decides one transition that enters a block of machine
+//!   code on both tiers, which `stencil_block` is.
 
 use crate::Runtime;
 use crate::Word;
@@ -2188,6 +2192,119 @@ pub extern "rust-preserve-none" fn stencil_call(
     }
     // A refusal observed no value: the stuck exit's word is zero.
     become hole_stuck(runtime, top, frames, environment, Word::ZERO)
+}
+
+/// A block of machine code under the platform's C convention: it takes the
+/// address of its words and returns one word.
+type Block = extern "C" fn(words: *mut Word) -> Word;
+
+/// Enter a block of machine code: operand A is the block's address, and
+/// operand B counts the machine integers pushed before it, the first pushed
+/// first, with [`layout::BLOCK_ANSWERS`] set when the block answers. The
+/// field of each integer becomes the block's word in place of its pushed
+/// word, and the block reads and writes the words through the address of the
+/// first. An answering block's word becomes a fresh machine integer in hand.
+/// Any other block leaves the value in hand as it was. The unit value is a
+/// constant object, and the stencil holds no operand for its address, so the
+/// lowering reads no value after a block that answers nothing.
+///
+/// # Specification
+/// - requires: B's count of machine integers lie just below the frame region's
+///   top; A addresses a block that follows [`Block`]'s convention and touches
+///   no word of the run but its own.
+/// - ensures: the words are popped. An answering block's answer is in hand as a
+///   fresh machine integer, allocated before the block runs; the heap exit is
+///   taken when the heap holds no such object, and then the block does not run.
+///   Any other block allocates nothing and leaves the value in hand.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Cost
+/// - allocation: none in steady state
+///
+/// # Adequacy
+/// - hypothesis: L3 — a block that adds its two words answers their sum as one
+///   fresh integer of three heap words, and a block that answers nothing moves
+///   neither the heap's top nor the value in hand; a word read from the object
+///   and not its field, a lost pop or a missed allocation changes one.
+/// - witness: `tests::machine::a_block_answers_the_sum_of_its_words`
+/// - witness: `tests::machine::a_block_that_answers_nothing_allocates_nothing`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_block(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    let operands = operand!(runtime, B);
+    let count = operands & layout::BLOCK_OPERANDS;
+    let base = frames.wrapping_sub(count);
+    let mut index = 0_usize;
+    while index < count {
+        let word = base.wrapping_add(index);
+        // SAFETY: the lowering pushed a machine integer at each word.
+        let integer = unsafe { *word }.to_pointer::<Word>();
+        // SAFETY: a machine integer's one field follows its header.
+        let field = unsafe { *integer.wrapping_add(1) };
+        // SAFETY: the word lies below the frame region's top.
+        unsafe {
+            *word = field;
+        }
+        index = index.wrapping_add(1);
+    }
+    let entry = address!(runtime, A).to_pointer::<()>().cast_const();
+    // To LLVM an address hole is the address of a static, which it calls
+    // directly: a branch that reaches 128 MiB on arm64, where the block lies
+    // anywhere. An empty template hides the address, so the call is indirect
+    // through a register and the patcher writes the whole address.
+    #[cfg(gandr_stencil_object)]
+    let entry = {
+        let mut hidden = entry;
+        // SAFETY: the template is a comment; it reads and writes one
+        // register.
+        unsafe {
+            core::arch::asm!(
+                "/* {0} */",
+                inout(reg) hidden,
+                options(pure, nomem, nostack, preserves_flags)
+            );
+        }
+        hidden
+    };
+    // SAFETY: operand A is the address of a block under `Block`'s
+    // convention, which the emitter mapped executable for the process.
+    let block = unsafe { core::mem::transmute::<*const (), Block>(entry) };
+    if operands & layout::BLOCK_ANSWERS == 0 {
+        #[cfg_attr(
+            dylint_lib = "quenchant_dylints",
+            expect(
+                allocation_free_region,
+                reason = "a block calls nothing: the block compiler refuses an object with a relocation or an undefined symbol"
+            )
+        )]
+        let _unanswered = block(base);
+        become hole_next(runtime, heap, base, environment, value)
+    }
+    let (object, next) = allocate!(runtime, heap, base, environment, value, 2_usize);
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            allocation_free_region,
+            reason = "a block calls nothing: the block compiler refuses an object with a relocation or an undefined symbol"
+        )
+    )]
+    let answer = block(base);
+    // SAFETY: the object's block is the run's.
+    unsafe {
+        *object = layout::INTEGER_HEADER;
+    }
+    // SAFETY: as above.
+    unsafe {
+        *object.wrapping_add(1) = answer;
+    }
+    become hole_next(runtime, next, base, environment, Word::from_pointer(object))
 }
 
 /// Count one more owner of the object in slot A: its count word grows by one,

@@ -63,6 +63,8 @@ use object::ObjectSymbol as _;
 use object::RelocationTarget;
 use object::SectionKind;
 
+use crate::machine;
+
 /// The version of the lowering, in each key: a change of the lowering is a
 /// change of the bytes, so it is a change of the key too.
 const LOWERING: &[u8] = b"gandr block 1\0";
@@ -426,13 +428,17 @@ pub enum Origin
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Code(pub Arc<[u8]>);
 
-/// The code of one block, and where it came from.
+/// The code of one block, its key and its target, and where it came from.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Block
 {
+    /// The key that a function enters the block by.
+    pub key: Key,
+    /// The target that the code runs on.
+    pub target: Target,
     /// The code.
     pub code: Code,
     /// Where this request found the code.
@@ -511,7 +517,23 @@ impl core::error::Error for Refusal
 /// trivial.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct Key(blake3::Hash);
+pub struct Key(blake3::Hash);
+
+impl fmt::Display for Key
+{
+    /// Write the digest in hexadecimal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
 
 /// The digest that a key reads the hash of a description into.
 ///
@@ -610,7 +632,8 @@ impl Blocks
     ///   for the lowering of `description`, the same for each request of one
     ///   key; the origin is [`Origin::Compiled`] for exactly one request of a
     ///   key that neither the process nor the directory held, and no other
-    ///   request starts a process.
+    ///   request starts a process. The process's table of blocks holds the key
+    ///   with its target and its code, so a run can enter it.
     /// - fails: each [`Refusal`], as its variant states. A failed request
     ///   leaves the key with no code.
     /// - panics: none.
@@ -618,8 +641,8 @@ impl Blocks
     ///   its run.
     ///
     /// # Cost
-    /// - allocation: the slot of a new key, its file's path and its code,
-    ///   durable by the key
+    /// - allocation: the slot of a new key, its file's path, its code and its
+    ///   entry in the process's table of blocks, durable by the key
     ///
     /// # Errors
     /// The [`Refusal`] of the lowering, of the assembler, of the object or of
@@ -642,12 +665,15 @@ impl Blocks
     ) -> Result<Block, Refusal>
     {
         let key = self.key(description);
+        let target = description.target;
         let slot = {
             let slots = self.slots.pin();
             if let Some(slot) = slots.get(&key)
                 && let Some(code) = slot.code.get()
             {
                 return Ok(Block {
+                    key,
+                    target,
                     code: code.clone(),
                     origin: Origin::Process,
                 });
@@ -660,6 +686,8 @@ impl Blocks
             .unwrap_or_else(PoisonError::into_inner);
         if let Some(code) = slot.code.get() {
             return Ok(Block {
+                key,
+                target,
                 code: code.clone(),
                 origin: Origin::Process,
             });
@@ -681,8 +709,12 @@ impl Blocks
                 (code, Origin::Compiled)
             },
         };
+        let code = slot.code.get_or_init(|| code).clone();
+        machine::record(key, target, &code);
         Ok(Block {
-            code: slot.code.get_or_init(|| code).clone(),
+            key,
+            target,
+            code,
             origin,
         })
     }
@@ -701,7 +733,7 @@ impl Blocks
     /// - hypothesis: L3 — two descriptions that differ in the template alone
     ///   give two different blocks.
     /// - witness: `tests::block::a_class_operand_and_an_output_take_their_words`
-    fn key(
+    pub(crate) fn key(
         &self,
         description: &Description,
     ) -> Key

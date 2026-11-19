@@ -5761,7 +5761,8 @@ mod tests
                 other @ (Operand::Unused
                 | Operand::Code(_)
                 | Operand::Data(_)
-                | Operand::Stub(_)) => {
+                | Operand::Stub(_)
+                | Operand::Block(_)) => {
                     panic!("a closure's header is an immediate, not {other:?}")
                 },
             })

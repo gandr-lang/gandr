@@ -22,11 +22,11 @@
 //! A continuation is a `b` (`BRANCH26`, ±128 MiB) patched to its target; a
 //! region is smaller than that reach.
 
-use crate::native::Address;
-use crate::native::CodeBytes;
+use crate::executable::Address;
+use crate::executable::CodeBytes;
+use crate::executable::Offset;
 use crate::native::PatchRefusal;
 use crate::native::Value;
-use crate::native::table::Offset;
 
 /// One instruction word.
 #[repr(transparent)]
@@ -296,11 +296,11 @@ mod tests
     use super::branch;
     use super::page;
     use super::page_offset;
-    use crate::native::Address;
-    use crate::native::CodeBytes;
+    use crate::executable::Address;
+    use crate::executable::CodeBytes;
+    use crate::executable::Offset;
     use crate::native::PatchRefusal;
     use crate::native::Value;
-    use crate::native::table::Offset;
 
     /// Where the patched instruction sits.
     const PC: Address = Address(0x1_0000_0000);
