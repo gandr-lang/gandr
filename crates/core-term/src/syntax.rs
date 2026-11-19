@@ -4414,8 +4414,10 @@ fn comp_type_formers(
 ///   otherwise [`CertificateEquality::Equal`], with each pair of children the
 ///   two must agree on pushed onto `pending`. Under [`Reading::Printed`] a pair
 ///   the printed reading identifies outright is `Equal` with nothing pushed,
-///   and the reading's other identifications push the pairs they read; under
-///   [`Reading::Syntax`] the step leaves `arena` borrowed.
+///   and the reading's other identifications push the pairs they read. Under
+///   [`Reading::Folded`] two holes nominated for an omitted implicit are
+///   `Equal` with nothing pushed. Under [`Reading::Syntax`] the step leaves
+///   `arena` borrowed.
 /// - panics: none.
 /// - executable: none — the contract is the former's comparison, which the body
 ///   states once.
@@ -4426,6 +4428,10 @@ fn comp_type_formers(
 /// - witness: `syntax::tests::each_value_former_equals_its_twin_and_differs_where_its_guard_does`
 /// - witness: `syntax::tests::each_computation_former_equals_its_twin_and_differs_where_its_guard_does`
 /// - witness: `syntax::tests::each_type_former_equals_its_twin_and_differs_where_its_guard_does`
+///
+/// # Cost
+/// - allocation: the arena's own copy and the shifted types that the printed
+///   reading mints, growth within the compared types
 fn pair_step<P>(
     arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
     reading: Reading<'_>,
