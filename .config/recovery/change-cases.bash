@@ -74,7 +74,8 @@ got=$(
   echo 'rows, edited' > crates/surface-parser/tests/recovery/strict/values.recovery
   sweep
 )
-[[ $got == "swept: fixture/model/data/data-new.gandr strict/values.gandr" ]] || fail "#5864, #8138: a new source and an edited record each name their source" "$got"
+[[ $got == "swept: fixture/model/data/data-new.gandr strict/values.gandr" ]] || fail "#5864: a new source and an edited record each name their source" "$got"
+[[ -d $work/new/.git ]] || fail "#8138: a case cleanup leaves its scratch repository until the outer cleanup" "$work/new"
 
 got=$(
   trap - EXIT
