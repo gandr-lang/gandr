@@ -1,0 +1,3 @@
+{{"jsonrpc":"2.0","id":2,"method":"textDocument/inlayHint","params":{{
+                    "textDocument":{{"uri":"{uri}"}},
+                    "range":{{"start":{{"line":{from},"character":0}},"end":{{"line":{to},"character":0}}}}}}}}

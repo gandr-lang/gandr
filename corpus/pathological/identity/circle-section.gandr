@@ -1,0 +1,67 @@
+// Two proofs by induction over the loops at the book circle's point that
+// prove nothing. The first forgets to carry the loop: its loop arm answers
+// with the rest's path, whose endpoints are not the loop's. The second
+// carries the loop but answers the inverse apart, so the two sides of a
+// cancellation are two different paths.
+
+/// The circle: one point and a loop at it.
+data Circle : Type where
+  | Base : Circle
+  | loop : Base <-> Base
+
+/// The integers, presented by their two cancellations.
+data Int : Type where {
+  | Z : Int
+  | S : (x : Int) --> Int
+  | P : (x : Int) --> Int
+  rule : S (P x) ==> x;
+  rule : P (S x) ==> x;
+}
+
+/// The winding number: a loop counts one up, its inverse one down.
+def rec wind(p : Path[.A = Circle] Base Base) -> Int =
+  match p where
+    | here => Z
+    | loop ∷ q => S (wind[<] q)
+    | back(loop) ∷ q => P (wind[<] q)
+
+/// Spinning: a successor is a loop, a predecessor its inverse.
+def rec spin(n : Int) -> Path[.A = Circle] Base Base =
+  match n where
+    | Z => Path.here Base
+    | S(x) => loop ∷ spin[<] x
+    | P(x) => back loop ∷ spin[<] x
+
+/// One loop more.
+def loopOn(p : Path[.A = Circle] Base Base) -> Path[.A = Circle] Base Base =
+  loop ∷ p
+
+/// One inverse loop more.
+def unloopOn(p : Path[.A = Circle] Base Base) -> Path[.A = Circle] Base Base =
+  back loop ∷ p
+
+/// A forged section: the loop arm answers with the rest's path unchanged,
+/// typed at the motive at `q`, where the arm owes the motive at `loop ∷ q`:
+/// a path from `loop ∷ spin(wind(q))` to `loop ∷ q`. The machine does not
+/// decide the two path types, and the arm is refused as undecided.
+@[refuses("Undecided")]
+def rec forged(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] (
+  spin (wind p)
+) p =
+  match p where
+    | here => Path.here (Path.here Base)
+    | loop ∷ q => forged[<] q
+    | back(loop) ∷ q => { let ih = forged[<] q; Path.ap unloopOn ih }
+
+/// A path at every loop whose inverse arm drops its rest's path: each arm
+/// checks at its letter, but at `loop ∷ back(loop) ∷ q` the loop arm carries
+/// the inverse arm's reflexivity to `Path.here(loop ∷ back(loop) ∷
+/// q)`, which is
+/// not the path at `q` the cancellation's right side reads. Read as a set,
+/// the loops would identify the two; the words are not read as one.
+@[refuses("RuleNotRespected")]
+def rec rewound(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] p p =
+  match p where
+    | here => Path.here (Path.here Base)
+    | loop ∷ q => { let ih = rewound[<] q; Path.ap loopOn ih }
+    | back(loop) ∷ q => Path.here (back loop ∷ q)

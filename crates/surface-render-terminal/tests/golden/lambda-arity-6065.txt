@@ -1,0 +1,8 @@
+error[OutOfFragment.Arity]: the lambda expression cannot take 2 operands
+  ╭▸ lambda-arity-6065.gandr:7:34
+  │
+7 │ def passed : () -> Nat = apply2 (fun (a, b) { a });
+  │                                  ━━━━━━━━━━━━━━━━ the wrong number of operands
+  │
+  ├ note: `passed` is expected to check, and this refusal leaves it unsettled
+  ╰ help: write one parameter per lambda: `fun (a) { fun (b) { … } }`
