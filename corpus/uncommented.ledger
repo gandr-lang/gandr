@@ -922,9 +922,9 @@ model/modules/model-include.gandr:Graded.Eq:d9327e9b536be2f1 uncommented
 model/modules/model-include.gandr:Graded.below:676ac9f590c95852 uncommented
 model/modules/model-laws.gandr:Lawful.Carrier:ad5b0e673c29ec75 uncommented
 model/modules/model-laws.gandr:Lawful.alike:e2704914c7a27d64 uncommented
-model/modules/model-laws.gandr:Lawful.refl:79055f41dee27e86 uncommented
-model/modules/model-laws.gandr:Lawful.sym:434e2551cc481156 uncommented
-model/modules/model-laws.gandr:Lawful.trans:400efd170a6c6f41 uncommented
+model/modules/model-laws.gandr:Lawful.refl:2310deabf1bf79a4 uncommented
+model/modules/model-laws.gandr:Lawful.sym:ae264a13031cc102 uncommented
+model/modules/model-laws.gandr:Lawful.trans:eb0004c63ae09f6f uncommented
 model/modules/model-laws.gandr:LawfulInteger.alike:8908b27c9fcf246a uncommented
 model/modules/model-laws.gandr:LawfulInteger.refl:a7f25ebe22469fea uncommented
 model/modules/model-laws.gandr:LawfulInteger.sym:13d9b7ea14e31138 uncommented
@@ -934,9 +934,9 @@ model/modules/model-laws.gandr:LawfulOrder.below:676ac9f590c95852 uncommented
 model/modules/model-laws.gandr:LawfulOrderInteger.LawfulInteger:e642c0ba184389bc uncommented
 model/modules/model-laws.gandr:LawfulOrderInteger.below:aab8261434780350 uncommented
 model/modules/model-laws.gandr:LawfulSingle.alike:fba338157312b2ce uncommented
-model/modules/model-laws.gandr:LawfulSingle.refl:643d46c274072fd8 uncommented
-model/modules/model-laws.gandr:LawfulSingle.sym:240d99cfee95bcd7 uncommented
-model/modules/model-laws.gandr:LawfulSingle.trans:5eec691e9491e4d6 uncommented
+model/modules/model-laws.gandr:LawfulSingle.refl:0f0723514c93d140 uncommented
+model/modules/model-laws.gandr:LawfulSingle.sym:0c6646fb48bfb8a9 uncommented
+model/modules/model-laws.gandr:LawfulSingle.trans:641ef558a9d603f1 uncommented
 model/modules/model-laws.gandr:Single.Only:d173c9fa50a2823a uncommented
 model/modules/model-manifest.gandr:Metering.Ratio:e25114a9fa58102f uncommented
 model/modules/model-manifest.gandr:Metering.base:89015a44b7351e3c uncommented
@@ -1632,8 +1632,8 @@ pathological/modules/model-include.gandr:Shadowing.Zero:d3aa30805821f39b uncomme
 pathological/modules/model-include.gandr:Stray.Nowhere:085d4f7fdcef3f18 uncommented
 pathological/modules/model-laws.gandr:Decided.Carrier:ad5b0e673c29ec75 uncommented
 pathological/modules/model-laws.gandr:Decided.alike:e2704914c7a27d64 uncommented
-pathological/modules/model-laws.gandr:Decided.refl:79055f41dee27e86 uncommented
-pathological/modules/model-laws.gandr:Decided.sym:434e2551cc481156 uncommented
+pathological/modules/model-laws.gandr:Decided.refl:2310deabf1bf79a4 uncommented
+pathological/modules/model-laws.gandr:Decided.sym:ae264a13031cc102 uncommented
 pathological/modules/model-laws.gandr:FloatEqAdmitted.eq:efe5a7c15c5c0565 uncommented
 pathological/modules/model-laws.gandr:FloatEqAdmitted.refl:a7f25ebe22469fea uncommented
 pathological/modules/model-laws.gandr:FloatEqAdmitted.sym:13d9b7ea14e31138 uncommented
@@ -1642,7 +1642,7 @@ pathological/modules/model-laws.gandr:FloatEqMissing.sym:13d9b7ea14e31138 uncomm
 pathological/modules/model-laws.gandr:Lone.Alone:c8b1d63afd339403 uncommented
 pathological/modules/model-laws.gandr:Overadmitted.alike:e5d05aed5957913c uncommented
 pathological/modules/model-laws.gandr:Overadmitted.refl:a7f25ebe22469fea uncommented
-pathological/modules/model-laws.gandr:Overadmitted.sym:be22151b0a6ec953 uncommented
+pathological/modules/model-laws.gandr:Overadmitted.sym:82684ac9e6a7bdfb uncommented
 pathological/modules/model-manifest.gandr:Misnamed.Ratio:4c2c133532579ec7 uncommented
 pathological/modules/model-manifest.gandr:Opaque.Ratio:4c2c133532579ec7 uncommented
 pathological/modules/model-manifest.gandr:Scaled.Ratio:e25114a9fa58102f uncommented

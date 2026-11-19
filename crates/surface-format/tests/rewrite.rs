@@ -192,9 +192,10 @@ theory Counting where {
     }
 }
 
-/// #2384: a law's statement is kept as written in either form, the
-/// value-function alias over its named telescope, which is the only spelling
-/// a theory reads there, while an operation's judgment beside it is respelled.
+/// #2384: a law's statement keeps the value-function alias over its named
+/// telescope in either form, the only spelling a theory reads there, while an
+/// operation's judgment beside it is respelled. Its path keeps the juxtaposed
+/// spelling in either form (#8075).
 #[test]
 fn a_law_keeps_its_statement_in_either_form_2384()
 {

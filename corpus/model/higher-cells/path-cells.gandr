@@ -28,13 +28,10 @@ def associator(
   b : Circle,
   c : Circle,
   d : Circle,
-  f : Path(a, b),
-  g : Path(b, c),
-  h : Path(c, d)
-) -> Path[.A = Path[.A = Circle](a, d)](
-  Path.step (Path.step f g) h,
-  Path.step f (Path.step g h)
-) =
+  f : Path a b,
+  g : Path b c,
+  h : Path c d
+) -> Path[.A = Path[.A = Circle] a d] (Path.step (Path.step f g) h) (Path.step f (Path.step g h)) =
   assoc Circle a b c d f g h
 
 /// `Glob` is a globular theory at dimension one. It has a right-unit rule and
@@ -61,36 +58,32 @@ theory Glob where
     f : Hom a b,
     g : Hom b c,
     h : Hom c d
-  ) -> Path[.A = Hom a d](comp (comp f g) h, comp f (comp g h));
+  ) -> Path[.A = Hom a d] (comp (comp f g) h) (comp f (comp g h));
 
 /// `PathCells` models `Glob` with circle points and paths.
 module PathCells : Model(Glob) where
   /// `Ob` is `Circle`.
   type Ob = Circle;
   /// `Hom` is the path type between two circle points.
-  type Hom(a : Ob, b : Ob) = Path[.A = Circle](a, b);
+  type Hom(a : Ob, b : Ob) = Path[.A = Circle] a b;
 
   /// `id` returns path reflexivity.
-  def id(a : Circle) -> Path(a, a) = Path.here a;
+  def id(a : Circle) -> Path a a = Path.here a;
 
   /// `comp` joins paths.
   def comp(
     a : Circle,
     b : Circle,
     c : Circle,
-    f : Path(a, b),
-    g : Path(b, c)
-  ) -> Path[.A = Circle](
-    a,
-    c
-  ) =
+    f : Path a b,
+    g : Path b c
+  ) -> Path[.A = Circle] a c =
     Path.step f g
 
   /// `unitR` proves the right unit law by conversion.
-  def unitR(a : Circle, b : Circle, f : Path(a, b)) -> Path[.A = Path[.A = Circle](a, b)](
-    comp a b b f (id b),
-    f
-  ) =
+  def unitR(a : Circle, b : Circle, f : Path a b) -> Path[.A = Path[.A = Circle] a b] (
+    comp a b b f (id b)
+  ) f =
     Path.here f
 
   /// `assoc` proves the associator cell with the path theorem.
@@ -99,11 +92,10 @@ module PathCells : Model(Glob) where
     b : Circle,
     c : Circle,
     d : Circle,
-    f : Path(a, b),
-    g : Path(b, c),
-    h : Path(c, d)
-  ) -> Path[.A = Path[.A = Circle](a, d)](
-    comp a c d (comp a b c f g) h,
+    f : Path a b,
+    g : Path b c,
+    h : Path c d
+  ) -> Path[.A = Path[.A = Circle] a d] (comp a c d (comp a b c f g) h) (
     comp a b d f (comp b c d g h)
   ) =
     associator a b c d f g h
@@ -113,27 +105,23 @@ module Discharged : Model(Glob) where
   /// `Ob` is `Circle`.
   type Ob = Circle;
   /// `Hom` is the path type between two circle points.
-  type Hom(a : Ob, b : Ob) = Path(a, b);
+  type Hom(a : Ob, b : Ob) = Path a b;
 
   /// `id` returns path reflexivity.
-  def id(a : Circle) -> Path(a, a) = Path.here a;
+  def id(a : Circle) -> Path a a = Path.here a;
 
   /// `comp` joins paths.
   def comp(
     a : Circle,
     b : Circle,
     c : Circle,
-    f : Path(a, b),
-    g : Path(b, c)
-  ) -> Path[.A = Circle](
-    a,
-    c
-  ) =
+    f : Path a b,
+    g : Path b c
+  ) -> Path[.A = Circle] a c =
     Path.step f g
 
   /// `unitR` proves the right unit law by conversion.
-  def unitR(a : Circle, b : Circle, f : Path(a, b)) -> Path[.A = Path[.A = Circle](a, b)](
-    comp a b b f (id b),
-    f
-  ) =
+  def unitR(a : Circle, b : Circle, f : Path a b) -> Path[.A = Path[.A = Circle] a b] (
+    comp a b b f (id b)
+  ) f =
     Path.here f

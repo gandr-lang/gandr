@@ -2061,6 +2061,43 @@ fn a_law_member_reads_its_statement_2356()
     ]);
 }
 
+/// #8075: a law that states its path juxtaposed, `Path[.A = Bool] (eq a a)
+/// true`, reads the carrier and the two sides that the call `Path[.A =
+/// Bool](eq a a, true)` reads.
+#[test]
+fn a_law_states_its_path_juxtaposed_8075()
+{
+    let source = include_str!("tests/fixtures/a-law-states-its-path-juxtaposed-8075.gandr");
+    let report = described(source);
+    assert_eq!(report.diagnostics.len(), 0, "{:?}", report.diagnostics);
+    let laws = &presented(&report.declarations[0]).laws;
+    let read: Vec<(String, String, String, String)> = laws
+        .iter()
+        .map(|law| {
+            (
+                format!("{}", law.name),
+                format!("{}", law.carrier.sort),
+                format!("{}", law.left),
+                format!("{}", law.right),
+            )
+        })
+        .collect();
+    assert_eq!(read, [
+        (
+            String::from("refl"),
+            String::from("Bool"),
+            String::from("eq(a, a)"),
+            String::from("true")
+        ),
+        (
+            String::from("sym"),
+            String::from("Bool"),
+            String::from("eq(a, b)"),
+            String::from("eq(b, a)")
+        ),
+    ]);
+}
+
 /// #4115: a stated law naming a variable it does not bind, or a head the
 /// theory does not declare, is refused at the law by its theory; a law over
 /// an included theory's laws is read once, at the theory that writes it.

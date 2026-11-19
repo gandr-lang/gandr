@@ -2343,15 +2343,15 @@ impl Reader<'_, '_>
         ))
     }
 
-    /// The path a law's type writes, `Path[.A = C](l, r)`: its carrier and its
-    /// two sides, and where each is written; none for a type of another
-    /// former.
+    /// The path a law's type writes, `Path[.A = C](l, r)` or `Path[.A = C] l
+    /// r`: its carrier and its two sides, and where each is written; none for
+    /// a type of another former.
     ///
     /// # Specification
     /// - ensures: for a type headed `Path` that supplies its carrier by name,
-    ///   the carrier read as [`Self::sort_term`] reads a sort and the two
-    ///   endpoints as [`Self::law_side`] reads a side, with the bytes of the
-    ///   whole type; [`Maybe::Absent`] for any other type.
+    ///   called or juxtaposed, the carrier read as [`Self::sort_term`] reads a
+    ///   sort and the two endpoints as [`Self::law_side`] reads a side, with
+    ///   the bytes of the whole type; [`Maybe::Absent`] for any other type.
     /// - fails: a path that leaves its carrier out or writes it first, as a law
     ///   statement out of shape; a malformed carrier or side as its reader
     ///   refuses it.
@@ -2364,6 +2364,10 @@ impl Reader<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::signature_law`].
     /// - witness: `description::theory::tests::a_law_member_reads_its_statement_2356`
+    /// - witness: `description::theory::tests::a_law_states_its_path_juxtaposed_8075`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the type and of a juxtaposed head, setup
     fn law_path(
         &self,
         at: Placed,
@@ -2374,26 +2378,52 @@ impl Reader<'_, '_>
         if let [Piece::Tile { .. }] = *pieces.as_slice() {
             return Ok(unpathed);
         }
+        // The bracket `[.A = C]` that supplies the carrier by name.
+        let carrier_of = |run: &mut Run<'_>| {
+            if !run.eat(Spelling("[")).0 {
+                return Err(DescriptionDiagnostic {
+                    span: at.span,
+                    fault: DescriptionFault::Signature(SignatureFault::LawStatement),
+                });
+            }
+            if !run.eat(Spelling(".")).0 {
+                return Err(run.fault(DescriptionFault::Malformed));
+            }
+            let named = run.take()?;
+            if self.text(named).0 != "A" || !run.eat(Spelling("=")).0 {
+                return Err(run.fault(DescriptionFault::Malformed));
+            }
+            let carrier = run.take()?;
+            if !run.eat(Spelling("]")).0 {
+                return Err(run.fault(DescriptionFault::Malformed));
+            }
+            Ok(carrier)
+        };
         let mut run = Run::new(&pieces, at.span);
         let head = run.take()?;
-        if self.text(head).0 != "Path" {
-            return Ok(unpathed);
+        // A juxtaposed path reads as the call it spells, so its head `Path[.A
+        // = C]` is one operand, whose own pieces hold the bracket.
+        let carrier = if self.text(head).0 == "Path" {
+            carrier_of(&mut run)?
         }
-        if !run.eat(Spelling("[")).0 {
-            return Err(DescriptionDiagnostic {
-                span: at.span,
-                fault: DescriptionFault::Signature(SignatureFault::LawStatement),
-            });
-        }
-        if !run.eat(Spelling(".")).0 {
-            return Err(run.fault(DescriptionFault::Malformed));
-        }
-        let named = run.take()?;
-        if self.text(named).0 != "A" || !run.eat(Spelling("=")).0 {
-            return Err(run.fault(DescriptionFault::Malformed));
-        }
-        let carrier = run.take()?;
-        if !(run.eat(Spelling("]")).0 && run.eat(Spelling("(")).0) {
+        else {
+            let Ok(held) = self.pieces(head)
+            else {
+                return Ok(unpathed);
+            };
+            let mut headed = Run::new(&held, at.span);
+            let Ok(path) = headed.take()
+            else {
+                return Ok(unpathed);
+            };
+            if self.text(path).0 != "Path" {
+                return Ok(unpathed);
+            }
+            let carrier = carrier_of(&mut headed)?;
+            headed.end()?;
+            carrier
+        };
+        if !run.eat(Spelling("(")).0 {
             return Err(run.fault(DescriptionFault::Malformed));
         }
         let left = run.take()?;
