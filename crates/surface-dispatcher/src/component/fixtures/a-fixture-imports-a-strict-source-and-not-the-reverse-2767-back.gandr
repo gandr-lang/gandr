@@ -1,0 +1,2 @@
+import "../fixture/sibling.gandr";
+def two : Integer = 2;

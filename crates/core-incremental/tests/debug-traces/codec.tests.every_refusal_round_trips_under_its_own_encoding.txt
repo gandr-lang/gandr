@@ -1,0 +1,84 @@
+test: codec::tests::every_refusal_round_trips_under_its_own_encoding
+package: gandr-core-incremental
+command: mise run debug:test gandr-core-incremental codec::tests::every_refusal_round_trips_under_its_own_encoding --break codec::read_refusal
+
+(lldb) target create "target/debug-trace/debug/build/gandr-core-incremental/dc552edd99ad2c5c/out/gandr_core_incremental-dc552edd99ad2c5c"
+Current executable set to 'target/debug-trace/debug/build/gandr-core-incremental/dc552edd99ad2c5c/out/gandr_core_incremental-dc552edd99ad2c5c' (arm64).
+(lldb) settings set -- target.run-args  "codec::tests::every_refusal_round_trips_under_its_own_encoding" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex codec::read_refusal
+Breakpoint 1: 5 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_core_incremental-dc552edd99ad2c5c`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x0000000100d249e8
+(lldb) run
+
+running 1 test
+test codec::tests::every_refusal_round_trips_under_its_own_encoding ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 84344 launched: 'target/debug-trace/debug/build/gandr-core-incremental/dc552edd99ad2c5c/out/gandr_core_incremental-dc552edd99ad2c5c' (arm64)
+Process 84344 stopped
+* thread #2, name = 'codec::tests::every_refusal_round_trips_under_its_own_encoding', stop reason = breakpoint 1.2
+       frame #0: 0x00000001000c6800 gandr_core_incremental-dc552edd99ad2c5c`gandr_core_incremental::codec::read_refusal(reader={bytes:size=19, cursor:0}) at codec.rs:7638:1
+   7635	/// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+   7636	/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+   7637	/// - witness: `codec::tests::an_offer_narrowed_fault_is_read_only_at_step_zero`
+-> 7638	#[spec(
+    	^
+   7639	    captures: [before = reader.cursor],
+   7640	    ensures: |ret| match ret {
+   7641	        | Ok(ref refusal) => {
+(lldb) bt 24
+* thread #2, name = 'codec::tests::every_refusal_round_trips_under_its_own_encoding', stop reason = breakpoint 1.2
+   * frame #0: 0x00000001000c6800 gandr_core_incremental-dc552edd99ad2c5c`gandr_core_incremental::codec::read_refusal(reader={bytes:size=19, cursor:0}) at codec.rs:7638:1
+     frame #1: 0x0000000100257ab4 gandr_core_incremental-dc552edd99ad2c5c`gandr_core_incremental::codec::tests::every_refusal_round_trips_under_its_own_encoding at tests.rs:3210:20
+     frame #2: 0x000000010023e318 gandr_core_incremental-dc552edd99ad2c5c`gandr_core_incremental::codec::tests::every_refusal_round_trips_under_its_own_encoding::{closure#0}((null)={}) at tests.rs:3196:54
+     frame #3: 0x00000001003e3a14 gandr_core_incremental-dc552edd99ad2c5c`<gandr_core_incremental::codec::tests::every_refusal_round_trips_under_its_own_encoding::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x000000010041d7d8 gandr_core_incremental-dc552edd99ad2c5c`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #5: 0x000000010041d7d0 gandr_core_incremental-dc552edd99ad2c5c`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #6: 0x0000000100428cf4 gandr_core_incremental-dc552edd99ad2c5c`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #7: 0x0000000100428ce8 gandr_core_incremental-dc552edd99ad2c5c`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #8: 0x0000000100428ce8 gandr_core_incremental-dc552edd99ad2c5c`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #9: 0x0000000100428ce4 gandr_core_incremental-dc552edd99ad2c5c`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #10: 0x0000000100428ce4 gandr_core_incremental-dc552edd99ad2c5c`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #11: 0x0000000100428ce4 gandr_core_incremental-dc552edd99ad2c5c`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #12: 0x0000000100428cd8 gandr_core_incremental-dc552edd99ad2c5c`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #13: 0x00000001004236e8 gandr_core_incremental-dc552edd99ad2c5c`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+     frame #14: 0x0000000100423684 gandr_core_incremental-dc552edd99ad2c5c`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #15: 0x000000010042b1b8 gandr_core_incremental-dc552edd99ad2c5c`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #16: 0x000000010042b1a8 gandr_core_incremental-dc552edd99ad2c5c`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #17: 0x000000010042b1a8 gandr_core_incremental-dc552edd99ad2c5c`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [opt] [inlined]
+     frame #18: 0x000000010042b1a4 gandr_core_incremental-dc552edd99ad2c5c`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #19: 0x000000010042b1a4 gandr_core_incremental-dc552edd99ad2c5c`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [opt] [inlined]
+     frame #20: 0x000000010042b1a4 gandr_core_incremental-dc552edd99ad2c5c`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [opt] [inlined]
+     frame #21: 0x000000010042b194 gandr_core_incremental-dc552edd99ad2c5c`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5 [opt]
+     frame #22: 0x0000000100cfa3f8 gandr_core_incremental-dc552edd99ad2c5c`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [opt] [inlined]
+     frame #23: 0x0000000100cfa3ec gandr_core_incremental-dc552edd99ad2c5c`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17 [opt]
+(lldb) frame variable --depth 3
+(gandr_core_incremental::codec::Reader *) reader = 0x0000000170006418 {bytes:size=19, cursor:0}
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x0000000100257ab4 gandr_core_incremental-dc552edd99ad2c5c`gandr_core_incremental::codec::tests::every_refusal_round_trips_under_its_own_encoding at tests.rs:3210:20
+   3207	            bytes: bytes.as_ref(),
+   3208	            cursor: 0,
+   3209	        };
+-> 3210	        assert_eq!(super::read_refusal(&mut reader), Ok(refusal));
+    	                   ^
+   3211	        assert_eq!(reader.finish(), Ok(()));
+   3212	    }
+   3213	}
+(lldb) frame variable --depth 3
+(alloc::collections::btree::set::BTreeSet<alloc::vec::Vec<unsigned char, alloc::alloc::Global>, alloc::alloc::Global>) encodings = {map:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}}
+(alloc::vec::into_iter::IntoIter<gandr_core_incremental::typing::Refusal, alloc::alloc::Global>) iter = {buf:{pointer:NotADataType(Item{key:{0:{…}}, occurrence:{0:0}})}, phantom:{}, cap:324, alloc:{value:{0:{}}}, ptr:{pointer:DataKindNotUniverse(Node({0:3}))}, end:FootprintsOverlap{at:Node({0:0}), child:{nodes:size=0, root:{head:{0:0}, tail:None}}, parent:{nodes:size=0, root:{head:{0:0}, tail:None}}, shared:{nodes:size=0, root:{head:{0:0}, tail:None}}}}
+(gandr_core_incremental::typing::Refusal) refusal = NotADataType(Item{key:{0:{data_ptr:"\U00000001", length:1}}, occurrence:{0:0}}) {
+  0 = Item{key:{0:{data_ptr:"\U00000001", length:1}}, occurrence:{0:0}} {
+    key = {0:{data_ptr:"\U00000001", length:1}}
+    occurrence = {0:0}
+  }
+}
+(gandr_core_incremental::codec::CheckpointBytes) bytes = {0:size=19}
+(gandr_core_incremental::codec::Reader) reader = {bytes:size=19, cursor:0}
