@@ -1,0 +1,562 @@
+//! **Sweeps**: the corpus sources a sweep test visits. A sweep drives the
+//! whole corpus through one feature — typing and erasing every source,
+//! formatting it, molding every token drop — and runs in two budgets: a
+//! stated sample on every pull request and every merge-queue entry, with
+//! specifications enforced, within the 30 s every test is held to; and whole
+//! under the `nightly` nextest profile, where the costliest sweeps each visit
+//! the night's slice of the corpus and the rest visit all of it. The
+//! `sweeps` profile visits the whole corpus in every sweep at once.
+//!
+//! - [`coverage`] reads which budget a run is in from the nextest profile.
+//! - [`corpus`] walks the corpus and names each source's class.
+//! - [`changed`] lists the corpus sources a change touches.
+//! - [`sample`] draws a sample's hashed, stratified slice.
+//! - [`rotation`] names the night's slice of a rotating sweep.
+//!
+//! A sweep test asks [`Sweep::asked`] once, filters [`corpus::sources`] to
+//! its candidates, and visits what [`Sweep::visit`] returns, or what
+//! [`Sweep::visit_rotating`] returns when it rotates nightly. Its `_changed`
+//! companion runs the same body over [`Sweep::changed`], the change's sources
+//! beside the fixed set:
+//!
+//! ```no_run
+//! use gandr_workflow_sweep::Sample;
+//! use gandr_workflow_sweep::SampleName;
+//! use gandr_workflow_sweep::SampleSize;
+//! use gandr_workflow_sweep::Sweep;
+//! use gandr_workflow_sweep::corpus;
+//!
+//! const SAMPLE: Sample = Sample {
+//!     name: SampleName("every_source_formats_once"),
+//!     size: SampleSize(12),
+//! };
+//! let sweep = Sweep::asked()?;
+//! for source in sweep.visit(SAMPLE, &corpus::sources()?) {
+//!     let _text = std::fs::read_to_string(&source.path);
+//! }
+//! # Ok::<(), gandr_workflow_sweep::SweepError>(())
+//! ```
+//!
+//! # Decisions
+//!
+//! **One test, two budgets.** A sweep never leaves the pull-request lanes:
+//! each test exercises some of its inputs under enforcement on every
+//! landing, and the whole corpus nightly. The alternative was moving sweeps
+//! to a nightly lane alone, which lets a landing break a sweep unseen for a
+//! day.
+//!
+//! **The profile is the knob.** nextest names the running profile to every
+//! test in `NEXTEST_PROFILE`; the `sweeps` profile means the whole corpus, the
+//! `nightly` profile the whole corpus over its rotation, and every other
+//! profile, or a run outside nextest, the sample. A sweep is selected by the
+//! `sweeps` module it sits in, so neither whole profile's filter names a test.
+//! The alternative was a variable per lane, which a task forgets to
+//! set and a local run never sets.
+//!
+//! **A hashed slice at a fixed size.** A sample ranks its candidates by the
+//! BLAKE3 digest of the sweep's name and the source's corpus path and takes
+//! the first `size`: the same slice on every machine and every run, salted
+//! per sweep so two sweeps cover different sources, and moved by at most one
+//! source when the corpus gains or loses one. Its cost is fixed until the
+//! corpus changes, which a stride over a length-sorted list is too, but a
+//! stride moves every choice when one source is added. The alternatives were
+//! the stride and a random draw per run, which makes a failure a lottery.
+//!
+//! **Stratified by location.** A source's class is where it sits — the
+//! strict root, or the family below the fixture root, the pending set among
+//! them — because membership in the corpus is location. The slice keeps the
+//! first-ranked source of every class, so no class goes unvisited.
+//!
+//! **The change beside the fixed set.** A sampled sweep visits its fixed set
+//! whatever the change, and its `_changed` companion test visits the
+//! candidates the change adds or modifies outside it (#4654), measured
+//! against the revision `GANDR_SWEEP_BASE` names or, unset, where `HEAD` left
+//! `origin/main` — the merge-base selection the obligations report applies to
+//! witnesses. A run that cannot list the change fails rather than sample
+//! without it. The sample's stated size is the count its sweep measured to
+//! fit the 30 s bound, and it caps each of the two tests: a change touching
+//! more sources than that visits as many as the size, ranked by the digest of
+//! the commit the change was read at, the sweep's name and the source, so
+//! each commit of a wide change — each push, each merge-queue entry — visits
+//! another part of it and the nightly profile visits the rest. A failure
+//! names its source, and the commit replays the part. A defect in the fixed
+//! set then fails the landing that makes it, however many sources that
+//! landing changes. The alternatives were the change first within the size,
+//! which let a wide landing displace the fixed set and pass over a defect
+//! later landings failed on (#4547, #4606); every touched source beyond the
+//! size, which put a change touching hundreds of sources past the bound in
+//! every sampled sweep at once; and half the size for each, which halves the
+//! fixed set every landing visits. A raised bound was refused, since the
+//! bound is what keeps a sweep a test.
+//!
+//! **A layout is no change.** A modified source the formatter lays out to the
+//! text it lays the base's out to holds the base's tokens and comments in the
+//! base's order — the invariant `gandr-surface-format` checks on every text
+//! it returns — so every sweep reads it as before, and it leaves the change.
+//! A corpus-wide layout then leaves every sample its ranked slice; the
+//! nightly profile, visiting every source over its rotation, is the backstop.
+//! The alternative was every touched file in, which put the corpus's layout
+//! pass past the 30 s bound in every sample at once (#492).
+//!
+//! **A rotating cover nightly.** The whole nightly run is held to fifteen
+//! minutes summed over its jobs, twenty at the most. A sweep that cannot
+//! visit the whole corpus inside its share of that visits one slice of it a
+//! night and covers the whole over the [`Nights`] it states beside its
+//! sample: its whole cost on the nightly runner over its share. The slice is
+//! a hash of the sweep's name and the source's corpus path
+//! ([`Rotation::holds`]). The typing and the erasure cannot rotate by source:
+//! each one's costliest source alone takes longer than its share, so each
+//! visits every source each night, opened whole up to the night's part and
+//! typed or erased through it, each source cut into as many parts as its
+//! nights so each costs about that fraction ([`Rotation::part`], #3850). The
+//! recovery sweep cannot rotate by source either. Its rows stand alone, so it
+//! visits every source each night and checks every `nights`th row of each
+//! ([`Rotation::holds_row`]).
+//! Either way the night is the UTC day, every input is visited within the
+//! sweep's nights, the run prints the night it visited, and
+//! `GANDR_SWEEP_NIGHT` replays it. A sweep cheap enough visits the whole
+//! corpus every night. The alternatives were one night count for
+//! every rotating sweep, which leaves the costliest past the budget or spreads
+//! the cheaper ones thinner than they need; a stride over the keystrokes,
+//! which never visits the text between its steps; shards across jobs, which
+//! each pay the build again inside one summed budget; a raised timeout, which
+//! spends the budget; and retiring a sweep, which no pull-request lane covers
+//! whole.
+//!
+//! **Reversal**: a runner that takes the whole sweeps between nightlies, or
+//! nextest's own test partitioning by input, makes the sample and the
+//! rotation unnecessary.
+//!
+//! See the [crate README](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-sweep/README.md).
+
+// Module documentation that predates the shape lint: 1 heading outside the
+// vocabulary, 1 decision record, 2 issue references and 2 budgets exceeded.
+// Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        doc_issue_reference,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
+
+extern crate alloc;
+
+pub mod changed;
+pub mod corpus;
+pub mod coverage;
+pub mod error;
+pub mod rotation;
+pub mod sample;
+
+use anodized::spec;
+
+pub use crate::changed::Changed;
+pub use crate::corpus::Class;
+pub use crate::corpus::CorpusName;
+pub use crate::corpus::Source;
+pub use crate::coverage::Coverage;
+pub use crate::error::SweepError;
+pub use crate::rotation::Held;
+pub use crate::rotation::Night;
+pub use crate::rotation::Nights;
+pub use crate::rotation::Offset;
+pub use crate::rotation::Part;
+pub use crate::rotation::Rotation;
+pub use crate::rotation::Row;
+pub use crate::rotation::Slice;
+pub use crate::rotation::Text;
+pub use crate::sample::Sample;
+pub use crate::sample::SampleName;
+pub use crate::sample::SampleSize;
+
+/// Which portion of a sampled run a sweep test visits (#4654).
+///
+/// The sample's fixed set is the same for every change; the change's sources
+/// beside it are what the sweep's `_changed` companion test visits within its
+/// own 30 s.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Portion
+{
+    /// The sample's fixed set; every candidate, or the night's slice, when
+    /// full.
+    Fixed,
+    /// The sources the change touches outside the fixed set; none when full,
+    /// where the fixed portion visits every source.
+    Changed,
+}
+
+/// What a run asks a sweep to visit: its coverage, the portion a test visits,
+/// and, when sampled, the sources the change touches, and, when whole, the
+/// slice a rotating sweep visits.
+///
+/// # Specification
+/// - provides: [`Sweep::visit`] and [`Sweep::visit_rotating`], the selections
+///   every sweep test applies.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Sweep
+{
+    /// The budget the run is in.
+    coverage: Coverage,
+    /// The portion the test visits.
+    portion: Portion,
+    /// The changed corpus sources; empty under [`Coverage::Full`], which
+    /// visits every one.
+    changed: Changed,
+    /// The slice a rotating sweep visits under [`Coverage::Full`];
+    /// [`Rotation::Whole`] under [`Coverage::Sampled`], whose sample draws
+    /// from every source.
+    rotation: Rotation,
+}
+
+impl Sweep
+{
+    /// The sweep the running profile asks for, visiting the fixed portion.
+    ///
+    /// # Specification
+    /// - requires: when sampled, as [`Changed::asked`].
+    /// - ensures: the coverage [`Coverage::asked`] reads and
+    ///   [`Portion::Fixed`]; when sampled, the change [`Changed::asked`] lists
+    ///   against the corpus's roots and the whole rotation; when full, no
+    ///   change and the rotation [`Rotation::asked`] reads.
+    /// - provides: what a sweep test reads once before choosing its inputs.
+    /// - fails: [`SweepError::Walk`] when a corpus root cannot be resolved,
+    ///   [`SweepError::Git`] when the change cannot be listed, and
+    ///   [`SweepError::Night`] when the night cannot be read.
+    /// - panics: none.
+    /// - executable: none — the outcome is the environment's and Git's.
+    ///
+    /// # Errors
+    /// As `fails` lists.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the parts are witnessed where they live; this joins
+    ///   them, and every sweep test runs it in both budgets.
+    /// - witness: `tests::a_full_sweep_visits_every_candidate`
+    #[inline]
+    pub fn asked() -> Result<Self, SweepError>
+    {
+        let coverage = Coverage::asked();
+        let (changed, rotation) = match coverage {
+            Coverage::Full => (Changed::default(), Rotation::asked()?),
+            Coverage::Sampled => {
+                let changed = Changed::asked(&corpus::Roots::asked()?)?;
+                (changed, Rotation::Whole)
+            },
+        };
+        Ok(Self {
+            coverage,
+            portion: Portion::Fixed,
+            changed,
+            rotation,
+        })
+    }
+
+    /// A sweep of `coverage` over a change touching `changed`, rotating as
+    /// `rotation` says when full, visiting the fixed portion.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        coverage: Coverage,
+        changed: Changed,
+        rotation: Rotation,
+    ) -> Self
+    {
+        Self {
+            coverage,
+            portion: Portion::Fixed,
+            changed,
+            rotation,
+        }
+    }
+
+    /// This sweep visiting the change's sources beside the fixed set: what a
+    /// sweep's `_changed` companion test asks for.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn changed(self) -> Self
+    {
+        Self {
+            portion: Portion::Changed,
+            ..self
+        }
+    }
+
+    /// The budget the run is in.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn coverage(&self) -> Coverage
+    {
+        self.coverage
+    }
+
+    /// The portion the test visits.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn portion(&self) -> Portion
+    {
+        self.portion
+    }
+
+    /// The fewest sources a sampled visit under `sample` draws: its size for
+    /// the fixed portion, none for the change's, which a change touching no
+    /// candidate leaves empty. A sweep test asserts its sample is drawn
+    /// against it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn drawn(
+        &self,
+        sample: Sample,
+    ) -> SampleSize
+    {
+        match self.portion {
+            Portion::Fixed => sample.size,
+            Portion::Changed => SampleSize(0),
+        }
+    }
+
+    /// The slice a rotating sweep visits when full; a rotating sweep prints
+    /// it, so its failure names the night it visited.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn rotation(&self) -> Rotation
+    {
+        self.rotation
+    }
+
+    /// The candidates the sweep visits: every one under [`Coverage::Full`],
+    /// `sample`'s fixed set otherwise; for [`Portion::Changed`], none under
+    /// [`Coverage::Full`] and the change's sources beside the fixed set
+    /// otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for [`Portion::Fixed`], `candidates` whole under
+    ///   [`Coverage::Full`] and [`Sample::select`] otherwise; for
+    ///   [`Portion::Changed`], nothing under [`Coverage::Full`] and
+    ///   [`Sample::touched`] over the change otherwise.
+    /// - provides: the sources a sweep test visits, in the candidates' order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a full sweep returns every candidate and a sampled
+    ///   one its fixed set whatever the change, and the change's portion
+    ///   returns the touched sources beside it, none when full; swapping an arm
+    ///   changes a count.
+    /// - witness: `tests::a_full_sweep_visits_every_candidate`
+    /// - witness: `tests::the_change_s_portion_visits_beside_the_fixed_set_4654`
+    #[spec(ensures: |ret| self.coverage != Coverage::Full || ret.len() == if self.portion == Portion::Fixed { candidates.len() } else { 0 })]
+    #[inline]
+    #[must_use]
+    pub fn visit(
+        &self,
+        sample: Sample,
+        candidates: &[Source],
+    ) -> Vec<Source>
+    {
+        match (self.portion, self.coverage) {
+            (Portion::Fixed, Coverage::Full) => candidates.to_vec(),
+            (Portion::Fixed, Coverage::Sampled) => sample.select(candidates),
+            (Portion::Changed, Coverage::Full) => Vec::new(),
+            (Portion::Changed, Coverage::Sampled) => sample.touched(candidates, &self.changed),
+        }
+    }
+
+    /// The candidates a rotating sweep visits: those the night's slice of
+    /// `nights` holds under [`Coverage::Full`], `sample`'s fixed set
+    /// otherwise; for [`Portion::Changed`], as [`Sweep::visit`].
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for [`Portion::Fixed`], under [`Coverage::Full`], exactly the
+    ///   candidates [`Rotation::holds`] for `sample`'s name over `nights`,
+    ///   every one under [`Rotation::Whole`]; [`Sample::select`] otherwise. For
+    ///   [`Portion::Changed`], what [`Sweep::visit`] returns.
+    /// - provides: the sources a sweep too costly to visit whole every night
+    ///   visits, in the candidates' order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nightly sweep over the corpus on `nights`
+    ///   consecutive nights, a whole one and a sampled one; a rotation applied
+    ///   to a sampled run or ignored by a full one, or a night count ignored,
+    ///   changes a count.
+    /// - witness: `tests::a_rotating_sweep_covers_the_corpus_over_its_nights`
+    #[spec(ensures: |ret| self.coverage != Coverage::Full || ret.len() == if self.portion == Portion::Fixed { candidates.iter().filter(|candidate| self.rotation.holds(sample.name, nights, candidate) == Held::Tonight).count() } else { 0 })]
+    #[inline]
+    #[must_use]
+    pub fn visit_rotating(
+        &self,
+        sample: Sample,
+        nights: Nights,
+        candidates: &[Source],
+    ) -> Vec<Source>
+    {
+        match (self.portion, self.coverage) {
+            (Portion::Fixed, Coverage::Full) => candidates
+                .iter()
+                .filter(|candidate| {
+                    self.rotation.holds(sample.name, nights, candidate) == Held::Tonight
+                })
+                .cloned()
+                .collect(),
+            (Portion::Fixed, Coverage::Sampled) | (Portion::Changed, _) => {
+                self.visit(sample, candidates)
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::collections::BTreeSet;
+
+    use super::Changed;
+    use super::CorpusName;
+    use super::Coverage;
+    use super::Night;
+    use super::Nights;
+    use super::Rotation;
+    use super::Sample;
+    use super::SampleName;
+    use super::SampleSize;
+    use super::Sweep;
+    use super::corpus::sources;
+
+    #[test]
+    fn a_full_sweep_visits_every_candidate()
+    {
+        let corpus = sources().expect("the corpus reads");
+        let sample = Sample {
+            name: SampleName("a sweep"),
+            size: SampleSize(3),
+        };
+        let tonight = Rotation::Night(Night(0));
+        assert_eq!(
+            Sweep::new(Coverage::Full, Changed::default(), tonight).visit(sample, &corpus),
+            corpus,
+            "a sweep that does not rotate visits everything on every night"
+        );
+        let sampled = Sweep::new(Coverage::Sampled, Changed::default(), Rotation::Whole)
+            .visit(sample, &corpus);
+        assert!(
+            sampled.len() < corpus.len() && sampled.len() >= 3,
+            "{} of {}",
+            sampled.len(),
+            corpus.len()
+        );
+        let asked = Sweep::asked().expect("the run's sweep resolves");
+        assert_eq!(asked.coverage(), Coverage::asked());
+    }
+
+    #[test]
+    fn a_rotating_sweep_covers_the_corpus_over_its_nights()
+    {
+        let corpus = sources().expect("the corpus reads");
+        let sample = Sample {
+            name: SampleName("a sweep"),
+            size: SampleSize(3),
+        };
+        let nights = Nights(6);
+        let mut visits = 0_usize;
+        let mut covered = alloc::collections::BTreeSet::new();
+        for night in 0 .. nights.0 {
+            let sweep = Sweep::new(
+                Coverage::Full,
+                Changed::default(),
+                Rotation::Night(Night(night)),
+            );
+            let visited = sweep.visit_rotating(sample, nights, &corpus);
+            assert!(
+                visited.len() < corpus.len(),
+                "night {night} visits a slice: {} of {}",
+                visited.len(),
+                corpus.len()
+            );
+            visits = visits.saturating_add(visited.len());
+            covered.extend(visited.into_iter().map(|source| source.name));
+        }
+        assert_eq!(visits, corpus.len(), "no source is visited twice");
+        assert_eq!(covered.len(), corpus.len(), "every source is visited");
+        assert_eq!(
+            Sweep::new(Coverage::Full, Changed::default(), Rotation::Whole)
+                .visit_rotating(sample, nights, &corpus),
+            corpus,
+            "the whole rotation visits every source"
+        );
+        let sampled = Sweep::new(
+            Coverage::Sampled,
+            Changed::default(),
+            Rotation::Night(Night(0)),
+        )
+        .visit_rotating(sample, nights, &corpus);
+        assert_eq!(
+            sampled,
+            sample.select(&corpus),
+            "a sampled run draws its sample, whatever the night"
+        );
+    }
+
+    /// #4654: a sampled sweep's fixed portion is the same whatever the change,
+    /// and its companion visits the change's sources beside it; a full sweep's
+    /// companion visits nothing, since the fixed portion visits every source.
+    #[test]
+    fn the_change_s_portion_visits_beside_the_fixed_set_4654()
+    {
+        let corpus = sources().expect("the corpus reads");
+        let sample = Sample {
+            name: SampleName("a sweep"),
+            size: SampleSize(3),
+        };
+        let every: Changed = corpus.iter().map(|source| source.name.clone()).collect();
+        let still = Sweep::new(Coverage::Sampled, Changed::default(), Rotation::Whole);
+        let moved = Sweep::new(Coverage::Sampled, every, Rotation::Whole);
+        assert_eq!(
+            moved.visit(sample, &corpus),
+            still.visit(sample, &corpus),
+            "the fixed portion is the same whatever the change"
+        );
+        let fixed = still.visit(sample, &corpus);
+        let fixed: BTreeSet<&CorpusName> = fixed.iter().map(|source| &source.name).collect();
+        let beside = moved.changed().visit(sample, &corpus);
+        assert_eq!(beside.len(), 3, "the change's portion is held to the size");
+        assert!(
+            beside.iter().all(|source| !fixed.contains(&source.name)),
+            "the change's portion comes beside the fixed set"
+        );
+        assert_eq!(
+            still.changed().visit(sample, &corpus),
+            [],
+            "no change, an empty companion"
+        );
+        assert_eq!(
+            Sweep::new(Coverage::Full, Changed::default(), Rotation::Whole)
+                .changed()
+                .visit_rotating(sample, Nights(6), &corpus),
+            [],
+            "a full companion visits nothing"
+        );
+    }
+}

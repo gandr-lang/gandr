@@ -1,0 +1,4 @@
+//! Uses [Point].
+import "./point.gandr" ;
+def there : Point ;
+def there = Here ;
