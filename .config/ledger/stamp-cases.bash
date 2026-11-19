@@ -44,7 +44,7 @@ INSERT INTO feature VALUES('delta','implemented','five','#12');
 INSERT INTO feature VALUES('gamma','planned','four more',NULL);")" change
 }
 
-since() { { cat ledger/features.sql; echo "SELECT id || '=' || coalesce(since, 'NULL') FROM feature ORDER BY id;"; } | sqlite3 | paste -sd ' '; }
+since() { { cat ledger/features.sql; echo "SELECT id || '=' || coalesce(since, 'NULL') FROM feature ORDER BY id;"; } | sqlite3 | paste -sd ' ' -; }
 
 # The touched implemented and partial rows take the number. A planned row and
 # an untouched row keep their since. The commit holds the ledger alone.
@@ -54,7 +54,7 @@ got=$(
   echo "$(since) | $(git log -1 --format=%s) | $(git show --name-only --format= HEAD)"
 )
 want="alpha=#7 beta=b87a65d #866 #7 delta=#12 gamma=NULL | chore(repo): the ledger rows of #7 carry its number | ledger/features.sql"
-[[ $got == "$want" ]] || fail "#7978: the touched rows take the number and nothing else changes" "$got"
+[[ $got == "$want" ]] || fail "#8116: the touched rows take the number and nothing else changes" "$got"
 
 # A second run finds each row stamped, and writes and commits nothing.
 got=$(

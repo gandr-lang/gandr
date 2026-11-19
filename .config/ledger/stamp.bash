@@ -78,7 +78,7 @@ if ! jq -ne --argjson pr "$pr" --slurpfile head "$tables/head.json" --slurpfile 
   echo "ledger:stamp: the stamped $file changes more than the since of the rows it stamps; it is refused" >&2
   exit 2
 fi
-count=$(wc -l < "$tables/ids")
+count=$(wc -l < "$tables/ids" | tr -d '[:space:]')
 read -r added removed _ < <(git diff --no-index --numstat -- "$file" "$tables/stamped.sql" || true)
 if [[ $added != "$count" || $removed != "$count" ]]; then
   echo "ledger:stamp: the stamped $file changes $added line(s) for $count row(s); it is refused" >&2
