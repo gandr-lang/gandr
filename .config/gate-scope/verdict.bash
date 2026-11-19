@@ -11,6 +11,10 @@
 # pull request and of the merge group read it. A job that reads a record for
 # each of its checks runs none of them.
 #
+# A write retries one failed signing call. The tree, check and key stay fixed,
+# so the retry writes the same record. A second failure leaves no record and
+# names the command that writes it without another gate run.
+#
 # The key binds each input that the verdict reads (`verdicts.json` names the
 # checks and the profile of each):
 #   - `tree` and `check`: the tree and the task;
@@ -193,13 +197,27 @@ case ${1:-} in
     mapfile -t ran < <(mise tasks ls --json 2> /dev/null | jq -r --args '
       (map({key: .name, value: [(.depends // [])[] | if type == "array" then .[0] else . end | split(" ")[0]]}) | from_entries) as $deps
       | def ran: ., (($deps[.] // [])[] | ran); [$ARGS.positional[] | ran] | unique[]' "$@" || printf '%s\n' "$@")
+    failed=0
     for check in "${ran[@]}"; do
       jq -e --arg check "$check" '.checks | has($check)' "$table" > /dev/null || continue
       k=$(key "$check")
-      commit=$(git commit-tree -S -m "verdict: $check passes on ${tree:0:12}" -m "$k" "$tree")
+      signed=false
+      for attempt in 1 2; do
+        if commit=$(git commit-tree -S -m "verdict: $check passes on ${tree:0:12}" -m "$k" "$tree"); then
+          signed=true
+          break
+        fi
+        echo "verdict: $check passed; signing attempt $attempt of 2 failed" >&2
+      done
+      if [[ $signed != true ]]; then
+        echo "verdict: $check passed, but its record did not sign after 2 attempts; write it without running the check: $here/verdict.bash write $tree $check" >&2
+        failed=1
+        continue
+      fi
       git update-ref "refs/verdicts/$tree/$(ref_name "$check")/$(key_hash "$k")" "$commit"
       echo "verdict: $check passes on ${tree:0:12}; the record is ${commit:0:12}" >&2
     done
+    (( failed == 0 )) || exit 1
     ;;
   publish)
     (( $# == 2 )) || { echo 'usage: verdict.bash publish <commit>' >&2; exit 2; }
