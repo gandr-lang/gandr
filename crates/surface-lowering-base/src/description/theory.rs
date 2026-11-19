@@ -3568,7 +3568,7 @@ fn undeclared_ports(
 ///
 /// # Cost
 /// - allocation: the refusal and its message, error path
-pub(crate) fn unknown_port_sort(
+pub fn unknown_port_sort(
     operation: &Name,
     sort: &Name,
     span: ByteSpan,

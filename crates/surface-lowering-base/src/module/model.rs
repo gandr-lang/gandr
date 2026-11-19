@@ -579,7 +579,7 @@ impl<'source> Collected<'source>
     ///
     /// # Specification
     /// trivial.
-    fn presentation_of(
+    pub fn presentation_of(
         &self,
         position: SlotIndex,
     ) -> Option<(SlotIndex, &Presentation)>

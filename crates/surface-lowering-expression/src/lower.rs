@@ -1087,6 +1087,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         self.declare();
         self.mark_generic();
         self.read_builtins();
+        self.resolve_ports();
         self.seed()?;
         Exits::new(self.host()).survey()?;
         self.classify()?;
