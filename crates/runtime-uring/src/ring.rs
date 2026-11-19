@@ -1,14 +1,6 @@
 //! The ring: its setup through a typed builder, with each setup flag at most
 //! once, and the borrows of its two queues and its registrar.
 
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        single_field_struct_needs_transparent_repr,
-        reason = "the builder's macro makes a struct for each argument of `make`, and the source has no struct to mark; #7729 owes the lint's reading of a macro's structs"
-    )
-)]
-
 use ::bon::bon;
 use ::core::marker::PhantomData;
 use ::core::ptr::NonNull;

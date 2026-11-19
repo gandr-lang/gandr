@@ -48,13 +48,6 @@ pub mod repr
 }
 
 #[cfg(test)]
-#[cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        single_field_struct_needs_transparent_repr,
-        reason = "the builder's macro makes a struct for each field of the fixture, and the source has no struct to mark; #7729 owes the lint's reading of a macro's structs"
-    )
-)]
 pub mod test
 {
     use ::assert_fs::TempDir;
