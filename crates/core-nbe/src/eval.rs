@@ -6317,6 +6317,10 @@ fn step_bind(
 /// - witness: `eval::tests::a_case_picks_the_branch_the_injection_names`
 /// - witness: `eval::tests::an_eliminator_on_a_neutral_grows_its_spine`
 /// - witness: `eval::tests::an_ill_shaped_elimination_is_refused`
+///
+/// # Cost
+/// - allocation: case closures and a neutral spine, growth within the domain
+///   arena capacity.
 #[spec(
     requires: [!machine.values.is_empty(), env.0 < machine.envs.len()],
     captures: [

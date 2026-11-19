@@ -1061,6 +1061,9 @@ impl<T: Clone> core::ops::DerefMut for Snapshot<T>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: copy-on-write snapshot state, durable by the snapshot.
     fn deref_mut(&mut self) -> &mut Self::Target
     {
         match *self {
@@ -1076,6 +1079,9 @@ impl<T: Default> Snapshot<T>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: shared snapshot state, durable by the fork branch.
     fn share(&mut self) -> Arc<T>
     {
         match *self {
@@ -4017,6 +4023,9 @@ where
     /// - witness: `machine::tests::unfolding_one_function_twice_is_not_a_cycle`
     /// - witness: `machine::tests::a_definition_cycle_declines_rather_than_unfolding_forever`
     /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
+    ///
+    /// # Cost
+    /// - allocation: unfolded spine copies, durable by the frozen goal state.
     #[spec(
         captures: [left = goal.left, right = goal.right],
         ensures: |ret| match ret {
@@ -4525,6 +4534,10 @@ where
     /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
     /// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
+    ///
+    /// # Cost
+    /// - allocation: child goal list, setup.
+    /// - allocation: shared fork snapshots, durable by the child goals.
     #[spec(
         captures: [before = self.spent.0],
         ensures: |ret| ret.is_err() || (ret == Ok(Turn::Wait) && {
