@@ -478,10 +478,9 @@ fn a_malformed_protocol_is_refused_where_it_is_written()
 #[test]
 fn each_retired_protocol_spelling_is_refused_by_name()
 {
-    let source = SourceText::from(
-        "def dotted : ! Integer . end ;\ndef shifted : ! Integer >> end ;\ndef asked : ? \
-         Integer . end ;\ndef heard : ? Integer >> end ;\ndef spun : mu t . Integer >! t ;\n",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/unformatted/each-retired-protocol-spelling-is-refused-by-name.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     for (name, written, form) in [

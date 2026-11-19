@@ -1,0 +1,5 @@
+def dotted : ! Integer . end ;
+def shifted : ! Integer >> end ;
+def asked : ? Integer . end ;
+def heard : ? Integer >> end ;
+def spun : mu t . Integer >! t ;
