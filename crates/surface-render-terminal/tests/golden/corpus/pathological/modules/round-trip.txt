@@ -1,0 +1,31 @@
+error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/modules/round-trip.gandr:32:5
+   │
+17 │     oper answer : Integer;
+   │          ────── an endpoint the point does not convert to
+   ┆
+32 │ ┏     @[refuses("EndpointMismatch")]
+33 │ ┃     def answer = reply + 1;
+   │ ┃                           ╿
+   │ ┃                           │
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━not both endpoints of the path
+   │                             an endpoint the point does not convert to
+   │
+   ├ note: `answer` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
+
+error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/modules/round-trip.gandr:28:5
+   │
+22 │     oper reply : Integer;
+   │          ───── an endpoint the point does not convert to
+   ┆
+28 │ ┏     @[refuses("EndpointMismatch")]
+29 │ ┃     def reply = answer;
+   │ ┃                       ╿
+   │ ┃                       │
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━not both endpoints of the path
+   │                         an endpoint the point does not convert to
+   │
+   ├ note: `reply` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints

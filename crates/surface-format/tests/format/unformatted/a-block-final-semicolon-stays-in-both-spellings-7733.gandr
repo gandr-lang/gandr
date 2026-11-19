@@ -1,0 +1,3 @@
+def laid() -> -F Unit =
+  pure *{}  ;
+def braced() -> -F Unit = {   pure *{}  ;   };
