@@ -1,7 +1,0 @@
-/// `prefix_receive_step`: the retired receive step with a lead `?`, written
-/// `? T . S` or `? T >> S`. The infix `T >? S` replaces it. The lowering
-/// refuses the step, and the refusal names it.
-@[refuses("RetiredSpelling.prefix_receive_step")]
-def inward(c : ? Integer >> end) -> Unit =
-  let n = recv c
-  close c

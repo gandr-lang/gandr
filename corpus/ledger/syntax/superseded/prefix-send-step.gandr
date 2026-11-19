@@ -1,7 +1,0 @@
-/// `prefix_send_step`: the retired send step with a lead `!`, written
-/// `! T . S` or `! T >> S`. The infix `T >! S` replaces it. The lowering
-/// refuses the step, and the refusal names it.
-@[refuses("RetiredSpelling.prefix_send_step")]
-def outward(c : ! Integer . end) -> Unit =
-  send c 1
-  close c

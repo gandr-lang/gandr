@@ -476,52 +476,6 @@ fn a_malformed_protocol_is_refused_where_it_is_written()
 }
 
 #[test]
-fn each_retired_protocol_spelling_is_refused_by_name()
-{
-    let source = SourceText::from(include_str!(
-        "tests/unformatted/each-retired-protocol-spelling-is-refused-by-name.gandr"
-    ));
-    let mut arena = CoreArena::new();
-    let module = lowered(source, &mut arena);
-    for (name, written, form) in [
-        (
-            "dotted",
-            "! Integer . end",
-            gandr_surface_grammar::RetiredForm::PrefixSendStep,
-        ),
-        (
-            "shifted",
-            "! Integer >> end",
-            gandr_surface_grammar::RetiredForm::PrefixSendStep,
-        ),
-        (
-            "asked",
-            "? Integer . end",
-            gandr_surface_grammar::RetiredForm::PrefixReceiveStep,
-        ),
-        (
-            "heard",
-            "? Integer >> end",
-            gandr_surface_grammar::RetiredForm::PrefixReceiveStep,
-        ),
-        (
-            "spun",
-            "mu t . Integer >! t",
-            gandr_surface_grammar::RetiredForm::MuRecursion,
-        ),
-    ] {
-        assert_eq!(
-            refusal_of(&module, SurfaceName::from(name)),
-            LoweringRefusal::RetiredName {
-                span: spelled_within(source, SourceText::from(written), SourceText::from(written)),
-                form,
-            },
-            "`{written}` is refused by the name of its retired spelling"
-        );
-    }
-}
-
-#[test]
 fn the_seat_exchange_lowers_both_ends()
 {
     let mut arena = CoreArena::new();

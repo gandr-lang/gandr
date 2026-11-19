@@ -7485,9 +7485,9 @@ mod tests
         };
         for (source, start, end, form) in [
             (
-                "def serve(c : t => +{more : !Integer >> t, done : end}) -> Unit = unit;\n",
+                "def serve(c : t => +{more : Integer >! t, done : end}) -> Unit = unit;\n",
                 14,
-                54,
+                53,
                 FormName::from(NamedKind("def_function")),
             ),
             (

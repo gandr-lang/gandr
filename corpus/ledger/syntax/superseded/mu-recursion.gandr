@@ -1,7 +1,0 @@
-/// `mu_recursion`: the retired recursive protocol `mu X . S`. The form
-/// `rec X => S` replaces it. The lowering refuses the form, and the refusal
-/// names it.
-@[refuses("RetiredSpelling.mu_recursion")]
-def serve(c : mu t . +{more : Integer >! t, done : end}) -> Unit =
-  select c done
-  close c

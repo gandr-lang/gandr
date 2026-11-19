@@ -116,7 +116,6 @@ use gandr_core_term::session::SessionAction;
 use gandr_core_term::session::SessionType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
-use gandr_surface_grammar::RetiredForm;
 use gandr_surface_lowering_base::lower::arity::Arranged;
 use gandr_surface_lowering_base::lower::arity::Key;
 use gandr_surface_lowering_base::lower::arity::arrange;
@@ -721,26 +720,21 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///   as a value type under the form's frame, stores it in the next slot and
     ///   queues its continuation as a fresh state; `rec t => S` binds `t` for
     ///   the walk under it, queues a leave after `S`, is the fixed point of the
-    ///   state `S` fills, and keeps `t` as a site naming `state`; a form led by
-    ///   `mu`, `!` or `?` is refused as its retired spelling.
-    /// - fails: a misplaced tile, a hole's own fault, or a retired spelling.
+    ///   state `S` fills, and keeps `t` as a site naming `state`.
+    /// - fails: a misplaced tile, or a hole's own fault.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::MalformedForm`]; [`LoweringRefusal::RetiredName`] of
-    /// [`RetiredForm::MuRecursion`], [`RetiredForm::PrefixSendStep`] or
-    /// [`RetiredForm::PrefixReceiveStep`] at the form's span.
+    /// [`LoweringRefusal::MalformedForm`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the seat's protocol reads every one of the four, and
-    ///   each retired spelling is refused by its own name.
+    /// - hypothesis: L3 — the seat's protocol reads every one of the four.
     /// - witness: `gandr-surface-lowering::lower::session::tests::a_session_type_lowers_to_its_protocol`
-    /// - witness: `gandr-surface-lowering::lower::session::tests::each_retired_protocol_spelling_is_refused_by_name`
     ///
     /// # Cost
     /// - allocation: the binder, the state site, the payload operand and the
     ///   queued continuation of each form, growth within the protocol's forms
-    /// - allocation: the refusal of a malformed or retired form, error path
+    /// - allocation: the refusal of a malformed form, error path
     #[spec(
         captures: before = (draft.syntax.len(), self.cx().operands.entries().len()),
         ensures: |ret| ret.as_ref().map_or(true, |node| match *node {
@@ -759,18 +753,6 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         binders: &mut Vec<SurfaceName<'source>>,
     ) -> Result<ProtocolSyntax, LoweringRefusal<'source>>
     {
-        for (lead, form) in [
-            (TileName::MU, RetiredForm::MuRecursion),
-            (TileName::BANG, RetiredForm::PrefixSendStep),
-            (TileName::QUESTION, RetiredForm::PrefixReceiveStep),
-        ] {
-            if let Maybe::Present(_) = cursor.at(lead) {
-                return Err(LoweringRefusal::RetiredName {
-                    span: here.at.span,
-                    form,
-                });
-            }
-        }
         if let Maybe::Present(_) = cursor.tile(TileName::END) {
             exhausted(here, &cursor)?;
             return Ok(ProtocolSyntax::End);

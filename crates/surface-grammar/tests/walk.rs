@@ -99,12 +99,12 @@ const BUILT_IN_FINGERPRINT: u64 = 0x3ad2_f303_0abb_0fbf;
 const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3124);
 
 /// How many labels the walk index projects to more than one mold.
-const BUILT_IN_MULTI_MOLD_LABELS: usize = 94;
+const BUILT_IN_MULTI_MOLD_LABELS: usize = 92;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     (" ", 2),
-    ("!", 2),
+    ("!", 1),
     ("!=", 1),
     ("\"", 12),
     ("#", 1),
@@ -129,7 +129,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("-=", 16),
     ("->", 13),
     ("-F", 3),
-    (".", 99),
+    (".", 96),
     (".#[", 2),
     (".#{", 1),
     (".*{", 1),
@@ -149,9 +149,8 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     (">", 3),
     (">!", 1),
     (">=", 1),
-    (">>", 2),
     (">?", 1),
-    ("?", 4),
+    ("?", 3),
     ("@", 1),
     ("@![", 3),
     ("@[", 4),
@@ -236,7 +235,6 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("migrate", 1),
     ("mobile", 10),
     ("module", 18),
-    ("mu", 1),
     ("node", 3),
     ("number", 58),
     ("obs", 1),
@@ -272,7 +270,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("type", 23),
     ("type(", 1),
     ("type_identifier", 221),
-    ("type_variable", 93),
+    ("type_variable", 92),
     ("typed_number", 2),
     ("u16", 1),
     ("u32", 1),
