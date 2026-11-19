@@ -1515,7 +1515,7 @@ pub enum Plan
     /// The record of the values its labels name: `*{ .l = v, … }`.
     Record(BTreeMap<FieldLabel, NodeIndex>),
     /// The update of its base by the record of the values its labels name:
-    /// `*{ b | l = v, … }`.
+    /// `*{ b | .l = v, … }`.
     RecordUpdate(NodeIndex, BTreeMap<FieldLabel, NodeIndex>),
     /// The injection of its value into the summand at this index.
     Injection(Summand, NodeIndex),

@@ -31,9 +31,9 @@ pub def encodeJson(D : Desc, x : Mu D) -> Json =
 /// The generic codec for `D`, its decoder the encoder's inverse.
 pub def jsonCodec(D : Desc) -> Codec Json (Mu D) =
   *{
-    encode = fun (x) { encodeJson D x },
-    decode = fun (doc) { decodeJson D doc },
-    roundTrip = fun (x) { decodeEncodeJson D x }
+    .encode = fun (x) { encodeJson D x },
+    .decode = fun (doc) { decodeJson D doc },
+    .roundTrip = fun (x) { decodeEncodeJson D x }
   }
 
 /// A service's health, which the derived codec encodes to JSON.

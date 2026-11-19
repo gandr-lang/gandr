@@ -24,7 +24,7 @@ def twice() -> Integer =
 @[entry(*{operator, seat, seat}), runs("*{.done = 3, .left = 4}")]
 def reread() -> *{done : Integer, left : Integer} =
   let held : *{done : Integer, left : Integer} at seat = migrate [seat] {
-    (hold *{done = 3, left = 4})
+    (hold *{.done = 3, .left = 4})
   };
   let counts at seat = held
   migrate [seat] { pure counts }

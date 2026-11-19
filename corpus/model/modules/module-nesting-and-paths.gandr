@@ -38,4 +38,4 @@ def soft_limit = Config.limits.soft;
 
 /// `limits` gathers every limit value.
 @[runs("*{.hard = 100, .note = \"the innermost component\", .soft = 10}")]
-def limits = *{hard = hard_limit, soft = soft_limit, note = note};
+def limits = *{.hard = hard_limit, .soft = soft_limit, .note = note};

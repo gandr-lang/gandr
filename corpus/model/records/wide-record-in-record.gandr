@@ -26,14 +26,14 @@ pub type Long = *{
 
 /// A value of the long record.
 def long : Long = *{
-  a = "a",
-  b = "b",
-  c = "c",
-  d = "d",
-  e = "e",
-  f = "f",
-  g = "g",
-  i = *{d = "d", s = "s"}
+  .a = "a",
+  .b = "b",
+  .c = "c",
+  .d = "d",
+  .e = "e",
+  .f = "f",
+  .g = "g",
+  .i = *{.d = "d", .s = "s"}
 };
 
 /// Two text fields of other labels.
@@ -53,12 +53,12 @@ pub type Apart = *{
 
 /// A value of the record apart.
 def apart : Apart = *{
-  a = "a",
-  b = "b",
-  c = "c",
-  d = "d",
-  e = "e",
-  f = "f",
-  g = "g",
-  i = *{x = "x", y = "y"}
+  .a = "a",
+  .b = "b",
+  .c = "c",
+  .d = "d",
+  .e = "e",
+  .f = "f",
+  .g = "g",
+  .i = *{.x = "x", .y = "y"}
 };

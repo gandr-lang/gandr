@@ -27,11 +27,11 @@ error[LoopNotRespected]: this case answers at its loop's point by a case over an
    │ │
 29 │ │┏   match a where
 30 │ │┃     | Base => match b where
-31 │ │┃       | Base => *{centre = Base, around = loop}
-   │ │┃                                               ╿
-   │ └┃───────────────────────────────────────────────│
-   │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `(a : Circle, Circle) -> *{around : Path[.A = Circle] a a, centre : Circle}`; while checking the body of this thunk
-   │                                                  a case its sort's loops do not admit
+31 │ │┃       | Base => *{.centre = Base, .around = loop}
+   │ │┃                                                 ╿
+   │ └┃─────────────────────────────────────────────────│
+   │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `(a : Circle, Circle) -> *{around : Path[.A = Circle] a a, centre : Circle}`; while checking the body of this thunk
+   │                                                    a case its sort's loops do not admit
    │
    ├ note: `rotTwin` is refused with LoopNotRespected, as its expectation states
    ├ note: the answer carried along the loop is:

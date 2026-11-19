@@ -683,7 +683,7 @@ pub enum Former<'source, Node>
     Record(Arity),
     /// A record update of its base by this many fields, before elaboration,
     /// which the source answers in label order by [`Source::component`] and
-    /// [`Source::label`]: `*{b | l = a, …}`.
+    /// [`Source::label`]: `*{b | .l = a, …}`.
     RecordUpdate(Node, Arity),
     /// An injection into the summand at this position: `+{.i = v}`.
     Injection(Component, Node),

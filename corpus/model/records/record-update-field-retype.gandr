@@ -8,11 +8,11 @@
 // - see: `pathological/records/record-update-stale-type.gandr` — `stale`
 
 /// `cell` holds an integer count and a label.
-def cell = *{count = 3, label = "start"};
+def cell = *{.count = 3, .label = "start"};
 
 /// `named` changes `cell.count` to a string.
-def named : *{count : String, label : String} = *{cell | count = "three"};
+def named : *{count : String, label : String} = *{cell | .count = "three"};
 
 /// `recounted` returns `cell` with a string count.
 @[runs("*{.count = \"three\", .label = \"start\"}")]
-def recounted() -> *{count : String, label : String} = *{cell | count = "three"};
+def recounted() -> *{count : String, label : String} = *{cell | .count = "three"};

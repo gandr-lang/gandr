@@ -23,7 +23,7 @@ def second(v : prodOf(Integer, Bool)) -> Bool = v.1;
 
 def pairOf(a : Type, b : Type) -> Type = return type(*{x : a, y : b});
 
-def literal(u : Integer, s : Bool) -> pairOf(Integer, Bool) = *{x = u, y = s};
+def literal(u : Integer, s : Bool) -> pairOf(Integer, Bool) = *{.x = u, .y = s};
 
 def rec tower(n : Nat) -> Type =
   match n {

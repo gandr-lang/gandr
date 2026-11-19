@@ -28,8 +28,8 @@ const DEPTH: usize = 20;
 const STEPS_PER_LEVEL: usize = 4;
 
 /// The iterated pair of depth [`DEPTH`] beside its type: `t₀ = ()` and
-/// `t_{k+1} = *{l = t_k, r = t_k}`, each level one node that both fields of the
-/// next level share, and its type built the same way from `Unit`.
+/// `t_{k+1} = *{.l = t_k, .r = t_k}`, each level one node that both fields of
+/// the next level share, and its type built the same way from `Unit`.
 ///
 /// # Specification
 /// trivial.

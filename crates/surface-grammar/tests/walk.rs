@@ -87,13 +87,13 @@ use crate::failure::Failure;
 /// fields, `T.#{.l = v}` and `T.#{f ↦ v}` (#6498), then by a definition's
 /// body after `=` (#6318), then by the six machine width atoms, `u8` to
 /// `isize` (#7960).
-const BUILT_IN_FINGERPRINT: u64 = 0x7029_5d0d_7c35_ff4d;
+const BUILT_IN_FINGERPRINT: u64 = 0x4b36_7932_c2f2_c6e8;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3159);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3161);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 99;
@@ -129,7 +129,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("-=", 16),
     ("->", 13),
     ("-F", 3),
-    (".", 97),
+    (".", 99),
     (".#[", 2),
     (".#{", 1),
     (".*{", 1),

@@ -27,4 +27,4 @@ def breadth = Kit.Tools.breadth;
 
 /// `labelled_breadth` gathers the label and breadth.
 @[runs("*{.breadth = 4, .label = \"tag\"}")]
-def labelled_breadth = *{label = Tag.label, breadth = breadth};
+def labelled_breadth = *{.label = Tag.label, .breadth = breadth};

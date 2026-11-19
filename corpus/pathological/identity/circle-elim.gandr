@@ -28,7 +28,7 @@ def contractible(x : Circle) -> Path[.A = Circle] Base x =
 def rotTwin(a : Circle, b : Circle) -> *{centre : Circle, around : Path[.A = Circle] a a} =
   match a where
     | Base => match b where
-      | Base => *{centre = Base, around = loop}
+      | Base => *{.centre = Base, .around = loop}
 
 /// The degree-two map: the loop goes round twice. A loop arm of a
 /// non-dependent case chooses any loop at the image of the point, so the map

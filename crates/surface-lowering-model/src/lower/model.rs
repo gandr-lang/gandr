@@ -1830,6 +1830,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_sort_the_theory_cannot_fix_is_refused`
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_sort_after_another_head_is_refused`
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_sort_a_partly_manifest_type_leaves_a_field_is_read_off_its_binder_2158`
+    ///
+    /// # Cost
+    /// - allocation: the sorts the model fixes, durable by the applied node
+    ///   that keys them
+    /// - allocation: the pieces of each binding, growth within the lowering's
+    ///   scratch
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -1909,6 +1915,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     ///   order, and an operand that is no binding.
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_model_type_writes_its_sort_as_its_type`
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_sort_the_theory_cannot_fix_is_refused`
+    ///
+    /// # Cost
+    /// - allocation: each sort the bindings fix, growth within the caller's
+    ///   list of sorts
+    /// - allocation: the pieces of each link, growth within the caller's
+    ///   scratch
     #[spec(captures: before = sorts.len(), ensures: |ret| ret.is_err() || sorts.len() > before)]
     fn bindings(
         &self,
@@ -1964,6 +1976,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     ///   is no binding.
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_model_type_writes_its_sort_as_its_type`
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_sort_the_theory_cannot_fix_is_refused`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the binding, growth within the caller's
+    ///   scratch
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(sort, defined)| at.span.start() <= sort.span.start() && defined.span.end() <= at.span.end()))]
     fn binding(
         &self,
@@ -2030,6 +2046,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_model_type_writes_its_sort_as_its_type`
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_sort_the_theory_cannot_fix_is_refused`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_theory_at_a_dotted_path_takes_a_manifest_wherever_a_theory_is_named_4514`
+    ///
+    /// # Cost
+    /// - allocation: the fixed sorts of the bundle, durable by the plan of the
+    ///   bundle
     #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Bundle(_))))]
     #[inline]
     pub fn model_type(
@@ -3129,6 +3149,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// # Adequacy
     /// - hypothesis: L3 — as [`Models::module_value`].
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_module_named_where_a_value_is_read_is_its_model_4485`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the ascription, setup
+    /// - allocation: the prefix of the theory's path, durable by the path it
+    ///   returns
     fn ascribed_theory(
         &self,
         form: Placed,
@@ -3422,6 +3447,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_module_packs_as_the_record_of_its_members`
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_written_forgetting_map_takes_the_slot_it_names_2130`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_theory_at_a_dotted_path_takes_a_manifest_wherever_a_theory_is_named_4514`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the stated theory, setup
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |theory| theory.span().start() >= site.at.span.start() && theory.span().end() <= site.at.span.end()))]
     fn stated_theory(
         &self,
@@ -4174,6 +4202,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
     /// - witness: `gandr-surface-lowering::tests::modules::a_kinded_type_component_spine_declares_its_arity`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the kind and of each domain, setup
+    /// - allocation: the index types, durable by the kind they describe
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |types| types.iter().all(|&id| sink.arena.value_type(id).is_some())))]
     fn written_indices(
         &self,

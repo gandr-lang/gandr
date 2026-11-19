@@ -3233,11 +3233,13 @@ fn glob_field() -> Regex
     ])
 }
 
-/// Build a record expression field.
+/// Build a record update field: `.l = E`, or the bare `l = E`, which the
+/// lowering refuses by name.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a named record field assigned an expression hole.
+/// - ensures: an optional `.`, then a named record field assigned an expression
+///   hole.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3247,10 +3249,11 @@ fn glob_field() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression))))]
 fn record_field() -> Regex
 {
     seq([
+        opt(t(TileLabel("."))),
         t(TileLabel("identifier")),
         t(TileLabel("=")),
         h(Sort::Expression),
@@ -4704,8 +4707,8 @@ fn primary_expressions(
         ]),
     ));
     // The `*{`-opened expression forms — the telescope value `*{ }`, `*{ a, b
-    // }`, `*{ .n = E, … }`, its `*{ n = E }` shorthand, and the record update
-    // `*{ E | id = E, … }` — share the `*{` prefix. The hole-led ones diverge
+    // }`, `*{ .n = E, … }`, and the record update `*{ E | .id = E, … }` —
+    // share the `*{` prefix. The hole-led ones diverge
     // only at the tile after the first entry: an update's `|` versus a
     // telescope's `,` or `}`. Declaring them as two rules would give `*{` two
     // hole-led Expression-sort molds, so the molder would decide
@@ -4717,8 +4720,9 @@ fn primary_expressions(
     // `|`, `,` or `}` `≐`-continues exactly one tail — locally decidable with
     // no window — and the `|` reads as the form's own continuation
     // (continuation-rank 0), never the pipeline operator. A positional entry
-    // is an `E`, and `E = E` the shorthand whose key the lowering reads as a
-    // bare label.
+    // is an `E`. An entry `E = E` molds too, its key an expression hole, so
+    // the lowering refuses the undotted field by name rather than the parser
+    // by repair.
     //
     // The leading-dot entries `.n = E` and `.0 = E` take a `*{` of their own,
     // decided by the very next tile: a `*{` that admits a hole after it and
@@ -4750,7 +4754,8 @@ fn primary_expressions(
                         // entry.
                         positional_entry(),
                         alt([
-                            // update tail: `| id = E, … }`
+                            // update tail: `| .id = E, … }`; a bare `id = E`
+                            // molds, and the lowering refuses it by name
                             seq([t(TileLabel("|")), comma1(record_field()), t(TileLabel("}"))]),
                             // telescope tail: `, entry`*, an optional trailing
                             // `,`.
@@ -4773,17 +4778,27 @@ fn primary_expressions(
     telescope.adaptations.push(Adaptation::new(
         RuleName("telescope_expression"),
         SurfaceForm("record_field"),
-        AdaptationReason("folded into the factored #{ family: the `.id = E` entry and its `id = E` shorthand are inlined (the shorthand's key is an expression hole), not a standalone form-first identifier competing with a bare variable"),
+        AdaptationReason("folded into the factored #{ family: the `.id = E` entry is inlined, not a standalone form-first identifier competing with a bare variable"),
     ));
     telescope.adaptations.push(Adaptation::new(
         RuleName("telescope_expression"),
         SurfaceForm("record_update_expression"),
-        AdaptationReason("factored into the #{ expression family: the update tail `| id = E, … }` shares the `#{ E` prefix and discriminates on the `|` tile after the source expression"),
+        AdaptationReason("factored into the #{ expression family: the update tail `| .id = E, … }` shares the `#{ E` prefix and discriminates on the `|` tile after the source expression"),
     ));
     telescope.adaptations.push(Adaptation::refused(
         RuleName("telescope_expression"),
         RetiredForm::UnitValue,
         AdaptationReason("the unit value is the empty telescope `*{}`: the name `unit`, where no declaration binds it, is refused by name"),
+    ));
+    telescope.adaptations.push(Adaptation::refused(
+        RuleName("telescope_expression"),
+        RetiredForm::BareRecordField,
+        AdaptationReason("a field of a record literal supplies a name, so it writes the dot, `*{ .l = e }`: the undotted `*{ l = e }` is refused by name"),
+    ));
+    telescope.adaptations.push(Adaptation::refused(
+        RuleName("telescope_expression"),
+        RetiredForm::BareUpdateField,
+        AdaptationReason("a field of a record update supplies a name, so it writes the dot, `*{ r | .l = e }`: the undotted `*{ r | l = e }` is refused by name"),
     ));
     out.push(telescope);
     // The injection `+{ .ok = E }` into a sum over labels, positional as

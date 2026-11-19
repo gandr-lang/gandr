@@ -417,7 +417,7 @@ fn the_printer_decides_every_inner_space()
         text(&grammar, source, WIDE),
         "@[checks]\n\
          def f(x : Integer, y : Integer) -> -F Integer = { return x + y; };\n\
-         def p = *{a = 1, b = - 2};\n\
+         def p = *{.a = 1, .b = - 2};\n\
          def q : +{A : Integer, B : Unit};\n\
          def g[r : Row](k : Integer) -> [Partial | r] Unit = pure *{};\n\
          def l = fun (x) { x };\n\

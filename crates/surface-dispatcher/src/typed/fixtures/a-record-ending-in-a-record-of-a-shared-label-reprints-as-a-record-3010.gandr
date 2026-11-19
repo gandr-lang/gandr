@@ -11,12 +11,12 @@ type Long = *{
 };
 def long : Long;
 def long = *{
-  a = "a",
-  b = "b",
-  c = "c",
-  d = "d",
-  e = "e",
-  f = "f",
-  g = "g",
-  i = *{d = "d", s = "s"}
+  .a = "a",
+  .b = "b",
+  .c = "c",
+  .d = "d",
+  .e = "e",
+  .f = "f",
+  .g = "g",
+  .i = *{.d = "d", .s = "s"}
 };

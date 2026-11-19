@@ -1,4 +1,4 @@
-@[deprecated(*{since = "0.2", note = "use cube"})]
+@[deprecated(*{.since = "0.2", .note = "use cube"})]
 def square = 1;
 @[deprecated]
 def old : Integer;
