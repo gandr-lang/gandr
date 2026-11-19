@@ -796,7 +796,7 @@ impl<Label> Modifier<Label>
                         Some(&next) => {
                             current = input.clone();
                             stack.push(Instruction::UnionFold {
-                                prefix: prefix.clone(),
+                                prefix: Arc::clone(&prefix),
                                 input,
                                 accumulated,
                                 remaining,

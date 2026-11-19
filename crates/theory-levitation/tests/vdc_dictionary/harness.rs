@@ -2405,8 +2405,8 @@ mod tests
             start: fixtures::zero(),
             steps: vec![RewriteStep {
                 cell: GeneratorIndex::from(0_usize),
-                pos: vec![],
-                subst: Binding::new(),
+                pos: vec![].into(),
+                subst: Binding::new().into(),
             }],
         };
         for (left, right, expected) in [
@@ -2522,8 +2522,8 @@ mod tests
                 start: start.clone(),
                 steps: vec![RewriteStep {
                     cell: GeneratorIndex::from(cell),
-                    pos,
-                    subst: Binding::new(),
+                    pos: pos.into(),
+                    subst: Binding::new().into(),
                 }],
             };
             assert_eq!(
@@ -2703,8 +2703,8 @@ mod tests
                 start: FreeTerm::op("plus", [fixtures::zero(), fixtures::zero()]),
                 steps: vec![RewriteStep {
                     cell: GeneratorIndex::from(0_usize),
-                    pos: vec![],
-                    subst: Binding::from([(Name::from("n"), fixtures::zero())]),
+                    pos: vec![].into(),
+                    subst: Binding::from([(Name::from("n"), fixtures::zero())]).into(),
                 }],
             }],
         };
@@ -3042,8 +3042,8 @@ mod tests
                 generator: generator.clone(),
                 absorbed: vec![RewriteStep {
                     cell: GeneratorIndex::from(cell),
-                    pos,
-                    subst: Binding::new(),
+                    pos: pos.into(),
+                    subst: Binding::new().into(),
                 }],
                 path_start: start.clone(),
             };

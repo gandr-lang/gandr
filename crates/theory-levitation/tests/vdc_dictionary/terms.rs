@@ -1075,7 +1075,8 @@ mod tests
                             else {
                                 a.clone()
                             },
-                        )]),
+                        )])
+                        .into(),
                     },
                     entry.1.clone(),
                 )
@@ -1092,7 +1093,11 @@ mod tests
                             .map(|step| {
                                 (
                                     usize::from(step.cell),
-                                    step.pos.into_iter().map(usize::from).collect::<Vec<_>>(),
+                                    step.pos
+                                        .iter()
+                                        .copied()
+                                        .map(usize::from)
+                                        .collect::<Vec<_>>(),
                                 )
                             })
                             .collect::<Vec<_>>(),

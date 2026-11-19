@@ -3801,25 +3801,30 @@ pub fn misspelt_keyword(
     }
     for at in (0 .. bytes.len()).rev() {
         let mut shorter = Vec::with_capacity(bytes.len().saturating_sub(1));
-        shorter.extend_from_slice(&bytes[.. at]);
-        shorter.extend_from_slice(&bytes[at.saturating_add(1) ..]);
+        let (before, _) = bytes.split_at(at);
+        let (_, after) = bytes.split_at(at.saturating_add(1));
+        shorter.extend_from_slice(before);
+        shorter.extend_from_slice(after);
         edits.push(shorter);
     }
     for at in 0 .. bytes.len() {
         for &letter in letters {
             let mut changed = Vec::with_capacity(bytes.len());
-            changed.extend_from_slice(&bytes[.. at]);
+            let (before, _) = bytes.split_at(at);
+            let (_, after) = bytes.split_at(at.saturating_add(1));
+            changed.extend_from_slice(before);
             changed.push(letter);
-            changed.extend_from_slice(&bytes[at.saturating_add(1) ..]);
+            changed.extend_from_slice(after);
             edits.push(changed);
         }
     }
     for at in 0 .. bytes.len() {
         for &letter in letters {
             let mut longer = Vec::with_capacity(bytes.len().saturating_add(1));
-            longer.extend_from_slice(&bytes[.. at]);
+            let (before, after) = bytes.split_at(at);
+            longer.extend_from_slice(before);
             longer.push(letter);
-            longer.extend_from_slice(&bytes[at ..]);
+            longer.extend_from_slice(after);
             edits.push(longer);
         }
     }
