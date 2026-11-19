@@ -2603,6 +2603,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// # Errors
     /// [`LoweringRefusal::MalformedForm`].
     ///
+    /// # Cost
+    /// - allocation: the refusal it returns, error path
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::capability_scope`].
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_handles_its_capability_and_resumes`

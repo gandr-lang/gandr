@@ -2033,6 +2033,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// # Errors
     /// [`LoweringRefusal::BudgetExceeded`].
     ///
+    /// # Cost
+    /// - allocation: the set of slots that the module holds, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — `M.B` and `M.Box.B` name the constructor in a value
     ///   and `M.B(x)` in a pattern, and a family the module does not hold is no
@@ -4035,6 +4038,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// # Errors
     /// [`LoweringRefusal::UnknownMold`], [`LoweringRefusal::UnknownMember`] and
     /// [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Cost
+    /// - allocation: the refusal it returns, error path
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::annotated`], and a constructor a typed
@@ -10515,6 +10521,9 @@ fn variable(
 /// # Errors
 /// [`LoweringRefusal::MalformedLiteral`].
 ///
+/// # Cost
+/// - allocation: the refusal it returns, error path
+///
 /// # Adequacy
 /// - hypothesis: L3 — a literal column compares against the written integer.
 /// - witness: `gandr-surface-lowering::lower::native::tests::literal_patterns_compare_and_branch`
@@ -11150,6 +11159,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     ///
     /// # Errors
     /// The refusals of `Self::resolve_name`.
+    ///
+    /// # Cost
+    /// - allocation: the refusal it returns, error path
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a claim on an earlier declaration and on a name
