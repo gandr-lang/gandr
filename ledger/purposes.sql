@@ -3166,6 +3166,8 @@ INSERT INTO purpose VALUES('surface-dispatcher','strata::StoredStrata','struct',
 INSERT INTO purpose VALUES('surface-dispatcher','strata::StrataTally','struct','Counts what a process''s stratum store recalled, certified, refused, did not believe and could not write.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','strata::install_stratum_store','function','Installs a process''s stratum store before its walk, once.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','strata::strata_tally','function','Reads what the installed stratum store recalled, certified, refused, did not believe and could not write.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','thir::Stager','struct','Holds the reader of a Rust crate and the cache of its records, so each `thir` mark of a source stages its body.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','thir::install_stager','function','Installs the stager that each source read after it uses, once.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','tier::AdmittedTally','struct','Counts what a process under an admission policy took from the emitter tier, beside the policy.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','tier::Admitting','struct','Names the policy and the tier a verdict that took admitted results stands on.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','tier::admitted_tally','function','Reads what the installed admission policy took, when it takes admitted results.',NULL,'fits','sound',NULL);
@@ -3589,6 +3591,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','error::FragmentSort','enum',
 INSERT INTO purpose VALUES('surface-lowering-base','error::LoopExit','enum','Names a loop''s exit, so a `break` or a `continue` on no path through a loop''s body is refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','error::LoweringRefusal','enum','Names the crate''s typed refusal vocabulary, so a refusal''s span is named.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','error::MatchFault','enum','Names how an import''s signature misses its source''s interface, so a missing member, one at another type and one with no written type are refused apart.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','error::StagedFault','enum','Names why a `thir` mark gives its signature no staged value, so the refusal names the fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','error::TelescopeFault','enum','Names a telescope''s fault, so the refusal names the fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','error::Unexported','enum','Names why an imported name is not exported, so a private name and an undefined one are refused apart.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','error::description_subject','module','Names the reason the name is absent.',NULL,'fits','sound',NULL);
@@ -4194,12 +4197,18 @@ INSERT INTO purpose VALUES('surface-lowering-base','table::NodeTable','struct','
 INSERT INTO purpose VALUES('surface-lowering-base','unbuilt::Spelling','struct','Names the spelling an unbuilt feature carries, so the feature''s spelling is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','unbuilt::Unbuilt','enum','Names a feature the lowering has not built, so the feature''s spelling is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','unit::ImportTarget','enum','Names an import''s target, so the target''s resolution is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','unit::MarkIndex','struct','Names the place of a `thir` mark among the marks of its source, so a fault reads the mark''s answer.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','unit::PathImportOrdinal','struct','Names the ordinal of a path import, so the ordinal''s position is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','unit::SourceIndex','struct','Names a source''s position in its unit, so the position''s order is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','unit::Staged','struct','Holds what a `thir` mark staged: its file, its function, and its body or why there is none.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','unit::StagedName','enum','Names what a fault of a `thir` mark names: a node, a callee, the ceiling or a cause.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','unit::Unit','struct','Holds a unit, so the unit''s sources are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','unit::UnitFault','enum','Names a unit''s fault, so the fault''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','unit::UnitKey','struct','Holds a unit''s key, so the key''s source is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','unit::UnitSource','struct','Holds a unit''s source, so the source''s start is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','unit::Unstaged','enum','Names why a `thir` mark staged no body, so the fault reads its cause.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','unit::staged_name','function','Reads what a fault of a `thir` mark names, from the marks of its source.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','unit::staged_name','module','Names the reason no name is held.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','unit::unhomed','module','Names the reason no module is held.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','unit::unnamed','module','Names the reason no name is held.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','written_import::Address','enum','Names what an import''s address is: a scheme, a package''s coordinate, a path or a module path.',NULL,'fits','sound',NULL);
