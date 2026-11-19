@@ -1663,4 +1663,33 @@ mod tests
             );
         }
     }
+
+    /// #8052: Deleting `rec` leaves the recursion arrow in a session type. Its
+    /// first refusal names the deleted recursion marker.
+    #[test]
+    fn a_deleted_session_recursion_marker_marks_its_gap_8052()
+    {
+        let scratch = std::env::temp_dir().join(format!(
+            "gandr-recovery-test-{}-session-recursion",
+            std::process::id()
+        ));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        std::fs::write(
+            folder.join("mu-session-type.gandr"),
+            include_str!("../../../../corpus/ledger/syntax/mu-session-type.gandr"),
+        )
+        .expect("the exemplar is written");
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        assert!(
+            !report.findings.iter().any(|finding| {
+                finding.exemplar.file_name() == Some("mu-session-type.gandr".as_ref())
+                    && finding.tile == "rec"
+                    && finding.mutation == Mutation::Deleted
+            }),
+            "mu-session-type.gandr: `rec` deleted is reported at its mutation: {report}"
+        );
+    }
 }

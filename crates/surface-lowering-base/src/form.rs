@@ -4523,8 +4523,9 @@ pub fn retired_within(
     found
 }
 
-/// Whether the extra operand at `extra` under the form at `form` is the
-/// retired box: an operand of sort `Type` that starts with the tile `=>`.
+/// The retired box at `extra` under `form`: an operand of sort `Type` that
+/// starts with the tile `=>`. Its mark starts at the preceding type in the
+/// same hole.
 ///
 /// In a hole of sort `Type`, no mold reads `=>` but the one of `rec X => S`,
 /// so the molder reads `A => B` as `A` and an extra operand that starts with
@@ -4535,20 +4536,25 @@ pub fn retired_within(
 /// # Specification
 /// - requires: `extra` is the span of an extra operand that a form under `form`
 ///   refuses.
-/// - ensures: true exactly when a form under `form` stands at `extra`, its mold
-///   is of sort `Type` and labelled with the box's written text, and its first
-///   child is a tile of that text.
-/// - fails: never; a node the tree does not hold reads as false.
+/// - ensures: a span from the type before `extra` in its hole, or `extra` when
+///   no type precedes it, to `extra`'s end exactly when a form under `form`
+///   stands at `extra`, its mold is of sort `Type` and labelled with the box's
+///   written text, and its first child is a tile of that text.
+/// - fails: never; a node the tree does not hold reads as absent.
 /// - panics: none.
 ///
 /// # Cost
 /// - allocation: the worklist of the walk, error path
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `def b : Integer => Integer;` reads as the box at `=>
-///   Integer`; `rec X => S` holds no such operand.
+/// - hypothesis: L3 — `def b : Integer => Integer;` marks both sides of the
+///   box. `rec X => S` reads with no retired box.
 /// - witness: `gandr-surface-lowering::lower::tests::the_fat_arrow_box_is_refused_by_name_7879`
-#[spec(ensures: |ret| ret == RetiredBox(false) || extra.start() < extra.end())]
+/// - witness: `gandr-surface-lowering::lower::tests::the_retired_box_marks_its_whole_form_8052`
+#[spec(ensures: |ret| match ret.0 {
+    Maybe::Present(span) => span.start() <= extra.start() && span.end() == extra.end(),
+    Maybe::Absent(_) => true,
+})]
 #[inline]
 #[must_use]
 pub fn boxed_extra(
@@ -4563,12 +4569,39 @@ pub fn boxed_extra(
         pbg.mold(mold)
             .is_ok_and(|held| held.label == written && held.sort == Sort::Type)
     };
+    let typed = |node: &Node| match node.label() {
+        NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
+            pbg.mold(mold).is_ok_and(|held| held.sort == Sort::Type)
+        },
+        NodeLabel::Wald
+        | NodeLabel::Grout { .. }
+        | NodeLabel::GhostClose { .. }
+        | NodeLabel::Space
+        | NodeLabel::Doc => false,
+    };
+    let mut start = Maybe::Absent(retired_box::Absent::Unboxed);
+    let mut found = false;
     let mut pending = alloc::vec![form];
     while let Some(position) = pending.pop() {
         let Some(node) = tree.node(position)
         else {
             continue;
         };
+        let mut preceding = Maybe::Absent(retired_box::Absent::Unboxed);
+        for child in tree.children(position).filter_map(|child| tree.node(child)) {
+            if child.span() == extra
+                && let Maybe::Present(previous) = preceding
+                && typed(previous)
+            {
+                start = match start {
+                    Maybe::Present(held) if held >= previous.span().start() => Maybe::Present(held),
+                    Maybe::Present(_) | Maybe::Absent(_) => Maybe::Present(previous.span().start()),
+                };
+            }
+            if !matches!(child.label(), NodeLabel::Space | NodeLabel::Doc) {
+                preceding = Maybe::Present(child);
+            }
+        }
         if node.span() == extra
             && let NodeLabel::Meld(mold) = node.label()
             && boxed(mold)
@@ -4578,20 +4611,42 @@ pub fn boxed_extra(
                 .find(|child| child.label() != NodeLabel::Space)
                 .is_some_and(|first| matches!(first.label(), NodeLabel::Tile(tile) if boxed(tile)))
         {
-            return RetiredBox(true);
+            found = true;
         }
         pending.extend(tree.children(position));
     }
-    RetiredBox(false)
+    if found {
+        let start = match start {
+            Maybe::Present(start) => start,
+            Maybe::Absent(_) => extra.start(),
+        };
+        let span = ByteSpan::new(start, extra.end()).unwrap_or(extra);
+        RetiredBox(Maybe::Present(span))
+    }
+    else {
+        RetiredBox(Maybe::Absent(retired_box::Absent::Unboxed))
+    }
 }
 
-/// Whether an extra operand is the retired box.
+/// The full span of the retired box at an extra operand.
 ///
 /// # Specification
 /// trivial.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct RetiredBox(pub bool);
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct RetiredBox(pub Maybe<ByteSpan, retired_box::Absent>);
+
+quenchant_shape::reason_enum! {
+    /// Why an extra operand is no retired box.
+    pub mod retired_box {
+        /// The operand is no retired box.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The operand has no retired box shape.
+            Unboxed,
+        }
+    }
+}
 
 quenchant_shape::reason_enum! {
     /// Why a node carries no tile label.
