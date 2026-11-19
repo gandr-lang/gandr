@@ -13,8 +13,10 @@ mkdir "$fake"
 cat > "$fake/date" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-[[ "$*" == '-u +%Gw%V' ]]
-printf '2026w47\n'
+case "$*" in
+  '-u +%Gw%V') printf '2026w47\n' ;;
+  *) /bin/date "$@" ;;
+esac
 EOF
 chmod +x "$fake/date"
 
