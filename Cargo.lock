@@ -1279,6 +1279,10 @@ name = "gandr-boot-alloc"
 version = "0.0.0"
 
 [[package]]
+name = "gandr-boot-core"
+version = "0.0.0"
+
+[[package]]
 name = "gandr-core-checker"
 version = "0.0.0"
 dependencies = [

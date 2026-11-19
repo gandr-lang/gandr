@@ -9,6 +9,7 @@ digraph crates {
   subgraph "cluster_boot" {
     label = "boot";
     "boot-alloc";
+    "boot-core";
   }
   subgraph "cluster_theory" {
     label = "theory";
