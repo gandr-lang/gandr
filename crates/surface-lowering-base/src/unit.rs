@@ -1084,4 +1084,97 @@ mod tests
         );
         assert_eq!(Unit::single().before_last(), Err(UnitFault::Empty));
     }
+
+    #[test]
+    fn each_staged_fault_reads_its_name_from_its_mark()
+    {
+        use gandr_runtime_rust_record::Body;
+        use gandr_runtime_rust_record::Node;
+        use gandr_runtime_rust_record::NodeIndex;
+        use gandr_runtime_rust_record::NodeName;
+        use gandr_runtime_rust_record::Outside;
+        use gandr_runtime_rust_record::Staging;
+        use quenchant_shape::shape::Maybe;
+
+        use super::MarkIndex;
+        use super::Staged;
+        use super::StagedName;
+        use super::Unstaged;
+        use super::staged_name;
+        use crate::error::StagedFault;
+
+        let mark = |staging| Staged {
+            file: "example.rs".into(),
+            function: "example".into(),
+            staging,
+        };
+        let marks = [
+            mark(Err(Unstaged::Unread("the crate does not build".into()))),
+            mark(Ok(Staging::Outside(Outside::Node("Binary".into())))),
+            mark(Ok(Staging::Outside(Outside::Callee("helper".into())))),
+            mark(Ok(Staging::Outside(Outside::Large))),
+            mark(Ok(Staging::Staged(Body {
+                nodes: Vec::from([Node::Parameter, Node::Call {
+                    callee: "identity".into(),
+                    argument: NodeIndex::from(0_u32),
+                }]),
+            }))),
+        ];
+        let unread = Unstaged::Unread("the crate does not build".into());
+        let binary = NodeName::from("Binary");
+        let at = |place: usize| MarkIndex::from(place);
+        let unmapped = |node: u32| StagedFault::Unmapped {
+            mark: at(4),
+            node: NodeIndex::from(node),
+        };
+        for (fault, named) in [
+            (
+                StagedFault::Unread(at(0)),
+                Maybe::Present(StagedName::Cause(&unread)),
+            ),
+            (
+                StagedFault::Outside(at(1)),
+                Maybe::Present(StagedName::Node(&binary)),
+            ),
+            (
+                StagedFault::Outside(at(2)),
+                Maybe::Present(StagedName::Callee("helper")),
+            ),
+            (
+                StagedFault::Outside(at(3)),
+                Maybe::Present(StagedName::Large),
+            ),
+            (unmapped(1), Maybe::Present(StagedName::Callee("identity"))),
+            (
+                unmapped(0),
+                Maybe::Absent(super::staged_name::Absent::NoNode),
+            ),
+            (
+                unmapped(2),
+                Maybe::Absent(super::staged_name::Absent::NoNode),
+            ),
+            (
+                StagedFault::Outside(at(5)),
+                Maybe::Absent(super::staged_name::Absent::NoMark),
+            ),
+            (
+                StagedFault::Unread(at(1)),
+                Maybe::Absent(super::staged_name::Absent::Unmatched),
+            ),
+            (
+                StagedFault::Outside(at(0)),
+                Maybe::Absent(super::staged_name::Absent::Unmatched),
+            ),
+            (
+                StagedFault::Bodied,
+                Maybe::Absent(super::staged_name::Absent::Unnamed),
+            ),
+            (
+                StagedFault::ItemMark,
+                Maybe::Absent(super::staged_name::Absent::Unnamed),
+            ),
+        ] {
+            assert_eq!(staged_name(&marks, fault), named, "{fault:?}");
+        }
+    }
 }
