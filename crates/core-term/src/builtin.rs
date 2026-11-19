@@ -19,7 +19,6 @@
 //!   toolchain with a key, a kind and a direction for each row, and one
 //!   attribute that binds a declaration of `std` to a row.
 
-use anodized::spec;
 use gandr_kernel_term::Builtin;
 use quenchant_shape::shape::Maybe;
 
@@ -173,6 +172,8 @@ impl Row
     /// - ensures: the row whose [`Self::key`] is `key`, and
     ///   [`row::Absent::Unkeyed`] when no row of the table has that key.
     /// - panics: none.
+    /// - executable: none — the predicate would read the whole table again, and
+    ///   the witnesses read each row.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each row is named back by its key, the keys are
@@ -180,16 +181,13 @@ impl Row
     ///   names no row.
     /// - witness: `builtin::tests::each_row_is_named_back_by_its_key`
     /// - witness: `builtin::tests::a_key_that_no_row_holds_names_none`
-    #[spec(ensures: |ret| match ret {
-        | Maybe::Present(row) => row.key() == key,
-        | Maybe::Absent(_) => Self::all().all(|row| row.key() != key),
-    })]
     #[inline]
     pub fn named(key: Key<'_>) -> Maybe<Self, row::Absent>
     {
-        Self::all()
-            .find(|row| row.key() == key)
-            .map_or(Maybe::Absent(row::Absent::Unkeyed), Maybe::Present)
+        match Self::all().find(|row| row.key() == key) {
+            Some(row) => Maybe::Present(row),
+            None => Maybe::Absent(row::Absent::Unkeyed),
+        }
     }
 }
 
