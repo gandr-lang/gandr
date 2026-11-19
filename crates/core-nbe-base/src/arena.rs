@@ -1203,6 +1203,10 @@ impl DomainArena
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the computation closure, growth within the closure arena
+    ///   capacity.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — both product components can be stuck independently;
     ///   the captured continuation must retain the first result and transport
