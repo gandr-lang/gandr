@@ -154,27 +154,29 @@ case ${1:-} in
     # the root, where cargo runs rustc. A relative path of a build script is
     # relative to its crate. A path that the tree does not hold is no input of
     # the tree: a case builds its own scratch crate there.
-    refused=$(for directory in "$@"; do
+    refused=$(while IFS= read -r -d '' input; do
+        awk -v root="$root/" '
+          function emit(kind, p) {
+            if (index(p, root) == 1) print FILENAME "\troot\t" substr(p, length(root) + 1)
+            else if (p !~ /^\// && p != "") print FILENAME "\t" kind "\t" p
+          }
+          FILENAME ~ /\/run\/stdout$/ {
+            if ($0 ~ /^cargo::?rerun-if-changed=/) { p = $0; sub(/^cargo::?rerun-if-changed=/, "", p); emit("crate", p) }
+            next
+          }
+          /^#/ || /^$/ { next }
+          {
+            line = $0
+            gsub(/\\ /, "\001", line)
+            if (line ~ /:$/) { line = substr(line, 1, length(line) - 1) }
+            else { sub(/^[^ ]*: */, "", line) }
+            n = split(line, parts, " ")
+            for (i = 1; i <= n; i++) { p = parts[i]; gsub("\001", " ", p); emit("root", p) }
+          }' "$input"
+      done < <(for directory in "$@"; do
         [[ -d $directory ]] || continue
         find "$directory" \( -name '*.d' -o -path '*/run/stdout' \) -newer "$stamp" -print0
-      done | xargs -0 -r awk -v root="$root/" '
-        function emit(kind, p) {
-          if (index(p, root) == 1) print FILENAME "\troot\t" substr(p, length(root) + 1)
-          else if (p !~ /^\// && p != "") print FILENAME "\t" kind "\t" p
-        }
-        FILENAME ~ /\/run\/stdout$/ {
-          if ($0 ~ /^cargo::?rerun-if-changed=/) { p = $0; sub(/^cargo::?rerun-if-changed=/, "", p); emit("crate", p) }
-          next
-        }
-        /^#/ || /^$/ { next }
-        {
-          line = $0
-          gsub(/\\ /, "\001", line)
-          if (line ~ /:$/) { line = substr(line, 1, length(line) - 1) }
-          else { sub(/^[^ ]*: */, "", line) }
-          n = split(line, parts, " ")
-          for (i = 1; i <= n; i++) { p = parts[i]; gsub("\001", " ", p); emit("root", p) }
-        }' \
+      done) \
       | jq -R -r --slurpfile crates <(printf '%s\n' "$crates") --rawfile allowed <(printf '%s\n' "$allowed") '
         def norm: reduce (split("/")[]) as $s ([];
           if $s == ".." and length > 0 and .[-1] != ".." then .[:-1] elif $s == "." or $s == "" then . else . + [$s] end) | join("/");

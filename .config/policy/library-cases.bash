@@ -62,7 +62,14 @@ for name in "${names[@]}"; do
   mkdir -p "$home/git/checkouts/${name##*/}/case"
   checkouts+=("$home/git/checkouts/${name##*/}/case")
 done
-times() { stat -c '%n %y' "${checkouts[@]}"; }
+times() {
+  if stat -f '%N %m' "${checkouts[@]}" > /dev/null 2>&1; then
+    stat -f '%N %m' "${checkouts[@]}"
+  else
+    # gnu-only: macOS's stat takes -f, so this fallback runs on GNU stat.
+    stat -c '%n %y' "${checkouts[@]}"
+  fi
+}
 before=$(times)
 
 libraries=$(cargo metadata --no-deps --format-version 1 --locked | jq -r '

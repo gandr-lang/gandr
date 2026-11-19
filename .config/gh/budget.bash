@@ -106,6 +106,7 @@ gh_budget_wait() {
   until=$(< "$gh_budget_dir/limited.$1")
   now=$(gh_budget_now)
   ((until > now)) || return 0
+  # gnu-only: the other form follows on this line.
   echo "gh: the $1 budget is spent; waiting $((until - now)) s, until $(date -d "@$until" +%H:%M 2> /dev/null || date -r "$until" +%H:%M)" >&2
   sleep $((until - now + RANDOM % 30))
 }

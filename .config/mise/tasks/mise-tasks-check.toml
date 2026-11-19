@@ -721,7 +721,14 @@ toolchain=$(rustup show active-toolchain | awk '{print $1}')
 revision=$(mise run --quiet workflow:revision)
 library=$(.config/policy/library.bash "$revision")
 printf 'check:dylint: policy library %s\n' "$library"
-find "$library" -mindepth 1 -maxdepth 2 -printf 'check:dylint: policy library entry %y %P\n' | LC_ALL=C sort
+while IFS= read -r entry; do
+  if [[ -d $entry ]]; then kind=d
+  elif [[ -f $entry ]]; then kind=f
+  elif [[ -L $entry ]]; then kind=l
+  else kind=?
+  fi
+  printf 'check:dylint: policy library entry %s %s\n' "$kind" "${entry#"$library"/}"
+done < <(find "$library" -mindepth 1 -maxdepth 2 -print) | LC_ALL=C sort
 dylint=$(cargo dylint --version)
 if [ "$(cat target/dylint/quenchant-revision 2> /dev/null)" != "$revision" ] \
   || { [ -e target/dylint/dylint-version ] && [ "$(cat target/dylint/dylint-version)" != "$dylint" ]; }; then
@@ -3092,6 +3099,15 @@ if [[ -n $findings ]]; then
 fi
 echo "gate-scope check OK: $(jq length .config/gate-scope/cases.json) cases read as recorded; every check that builds the toolchain sits in a group of the table; ${#scoped[@]} scoped light checks read only their rows"
 {% endraw %}'''
+
+# The GNU-only command options that a macOS gate cannot take. The scanner reads
+# its option table and each configuration script. A use that has no portable
+# form needs the direct `# gnu-only: <reason>` note.
+# - see: #8165
+["check:gnu-options"]
+description = "Each GNU-only command option under configuration has a portable form or a direct reason"
+tools.jq = "1.8.1"
+run = [".config/gnu-options/cases.bash", ".config/gnu-options/check.bash"]
 
 # The pinned rust-clippy the Dylint driver's build reads, in the CI image and
 # in `check:dylint` (#3531): `.config/rust-clippy/cases.bash` runs

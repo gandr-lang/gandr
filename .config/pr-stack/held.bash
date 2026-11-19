@@ -39,6 +39,7 @@ held_read() {
         dir=${line#*/cwd -> }
         if [[ -z ${held_dirs[$dir]:-} ]]; then held_dirs[$dir]=$pid; fi
       fi
+    # gnu-only: this branch reads /proc, which Linux alone provides.
     done < <(cd / && QUOTING_STYLE=literal stat -c '%N' /proc/[0-9]*/cwd 2> /dev/null || true)
   elif command -v lsof > /dev/null; then
     pid=
