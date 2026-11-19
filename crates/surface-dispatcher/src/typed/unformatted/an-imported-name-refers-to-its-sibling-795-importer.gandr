@@ -1,0 +1,3 @@
+import "./point.gandr" ;
+def there : Point ;
+def there = here ;

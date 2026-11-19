@@ -1,0 +1,5 @@
+def a : Integer ;
+def a = nope ;
+def b : Natural ;
+def c : Integer ;
+def c = 1 ;
