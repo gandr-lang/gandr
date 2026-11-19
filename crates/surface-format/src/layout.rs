@@ -1176,6 +1176,9 @@ enum Continuation
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the items of the group, growth within the group's elements
 fn items<'group, 'source>(
     placed: &'group [Placed<'source>],
     docs: &[Built],
