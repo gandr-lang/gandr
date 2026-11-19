@@ -5,34 +5,32 @@ use gandr_kernel_term::ArenaLength;
 use gandr_kernel_term::Family;
 
 use super::FamilyAddress as _;
+use super::next_address;
 use crate::il::ProducerId;
 
-/// The excluded address ceiling is reached without allocating node bytes.
+/// The last address is admitted and the next is refused without node bytes.
+/// - see: #8054
 #[test]
-fn addresses_refuse_exactly_at_the_u32_ceiling()
+fn addresses_refuse_exactly_at_the_u32_ceiling_8054()
 {
     assert_eq!(
         Some(ProducerId::from(0_u32)),
         ProducerId::next_in(&Family::<()>::default())
     );
+    let mut ordinary = Family::default();
+    ordinary.push(());
+    ordinary.push(());
     assert_eq!(
         Some(ProducerId::from(2_u32)),
-        ProducerId::next_in(&Family::from(SmallVec::<(), 0, Global>::from_iter([
-            (),
-            ()
-        ])))
+        ProducerId::next_in(&ordinary)
     );
+
     let ceiling = usize::try_from(u32::MAX).expect("the address ceiling fits usize");
-    let mut family = Family::from(SmallVec::<(), 0, Global>::from_iter(core::iter::repeat_n(
-        (),
-        ceiling,
-    )));
-    assert_eq!(None, ProducerId::next_in(&family));
-    family.truncate(ArenaLength::from(ceiling.saturating_sub(1)));
     assert_eq!(
         Some(ProducerId::from(u32::MAX.saturating_sub(1))),
-        ProducerId::next_in(&family),
+        next_address(ArenaLength::from(ceiling.saturating_sub(1))),
     );
+    assert_eq!(None, next_address::<ProducerId>(ArenaLength::from(ceiling)));
 }
 
 /// Reads distinguish the last live slot from the exact end and a dropped

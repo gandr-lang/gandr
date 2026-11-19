@@ -151,11 +151,11 @@ pub trait FamilyAddress: Copy + From<u32> + Into<u32>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — empty and ordinary families expose reused or shifted
-    ///   addresses; families of zero-sized nodes immediately below and at
-    ///   `u32::MAX` expose an inclusive ceiling without allocating node
-    ///   storage. The observer is the exact optional address; arbitrary
-    ///   implementations with lossy conversions are excluded.
-    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
+    ///   addresses. Lengths immediately below and at `u32::MAX` expose the
+    ///   inclusive ceiling without constructing node bytes. The observer is the
+    ///   exact optional address; arbitrary implementations with lossy
+    ///   conversions are excluded.
+    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling_8054`
     #[inline]
     #[spec(ensures: |ret| match ret {
         | Some(address) => {
@@ -167,10 +167,7 @@ pub trait FamilyAddress: Copy + From<u32> + Into<u32>
     })]
     fn next_in<Node>(family: &Family<Node>) -> Option<Self>
     {
-        u32::try_from(usize::from(family.len()))
-            .ok()
-            .filter(|&address| address < u32::MAX)
-            .map(Self::from)
+        next_address(family.len())
     }
 
     /// The node this address names in `family`, or `None` when it dangles.
@@ -210,6 +207,37 @@ pub trait FamilyAddress: Copy + From<u32> + Into<u32>
             usize::try_from(Into::<u32>::into(self)).ok()?,
         ))
     }
+}
+
+/// The address index for a family length below the excluded ceiling.
+///
+/// # Specification
+/// - ensures: the length becomes its `u32` address below `u32::MAX`.
+/// - fails: `None` at or above `u32::MAX`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the last admitted address and the excluded ceiling
+///   distinguish a shifted or inclusive boundary. The observer is the exact
+///   optional address.
+/// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling_8054`
+#[inline]
+#[spec(ensures: |ret| match ret {
+    | Some(address) => {
+        let offset: u32 = address.into();
+        usize::try_from(offset) == Ok(usize::from(length)) && offset < u32::MAX
+    },
+    | None => u32::try_from(usize::from(length)).is_err()
+        || u32::try_from(usize::from(length)) == Ok(u32::MAX),
+})]
+fn next_address<Address>(length: ArenaLength) -> Option<Address>
+where
+    Address: FamilyAddress,
+{
+    u32::try_from(usize::from(length))
+        .ok()
+        .filter(|&address| address < u32::MAX)
+        .map(Address::from)
 }
 
 pub(crate) use address_wrapper;
