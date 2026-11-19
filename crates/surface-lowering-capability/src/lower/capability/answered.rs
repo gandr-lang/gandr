@@ -38,6 +38,7 @@ use quenchant_shape::shape::Maybe;
 
 use super::CapabilityRef;
 use super::TheoryInterface;
+use super::theory::Continuation;
 use super::theory::TheoryOperation;
 use crate::lower::Sink;
 use crate::lower::lowered;
@@ -161,6 +162,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the arguments of the component, growth within the operation's
+///   payload
+///
 /// # Adequacy
 /// - hypothesis: L3 — `State`'s `get` binds the state at its port and `put`
 ///   sends one and binds nothing; a clause misplacing either runs to another
@@ -176,10 +181,16 @@ fn clause(
 {
     let at = |index: usize| DeBruijnIndex::from(u32::try_from(index).unwrap_or(u32::MAX));
     let payload = operation.payload.len();
-    let reply = operation.reply.len();
+    // An operation with no continuation passes the component no continuation:
+    // its clause abandons the continuation, then gives the component's answer.
+    let (reply, abandoned) = match operation.continuation {
+        Continuation::Resumable(ref reply) => (reply.len(), false),
+        Continuation::Abandoned => (0, true),
+    };
     // The payload's values, split off its binder when there are several.
     let split = if payload > 1 { payload } else { 0 };
-    // The continuation's answer, bound when the port binds nothing.
+    // The continuation's answer, bound when the port binds nothing: or the
+    // unit of the abandonment.
     let bound = usize::from(reply == 0);
     let opened = 2_usize.saturating_add(split).saturating_add(bound);
     let raised = raised_value(
@@ -237,14 +248,24 @@ fn clause(
         sink.origins.record_value(id, origin);
         id
     };
-    applied = sink.arena.computation_application(applied, continued);
-    sink.origins.record_computation(applied, origin);
+    if !abandoned {
+        applied = sink.arena.computation_application(applied, continued);
+        sink.origins.record_computation(applied, origin);
+    }
     let mut body = applied;
     if reply == 0 {
-        let unit = sink.arena.value_unit();
-        sink.origins.record_value(unit, origin);
-        let resumed = resume(sink, at(split), unit, origin);
-        body = sink.arena.computation_bind(resumed, body);
+        let first = if abandoned {
+            let stack = variable(sink, at(split), origin);
+            let abandonment = sink.arena.computation_abandon(stack);
+            sink.origins.record_computation(abandonment, origin);
+            abandonment
+        }
+        else {
+            let unit = sink.arena.value_unit();
+            sink.origins.record_value(unit, origin);
+            resume(sink, at(split), unit, origin)
+        };
+        body = sink.arena.computation_bind(first, body);
         sink.origins.record_computation(body, origin);
     }
     if split > 0 {

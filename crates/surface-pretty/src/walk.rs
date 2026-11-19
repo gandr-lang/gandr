@@ -1281,14 +1281,24 @@ where
                 })
                 .collect::<Vec<_>>()
         };
-    let clauses = |subject: Slot<S::Node>, on_return, count| {
+    // A clause of an operation with no continuation writes its payload alone:
+    // its body stands past the abandonment of the stack that the lowering
+    // opens it with, under the binder of that bind.
+    let clauses = |subject: Slot<S::Node>, on_return, count: crate::former::Arity| {
         let mut slots = Vec::from([subject, ends(on_return, Binds::ONE)]);
-        slots.extend(components(
-            count,
-            Admits::Computation(Tail::Ends),
-            Binds::intuitionistic(OpenBinders(2_usize)),
-            None,
-        ));
+        slots.extend((0_usize .. usize::from(count)).map(|index| {
+            let index = Component::from(index);
+            let (body, opened) = source.abandoned(node, index).map_or_else(
+                || (source.component(node, index), 2_usize),
+                |rest| (Some(rest), 3_usize),
+            );
+            Slot {
+                node: body,
+                admits: Admits::Computation(Tail::Ends),
+                binds: Binds::intuitionistic(OpenBinders(opened)),
+                label: None,
+            }
+        }));
         slots
     };
     match *former {
@@ -12558,8 +12568,12 @@ impl Walk<'_, '_>
                     .text(name)
                     .text("(");
                 // A minting clause's split opens the payload and the mint
-                // past the pair and the continuation.
-                let _ = if source
+                // past the pair and the continuation. A clause of an operation
+                // with no continuation writes its payload alone.
+                let _ = if source.abandoned(node, Component::from(index)).is_some() {
+                    parts.part(Part::Binder(0_usize))
+                }
+                else if source
                     .component(node, Component::from(index))
                     .is_some_and(|body| minted(source, body).is_some())
                 {

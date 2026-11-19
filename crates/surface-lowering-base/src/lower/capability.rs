@@ -220,8 +220,9 @@ pub struct Clause
     pub operation: OperationName,
     /// The payload's binder, as written; none for `oper op(k)`.
     pub payload: Option<NodeIndex>,
-    /// The continuation's binder, as written.
-    pub continuation: NodeIndex,
+    /// The continuation's binder, as written; none for an operation with no
+    /// continuation, whose clause abandons it before its body.
+    pub continuation: Option<NodeIndex>,
     /// The body, under the clause's binders.
     pub body: NodeIndex,
     /// The buffer the scope mints for the clause, for an operation that

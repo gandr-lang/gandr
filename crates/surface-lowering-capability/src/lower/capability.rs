@@ -272,6 +272,7 @@ mod answered;
 
 use answered::Answering;
 use gandr_surface_lowering_base::lower::capability::theory;
+use theory::Continuation;
 pub(super) use theory::TheoryInterface;
 
 /// The name an abandonment is called by, where the program binds none.
@@ -2199,93 +2200,145 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                         return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
                     };
                     closed(site, &mut cursor, TileName::PAREN_OPEN)?;
-                    let Maybe::Present(first) = cursor.tile(TileName::IDENTIFIER)
-                    else {
-                        return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
-                    };
-                    // `oper op(k)`: an operation that sends nothing binds its
-                    // resumption alone.
-                    let (payload, second) = if let Maybe::Present(_) = cursor.tile(TileName::COMMA)
-                    {
-                        let Maybe::Present(second) = cursor.tile(TileName::IDENTIFIER)
-                        else {
-                            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
-                        };
-                        (Some(first), second)
-                    }
-                    else {
-                        (None, first)
-                    };
                     let operation = OperationName::from(self.cx().name_at(at).as_ref());
-                    // A host operation replying a buffer names its mint
-                    // between the payload and the continuation; a theory's
-                    // replies values of the sorts its manifest fixes.
-                    let minting = matches!(interface, Interface::Host(_))
-                        && mints(&operation) == Reply::Minted;
-                    let (minted, continuation) = match (minting, payload) {
-                        (true, Some(_)) => {
-                            closed(site, &mut cursor, TileName::COMMA)?;
-                            let Maybe::Present(continuation) = cursor.tile(TileName::IDENTIFIER)
-                            else {
-                                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
-                            };
-                            (Some(second), continuation)
-                        },
-                        (true, None) => {
-                            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
-                        },
-                        (false, _) => (None, second),
-                    };
-                    closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
-                    closed(site, &mut cursor, TileName::FAT_ARROW)?;
-                    let body = site.one(cursor.operands())?;
-                    let (under, mint) = if let (Some(minted), Some(payload)) = (minted, payload) {
-                        // The payload binder holds the pair the body splits
-                        // into the payload and the mint, placed live.
+                    let abandoned = matches!(
+                        interface,
+                        Interface::Theory(ref theory)
+                            if theory.operation(&operation).is_some_and(|read| {
+                                read.continuation == Continuation::Abandoned
+                            })
+                    );
+                    if abandoned {
+                        // An operation with no continuation: the clause names
+                        // its payload alone. The continuation and the unit of
+                        // its abandonment take unnamed binders, and the body
+                        // runs under them.
+                        let payload = match cursor.tile(TileName::IDENTIFIER) {
+                            Maybe::Present(payload) => Some(payload),
+                            Maybe::Absent(_) => None,
+                        };
+                        closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
+                        closed(site, &mut cursor, TileName::FAT_ARROW)?;
+                        let body = site.one(cursor.operands())?;
                         let unwritten = || Maybe::Absent(binder_site::Absent::Unwritten);
-                        let pair =
-                            self.cx_mut()
-                                .scope
-                                .extend(frame, SurfaceName::from(""), unwritten());
-                        let resumed = self.bind(continuation, Frame::Inner(pair))?;
-                        let _first = self.cx_mut().resumptions.insert(resumed);
-                        let split = self.bind(payload, Frame::Inner(resumed))?;
-                        let placed = self.cx_mut().scope.extend(
-                            Frame::Inner(split),
-                            SurfaceName::from(""),
-                            unwritten(),
-                        );
-                        let name = self.cx().name_at(minted);
-                        self.host()
-                            .note_binder(minted, Frame::Inner(placed), name)?;
-                        let live = self.cx_mut().scope.extend_linear(
-                            Frame::Inner(placed),
-                            name,
-                            Maybe::Present(minted.span),
-                        );
-                        (Frame::Inner(live), Mint::Minted { mint: minted.node })
-                    }
-                    else {
                         let bound = match payload {
                             Some(payload) => self.bind(payload, frame)?,
                             None => self.cx_mut().scope.extend(
                                 frame,
                                 SurfaceName::from(""),
-                                Maybe::Absent(binder_site::Absent::Unwritten),
+                                unwritten(),
                             ),
                         };
-                        let resumed = self.bind(continuation, Frame::Inner(bound))?;
-                        let _first = self.cx_mut().resumptions.insert(resumed);
-                        (Frame::Inner(resumed), Mint::Unminted)
-                    };
-                    self.clause(site, body.node, under)?;
-                    clauses.push(Clause {
-                        operation,
-                        payload: payload.map(|payload| payload.node),
-                        continuation: continuation.node,
-                        body: body.node,
-                        mint,
-                    });
+                        let stack = self.cx_mut().scope.extend(
+                            Frame::Inner(bound),
+                            SurfaceName::from(""),
+                            unwritten(),
+                        );
+                        let unit = self.cx_mut().scope.extend(
+                            Frame::Inner(stack),
+                            SurfaceName::from(""),
+                            unwritten(),
+                        );
+                        self.clause(site, body.node, Frame::Inner(unit))?;
+                        clauses.push(Clause {
+                            operation,
+                            payload: payload.map(|payload| payload.node),
+                            continuation: None,
+                            body: body.node,
+                            mint: Mint::Unminted,
+                        });
+                    }
+                    else {
+                        let Maybe::Present(first) = cursor.tile(TileName::IDENTIFIER)
+                        else {
+                            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+                        };
+                        // `oper op(k)`: an operation that sends nothing binds
+                        // its resumption alone.
+                        let (payload, second) =
+                            if let Maybe::Present(_) = cursor.tile(TileName::COMMA) {
+                                let Maybe::Present(second) = cursor.tile(TileName::IDENTIFIER)
+                                else {
+                                    return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+                                };
+                                (Some(first), second)
+                            }
+                            else {
+                                (None, first)
+                            };
+                        // A host operation replying a buffer names its mint
+                        // between the payload and the continuation; a theory's
+                        // replies values of the sorts its manifest fixes.
+                        let minting = matches!(interface, Interface::Host(_))
+                            && mints(&operation) == Reply::Minted;
+                        let (minted, continuation) = match (minting, payload) {
+                            (true, Some(_)) => {
+                                closed(site, &mut cursor, TileName::COMMA)?;
+                                let Maybe::Present(continuation) =
+                                    cursor.tile(TileName::IDENTIFIER)
+                                else {
+                                    return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+                                };
+                                (Some(second), continuation)
+                            },
+                            (true, None) => {
+                                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+                            },
+                            (false, _) => (None, second),
+                        };
+                        closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
+                        closed(site, &mut cursor, TileName::FAT_ARROW)?;
+                        let body = site.one(cursor.operands())?;
+                        let (under, mint) = if let (Some(minted), Some(payload)) = (minted, payload)
+                        {
+                            // The payload binder holds the pair the body splits
+                            // into the payload and the mint, placed live.
+                            let unwritten = || Maybe::Absent(binder_site::Absent::Unwritten);
+                            let pair = self.cx_mut().scope.extend(
+                                frame,
+                                SurfaceName::from(""),
+                                unwritten(),
+                            );
+                            let resumed = self.bind(continuation, Frame::Inner(pair))?;
+                            let _first = self.cx_mut().resumptions.insert(resumed);
+                            let split = self.bind(payload, Frame::Inner(resumed))?;
+                            let placed = self.cx_mut().scope.extend(
+                                Frame::Inner(split),
+                                SurfaceName::from(""),
+                                unwritten(),
+                            );
+                            let name = self.cx().name_at(minted);
+                            self.host()
+                                .note_binder(minted, Frame::Inner(placed), name)?;
+                            let live = self.cx_mut().scope.extend_linear(
+                                Frame::Inner(placed),
+                                name,
+                                Maybe::Present(minted.span),
+                            );
+                            (Frame::Inner(live), Mint::Minted { mint: minted.node })
+                        }
+                        else {
+                            let bound = match payload {
+                                Some(payload) => self.bind(payload, frame)?,
+                                None => self.cx_mut().scope.extend(
+                                    frame,
+                                    SurfaceName::from(""),
+                                    Maybe::Absent(binder_site::Absent::Unwritten),
+                                ),
+                            };
+                            let resumed = self.bind(continuation, Frame::Inner(bound))?;
+                            let _first = self.cx_mut().resumptions.insert(resumed);
+                            (Frame::Inner(resumed), Mint::Unminted)
+                        };
+                        self.clause(site, body.node, under)?;
+                        clauses.push(Clause {
+                            operation,
+                            payload: payload.map(|payload| payload.node),
+                            continuation: Some(continuation.node),
+                            body: body.node,
+                            mint,
+                        });
+                    }
                 },
                 Maybe::Present(piece) => {
                     return Err(site.fault(piece.placed().span, FormFault::MisplacedTile));
@@ -2845,6 +2898,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     ///   own presentation rules out.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the signature's operations, growth within the theory's
+    ///   operations
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a scope over `State` and the exercises in its subject
     ///   check against one signature, each where it stands.
@@ -2879,9 +2936,16 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
                     Maybe::Present(payload) => payload,
                     Maybe::Absent(reason) => return Err(reason),
                 };
-                let reply = match self.tuple_at(&operation.reply, standing, sink, origin) {
-                    Maybe::Present(reply) => reply,
-                    Maybe::Absent(reason) => return Err(reason),
+                // An operation with no continuation replies the empty sum: no
+                // value returns to its site, so the site stands at each type.
+                let reply = match operation.continuation {
+                    Continuation::Resumable(ref reply) => {
+                        match self.tuple_at(reply, standing, sink, origin) {
+                            Maybe::Present(reply) => reply,
+                            Maybe::Absent(reason) => return Err(reason),
+                        }
+                    },
+                    Continuation::Abandoned => sink.arena.value_type_sum(&[]),
                 };
                 Ok(EffectOp {
                     name: operation.name.clone(),
@@ -3010,6 +3074,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the values of the payload, growth within the exercise's
+    ///   arguments
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Capability::exercise`]; the head answers at the
     ///   operation it selects.
@@ -3043,9 +3111,14 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
         let standing = Standing::Term(exercised.frame);
         self.interface_signature(&exercised.interface, standing, sink, origin)
             .map(|signature| {
+                let mut never = false;
                 if let Maybe::Present(&EffectOp { payload, reply, .. }) =
                     signature.operation(&exercised.operation)
                 {
+                    never = matches!(
+                        sink.arena.value_type(reply),
+                        Some(&ValueType::Sum(ref summands)) if summands.is_empty()
+                    );
                     let replied = sink.arena.comp_type_returner(reply);
                     let ty = sink.arena.comp_type_arrow(payload, replied);
                     sink.origins.record_label(Label {
@@ -3069,7 +3142,25 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
                         payload,
                     ),
                 };
-                sink.computation(id, origin)
+                if !never {
+                    return sink.computation(id, origin);
+                }
+                // No value returns from an operation that replies the empty
+                // sum, so its site eliminates the reply into the type that
+                // its position expects, and it binds no value.
+                let performed = sink.computation(id, origin);
+                let reply = sink
+                    .arena
+                    .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                sink.origins.record_value(reply, origin);
+                let eliminated = sink.arena.computation_case(reply, &[]);
+                sink.origins.record_computation(eliminated, origin);
+                let Lowered::Computation(performed) = performed
+                else {
+                    return performed;
+                };
+                let bound = sink.arena.computation_bind(performed, eliminated);
+                sink.computation(bound, origin)
             })
     }
 
@@ -3162,6 +3253,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the clauses and the names of their binders, growth within
+    ///   the scope's clauses
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Capability::capability_scope`].
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_handles_its_capability_and_resumes`
@@ -3224,10 +3319,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
                                     let place = ClausePlace::from(place);
                                     [
                                         (ClauseBinder::Payload(place), clause.payload),
-                                        (
-                                            ClauseBinder::Continuation(place),
-                                            Some(clause.continuation),
-                                        ),
+                                        (ClauseBinder::Continuation(place), clause.continuation),
                                     ]
                                 }),
                         );
@@ -3274,6 +3366,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     ///   absence among the bodies.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the clauses, growth within the scope's clauses
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Capability::capability_scope`].
@@ -3335,6 +3430,18 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
                 {
                     sink.origins.record_binder(body, name);
                 }
+            }
+            if clause.continuation.is_none() {
+                // An operation with no continuation: abandon it, then run the
+                // body under the abandonment's unit binder.
+                let stack = sink
+                    .arena
+                    .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                sink.origins.record_value(stack, origin);
+                let abandonment = sink.arena.computation_abandon(stack);
+                sink.origins.record_computation(abandonment, origin);
+                body = sink.arena.computation_bind(abandonment, body);
+                sink.origins.record_computation(body, origin);
             }
             clauses.push(EffectClause {
                 operation: clause.operation.clone(),

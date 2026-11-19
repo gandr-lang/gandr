@@ -15,12 +15,14 @@ use gandr_theory_levitation::Name;
 use gandr_theory_levitation::RuleTurn;
 use quenchant_shape::shape::Maybe;
 
+use super::Continuation;
 use super::TheoryOperation;
 use super::laws;
 use super::operations;
 use super::rules;
 use crate::description::elaborate_descriptions;
 use crate::fixture::grammar;
+use crate::model::ContinuationCount;
 use crate::model::InterfaceFault;
 use crate::model::Members;
 use crate::unit::Unit;
@@ -77,17 +79,38 @@ fn state_reads_as_a_get_and_a_put_2272()
             TheoryOperation {
                 name: OperationName::from("get"),
                 payload: Vec::new(),
-                reply: vec![integer],
+                continuation: Continuation::Resumable(vec![integer]),
             },
             TheoryOperation {
                 name: OperationName::from("put"),
                 payload: vec![integer],
-                reply: Vec::new(),
+                continuation: Continuation::Resumable(Vec::new()),
             },
         ],
         read.effects
     );
     assert!(read.values.is_empty(), "state has no value operation");
+}
+
+/// An operation with no input at the carrier passes no continuation: it reads
+/// as abandoned, and each of its inputs is payload (#7968).
+#[test]
+fn an_operation_with_no_continuation_is_read_as_abandoned_7968()
+{
+    let fixed = fixing([Name::from("R")]);
+    let reason = crate::fixture::node(100_usize);
+    let source = include_str!(
+        "tests/fixtures/an-operation-with-no-continuation-is-read-as-abandoned-7968.gandr"
+    );
+    let read = operations(&members(SourceText::from(source)), &fixed).unwrap();
+    assert_eq!(
+        vec![TheoryOperation {
+            name: OperationName::from("overflow"),
+            payload: vec![reason],
+            continuation: Continuation::Abandoned,
+        }],
+        read.effects
+    );
 }
 
 /// A cost theory's `zero` and `plus` take and return the fixed cost sort, so
@@ -105,7 +128,7 @@ fn a_value_operation_is_read_apart_from_the_effects_2288()
         vec![TheoryOperation {
             name: OperationName::from("charge"),
             payload: vec![cost],
-            reply: Vec::new(),
+            continuation: Continuation::Resumable(Vec::new()),
         }],
         read.effects
     );
@@ -138,7 +161,7 @@ fn a_value_operation_is_read_apart_from_the_effects_2288()
 #[test]
 fn each_member_out_of_shape_is_refused_by_its_fault_2272()
 {
-    let cases: [(&str, &[&str], &str, InterfaceFault); 6] = [
+    let cases: [(&str, &[&str], &str, InterfaceFault); 7] = [
         (
             include_str!(
                 "tests/fixtures/each-member-out-of-shape-is-refused-by-its-fault-2272-1.gandr"
@@ -171,6 +194,14 @@ fn each_member_out_of_shape_is_refused_by_its_fault_2272()
             ),
             &["S"],
             "or",
+            InterfaceFault::Continuations(ContinuationCount::from(2_usize)),
+        ),
+        (
+            include_str!(
+                "tests/fixtures/each-member-out-of-shape-is-refused-by-its-fault-7968.gandr"
+            ),
+            &["S"],
+            "apply",
             InterfaceFault::Payload,
         ),
     ];
