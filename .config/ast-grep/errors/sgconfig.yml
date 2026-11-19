@@ -1,0 +1,5 @@
+# The codemod of the errors' wave (#7385): each boxed `dyn Error` of a test
+# takes the test's own `Failure`, and the compiler's errors that stay are the
+# wave's second phase.
+ruleDirs:
+  - rules

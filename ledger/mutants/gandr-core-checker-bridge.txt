@@ -1,0 +1,305 @@
+crates/core-checker-bridge/src/bridge.rs:1180:9: replace <impl Stopwatch for Timed<C>>::stop -> AdmissionTime with Default::default()
+crates/core-checker-bridge/src/bridge.rs:1232:9: replace ArtifactAudit::of -> Self with Default::default()
+crates/core-checker-bridge/src/bridge.rs:1388:9: replace Readmission::export -> EncodedArtifact with Default::default()
+crates/core-checker-bridge/src/bridge.rs:1448:9: replace Readmission::export_resuming -> EncodedArtifact with Default::default()
+crates/core-checker-bridge/src/bridge.rs:1450:40: replace match guard self.resumed == crossed.readmitted.len() with false in Readmission::export_resuming
+crates/core-checker-bridge/src/bridge.rs:1450:53: replace == with != in Readmission::export_resuming
+crates/core-checker-bridge/src/bridge.rs:1468:13: replace && with || in Readmission::export_resuming
+crates/core-checker-bridge/src/bridge.rs:1506:9: replace Readmission::marked -> Vec<MarkedDeclaration> with vec![Default::default()]
+crates/core-checker-bridge/src/bridge.rs:1506:9: replace Readmission::marked -> Vec<MarkedDeclaration> with vec![]
+crates/core-checker-bridge/src/bridge.rs:1511:17: replace && with || in Readmission::marked
+crates/core-checker-bridge/src/bridge.rs:1511:40: replace >= with < in Readmission::marked
+crates/core-checker-bridge/src/bridge.rs:1704:9: replace Crossed::record -> Maybe<Self, crossed::Absent> with Default::default()
+crates/core-checker-bridge/src/bridge.rs:1705:29: replace <= with > in Crossed::record
+crates/core-checker-bridge/src/bridge.rs:1708:12: delete ! in Crossed::record
+crates/core-checker-bridge/src/bridge.rs:1719:12: delete ! in Crossed::record
+crates/core-checker-bridge/src/bridge.rs:1785:9: replace Crossed::resume -> Option<(Environment, Positions, Vec<Readmitted>)> with None
+crates/core-checker-bridge/src/bridge.rs:1785:9: replace Crossed::resume -> Option<(Environment, Positions, Vec<Readmitted>)> with Some((Default::default(), Default::default(), vec![Default::default()]))
+crates/core-checker-bridge/src/bridge.rs:1785:9: replace Crossed::resume -> Option<(Environment, Positions, Vec<Readmitted>)> with Some((Default::default(), Default::default(), vec![]))
+crates/core-checker-bridge/src/bridge.rs:1786:9: replace Crossed::resume -> Option<(Environment, Positions, Vec<Readmitted>)> with None
+crates/core-checker-bridge/src/bridge.rs:1786:9: replace Crossed::resume -> Option<(Environment, Positions, Vec<Readmitted>)> with Some((Default::default(), Default::default(), vec![Default::default()]))
+crates/core-checker-bridge/src/bridge.rs:1786:9: replace Crossed::resume -> Option<(Environment, Positions, Vec<Readmitted>)> with Some((Default::default(), Default::default(), vec![]))
+crates/core-checker-bridge/src/bridge.rs:1790:31: replace != with == in Crossed::resume
+crates/core-checker-bridge/src/bridge.rs:1791:31: replace != with == in Crossed::resume
+crates/core-checker-bridge/src/bridge.rs:1796:17: delete match arm (&(Outcome::Defined{..} | Outcome::Static), Verdict::Checked{body, ..} | Verdict::Synthesised{body, ..},) in Crossed::resume
+crates/core-checker-bridge/src/bridge.rs:1797:17: delete match arm (&(Outcome::Defined{..} | Outcome::Static), Verdict::Checked{body, ..} | Verdict::Synthesised{body, ..},) in Crossed::resume
+crates/core-checker-bridge/src/bridge.rs:1900:5: replace readmit -> Readmission with Default::default()
+crates/core-checker-bridge/src/bridge.rs:1946:5: replace readmit_resuming -> (Readmission, Maybe<Crossed, crossed::Absent>) with (Default::default(), Default::default())
+crates/core-checker-bridge/src/bridge.rs:1947:5: replace readmit_resuming -> (Readmission, Maybe<Crossed, crossed::Absent>) with (Default::default(), Default::default())
+crates/core-checker-bridge/src/bridge.rs:2084:5: replace readmit_retiring -> Readmitting<Poll::Retired> with Readmitting::from(Default::default())
+crates/core-checker-bridge/src/bridge.rs:2084:5: replace readmit_retiring -> Readmitting<Poll::Retired> with Readmitting::from_iter([Default::default()])
+crates/core-checker-bridge/src/bridge.rs:2084:5: replace readmit_retiring -> Readmitting<Poll::Retired> with Readmitting::new()
+crates/core-checker-bridge/src/bridge.rs:2084:5: replace readmit_retiring -> Readmitting<Poll::Retired> with Readmitting::new(Default::default())
+crates/core-checker-bridge/src/bridge.rs:2085:5: replace readmit_retiring -> Readmitting<Poll::Retired> with Readmitting::from(Default::default())
+crates/core-checker-bridge/src/bridge.rs:2085:5: replace readmit_retiring -> Readmitting<Poll::Retired> with Readmitting::from_iter([Default::default()])
+crates/core-checker-bridge/src/bridge.rs:2085:5: replace readmit_retiring -> Readmitting<Poll::Retired> with Readmitting::new()
+crates/core-checker-bridge/src/bridge.rs:2085:5: replace readmit_retiring -> Readmitting<Poll::Retired> with Readmitting::new(Default::default())
+crates/core-checker-bridge/src/bridge.rs:2124:5: replace readmit_with -> Readmission with Default::default()
+crates/core-checker-bridge/src/bridge.rs:2193:5: replace readmit_from -> Readmitting<Poll::Retired> with Readmitting::from(Default::default())
+crates/core-checker-bridge/src/bridge.rs:2193:5: replace readmit_from -> Readmitting<Poll::Retired> with Readmitting::from_iter([Default::default()])
+crates/core-checker-bridge/src/bridge.rs:2193:5: replace readmit_from -> Readmitting<Poll::Retired> with Readmitting::new()
+crates/core-checker-bridge/src/bridge.rs:2193:5: replace readmit_from -> Readmitting<Poll::Retired> with Readmitting::new(Default::default())
+crates/core-checker-bridge/src/bridge.rs:2194:5: replace readmit_from -> Readmitting<Poll::Retired> with Readmitting::from(Default::default())
+crates/core-checker-bridge/src/bridge.rs:2194:5: replace readmit_from -> Readmitting<Poll::Retired> with Readmitting::from_iter([Default::default()])
+crates/core-checker-bridge/src/bridge.rs:2194:5: replace readmit_from -> Readmitting<Poll::Retired> with Readmitting::new()
+crates/core-checker-bridge/src/bridge.rs:2194:5: replace readmit_from -> Readmitting<Poll::Retired> with Readmitting::new(Default::default())
+crates/core-checker-bridge/src/bridge.rs:2250:21: replace == with != in readmit_from
+crates/core-checker-bridge/src/bridge.rs:2251:21: replace == with != in readmit_from
+crates/core-checker-bridge/src/bridge.rs:2387:20: replace match guard matches!( value_type_view(arena, declared), Ok(ValueTypeView::StaticPi { .. }) ) with true in readmit_from
+crates/core-checker-bridge/src/bridge.rs:2388:20: replace match guard matches!( value_type_view(arena, declared), Ok(ValueTypeView::StaticPi { .. }) ) with true in readmit_from
+crates/core-checker-bridge/src/bridge.rs:2521:5: replace block_offers -> Vec<(ConstantIndex, Offer<'report>)> with vec![(Default::default(), Default::default())]
+crates/core-checker-bridge/src/bridge.rs:2521:5: replace block_offers -> Vec<(ConstantIndex, Offer<'report>)> with vec![]
+crates/core-checker-bridge/src/bridge.rs:2522:5: replace block_offers -> Vec<(ConstantIndex, Offer<'report>)> with vec![(Default::default(), Default::default())]
+crates/core-checker-bridge/src/bridge.rs:2522:5: replace block_offers -> Vec<(ConstantIndex, Offer<'report>)> with vec![]
+crates/core-checker-bridge/src/bridge.rs:2531:34: replace >= with < in block_offers
+crates/core-checker-bridge/src/bridge.rs:2532:34: replace >= with < in block_offers
+crates/core-checker-bridge/src/bridge.rs:2535:49: replace match guard families with false in block_offers
+crates/core-checker-bridge/src/bridge.rs:2536:49: replace match guard families with false in block_offers
+crates/core-checker-bridge/src/bridge.rs:2542:20: delete ! in block_offers
+crates/core-checker-bridge/src/bridge.rs:2542:20: replace match guard !matches!( value_type_view(arena, declared.id()), Ok(ValueTypeView::StaticPi { .. }) ) with false in block_offers
+crates/core-checker-bridge/src/bridge.rs:2543:20: delete ! in block_offers
+crates/core-checker-bridge/src/bridge.rs:2543:20: replace match guard !matches!( value_type_view(arena, declared.id()), Ok(ValueTypeView::StaticPi { .. }) ) with false in block_offers
+crates/core-checker-bridge/src/bridge.rs:2605:34: replace != with == in block_offers
+crates/core-checker-bridge/src/bridge.rs:2606:34: replace != with == in block_offers
+crates/core-checker-bridge/src/bridge.rs:2610:22: replace < with <= in block_offers
+crates/core-checker-bridge/src/bridge.rs:2610:22: replace < with == in block_offers
+crates/core-checker-bridge/src/bridge.rs:2610:43: replace != with == in block_offers
+crates/core-checker-bridge/src/bridge.rs:2611:22: replace < with <= in block_offers
+crates/core-checker-bridge/src/bridge.rs:2611:22: replace < with == in block_offers
+crates/core-checker-bridge/src/bridge.rs:2611:43: replace != with == in block_offers
+crates/core-checker-bridge/src/bridge.rs:2662:5: replace close_seals with ()
+crates/core-checker-bridge/src/bridge.rs:2663:5: replace close_seals with ()
+crates/core-checker-bridge/src/bridge.rs:2664:36: replace <= with > in close_seals
+crates/core-checker-bridge/src/bridge.rs:2665:36: replace <= with > in close_seals
+crates/core-checker-bridge/src/bridge.rs:2920:5: replace cross -> (Outcome, Vec<Replayed>, AdmissionTime) with (Default::default(), vec![Default::default()], Default::default())
+crates/core-checker-bridge/src/bridge.rs:2920:5: replace cross -> (Outcome, Vec<Replayed>, AdmissionTime) with (Default::default(), vec![], Default::default())
+crates/core-checker-bridge/src/bridge.rs:2933:5: replace cross -> (Outcome, Vec<Replayed>, AdmissionTime) with (Default::default(), vec![Default::default()], Default::default())
+crates/core-checker-bridge/src/bridge.rs:2933:5: replace cross -> (Outcome, Vec<Replayed>, AdmissionTime) with (Default::default(), vec![], Default::default())
+crates/core-checker-bridge/src/bridge.rs:3083:5: replace stage -> Result<Staged, Unstaged> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:3101:5: replace stage -> Result<Staged, Unstaged> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:3276:5: replace kernel_rules -> Result<gandr_kernel_term::OperationRules, ConstantIndex> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:3287:27: replace == with != in kernel_rules
+crates/core-checker-bridge/src/bridge.rs:3294:5: replace kernel_rules -> Result<gandr_kernel_term::OperationRules, ConstantIndex> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:3305:27: replace == with != in kernel_rules
+crates/core-checker-bridge/src/bridge.rs:3354:5: replace settle -> Outcome with Default::default()
+crates/core-checker-bridge/src/bridge.rs:3414:5: replace cross_block -> Vec<(Outcome, Vec<Replayed>)> with vec![(Default::default(), vec![Default::default()])]
+crates/core-checker-bridge/src/bridge.rs:3414:5: replace cross_block -> Vec<(Outcome, Vec<Replayed>)> with vec![(Default::default(), vec![])]
+crates/core-checker-bridge/src/bridge.rs:3414:5: replace cross_block -> Vec<(Outcome, Vec<Replayed>)> with vec![]
+crates/core-checker-bridge/src/bridge.rs:3432:5: replace cross_block -> Vec<(Outcome, Vec<Replayed>)> with vec![(Default::default(), vec![Default::default()])]
+crates/core-checker-bridge/src/bridge.rs:3432:5: replace cross_block -> Vec<(Outcome, Vec<Replayed>)> with vec![(Default::default(), vec![])]
+crates/core-checker-bridge/src/bridge.rs:3432:5: replace cross_block -> Vec<(Outcome, Vec<Replayed>)> with vec![]
+crates/core-checker-bridge/src/bridge.rs:3542:5: replace wanted -> Option<Assumption> with None
+crates/core-checker-bridge/src/bridge.rs:3542:5: replace wanted -> Option<Assumption> with Some(Default::default())
+crates/core-checker-bridge/src/bridge.rs:3555:14: delete ! in wanted
+crates/core-checker-bridge/src/bridge.rs:3560:5: replace wanted -> Option<Assumption> with None
+crates/core-checker-bridge/src/bridge.rs:3560:5: replace wanted -> Option<Assumption> with Some(Default::default())
+crates/core-checker-bridge/src/bridge.rs:3573:14: delete ! in wanted
+crates/core-checker-bridge/src/bridge.rs:3627:5: replace assumed_for -> Maybe<ConstantIndex, assumption::Absent> with Default::default()
+crates/core-checker-bridge/src/bridge.rs:3779:37: replace == with != in modelled
+crates/core-checker-bridge/src/bridge.rs:3798:37: replace == with != in modelled
+crates/core-checker-bridge/src/bridge.rs:3930:25: replace <= with > in formed
+crates/core-checker-bridge/src/bridge.rs:3935:9: replace Positions::reserved -> ConstantIndex with Default::default()
+crates/core-checker-bridge/src/bridge.rs:3962:9: replace Positions::model -> Maybe<&Model, model::Absent> with Default::default()
+crates/core-checker-bridge/src/bridge.rs:3998:39: delete ! in formed
+crates/core-checker-bridge/src/bridge.rs:4006:21: delete field coercions from struct Source expression in formed
+crates/core-checker-bridge/src/bridge.rs:4050:5: replace witness -> Result<ConstantIndex, Outcome> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:4070:9: replace Positions::define with ()
+crates/core-checker-bridge/src/bridge.rs:4105:9: replace Positions::declare with ()
+crates/core-checker-bridge/src/bridge.rs:4146:9: replace Positions::unfoldings -> Unfoldings with Default::default()
+crates/core-checker-bridge/src/bridge.rs:4152:32: replace < with <= in Positions::unfoldings
+crates/core-checker-bridge/src/bridge.rs:4152:32: replace < with == in Positions::unfoldings
+crates/core-checker-bridge/src/bridge.rs:4152:32: replace < with > in Positions::unfoldings
+crates/core-checker-bridge/src/bridge.rs:4211:9: replace Positions::kernel_decision -> ConversionDecision<ReplayNode> with ConversionDecision::from(Default::default())
+crates/core-checker-bridge/src/bridge.rs:4211:9: replace Positions::kernel_decision -> ConversionDecision<ReplayNode> with ConversionDecision::from_iter([Default::default()])
+crates/core-checker-bridge/src/bridge.rs:4211:9: replace Positions::kernel_decision -> ConversionDecision<ReplayNode> with ConversionDecision::new()
+crates/core-checker-bridge/src/bridge.rs:4211:9: replace Positions::kernel_decision -> ConversionDecision<ReplayNode> with ConversionDecision::new(Default::default())
+crates/core-checker-bridge/src/bridge.rs:4304:9: replace Positions::define with ()
+crates/core-checker-bridge/src/bridge.rs:4339:9: replace Positions::declare with ()
+crates/core-checker-bridge/src/bridge.rs:4386:32: replace < with <= in Positions::unfoldings
+crates/core-checker-bridge/src/bridge.rs:4386:32: replace < with == in Positions::unfoldings
+crates/core-checker-bridge/src/bridge.rs:4386:32: replace < with > in Positions::unfoldings
+crates/core-checker-bridge/src/bridge.rs:4445:9: replace Positions::kernel_decision -> ConversionDecision<ReplayNode> with ConversionDecision::from(Default::default())
+crates/core-checker-bridge/src/bridge.rs:4445:9: replace Positions::kernel_decision -> ConversionDecision<ReplayNode> with ConversionDecision::from_iter([Default::default()])
+crates/core-checker-bridge/src/bridge.rs:4445:9: replace Positions::kernel_decision -> ConversionDecision<ReplayNode> with ConversionDecision::new()
+crates/core-checker-bridge/src/bridge.rs:4445:9: replace Positions::kernel_decision -> ConversionDecision<ReplayNode> with ConversionDecision::new(Default::default())
+crates/core-checker-bridge/src/bridge.rs:5247:9: replace Erasure<'source, 'positions>::native -> Result<ConstantIndex, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:5283:9: replace Erasure<'source, 'positions>::free_model -> Result<ConstantIndex, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:5345:9: replace Erasure<'source, 'positions>::offer -> Result<Erased, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:5481:9: replace Erasure<'source, 'positions>::native -> Result<ConstantIndex, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:5517:9: replace Erasure<'source, 'positions>::free_model -> Result<ConstantIndex, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:5550:9: replace Erasure<'source, 'positions>::replay_certificates -> Result<Vec<Replayed>, (Refusal, Vec<Replayed>)> with Ok(vec![Default::default()])
+crates/core-checker-bridge/src/bridge.rs:5550:9: replace Erasure<'source, 'positions>::replay_certificates -> Result<Vec<Replayed>, (Refusal, Vec<Replayed>)> with Ok(vec![])
+crates/core-checker-bridge/src/bridge.rs:5579:9: replace Erasure<'source, 'positions>::offer -> Result<Erased, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:5607:9: replace Erasure<'source, 'positions>::replay_one -> Result<Maybe<Replayed, replay_entry::Absent>, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:5617:12: delete ! in Erasure<'source, 'positions>::replay_one
+crates/core-checker-bridge/src/bridge.rs:5625:37: replace == with != in Erasure<'source, 'positions>::replay_one
+crates/core-checker-bridge/src/bridge.rs:5656:17: replace && with || in Erasure<'source, 'positions>::replay_one
+crates/core-checker-bridge/src/bridge.rs:5712:9: replace Erasure<'source, 'positions>::value_in -> Result<gandr_kernel_term::ValueId, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:5752:9: replace Erasure<'source, 'positions>::erase_operators -> Result<(), Refusal> with Ok(())
+crates/core-checker-bridge/src/bridge.rs:5754:39: replace == with != in Erasure<'source, 'positions>::erase_operators
+crates/core-checker-bridge/src/bridge.rs:5784:9: replace Erasure<'source, 'positions>::replay_certificates -> Result<Vec<Replayed>, (Refusal, Vec<Replayed>)> with Ok(vec![Default::default()])
+crates/core-checker-bridge/src/bridge.rs:5784:9: replace Erasure<'source, 'positions>::replay_certificates -> Result<Vec<Replayed>, (Refusal, Vec<Replayed>)> with Ok(vec![])
+crates/core-checker-bridge/src/bridge.rs:5799:9: replace Erasure<'source, 'positions>::operator -> Result<ConstantIndex, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:5841:9: replace Erasure<'source, 'positions>::replay_one -> Result<Maybe<Replayed, replay_entry::Absent>, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:5851:12: delete ! in Erasure<'source, 'positions>::replay_one
+crates/core-checker-bridge/src/bridge.rs:5851:9: replace Erasure<'source, 'positions>::constant_position -> Result<ConstantIndex, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:5857:13: replace && with || in Erasure<'source, 'positions>::constant_position
+crates/core-checker-bridge/src/bridge.rs:5859:37: replace == with != in Erasure<'source, 'positions>::replay_one
+crates/core-checker-bridge/src/bridge.rs:5890:17: replace && with || in Erasure<'source, 'positions>::replay_one
+crates/core-checker-bridge/src/bridge.rs:5893:9: replace Erasure<'source, 'positions>::covered -> Vec<gandr_kernel_term::cover::Covered> with vec![Default::default()]
+crates/core-checker-bridge/src/bridge.rs:5893:9: replace Erasure<'source, 'positions>::covered -> Vec<gandr_kernel_term::cover::Covered> with vec![]
+crates/core-checker-bridge/src/bridge.rs:591:5: replace fault -> Refusal with Default::default()
+crates/core-checker-bridge/src/bridge.rs:5927:9: replace Erasure<'source, 'positions>::kernel_cover -> Option<gandr_kernel_term::cover::Cover> with None
+crates/core-checker-bridge/src/bridge.rs:5927:9: replace Erasure<'source, 'positions>::kernel_cover -> Option<gandr_kernel_term::cover::Cover> with Some(Default::default())
+crates/core-checker-bridge/src/bridge.rs:5946:9: replace Erasure<'source, 'positions>::value_in -> Result<gandr_kernel_term::ValueId, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:5986:9: replace Erasure<'source, 'positions>::erase_operators -> Result<(), Refusal> with Ok(())
+crates/core-checker-bridge/src/bridge.rs:5988:39: replace == with != in Erasure<'source, 'positions>::erase_operators
+crates/core-checker-bridge/src/bridge.rs:5999:9: replace Erasure<'source, 'positions>::step -> Result<Maybe<ValueId, unfolding::Absent>, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6033:9: replace Erasure<'source, 'positions>::operator -> Result<ConstantIndex, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6050:9: replace Erasure<'source, 'positions>::value_type -> Result<gandr_kernel_term::ValueTypeId, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6084:9: replace Erasure<'source, 'positions>::comp_type -> Result<gandr_kernel_term::CompTypeId, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6085:9: replace Erasure<'source, 'positions>::constant_position -> Result<ConstantIndex, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6091:13: replace && with || in Erasure<'source, 'positions>::constant_position
+crates/core-checker-bridge/src/bridge.rs:6123:9: replace Erasure<'source, 'positions>::value -> Result<gandr_kernel_term::ValueId, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6127:9: replace Erasure<'source, 'positions>::covered -> Vec<gandr_kernel_term::cover::Covered> with vec![Default::default()]
+crates/core-checker-bridge/src/bridge.rs:6127:9: replace Erasure<'source, 'positions>::covered -> Vec<gandr_kernel_term::cover::Covered> with vec![]
+crates/core-checker-bridge/src/bridge.rs:6161:9: replace Erasure<'source, 'positions>::kernel_cover -> Option<gandr_kernel_term::cover::Cover> with None
+crates/core-checker-bridge/src/bridge.rs:6161:9: replace Erasure<'source, 'positions>::kernel_cover -> Option<gandr_kernel_term::cover::Cover> with Some(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6195:9: replace Erasure<'source, 'positions>::erase -> Result<AnyNode, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6233:9: replace Erasure<'source, 'positions>::step -> Result<Maybe<ValueId, unfolding::Absent>, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6243:9: replace Erasure<'source, 'positions>::descend -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6284:9: replace Erasure<'source, 'positions>::value_type -> Result<gandr_kernel_term::ValueTypeId, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6293:9: replace Erasure<'source, 'positions>::descend_value -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6318:9: replace Erasure<'source, 'positions>::comp_type -> Result<gandr_kernel_term::CompTypeId, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6319:13: replace && with || in Erasure<'source, 'positions>::descend_value
+crates/core-checker-bridge/src/bridge.rs:6357:9: replace Erasure<'source, 'positions>::value -> Result<gandr_kernel_term::ValueId, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6429:9: replace Erasure<'source, 'positions>::erase -> Result<AnyNode, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6465:21: replace && with || in Erasure<'source, 'positions>::descend_value
+crates/core-checker-bridge/src/bridge.rs:6477:9: replace Erasure<'source, 'positions>::descend -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6527:9: replace Erasure<'source, 'positions>::descend_value -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6553:13: replace && with || in Erasure<'source, 'positions>::descend_value
+crates/core-checker-bridge/src/bridge.rs:6567:30: replace == with != in Erasure<'source, 'positions>::descend_value
+crates/core-checker-bridge/src/bridge.rs:6568:21: replace && with || in Erasure<'source, 'positions>::descend_value
+crates/core-checker-bridge/src/bridge.rs:6615:9: replace Erasure<'source, 'positions>::prepare_funext -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6668:13: delete match arm Some(Frame::NativeNext(child)) in Erasure<'source, 'positions>::prepare_funext
+crates/core-checker-bridge/src/bridge.rs:6669:13: delete match arm Some(Frame::FunextBuild(node)) in Erasure<'source, 'positions>::prepare_funext
+crates/core-checker-bridge/src/bridge.rs:6699:21: replace && with || in Erasure<'source, 'positions>::descend_value
+crates/core-checker-bridge/src/bridge.rs:6728:9: replace Erasure<'source, 'positions>::funext -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6768:37: delete match arm Some(&Image::Erased(image)) in Erasure<'source, 'positions>::funext
+crates/core-checker-bridge/src/bridge.rs:6801:30: replace == with != in Erasure<'source, 'positions>::descend_value
+crates/core-checker-bridge/src/bridge.rs:6802:21: replace && with || in Erasure<'source, 'positions>::descend_value
+crates/core-checker-bridge/src/bridge.rs:6849:9: replace Erasure<'source, 'positions>::prepare_funext -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:6857:9: replace Erasure<'source, 'positions>::returned -> Result<(gandr_kernel_term::ValueId, gandr_kernel_term::ValueId), Refusal> with Ok((Default::default(), Default::default()))
+crates/core-checker-bridge/src/bridge.rs:6889:29: delete match arm [] in Erasure<'source, 'positions>::returned
+crates/core-checker-bridge/src/bridge.rs:6890:29: delete match arm [first, second] in Erasure<'source, 'positions>::returned
+crates/core-checker-bridge/src/bridge.rs:6902:13: delete match arm Some(Frame::NativeNext(child)) in Erasure<'source, 'positions>::prepare_funext
+crates/core-checker-bridge/src/bridge.rs:6903:13: delete match arm Some(Frame::FunextBuild(node)) in Erasure<'source, 'positions>::prepare_funext
+crates/core-checker-bridge/src/bridge.rs:6927:32: replace match guard matches!( literal.base_type(), BaseType::Integer | BaseType::String | BaseType::Character | BaseType::Fixed(_) ) with false in Erasure<'source, 'positions>::returned
+crates/core-checker-bridge/src/bridge.rs:6962:9: replace Erasure<'source, 'positions>::funext -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:7002:37: delete match arm Some(&Image::Erased(image)) in Erasure<'source, 'positions>::funext
+crates/core-checker-bridge/src/bridge.rs:7024:13: delete match arm (Some(image), true) in Erasure<'source, 'positions>::returned
+crates/core-checker-bridge/src/bridge.rs:7058:9: replace Erasure<'source, 'positions>::abstraction -> Result<ConstantIndex, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:7063:22: replace == with != in Erasure<'source, 'positions>::abstraction
+crates/core-checker-bridge/src/bridge.rs:7064:13: replace || with && in Erasure<'source, 'positions>::abstraction
+crates/core-checker-bridge/src/bridge.rs:7064:62: replace != with == in Erasure<'source, 'positions>::abstraction
+crates/core-checker-bridge/src/bridge.rs:7091:9: replace Erasure<'source, 'positions>::returned -> Result<(gandr_kernel_term::ValueId, gandr_kernel_term::ValueId), Refusal> with Ok((Default::default(), Default::default()))
+crates/core-checker-bridge/src/bridge.rs:7123:29: delete match arm [] in Erasure<'source, 'positions>::returned
+crates/core-checker-bridge/src/bridge.rs:7124:29: delete match arm [first, second] in Erasure<'source, 'positions>::returned
+crates/core-checker-bridge/src/bridge.rs:7127:9: replace Erasure<'source, 'positions>::descend_computation -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:7141:13: replace && with || in Erasure<'source, 'positions>::descend_computation
+crates/core-checker-bridge/src/bridge.rs:7161:32: replace match guard matches!( literal.base_type(), BaseType::Integer | BaseType::String | BaseType::Character | BaseType::Fixed(_) ) with false in Erasure<'source, 'positions>::returned
+crates/core-checker-bridge/src/bridge.rs:7258:13: delete match arm (Some(image), true) in Erasure<'source, 'positions>::returned
+crates/core-checker-bridge/src/bridge.rs:7292:9: replace Erasure<'source, 'positions>::abstraction -> Result<ConstantIndex, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:7297:22: replace == with != in Erasure<'source, 'positions>::abstraction
+crates/core-checker-bridge/src/bridge.rs:7298:13: replace || with && in Erasure<'source, 'positions>::abstraction
+crates/core-checker-bridge/src/bridge.rs:7298:62: replace != with == in Erasure<'source, 'positions>::abstraction
+crates/core-checker-bridge/src/bridge.rs:7351:9: replace Erasure<'source, 'positions>::descend_value_type -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:7361:9: replace Erasure<'source, 'positions>::descend_computation -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:7374:20: delete ! in Erasure<'source, 'positions>::descend_value_type
+crates/core-checker-bridge/src/bridge.rs:7375:13: replace && with || in Erasure<'source, 'positions>::descend_computation
+crates/core-checker-bridge/src/bridge.rs:747:9: replace Refusal::classify -> FailureClass with Default::default()
+crates/core-checker-bridge/src/bridge.rs:7585:9: replace Erasure<'source, 'positions>::descend_value_type -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:7594:9: replace Erasure<'source, 'positions>::descend_comp_type -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:7605:37: replace != with == in Erasure<'source, 'positions>::descend_comp_type
+crates/core-checker-bridge/src/bridge.rs:7608:20: delete ! in Erasure<'source, 'positions>::descend_value_type
+crates/core-checker-bridge/src/bridge.rs:7707:9: replace Erasure<'source, 'positions>::decode -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:7715:26: replace == with != in Erasure<'source, 'positions>::decode
+crates/core-checker-bridge/src/bridge.rs:7716:17: replace && with || in Erasure<'source, 'positions>::decode
+crates/core-checker-bridge/src/bridge.rs:7717:17: replace && with || in Erasure<'source, 'positions>::decode
+crates/core-checker-bridge/src/bridge.rs:7828:9: replace Erasure<'source, 'positions>::descend_comp_type -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:7839:37: replace != with == in Erasure<'source, 'positions>::descend_comp_type
+crates/core-checker-bridge/src/bridge.rs:7858:9: replace Erasure<'source, 'positions>::argument -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:7859:22: replace == with != in Erasure<'source, 'positions>::argument
+crates/core-checker-bridge/src/bridge.rs:7859:40: replace || with && in Erasure<'source, 'positions>::argument
+crates/core-checker-bridge/src/bridge.rs:7915:9: replace Erasure<'source, 'positions>::forward_images -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:7941:9: replace Erasure<'source, 'positions>::decode -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:7949:26: replace == with != in Erasure<'source, 'positions>::decode
+crates/core-checker-bridge/src/bridge.rs:794:5: replace readmitted -> FailureClass with Default::default()
+crates/core-checker-bridge/src/bridge.rs:7950:17: replace && with || in Erasure<'source, 'positions>::decode
+crates/core-checker-bridge/src/bridge.rs:7951:17: replace && with || in Erasure<'source, 'positions>::decode
+crates/core-checker-bridge/src/bridge.rs:7961:9: replace Erasure<'source, 'positions>::restricted -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:8006:9: replace Erasure<'source, 'positions>::resume -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:8092:9: replace Erasure<'source, 'positions>::argument -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:8093:22: replace == with != in Erasure<'source, 'positions>::argument
+crates/core-checker-bridge/src/bridge.rs:8093:40: replace || with && in Erasure<'source, 'positions>::argument
+crates/core-checker-bridge/src/bridge.rs:8149:9: replace Erasure<'source, 'positions>::forward_images -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:8195:9: replace Erasure<'source, 'positions>::restricted -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:8240:9: replace Erasure<'source, 'positions>::resume -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:846:9: replace <impl From<FragmentRefusal> for Refusal>::from -> Self with Default::default()
+crates/core-checker-bridge/src/bridge.rs:8828:9: replace Erasure<'source, 'positions>::erased_value -> Step with Default::default()
+crates/core-checker-bridge/src/bridge.rs:8851:9: replace Erasure<'source, 'positions>::erased_computation -> Step with Default::default()
+crates/core-checker-bridge/src/bridge.rs:8904:9: replace Erasure<'source, 'positions>::session_reduct -> Result<(Frame, ComputationId), Refusal> with Ok((Default::default(), Default::default()))
+crates/core-checker-bridge/src/bridge.rs:9007:20: delete ! in Erasure<'source, 'positions>::session_reduct
+crates/core-checker-bridge/src/bridge.rs:9101:9: replace Erasure<'source, 'positions>::handler_reduct -> Result<ComputationId, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:9131:41: replace == with != in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9138:26: replace != with == in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9138:9: replace Erasure<'source, 'positions>::session_reduct -> Result<(Frame, ComputationId), Refusal> with Ok((Default::default(), Default::default()))
+crates/core-checker-bridge/src/bridge.rs:9149:26: replace != with == in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9149:80: replace != with == in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9223:23: replace match guard performed.name() == signature.name() with false in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9223:40: replace == with != in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9225:58: replace == with != in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9232:23: replace match guard scoped && matches!( self.arena.value(capability), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if u32::from(index) == depth ) with false in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9241:20: delete ! in Erasure<'source, 'positions>::session_reduct
+crates/core-checker-bridge/src/bridge.rs:9241:62: replace == with != in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9263:25: replace match guard tail with false in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9335:9: replace Erasure<'source, 'positions>::handler_reduct -> Result<ComputationId, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge.rs:9365:41: replace == with != in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9372:26: replace != with == in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9383:26: replace != with == in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9383:80: replace != with == in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9385:9: replace Erasure<'source, 'positions>::split_reduct -> ComputationId with Default::default()
+crates/core-checker-bridge/src/bridge.rs:9423:9: replace Erasure<'source, 'positions>::erased_value_type -> Step with Default::default()
+crates/core-checker-bridge/src/bridge.rs:9448:9: replace Erasure<'source, 'positions>::erased_comp_type -> Step with Default::default()
+crates/core-checker-bridge/src/bridge.rs:9457:23: replace match guard performed.name() == signature.name() with false in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9457:40: replace == with != in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9459:58: replace == with != in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9466:23: replace match guard scoped && matches!( self.arena.value(capability), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if u32::from(index) == depth ) with false in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9475:62: replace == with != in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge.rs:9478:5: replace decoded -> AnyNode with Default::default()
+crates/core-checker-bridge/src/bridge.rs:9497:25: replace match guard tail with false in Erasure<'source, 'positions>::handler_reduct
+crates/core-checker-bridge/src/bridge/native.rs:282:13: delete match arm Some(Frame::NativeNext(child)) in Erasure<'_, '_>::prepare_native
+crates/core-checker-bridge/src/bridge/native.rs:283:13: delete match arm Some(Frame::NativeBuild(node)) in Erasure<'_, '_>::prepare_native
+crates/core-checker-bridge/src/bridge/native.rs:287:13: delete match arm Some(Frame::NativeNext(child)) in Erasure<'_, '_>::prepare_native
+crates/core-checker-bridge/src/bridge/native.rs:288:13: delete match arm Some(Frame::NativeBuild(node)) in Erasure<'_, '_>::prepare_native
+crates/core-checker-bridge/src/bridge/native.rs:307:9: replace Erasure<'_, '_>::data_position -> Option<gandr_kernel_term::ConstantIndex> with None
+crates/core-checker-bridge/src/bridge/native.rs:307:9: replace Erasure<'_, '_>::data_position -> Option<gandr_kernel_term::ConstantIndex> with Some(Default::default())
+crates/core-checker-bridge/src/bridge/native.rs:312:9: replace Erasure<'_, '_>::data_position -> Option<gandr_kernel_term::ConstantIndex> with None
+crates/core-checker-bridge/src/bridge/native.rs:312:9: replace Erasure<'_, '_>::data_position -> Option<gandr_kernel_term::ConstantIndex> with Some(Default::default())
+crates/core-checker-bridge/src/bridge/native.rs:350:9: replace Erasure<'_, '_>::finish_native -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge/native.rs:352:13: delete match arm Some(&Image::Erased(image)) in Erasure<'_, '_>::finish_native
+crates/core-checker-bridge/src/bridge/native.rs:355:9: replace Erasure<'_, '_>::finish_native -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge/native.rs:356:13: delete match arm Some(&Image::Erased(image)) in Erasure<'_, '_>::finish_native
+crates/core-checker-bridge/src/bridge/native.rs:357:13: delete match arm Some(&Image::Erased(image)) in Erasure<'_, '_>::finish_native
+crates/core-checker-bridge/src/bridge/native.rs:360:13: delete match arm Some(&Image::Erased(image)) in Erasure<'_, '_>::finish_native
+crates/core-checker-bridge/src/bridge/native.rs:361:13: delete match arm Some(&Image::Erased(image)) in Erasure<'_, '_>::finish_native
+crates/core-checker-bridge/src/bridge/native.rs:364:13: delete match arm Some(&Image::Erased(image)) in Erasure<'_, '_>::finish_native
+crates/core-checker-bridge/src/bridge/native.rs:365:13: delete match arm Some(&Image::Erased(image)) in Erasure<'_, '_>::finish_native
+crates/core-checker-bridge/src/bridge/native.rs:369:13: delete match arm Some(&Image::Erased(image)) in Erasure<'_, '_>::finish_native
+crates/core-checker-bridge/src/bridge/native.rs:45:9: replace Erasure<'_, '_>::prepare_native -> Result<Step, Refusal> with Ok(Default::default())
+crates/core-checker-bridge/src/bridge/native.rs:739:5: replace ascription -> gandr_kernel_term::ComputationId with Default::default()
+crates/core-checker-bridge/src/bridge/native.rs:785:5: replace graph -> gandr_kernel_term::session::Graph with Default::default()
+crates/core-checker-bridge/src/bridge/native.rs:795:24: replace == with != in graph
+crates/core-checker-bridge/src/bridge/native.rs:800:24: replace == with != in graph
+crates/core-checker-bridge/src/bridge/native.rs:885:54: replace == with != in graph
+crates/core-checker-bridge/src/bridge/native.rs:890:54: replace == with != in graph
