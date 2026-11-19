@@ -1,0 +1,32 @@
+{
+  "x86_64-unknown-linux-gnu": {
+    "target_arch": ["x86_64"],
+    "target_endian": ["little"],
+    "target_env": ["gnu"],
+    "target_family": ["unix"],
+    "target_os": ["linux"],
+    "target_pointer_width": ["64"],
+    "target_vendor": ["unknown"],
+    "unix": true
+  },
+  "aarch64-unknown-linux-gnu": {
+    "target_arch": ["aarch64"],
+    "target_endian": ["little"],
+    "target_env": ["gnu"],
+    "target_family": ["unix"],
+    "target_os": ["linux"],
+    "target_pointer_width": ["64"],
+    "target_vendor": ["unknown"],
+    "unix": true
+  },
+  "aarch64-apple-darwin": {
+    "target_arch": ["aarch64"],
+    "target_endian": ["little"],
+    "target_env": [""],
+    "target_family": ["unix"],
+    "target_os": ["macos"],
+    "target_pointer_width": ["64"],
+    "target_vendor": ["apple"],
+    "unix": true
+  }
+}
