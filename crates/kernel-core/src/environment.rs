@@ -1419,7 +1419,7 @@ impl Environment
                     declaration: declaration.clone(),
                     admission,
                     rested_on,
-                    references: named.clone(),
+                    references: alloc::sync::Arc::clone(&named),
                     block: check::occurrence::Block::lone(position),
                     accessibility,
                     key_name,
@@ -1880,6 +1880,10 @@ impl Environment
     /// `lone.place.0`, or at the first prediction before it whose commit has
     /// not come; then nothing changes.
     ///
+    /// # Cost
+    /// - allocation: the entry, its rested-on set and its commit records,
+    ///   durable by the entry's position
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::add_decl`], and a refusal under a later
     ///   staging keeps that staging's content.
@@ -2236,6 +2240,10 @@ impl Environment
     /// # Errors
     /// [`KernelError::UnsettledReleases`] while a released check is not
     /// settled.
+    ///
+    /// # Cost
+    /// - allocation: the entry, its rested-on set and its references, durable
+    ///   by the entry's position
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the bypass's whole observable effect is that the
@@ -2715,7 +2723,7 @@ impl Environment
                 declaration: member.clone(),
                 admission: Admission::Checked,
                 rested_on,
-                references: named.clone(),
+                references: alloc::sync::Arc::clone(&named),
                 block: if offset < families {
                     check::occurrence::Block::new(first, past_families, end)
                 }
@@ -6048,11 +6056,15 @@ fn block_end(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the set of positions and the slice the members share, growth
+///   within the block's content
 fn block_references(
     arena: &TermArena,
     members: &[Declaration],
     first: ConstantIndex,
-) -> Box<[ConstantIndex]>
+) -> alloc::sync::Arc<[ConstantIndex]>
 {
     let mut found = BTreeSet::new();
     for member in members {
@@ -6201,7 +6213,7 @@ struct Lone
     /// Its own content key and entry key.
     keys: EntryKeys,
     /// The positions that its content names.
-    references: Box<[ConstantIndex]>,
+    references: alloc::sync::Arc<[ConstantIndex]>,
     /// What its check charged.
     census: ExpansionCensus,
     /// The admitted results that its check took.
@@ -6245,7 +6257,7 @@ pub struct Pending
     /// Its own content key and entry key.
     keys: EntryKeys,
     /// The positions that its content names.
-    references: Box<[ConstantIndex]>,
+    references: alloc::sync::Arc<[ConstantIndex]>,
     /// The arena's mark past its content, and the mark that a refusal
     /// truncates to.
     marks: (ArenaWatermark, ArenaWatermark),
