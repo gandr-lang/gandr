@@ -705,6 +705,7 @@ impl<'run, 'host> Calls<'run, 'host>
             Callee::Shift(_) => self.shift(runtime),
             Callee::Replay(_) => self.replay(runtime, first),
             Callee::Abandon(_) => self.abandon(runtime, first),
+            Callee::AbandonStanding(_) => self.abandon_standing(runtime, first),
             Callee::Rejoin(_) => self.rejoin(runtime, first),
             Callee::Escape => self.escape(runtime, first),
             Callee::Hold => allocate_cell(runtime, &[first]),
@@ -765,6 +766,7 @@ impl<'run, 'host> Calls<'run, 'host>
                 Callee::Migrate { at, .. } => Some(Refused::Migration(at, Unmigrated::Unanswered)),
                 Callee::Primitive(_)
                 | Callee::Abandon(_)
+                | Callee::AbandonStanding(_)
                 | Callee::Rejoin(_)
                 | Callee::Escape
                 | Callee::Hold
@@ -1771,6 +1773,151 @@ impl<'run, 'host> Calls<'run, 'host>
     {
         self.unwound(runtime, stack)?;
         unit(runtime)
+    }
+
+    /// Abandon the frames a clause's operation left standing, as
+    /// [`Self::unwound`] abandons a captured stack, with the abandonment's
+    /// continuation on top and the marker beneath it: give up what each frame
+    /// from the marker's mark owns, except an access's, which its unwind
+    /// takes; leave the continuation's frame at the mark with a frame per
+    /// access above it, innermost on top; and cancel each session end that no
+    /// unwind consumes. Answers `stand_in`, which the continuation binds in
+    /// the place of the unit.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: two vectors of the session ends that the frames hold,
+    ///   growth within the frames the operation left standing
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] when the marker is not beneath the top frame, for
+    /// a mark outside the frames, or a frame whose owners are unplaced; as
+    /// [`slot_in`] and [`Self::cancel_cells`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a clause that abandons the frames its operation left
+    ///   standing answers on both tiers as the clause that abandons their
+    ///   capture: an unwind left unrun, a frame given up twice or the
+    ///   continuation left above the unwinds changes the answer.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    fn abandon_standing(
+        &mut self,
+        runtime: &mut Runtime,
+        stand_in: Word,
+    ) -> Result<Word, Refusal>
+    {
+        let top = runtime.frame_top();
+        let continuation = top.wrapping_sub(2);
+        let marker = top.wrapping_sub(4);
+        // SAFETY: the base mark's sentinel frame lies below any frame above
+        // the base.
+        if marker < runtime.frame_base() || self.marker != Some(unsafe { *marker }) {
+            return Err(Refusal::Operands);
+        }
+        // SAFETY: the marker's second word is its mark.
+        let from = unsafe { *marker.wrapping_add(1) }.to_pointer::<Word>();
+        if from < runtime.frame_base() || from > marker {
+            return Err(Refusal::Operands);
+        }
+        // SAFETY: the continuation's frame is the top two words.
+        let continued = unsafe { *continuation };
+        // SAFETY: as above.
+        let continued_in = unsafe { *continuation.wrapping_add(1) };
+        let sites = self.sites;
+        let mut held = Vec::new();
+        let mut spared = Vec::new();
+        // Each access's frame moves down to `kept`, at or below where it
+        // stands, so no frame is written before it is read.
+        let mut kept = from;
+        let mut cursor = from;
+        while cursor < marker {
+            // SAFETY: every two words from the mark to the marker are a frame.
+            let code = unsafe { *cursor };
+            // SAFETY: as above.
+            let word = unsafe { *cursor.wrapping_add(1) };
+            let unwinds = self.unwinds.get(&code).copied();
+            for &slot in sites.linears(code) {
+                // SAFETY: a frame holding linear names is a window frame, whose
+                // word is its window, each such slot holding a cell.
+                let cell = unsafe { *slot_in(word.to_pointer::<Word>(), slot)? };
+                gather_end(
+                    if unwinds.is_some() {
+                        &mut spared
+                    }
+                    else {
+                        &mut held
+                    },
+                    cell,
+                );
+            }
+            if let Some(unwind) = unwinds {
+                // SAFETY: `kept` lies at or below `cursor`, inside the frames.
+                unsafe {
+                    *kept = unwind;
+                }
+                // SAFETY: as above.
+                unsafe {
+                    *kept.wrapping_add(1) = word;
+                }
+                kept = kept.wrapping_add(2);
+            }
+            else {
+                let given: Vec<Word> = match sites.owners(code) {
+                    Some(Owners::Window(slots)) => slots
+                        .iter()
+                        // SAFETY: a window frame's word is its window, which
+                        // holds its frame's owned slots.
+                        .map(|&slot| slot_in(word.to_pointer::<Word>(), slot).map(|at| unsafe { *at }))
+                        .collect::<Result<_, _>>()?,
+                    Some(Owners::Word) => Vec::from([word]),
+                    Some(Owners::Unplaced) => return Err(Refusal::Operands),
+                    None => Vec::new(),
+                };
+                for value in given {
+                    // SAFETY: the frame owned `value`, a value of the run's
+                    // heap or an immortal constant, and leaves the region
+                    // unread.
+                    unsafe {
+                        give_up(runtime, value, |object| owned(object, sites));
+                    }
+                }
+            }
+            cursor = cursor.wrapping_add(2);
+        }
+        // Lift the unwinds one frame, from the top down, and put the
+        // continuation beneath them, at the mark.
+        let mut lifted = kept;
+        while lifted > from {
+            lifted = lifted.wrapping_sub(2);
+            // SAFETY: the frame at `lifted` lies inside the frames.
+            let code = unsafe { *lifted };
+            // SAFETY: as above.
+            let window = unsafe { *lifted.wrapping_add(1) };
+            // SAFETY: the frame two words up lies below the marker's old
+            // place, inside the frames.
+            unsafe {
+                *lifted.wrapping_add(2) = code;
+            }
+            // SAFETY: as above.
+            unsafe {
+                *lifted.wrapping_add(3) = window;
+            }
+        }
+        // SAFETY: the mark lies inside the frames.
+        unsafe {
+            *from = continued;
+        }
+        // SAFETY: as above.
+        unsafe {
+            *from.wrapping_add(1) = continued_in;
+        }
+        runtime.set_frame_top(kept.wrapping_add(2));
+        spared.sort_unstable();
+        held.retain(|cell| spared.binary_search(cell).is_err());
+        self.cancel_cells(runtime, &held)?;
+        Ok(stand_in)
     }
 
     /// Push above the top a frame for each access `stack` captured, in the

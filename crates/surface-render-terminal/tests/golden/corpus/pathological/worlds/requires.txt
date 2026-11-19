@@ -16,7 +16,7 @@ error[UnlabelledRequirement]: the world requires `Store` under no label, so its 
    ├ note: `bare` is refused with UnlabelledRequirement, as its expectation states
    ╰ help: write a label before it, `l : Store with …`, and perform through `l`
 
-error[UninterfacedMember]: the theory cannot stand as the interface its handler reads at `mul`, which takes an input before its continuation at no sort the manifest fixes
+error[UninterfacedMember]: the theory cannot stand as the interface its handler reads at `mul`, which takes 2 inputs at the sort the operations return, and an operation takes one continuation or none
    ╭▸ corpus/pathological/worlds/requires.gandr:46:34
    │
 46 │ pub world modelled requires [m : Magma];

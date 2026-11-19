@@ -141,6 +141,11 @@
 //! clause's stack binder, so the path is read from where the body names the
 //! stack.
 //!
+//! A clause that abandons its stack from its tail position runs on the frames
+//! left standing too, when its abandonment binds the unit. The abandonment
+//! gives up what the frames own, except what an unwind takes. It keeps one
+//! frame for each unwind and copies no frame.
+//!
 //! # Dependencies
 //!
 //! The build script reads the stencil object with `object` (read-only, ELF
