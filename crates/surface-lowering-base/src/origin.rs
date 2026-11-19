@@ -2257,10 +2257,8 @@ impl OriginTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a use instantiated at a binder a later instantiation
-    ///   replaces answers at the value that replaced both; an endpoint written
-    ///   in an offer the lowering rebuilds answers at the rebuilt offer.
+    ///   replaces answers at the value that replaced both.
     /// - witness: `gandr-surface-lowering::lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
-    /// - witness: `gandr-surface-lowering::lower::session::tests::each_endpoint_answers_at_its_action`
     ///
     /// # Cost
     /// - allocation: none in steady state
