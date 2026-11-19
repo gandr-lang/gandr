@@ -1,0 +1,3 @@
+/// `binary_expression.and`: a conjunction.
+def both() -> Bool =
+  true && false

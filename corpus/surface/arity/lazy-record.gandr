@@ -1,0 +1,101 @@
+// Lazy records: a block of entries `&{.l => e}` answering each label's entry,
+// and its lazy product type.
+//
+// A lazy record is a lazy product whose entries carry labels, so an entry is
+// observed by its label or by its position. A position past the last entry
+// names nothing.
+//
+// Each `runs` row observes one entry. A lazy product standing unthunked is
+// refused `OutOfFragment.WrongSort`, as is a session type at an entry.
+//
+// - see: #1104 — `spread`, `beyond`
+
+def lazy() -> &{get : -F Integer, put : -F String} =
+  &{.put => "s", .get => 1}
+
+def binary : +U (-F Integer & -F String) = &{.0 => 1, .1 => "s"};
+
+def observe(m : +U &{get : -F Integer, put : -F String}) -> Integer =
+  m.get
+
+def offered(n : Integer) -> &{get : -F Integer, put : -F String} =
+  &{.put => "s", .get => n}
+
+/// The empty lazy record is the empty lazy product, answered by the empty
+/// block.
+def terminal : +U &{} = &{};
+
+/// A lazy record of one entry is the lazy product of one, not its entry: its
+/// block answers the one entry.
+def single() -> &{get : -F Integer} =
+  &{.get => 1}
+
+/// A lazy record of three is one lazy product of three, its block answering
+/// each entry.
+def triple() -> &{a : -F Integer, b : -F String, c : -F Integer} =
+  &{.a => 1, .b => "s", .c => 3}
+
+/// The chain `C & D & E` is the lazy product the lazy record of three is.
+def chained : +U (-F Integer & -F String & -F Integer) = triple;
+
+/// Each entry of a lazy product of three is one projection of it.
+def third(m : +U &{a : -F Integer, b : -F String, c : -F Integer}) -> Integer =
+  m.c
+
+/// The last entry of `triple`, observed.
+@[runs("3")]
+def tripled() -> Integer = third triple;
+
+/// The one entry of a lazy product of one is its one projection.
+def only(m : +U &{get : -F Integer}) -> Integer =
+  m.get
+
+/// The only entry of `single`, observed.
+@[runs("1")]
+def singled() -> Integer = only single;
+
+/// A lazy record written at its labels answers each label's entry. The
+/// printer spells its signature under those labels.
+def signed : +U &{get : -F Integer, put : -F String} = &{.put => "s", .get => 9};
+
+/// `observe` reads the entry `signed` writes at `get`. It runs to that entry.
+@[runs("9")]
+def signed_got() -> Integer = observe signed;
+
+/// `co` is an ordinary name. The lazy record takes its labels from its
+/// signature, so no bundle keyword spells it.
+def co : +U &{get : -F Integer} = &{.get => 4};
+
+/// The entry the record named `co` writes at `get`.
+@[runs("4")]
+def co_got() -> Integer = only co;
+
+/// An entry observed by its position, counted from zero, is the entry its
+/// label names: `m.1` is `m.put`.
+def placed(m : +U &{get : -F Integer, put : -F String}) -> String =
+  m.1
+
+/// A lazy product chain names no entry, so each is observed by its position.
+def last(m : +U (-F Integer & -F String & -F Integer)) -> Integer =
+  m.2
+
+/// The last component of `chained`, observed by its position.
+@[runs("3")]
+def lasted() -> Integer = last chained;
+
+/// A positional lazy record names no entry either, so each is observed by its
+/// position.
+def spread(m : +U (-F Integer & -F String)) -> String =
+  m.1
+
+/// A position past a lazy product's last entry names nothing, and is refused
+/// as the unresolved name it is.
+@[refuses("UnresolvedName")]
+def beyond(m : +U (-F Integer & -F String)) -> String =
+  m.2
+
+@[refuses("OutOfFragment.WrongSort")]
+def unthunked : -F Integer & -F Integer;
+
+@[refuses("OutOfFragment.WrongSort")]
+def menu : +U &{get : !Integer. end, put : ?Integer. end};
