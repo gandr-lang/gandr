@@ -1,0 +1,18 @@
+type Q = *{x : Integer, y : Integer} where
+  face fx = { x };
+
+type R = Q;
+
+type S = R;
+
+def direct : Q.#{fx ↦ *{.x = 1}} = *{.y = 2};
+
+def direct_by_label : Q.#{.x = 1} = *{.y = 2};
+
+def through : R.#{fx ↦ *{.x = 1}} = *{.y = 2};
+
+def by_label : R.#{.x = 1} = *{.y = 2};
+
+def twice : S.#{fx ↦ *{.x = 1}} = *{.y = 2};
+
+def twice_by_label : S.#{.x = 1} = *{.y = 2};
