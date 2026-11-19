@@ -89,7 +89,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     pub fn read_builtins(&mut self)
     {
         let cx = self.cx_mut();
-        let homed = matches!(cx.collected.unit.home(cx.current.source), Maybe::Present(_));
+        // The prelude and each module of `std` are sources of the toolchain.
+        let homed = matches!(cx.collected.unit.home(cx.current.source), Maybe::Present(_))
+            || cx.collected.unit.prelude() == Some(cx.current.source);
         let mut read = Vec::new();
         for (index, slot) in cx.collected.slots.iter().enumerate().skip(cx.current.slots) {
             if let Maybe::Present(_) = slot.refusal {
@@ -129,6 +131,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     let _first = cx.natives.insert(slot, primitive);
                     continue;
                 },
+                // A use of the type member reads the atom of its row, as
+                // `stated_type` plans it.
+                Ok(Row::Atom(_)) => continue,
                 Ok(Row::Role(role)) => match cx.roles.entry(role) {
                     Entry::Vacant(vacant) => {
                         let _first = vacant.insert(slot);

@@ -705,9 +705,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         Ok(match self.stated_named(named, self.cx().name_at(at))? {
             Maybe::Present(stated) => match stated.meaning {
                 TypeMeaning::Manifest(defined) => Some((defined, stated.held)),
-                TypeMeaning::Sealed | TypeMeaning::Family(_) | TypeMeaning::Instantiated { .. } => {
-                    None
-                },
+                TypeMeaning::Sealed
+                | TypeMeaning::Builtin(_)
+                | TypeMeaning::Family(_)
+                | TypeMeaning::Instantiated { .. } => None,
             },
             Maybe::Absent(_) => None,
         })

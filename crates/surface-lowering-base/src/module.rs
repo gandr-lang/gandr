@@ -4624,7 +4624,7 @@ impl<'source> Collector<'_, 'source>
                 read_pieces(self.pbg, self.tree, child.node, &mut pieces)?;
                 if Self::opens_type_member(&pieces).0 {
                     let top = self.collected.top(child.span.start());
-                    return self.type_member(top, child, &pieces);
+                    return self.type_member(top, child, &pieces, &[]);
                 }
                 self.module(child)
             },
@@ -5092,7 +5092,12 @@ impl<'source> Collector<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let held = SlotIndex(self.collected.slots.len());
-        self.type_member(self.collected.top(member.span.start()), member, pieces)?;
+        self.type_member(
+            self.collected.top(member.span.start()),
+            member,
+            pieces,
+            &attributes,
+        )?;
         if let Some(slot) = self.collected.slots.get_mut(held.0) {
             attributes.append(&mut slot.attributes);
             slot.attributes = attributes;
@@ -8671,7 +8676,7 @@ impl<'source> Collector<'_, 'source>
             return Ok(());
         }
         if Self::opens_type_member(pieces).0 {
-            if let Err(refusal) = self.type_member(container, member, pieces) {
+            if let Err(refusal) = self.type_member(container, member, pieces, &[]) {
                 self.fault_at(structure, member, refusal);
             }
             return Ok(());
@@ -14105,7 +14110,11 @@ impl<'source> LoweredModule<'source>
                     Maybe::Present(gandr_core_term::builtin::Row::Role(role)) => {
                         Maybe::Present(role)
                     },
-                    Maybe::Present(gandr_core_term::builtin::Row::Native(_)) | Maybe::Absent(_) => {
+                    Maybe::Present(
+                        gandr_core_term::builtin::Row::Native(_)
+                        | gandr_core_term::builtin::Row::Atom(_),
+                    )
+                    | Maybe::Absent(_) => {
                         Maybe::Absent(gandr_kernel_term::builtin_role::Absent::Unnamed)
                     },
                 },

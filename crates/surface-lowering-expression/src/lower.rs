@@ -54,6 +54,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::builtin::TypeAtom;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
@@ -277,7 +278,6 @@ use crate::resolve::ScopeId;
 use crate::resolve::Shadow;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
-use crate::resolve::TypeAtom;
 use crate::resolve::TypeFormer;
 use crate::resolve::binder_site;
 use crate::resolve::binder_type;
@@ -1308,9 +1308,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                         .map(|slot| (defined.node, slot.named.node))
                 },
                 TypeMeaning::Manifest(_) => None,
-                TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } | TypeMeaning::Family(_) => {
-                    None
-                },
+                TypeMeaning::Sealed
+                | TypeMeaning::Builtin(_)
+                | TypeMeaning::Instantiated { .. }
+                | TypeMeaning::Family(_) => None,
             })
             .collect();
     }
@@ -10654,6 +10655,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                         | TypeMeaning::Manifest(defined) => matches!(self.cx().plans.get(site.at.node), Some(&Plan::Transparent(node)) if node == defined.node),
                         | TypeMeaning::Sealed => matches!(self.cx().plans.get(site.at.node), Some(&Plan::Sealed(atom)) if usize::from(atom) == usize::from(stated.held)),
                         | TypeMeaning::Instantiated { defined, instance } => matches!(self.cx().plans.get(site.at.node), Some(&Plan::Instantiated(read, node)) if read == instance && node == defined.node),
+                        | TypeMeaning::Builtin(_) => matches!(self.cx().plans.get(site.at.node), Some(&Plan::Atom(_))),
                         | TypeMeaning::Family(_) => false,
                     })
         },
@@ -10672,12 +10674,19 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             },
             TypeMeaning::Manifest(_)
             | TypeMeaning::Sealed
+            | TypeMeaning::Builtin(_)
             | TypeMeaning::Instantiated { .. }
             | TypeMeaning::Family(_) => Produced::ValueType,
         };
         let _frame = self.require(site, produced)?;
         let plan = match stated.meaning {
             TypeMeaning::Manifest(defined) => Plan::Transparent(defined.node),
+            TypeMeaning::Builtin(_) => match self.cx().builtin_atom(stated.held) {
+                Maybe::Present(atom) => Plan::Atom(atom),
+                Maybe::Absent(_) => {
+                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::StatedType)));
+                },
+            },
             TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } => {
                 let Some(atom) = self.cx().collected.slots.get(usize::from(stated.held))
                 else {
@@ -10696,9 +10705,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     TypeMeaning::Instantiated { defined, instance } => {
                         Plan::Instantiated(instance, defined.node)
                     },
-                    TypeMeaning::Sealed | TypeMeaning::Manifest(_) | TypeMeaning::Family(_) => {
-                        Plan::Sealed(atom.constant)
-                    },
+                    TypeMeaning::Sealed
+                    | TypeMeaning::Builtin(_)
+                    | TypeMeaning::Manifest(_)
+                    | TypeMeaning::Family(_) => Plan::Sealed(atom.constant),
                 }
             },
             TypeMeaning::Family(_) => {
@@ -11335,7 +11345,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             },
             (
                 Some(_),
-                TypeMeaning::Manifest(_) | TypeMeaning::Sealed | TypeMeaning::Instantiated { .. },
+                TypeMeaning::Manifest(_)
+                | TypeMeaning::Sealed
+                | TypeMeaning::Builtin(_)
+                | TypeMeaning::Instantiated { .. },
             ) => unapplied(site, applied),
         }
     }
@@ -14847,9 +14860,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             .chain(self.cx().collected.type_members_in(Container::TopLevel(from.source)))
             .filter_map(|component| match component.meaning {
                 TypeMeaning::Manifest(defined) => Some(defined),
-                TypeMeaning::Sealed | TypeMeaning::Family(_) | TypeMeaning::Instantiated { .. } => {
-                    None
-                },
+                TypeMeaning::Sealed
+                | TypeMeaning::Builtin(_)
+                | TypeMeaning::Family(_)
+                | TypeMeaning::Instantiated { .. } => None,
             })
             // The record type an enclosing signature states a nested module at
             // is a type that signature writes.

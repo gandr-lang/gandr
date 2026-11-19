@@ -1640,7 +1640,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                             .value_injection(gandr_kernel_term::Summand::from(side), unit);
                         sink.origins.record_value(injected, origin);
                         let Lowered::ValueType(boolean) = sink.atom(
-                            crate::resolve::TypeAtom::Boolean,
+                            gandr_core_term::builtin::TypeAtom::Boolean,
                             origin.inserted(Insertion::Classifier),
                         )
                         else {
@@ -3388,7 +3388,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
                                 TypeMeaning::Manifest(_) | TypeMeaning::Instantiated { .. },
                             ) => {},
                             Maybe::Present(
-                                TypeMeaning::Sealed | TypeMeaning::Builtin(_) | TypeMeaning::Family(_),
+                                TypeMeaning::Sealed
+                                | TypeMeaning::Builtin(_)
+                                | TypeMeaning::Family(_),
                             ) => {
                                 return Err(
                                     site.out(FragmentBoundary::Unadmitted(Unbuilt::PackModel))

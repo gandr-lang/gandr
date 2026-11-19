@@ -8,6 +8,7 @@
 //! | Kind | Rows | Direction |
 //! | ---- | ---- | --------- |
 //! | a native value | each row of [`PRELUDE`], keyed by its name | given: the toolchain gives the value, and the declaration is a signature with no body that states the row's type |
+//! | an atom | each nullary value type of [`TypeAtom::ALL`], keyed by its word | given: the toolchain gives the type, and the declaration is a type signature with no body that states its kind |
 //! | a role | each role of [`Builtin`], keyed by its word | found: the library gives the declaration with its body, and a former of the core reads it by its role |
 //!
 //! A lookup reads the table in its order, so the work of one key is bounded by
@@ -63,6 +64,85 @@ impl core::fmt::Display for Key<'_>
     }
 }
 
+/// A nullary value type that the toolchain gives: an atom of the fragment.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TypeAtom
+{
+    /// `Bool`, the canonical sum of two unit types.
+    Boolean,
+    /// `Unit`, the type inhabited by the unit value alone.
+    Unit,
+    /// `Integer`, the integer base atom.
+    Integer,
+    /// `String`, the text base atom.
+    Text,
+    /// `Char`, the character base atom.
+    Character,
+    /// `f64`, the IEEE 754 binary64 base atom.
+    Float64,
+    /// `u32`, `u64`, `i32` or `i64`, an integer width atom.
+    Fixed(gandr_kernel_term::IntegerWidth),
+    /// `Void`, the sum of no summands, eliminated by a case of no arms.
+    Void,
+    /// `Buf`, the opaque buffer a receive places live and a send returns.
+    Buffer,
+    /// `Web`, the causal webs `decompose` returns.
+    Web,
+    /// `Qubit`, one quantum bit, which carries no comonoid.
+    Qubit,
+    /// `Row`, the kind of effect rows a row variable ranges over.
+    Row,
+}
+
+impl TypeAtom
+{
+    /// Every atom with the word that keys its row, in the order of the
+    /// table.
+    ///
+    /// # Specification
+    /// trivial.
+    pub const ALL: [(&'static str, Self); 21_usize] = [
+        ("unit", Self::Unit),
+        ("void", Self::Void),
+        ("bool", Self::Boolean),
+        ("integer", Self::Integer),
+        ("string", Self::Text),
+        ("char", Self::Character),
+        ("f64", Self::Float64),
+        ("u32", Self::Fixed(gandr_kernel_term::IntegerWidth::U32)),
+        ("u64", Self::Fixed(gandr_kernel_term::IntegerWidth::U64)),
+        ("i32", Self::Fixed(gandr_kernel_term::IntegerWidth::I32)),
+        ("i64", Self::Fixed(gandr_kernel_term::IntegerWidth::I64)),
+        ("u8", Self::Fixed(gandr_kernel_term::IntegerWidth::U8)),
+        ("u16", Self::Fixed(gandr_kernel_term::IntegerWidth::U16)),
+        ("i8", Self::Fixed(gandr_kernel_term::IntegerWidth::I8)),
+        ("i16", Self::Fixed(gandr_kernel_term::IntegerWidth::I16)),
+        ("usize", Self::Fixed(gandr_kernel_term::IntegerWidth::Usize)),
+        ("isize", Self::Fixed(gandr_kernel_term::IntegerWidth::Isize)),
+        ("row", Self::Row),
+        ("buf", Self::Buffer),
+        ("web", Self::Web),
+        ("qubit", Self::Qubit),
+    ];
+
+    /// The word that keys the atom's row.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn word(self) -> &'static str
+    {
+        Self::ALL
+            .iter()
+            .find_map(|&(word, atom)| (atom == self).then_some(word))
+            .unwrap_or("")
+    }
+}
+
 /// What a row of the table is.
 ///
 /// # Specification
@@ -72,6 +152,8 @@ pub enum Kind
 {
     /// A value of the native table.
     Native,
+    /// A nullary value type that the toolchain gives.
+    Atom,
     /// A role that a former of the core reads.
     Role,
 }
@@ -100,6 +182,8 @@ pub enum Row
 {
     /// A value of the native table, which gives the value and its type.
     Native(Primitive),
+    /// A nullary value type, which the toolchain gives with no body.
+    Atom(TypeAtom),
     /// A role that a former of the core reads, which states the canonical form
     /// of its holder.
     Role(Builtin),
@@ -107,7 +191,8 @@ pub enum Row
 
 impl Row
 {
-    /// The text that names the row: a native value's name, or a role's word.
+    /// The text that names the row: a native value's name, an atom's word,
+    /// or a role's word.
     ///
     /// # Specification
     /// trivial.
@@ -117,6 +202,7 @@ impl Row
     {
         Key(match self {
             Self::Native(primitive) => primitive.name().into(),
+            Self::Atom(atom) => atom.word(),
             Self::Role(role) => role.word().0,
         })
     }
@@ -131,12 +217,13 @@ impl Row
     {
         match self {
             Self::Native(_) => Kind::Native,
+            Self::Atom(_) => Kind::Atom,
             Self::Role(_) => Kind::Role,
         }
     }
 
-    /// Who gives the meaning of the row: the toolchain for a native value,
-    /// the library for a role.
+    /// Who gives the meaning of the row: the toolchain for a native value and
+    /// an atom, the library for a role.
     ///
     /// # Specification
     /// trivial.
@@ -145,13 +232,14 @@ impl Row
     pub const fn direction(self) -> Direction
     {
         match self {
-            Self::Native(_) => Direction::Given,
+            Self::Native(_) | Self::Atom(_) => Direction::Given,
             Self::Role(_) => Direction::Found,
         }
     }
 
     /// Every row of the table: the native values in the order of
-    /// [`PRELUDE`], then the roles in the order of [`Builtin::ALL`].
+    /// [`PRELUDE`], then the atoms in the order of [`TypeAtom::ALL`], then
+    /// the roles in the order of [`Builtin::ALL`].
     ///
     /// # Specification
     /// trivial.
@@ -162,6 +250,7 @@ impl Row
             .iter()
             .copied()
             .map(Self::Native)
+            .chain(TypeAtom::ALL.into_iter().map(|(_, atom)| Self::Atom(atom)))
             .chain(Builtin::ALL.into_iter().map(Self::Role))
     }
 

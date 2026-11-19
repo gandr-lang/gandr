@@ -62,6 +62,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::builtin::TypeAtom;
 use gandr_core_term::effect::capability::RegionBinder;
 use gandr_kernel_term::Stage;
 use gandr_kernel_term::StageBinder;
@@ -100,7 +101,6 @@ use crate::form::read_pieces;
 use crate::module::SlotIndex;
 use crate::origin::Origin;
 use crate::resolve::SurfaceName;
-use crate::resolve::TypeAtom;
 use crate::unbuilt::Unbuilt;
 
 /// The type forms whose operands a stage written under them is placed in:

@@ -715,6 +715,16 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                     Some(&InstanceType::Computation(_)) | None => Err(unlowered()),
                 }
             },
+            TypeMeaning::Builtin(_) => match self.cx().builtin_atom(argument.held) {
+                Maybe::Present(atom) => match sink.atom(atom, origin) {
+                    crate::lower::Lowered::ValueType(id) => Ok(id),
+                    crate::lower::Lowered::Value(_)
+                    | crate::lower::Lowered::Computation(_)
+                    | crate::lower::Lowered::CompType(_)
+                    | crate::lower::Lowered::Function { .. } => Err(unlowered()),
+                },
+                Maybe::Absent(_) => Err(unlowered()),
+            },
             TypeMeaning::Family(_) => Err(unlowered()),
         }
     }

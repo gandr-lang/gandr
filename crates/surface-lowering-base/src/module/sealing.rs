@@ -609,6 +609,7 @@ impl<'source> Collector<'_, 'source>
         container: Container,
         member: Placed,
         pieces: &Pieces,
+        decorations: &[WrittenAttribute<'source>],
     ) -> Result<(), LoweringRefusal<'source>>
     {
         if let Maybe::Present(repaired) = pieces.repair {
@@ -643,10 +644,12 @@ impl<'source> Collector<'_, 'source>
         // source and with no parameters.
         let (defined, written, builtin) = match cursor.tile(TileName::COLON) {
             Maybe::Present(colon) => {
-                let marked = attributes.iter().any(|attribute| {
-                    attribute.name.as_ref() == crate::attribute::RegisteredAttribute::BUILTIN.as_ref()
+                let marked = attributes.iter().chain(decorations).any(|attribute| {
+                    attribute.name.as_ref()
+                        == crate::attribute::RegisteredAttribute::BUILTIN.as_ref()
                 });
-                if !marked || !parameters.is_empty() || !matches!(container, Container::TopLevel(_)) {
+                if !marked || !parameters.is_empty() || !matches!(container, Container::TopLevel(_))
+                {
                     return Err(misplaced_in(FormName::MODULE, colon.span));
                 }
                 let kind = one_in(FormName::MODULE, cursor.operands())?;

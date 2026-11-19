@@ -770,7 +770,8 @@ impl Typer<'_>
                         let injected = self
                             .arena
                             .value_injection(gandr_kernel_term::Summand::from(side), unit);
-                        let boolean = atom_type(self.arena, crate::resolve::TypeAtom::Boolean);
+                        let boolean =
+                            atom_type(self.arena, gandr_core_term::builtin::TypeAtom::Boolean);
                         built.push(self.arena.value_ascribe(injected, boolean));
                     },
                     TermView::Ctor { .. }

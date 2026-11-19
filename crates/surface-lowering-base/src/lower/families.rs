@@ -14,6 +14,7 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::builtin::TypeAtom;
 use gandr_core_term::effect::capability::RegionBinder;
 use gandr_core_term::hole::HoleForm;
 use gandr_core_term::hole::HoleId;
@@ -88,7 +89,6 @@ use crate::resolve::Mentioned;
 use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
-use crate::resolve::TypeAtom;
 use crate::resolve::binder_type;
 use crate::resolve::type_head;
 

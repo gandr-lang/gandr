@@ -114,6 +114,52 @@ impl<'source> Context<'_, 'source>
         SurfaceName::from(self.text_at(placed))
     }
 
+    /// The atom of the row that the `builtin` attribute of the type member
+    /// held at `held` names.
+    ///
+    /// # Specification
+    /// - ensures: the atom of the row whose key the attribute's text spells;
+    ///   [`gandr_core_term::builtin::row::Absent::Unkeyed`] when the slot holds
+    ///   no `builtin` attribute with a text, or its key names no atom.
+    /// - panics: none.
+    #[inline]
+    pub fn builtin_atom(
+        &self,
+        held: crate::module::SlotIndex,
+    ) -> Maybe<gandr_core_term::builtin::TypeAtom, gandr_core_term::builtin::row::Absent>
+    {
+        use gandr_core_term::builtin::Row;
+        let unkeyed = Maybe::Absent(gandr_core_term::builtin::row::Absent::Unkeyed);
+        let Some(slot) = self.collected.slots.get(usize::from(held))
+        else {
+            return unkeyed;
+        };
+        let Some(text) = slot
+            .attributes
+            .iter()
+            .find_map(|attribute| match attribute.payload {
+                crate::module::Payload::Written(text)
+                    if attribute.name.as_ref()
+                        == crate::attribute::RegisteredAttribute::BUILTIN.as_ref() =>
+                {
+                    Some(text)
+                },
+                crate::module::Payload::Written(_) | crate::module::Payload::Unwritten => None,
+            })
+        else {
+            return unkeyed;
+        };
+        let Maybe::Present(crate::lower::Literal::Text(key)) =
+            crate::lower::parse_literal(Former::Text, self.text_at(text))
+        else {
+            return unkeyed;
+        };
+        match Row::named(gandr_core_term::builtin::Key(key.as_ref())) {
+            Maybe::Present(Row::Atom(atom)) => Maybe::Present(atom),
+            Maybe::Present(Row::Native(_) | Row::Role(_)) | Maybe::Absent(_) => unkeyed,
+        }
+    }
+
     /// The block naming the form `position` belongs to: its descendants' block
     /// for a top-level form, and its own block for any other node.
     ///

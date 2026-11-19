@@ -119,6 +119,7 @@ use anodized::spec;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::builtin::TypeAtom;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -400,36 +401,6 @@ impl fmt::Display for HeadArity
     }
 }
 
-/// A nullary type head: a value-type atom of the fragment.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum TypeAtom
-{
-    /// `Bool`, the canonical sum of two unit types.
-    Boolean,
-    /// `Unit`, the type inhabited by the unit value alone.
-    Unit,
-    /// `Integer`, the integer base atom.
-    Integer,
-    /// `String`, the text base atom.
-    Text,
-    /// `Char`, the character base atom.
-    Character,
-    /// `f64`, the IEEE 754 binary64 base atom.
-    Float64,
-    /// `u32`, `u64`, `i32` or `i64`, an integer width atom.
-    Fixed(gandr_kernel_term::IntegerWidth),
-    /// `Void`, the sum of no summands, eliminated by a case of no arms.
-    Void,
-    /// `Buf`, the opaque buffer a receive places live and a send returns.
-    Buffer,
-    /// `Web`, the causal webs `decompose` returns.
-    Web,
-    /// `Qubit`, one quantum bit, which carries no comonoid.
-    Qubit,
-    /// `Row`, the kind of effect rows a row variable ranges over.
-    Row,
-}
-
 /// A unary type head: a type former of the fragment.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum TypeFormer
@@ -469,11 +440,10 @@ pub enum TypeFormer
 /// - hypothesis: L3 — every row has an exact answer, with the other arity and
 ///   near spellings separating the absent branch.
 /// - witness: `resolve::tests::a_near_miss_nullary_head_answers_nothing`
-const TYPE_ATOMS: [(&str, TypeAtom); 18_usize] = [
+const TYPE_ATOMS: [(&str, TypeAtom); 17_usize] = [
     ("Unit", TypeAtom::Unit),
     ("Void", TypeAtom::Void),
     ("Bool", TypeAtom::Boolean),
-    ("Integer", TypeAtom::Integer),
     ("String", TypeAtom::Text),
     ("Char", TypeAtom::Character),
     ("f64", TypeAtom::Float64),
