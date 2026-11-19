@@ -1,0 +1,77 @@
+test: specification::a_specified_body_runs_in_no_helper_frame_4507
+package: gandr-surface-session
+command: mise run debug:test gandr-surface-session specification::a_specified_body_runs_in_no_helper_frame_4507 --break surface_syntax::tree::NodeCount.as.core::convert::From
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-session/9f02d35440c5cfdb/out/tests-9f02d35440c5cfdb"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-session/9f02d35440c5cfdb/out/tests-9f02d35440c5cfdb' (x86_64).
+(lldb) settings set -- target.run-args  "specification::a_specified_body_runs_in_no_helper_frame_4507" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex surface_syntax::tree::NodeCount.as.core::convert::From
+Breakpoint 1: 2 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-9f02d35440c5cfdb`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x0000000004ae1678
+(lldb) run
+
+running 1 test
+test specification::a_specified_body_runs_in_no_helper_frame_4507 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 2185329 launched: 'target/debug-trace/debug/build/gandr-surface-session/9f02d35440c5cfdb/out/tests-9f02d35440c5cfdb' (x86_64)
+Process 2185329 stopped
+* thread #2, name = 'specification::', stop reason = breakpoint 1.1
+       frame #0: 0x000055555684f818 tests-9f02d35440c5cfdb`<gandr_surface_syntax::tree::NodeCount as core::convert::From<usize>>::from(count=15) at tree.rs:166:6
+   163 	    fn from(count: usize) -> Self
+   164 	    {
+   165 	        Self(count)
+-> 166 	    }
+    	     ^
+   167 	}
+   168 	
+   169 	impl From<NodeCount> for usize
+(lldb) bt 24
+* thread #2, name = 'specification::', stop reason = breakpoint 1.1
+   * frame #0: 0x000055555684f818 tests-9f02d35440c5cfdb`<gandr_surface_syntax::tree::NodeCount as core::convert::From<usize>>::from(count=15) at tree.rs:166:6
+     frame #1: 0x0000555556845106 tests-9f02d35440c5cfdb`tests::specification::read_then_captured::{closure#0} at specification.rs:38:34
+     frame #2: 0x000055555684b34f tests-9f02d35440c5cfdb`anodized::__::eval_once::<(std::backtrace::Backtrace, gandr_surface_syntax::tree::NodeCount), tests::specification::read_then_captured::{closure#0}>(closure={_ref__text:{__0:"def answer : Integer = 42\n"}}) at __.rs:32:5 [inlined]
+     frame #3: 0x000055555684b340 tests-9f02d35440c5cfdb`tests::specification::read_then_captured(text={0:"def answer : Integer = 42\n"}) at specification.rs:28:1
+     frame #4: 0x000055555684b408 tests-9f02d35440c5cfdb`tests::specification::a_specified_body_runs_in_no_helper_frame_4507 at specification.rs:52:25
+     frame #5: 0x00005555568451e7 tests-9f02d35440c5cfdb`tests::specification::a_specified_body_runs_in_no_helper_frame_4507::{closure#0}((null)={}) at specification.rs:50:51
+     frame #6: 0x000055555679fcd6 tests-9f02d35440c5cfdb`<tests::specification::a_specified_body_runs_in_no_helper_frame_4507::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #7: 0x000055555699af4b tests-9f02d35440c5cfdb`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #8: 0x000055555699af49 tests-9f02d35440c5cfdb`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #9: 0x00005555569a8495 tests-9f02d35440c5cfdb`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #10: 0x00005555569a8490 tests-9f02d35440c5cfdb`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #11: 0x00005555569a8490 tests-9f02d35440c5cfdb`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #12: 0x00005555569a847b tests-9f02d35440c5cfdb`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #13: 0x00005555569a847b tests-9f02d35440c5cfdb`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #14: 0x00005555569a847b tests-9f02d35440c5cfdb`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #15: 0x00005555569a8466 tests-9f02d35440c5cfdb`test::run_test::{closure#0} at lib.rs:677:43
+     frame #16: 0x00005555569a2e54 tests-9f02d35440c5cfdb`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #17: 0x00005555569a2dd9 tests-9f02d35440c5cfdb`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #18: 0x00005555569ab5f2 tests-9f02d35440c5cfdb`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #19: 0x00005555569ab5e3 tests-9f02d35440c5cfdb`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #20: 0x00005555569ab5e3 tests-9f02d35440c5cfdb`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #21: 0x00005555569ab5d3 tests-9f02d35440c5cfdb`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #22: 0x00005555569ab5d3 tests-9f02d35440c5cfdb`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #23: 0x00005555569ab5d3 tests-9f02d35440c5cfdb`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+(lldb) frame variable --depth 3
+(unsigned long) count = 15
+(lldb) up
+frame #1: 0x0000555556845106 tests-9f02d35440c5cfdb`tests::specification::read_then_captured::{closure#0} at specification.rs:38:34
+   35  	        .positions()
+   36  	        .filter(|&position: &NodeIndex| tree.node(position).is_some())
+   37  	        .count();
+-> 38  	    (Backtrace::force_capture(), NodeCount::from(read))
+    	                                 ^
+   39  	}
+   40  	
+   41  	/// #4507: at the size-optimised profile every specified function ran its body
+(lldb) frame variable --depth 3
+(gandr_surface_syntax::span::SourceText) text = {0:"def answer : Integer = 42\n"}
+(gandr_surface_parser::parse::ParseResult) parsed = {tree:{source:{0:"def answer : Integer = 42\n"}, grammar:{0:10105924557591606453}, nodes:size=15, roots:size=1, index:{forms:size=1, digests:size=1, ranges:size=1, ranks:size=15, digest:Some({0:"K%ڠ\xd9i\U0000001dN\\\xd7L\U0000001d\x99\xb8z\xcaŬ\x8b\xed\xb1\xab\xd7\xcf\xf3\\}\U00000001\xa3\xab\xe5\xd0"})}}, obligations:size=1}
+(gandr_surface_syntax::tree::SyntaxTree *) tree = 0x00007ffff79fde98 {source:{0:"def answer : Integer = 42\n"}, grammar:{0:10105924557591606453}, nodes:size=15, roots:size=1, index:{forms:size=1, digests:size=1, ranges:size=1, ranks:size=15, digest:Some({0:"K%ڠ\xd9i\U0000001dN\\\xd7L\U0000001d\x99\xb8z\xcaŬ\x8b\xed\xb1\xab\xd7\xcf\xf3\\}\U00000001\xa3\xab\xe5\xd0"})}}
+(unsigned long) read = 15
