@@ -1,0 +1,9 @@
+/// `bracket_fields`: the retired static bracket `T[.l = v]` that fixes a
+/// record type's fields. The reader `T.#{.l = v}` replaces it. The lowering
+/// refuses the bracket, and the refusal names it.
+///
+/// A stage `T[i]` keeps the bracket. A supply by name `f[.a = A]` is a term
+/// form, and it keeps the bracket too.
+type Config = *{host : String, port : Integer};
+@[refuses("RetiredSpelling.bracket_fields")]
+def secured : Config[.port = 443] = *{.host = "localhost"};

@@ -1,0 +1,27 @@
+//! An in-flight buffer touched: the buffer moved into a read's submission is
+//! used again before the completion hands it back, while the kernel owns it
+//! [boats-2020-notes_on_io_uring].
+//!
+//! - cites: [boats-2020-notes_on_io_uring]
+//!
+//! [boats-2020-notes_on_io_uring]: https://without.boats/blog/io-uring/ "boats, Notes on io-uring"
+
+// The ring's protocol and its entries.
+import "../../model/completion/ring-base.gandr";
+
+/// The buffer finished by its submitter after it was moved into the
+/// submission: the send consumed the submitter's end, so the close acts on a
+/// spent slot.
+@[refuses("UsedAfterClose")]
+def bufferTouched() -> Unit =
+  let buffer = fork (owner : Ring.Buffer) { close owner };
+  let ring = fork (kernel : Ring.Moving) {
+    let held = recv kernel;
+    close held;
+    send kernel Ring.done;
+    close kernel
+  };
+  send ring buffer
+  close buffer
+  let cqe = recv ring
+  close ring

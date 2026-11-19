@@ -1,0 +1,2 @@
+codata Point : Type where {
+  x : Integer;
