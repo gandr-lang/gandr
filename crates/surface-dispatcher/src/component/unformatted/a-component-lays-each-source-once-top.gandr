@@ -1,0 +1,4 @@
+import "./left.gandr" ;
+import "./right.gandr" ;
+def four : Integer ;
+def four = two ;

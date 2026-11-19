@@ -1,0 +1,10 @@
+command: mise run check:prose, with PROSE_BASE=8574a25a2c9810376cc89c911ee6672cef9491fb
+issue: #7750
+before: 4f7e05edd5
+exit: 1
+.config/ast-grep/containers/rules/shared.yml:1: STE-6.3: "An `Arc` in a type takes the shared pointer of the kernel's data over the global allocator: one count, no weak count, and `Send` and `Sync` as `Arc` is." — split it into sentences of at most 25 words, one clause each
+.config/ast-grep/containers/rules/vector.yml:1: STE-8.1: "`N` of zero is a plain heap vector of the same size, so no type grows; the census sets a larger `N` where an inline capacity pays." — end the first sentence with a full stop and start the next
+(239 findings in 54 paragraphs of 32 files)
+prose: 53 file(s) touched since 8574a25a2c9810376cc89c911ee6672cef9491fb: 1138 paragraph(s) kept from the base, 107 written and judged; 0 line(s) of commented-out code left out
+after: 02498e6736
+exit: 0

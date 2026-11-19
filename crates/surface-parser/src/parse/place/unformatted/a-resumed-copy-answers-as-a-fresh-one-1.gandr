@@ -1,0 +1,4 @@
+data Circle : Type where {
+  | Base : Circle
+  loop : Base <-> Base
+}

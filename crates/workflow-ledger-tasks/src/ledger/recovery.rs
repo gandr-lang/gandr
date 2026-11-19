@@ -1,0 +1,1695 @@
+//! The recovery sweep: every syntax exemplar, one tile at a time, written
+//! wrong.
+//!
+//! # A mistake is reported where it was made
+//!
+//! [`sweep`] reads each exemplar under `syntax/`, labels it, and makes two
+//! mutants of every token that is a literal tile of the grammar (a keyword, a
+//! punctuation tile, a string's quote): the tile written as its near miss, and
+//! the tile deleted. Each mutant is checked as `gandr check` checks it, and the
+//! first error it reports must mark the mutation: one location it names, its
+//! primary span or a context location, must touch the mutation's site. The
+//! judgement that refuses an admitted form names the whole form it judged,
+//! so a near miss that turns one form into another is marked inside it. A
+//! near miss's site is the bytes written in the tile's
+//! place. A deletion's is the layout between the tokens either side, since a
+//! tile found missing can only be reported at the end of what came before it
+//! or the start of what comes after. A mutant whose first error marks other
+//! bytes, or marks none, is a finding. A mutant the checker accepts is counted
+//! and not a finding: a deleted optional tile, or a near miss that spells
+//! another form, is no mistake. Nor is a mutant that leaves a well-formed
+//! source, one the lowering reads with no refusal but for a name no
+//! declaration answers, though the check refuses it (#2340): `-> -F
+//! +{Integer}` less `Integer` is the empty sum, a type the corpus writes on
+//! purpose, and the first ill-typed term is then the body's injection; `def
+//! rec f` less `rec` is a definition that cannot call itself, and its own
+//! call is unresolved. So is a source whose lowering refuses a form only for
+//! what it means where it stands (#3332): `loop` deleted leaves its `break`
+//! outside any loop, `break` deleted leaves the statement after an endless
+//! loop unreached, `rec` deleted leaves a descent claim outside a recursive
+//! group, and `thunk` deleted leaves its `return` where no body passes
+//! (#3496). With no mistake of form left, the first refusal is where the
+//! source goes wrong by construction, so it is counted well formed beside the
+//! accepted, not filed.
+//!
+//! A mutant that closes a form early is counted apart, as closed early. A
+//! closer doubled, or the closer an opener's deletion leaves, closes a form
+//! legally, and the closer left over has nothing to close; its first error
+//! marks that stray, a span holding exactly one `}`, `)` or `]`. The stray is
+//! the right diagnostic: which closer is the extra one is not in the tree, so
+//! the parse knows something is wrong only there. It is counted by its own
+//! name rather than as well formed, since the source is not.
+//!
+//! An opener's deletion can also let a declaration close legally before the
+//! body that the opener opened. A `{` deleted after `-> Integer` makes `let
+//! (q, r) = divmod a b;` part of the definition, and its `;` ends the
+//! definition. The rest of the body then stands at the top level, after the
+//! deletion, and the first error marks that remainder. The tree does not show
+//! the opener either, so this mutant is also counted closed early. Only an
+//! opener's deletion is counted so. A remainder that another deletion leaves
+//! at the top level is a finding.
+//!
+//! A tile's near miss is derived, never listed: the first of its text with the
+//! last character dropped, its last two characters swapped, and its last
+//! character doubled that spells no literal tile of the grammar. A tile none of
+//! those miss is swept by deletion alone. The table of near misses leads the
+//! report, so a reader sees what each tile was mistaken for.
+//!
+//! - Choice: the mutants are written under a scratch `ledger` directory and
+//!   walked as `check` walks, so the report is what a user who made the mistake
+//!   reads, the exemplars' expectations included.
+//! - Alternatives: parsing each mutant alone and reading the parser's
+//!   obligations, which misses every report the lowering and the checker make;
+//!   a hand-written table of near misses, which drifts from the grammar. The
+//!   parser's own drop sweep (`gandr-surface-parser`'s
+//!   `sweeps::dropped_tokens_recover_no_worse_than_the_record`) holds every
+//!   dropped token's obligation and node counts to a record; it says how much
+//!   the parse recovers, and this sweep where the user is told.
+//! - Reversal: a sweep that must run on every pull request checks its mutants
+//!   in memory, without the scratch directory.
+
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use core::convert::Infallible;
+use core::ops::ControlFlow;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
+use std::path::Path;
+use std::path::PathBuf;
+
+use anodized::spec;
+use gandr_surface_corpus::Refusal;
+use gandr_surface_diagnostics::Identifier;
+use gandr_surface_diagnostics::Severity;
+use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Goals;
+use gandr_surface_dispatcher::Pool;
+use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::Verb;
+use gandr_surface_dispatcher::Walk;
+use gandr_surface_dispatcher::Width;
+use gandr_surface_dispatcher::entries;
+use gandr_surface_evaluate::Evaluator;
+use gandr_surface_grammar::Ascii;
+use gandr_surface_grammar::LabelText;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::SPELLED;
+use gandr_surface_lowering::FragmentBoundary;
+use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_parser::CandidateLabel;
+use gandr_surface_parser::Lexeme;
+use gandr_surface_parser::TileSpelling;
+use gandr_surface_parser::Token;
+use gandr_surface_parser::label;
+use gandr_surface_parser::tile_spelling;
+use gandr_surface_syntax::SourceFragment;
+use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
+
+use super::LedgerFault;
+use super::exemplars::listed;
+
+/// The directory of rule exemplars under the exemplar directory.
+const SYNTAX: &str = "syntax";
+
+/// The extension every exemplar carries.
+const EXTENSION: &str = "gandr";
+
+/// The sweeps begun in this process: each names its own scratch directory, so
+/// two sweeps in one process, as the tests run them, never write over each
+/// other's mutants.
+static SWEEPS: AtomicUsize = AtomicUsize::new(0);
+
+/// How a mutant writes its tile wrong.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Mutation
+{
+    /// The tile written as its near miss.
+    Missed(String),
+    /// The tile left out.
+    Deleted,
+}
+
+impl core::fmt::Display for Mutation
+{
+    /// Writes ``written as `<miss>` `` or `deleted`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        match *self {
+            Self::Missed(ref text) => write!(f, "written as `{text}`"),
+            Self::Deleted => f.write_str("deleted"),
+        }
+    }
+}
+
+/// The bytes a mutation is sited at, in its mutant's text.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Site
+{
+    /// The first byte.
+    start: usize,
+    /// One past the last byte; equal to `start` for an empty site.
+    end: usize,
+}
+
+impl core::fmt::Display for Site
+{
+    /// Writes `start..end`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        write!(f, "{}..{}", self.start, self.end)
+    }
+}
+
+/// One mutant of one exemplar, before it is checked.
+#[derive(Clone, Debug)]
+struct Mutant
+{
+    /// The exemplar it was made from.
+    exemplar: PathBuf,
+    /// The tile written wrong, as the exemplar writes it.
+    tile: String,
+    /// Where the tile starts in the exemplar.
+    at: usize,
+    /// How it is written wrong.
+    mutation: Mutation,
+    /// The mutant's text.
+    text: String,
+    /// Where the mutation lies in that text.
+    site: Site,
+}
+
+/// The first error a mutant's check reported.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Reported
+{
+    /// The refusal or lint it names, when it names one.
+    name: Option<String>,
+    /// What it leads with.
+    message: String,
+    /// Its primary span, measured in the mutant's own text, when it has one.
+    span: Option<Site>,
+    /// Every location it names in the mutant's own text, the primary span
+    /// first, then the context locations its refusal names.
+    loci: Vec<Site>,
+    /// Whether the mutant was well formed: the lowering read every
+    /// declaration and refused none but for what a well-formed form means
+    /// where it stands, so the first error is a meaning's, not a form's.
+    formed: bool,
+    /// Whether the first error refuses a remainder: an expression that
+    /// stands at the source's top level, where only declarations stand.
+    remainder: bool,
+}
+
+/// Whether a cause's mutants deleted their tile or missed it.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Kind
+{
+    /// The tile left out.
+    Deleted,
+    /// The tile written as its near miss.
+    Missed,
+}
+
+/// What a finding is filed under: one issue per cause, not per finding.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Cause
+{
+    /// The first error's name, or `unnamed`.
+    name: String,
+    /// How the tile was written wrong.
+    kind: Kind,
+}
+
+impl core::fmt::Display for Cause
+{
+    /// Writes ``` `<name>` deleted ``` or ``` `<name>` missed ```.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        let kind = match self.kind {
+            Kind::Deleted => "deleted",
+            Kind::Missed => "missed",
+        };
+        write!(f, "`{}` {kind}", self.name)
+    }
+}
+
+/// A mutant whose first error does not mark its mutation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecoveryFinding
+{
+    /// The exemplar the mutant was made from.
+    exemplar: PathBuf,
+    /// The tile written wrong.
+    tile: String,
+    /// Where the tile starts in the exemplar.
+    at: usize,
+    /// How it was written wrong.
+    mutation: Mutation,
+    /// Where the mutation lies in the mutant.
+    site: Site,
+    /// What the check reported first.
+    reported: Reported,
+}
+
+impl core::fmt::Display for RecoveryFinding
+{
+    /// Writes the exemplar's path and the tile's byte, the tile and how it was
+    /// written wrong, then the first error's name and the span it marks beside
+    /// the mutation's site, or that it marks none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        write!(
+            f,
+            "{}:{}: `{}` {}: first error ",
+            self.exemplar.display(),
+            self.at,
+            self.tile,
+            self.mutation,
+        )?;
+        match self.reported.name {
+            Some(ref name) => write!(f, "`{name}`")?,
+            None => write!(f, "\"{}\"", self.reported.message)?,
+        }
+        match self.reported.span {
+            Some(span) => write!(f, " at {span}, not at {}", self.site),
+            None => write!(f, " with no span, not at {}", self.site),
+        }
+    }
+}
+
+impl RecoveryFinding
+{
+    /// What the finding is filed under: its first error's name, `unnamed` for
+    /// an error that names no refusal or lint, and whether its tile was
+    /// deleted or missed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn cause(&self) -> Cause
+    {
+        Cause {
+            name: self
+                .reported
+                .name
+                .clone()
+                .unwrap_or_else(|| "unnamed".to_owned()),
+            kind: match self.mutation {
+                Mutation::Missed(_) => Kind::Missed,
+                Mutation::Deleted => Kind::Deleted,
+            },
+        }
+    }
+
+    /// The exemplar's family: its file's name up to the first dot, the rule
+    /// its variants share.
+    ///
+    /// # Specification
+    /// trivial.
+    fn family(&self) -> String
+    {
+        self.exemplar
+            .file_name()
+            .and_then(std::ffi::OsStr::to_str)
+            .and_then(|name| name.split('.').next())
+            .unwrap_or_default()
+            .to_owned()
+    }
+}
+
+/// What a sweep of the syntax exemplars found.
+#[derive(Clone, Debug, Default)]
+pub struct RecoveryReport
+{
+    /// Each literal tile the exemplars write, with its near miss; none for a
+    /// tile every derivation spells as another tile.
+    near_misses: BTreeMap<String, Option<String>>,
+    /// How many mutants were checked.
+    swept: usize,
+    /// How many the checker accepted.
+    accepted: usize,
+    /// How many mutants left a well-formed source the check refused: no
+    /// mistake of form is left to mark, so the first refusal is where the
+    /// source now goes wrong.
+    formed: usize,
+    /// How many mutants closed a form early: an extra closer, or one left
+    /// behind by a deleted opener, closes a form legally and leaves a closer
+    /// with nothing to close, which the first error marks rather than the
+    /// mutation.
+    early: usize,
+    /// The mutants whose first error does not mark their mutation, in
+    /// exemplar and byte order.
+    findings: Vec<RecoveryFinding>,
+}
+
+/// What became of a sweep's mutants, each counted once.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `where_made`, `accepted`, `formed`, `early` and `elsewhere`
+///   partition `swept`.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary;
+///   [`RecoveryReport::tally`] answers it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a sweep whose deleted opener leaves a stray closer, or a
+///   remainder at the top level, counts that mutant closed early and every
+///   mutant in one class; a mutant counted twice or in no class changes the
+///   sum.
+/// - witness: `ledger::recovery::tests::a_closer_left_with_nothing_to_close_is_closed_early_3063`
+/// - witness: `ledger::recovery::tests::a_body_an_opener_s_deletion_leaves_at_the_top_level_is_closed_early_4785`
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RecoveryTally
+{
+    /// The mutants checked.
+    pub swept: usize,
+    /// The mutants whose first error marks their mutation.
+    pub where_made: usize,
+    /// The mutants the checker accepted.
+    pub accepted: usize,
+    /// The mutants that left a well-formed source the check refused.
+    pub formed: usize,
+    /// The mutants that closed a form early.
+    pub early: usize,
+    /// The mutants whose first error marks other bytes than their mutation.
+    pub elsewhere: usize,
+}
+
+impl RecoveryReport
+{
+    /// The mutants whose first error does not mark their mutation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn findings(&self) -> &[RecoveryFinding]
+    {
+        &self.findings
+    }
+
+    /// What became of the sweep's mutants.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn tally(&self) -> RecoveryTally
+    {
+        let elsewhere = self.findings.len();
+        RecoveryTally {
+            swept: self.swept,
+            where_made: self
+                .swept
+                .saturating_sub(self.accepted)
+                .saturating_sub(self.formed)
+                .saturating_sub(self.early)
+                .saturating_sub(elsewhere),
+            accepted: self.accepted,
+            formed: self.formed,
+            early: self.early,
+            elsewhere,
+        }
+    }
+}
+
+impl core::fmt::Display for RecoveryReport
+{
+    /// Writes the near-miss table, one ``near miss: `<tile>` → `<miss>` `` line
+    /// per tile (`—` for a tile with none), then each finding, then one
+    /// ``cause: `<name>` <kind>`` line per cause with its count and families,
+    /// the largest first, then the count swept, marked where made, accepted,
+    /// well formed, closed early and marked elsewhere.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        for (tile, miss) in &self.near_misses {
+            match *miss {
+                Some(ref miss) => writeln!(f, "near miss: `{tile}` → `{miss}`")?,
+                None => writeln!(f, "near miss: `{tile}` → —")?,
+            }
+        }
+        for finding in &self.findings {
+            writeln!(f, "{finding}")?;
+        }
+        let mut causes: BTreeMap<Cause, (usize, BTreeSet<String>)> = BTreeMap::new();
+        for finding in &self.findings {
+            let &mut (ref mut count, ref mut families) = causes.entry(finding.cause()).or_default();
+            *count = count.saturating_add(1);
+            let _new = families.insert(finding.family());
+        }
+        let mut ranked: Vec<(&Cause, &(usize, BTreeSet<String>))> = causes.iter().collect();
+        ranked.sort_by_key(|&(cause, &(count, _))| (core::cmp::Reverse(count), cause));
+        for (cause, &(count, ref families)) in ranked {
+            write!(
+                f,
+                "cause: {cause}: {count} mutants in {} families: ",
+                families.len()
+            )?;
+            for (index, family) in families.iter().enumerate() {
+                if index > 0 {
+                    f.write_str(", ")?;
+                }
+                f.write_str(family)?;
+            }
+            writeln!(f)?;
+        }
+        let tally = self.tally();
+        write!(
+            f,
+            "{} mutants swept: {} marked where they were made, {} accepted, {} well formed, {} closed early, {} marked elsewhere",
+            tally.swept,
+            tally.where_made,
+            tally.accepted,
+            tally.formed,
+            tally.early,
+            tally.elsewhere,
+        )
+    }
+}
+
+/// The texts of a grammar's literal tiles, as [`literal_tiles`] reads them.
+#[repr(transparent)]
+#[derive(Clone, Debug)]
+struct Literals(BTreeSet<&'static str>);
+
+/// Every literal tile of `pbg`: the text of each mold's tile written as text,
+/// and the ASCII token of each glyph tile.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a mold's label is held exactly when the parser spells it
+///   literally; an ASCII spelling is held exactly when it is a token.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the built-in grammar's keywords, punctuation and glyph
+///   tokens are held, and no class tile is.
+/// - witness: `ledger::recovery::tests::every_near_miss_is_one_edit_from_its_tile_and_no_tile`
+#[spec(ensures: |ret| SPELLED.iter().all(|spelled| match spelled.ascii {
+    Ascii::Token(LabelText(text)) => ret.0.contains(text),
+    Ascii::Head(_) => true,
+}))]
+fn literal_tiles(pbg: &Pbg) -> Literals
+{
+    let mut literals: BTreeSet<&'static str> = pbg
+        .iter_molds()
+        .filter_map(
+            |(_, mold)| match tile_spelling(CandidateLabel::from(mold.label)) {
+                TileSpelling::Literal(_) => Some(mold.label),
+                TileSpelling::Class(_) => None,
+            },
+        )
+        .collect();
+    for spelled in SPELLED {
+        if let Ascii::Token(LabelText(text)) = spelled.ascii {
+            let _new = literals.insert(text);
+        }
+    }
+    Literals(literals)
+}
+
+/// The near miss of the tile written `tile`: the first of its text with the
+/// last character dropped, its last two characters swapped and its last
+/// character doubled that is not empty, differs from the tile and is held in
+/// no entry of `literals`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a present answer is one edit from `tile`, non-empty, and held in
+///   no entry of `literals`; absent when every derivation is a literal tile or
+///   empty.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every literal tile of the built-in grammar, the ones
+///   whose dropped spelling is a tile among them.
+/// - witness: `ledger::recovery::tests::every_near_miss_is_one_edit_from_its_tile_and_no_tile`
+#[spec(ensures: |ref ret| ret.as_ref().is_none_or(|miss| !miss.is_empty() && miss.as_str() != tile.0 && !literals.0.contains(miss.as_str())))]
+fn near_miss(
+    tile: LabelText<'_>,
+    literals: &Literals,
+) -> Option<String>
+{
+    let characters: Vec<char> = tile.0.chars().collect();
+    let dropped: String = characters
+        .iter()
+        .take(characters.len().saturating_sub(1))
+        .collect();
+    let swapped: String = match *characters.as_slice() {
+        [ref head @ .., last_but_one, last] => {
+            head.iter().copied().chain([last, last_but_one]).collect()
+        },
+        _ => String::new(),
+    };
+    let doubled: String = characters
+        .iter()
+        .copied()
+        .chain(characters.last().copied())
+        .collect();
+    [dropped, swapped, doubled].into_iter().find(|candidate| {
+        !candidate.is_empty()
+            && candidate.as_str() != tile.0
+            && !literals.0.contains(candidate.as_str())
+    })
+}
+
+/// The mutants of the exemplar at `exemplar` whose text is `text`: a near miss
+/// and a deletion of each token that is a literal tile.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one deletion per token whose text is held in `literals` or that
+///   is a punctuation tile or a quote, and one near miss of each that has one;
+///   a near miss's site is its written bytes, a deletion's the layout between
+///   the tokens either side of it, in the mutant's text.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the mutants and their texts, growth within the tokens of the
+///   exemplar
+///
+/// # Adequacy
+/// - hypothesis: L3 — a definition's keyword, its `=` and its closing `;` are
+///   each deleted and missed, with the deletion of the last sited from the end
+///   of the value to the end of the text.
+/// - witness: `ledger::recovery::tests::a_deletion_is_sited_between_its_neighbours`
+#[spec(ensures: |ref ret| ret.iter().all(|mutant| mutant.site.start <= mutant.site.end && mutant.site.end <= mutant.text.len()))]
+fn mutants(
+    exemplar: &Path,
+    text: SourceText<'_>,
+    literals: &Literals,
+    near_misses: &mut BTreeMap<String, Option<String>>,
+) -> Vec<Mutant>
+{
+    let text = <&str>::from(text);
+    let tokens = label(SourceFragment::from(text));
+    let written: Vec<(Token, usize, usize)> = tokens
+        .iter()
+        .filter(|token| !matches!(token.lexeme, Lexeme::Space))
+        .filter_map(|&token| {
+            Some((
+                token,
+                usize::try_from(token.start).ok()?,
+                usize::try_from(token.end).ok()?,
+            ))
+        })
+        .collect();
+    let mut made = Vec::new();
+    for (index, &(token, start, end)) in written.iter().enumerate() {
+        let Some(tile) = text.get(start .. end)
+        else {
+            continue;
+        };
+        let literal = matches!(token.lexeme, Lexeme::Punct | Lexeme::Quote)
+            || (matches!(token.lexeme, Lexeme::LowerWord | Lexeme::UpperWord)
+                && literals.0.contains(tile));
+        if !literal {
+            continue;
+        }
+        let (Some(before), Some(after)) = (text.get(.. start), text.get(end ..))
+        else {
+            continue;
+        };
+        let miss = near_misses
+            .entry(tile.to_owned())
+            .or_insert_with(|| near_miss(LabelText(tile), literals))
+            .clone();
+        if let Some(miss) = miss {
+            made.push(Mutant {
+                exemplar: exemplar.to_path_buf(),
+                tile: tile.to_owned(),
+                at: start,
+                site: Site {
+                    start,
+                    end: start.saturating_add(miss.len()),
+                },
+                text: format!("{before}{miss}{after}"),
+                mutation: Mutation::Missed(miss),
+            });
+        }
+        let previous = index
+            .checked_sub(1)
+            .and_then(|previous| written.get(previous))
+            .map_or(0, |&(_, _, previous_end)| previous_end);
+        let removed = end.saturating_sub(start);
+        let next = written
+            .get(index.saturating_add(1))
+            .map_or(text.len(), |&(_, next_start, _)| next_start)
+            .saturating_sub(removed);
+        made.push(Mutant {
+            exemplar: exemplar.to_path_buf(),
+            tile: tile.to_owned(),
+            at: start,
+            mutation: Mutation::Deleted,
+            text: format!("{before}{after}"),
+            site: Site {
+                start: previous,
+                end: next,
+            },
+        });
+    }
+    made
+}
+
+/// Sweep the syntax exemplars under `directory`: every literal tile of every
+/// exemplar written as its near miss and deleted, each mutant checked, and
+/// each whose first error does not mark its mutation reported.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one mutant per tile and mutation as [`mutants`] makes them, each
+///   checked as `check` checks a source under a `ledger` directory; a mutant is
+///   accepted when the check reports no error, counted well formed when the
+///   lowering refused none of its declarations but for an unresolved name, a
+///   loop's exit outside any loop, an unreachable statement, a descent claim
+///   outside a recursive group or an exit where no body passes, and its first
+///   error does not mark the site, counted closed early when its first error
+///   does not mark the site but marks a lone closer, exactly one `}`, `)` or
+///   `]`, or, for a deleted `{`, `(` or `[`, refuses a remainder at the top
+///   level after the site, and a finding otherwise when no location of its
+///   first error, primary or context, overlaps or touches the mutation's site,
+///   or the error names none. The scratch directory the mutants are written
+///   under is removed.
+/// - fails: the exemplars cannot be listed or read, or the mutants cannot be
+///   written.
+/// - panics: none.
+///
+/// # Errors
+/// [`LedgerFault::Unreadable`] naming the folder, [`LedgerFault::Unshown`]
+/// naming an exemplar, or [`LedgerFault::Unwritable`] naming the scratch
+/// directory.
+///
+/// # Cost
+/// - allocation: the text of each exemplar and its mutants, growth within the
+///   exemplars
+///
+/// # Adequacy
+/// - hypothesis: L3 — a definition's exemplar is swept tile by tile, every
+///   mutant counted and each first error read against its site; a deletion
+///   leaving another well-formed declaration whose body the checker refuses, a
+///   `rec` deleted or a declaration's keyword name missed, leaving only
+///   unresolved names, and a `loop`, `break`, `rec` or `thunk` deleted, leaving
+///   an exit outside any loop, a statement no path reaches, a descent claim
+///   outside a recursive group or a `return` where no body passes, are counted
+///   well formed, not filed; a closer doubled or an opener deleted, leaving a
+///   closer with nothing to close, and an opener deleted, leaving the rest of
+///   its body at the top level, are counted closed early, not filed; a near
+///   miss that makes an application is marked by the application's location, a
+///   deletion that leaves a model form by the model form's location, and a
+///   deletion that unlabels a record field by the face check's location.
+/// - witness: `ledger::recovery::tests::a_definition_is_swept_tile_by_tile`
+/// - witness: `ledger::recovery::tests::a_deletion_leaving_a_well_formed_source_is_no_finding_2340`
+/// - witness: `ledger::recovery::tests::a_mutant_leaving_only_unresolved_names_is_no_finding_2876`
+/// - witness: `ledger::recovery::tests::a_closer_left_with_nothing_to_close_is_closed_early_3063`
+/// - witness: `ledger::recovery::tests::a_body_an_opener_s_deletion_leaves_at_the_top_level_is_closed_early_4785`
+/// - witness: `ledger::recovery::tests::a_deleted_licence_leaves_a_well_formed_source_3332`
+/// - witness: `ledger::recovery::tests::an_application_a_near_miss_makes_marks_its_mutation_6235`
+/// - witness: `ledger::recovery::tests::a_model_form_a_deletion_leaves_marks_its_mutation_6236`
+/// - witness: `ledger::recovery::tests::a_record_a_deletion_unlabels_marks_its_mutation_6237`
+#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |report| report.accepted.saturating_add(report.formed).saturating_add(report.early).saturating_add(report.findings.len()) <= report.swept))]
+pub(super) fn sweep(
+    pbg: &Pbg,
+    directory: &Path,
+) -> Result<RecoveryReport, LedgerFault>
+{
+    let literals = literal_tiles(pbg);
+    let mut report = RecoveryReport::default();
+    let mut made = Vec::new();
+    for path in listed(&directory.join(SYNTAX))? {
+        if path.extension().and_then(std::ffi::OsStr::to_str) != Some(EXTENSION) {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).map_err(|error| LedgerFault::Unshown {
+            path: path.clone(),
+            error: error.to_string(),
+        })?;
+        made.extend(mutants(
+            &path,
+            SourceText::from(text.as_str()),
+            &literals,
+            &mut report.near_misses,
+        ));
+    }
+    let scratch = std::env::temp_dir().join(format!(
+        "gandr-recovery-{}-{}",
+        std::process::id(),
+        SWEEPS.fetch_add(1, Ordering::Relaxed)
+    ));
+    let folder = scratch.join("ledger");
+    let unwritable = |error| LedgerFault::Unwritable {
+        path: folder.clone(),
+        error,
+    };
+    std::fs::create_dir_all(&folder).map_err(unwritable)?;
+    for (index, mutant) in made.iter().enumerate() {
+        std::fs::write(folder.join(format!("{index}.{EXTENSION}")), &mutant.text)
+            .map_err(unwritable)?;
+    }
+    let mut reported: Vec<Option<Reported>> = vec![None; made.len()];
+    let ControlFlow::Continue(_run) = Walk::new(vec![folder.clone()]).visit::<Evaluator, _, _>(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
+            if let Step::Source {
+                path, ref composed, ..
+            } = step
+            {
+                // Well formed: the lowering read the source and refused no
+                // declaration of it but for what a well-formed form means
+                // where it stands — a name no declaration answers, a loop's
+                // exit outside any loop, a statement no path reaches, a
+                // descent claim outside a recursive group, or an exit where no
+                // body passes — so what the check reports is a meaning, not a
+                // form.
+                let formed = matches!(
+                    *composed,
+                    Composed::Settled {
+                        ref report,
+                        ref unstatable,
+                        ..
+                    } if unstatable.is_empty()
+                        && report.declarations().iter().all(|declaration| {
+                            !matches!(
+                                declaration.produced().refusal(),
+                                Maybe::Present(Refusal::Lowering(ref refused))
+                                    if !matches!(
+                                        *refused,
+                                        LoweringRefusal::UnresolvedName { .. }
+                                            | LoweringRefusal::OutsideLoop { .. }
+                                            | LoweringRefusal::Unreachable { .. }
+                                            | LoweringRefusal::OutOfFragment {
+                                                boundary:
+                                                    FragmentBoundary::ForeignClaim
+                                                    | FragmentBoundary::NotInTail,
+                                                ..
+                                            }
+                                    )
+                            )
+                        })
+                );
+                let index = path
+                    .file_stem()
+                    .and_then(std::ffi::OsStr::to_str)
+                    .and_then(|stem| stem.parse::<usize>().ok());
+                // An entry's span is measured from the source's own first
+                // byte, past the prelude laid before it.
+                let first = entries::<Evaluator>(&step, Verb::Check(Goals::Gated))
+                    .find(|diagnostic| diagnostic.severity == Severity::Error);
+                if let (Some(slot), Some(diagnostic)) =
+                    (index.and_then(|index| reported.get_mut(index)), first)
+                {
+                    // A remainder: the first error is the refusal of an
+                    // expression that the lowering read at the top level.
+                    let remainder = matches!(
+                        *composed,
+                        Composed::Settled { ref report, .. }
+                            if report.declarations().iter().any(|declaration| {
+                                matches!(
+                                    declaration.produced().refusal(),
+                                    Maybe::Present(refusal @ Refusal::Lowering(
+                                        LoweringRefusal::OutOfFragment {
+                                            boundary: FragmentBoundary::TopLevel,
+                                            ..
+                                        }
+                                    )) if matches!(
+                                        diagnostic.identifier,
+                                        Maybe::Present(Identifier::Refusal(spelling))
+                                            if spelling == refusal.name().spelling()
+                                    )
+                                )
+                            })
+                    );
+                    *slot = Some(Reported {
+                        name: match diagnostic.identifier {
+                            Maybe::Present(ref identifier) => Some(identifier.to_string()),
+                            Maybe::Absent(_) => None,
+                        },
+                        message: diagnostic.message.text.clone(),
+                        span: match diagnostic.span {
+                            Maybe::Present(span) => Some(Site {
+                                start: usize::from(span.start()),
+                                end: usize::from(span.end()),
+                            }),
+                            Maybe::Absent(_) => None,
+                        },
+                        loci: diagnostic
+                            .annotations
+                            .iter()
+                            .map(|annotation| Site {
+                                start: usize::from(annotation.locus.span.start()),
+                                end: usize::from(annotation.locus.span.end()),
+                            })
+                            .collect(),
+                        formed,
+                        remainder,
+                    });
+                }
+            }
+            ControlFlow::Continue(())
+        },
+    );
+    std::fs::remove_dir_all(&scratch).map_err(unwritable)?;
+    report.swept = made.len();
+    for (mutant, first) in made.into_iter().zip(reported) {
+        let Some(first) = first
+        else {
+            report.accepted = report.accepted.saturating_add(1);
+            continue;
+        };
+        // The judgement that refuses names the whole form it judged, and the
+        // parts it involves. The mutation is marked when one location of the
+        // first error, primary or context, overlaps or touches it.
+        let marked = first
+            .loci
+            .iter()
+            .any(|locus| locus.start <= mutant.site.end && mutant.site.start <= locus.end);
+        // A closer doubled, or one an opener's deletion leaves, closes a form
+        // legally; the closer left over has nothing to close, and the first
+        // error marks it, never the mutation, which the tree does not show.
+        // An opener's deletion can also let a declaration close legally
+        // before the body that the opener opened. The rest of that body then
+        // stands at the top level, after the site. The first error marks
+        // that remainder, and the tree does not show the mutation.
+        let opener =
+            mutant.mutation == Mutation::Deleted && matches!(mutant.tile.as_str(), "{" | "(" | "[");
+        let early = first.span.is_some_and(|span| {
+            matches!(
+                mutant.text.get(span.start .. span.end),
+                Some("}" | ")" | "]")
+            ) || (opener && first.remainder && mutant.site.end < span.start)
+        });
+        if !marked && first.formed {
+            report.formed = report.formed.saturating_add(1);
+        }
+        else if !marked && early {
+            report.early = report.early.saturating_add(1);
+        }
+        else if !marked {
+            report.findings.push(RecoveryFinding {
+                exemplar: mutant.exemplar,
+                tile: mutant.tile,
+                at: mutant.at,
+                mutation: mutant.mutation,
+                site: mutant.site,
+                reported: first,
+            });
+        }
+    }
+    Ok(report)
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::collections::BTreeMap;
+    use std::path::Path;
+    use std::path::PathBuf;
+
+    use gandr_surface_grammar::LabelText;
+    use gandr_surface_grammar::built_in;
+    use gandr_surface_syntax::SourceText;
+
+    use super::Mutation;
+    use super::RecoveryFinding;
+    use super::RecoveryReport;
+    use super::Reported;
+    use super::Site;
+    use super::literal_tiles;
+    use super::mutants;
+    use super::near_miss;
+    use super::sweep;
+
+    #[test]
+    fn every_near_miss_is_one_edit_from_its_tile_and_no_tile()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let literals = literal_tiles(&pbg);
+        for keyword in ["def", "=", ";", "::", "<~>", "@["] {
+            assert!(
+                literals.0.contains(keyword),
+                "`{keyword}` is a literal tile"
+            );
+        }
+        assert!(
+            !literals.0.contains("Iso"),
+            "a glyph's ASCII head is an identifier, not a tile"
+        );
+        assert_eq!(
+            near_miss(LabelText("def"), &literals).as_deref(),
+            Some("de")
+        );
+        for &tile in &literals.0 {
+            let Some(miss) = near_miss(LabelText(tile), &literals)
+            else {
+                continue;
+            };
+            assert!(
+                !literals.0.contains(miss.as_str()),
+                "`{tile}` misses as `{miss}`, a tile"
+            );
+            let (tile_length, miss_length) = (tile.chars().count(), miss.chars().count());
+            assert!(
+                tile_length.abs_diff(miss_length) <= 1,
+                "`{tile}` misses as `{miss}`, more than one edit away"
+            );
+        }
+    }
+
+    #[test]
+    fn a_deletion_is_sited_between_its_neighbours()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let literals = literal_tiles(&pbg);
+        let text = "def answer = 42 ;\n";
+        let made = mutants(
+            Path::new("def-value.gandr"),
+            SourceText::from(text),
+            &literals,
+            &mut BTreeMap::new(),
+        );
+        let deleted: Vec<(&str, Site, &str)> = made
+            .iter()
+            .filter(|mutant| mutant.mutation == Mutation::Deleted)
+            .map(|mutant| (mutant.tile.as_str(), mutant.site, mutant.text.as_str()))
+            .collect();
+        assert_eq!(deleted, [
+            ("def", Site { start: 0, end: 1 }, " answer = 42 ;\n"),
+            ("=", Site { start: 10, end: 12 }, "def answer  42 ;\n"),
+            (";", Site { start: 15, end: 17 }, "def answer = 42 \n"),
+        ]);
+        let missed: Vec<(&str, &Mutation, Site)> = made
+            .iter()
+            .filter(|mutant| mutant.mutation != Mutation::Deleted)
+            .map(|mutant| (mutant.tile.as_str(), &mutant.mutation, mutant.site))
+            .collect();
+        assert_eq!(
+            missed.first(),
+            Some(&("def", &Mutation::Missed("de".to_owned()), Site {
+                start: 0,
+                end: 2
+            }))
+        );
+    }
+
+    #[test]
+    fn findings_are_filed_by_cause_the_largest_first()
+    {
+        let finding = |exemplar: &str, name: Option<&str>, mutation: Mutation| RecoveryFinding {
+            exemplar: PathBuf::from(exemplar),
+            tile: "=".to_owned(),
+            at: 0,
+            mutation,
+            site: Site { start: 0, end: 1 },
+            reported: Reported {
+                name: name.map(str::to_owned),
+                message: "a message".to_owned(),
+                span: Some(Site { start: 9, end: 9 }),
+                loci: Vec::from([Site { start: 9, end: 9 }]),
+                formed: false,
+                remainder: false,
+            },
+        };
+        let report = RecoveryReport {
+            findings: vec![
+                finding("syntax/sum-type.gandr", None, Mutation::Deleted),
+                finding(
+                    "syntax/binary-expression.add.gandr",
+                    Some("MalformedForm"),
+                    Mutation::Deleted,
+                ),
+                finding(
+                    "syntax/binary-expression.cons.gandr",
+                    Some("MalformedForm"),
+                    Mutation::Deleted,
+                ),
+                finding(
+                    "syntax/path-type.gandr",
+                    Some("MalformedForm"),
+                    Mutation::Deleted,
+                ),
+                finding(
+                    "syntax/path-type.gandr",
+                    Some("MalformedForm"),
+                    Mutation::Missed("==".to_owned()),
+                ),
+            ],
+            ..RecoveryReport::default()
+        };
+        let causes: Vec<String> = report
+            .to_string()
+            .lines()
+            .filter(|line| line.starts_with("cause: "))
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(causes, [
+            "cause: `MalformedForm` deleted: 3 mutants in 2 families: binary-expression, path-type",
+            "cause: `MalformedForm` missed: 1 mutants in 1 families: path-type",
+            "cause: `unnamed` deleted: 1 mutants in 1 families: sum-type",
+        ]);
+    }
+
+    #[test]
+    fn a_definition_is_swept_tile_by_tile()
+    {
+        let scratch = std::env::temp_dir().join(format!(
+            "gandr-recovery-test-{}-definition",
+            std::process::id()
+        ));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        std::fs::write(
+            folder.join("def-value.gandr"),
+            "/// `def_value`: a definition.\n@[ checks ]\ndef answer = 42 ;\n",
+        )
+        .expect("the exemplar is written");
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        assert_eq!(
+            report.swept,
+            report
+                .near_misses
+                .values()
+                .filter(|miss| miss.is_some())
+                .count()
+                + report.near_misses.len(),
+            "each tile, written once, is deleted, and missed where it has a miss: {report}"
+        );
+        assert!(report.findings.is_empty(), "{report}");
+    }
+
+    /// An opener deleted leaves its closer with nothing to close. The first
+    /// error marks that stray, away from the deletion, and the stray is the
+    /// right diagnostic, so the mutant is counted closed early, by its own
+    /// name, and never as well formed or a finding.
+    #[test]
+    fn a_closer_left_with_nothing_to_close_is_closed_early_3063()
+    {
+        let scratch =
+            std::env::temp_dir().join(format!("gandr-recovery-test-{}-early", std::process::id()));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        std::fs::write(
+            folder.join("block.gandr"),
+            "/// `block`: a block.\n@[ checks ]\ndef answer() -> -F Integer {\n  return (1 + 2)\n}\n",
+        )
+        .expect("the exemplar is written");
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        assert!(
+            report
+                .findings
+                .iter()
+                .all(|finding| !(finding.tile == "(" && finding.mutation == Mutation::Deleted)),
+            "the deleted `(` leaves its `)` stray, closed early: {report}"
+        );
+        assert_eq!(report.early, 1_usize, "{report}");
+        assert_eq!(
+            report.formed, 0_usize,
+            "a stray closer is no well-formed source: {report}"
+        );
+        let tally = report.tally();
+        assert_eq!(
+            (tally.early, tally.formed, tally.elsewhere),
+            (1_usize, 0_usize, report.findings.len()),
+            "the tally counts the stray closed early: {report}"
+        );
+        assert_eq!(
+            tally.where_made + tally.accepted + tally.formed + tally.early + tally.elsewhere,
+            tally.swept,
+            "every mutant counts in one class: {report}"
+        );
+    }
+
+    /// A `{` deleted before a body lets the definition close legally inside
+    /// that body. The rest of the body then stands at the top level,
+    /// and the first error marks that remainder, after the deletion. The tree
+    /// does not show the opener, so the mutant is counted closed early, and
+    /// never as a finding. The two exemplars are the ledger's own: one body
+    /// is on lines of its own, the other on the line of the definition.
+    #[test]
+    fn a_body_an_opener_s_deletion_leaves_at_the_top_level_is_closed_early_4785()
+    {
+        let scratch = std::env::temp_dir().join(format!(
+            "gandr-recovery-test-{}-remainder",
+            std::process::id()
+        ));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        for (exemplar, text) in [
+            (
+                "break-expression.gandr",
+                "/// `break_expression`: a break out of a loop.\n@[ checks ]\ndef once(n : Integer) \
+                 -> -F Integer {\n  loop { break; } ;\n  return n\n}\n",
+            ),
+            (
+                "tuple-pattern.gandr",
+                "/// `tuple_pattern`: a group of patterns that receives a call's outputs.\n@[ \
+                 checks ]\ndef divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { \
+                 (m, n) }\n\n/// The second output of `divmod`, bound by the group.\n@[ checks \
+                 ]\ndef second(a : Integer, b : Integer) -> Integer { let (q, r) = divmod a b; r \
+                 }\n",
+            ),
+        ] {
+            std::fs::write(folder.join(exemplar), text).expect("the exemplar is written");
+        }
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        for (exemplar, at) in [
+            ("break-expression.gandr", 95_usize),
+            ("tuple-pattern.gandr", 279_usize),
+        ] {
+            assert!(
+                !report.findings.iter().any(|finding| {
+                    finding.exemplar.file_name() == Some(exemplar.as_ref())
+                        && finding.at == at
+                        && finding.tile == "{"
+                        && finding.mutation == Mutation::Deleted
+                }),
+                "the `{{` deleted at {at} of {exemplar} leaves its body's rest at the top level, \
+                 closed early: {report}"
+            );
+        }
+        let tally = report.tally();
+        assert_eq!(
+            tally.where_made + tally.accepted + tally.formed + tally.early + tally.elsewhere,
+            tally.swept,
+            "every mutant counts in one class: {report}"
+        );
+    }
+
+    /// A deleted `let` leaves a statement's first line right of the line
+    /// after it, and a deleted `(` leaves a `)` with no bracket to close. The
+    /// layout pass keeps the body's block open past both, so neither mutant's
+    /// first error marks a line that an early close left at the top level.
+    #[test]
+    fn a_layout_block_stays_open_past_a_broken_line_5189()
+    {
+        let scratch =
+            std::env::temp_dir().join(format!("gandr-recovery-test-{}-layout", std::process::id()));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        std::fs::write(
+            folder.join("block.gandr"),
+            "/// `block`: a block.\n@[ checks ]\ndef answer() -> -F Integer =\n  let x = (1 + 2);\n  \
+             return x\n",
+        )
+        .expect("the exemplar is written");
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        assert!(
+            report.findings.iter().all(|finding| {
+                !((finding.tile == "let" || finding.tile == "(")
+                    && finding.mutation == Mutation::Deleted)
+            }),
+            "each deletion's first error marks its site or the stray: {report}"
+        );
+    }
+
+    /// #2340: `Integer` deleted from `-> -F +{Integer}` leaves the empty sum,
+    /// a well-formed type, and the checker's first refusal is the body's
+    /// injection at a summand the empty sum lacks. The refusal names the empty
+    /// sum as the type the injection is checked against, and that location
+    /// marks the deletion. So the mutant is not filed, and it is counted where
+    /// it was made, not well formed.
+    #[test]
+    fn a_deletion_leaving_a_well_formed_source_is_no_finding_2340()
+    {
+        let scratch =
+            std::env::temp_dir().join(format!("gandr-recovery-test-{}-formed", std::process::id()));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        std::fs::write(
+            folder.join("labelled-sum-expression.gandr"),
+            "/// `labelled_sum_expression`: a labelled sum injection.\n@[ checks ]\ndef one() -> \
+             -F +{Integer} {\n  return +{.0 = 1}\n}\n",
+        )
+        .expect("the exemplar is written");
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        assert!(
+            report.findings.iter().all(
+                |finding| !(finding.tile == "Integer" && finding.mutation == Mutation::Deleted)
+            ),
+            "the empty sum the deletion leaves is well formed: {report}"
+        );
+        assert_eq!(report.formed, 0_usize, "{report}");
+        assert!(
+            report.findings.len()
+                < report
+                    .swept
+                    .saturating_sub(report.accepted)
+                    .saturating_sub(report.formed),
+            "the rest is still read against its site: {report}"
+        );
+    }
+
+    /// #2875: a mistake in a module member or a `rec` group's closing brace
+    /// leaves a refusal resting on the repair (the signature's member the
+    /// repair dropped, the name the early close moved out of the group)
+    /// admitted before the repaired form. Each of these mutants' first error
+    /// marks its mutation once refusals of form print first.
+    #[test]
+    fn a_refusal_resting_on_a_repair_does_not_mark_first_2875()
+    {
+        let scratch = std::env::temp_dir().join(format!(
+            "gandr-recovery-test-{}-resting",
+            std::process::id()
+        ));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        for (name, text) in [
+            (
+                "hold-expression.gandr",
+                include_str!("../../../../corpus/ledger/syntax/hold-expression.gandr"),
+            ),
+            (
+                "rec-block.gandr",
+                include_str!("../../../../corpus/ledger/syntax/rec-block.gandr"),
+            ),
+        ] {
+            std::fs::write(folder.join(name), text).expect("the exemplar is written");
+        }
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        let missed = |miss: &str| Mutation::Missed(String::from(miss));
+        let resting = [
+            ("hold-expression.gandr", 127_usize, "{", missed("{{")),
+            ("hold-expression.gandr", 131, "type", missed("typ")),
+            ("hold-expression.gandr", 131, "type", Mutation::Deleted),
+            ("hold-expression.gandr", 143, "=", Mutation::Deleted),
+            ("hold-expression.gandr", 145, "String", Mutation::Deleted),
+            ("hold-expression.gandr", 151, ";", Mutation::Deleted),
+            ("rec-block.gandr", 276, "}", missed("}}")),
+            ("rec-block.gandr", 280, "}", missed("}}")),
+            ("rec-block.gandr", 284, "@[", missed("@")),
+            ("rec-block.gandr", 284, "@[", Mutation::Deleted),
+        ];
+        for (exemplar, at, tile, mutation) in resting {
+            assert!(
+                !report.findings.iter().any(|finding| {
+                    finding.exemplar.file_name() == Some(exemplar.as_ref())
+                        && finding.at == at
+                        && finding.tile == tile
+                        && finding.mutation == mutation
+                }),
+                "{exemplar}:{at}: `{tile}` {mutation} is reported first at its mutation: {report}"
+            );
+        }
+    }
+
+    /// A path composed with itself over a cell named `loop`, its declaration
+    /// at the offsets the retired infix exemplar held it.
+    const PATH_STEP: &str = "/// `Path.step` composes two paths: one path, then the next after that.\n\
+                             @[ checks ]\ndata Circle : Type where {\n  | Base : Circle\n  \
+                             | loop : Base <-> Base\n}\n@[ checks ]\ndef twice : Path[.A = Circle](Base, \
+                             Base) ;\ndef twice = Path.step loop loop ;\n";
+
+    /// #2876: `rec` deleted from `def rec down` leaves a definition that
+    /// cannot call itself, and `loop` missed as `loo` renames a declaration
+    /// the source names by the keyword. Each leaves a source with another
+    /// meaning, refused only at a use no declaration answers, so it is counted
+    /// well formed and not filed. The composite's source is written here: no
+    /// syntax exemplar declares a cell named `loop`.
+    #[test]
+    fn a_mutant_leaving_only_unresolved_names_is_no_finding_2876()
+    {
+        let scratch = std::env::temp_dir().join(format!(
+            "gandr-recovery-test-{}-unresolved",
+            std::process::id()
+        ));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        for (name, text) in [
+            (
+                "run-expression.gandr",
+                include_str!("../../../../corpus/ledger/syntax/run-expression.gandr"),
+            ),
+            ("path-step.gandr", PATH_STEP),
+        ] {
+            std::fs::write(folder.join(name), text).expect("the exemplar is written");
+        }
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        let unresolved = [
+            ("run-expression.gandr", 161_usize, "rec", Mutation::Deleted),
+            (
+                "path-step.gandr",
+                124,
+                "loop",
+                Mutation::Missed(String::from("loo")),
+            ),
+        ];
+        for &(exemplar, at, tile, ref mutation) in &unresolved {
+            assert!(
+                !report.findings.iter().any(|finding| {
+                    finding.exemplar.file_name() == Some(exemplar.as_ref())
+                        && finding.at == at
+                        && finding.tile == tile
+                        && finding.mutation == *mutation
+                }),
+                "{exemplar}:{at}: `{tile}` {mutation} leaves only unresolved names: {report}"
+            );
+        }
+        assert!(report.formed >= unresolved.len(), "{report}");
+    }
+
+    /// #3332: `loop` deleted leaves its `break` outside any loop, `break`
+    /// deleted or missed leaves the loop endless and the statement after it
+    /// unreached, `rec` deleted leaves a descent claim outside a recursive
+    /// group, and `thunk` deleted leaves its `return` where no body passes
+    /// (#3496). Each form left is well formed and refused for what it means
+    /// where it stands, so each mutant is counted well formed and not filed.
+    #[test]
+    fn a_deleted_licence_leaves_a_well_formed_source_3332()
+    {
+        let scratch = std::env::temp_dir().join(format!(
+            "gandr-recovery-test-{}-licence",
+            std::process::id()
+        ));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        for (name, text) in [
+            (
+                "break-expression.gandr",
+                include_str!("../../../../corpus/ledger/syntax/break-expression.gandr"),
+            ),
+            (
+                "break-value-expression.gandr",
+                include_str!("../../../../corpus/ledger/syntax/break-value-expression.gandr"),
+            ),
+            (
+                "rec-block.gandr",
+                include_str!("../../../../corpus/ledger/syntax/rec-block.gandr"),
+            ),
+            (
+                "parenthesized-type.gandr",
+                include_str!("../../../../corpus/ledger/syntax/parenthesized-type.gandr"),
+            ),
+        ] {
+            std::fs::write(folder.join(name), text).expect("the exemplar is written");
+        }
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        let licensed = [
+            (
+                "break-expression.gandr",
+                99_usize,
+                "loop",
+                Mutation::Deleted,
+            ),
+            (
+                "break-expression.gandr",
+                106,
+                "break",
+                Mutation::Missed(String::from("brea")),
+            ),
+            ("break-expression.gandr", 106, "break", Mutation::Deleted),
+            (
+                "break-value-expression.gandr",
+                119,
+                "loop",
+                Mutation::Deleted,
+            ),
+            ("rec-block.gandr", 178, "rec", Mutation::Deleted),
+            ("rec-block.gandr", 301, "rec", Mutation::Deleted),
+            ("parenthesized-type.gandr", 102, "thunk", Mutation::Deleted),
+        ];
+        for &(exemplar, at, tile, ref mutation) in &licensed {
+            assert!(
+                !report.findings.iter().any(|finding| {
+                    finding.exemplar.file_name() == Some(exemplar.as_ref())
+                        && finding.at == at
+                        && finding.tile == tile
+                        && finding.mutation == *mutation
+                }),
+                "{exemplar}:{at}: `{tile}` {mutation} leaves a well-formed source: {report}"
+            );
+        }
+        assert!(report.formed >= licensed.len(), "{report}");
+    }
+
+    /// #3811: `++` deleted from `[1] ++ [2]` leaves `[1]  [2]`, an
+    /// instantiation whose head is no name. Its refusal marks the whole
+    /// instantiation, the deleted tile's place among it, so the mutant is
+    /// reported at its mutation.
+    #[test]
+    fn an_instantiation_whose_head_is_no_name_marks_its_mutation_3811()
+    {
+        let scratch = std::env::temp_dir().join(format!(
+            "gandr-recovery-test-{}-instantiation",
+            std::process::id()
+        ));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        std::fs::write(
+            folder.join("binary-expression.add.concat.gandr"),
+            include_str!("../../../../corpus/ledger/syntax/binary-expression.add.concat.gandr"),
+        )
+        .expect("the exemplar is written");
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        assert!(
+            !report.findings.iter().any(|finding| {
+                finding.at == 184_usize
+                    && finding.tile == "++"
+                    && finding.mutation == Mutation::Deleted
+            }),
+            "binary-expression.add.concat.gandr:184: `++` deleted is reported at its mutation: {report}"
+        );
+    }
+
+    /// #6235: `at` written as `a` turns `Integer at seat` into the application
+    /// `Integer a seat`, and a doubled `≃` or a short `<~>` turns an
+    /// equivalence into an application too. No type head answers the
+    /// application. Its refusal marks the whole application and names the head
+    /// inside it, so each mutant is reported at its mutation.
+    #[test]
+    fn an_application_a_near_miss_makes_marks_its_mutation_6235()
+    {
+        let scratch = std::env::temp_dir().join(format!(
+            "gandr-recovery-test-{}-application",
+            std::process::id()
+        ));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        for (name, text) in [
+            (
+                "at-type.gandr",
+                include_str!("../../../../corpus/ledger/syntax/at-type.gandr"),
+            ),
+            (
+                "equivalence-type.gandr",
+                include_str!("../../../../corpus/ledger/syntax/equivalence-type.gandr"),
+            ),
+        ] {
+            std::fs::write(folder.join(name), text).expect("the exemplar is written");
+        }
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        let missed = [
+            ("at-type.gandr", 99_usize, "at", "a"),
+            ("at-type.gandr", 123, "at", "a"),
+            ("equivalence-type.gandr", 115, "≃", "≃≃"),
+            ("equivalence-type.gandr", 190, "<~>", "<~"),
+        ];
+        for &(exemplar, at, tile, miss) in &missed {
+            assert!(
+                !report.findings.iter().any(|finding| {
+                    finding.exemplar.file_name() == Some(exemplar.as_ref())
+                        && finding.at == at
+                        && finding.tile == tile
+                        && finding.mutation == Mutation::Missed(String::from(miss))
+                }),
+                "{exemplar}:{at}: `{tile}` written as `{miss}` is reported at its mutation: \
+                 {report}"
+            );
+        }
+    }
+
+    /// #6236: `type(` deleted from `return type(Model Counter with sort C =
+    /// x)` leaves a model form whose operand carries the manifest sort. The
+    /// lowering refuses that model form. Its refusal marks the whole form
+    /// from its `Model` tile, and the deleted site lies at its start, so each
+    /// mutant is reported at its mutation.
+    #[test]
+    fn a_model_form_a_deletion_leaves_marks_its_mutation_6236()
+    {
+        let scratch =
+            std::env::temp_dir().join(format!("gandr-recovery-test-{}-model", std::process::id()));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        for (name, text) in [
+            (
+                "manifest-sort.gandr",
+                include_str!("../../../../corpus/ledger/syntax/manifest-sort.gandr"),
+            ),
+            (
+                "manifest-type.gandr",
+                include_str!("../../../../corpus/ledger/syntax/manifest-type.gandr"),
+            ),
+        ] {
+            std::fs::write(folder.join(name), text).expect("the exemplar is written");
+        }
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        for &(exemplar, at) in &[
+            ("manifest-sort.gandr", 198_usize),
+            ("manifest-type.gandr", 193),
+        ] {
+            assert!(
+                !report.findings.iter().any(|finding| {
+                    finding.exemplar.file_name() == Some(exemplar.as_ref())
+                        && finding.at == at
+                        && finding.tile == "type("
+                        && finding.mutation == Mutation::Deleted
+                }),
+                "{exemplar}:{at}: `type(` deleted is reported at its mutation: {report}"
+            );
+        }
+    }
+
+    /// #6237: `:` deleted from `*{left : Integer, right : Integer}` leaves
+    /// `left` no label of the record, so the face `lefty = { left }` lists a
+    /// label the record lacks. The face check judges the face against the
+    /// record. Its refusal marks the record through the label, and the
+    /// deleted site lies inside the record, so the mutant is reported at its
+    /// mutation.
+    #[test]
+    fn a_record_a_deletion_unlabels_marks_its_mutation_6237()
+    {
+        let scratch =
+            std::env::temp_dir().join(format!("gandr-recovery-test-{}-record", std::process::id()));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        std::fs::write(
+            folder.join("staged-type.gandr"),
+            include_str!("../../../../corpus/ledger/syntax/staged-type.gandr"),
+        )
+        .expect("the exemplar is written");
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        assert!(
+            !report.findings.iter().any(|finding| {
+                finding.exemplar.file_name() == Some("staged-type.gandr".as_ref())
+                    && finding.at == 239
+                    && finding.tile == ":"
+                    && finding.mutation == Mutation::Deleted
+            }),
+            "staged-type.gandr:239: `:` deleted is reported at its mutation: {report}"
+        );
+    }
+
+    /// #8051: Deleting `<->` leaves adjacent terms in a cell member. Its first
+    /// refusal names the gap between those terms.
+    #[test]
+    fn a_deleted_invertible_cell_arrow_marks_its_gap_8051()
+    {
+        let scratch = std::env::temp_dir().join(format!(
+            "gandr-recovery-test-{}-cell-arrow",
+            std::process::id()
+        ));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        for (name, text) in [
+            (
+                "binary-expression.cons.gandr",
+                include_str!("../../../../corpus/ledger/syntax/binary-expression.cons.gandr"),
+            ),
+            (
+                "cons-pattern.gandr",
+                include_str!("../../../../corpus/ledger/syntax/cons-pattern.gandr"),
+            ),
+        ] {
+            std::fs::write(folder.join(name), text).expect("the exemplar is written");
+        }
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        for exemplar in ["binary-expression.cons.gandr", "cons-pattern.gandr"] {
+            assert!(
+                !report.findings.iter().any(|finding| {
+                    finding.exemplar.file_name() == Some(exemplar.as_ref())
+                        && finding.tile == "<->"
+                        && finding.mutation == Mutation::Deleted
+                }),
+                "{exemplar}: `<->` deleted is reported at its mutation: {report}"
+            );
+        }
+    }
+
+    /// #8052: Deleting `rec` leaves the recursion arrow in a session type. Its
+    /// first refusal names the deleted recursion marker.
+    #[test]
+    fn a_deleted_session_recursion_marker_marks_its_gap_8052()
+    {
+        let scratch = std::env::temp_dir().join(format!(
+            "gandr-recovery-test-{}-session-recursion",
+            std::process::id()
+        ));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        std::fs::write(
+            folder.join("mu-session-type.gandr"),
+            include_str!("../../../../corpus/ledger/syntax/mu-session-type.gandr"),
+        )
+        .expect("the exemplar is written");
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        assert!(
+            !report.findings.iter().any(|finding| {
+                finding.exemplar.file_name() == Some("mu-session-type.gandr".as_ref())
+                    && finding.tile == "rec"
+                    && finding.mutation == Mutation::Deleted
+            }),
+            "mu-session-type.gandr: `rec` deleted is reported at its mutation: {report}"
+        );
+    }
+}

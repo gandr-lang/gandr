@@ -1,0 +1,7 @@
+allowBuilds:
+  # Its install script sets up the signing binary; `vsce package` never signs.
+  "@vscode/vsce-sign": false
+jailBuilds: true
+nodeLinker: isolated
+packages:
+  - "contrib/gandr-vscode"

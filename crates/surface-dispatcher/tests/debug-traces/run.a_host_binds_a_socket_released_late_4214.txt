@@ -1,0 +1,81 @@
+test: run::a_host_binds_a_socket_released_late_4214
+package: gandr-surface-dispatcher
+command: mise run debug:test gandr-surface-dispatcher run::a_host_binds_a_socket_released_late_4214 --break run::bound
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-dispatcher/6fdf5821bdd173fe/out/tests-6fdf5821bdd173fe"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-dispatcher/6fdf5821bdd173fe/out/tests-6fdf5821bdd173fe' (x86_64).
+(lldb) settings set -- target.run-args  "run::a_host_binds_a_socket_released_late_4214" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex run::bound
+Breakpoint 1: where = tests-6fdf5821bdd173fe`tests::run::bound + 43 at run.rs:656:48, address = 0x00000000019d817b
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-6fdf5821bdd173fe`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x0000000006695b78
+(lldb) run
+
+running 1 test
+test run::a_host_binds_a_socket_released_late_4214 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 712057 launched: 'target/debug-trace/debug/build/gandr-surface-dispatcher/6fdf5821bdd173fe/out/tests-6fdf5821bdd173fe' (x86_64)
+Process 712057 stopped
+* thread #2, name = 'run::a_host_bin', stop reason = breakpoint 1.1
+       frame #0: 0x0000555556f2c17b tests-6fdf5821bdd173fe`tests::run::bound(secret={__0:{0:{secret_key:('x', '\xea', '\xaa', '\x9e', '\xda', '\xd3', '\xee', '\x15', '\x18', 'j', 'p', '\xe5', '$', '\x0f', '\x8e', '\x8f', '\xae', '\xe1', '\xab', '&', 'l', '\x94', '\xd7', '\x96', '\v', '\xa9', '\xd8', 'A', 'I', 'G', '\x1c', '\a'), verifying_key:{compressed:{0:"\U0000001a\xaaMy$\xad\U00000003\U00000019\x95,\x8f\x93\x8a{/^\xe5\0\xe97%u\x90;=Hf\"X\x88'E"}, point:{X:{…}, Y:{…}, Z:{…}, T:{…}}}}}}, socket=V4({ip:{octets:('\x7f', '\0', '\0', '\x01')}, port:37419})) at run.rs:656:48
+   653 	    socket: SocketAddr,
+   654 	) -> Net
+   655 	{
+-> 656 	    let mut net = Net::new(Binding::new(secret.clone()).at(socket));
+    	                                               ^
+   657 	    let started = Instant::now();
+   658 	    while let Err(fault) = net.endpoint() {
+   659 	        assert!(
+(lldb) bt 24
+* thread #2, name = 'run::a_host_bin', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555556f2c17b tests-6fdf5821bdd173fe`tests::run::bound(secret={__0:{0:{secret_key:('x', '\xea', '\xaa', '\x9e', '\xda', '\xd3', '\xee', '\x15', '\x18', 'j', 'p', '\xe5', '$', '\x0f', '\x8e', '\x8f', '\xae', '\xe1', '\xab', '&', 'l', '\x94', '\xd7', '\x96', '\v', '\xa9', '\xd8', 'A', 'I', 'G', '\x1c', '\a'), verifying_key:{compressed:{0:"\U0000001a\xaaMy$\xad\U00000003\U00000019\x95,\x8f\x93\x8a{/^\xe5\0\xe97%u\x90;=Hf\"X\x88'E"}, point:{X:{…}, Y:{…}, Z:{…}, T:{…}}}}}}, socket=V4({ip:{octets:('\x7f', '\0', '\0', '\x01')}, port:37419})) at run.rs:656:48
+     frame #1: 0x0000555556f2e15c tests-6fdf5821bdd173fe`tests::run::a_host_binds_a_socket_released_late_4214 at run.rs:832:19
+     frame #2: 0x0000555556f21217 tests-6fdf5821bdd173fe`tests::run::a_host_binds_a_socket_released_late_4214::{closure#0}((null)={}) at run.rs:823:46
+     frame #3: 0x0000555556ffcb06 tests-6fdf5821bdd173fe`<tests::run::a_host_binds_a_socket_released_late_4214::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x000055555708a87b tests-6fdf5821bdd173fe`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #5: 0x000055555708a879 tests-6fdf5821bdd173fe`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #6: 0x0000555557097dc5 tests-6fdf5821bdd173fe`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #7: 0x0000555557097dc0 tests-6fdf5821bdd173fe`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #8: 0x0000555557097dc0 tests-6fdf5821bdd173fe`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #9: 0x0000555557097dab tests-6fdf5821bdd173fe`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #10: 0x0000555557097dab tests-6fdf5821bdd173fe`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #11: 0x0000555557097dab tests-6fdf5821bdd173fe`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #12: 0x0000555557097d96 tests-6fdf5821bdd173fe`test::run_test::{closure#0} at lib.rs:677:43
+     frame #13: 0x0000555557092784 tests-6fdf5821bdd173fe`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #14: 0x0000555557092709 tests-6fdf5821bdd173fe`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #15: 0x000055555709af22 tests-6fdf5821bdd173fe`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #16: 0x000055555709af13 tests-6fdf5821bdd173fe`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #17: 0x000055555709af13 tests-6fdf5821bdd173fe`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #18: 0x000055555709af03 tests-6fdf5821bdd173fe`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #19: 0x000055555709af03 tests-6fdf5821bdd173fe`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #20: 0x000055555709af03 tests-6fdf5821bdd173fe`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #21: 0x000055555709aef4 tests-6fdf5821bdd173fe`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #22: 0x000055555bc1132f tests-6fdf5821bdd173fe`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [inlined]
+     frame #23: 0x000055555bc11328 tests-6fdf5821bdd173fe`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17
+(lldb) frame variable --depth 3
+(gandr_runtime_net::peer::Secret *) secret = 0x00007ffff79fe130 {__0:{0:{secret_key:('x', '\xea', '\xaa', '\x9e', '\xda', '\xd3', '\xee', '\x15', '\x18', 'j', 'p', '\xe5', '$', '\x0f', '\x8e', '\x8f', '\xae', '\xe1', '\xab', '&', 'l', '\x94', '\xd7', '\x96', '\v', '\xa9', '\xd8', 'A', 'I', 'G', '\x1c', '\a'), verifying_key:{compressed:{0:"\U0000001a\xaaMy$\xad\U00000003\U00000019\x95,\x8f\x93\x8a{/^\xe5\0\xe97%u\x90;=Hf\"X\x88'E"}, point:{X:{…}, Y:{…}, Z:{…}, T:{…}}}}}}
+(core::net::socket_addr::SocketAddr) socket = V4({ip:{octets:('\x7f', '\0', '\0', '\x01')}, port:37419}) {
+  0 = {ip:{octets:('\x7f', '\0', '\0', '\x01')}, port:37419}
+}
+(lldb) up
+frame #1: 0x0000555556f2e15c tests-6fdf5821bdd173fe`tests::run::a_host_binds_a_socket_released_late_4214 at run.rs:832:19
+   829 	        thread::sleep(LATE);
+   830 	        drop(held);
+   831 	    });
+-> 832 	    let mut net = bound(&Secret::generate(), socket);
+    	                  ^
+   833 	    holder.join().expect("the holder releases the socket");
+   834 	    let endpoint = net
+   835 	        .endpoint()
+(lldb) frame variable --depth 3
+(std::net::udp::UdpSocket) held = {0:{inner:{0:{0:{fd:{…}}}}}}
+(core::net::socket_addr::SocketAddr) socket = V4({ip:{octets:('\x7f', '\0', '\0', '\x01')}, port:37419}) {
+  0 = {ip:{octets:('\x7f', '\0', '\0', '\x01')}, port:37419}
+}
+(std::thread::join_handle::JoinHandle<void>) holder = {0:{native:{id:140737345742528}, thread:{inner:{pointer:strong=2, weak=0}}, packet:strong=2, weak=0}}

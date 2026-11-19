@@ -1,0 +1,2 @@
+import "./read.gandr";
+def far : Seat.Task = Stage.deep;
