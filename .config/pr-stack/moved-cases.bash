@@ -6,8 +6,9 @@
 # The open pull requests are read from a stub of `landable_prs`:
 # - #1 under #2, a stack of two, is restacked: each member holds the new
 #   tip and its own commit, and #2 still holds #1.
-# - #5 is queued at the first reading and out of the queue at the next. The
-#   act waits for it and then restacks it.
+# - #5 is queued at the first reading and out of the queue at the next.
+#   #8101 delays the first reading past one budget. The act starts its wait
+#   there and then restacks #5.
 # - #3 stays queued past the wait. It never moves.
 # - #4 changes the file that the push changes. Its restack conflicts, so it
 #   stays, and the act names it, its lane and the file.
@@ -64,6 +65,7 @@ landable_prs() {
   local n
   n=$(($(< "$work/readings") + 1))
   echo "$n" > "$work/readings"
+  [[ $n == 1 ]] && sleep 2
   jq -nc --argjson first "$([[ $n == 1 ]] && echo true || echo false)" '[
     {number: 5, head: "spaces-5-w", base: "landing", landing: $first},
     {number: 1, head: "engine-1-a", base: "landing", landing: false},
@@ -76,7 +78,7 @@ landable_prs() {
 landed_heads() { :; }
 pushed_heads() { :; }
 status=0
-out=$(TRUNK_MOVED_WAIT=5 TRUNK_MOVED_POLL=1 trunk_moved 2>&1) || status=$?
+out=$(TRUNK_MOVED_WAIT=1 TRUNK_MOVED_POLL=1 trunk_moved 2>&1) || status=$?
 git fetch --quiet origin
 
 [[ $status == 3 ]] || fail "#6700: a stack whose restack stops makes the act return 3" "exit $status; $out"
@@ -90,7 +92,7 @@ got="$(on_tip engine-1-a), $(git log --format=%s origin/landing..origin/engine-2
 
 got="$(on_tip spaces-5-w), $(git log --format=%s origin/landing..origin/spaces-5-w | paste -sd ',' -)"
 [[ $got == "on the tip, w of #5" && $out == *"stack #5: restacked onto"* ]] \
-  || fail "#6700: a stack whose member leaves the queue during the wait is restacked" "$got; $out"
+  || fail "#8101: a stack starts its wait when its first queued reading arrives" "$got; $out"
 
 after=$(git rev-parse origin/reduction-3-q origin/floor-4-c origin/workflow-6-n)
 [[ $after == "$before" ]] || fail "#6700: a queued, a conflicting and a current stack stay where they stand" "$after"
