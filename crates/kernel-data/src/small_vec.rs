@@ -1885,9 +1885,11 @@ where
                 return;
             };
             // SAFETY: `written.len` is below the capacity, so the slot lies in
-            // the live half, and it holds no item, since no length counts it.
+            // the live half's allocation.
+            let slot = unsafe { start.add(written.len) };
+            // SAFETY: the slot holds no item, since no length counts it.
             unsafe {
-                start.add(written.len).write(item);
+                slot.write(item);
             }
             written.len = written.len.wrapping_add(1);
         }
