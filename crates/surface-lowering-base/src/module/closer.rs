@@ -377,9 +377,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a codata declaration whose universe's `]` is doubled
     ///   and an operation whose parameter's `)` is doubled refuse at the second
-    ///   closer, and so does a shell block whose `}` is doubled before the
-    ///   line's last `}`; a closer after a word, an opener left out, keeps its
-    ///   own refusal.
+    ///   closer; a closer after a word, an opener left out, keeps its own
+    ///   refusal.
     /// - witness: `module::tests::a_closer_doubled_on_its_line_is_refused_where_it_was_written_2051`
     /// - witness: `module::tests::a_fault_before_a_declaration_is_refused_where_it_was_written_2082`
     pub(super) fn torn_lines(

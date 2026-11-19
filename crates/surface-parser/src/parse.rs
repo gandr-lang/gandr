@@ -22,12 +22,10 @@
 //! letter ends, so `+Unit` stays a sign and a word and the sum keeps its
 //! spellings. A backslash in code is one tile, the static abstraction's lead,
 //! so `\A.` is the lead, the binder and the dot; an escape sequence exists only
-//! inside a string or a character, whose modes read it. Shell blocks, strings
-//! and interpolations switch the labeler into their own lexical modes.
-//!
-//! In a shell braced parameter, non-name scalars remain whole shell-word
-//! tokens. UTF-8 boundaries are preserved even when closing braces are missing,
-//! so batch and form-split parsing see the same source bytes.
+//! inside a string or a character, whose modes read it. Strings and
+//! interpolations switch the labeler into their own lexical modes. UTF-8
+//! boundaries are preserved even when closing braces are missing, so batch and
+//! form-split parsing see the same source bytes.
 //!
 //! The molder's candidates for a token are the union of the grammar's molds for
 //! each label the token could carry, visited in ascending `MoldId` order. The
@@ -50,16 +48,15 @@
 //!
 //! ### An edit is relabeled around itself
 //!
-//! The labeler carries a little state between tokens — inside a string, a shell
-//! block, a shell quote or a parameter expansion, an interpolation — and the
-//! lexemes it scans read ahead of themselves: a word looks for a prime, a
-//! number for its suffix, a character literal for its closing quote, a shell
-//! start along its dialect word for the brace. `Labeling` keeps a source's
+//! The labeler carries a little state between tokens — inside a string or an
+//! interpolation — and the lexemes it scans read ahead of themselves: a word
+//! looks for a prime, a number for its suffix, a character literal for its
+//! closing quote. `Labeling` keeps a source's
 //! tokens and the tokens before which the labeler stood within a mode, and
 //! `Labeling::relabel` labels an edit of the source from them. It restarts at
 //! the last token boundary at ground on an earlier line than the edit and at
 //! least 64 bytes before it: no scanner reads further past its token than eight
-//! bytes save along a dialect word, which stops at a line break, so every token
+//! bytes, so every token
 //! before the restart is a token of the edited source. It stops at the first
 //! boundary inside the unedited suffix where it stands at ground over a
 //! boundary the old labeling stood at ground on: the labeler never reads behind
@@ -962,6 +959,10 @@ impl<'source> FormSplit<'source>
     ///   that equal spellings mold equal units, only molding both runs
     ///   observes.
     ///
+    /// # Cost
+    /// - allocation: the spelling of the window, durable by the identity of the
+    ///   parked unit
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — over edited corpus sources, every run whose identity
     ///   a run of the unedited source carries molds to an equal unit, and the
@@ -1011,16 +1012,8 @@ impl<'source> FormSplit<'source>
                 Lexeme::StringFragment => 6,
                 Lexeme::EscapeSequence => 7,
                 Lexeme::Punct => 8,
-                Lexeme::ShellWord => 9,
-                Lexeme::EnvAssign => 10,
-                Lexeme::SingleQuotedContent => 11,
-                Lexeme::VariableName => 12,
-                Lexeme::SubshellOpen => 13,
-                Lexeme::SubshellClose => 14,
-                Lexeme::FileDescriptor => 15,
                 Lexeme::Space => 16,
                 Lexeme::Unknown => 17,
-                Lexeme::ShellStringFragment => 18,
                 Lexeme::ArmBar => 19,
                 Lexeme::LayoutOpen => 20,
                 Lexeme::LayoutSemi => 21,
@@ -1657,10 +1650,11 @@ mod tests
     fn a_source_splits_before_each_declaration_head() -> Result<(), Failure>
     {
         // Five declarations: a plain one, an attributed one, a module whose
-        // members sit inside its braces, a data declaration followed by an
-        // expression statement, and one after that statement. The split cuts
-        // before each top-level head and nowhere else; every seam holds but
-        // the last, which follows a statement rather than a declaration.
+        // members sit inside its braces, a data declaration followed by a
+        // stray expression, and one after that stray. The split cuts before
+        // each top-level head and nowhere else; every seam holds but the last,
+        // where the melder reads the stray's `;` as a separator whose block
+        // the slope leaves open. The parse owes that `;` alone.
         let pbg = built_in()?;
         let src =
             include_str!("parse/fixtures/a-source-splits-before-each-declaration-head-src.gandr");
@@ -1688,9 +1682,28 @@ mod tests
             UnitSeam::Joined,
             UnitSeam::Joined,
             UnitSeam::Joined,
-            UnitSeam::Broken(SeamBreak::SortMismatch),
+            UnitSeam::Broken(SeamBreak::OpenSlope),
         ]);
         assert_eq!(*joined.result(), parse(&pbg, source)?);
+        let semicolon = src.find("}\n1;").map_or(0, |at| at.saturating_add(3));
+        assert_eq!(
+            joined
+                .result()
+                .obligations()
+                .iter()
+                .map(|obligation| (
+                    obligation.class,
+                    usize::from(obligation.span.start()),
+                    usize::from(obligation.span.end())
+                ))
+                .collect::<Vec<_>>(),
+            [(
+                crate::oblig::Oblig::UnmoldedTok,
+                semicolon,
+                semicolon.saturating_add(1)
+            )],
+            "the stray's `;` owes itself alone, and nothing after it is owed"
+        );
         Ok(())
     }
 
@@ -2133,7 +2146,6 @@ mod tests
             "if c { pure 1 } else { pure 2 }",
             "*{ .a = 1, .b = \"s\" }",
             "#[1, 2, 3] ++ #[4]",
-            "#!{ echo hi; }",
             "@[doc(\"d\")] def y = 2;",
         ];
         prop_oneof![

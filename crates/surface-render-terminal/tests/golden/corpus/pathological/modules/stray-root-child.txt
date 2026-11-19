@@ -1,8 +1,8 @@
 error[OutOfFragment.WrongSort.declaration]: a lambda expression cannot stand where a declaration is expected
    ╭▸ corpus/pathological/modules/stray-root-child.gandr:13:1
    │
-13 │ | x => 1 ;
-   │ ━━━━━━━━━━ a form of another sort than this position takes
+13 │ | x => 1
+   │ ━━━━━━━━ a form of another sort than this position takes
    │
    ├ note: `|` is refused with OutOfFragment.WrongSort.declaration, as its expectation states
    ╰ help: write a declaration in this position

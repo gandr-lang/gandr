@@ -209,24 +209,6 @@
 //!   operand's rule decides what it binds, say. The rule then has to compare
 //!   that too, or yield to the window.
 //!
-//! ### A shell string's text is its own lexeme
-//!
-//! A `"` opens an expression string in code and a double-quoted string in a
-//! shell block, and both forms open with the same `"` label. The labeler
-//! already scans the two interiors in different modes, so it gives a shell
-//! string's text its own lexeme, `ShellStringFragment`, labelled
-//! `double_string_fragment`, where an expression string's text stays a
-//! `StringFragment` labelled `string_fragment`. The token after the `"` then
-//! refutes the reading of the other context, and the tie runs no window.
-//! Carrying both labels on both fragments would mold the two readings alike,
-//! and the window would keep the lesser mold, the expression string, inside
-//! shell blocks too.
-//!
-//! - Alternatives: a distinct label for the shell `"` itself, which is a
-//!   grammar change for what the labeler already knows.
-//! - Reversal: a string form that admits both interiors, which would take both
-//!   labels again.
-//!
 //! ### A token's labels are derived once, held inline and read by number
 //!
 //! A token's candidate labels feed three steps: settling the holes it cannot
@@ -437,7 +419,7 @@ impl<'label> From<CandidateLabel<'label>> for &'label str
 /// # Adequacy
 /// - hypothesis: L3 — every lexeme's menu reads back as the exact label
 ///   sequence, and a reserved word's fallback labels follow its own.
-/// - witness: `mold::tests::literal_and_shell_menus_are_exact`
+/// - witness: `mold::tests::literal_menus_are_exact`
 /// - witness: `mold::tests::keyword_and_identifier_share_a_word_menu`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TokenLabels<'label>
@@ -475,7 +457,7 @@ impl<'label> TokenLabels<'label>
     /// # Adequacy
     /// - hypothesis: L3 — the menus of every lexeme and a reserved word's
     ///   fallback read back whole.
-    /// - witness: `mold::tests::literal_and_shell_menus_are_exact`
+    /// - witness: `mold::tests::literal_menus_are_exact`
     #[inline]
     #[spec(captures: before = self.count, ensures: |()| (before == LABEL_CAPACITY && self.count == before) || (self.count == before.saturating_add(1) && self.as_slice().last() == Some(&label)))]
     fn push(
@@ -867,11 +849,13 @@ enum CandidateMenu
     Declared,
 }
 
-/// The delta a tied opener's lookahead window must stay below to win.
+/// The delta a lookahead window must not pass to win.
 ///
 /// # Specification
 /// - ensures: `Below` carries the least delta an earlier opener's window
-///   reached; a later opener wins only with a strictly smaller one.
+///   reached; a later opener wins only with a strictly smaller one. `AtMost`
+///   carries the delta of a reading as it stands; a close wins with one no
+///   greater.
 /// - panics: none.
 /// - executable: none — a plain value; [`Molder::mold_window`] carries the
 ///   executable clause.
@@ -882,6 +866,9 @@ enum WindowBound
     Unbounded,
     /// The least delta an earlier opener's window reached.
     Below(Delta),
+    /// The delta of the reading as it stands, which a close keeps on a tie:
+    /// the window stops only past it.
+    AtMost(Delta),
 }
 
 /// Whether a token can stand right after a mold.
@@ -976,12 +963,11 @@ pub const STATEMENT_LEADS: &[&str] = &[
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every lexeme menu, reserved and ordinary words, canonical
-///   versus dialect shell openers and each ASCII token of the spelling table
-///   (`<~>`, `~~>`, `::`, `inf`) expose exact label sequences. Dropping a
-///   generic alternative, widening a keyword or losing the source spelling
-///   changes the menu.
+///   and each ASCII token of the spelling table (`<~>`, `~~>`, `::`, `inf`)
+///   expose exact label sequences. Dropping a generic alternative, widening a
+///   keyword or losing the source spelling changes the menu.
 /// - witness: `mold::tests::keyword_and_identifier_share_a_word_menu`
-/// - witness: `mold::tests::literal_and_shell_menus_are_exact`
+/// - witness: `mold::tests::literal_menus_are_exact`
 #[inline]
 #[must_use]
 #[spec(ensures: |ret| ret.is_empty() == matches!(lexeme, Lexeme::Space | Lexeme::Unknown) && ret.len() <= MAX_LABELS && (!matches!(lexeme, Lexeme::LowerWord | Lexeme::UpperWord | Lexeme::Punct) || ret.first().is_some_and(|label| label.0 == text.0) || (matches!(lexeme, Lexeme::LowerWord) && tile_spelling(CandidateLabel::from(text.0)) != TileSpelling::Literal(text.0))))]
@@ -1031,45 +1017,16 @@ pub fn candidate_labels<'text>(
         Lexeme::Character => labels.push(CandidateLabel::from("character")),
         Lexeme::Quote => labels.push(CandidateLabel::from("\"")),
         Lexeme::StringFragment => labels.push(CandidateLabel::from("string_fragment")),
-        Lexeme::ShellStringFragment => {
-            labels.push(CandidateLabel::from("double_string_fragment"));
-        },
         Lexeme::EscapeSequence => labels.push(CandidateLabel::from("escape_sequence")),
-        // ONE label: the grammar's single shell-word atom class.
-        // The former `command_name` / `argument` labels rode the
-        // dead composite shell rules; with those folded away, a shell word has
-        // exactly one mold and takes the molder's sole-admissible fast path —
-        // no dry-run, no lookahead, per word.
-        Lexeme::ShellWord => labels.push(CandidateLabel::from("shell_word")),
-        // ONE label, like the shell word: the labeler has already decided the
-        // `NAME=value` shape, so the assignment takes the sole-admissible fast
-        // path too (no dry-run, no lookahead). The mold and its walk-index entry
-        // already existed — only the tile was missing.
-        Lexeme::EnvAssign => labels.push(CandidateLabel::from("environment_assignment")),
-        Lexeme::SingleQuotedContent => {
-            labels.push(CandidateLabel::from("single_quoted_content"));
-        },
-        Lexeme::VariableName => labels.push(CandidateLabel::from("variable_name")),
-        Lexeme::SubshellOpen => labels.push(CandidateLabel::from("subshell_open")),
-        Lexeme::SubshellClose => labels.push(CandidateLabel::from("subshell_close")),
-        Lexeme::FileDescriptor => labels.push(CandidateLabel::from("file_descriptor")),
         Lexeme::ArmBar => labels.push(CandidateLabel::from("arm_bar")),
         Lexeme::LayoutOpen => labels.push(CandidateLabel::from("{")),
         Lexeme::LayoutSemi => labels.push(CandidateLabel::from(";")),
         Lexeme::LayoutClose => labels.push(CandidateLabel::from("}")),
         Lexeme::Punct => {
             labels.push(CandidateLabel::from(text));
-            // A dialect-bearing shell opener (`#!sh{`, `$!py{`) lexes as one
-            // punctuation token; map it to the canonical opener label.
-            if text.starts_with("#!") && text.ends_with('{') {
-                labels.push(CandidateLabel::from("#!{"));
-            }
-            else if text.starts_with("$!") && text.ends_with('{') {
-                labels.push(CandidateLabel::from("command_substitution_start"));
-            }
             // An ASCII spelling the spelling table pairs with a glyph offers
             // the glyph's tile, so the alias molds the glyph's one form.
-            else if let Some(tile) = aliased(LabelText(text)) {
+            if let Some(tile) = aliased(LabelText(text)) {
                 labels.push(CandidateLabel::from(tile.0));
             }
         },
@@ -1278,18 +1235,10 @@ fn ends_declaration(
         | Lexeme::Character
         | Lexeme::Quote
         | Lexeme::StringFragment
-        | Lexeme::ShellStringFragment
         | Lexeme::EscapeSequence
-        | Lexeme::ShellWord
-        | Lexeme::EnvAssign
-        | Lexeme::SingleQuotedContent
-        | Lexeme::VariableName
-        | Lexeme::FileDescriptor
         | Lexeme::ArmBar
         | Lexeme::LayoutOpen
         | Lexeme::LayoutClose
-        | Lexeme::SubshellOpen
-        | Lexeme::SubshellClose
         | Lexeme::Space
         | Lexeme::Unknown => false,
     };
@@ -2594,6 +2543,9 @@ impl<'pbg> Molder<'pbg>
     ///   before it; one empty run for an empty stream.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the runs, growth within the declarations of `tokens`
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a source of declarations, one decorated by an
     ///   attribute, one a module holding members, splits before each top-level
@@ -2946,7 +2898,7 @@ impl<'pbg> Molder<'pbg>
         let reading = self.reading;
         let choice = self.choose_stream(state, tokens, index, source);
         Self::push_choice(state, choice, text, reading);
-        let bound = standing.map_or(WindowBound::Unbounded, WindowBound::Below);
+        let bound = standing.map_or(WindowBound::Unbounded, WindowBound::AtMost);
         let end = self.mold_window(state, tokens, next, source, &mark, bound);
         let closed =
             (end == WindowEnd::Molded).then(|| state.completion_delta(state.delta_since(&mark)));
@@ -5063,7 +5015,7 @@ impl<'pbg> Molder<'pbg>
     ///   stay below leaves the window whole.
     /// - witness: `mold::tests::lookahead_window_stops_after_eight_significant_tokens`
     /// - witness: `mold::tests::a_dominated_window_stops_before_its_next_token`
-    #[spec(requires: start.0 <= tokens.len(), ensures: |ret| ret == WindowEnd::Molded || matches!(bound, WindowBound::Below(least) if state.delta_since(mark) >= least))]
+    #[spec(requires: start.0 <= tokens.len(), ensures: |ret| ret == WindowEnd::Molded || matches!(bound, WindowBound::Below(least) if state.delta_since(mark) >= least) || matches!(bound, WindowBound::AtMost(most) if state.delta_since(mark) > most))]
     fn mold_window<'src>(
         &mut self,
         state: &mut MeldState<'_>,
@@ -5089,9 +5041,11 @@ impl<'pbg> Molder<'pbg>
                 state.space(SpaceText::from(AsRef::<str>::as_ref(&slice)));
             }
             else {
-                if let WindowBound::Below(least) = bound
-                    && state.delta_since(mark) >= least
-                {
+                if match bound {
+                    WindowBound::Unbounded => false,
+                    WindowBound::Below(least) => state.delta_since(mark) >= least,
+                    WindowBound::AtMost(most) => state.delta_since(mark) > most,
+                } {
                     state.set_reach(reach);
                     return WindowEnd::Dominated;
                 }
@@ -5757,7 +5711,7 @@ mod tests
     }
 
     #[test]
-    fn literal_and_shell_menus_are_exact()
+    fn literal_menus_are_exact()
     {
         let cases: &[(Lexeme, &str, &[&str])] = &[
             (Lexeme::Number, "1", &["number"]),
@@ -5765,24 +5719,8 @@ mod tests
             (Lexeme::Character, "'a'", &["character"]),
             (Lexeme::Quote, "\"", &["\""]),
             (Lexeme::StringFragment, "x", &["string_fragment"]),
-            (Lexeme::ShellStringFragment, "x", &[
-                "double_string_fragment",
-            ]),
             (Lexeme::EscapeSequence, "\\n", &["escape_sequence"]),
-            (Lexeme::ShellWord, "word", &["shell_word"]),
-            (Lexeme::EnvAssign, "A=b", &["environment_assignment"]),
-            (Lexeme::SingleQuotedContent, "a", &["single_quoted_content"]),
-            (Lexeme::VariableName, "A", &["variable_name"]),
-            (Lexeme::SubshellOpen, "[", &["subshell_open"]),
-            (Lexeme::SubshellClose, "]", &["subshell_close"]),
-            (Lexeme::FileDescriptor, "2", &["file_descriptor"]),
             (Lexeme::ArmBar, "|", &["arm_bar"]),
-            (Lexeme::Punct, "#!sh{", &["#!sh{", "#!{"]),
-            (Lexeme::Punct, "$!py{", &[
-                "$!py{",
-                "command_substitution_start",
-            ]),
-            (Lexeme::Punct, "#!{", &["#!{", "#!{"]),
             (Lexeme::Punct, "<~>", &["<~>", "≃"]),
             (Lexeme::Punct, "~~>", &["~~>", "⇝"]),
             (Lexeme::Punct, "|->", &["|->", "↦"]),

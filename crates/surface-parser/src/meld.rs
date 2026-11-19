@@ -2076,10 +2076,10 @@ pub struct MeldState<'pbg>
     /// (`Role::FormTile { open: true }`), the top of a monotone index cache.
     ///
     /// The three index caches (`frontiers` / `operators` / `barriers`) keep the
-    /// per-token head queries O(1) instead of O(content-region): a shell block
-    /// accumulates its whole interior as juxtaposed operand cells above the
-    /// open `#!{` frontier, so the former top-down role scans cost O(atoms) per
-    /// token — O(atoms²) per block (the shell-juxtaposition hazard). Every
+    /// per-token head queries O(1) instead of O(content-region): a form can
+    /// accumulate a long run of operand cells above its open frontier, so a
+    /// top-down role scan would cost O(atoms) per token — O(atoms²) per form.
+    /// Every
     /// slope mutation is a top push, a top-reaching splice, or a
     /// frontier-flag flip, so each cache maintains itself with amortized
     /// O(1) pushes/pops and no rescans.
@@ -2264,7 +2264,7 @@ impl<'pbg> MeldState<'pbg>
     ///   drift between the two changes the corpus trees.
     /// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
-    /// - witness: `tests::grammar::juxtaposition_applies_outside_a_shell_form_4853`
+    /// - witness: `tests::grammar::juxtaposition_applies_between_operands_4853`
     #[spec(captures: before = self.source.len(), ensures: |_| self.source.get(before ..) == Some(<&str>::from(text)) && (self.pbg.mold(mold).is_ok() || self.obligations.last().is_some_and(|obligation| obligation.class == Oblig::UnmoldedTok)))]
     pub(crate) fn push_text(
         &mut self,
@@ -2419,19 +2419,18 @@ impl<'pbg> MeldState<'pbg>
     ///   is no application, the grammar has an application tile in `sort`,
     ///   `mold` starts an operand by itself, the slope's top is a complete
     ///   operand of `sort` whose source does not end in `}` or opens with a
-    ///   connective's opener `*{`, `+{`, `&{` or `#{`, a form is open, and the
-    ///   open form is no shell form. `None` otherwise.
+    ///   connective's opener `*{`, `+{`, `&{` or `#{`, and a form is open.
+    ///   `None` otherwise.
     /// - panics: none.
-    /// - economy: a few comparisons, three byte reads and one binary search of
-    ///   the shell openers. No string is compared.
+    /// - bound: a few comparisons and three byte reads. No string is compared.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `f x y` applies twice, a shell block's words stay
-    ///   flat, `if c { a } else { b } x` stays two statements, a braced value
-    ///   `*{}` or `+{.l = a}` takes the next argument, a call `f(x)` stays a
-    ///   call, and two stray words at the root stay strays. `Vec A n` in a type
-    ///   applies twice, and `-F Maybe A` returns the application.
-    /// - witness: `tests::grammar::juxtaposition_applies_outside_a_shell_form_4853`
+    /// - hypothesis: L3 — `f x y` applies twice, `if c { a } else { b } x`
+    ///   stays two statements, a braced value `*{}` or `+{.l = a}` takes the
+    ///   next argument, a call `f(x)` stays a call, and two stray words at the
+    ///   root stay strays. `Vec A n` in a type applies twice, and `-F Maybe A`
+    ///   returns the application.
+    /// - witness: `tests::grammar::juxtaposition_applies_between_operands_4853`
     /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
     #[spec(ensures: |ret| ret.is_none_or(|application| Some(application) == self.pbg.application_in(sort) && application != mold))]
     fn juxtaposed(
@@ -2463,15 +2462,15 @@ impl<'pbg> MeldState<'pbg>
     /// - requires: nothing.
     /// - ensures: the grammar's application mold exactly when the slope's top
     ///   is a complete expression operand whose source does not end in `}` or
-    ///   opens with a connective's opener `*{`, `+{`, `&{` or `#{`, a form is
-    ///   open, and the open form is no shell form. `None` otherwise.
+    ///   opens with a connective's opener `*{`, `+{`, `&{` or `#{`, and a form
+    ///   is open. `None` otherwise.
     /// - provides: the slot a completion reads after an operand and a space.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::juxtaposed`], and a completion after `f p
     ///   ` offers a value slot.
-    /// - witness: `tests::grammar::juxtaposition_applies_outside_a_shell_form_4853`
+    /// - witness: `tests::grammar::juxtaposition_applies_between_operands_4853`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret.is_none_or(|application| Some(application) == self.pbg.application()))]
@@ -2646,12 +2645,8 @@ impl<'pbg> MeldState<'pbg>
             return None;
         }
         // The root holds declarations alone, so two words side by side there
-        // are strays, never an application. A shell form's words stay flat
-        // side by side.
-        let open = self.open_form_mold()?;
-        if self.pbg.flat_openers().binary_search(&open).is_ok() {
-            return None;
-        }
+        // are strays, never an application.
+        self.open_form_mold()?;
 
         Some(application)
     }
@@ -3794,7 +3789,12 @@ impl<'pbg> MeldState<'pbg>
         else {
             return SeparatorTaken::from(false);
         };
-        if self.nearest_open_form() != Some(frontier) {
+        if self.frontiers.iter().any(|&index| {
+            index > frontier.0
+                && self.stack.get(index).is_some_and(|cell| {
+                    matches!(cell.role, Role::FormTile { mold, open: true, .. } if self.pbg.closing_class(mold).is_some())
+                })
+        }) {
             return SeparatorTaken::from(false);
         }
         let Some(frontier_cell) = self.stack.get(usize::from(frontier)).copied()
@@ -4203,13 +4203,10 @@ impl<'pbg> MeldState<'pbg>
     ///
     /// With the head an operand, such a mold and a competing fresh atom /
     /// non-absorbing form-start over the same lexeme (a call `(` versus a
-    /// parenthesised `(`, the comparison `>` versus a shell redirection atom)
-    /// tie on the local `(Delta, continuation, sort)` key. Extending the
-    /// operand is the reading gandr's expression grammar always intends
-    /// after an operand (there is no bare expression juxtaposition outside
-    /// a shell block, and the shell corpus never puts these lexemes after a
-    /// command word), so the molder prefers it — settling the tie with no
-    /// lookahead window.
+    /// parenthesised `(`) tie on the local `(Delta, continuation, sort)` key.
+    /// Extending the operand is the reading gandr's expression grammar always
+    /// intends after an operand, so the molder prefers it — settling the tie
+    /// with no lookahead window.
     ///
     /// # Specification
     /// - requires: none.
@@ -4372,8 +4369,7 @@ impl<'pbg> MeldState<'pbg>
     {
         // The scan's Operand arm is a no-op, so it starts at the topmost
         // non-operand cell (the higher of the operator / form-tile cache tops)
-        // rather than walking the whole top operand run — a shell block's run
-        // holds every juxtaposed command atom (the sibling scan).
+        // rather than walking the whole top operand run (the sibling scan).
         let top_non_operand = match (self.operators.last(), self.barriers.last()) {
             (Some(&op), Some(&tile)) => op.max(tile),
             (Some(&op), None) => op,
@@ -5449,8 +5445,7 @@ impl<'pbg> MeldState<'pbg>
     ///
     /// The topmost `open` frontier is the innermost active form; its content is
     /// collapsed to hole-fills by the caller before the frontier advances.
-    /// O(1): the `frontiers` cache top — never a scan of the content region
-    /// (which for a shell block holds every juxtaposed command atom).
+    /// O(1): the `frontiers` cache top — never a scan of the content region.
     ///
     /// # Specification
     /// - ensures: returns the highest stack position carrying an open form, or
@@ -6563,6 +6558,18 @@ impl<'pbg> MeldState<'pbg>
             self.close_form(StackIndex::from(frontier));
             return;
         }
+        // A form that a stray mid opened, and that no tile continued, already
+        // owes its absent opener at that mid (`continue_form`). It closes as
+        // it stands, with no ghost end: the writer left out the tiles before
+        // the mid, and no tile after it.
+        if let Some(Role::FormTile {
+            mold, start: true, ..
+        }) = self.stack.get(frontier_index).map(|cell| cell.role)
+            && !bool::from(FormTable::is_form_first(self.pbg, mold))
+        {
+            self.close_form(StackIndex::from(frontier));
+            return;
+        }
 
         let Some(frontier_cell) = self.stack.get(frontier_index).copied()
         else {
@@ -7433,7 +7440,10 @@ impl<'pbg> MeldState<'pbg>
             };
             match cell.role {
                 Role::FormTile {
-                    mold, open: true, ..
+                    mold,
+                    open: true,
+                    start,
+                    ..
                 } => {
                     // A completable frontier (a `?` hole before its optional
                     // `hole_name`, mold in the grammar's LAST set) is already a
@@ -7441,6 +7451,13 @@ impl<'pbg> MeldState<'pbg>
                     // reports neither an expected tile nor an obligation for it
                     // — mirroring `force_close_form`.
                     if bool::from(FormTable::is_form_last(self.pbg, mold)) {
+                        continue;
+                    }
+                    // A form that a stray mid opened, and that no tile
+                    // continued, closes with no ghost and owes nothing more:
+                    // its absent opener is already owed, mirroring
+                    // `force_close_form`.
+                    if start && !bool::from(FormTable::is_form_first(self.pbg, mold)) {
                         continue;
                     }
                     // A required-tail frontier whose tail is one form already
@@ -13275,19 +13292,19 @@ mod tests
         // The O(1) head caches (`frontiers` / `operators` / `barriers`) must
         // equal a fresh role scan after EVERY mutation: pushes (every Kind),
         // splice-reduces, form open/close flips, mark/rollback dry-runs, and
-        // checkpoint resume. The sources cross the mutation classes: shell
+        // checkpoint resume. The sources cross the mutation classes:
         // juxtaposition (long operand runs over an open frontier), nested
         // forms, operators, strings, data members (closed-tile runs), and
         // malformed input (stray closers, force-closes at commit).
         let pbg = built_in()?;
         let sources = [
-            "#!{ echo a b c d e f; ls | grep x && echo y; }",
-            "#!{ [ cd d; ls ] | sort; echo ${x}${y} \"z $w\"; }",
+            "def f = g a b c d e f h;",
+            "def f = g (h a b) #[c, d] e;",
             "def f(x : Integer) -> -F Integer { return (x * x + 1) }",
             "data Tree(a) where { Leaf, Node(l : Tree(a), v : a, r : Tree(a)) }",
             "def s = \"a ${ f \"${x}\" } b\";",
             "match v { Inl(x) => x, Inr(y) => y }",
-            "#!{ echo unclosed",
+            "def f = g (a b c",
             ") } ] stray closers",
             "let p = (1, 2); if c { pure p } else { pure p }",
         ];

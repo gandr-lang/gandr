@@ -246,8 +246,8 @@ fn top_level_forms_and_comments_keep_their_lines()
         include_str!("format/unformatted/top-level-forms-and-comments-keep-their-lines.gandr");
     assert_eq!(
         text(&grammar, source, WIDE),
-        "#!/usr/bin/env gandr\n\n// head\ndef a = 1;\ndef b = 2; // trailing\n\n/* own */\n(f a);\n(g b);\n",
-        "forms take a line each, a trailing comment stays, a blank line is kept once, and a statement keeps its separator"
+        "#!/usr/bin/env gandr\n\n// head\ndef a = 1;\ndef b = 2; // trailing\n\n/* own */\ndef c = (f a);\ndef d = (g b);\n",
+        "forms take a line each, a trailing comment stays, a blank line is kept once, and a declaration keeps its terminator"
     );
     assert_eq!(text(&grammar, "", WIDE), "", "an empty source stays empty");
 }
@@ -459,8 +459,8 @@ fn a_separator_written_on_the_next_line_joins_its_statement()
             ),
             WIDE
         ),
-        "(f a);\n(g b);\n",
-        "a separator after a break or a blank line ends the statement on its line"
+        "def c = (f a);\ndef d = (g b);\n",
+        "a terminator after a break or a blank line ends the declaration on its line"
     );
 }
 
@@ -732,16 +732,14 @@ fn a_broken_spine_s_head_breaks_a_bracket_past_the_page_5528()
 }
 
 #[test]
-fn strings_shell_blocks_and_holes_are_copied_as_written()
+fn strings_and_holes_are_copied_as_written()
 {
     let grammar = grammar();
-    let source = include_str!(
-        "format/unformatted/strings-shell-blocks-and-holes-are-copied-as-written.gandr"
-    );
+    let source = include_str!("format/unformatted/strings-and-holes-are-copied-as-written.gandr");
     assert_eq!(
         text(&grammar, source, NARROW),
-        "def s = \"a  ${  b }\tc\";\ndef h = #!{\n    printf 'hi'\n};\ndef k = (?hole);\n",
-        "a string's, a shell block's and a hole's bytes are their own"
+        "def s = \"a  ${  b }\tc\";\ndef k = (?hole);\n",
+        "a string's and a hole's bytes are their own"
     );
 }
 

@@ -32,7 +32,7 @@ The source formatter: a parsed gandr source laid out at a page width through `ga
 ## Provided features
 
 - `format`: a parsed source formatted at a page width. Witnesses: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`, `tests::format::top_level_forms_and_comments_keep_their_lines`, `tests::format::a_repaired_form_is_copied_as_written`, `tests::format::the_source_line_ending_is_kept`, `tests::format::pieces_place_each_top_level_form`.
-- The layout of a form. Witnesses: `tests::format::a_long_declaration_breaks_its_parameters_before_its_type`, `tests::format::a_block_breaks_one_item_per_line_when_it_does_not_fit`, `tests::format::attributes_and_documentation_keep_their_lines`, `tests::format::a_continuation_line_indents_under_its_statement`, `tests::format::strings_shell_blocks_and_holes_are_copied_as_written`, `tests::format::the_printer_decides_every_inner_space`, `tests::format::a_terminator_touches_the_form_it_ends`.
+- The layout of a form. Witnesses: `tests::format::a_long_declaration_breaks_its_parameters_before_its_type`, `tests::format::a_block_breaks_one_item_per_line_when_it_does_not_fit`, `tests::format::attributes_and_documentation_keep_their_lines`, `tests::format::a_continuation_line_indents_under_its_statement`, `tests::format::strings_and_holes_are_copied_as_written`, `tests::format::the_printer_decides_every_inner_space`, `tests::format::a_terminator_touches_the_form_it_ends`.
 - `Formatted`, `Piece`, `Layout`: the text, and each top-level form's source and formatted spans, for an editor that applies a formatting change form by form.
 - `FormatOptions`, and `PageWidth` re-exported from `gandr-surface-layout`.
 - `Form`, `Selection`, `REWRITES`, `RewriteName`: the spelling a source is laid out in — its own, every token kept, or the explicit or sugared one through the table's named rewrites — asked for by `FormatOptions` and declared at a source's head with `@[ form(explicit) ]` or `@[ form(sugared) ]`, the declaration winning (crate docs, § The form a source is spelled in). Witnesses: `tests::rewrite::each_rewrite_moves_its_pair_both_ways`, `tests::rewrite::a_declared_form_wins_over_the_option`.
@@ -95,7 +95,7 @@ The engine chooses among the flat and broken layout of every group at once, by l
 
 ## Copied as written
 
-The formatter keeps strings, shell blocks, holes, forms the parser repairs and comments that span lines or hold a tab byte for byte, as the crate docs state.
+The formatter keeps strings, holes, forms the parser repairs and comments that span lines or hold a tab byte for byte, as the crate docs state.
 
 ## The meaning is checked, not assumed
 

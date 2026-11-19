@@ -106,9 +106,9 @@ pub use layout::Move;
 ///   labeler and token-text observer carry its executable obligations.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — host and shell contexts cover the complete lexical
-///   vocabulary with exact class streams and source spans. Wrong modes, missing
-///   classes and shifted spans change these observations.
+/// - hypothesis: L3 — the host contexts cover the complete lexical vocabulary
+///   with exact class streams and source spans. Wrong modes, missing classes
+///   and shifted spans change these observations.
 /// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
 /// - witness: `label::tests::labels_a_definition_losslessly`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -130,43 +130,10 @@ pub enum Lexeme
     /// A run of ordinary string content between escapes and the closing quote
     /// of a host string (`string_fragment`).
     StringFragment,
-    /// A run of ordinary content inside a shell double-quoted string
-    /// (`double_string_fragment`). Kept apart from [`Lexeme::StringFragment`]
-    /// so the token after an opening `"` tells a host string from a shell one.
-    ShellStringFragment,
     /// A backslash escape inside a string or character.
     EscapeSequence,
     /// An operator or punctuation tile whose label is its exact text.
     Punct,
-    /// A bare word inside a shell block (a `command_name` / `shell_word` /
-    /// `argument` run over the shell-word byte class).
-    ShellWord,
-    /// A command-local environment assignment `NAME=value` inside a shell
-    /// block: one whole token, the shape the tree-sitter `token(seq(…))`
-    /// `environment_assignment` and the PBG's single-tile atom both expect.
-    /// A shell word whose name part is not identifier-shaped
-    /// (`--color=auto`) or that has no name (`=`) stays a
-    /// [`Lexeme::ShellWord`].
-    EnvAssign,
-    /// The raw interior of a single-quoted shell string (`'…'`): everything
-    /// between the quotes verbatim (the tree-sitter `single_quoted_string`'s
-    /// `token.immediate(/[^']*/)`), one opaque `single_quoted_content` tile.
-    SingleQuotedContent,
-    /// A shell variable name after `$` (`$name`): the `variable_name` tile of a
-    /// `variable_expansion` (tree-sitter `variable_expansion`).
-    VariableName,
-    /// A shell subshell opener `[` (tree-sitter `subshell` = `[ … ]`). A
-    /// shell-context bracket, DISTINCT from the host list-literal `[`, so a
-    /// subshell never widens the host `[` mold menu.
-    SubshellOpen,
-    /// A shell subshell closer `]`, the shell-context partner of
-    /// [`Lexeme::SubshellOpen`].
-    SubshellClose,
-    /// A shell redirection file descriptor: a digit run immediately before a
-    /// `<` / `>` redirection operator (`2>`, `2>&1`; tree-sitter
-    /// `file_descriptor`). A bare digit run NOT before a redirection stays an
-    /// ordinary shell word.
-    FileDescriptor,
     /// A `|` that opens a clause, a constructor or a match arm: the first
     /// token on its line, or one standing directly in a brace whose first
     /// token is a `|`. Every other `|` stays [`Lexeme::Punct`].
@@ -256,34 +223,6 @@ impl SourceBytes<'_>
         BytePredicate::from(self.0 == pattern.0)
     }
 
-    /// Return whether the byte slice starts with `pattern`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    fn starts_with(
-        self,
-        pattern: BytePattern<'_>,
-    ) -> BytePredicate
-    {
-        BytePredicate::from(self.0.starts_with(pattern.0))
-    }
-
-    /// Return whether the byte slice ends with `pattern`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    fn ends_with(
-        self,
-        pattern: BytePattern<'_>,
-    ) -> BytePredicate
-    {
-        BytePredicate::from(self.0.ends_with(pattern.0))
-    }
-
     /// Return whether `start .. end` equals `pattern`.
     ///
     /// # Specification
@@ -350,28 +289,6 @@ impl ByteOffset
     ) -> Self
     {
         Self(self.0.saturating_add(width.0))
-    }
-
-    /// Move this cursor backwards by a byte width, saturating at zero.
-    ///
-    /// # Specification
-    /// - ensures: the cursor moves back by the width, saturating at zero.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — zero, ordinary and host-ceiling operands expose exact
-    ///   cursors; arithmetic wrap, wrong direction and an off-by-one saturation
-    ///   boundary change the observed offsets.
-    /// - witness: `label::tests::cursor_arithmetic_saturates_at_both_boundaries`
-    #[inline]
-    #[must_use]
-    #[spec(ensures: |ret| ret.0 == self.0.saturating_sub(width.0))]
-    fn retreat(
-        self,
-        width: ByteWidth,
-    ) -> Self
-    {
-        Self(self.0.saturating_sub(width.0))
     }
 }
 
@@ -462,27 +379,6 @@ impl SourceByte
         BytePredicate::from(u8::from(self).is_ascii_digit())
     }
 
-    /// Return whether this byte can start a shell variable name (`[A-Za-z_]`).
-    ///
-    /// # Specification
-    /// - ensures: accepts ASCII letters and underscore.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — all 256 byte values are compared with the explicit
-    ///   lexical alphabet, including both neighbors of every ASCII class
-    ///   boundary. Missing members and accidental additions flip an observed
-    ///   classification.
-    /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
-    #[inline]
-    #[must_use]
-    #[spec(ensures: |ret| bool::from(ret) == matches!(self.0, b'A' ..= b'Z' | b'a' ..= b'z' | b'_'))]
-    fn is_var_name_start(self) -> BytePredicate
-    {
-        let byte = u8::from(self);
-        BytePredicate::from(byte.is_ascii_alphabetic() || byte == b'_')
-    }
-
     /// Return whether this byte continues a word `[A-Za-z0-9_]`.
     ///
     /// # Specification
@@ -502,70 +398,6 @@ impl SourceByte
     {
         let byte = u8::from(self);
         BytePredicate::from(byte.is_ascii_alphanumeric() || byte == b'_')
-    }
-
-    /// Return whether this byte continues a shell word.
-    ///
-    /// # Specification
-    /// - ensures: accepts every byte except shell separators and delimiters.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — all 256 byte values are compared with the explicit
-    ///   lexical alphabet, including both neighbors of every ASCII class
-    ///   boundary. Missing members and accidental additions flip an observed
-    ///   classification.
-    /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
-    #[inline]
-    #[must_use]
-    #[spec(ensures: |ret| bool::from(ret) != b" \t\r\n\x0c\x0b;|&<>{}[]()`\"'$#".contains(&self.0))]
-    fn is_shell_word(self) -> BytePredicate
-    {
-        BytePredicate::from(!matches!(
-            u8::from(self),
-            b' ' | b'\t'
-                | b'\r'
-                | b'\n'
-                | 0x0c
-                | 0x0b
-                | b';'
-                | b'|'
-                | b'&'
-                | b'<'
-                | b'>'
-                | b'{'
-                | b'}'
-                | b'['
-                | b']'
-                | b'('
-                | b')'
-                | b'`'
-                | b'"'
-                | b'\''
-                | b'$'
-                | b'#'
-        ))
-    }
-
-    /// Return whether this byte can appear in a shell dialect word.
-    ///
-    /// # Specification
-    /// - ensures: accepts ASCII letters, digits, underscore and hyphen.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — all 256 byte values are compared with the explicit
-    ///   lexical alphabet, including both neighbors of every ASCII class
-    ///   boundary. Missing members and accidental additions flip an observed
-    ///   classification.
-    /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
-    #[inline]
-    #[must_use]
-    #[spec(ensures: |ret| bool::from(ret) == matches!(self.0, b'A' ..= b'Z' | b'a' ..= b'z' | b'0' ..= b'9' | b'_' | b'-'))]
-    fn is_dialect(self) -> BytePredicate
-    {
-        let byte = u8::from(self);
-        BytePredicate::from(byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
     }
 
     /// Return whether this byte ends a run: ASCII whitespace or a delimiter.
@@ -711,9 +543,9 @@ impl ScanResult
 ///   labeler and token-text observer carry its executable obligations.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — host and shell contexts cover the complete lexical
-///   vocabulary with exact class streams and source spans. Wrong modes, missing
-///   classes and shifted spans change these observations.
+/// - hypothesis: L3 — the host contexts cover the complete lexical vocabulary
+///   with exact class streams and source spans. Wrong modes, missing classes
+///   and shifted spans change these observations.
 /// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
 /// - witness: `label::tests::labels_a_definition_losslessly`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -789,9 +621,9 @@ pub enum Bracket
 /// # Specification
 /// - requires: `bytes` is the exact buffer `token` was labeled from.
 /// - ensures: [`Bracket::Open`] for a layout opener and [`Bracket::Close`] for
-///   a layout closer. For a punctuation or subshell token, [`Bracket::Open`]
-///   when its spelling ends in `(`, `[` or `{`, and [`Bracket::Close`] when it
-///   is `)`, `]` or `}`. [`Bracket::Neither`] otherwise.
+///   a layout closer. For a punctuation token, [`Bracket::Open`] when its
+///   spelling ends in `(`, `[` or `{`, and [`Bracket::Close`] when it is `)`,
+///   `]` or `}`. [`Bracket::Neither`] otherwise.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -807,7 +639,7 @@ pub enum Bracket
         Bracket::Open
     } else if token.lexeme == Lexeme::LayoutClose {
         Bracket::Close
-    } else if !matches!(token.lexeme, Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose) {
+    } else if !matches!(token.lexeme, Lexeme::Punct) {
         Bracket::Neither
     } else if spelled.ends_with(b"(") || spelled.ends_with(b"[") || spelled.ends_with(b"{") {
         Bracket::Open
@@ -825,7 +657,7 @@ pub fn bracket(
     match token.lexeme {
         Lexeme::LayoutOpen => return Bracket::Open,
         Lexeme::LayoutClose => return Bracket::Close,
-        Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose => {},
+        Lexeme::Punct => {},
         Lexeme::LowerWord
         | Lexeme::UpperWord
         | Lexeme::Number
@@ -833,13 +665,7 @@ pub fn bracket(
         | Lexeme::Character
         | Lexeme::Quote
         | Lexeme::StringFragment
-        | Lexeme::ShellStringFragment
         | Lexeme::EscapeSequence
-        | Lexeme::ShellWord
-        | Lexeme::EnvAssign
-        | Lexeme::SingleQuotedContent
-        | Lexeme::VariableName
-        | Lexeme::FileDescriptor
         | Lexeme::ArmBar
         | Lexeme::LayoutSemi
         | Lexeme::Space
@@ -892,7 +718,7 @@ pub fn bracket(
 ///   `ω` and the wildcard `_`.
 ///
 /// `@[` and `@![` are read at the delimiter `@`, and `#`, `//`, `/*`, `"` and
-/// `'` lead a shebang, a shell block, a comment, a string or a character before
+/// `'` lead a shebang, a comment, a string or a character before
 /// any run is read.
 const OPERATORS: &[&str] = &[
     "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "↦", "⊸", "<~>", "~~>", "|->", "-o", "~>",
@@ -935,10 +761,8 @@ const BYTE_ORDER_MARK_UTF8: [u8; 3] = [0xef, 0xbb, 0xbf];
 /// # Adequacy
 /// - hypothesis: L2/L3 — exact token classes and spans for every lexical mode
 ///   distinguish wrong dispatch, premature consumption, overconsumption and
-///   lost layout; sampled sources additionally observe full reconstruction. The
-///   green witnesses do not cover a dangling shell-assignment escape or a
-///   non-ASCII braced shell name, whose spans violate the intended boundary
-///   contract. Source sizes above the wire ceiling are not exercised.
+///   lost layout; sampled sources additionally observe full reconstruction.
+///   Source sizes above the wire ceiling are not exercised.
 /// - witness: `label::tests::labels_a_definition_losslessly`
 /// - witness: `label::tests::span_tiling_is_total_and_gapless`
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
@@ -1007,8 +831,6 @@ enum Opened
     Brace,
     /// A host parenthesis or bracket.
     Plain,
-    /// A shell block or a bracket inside one, where `|` is the shell's pipe.
-    Shell,
 }
 
 primitive_copy_wrapper!(
@@ -1125,25 +947,28 @@ fn arrow_ahead(
 ///
 /// # Specification
 /// - requires: `tokens` are the labeled tokens of `bytes`.
-/// - ensures: a `|` outside a shell block is an arm bar exactly when no token
-///   but space stands between it and the line's start, when the innermost open
-///   bracket is a brace and the token before the bar is a `,`, or when the
-///   innermost open bracket is a brace whose first token after it is a `|`,
-///   unless the brace's current arm has met no `=>` and one follows before the
-///   next `:`, `;`, line-leading `|`, reset or the brace's close, where it is
-///   an or-pattern's; no other token changes. A token that [`resets`] closes
-///   every bracket open before it.
+/// - ensures: a `|` is an arm bar exactly when no token but space stands
+///   between it and the line's start, when the innermost open bracket is a
+///   brace and the token before the bar is a `,`, or when the innermost open
+///   bracket is a brace whose first token after it is a `|`, unless the brace's
+///   current arm has met no `=>` and one follows before the next `:`, `;`,
+///   line-leading `|`, reset or the brace's close, where it is an or-pattern's;
+///   no other token changes. A token that [`resets`] closes every bracket open
+///   before it.
 /// - panics: none.
 /// - executable: none — the clause would walk every token twice per call; the
 ///   witness checks each class.
 ///
+/// # Cost
+/// - allocation: the stack of open brackets, growth within the nesting of the
+///   tokens
+///
 /// # Adequacy
 /// - hypothesis: L3 — a line-leading bar, bars on one line in a bar brace, a
 ///   union in parentheses inside one, an or-pattern among a clause's patterns
-///   on one line and on its own, a bar after a plain brace's first token, a bar
-///   after a plain brace's comma and a shell pipe each take their class;
-///   marking by line alone, by brace alone or past the arm's `=>` changes one
-///   of them.
+///   on one line and on its own, a bar after a plain brace's first token and a
+///   bar after a plain brace's comma each take their class; marking by line
+///   alone, by brace alone or past the arm's `=>` changes one of them.
 /// - witness: `label::tests::arm_bars_lead_lines_and_bar_braces`
 fn mark_arm_bars(
     bytes: SourceBytes<'_>,
@@ -1194,7 +1019,6 @@ fn mark_arm_bars(
                     .is_some_and(|gap| gap.contains(&b'\n'))
             });
             let arm = match within {
-                Some(Opened::Shell) => false,
                 Some(Opened::Bars { written, arrowed }) => {
                     line_start
                         || !written
@@ -1227,27 +1051,17 @@ fn mark_arm_bars(
             *written = true;
             *arrowed |= token.lexeme == Lexeme::Punct && text(&token) == b"=>";
         }
-        if matches!(
-            token.lexeme,
-            Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose
-        ) {
+        if matches!(token.lexeme, Lexeme::Punct) {
             let spelled = text(&token);
             if spelled.ends_with(b"(") || spelled.ends_with(b"[") || spelled.ends_with(b"{") {
-                let shell = within == Some(Opened::Shell)
-                    || spelled.starts_with(b"#!")
-                    || spelled.starts_with(b"$!");
-                let bars = !shell
-                    && spelled.ends_with(b"{")
+                let bars = spelled.ends_with(b"{")
                     && tokens
                         .get(index.saturating_add(1) ..)
                         .unwrap_or_default()
                         .iter()
                         .find(|next| next.lexeme != Lexeme::Space)
                         .is_some_and(&is_bar);
-                opened.push(if shell {
-                    Opened::Shell
-                }
-                else if bars {
+                opened.push(if bars {
                     Opened::Bars {
                         written: false,
                         arrowed: false,
@@ -1275,18 +1089,16 @@ fn mark_arm_bars(
 ///
 /// The furthest bounded reads are a bridge's prime check, a number's
 /// primitive suffix and a character literal's closing quote, each under eight
-/// bytes past the token. The one unbounded read, a shell start's dialect run,
-/// stops at the first byte no dialect word holds, a line break among them.
+/// bytes past the token.
 const RELABEL_MARGIN: usize = 64;
 
 /// Where the labeler stands between two tokens.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Standing
 {
-    /// No string, shell block or interpolation open: where a source begins.
+    /// No string or interpolation open: where a source begins.
     Ground,
-    /// Within a string, a shell block, a shell quote or expansion, or an
-    /// interpolation.
+    /// Within a string or an interpolation.
     Within,
 }
 
@@ -1338,44 +1150,13 @@ struct LabelMode
     /// content lexes as fragments and escapes (the tree-sitter string
     /// sub-grammar).
     in_string: Toggle,
-    /// The `#!{` / `$!{` shell-block nesting, so the interior lexes in the
-    /// shell word class (context-aware lexing, tree-sitter
-    /// `_shell_block_start`).
-    shell_depth: u32,
-    /// Whether the cursor sits between a shell `'` and its closing `'`, so
-    /// the single-quoted interior lexes as one opaque `single_quoted_content`
-    /// run (tree-sitter `single_quoted_string`), never split on interior
-    /// spaces.
-    shell_single: Toggle,
-    /// A one-shot flag: the token immediately after a shell `$` that a name
-    /// follows is the `variable_name` of a `variable_expansion`, not a shell
-    /// word (tree-sitter `variable_expansion` = `$` `variable_name`).
-    shell_var: Toggle,
-    /// Whether the cursor sits inside a shell braced parameter expansion
-    /// `${name}`: the interior lexes as a `variable_name` parameter and the
-    /// matching `}` closes the brace without touching `shell_depth` (it is
-    /// not the shell block's closer). A shell-native brace, distinct from
-    /// the string-interpolation `${ E }` (`interp_stack`): a shell parameter
-    /// name is not a host expression. A flag rather than a depth suffices for
-    /// `${name}`, whose interior has no nested braces (the `${name:-word}` /
-    /// `${#name}` operator forms are not scanned yet).
-    shell_brace: Toggle,
-    /// Whether the cursor sits inside a shell double-quoted string `"…"`: the
-    /// interior lexes as `double_string_fragment` runs, `\.` escapes, and
-    /// `$name` / `${name}` expansions (tree-sitter `double_quoted_string`),
-    /// so a quoted argument with interior spaces is one string rather than
-    /// juxtaposed shell words. Entered only at `shell_depth > 0`; a `'`
-    /// inside is an ordinary fragment byte. Distinct from the host string
-    /// mode (`in_string`), which never lexes shell expansions.
-    shell_double: Toggle,
     /// String-interpolation frames: each `"… ${` opens an interpolation whose
     /// interior lexes as ordinary host-expression tokens. The entry is that
     /// interpolation's `{`-brace depth (the opening `${` counts as one); a `}`
     /// that returns the depth to zero closes the interpolation and resumes
     /// the containing string. A stack, so a nested string inside an
     /// interpolation — `"${ f("${x}") }"` — is handled to any depth. Only
-    /// `{`-suffixed openers at this level (`{`, `#{`) push depth; `#!{` /
-    /// `$!{` switch to shell mode, which owns its own `}` accounting.
+    /// `{`-suffixed openers at this level (`{`, `#{`) push depth.
     interp_stack: Vec<u32>,
 }
 
@@ -1387,14 +1168,7 @@ impl LabelMode
     /// trivial.
     fn standing(&self) -> Standing
     {
-        if self.in_string == Toggle::Open
-            || self.shell_depth > 0
-            || self.shell_single == Toggle::Open
-            || self.shell_var == Toggle::Open
-            || self.shell_brace == Toggle::Open
-            || self.shell_double == Toggle::Open
-            || !self.interp_stack.is_empty()
-        {
+        if self.in_string == Toggle::Open || !self.interp_stack.is_empty() {
             Standing::Within
         }
         else {
@@ -1428,27 +1202,10 @@ impl LabelMode
         let scan = if self.in_string == Toggle::Open {
             scan_string_interior(source_bytes, pos)
         }
-        else if self.shell_single == Toggle::Open {
-            scan_single_quoted_interior(source_bytes, pos)
-        }
-        else if self.shell_var == Toggle::Open {
-            scan_variable_name(source_bytes, pos)
-        }
-        else if self.shell_brace == Toggle::Open {
-            scan_braced_shell_interior(source_bytes, pos)
-        }
-        else if self.shell_double == Toggle::Open {
-            scan_shell_double_interior(source_bytes, pos)
-        }
-        else if self.shell_depth > 0 {
-            scan_shell_interior(source_bytes, pos)
-        }
         else {
             scan_one(source_bytes, pos)
         };
         let lexeme = scan.lexeme;
-        // The variable-name state lasts exactly one token after its `$`.
-        self.shell_var = Toggle::Closed;
         // Defensive: scanning always advances; never emit a zero-width token.
         let next = if scan.next > start {
             scan.next
@@ -1475,21 +1232,14 @@ impl LabelMode
     /// # Specification
     /// - requires: `start .. next` is a punctuation token of `source_bytes`.
     /// - ensures: a string-interpolation `${` leaves the string and pushes a
-    ///   frame; a shell `${` opens a braced parameter and its `}` closes it; a
-    ///   shell `"` or `'` toggles its quote; a shell `$` before a name marks
-    ///   the name; a shell start deepens the block and a `}` in a block closes
-    ///   one; inside an interpolation, `{` and `#{` deepen the frame and a `}`
-    ///   that empties it resumes the string.
+    ///   frame; inside an interpolation, `{` and `#{` deepen the frame and a
+    ///   `}` that empties it resumes the string.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — interpolations nesting strings, braced shell
-    ///   parameters, shell quotes and nested shell blocks expose every
+    /// - hypothesis: L3 — interpolations nesting strings expose every
     ///   transition through exact token streams.
     /// - witness: `label::tests::string_interpolation_nests_braces_and_strings`
-    /// - witness: `label::tests::shell_braced_parameter_lexes_distinctly_from_interpolation`
-    /// - witness: `label::tests::shell_single_and_double_quotes_do_not_cross`
-    /// - witness: `label::tests::shell_braced_parameters_nest_and_juxtapose`
     ///
     /// # Cost
     /// - allocation: a frame of the interpolation stack at each `${` that opens
@@ -1512,56 +1262,10 @@ impl LabelMode
             self.in_string = Toggle::Closed;
             self.interp_stack.push(1);
         }
-        else if bool::from(text.equals(BytePattern(b"${"))) && self.shell_depth > 0 {
-            // A shell `${` opens a braced parameter expansion: the interior
-            // lexes as a `variable_name` parameter and the matching `}`
-            // closes the brace (not the shell block). Distinct from the
-            // string-interpolation `${` above — the shell interior is a
-            // shell parameter name, never a host expression.
-            self.shell_brace = Toggle::Open;
-        }
-        else if bool::from(text.equals(BytePattern(b"}"))) && self.shell_brace == Toggle::Open {
-            // The braced parameter expansion's closer: end the brace mode
-            // and resume shell lexing without decrementing `shell_depth`
-            // (this `}` is the parameter's, not the shell block's).
-            self.shell_brace = Toggle::Closed;
-        }
-        else if bool::from(text.equals(BytePattern(b"\""))) && self.shell_depth > 0 {
-            // A shell `"` opens or closes a double-quoted string: the
-            // interior lexes as fragments / escapes / expansions (never a
-            // nested block or the shell block's closer).
-            self.shell_double = self.shell_double.flipped();
-        }
-        else if bool::from(text.equals(BytePattern(b"'"))) && self.shell_depth > 0 {
-            // A shell `'` opens or closes a single-quoted string; the
-            // interior between them is lexed opaquely, so it cannot start a
-            // nested block or close the shell block.
-            self.shell_single = self.shell_single.flipped();
-        }
-        else if bool::from(text.equals(BytePattern(b"$")))
-            && self.shell_depth > 0
-            && source_bytes
-                .byte(next)
-                .is_some_and(|byte| bool::from(byte.is_var_name_start()))
-        {
-            // A bare shell `$name`: the following word is the variable name
-            // (`$( … )` host escapes and `$!{ … }` substitutions do not set
-            // this — their next byte is not a name start).
-            self.shell_var = Toggle::Open;
-        }
-        else if bool::from(is_shell_open(text)) {
-            self.shell_depth = self.shell_depth.saturating_add(1);
-        }
-        else if bool::from(text.equals(BytePattern(b"}"))) && self.shell_depth > 0 {
-            self.shell_depth = self.shell_depth.saturating_sub(1);
-        }
-        else if self.shell_depth == 0
-            && let Some(depth) = self.interp_stack.last_mut()
-        {
-            // Inside an interpolation's host-expression interior (shell mode
-            // owns its own brace accounting, so it is excluded). A form opened
-            // by a brace or a connective's opener deepens this frame; a `}`
-            // that empties it closes the interpolation and resumes the
+        else if let Some(depth) = self.interp_stack.last_mut() {
+            // Inside an interpolation's host-expression interior. A form
+            // opened by a brace or a connective's opener deepens this frame;
+            // a `}` that empties it closes the interpolation and resumes the
             // containing string.
             if matches!(text.0, b"{" | b"*{" | b"+{" | b"&{" | b".*{" | b".#{") {
                 *depth = depth.saturating_add(1);
@@ -1679,11 +1383,11 @@ impl Labeling
     ///
     /// # Adequacy
     /// - hypothesis: L3 — hostile sources replaced at arbitrary byte ranges by
-    ///   hostile text, edits inside strings, shell blocks, interpolations,
-    ///   comments, numbers, layout blocks and a long dialect run among them,
-    ///   relabel to the labeling of the edited source; a restart inside the
-    ///   margin, on the edit's line or off a reset, a restart off ground, or a
-    ///   resync short of the suffix or off a reset changes a token.
+    ///   hostile text, edits inside strings, interpolations, comments, numbers
+    ///   and layout blocks among them, relabel to the labeling of the edited
+    ///   source; a restart inside the margin, on the edit's line or off a
+    ///   reset, a restart off ground, or a resync short of the suffix or off a
+    ///   reset changes a token.
     /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
     /// - witness: `label::tests::a_relabel_restarts_before_what_a_token_read`
     #[inline]
@@ -1889,241 +1593,9 @@ fn scan_string_interior(
         None => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
     }
 }
-/// Scan one lexeme of single-quoted shell interior: the closing `'`, or the
-/// raw content run up to it (tree-sitter `single_quoted_string` is `'`
-/// `token.immediate(/[^']*/)` `'` — the interior is verbatim, no escapes).
-///
-/// # Specification
-/// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; a closing quote is punctuation; all interior
-///   bytes remain verbatim.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — closing quotes and verbatim runs containing
-///   escape-looking bytes expose exact class and end positions at two offsets.
-///   Interpreting an escape or swallowing the closing quote changes shell text.
-/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-/// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
-#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::SingleQuotedContent)))]
-fn scan_single_quoted_interior(
-    bytes: SourceBytes<'_>,
-    pos: ByteOffset,
-) -> ScanResult
-{
-    if bytes.byte(pos) == Some(SourceByte::from(b'\'')) {
-        return ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE));
-    }
-    let mut cursor = pos;
-    while bytes
-        .byte(cursor)
-        .is_some_and(|byte| u8::from(byte) != b'\'')
-    {
-        cursor = cursor.advance(ByteWidth::ONE);
-    }
-    ScanResult::new(Lexeme::SingleQuotedContent, cursor)
-}
-/// Scan a shell variable name after `$` (`[A-Za-z_][A-Za-z0-9_]*`, tree-sitter
-/// `variable_name`).
-///
-/// # Specification
-/// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; a nonempty word-byte run is a variable name;
-///   other starts advance as unknown.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — names, digit continuations and non-name starts at two
-///   offsets expose exact variable width and unknown fallback. Accepting
-///   punctuation into a name or failing to advance changes the shell token
-///   stream.
-/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-/// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
-#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::VariableName | Lexeme::Unknown)))]
-fn scan_variable_name(
-    bytes: SourceBytes<'_>,
-    pos: ByteOffset,
-) -> ScanResult
-{
-    let mut cursor = pos;
-    while bytes
-        .byte(cursor)
-        .is_some_and(|byte| bool::from(byte.is_word_continue()))
-    {
-        cursor = cursor.advance(ByteWidth::ONE);
-    }
-    if cursor > pos {
-        ScanResult::new(Lexeme::VariableName, cursor)
-    }
-    else {
-        // Defensive: the caller only sets the flag when a name start follows.
-        ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE))
-    }
-}
-/// Scan one lexeme of shell braced-parameter interior (`${…}`): the
-/// closing `}`, or the parameter's `variable_name` run.
-///
-/// The interior is a bare parameter name `[A-Za-z0-9_]+` (tree-sitter
-/// `variable_name`); the `${name:-word}` / `${#name}` operator forms are not
-/// scanned yet. A stray non-name, non-`}` scalar advances by its UTF-8 width
-/// as a shell word, preserving source boundaries on malformed input.
-///
-/// # Specification
-/// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; the closing brace is punctuation, names are
-///   variable runs and stray scalars are shell words with complete UTF-8 spans.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — closing braces, parameter-name runs and stray scalars of
-///   every UTF-8 width at two offsets expose exact class and width. Treating a
-///   closer as content, stopping a name early or splitting a scalar changes the
-///   parameter subtree or loses source bytes.
-/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-/// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
-#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::VariableName | Lexeme::ShellWord)))]
-fn scan_braced_shell_interior(
-    bytes: SourceBytes<'_>,
-    pos: ByteOffset,
-) -> ScanResult
-{
-    if bytes.byte(pos) == Some(SourceByte::from(b'}')) {
-        return ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE));
-    }
-    let mut cursor = pos;
-    while bytes
-        .byte(cursor)
-        .is_some_and(|byte| bool::from(byte.is_word_continue()))
-    {
-        cursor = cursor.advance(ByteWidth::ONE);
-    }
-    if cursor > pos {
-        ScanResult::new(Lexeme::VariableName, cursor)
-    }
-    else {
-        // Preserve the complete scalar so token spans remain UTF-8 boundaries.
-        let width = bytes.byte(pos).map_or(ByteWidth::ONE, utf8_width);
-        ScanResult::new(Lexeme::ShellWord, pos.advance(width))
-    }
-}
-
-/// Scan one lexeme of shell double-quoted interior (`"…"`): the closing
-/// `"`, a `\.` escape, a `$`-led expansion, or a `double_string_fragment` run
-/// up to the next `"` / `\` / `$` (tree-sitter `double_quoted_string`).
-///
-/// The `$`-led forms (`$name`, `${name}`, and the `$!{…}` command-substitution
-/// start) are dispatched by [`scan_dollar`]; the caller's shell-depth
-/// conditions then set the variable / brace state, so an expansion inside a
-/// double-quoted string lexes exactly as it does bare. A fragment run keeps
-/// interior spaces, so a quoted argument is one string.
-///
-/// # Specification
-/// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; double-quoted shell mode preserves spaces and
-///   recognizes escapes and dollar expansions.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
-///   complete tokens, adjacent delimiters and truncated tails are compared with
-///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
-///   and failure to advance change a row; double-quoted shell mode preserves
-///   spaces and recognizes escapes and dollar expansions.
-/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::EscapeSequence | Lexeme::Unknown | Lexeme::ShellStringFragment)))]
-fn scan_shell_double_interior(
-    bytes: SourceBytes<'_>,
-    pos: ByteOffset,
-) -> ScanResult
-{
-    match bytes.byte(pos).map(u8::from) {
-        Some(b'"') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
-        Some(b'\\') => scan_escape(bytes, pos),
-        Some(b'$') => scan_dollar(bytes, pos),
-        Some(_) => {
-            let mut cursor = pos;
-            while let Some(byte) = bytes.byte(cursor) {
-                if matches!(u8::from(byte), b'"' | b'\\' | b'$') {
-                    break;
-                }
-                cursor = cursor.advance(ByteWidth::ONE);
-            }
-            ScanResult::new(Lexeme::ShellStringFragment, cursor)
-        },
-        None => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
-    }
-}
-/// Scan one lexeme of shell-block interior: separators and operators as
-/// punctuation, quoted strings, and otherwise a run of shell-word bytes.
-///
-/// # Specification
-/// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; shell brackets are subshell delimiters, not
-///   host punctuation; a lone `#` is unknown, the freshness relation being host
-///   syntax.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
-///   complete tokens, adjacent delimiters and truncated tails are compared with
-///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
-///   and failure to advance change a row; shell brackets are subshell
-///   delimiters, not host punctuation, and a lone `#` stays unknown.
-/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (match bytes.0.get(pos.0).copied() { Some(b'[') => ret.lexeme == Lexeme::SubshellOpen, Some(b']') => ret.lexeme == Lexeme::SubshellClose, Some(b'#') if bytes.0.get(pos.0 ..).and_then(|rest| rest.get(1)) != Some(&b'!') => ret.lexeme == Lexeme::Unknown, _ => true }))]
-fn scan_shell_interior(
-    bytes: SourceBytes<'_>,
-    pos: ByteOffset,
-) -> ScanResult
-{
-    let Some(byte) = bytes.byte(pos)
-    else {
-        return ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE));
-    };
-    match u8::from(byte) {
-        // Whitespace and newlines are layout inside shell blocks too (the
-        // grammar's `list_operator` newline is approximated as layout; the
-        // explicit `;` / `&` separators carry the list structure the corpus
-        // uses).
-        b' ' | b'\t' | 0x0c | 0x0b => {
-            ScanResult::new(Lexeme::Space, scan_horizontal_space(bytes, pos))
-        },
-        b'\r' | b'\n' => ScanResult::new(Lexeme::Space, scan_newlines(bytes, pos)),
-        // `#!{` / `$!{` open a nested shell block; the brace / bracket / paren
-        // punctuation is structural. The freshness relation's lone `#`, the
-        // sequence literal's `#[` and the retired `#{` are host syntax, so
-        // inside a shell block a `#` that opens no shell stays unknown.
-        b'#' if bytes.byte(pos.advance(ByteWidth::ONE)) == Some(SourceByte::from(b'!')) => {
-            scan_hash(bytes, pos)
-        },
-        b'#' => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
-        b'$' => scan_dollar(bytes, pos),
-        // A shell `[` / `]` is a subshell bracket (tree-sitter `subshell`),
-        // classified DISTINCTLY from the host list-literal `[` so a subshell
-        // never widens the host `[` mold menu.
-        b'[' => ScanResult::new(Lexeme::SubshellOpen, pos.advance(ByteWidth::ONE)),
-        b']' => ScanResult::new(Lexeme::SubshellClose, pos.advance(ByteWidth::ONE)),
-        // Brace / paren / quote punctuation is structural. `=` is NOT: it is a
-        // shell-word byte, so `NAME=value` munches into one `environment_assignment`
-        // token and a bare `=` stays an ordinary word — no shell rule
-        // declares a `=` tile, so a split `=` could only ever be an `UnmoldedTok`.
-        b'}' | b'{' | b'(' | b')' | b'\'' | b'"' => {
-            ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE))
-        },
-        // Shell list / pipe / logical operators.
-        b';' | b'&' | b'|' => scan_shell_operator(bytes, pos),
-        // Redirections.
-        b'<' | b'>' => scan_shell_redirection(bytes, pos),
-        // A digit run immediately before a redirection is a file descriptor
-        // (`2>`); otherwise it is an ordinary shell word.
-        b'0' ..= b'9' => scan_shell_fd_or_word(bytes, pos),
-        // A run of shell-word bytes (`pattern_shell_word`).
-        _ => scan_shell_word(bytes, pos),
-    }
-}
 /// Scan one lexeme starting at `pos`, returning its class and the next cursor.
 ///
-/// Layout, a comment, a shebang or shell start, a string quote, a character, a
+/// Layout, a comment, a shebang, a string quote, a character, a
 /// number and each delimiter are read first; any other byte starts a run,
 /// which [`scan_run`] reads to the next whitespace or delimiter.
 ///
@@ -2173,28 +1645,6 @@ fn scan_one(
         },
         _ => scan_run(bytes, pos),
     }
-}
-/// Return whether a punctuation token text opens a shell block (`#!…{` /
-/// `$!…{`).
-///
-/// # Specification
-/// - ensures: recognizes exactly hash-bang or dollar-bang prefixes whose final
-///   byte is an opening brace.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — empty, truncated, complete and wrong-sigil forms expose
-///   the decision; dropping either the prefix or final-brace condition accepts
-///   a negative neighbor.
-/// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
-#[spec(ensures: |ret| bool::from(ret) == ((text.0.starts_with(b"#!") || text.0.starts_with(b"$!")) && text.0.ends_with(b"{")))]
-fn is_shell_open(text: SourceBytes<'_>) -> BytePredicate
-{
-    BytePredicate::from(
-        (bool::from(text.starts_with(BytePattern(b"#!")))
-            || bool::from(text.starts_with(BytePattern(b"$!"))))
-            && bool::from(text.ends_with(BytePattern(b"{"))),
-    )
 }
 
 /// Scan a run of non-newline horizontal whitespace, including the Unicode
@@ -2346,25 +1796,25 @@ fn scan_slash(
         _ => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
     }
 }
-/// Scan a lexeme led by `#`: a shebang, a shell start, the sequence literal's
-/// `#[`, the retired token `#{`, the freshness relation, or a stray byte.
+/// Scan a lexeme led by `#`: a shebang, the sequence literal's `#[`, the
+/// retired token `#{`, the freshness relation, or a stray byte.
 ///
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; shebangs are layout, sequence and valid shell
-///   openers are punctuation, the glued `#{` is one unknown token that the
-///   lowering refuses by name, a `#` that opens none is the one-byte
-///   punctuation of a freshness condition `a # t`, and a `#!` that opens no
-///   shell is unknown.
+/// - ensures: scanning advances; shebangs are layout, the sequence opener is
+///   punctuation, the glued `#{` is one unknown token that the lowering refuses
+///   by name, a `#` that opens none is the one-byte punctuation of a freshness
+///   condition `a # t`, and a `#!` that opens no shebang is an unknown token of
+///   two bytes.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
 ///   complete tokens, adjacent delimiters and truncated tails are compared with
 ///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
-///   and failure to advance change a row; shebangs are layout, sequence and
-///   valid shell openers are punctuation, a lone hash is punctuation and a `#!`
-///   that opens no shell is unknown.
+///   and failure to advance change a row; shebangs are layout, the sequence
+///   opener is punctuation, a lone hash is punctuation and a `#!` that opens no
+///   shebang is unknown.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
 #[spec(requires: bytes.0.get(pos.0) == Some(&b'#'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Space | Lexeme::Punct | Lexeme::Unknown)))]
 fn scan_hash(
@@ -2390,8 +1840,8 @@ fn scan_hash(
                 Lexeme::Space,
                 scan_line_comment_from(bytes, pos.advance(ByteWidth::TWO)),
             ),
-            // `#!{` or `#!dialect{` shell-block start.
-            _ => scan_shell_start(bytes, pos, SourceByte::from(b'{')),
+            // A `#!` that opens no shebang is no token of the surface.
+            _ => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::TWO)),
         },
         // `#[` opens a sequence.
         Some(b'[') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO)),
@@ -2551,186 +2001,6 @@ fn scan_escape(
         },
     )
 }
-/// Scan a `$`-led shell lexeme (`$!{` command substitution, `${` braced
-/// parameter expansion, `$(` host escape, `$name` variable, or a bare `$`).
-///
-/// # Specification
-/// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; a braced parameter or valid command opener is
-///   punctuation; an incomplete command start is unknown.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
-///   complete tokens, adjacent delimiters and truncated tails are compared with
-///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
-///   and failure to advance change a row; a braced parameter or valid command
-///   opener is punctuation; an incomplete command start is unknown.
-/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[spec(requires: bytes.0.get(pos.0) == Some(&b'$'), ensures: |ret| ret.next > pos && matches!(ret.lexeme, Lexeme::Punct | Lexeme::Unknown))]
-fn scan_dollar(
-    bytes: SourceBytes<'_>,
-    pos: ByteOffset,
-) -> ScanResult
-{
-    match bytes.byte(pos.advance(ByteWidth::ONE)).map(u8::from) {
-        Some(b'!') => scan_shell_start(bytes, pos, SourceByte::from(b'{')),
-        // `${` opens a braced parameter expansion (`${name}`); the two-byte
-        // opener is one lexeme, and the caller sets the brace mode so the
-        // interior lexes as a `variable_name` and the matching `}` does not
-        // close the shell block.
-        Some(b'{') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO)),
-        _ => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
-    }
-}
-/// Scan a shell list/pipe/logical operator (`;`, `&`, `&&`, `|`, `||`, `|&`).
-///
-/// # Specification
-/// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; shell logical and pipe pairs take precedence
-///   over their single-byte prefixes.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
-///   complete tokens, adjacent delimiters and truncated tails are compared with
-///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
-///   and failure to advance change a row; shell logical and pipe pairs take
-///   precedence over their single-byte prefixes.
-/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[spec(requires: bytes.0.get(pos.0).is_some_and(|byte| b";&|".contains(byte)), ensures: |ret| ret.next > pos && (ret.lexeme == Lexeme::Punct && ret.next.0 == pos.0.saturating_add(if bytes.0.get(pos.0 ..).is_some_and(|tail| [b"&&", b"||", b"|&"].iter().any(|op| tail.starts_with(*op))) { 2 } else { 1 })))]
-fn scan_shell_operator(
-    bytes: SourceBytes<'_>,
-    pos: ByteOffset,
-) -> ScanResult
-{
-    let two = pos.advance(ByteWidth::TWO);
-    if bool::from(bytes.span_matches(pos, two, BytePattern(b"&&")))
-        || bool::from(bytes.span_matches(pos, two, BytePattern(b"||")))
-        || bool::from(bytes.span_matches(pos, two, BytePattern(b"|&")))
-    {
-        ScanResult::new(Lexeme::Punct, two)
-    }
-    else {
-        ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE))
-    }
-}
-/// Scan a shell redirection operator (`<`, `>`, `<>`, `<&`, `>&`, `>>`).
-///
-/// # Specification
-/// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; redirection pairs consume two bytes; other
-///   redirection prefixes consume one.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
-///   complete tokens, adjacent delimiters and truncated tails are compared with
-///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
-///   and failure to advance change a row; redirection pairs consume two bytes;
-///   other redirection prefixes consume one.
-/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[spec(requires: bytes.0.get(pos.0).is_some_and(|byte| b"<>".contains(byte)), ensures: |ret| ret.next > pos && (ret.lexeme == Lexeme::Punct && ret.next.0 == pos.0.saturating_add(if bytes.0.get(pos.0 ..).is_some_and(|tail| [b"<>", b"<&", b">&", b">>"].iter().any(|op| tail.starts_with(*op))) { 2 } else { 1 })))]
-fn scan_shell_redirection(
-    bytes: SourceBytes<'_>,
-    pos: ByteOffset,
-) -> ScanResult
-{
-    let two = pos.advance(ByteWidth::TWO);
-    if bool::from(bytes.span_matches(pos, two, BytePattern(b"<>")))
-        || bool::from(bytes.span_matches(pos, two, BytePattern(b"<&")))
-        || bool::from(bytes.span_matches(pos, two, BytePattern(b">&")))
-        || bool::from(bytes.span_matches(pos, two, BytePattern(b">>")))
-    {
-        ScanResult::new(Lexeme::Punct, two)
-    }
-    else {
-        ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE))
-    }
-}
-
-/// Scan a shell digit run as a redirection file descriptor when it abuts a
-/// `<` / `>` operator (`2>`, `2>&1`), else as an ordinary shell word.
-///
-/// The lookahead is exactly one byte past the digit run, so a bare numeric
-/// word (`echo 2`) and a digit-led word (`2nd`) stay shell words; only the
-/// `2>` / `2>>` / `2>&1` redirection-prefix shape classifies as a
-/// `file_descriptor` (tree-sitter `file_descriptor`).
-///
-/// # Specification
-/// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; only a digit run immediately followed by
-///   redirection is a file descriptor.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
-///   complete tokens, adjacent delimiters and truncated tails are compared with
-///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
-///   and failure to advance change a row; only a digit run immediately followed
-///   by redirection is a file descriptor.
-/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[spec(requires: bytes.0.get(pos.0).is_some_and(u8::is_ascii_digit), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::FileDescriptor | Lexeme::ShellWord)))]
-fn scan_shell_fd_or_word(
-    bytes: SourceBytes<'_>,
-    pos: ByteOffset,
-) -> ScanResult
-{
-    let digits_end = scan_digits(bytes, pos);
-    if bytes
-        .byte(digits_end)
-        .is_some_and(|byte| matches!(u8::from(byte), b'<' | b'>'))
-    {
-        ScanResult::new(Lexeme::FileDescriptor, digits_end)
-    }
-    else {
-        scan_shell_word(bytes, pos)
-    }
-}
-
-/// Scan a `#!` / `$!` shell start with an optional dialect run up to `open`.
-///
-/// The whole `#!dialect{` (or `$!dialect{`) spelling is one lexeme; its label
-/// is resolved by the molder from the opener text.
-///
-/// # Specification
-/// - requires: the cursor points to a hash-bang or dollar-bang prefix.
-/// - ensures: a complete optional dialect and opener is punctuation; otherwise
-///   only the leading byte is unknown.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — empty and named dialects, absent openers and trailing
-///   source expose the exact class/end pair. Accepting a missing brace or
-///   keeping the dialect after a rejected prefix changes the observation.
-/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-/// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
-#[spec(requires: bytes.0.get(pos.0 ..).is_some_and(|tail| tail.starts_with(b"#!") || tail.starts_with(b"$!")), ensures: |ret| match ret.lexeme { Lexeme::Punct => ret.next.0 >= pos.0.saturating_add(3) && ret.next <= bytes.len() && bytes.0.get(ret.next.0.saturating_sub(1)) == Some(&open.0), Lexeme::Unknown => ret.next.0 == pos.0.saturating_add(1), Lexeme::LowerWord | Lexeme::UpperWord | Lexeme::Number | Lexeme::TypedNumber | Lexeme::Character | Lexeme::Quote | Lexeme::StringFragment | Lexeme::ShellStringFragment | Lexeme::EscapeSequence | Lexeme::ShellWord | Lexeme::EnvAssign | Lexeme::SingleQuotedContent | Lexeme::VariableName | Lexeme::SubshellOpen | Lexeme::SubshellClose | Lexeme::FileDescriptor | Lexeme::ArmBar | Lexeme::LayoutOpen | Lexeme::LayoutSemi | Lexeme::LayoutClose | Lexeme::Space => false })]
-fn scan_shell_start(
-    bytes: SourceBytes<'_>,
-    pos: ByteOffset,
-    open: SourceByte,
-) -> ScanResult
-{
-    // Skip the two-byte `#!` / `$!` lead, then an optional dialect word.
-    let mut cursor = pos.advance(ByteWidth::TWO);
-    while let Some(byte) = bytes.byte(cursor) {
-        if bool::from(byte.is_dialect()) {
-            cursor = cursor.advance(ByteWidth::ONE);
-        }
-        else {
-            break;
-        }
-    }
-    if bytes.byte(cursor) == Some(open) {
-        ScanResult::new(Lexeme::Punct, cursor.advance(ByteWidth::ONE))
-    }
-    else {
-        // No opening brace: not a shell start; fall back to a stray byte.
-        ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE))
-    }
-}
-
 /// Scan a numeric literal, classifying a trailing primitive suffix as
 /// `typed_number`.
 ///
@@ -2811,143 +2081,6 @@ fn scan_digits(
         .is_some_and(|byte| bool::from(byte.is_ascii_digit()))
     {
         cursor = cursor.advance(ByteWidth::ONE);
-    }
-    cursor
-}
-/// Scan a run of shell-word bytes, classifying a `NAME=…` run as an
-/// environment assignment.
-///
-/// The `=` is a shell-word byte, so the run is a maximal munch across it and a
-/// `NAME=value` assignment arrives as ONE token — the whole-token shape both
-/// tree-sitter grammar (`environment_assignment` is a `token(seq(…))`, not a
-/// composite rule) and the PBG (a single-tile Expression atom) already expect.
-/// Splitting it into `NAME` / `=` / `value` left the `=` with no admissible
-/// shell mold at all — no shell rule declares a `=` tile — so it could only
-/// ever raise an `UnmoldedTok`, and the assignment mold could never fire.
-///
-/// A `"`-quoted value binds into the same token when the run ends at the `=`
-/// (the tree-sitter `choice(pattern_shell_word, /"([^"\\]|\\.)*"/)` value), so
-/// `FOO="a b"` is one assignment rather than an assignment plus a string.
-///
-/// # Specification
-/// - requires: the cursor identifies an existing byte.
-/// - ensures: advances over a shell word, whole assignment or one unknown byte.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
-///   complete tokens, adjacent delimiters and truncated tails are compared with
-///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
-///   and failure to advance change a row; identifier-led assignment prefixes
-///   stay whole, while flags containing equals remain ordinary words.
-/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::ShellWord | Lexeme::EnvAssign | Lexeme::Unknown)))]
-fn scan_shell_word(
-    bytes: SourceBytes<'_>,
-    pos: ByteOffset,
-) -> ScanResult
-{
-    let mut cursor = pos;
-    while bytes
-        .byte(cursor)
-        .is_some_and(|byte| bool::from(byte.is_shell_word()))
-    {
-        cursor = cursor.advance(ByteWidth::ONE);
-    }
-    if cursor <= pos {
-        // Not a shell-word byte and unmatched above: advance one to stay total.
-        return ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE));
-    }
-    if !bool::from(is_env_assign_run(bytes, pos, cursor)) {
-        return ScanResult::new(Lexeme::ShellWord, cursor);
-    }
-    // `NAME=` immediately before a `"` takes the quoted string as its value.
-    let end = if bytes.byte(cursor.retreat(ByteWidth::ONE)) == Some(SourceByte::from(b'='))
-        && bytes.byte(cursor) == Some(SourceByte::from(b'"'))
-    {
-        scan_shell_quoted_value(bytes, cursor)
-    }
-    else {
-        cursor
-    };
-    ScanResult::new(Lexeme::EnvAssign, end)
-}
-
-/// Return whether the shell-word run `bytes[start .. end]` is an environment
-/// assignment: an identifier-shaped `NAME` followed by `=` (tree-sitter
-/// `environment_assignment`'s `/[A-Za-z_][A-Za-z0-9_]*/ "="` prefix).
-///
-/// A run whose name part is not identifier-shaped is an ordinary shell word,
-/// so `--color=auto` and a bare `=` (a `[ "$a" = "$b" ]` test operator) stay
-/// words rather than assignments.
-///
-/// # Specification
-/// - requires: start and end bound a source run.
-/// - ensures: recognizes a nonempty ASCII variable name immediately followed by
-///   equals, irrespective of its value.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — empty runs, empty values, digit-led names and flags
-///   containing equals are compared with assignment classification. Moving the
-///   name-start boundary or accepting a separator inside the name changes it.
-/// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
-#[spec(requires: start <= end && end <= bytes.len(), ensures: |ret| bool::from(ret) == bytes.0.get(start.0 .. end.0).is_some_and(|run| run.iter().position(|byte| *byte == b'=').is_some_and(|equal| equal > 0 && run.first().is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_') && run.get(1 .. equal).is_some_and(|name| name.iter().all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')))))]
-fn is_env_assign_run(
-    bytes: SourceBytes<'_>,
-    start: ByteOffset,
-    end: ByteOffset,
-) -> BytePredicate
-{
-    let mut cursor = start;
-    if !bytes
-        .byte(cursor)
-        .is_some_and(|byte| bool::from(byte.is_var_name_start()))
-    {
-        return BytePredicate::from(false);
-    }
-    cursor = cursor.advance(ByteWidth::ONE);
-    while cursor < end
-        && bytes
-            .byte(cursor)
-            .is_some_and(|byte| bool::from(byte.is_word_continue()))
-    {
-        cursor = cursor.advance(ByteWidth::ONE);
-    }
-    BytePredicate::from(cursor < end && bytes.byte(cursor) == Some(SourceByte::from(b'=')))
-}
-
-/// Scan a `"`-quoted environment-assignment value from its opening quote to the
-/// byte past its closing quote, honoring `\.` escapes. An unterminated string
-/// runs to end of input (the scan stays total; the melder raises the
-/// obligation).
-///
-/// # Specification
-/// - requires: the cursor points to a double quote.
-/// - ensures: an unescaped closing quote ends the value; otherwise scanning
-///   continues through the tail, an escape at the last byte ending it at the
-///   source's end.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — empty, spaced and escaped-quote values, with a following
-///   delimiter or an ordinary unclosed tail, expose the end offset. Stopping at
-///   an escaped quote or consuming past a real closing quote changes it.
-/// - witness: `label::tests::quoted_values_stop_only_at_an_unescaped_quote`
-/// - witness: `label::tests::a_quoted_value_ending_in_a_lone_backslash_ends_at_the_source_1070`
-#[spec(requires: bytes.0.get(pos.0) == Some(&b'"'), ensures: |ret| ret > pos && ret <= bytes.len() && (ret == bytes.len() || bytes.0.get(ret.0.saturating_sub(1)) == Some(&b'"')))]
-fn scan_shell_quoted_value(
-    bytes: SourceBytes<'_>,
-    pos: ByteOffset,
-) -> ByteOffset
-{
-    let mut cursor = pos.advance(ByteWidth::ONE);
-    while let Some(byte) = bytes.byte(cursor) {
-        match u8::from(byte) {
-            b'\\' => cursor = cursor.advance(ByteWidth::TWO).min(bytes.len()),
-            b'"' => return cursor.advance(ByteWidth::ONE),
-            _ => cursor = cursor.advance(ByteWidth::ONE),
-        }
     }
     cursor
 }
@@ -3428,80 +2561,9 @@ mod tests
     }
 
     #[test]
-    fn quoted_values_stop_only_at_an_unescaped_quote()
-    {
-        for (source, end) in [
-            ("\"\";", 2_usize),
-            ("\"a b\";", 5),
-            ("\"a\\\"b\";", 6),
-            ("\"tail", 5),
-        ] {
-            assert_eq!(
-                usize::from(super::scan_shell_quoted_value(
-                    super::SourceBytes::from(source.as_bytes()),
-                    super::ByteOffset::from(0_usize)
-                )),
-                end
-            );
-        }
-    }
-
-    /// #1070: a quoted value whose last byte is an escaping backslash ends at
-    /// the source's end, and the shell block it closes labels whole: the
-    /// escape stepped the cursor one byte past the source.
-    #[test]
-    fn a_quoted_value_ending_in_a_lone_backslash_ends_at_the_source_1070()
-    {
-        assert_eq!(
-            usize::from(super::scan_shell_quoted_value(
-                super::SourceBytes::from(b"\"\\".as_slice()),
-                super::ByteOffset::from(0_usize)
-            )),
-            2_usize
-        );
-        let source = super::SourceFragment::from("#!{NAME=\"\\");
-        assert_eq!(relabeled(source, source), Labeling::new(source));
-    }
-
-    #[test]
     fn prefix_recognizers_respect_truncation_and_word_boundaries()
     {
         let zero = super::ByteOffset::from(0_usize);
-        for (source, expected) in [
-            ("", false),
-            ("#!", false),
-            ("#!{", true),
-            ("$!sh{", true),
-            ("#sh{", false),
-            ("#!sh}", false),
-        ] {
-            assert_eq!(
-                bool::from(super::is_shell_open(super::SourceBytes::from(
-                    source.as_bytes()
-                ))),
-                expected,
-                "{source}"
-            );
-        }
-        for (source, expected) in [
-            ("", false),
-            ("A=", true),
-            ("_a9=x", true),
-            ("9a=x", false),
-            ("--x=y", false),
-            ("a-b=x", false),
-            ("=x", false),
-        ] {
-            assert_eq!(
-                bool::from(super::is_env_assign_run(
-                    super::SourceBytes::from(source.as_bytes()),
-                    zero,
-                    super::ByteOffset::from(source.len())
-                )),
-                expected,
-                "{source}"
-            );
-        }
         for suffix in [
             "u8", "u16", "u32", "u64", "usize", "i8", "i16", "i32", "i64", "isize", "f32", "f64",
         ] {
@@ -3550,16 +2612,6 @@ mod tests
                 None
             );
         }
-
-        for source in ["#!{", "$!{"] {
-            let result = super::scan_shell_start(
-                super::SourceBytes::from(source.as_bytes()),
-                zero,
-                super::SourceByte::from(b'{'),
-            );
-            assert_eq!(result.lexeme, Lexeme::Punct);
-            assert_eq!(usize::from(result.next), 3);
-        }
     }
 
     #[test]
@@ -3575,41 +2627,6 @@ mod tests
                 ("\\", Lexeme::Unknown, 1),
                 ("${x", Lexeme::Punct, 2),
                 ("a$b\"", Lexeme::StringFragment, 3),
-            ]),
-            (super::scan_single_quoted_interior, &[
-                ("'x", Lexeme::Punct, 1),
-                ("a\\n'", Lexeme::SingleQuotedContent, 3),
-                ("a\"b", Lexeme::SingleQuotedContent, 3),
-            ]),
-            (super::scan_variable_name, &[
-                ("_a9!", Lexeme::VariableName, 3),
-                ("9x", Lexeme::VariableName, 2),
-                ("!", Lexeme::Unknown, 1),
-            ]),
-            (super::scan_braced_shell_interior, &[
-                ("}x", Lexeme::Punct, 1),
-                ("a9_}", Lexeme::VariableName, 3),
-                (":x", Lexeme::ShellWord, 1),
-                ("éx", Lexeme::ShellWord, 2),
-                ("�x", Lexeme::ShellWord, 3),
-                ("\u{10000}x", Lexeme::ShellWord, 4),
-            ]),
-            (super::scan_shell_double_interior, &[
-                ("\"x", Lexeme::Punct, 1),
-                ("\\n", Lexeme::EscapeSequence, 2),
-                ("\\", Lexeme::Unknown, 1),
-                ("${x", Lexeme::Punct, 2),
-                ("a b$", Lexeme::ShellStringFragment, 3),
-            ]),
-            (super::scan_shell_interior, &[
-                ("[x", Lexeme::SubshellOpen, 1),
-                ("]x", Lexeme::SubshellClose, 1),
-                ("# q", Lexeme::Unknown, 1),
-                ("#[x", Lexeme::Unknown, 1),
-                ("#{x", Lexeme::Unknown, 1),
-                ("word=ok;", Lexeme::EnvAssign, 7),
-                (" \t", Lexeme::Space, 2),
-                ("2>x", Lexeme::FileDescriptor, 1),
             ]),
             (super::scan_one, &[
                 ("a9;", Lexeme::LowerWord, 2),
@@ -3629,11 +2646,11 @@ mod tests
             ]),
             (super::scan_hash, &[
                 ("#!/x\n", Lexeme::Space, 4),
-                ("#!sh{x", Lexeme::Punct, 5),
+                ("#!sh{x", Lexeme::Unknown, 2),
                 ("#{x", Lexeme::Unknown, 2),
                 ("# {x", Lexeme::Punct, 1),
                 ("#[x", Lexeme::Punct, 2),
-                ("#!bad", Lexeme::Unknown, 1),
+                ("#!bad", Lexeme::Unknown, 2),
                 ("#", Lexeme::Punct, 1),
                 ("# q", Lexeme::Punct, 1),
             ]),
@@ -3649,34 +2666,6 @@ mod tests
                 ("\\n", Lexeme::EscapeSequence, 2),
                 ("\\", Lexeme::Unknown, 1),
             ]),
-            (super::scan_dollar, &[
-                ("${x", Lexeme::Punct, 2),
-                ("$!sh{x", Lexeme::Punct, 5),
-                ("$!bad", Lexeme::Unknown, 1),
-                ("$x", Lexeme::Punct, 1),
-                ("$", Lexeme::Punct, 1),
-            ]),
-            (super::scan_shell_operator, &[
-                ("&&x", Lexeme::Punct, 2),
-                ("||x", Lexeme::Punct, 2),
-                ("|&x", Lexeme::Punct, 2),
-                ("&|", Lexeme::Punct, 1),
-                (";", Lexeme::Punct, 1),
-            ]),
-            (super::scan_shell_redirection, &[
-                ("<>x", Lexeme::Punct, 2),
-                ("<&x", Lexeme::Punct, 2),
-                (">&x", Lexeme::Punct, 2),
-                (">>x", Lexeme::Punct, 2),
-                ("><", Lexeme::Punct, 1),
-                (">", Lexeme::Punct, 1),
-            ]),
-            (super::scan_shell_fd_or_word, &[
-                ("12>x", Lexeme::FileDescriptor, 2),
-                ("12nd", Lexeme::ShellWord, 4),
-                ("12 ", Lexeme::ShellWord, 2),
-                ("2", Lexeme::ShellWord, 1),
-            ]),
             (super::scan_number, &[
                 ("1", Lexeme::Number, 1),
                 ("1.", Lexeme::Number, 1),
@@ -3684,13 +2673,6 @@ mod tests
                 ("1e+", Lexeme::Number, 1),
                 ("0.5u32!", Lexeme::TypedNumber, 6),
                 ("1u32x", Lexeme::Number, 1),
-            ]),
-            (super::scan_shell_word, &[
-                ("a=b;", Lexeme::EnvAssign, 3),
-                ("A=\"a b\";", Lexeme::EnvAssign, 7),
-                ("--x=y;", Lexeme::ShellWord, 5),
-                ("=", Lexeme::ShellWord, 1),
-                (";", Lexeme::Unknown, 1),
             ]),
             (super::scan_dot, &[
                 (".5!", Lexeme::Punct, 1),
@@ -3783,22 +2765,16 @@ mod tests
     #[test]
     fn cursor_arithmetic_saturates_at_both_boundaries()
     {
-        for (start, width, forward, backward) in [
-            (0_usize, 0_usize, 0_usize, 0_usize),
-            (1, 2, 3, 0),
-            (0, usize::MAX, usize::MAX, 0),
-            (usize::MAX, 1, usize::MAX, usize::MAX.saturating_sub(1)),
-            (
-                usize::MAX.saturating_sub(1),
-                1,
-                usize::MAX,
-                usize::MAX.saturating_sub(2),
-            ),
+        for (start, width, forward) in [
+            (0_usize, 0_usize, 0_usize),
+            (1, 2, 3),
+            (0, usize::MAX, usize::MAX),
+            (usize::MAX, 1, usize::MAX),
+            (usize::MAX.saturating_sub(1), 1, usize::MAX),
         ] {
             let start = super::ByteOffset::from(start);
             let width = super::ByteWidth::from(width);
             assert_eq!(usize::from(start.advance(width)), forward);
-            assert_eq!(usize::from(start.retreat(width)), backward);
         }
     }
 
@@ -3810,20 +2786,8 @@ mod tests
             let letter = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".contains(&value);
             let digit = b"0123456789".contains(&value);
             assert_eq!(
-                bool::from(byte.is_var_name_start()),
-                letter || value == b'_'
-            );
-            assert_eq!(
                 bool::from(byte.is_word_continue()),
                 letter || digit || value == b'_'
-            );
-            assert_eq!(
-                bool::from(byte.is_dialect()),
-                letter || digit || b"_-".contains(&value)
-            );
-            assert_eq!(
-                bool::from(byte.is_shell_word()),
-                !b" \t\r\n\x0c\x0b;|&<>{}[]()`\"'$#".contains(&value)
             );
             assert_eq!(
                 bool::from(byte.is_run_end()),
@@ -3886,25 +2850,6 @@ mod tests
             ("\"a\"", &[Quote, StringFragment, Quote]),
             ("\"\\n\"", &[Quote, EscapeSequence, Quote]),
             ("+", &[Punct]),
-            ("#!{hi}", &[Punct, ShellWord, Punct]),
-            ("#!{A=b}", &[Punct, EnvAssign, Punct]),
-            ("#!{'hi'}", &[
-                Punct,
-                Punct,
-                SingleQuotedContent,
-                Punct,
-                Punct,
-            ]),
-            ("#!{$A}", &[Punct, Punct, VariableName, Punct]),
-            ("#!{\"a\"}", &[
-                Punct,
-                Punct,
-                ShellStringFragment,
-                Punct,
-                Punct,
-            ]),
-            ("#!{[]}", &[Punct, SubshellOpen, SubshellClose, Punct]),
-            ("#!{2>f}", &[Punct, FileDescriptor, Punct, ShellWord, Punct]),
             (" ", &[Space]),
             ("\u{1}", &[Unknown]),
             ("~a", &[Punct, LowerWord]),
@@ -3949,8 +2894,6 @@ mod tests
             ("f : T where\n  | x => a | b\n  | y => c", &[
                 true, false, true,
             ]),
-            // A shell pipe is never an arm's, at a line's start or not.
-            ("#!{ a | b\n| c }", &[false, false]),
             // A closed bar brace gives the bar after it back to the union.
             ("({ | a } | b)", &[true, false]),
             // A bar among a clause's patterns, before its `=>`, is an
@@ -4058,145 +3001,6 @@ mod tests
             ]
         );
     }
-    #[test]
-    fn shell_braced_parameter_lexes_distinctly_from_interpolation()
-    {
-        // `#!{ echo ${HOME}; }`: the shell `${` opens a braced parameter whose
-        // interior is a `variable_name` (VariableName), and the matching `}`
-        // closes the brace WITHOUT closing the shell block — the shell block's
-        // own `}` still follows. This is the shell-brace mode, distinct from
-        // the string-interpolation `${ E }` (whose interior is host tokens).
-        let src = "#!{ echo ${HOME}; }";
-        let tokens = label(SourceFragment::from(src));
-        assert_eq!(
-            reconstruct(SourceFragment::from(src), &tokens),
-            src,
-            "braced param is lossless"
-        );
-        assert_eq!(tiles(SourceFragment::from(src), &tokens), vec![
-            (Lexeme::Punct, "#!{".to_owned()),
-            (Lexeme::ShellWord, "echo".to_owned()),
-            (Lexeme::Punct, "${".to_owned()),
-            (Lexeme::VariableName, "HOME".to_owned()),
-            (Lexeme::Punct, "}".to_owned()),
-            (Lexeme::Punct, ";".to_owned()),
-            (Lexeme::Punct, "}".to_owned()),
-        ]);
-    }
-    #[test]
-    fn shell_file_descriptor_is_a_digit_run_before_a_redirection()
-    {
-        // A digit run immediately before `<` / `>` is a FileDescriptor (`2>`),
-        // while a bare digit word and a digit-led word stay ShellWords.
-        let src = "#!{ make 2>&1; }";
-        assert_eq!(
-            reconstruct(SourceFragment::from(src), &label(SourceFragment::from(src))),
-            src,
-            "fd is lossless"
-        );
-        assert_eq!(
-            tiles(SourceFragment::from(src), &label(SourceFragment::from(src))),
-            vec![
-                (Lexeme::Punct, "#!{".to_owned()),
-                (Lexeme::ShellWord, "make".to_owned()),
-                (Lexeme::FileDescriptor, "2".to_owned()),
-                (Lexeme::Punct, ">&".to_owned()),
-                (Lexeme::ShellWord, "1".to_owned()),
-                (Lexeme::Punct, ";".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-            ]
-        );
-        // A bare digit word (`echo 2 things`) and a digit-led word (`2nd`) are
-        // NOT file descriptors — the lookahead requires an abutting
-        // redirection.
-        assert_eq!(
-            tiles(
-                SourceFragment::from("#!{ echo 2 2nd; }"),
-                &label(SourceFragment::from("#!{ echo 2 2nd; }"))
-            ),
-            vec![
-                (Lexeme::Punct, "#!{".to_owned()),
-                (Lexeme::ShellWord, "echo".to_owned()),
-                (Lexeme::ShellWord, "2".to_owned()),
-                (Lexeme::ShellWord, "2nd".to_owned()),
-                (Lexeme::Punct, ";".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-            ]
-        );
-    }
-    #[test]
-    fn shell_subshell_brackets_are_distinct_from_host_brackets()
-    {
-        // A shell `[` / `]` classifies as SubshellOpen / SubshellClose (a
-        // shell-context bracket), while a host list literal keeps the ordinary
-        // `[` / `]` punctuation — the two never share a lexeme class, so the
-        // host `[` mold menu is untouched.
-        let shell = "#!{ [ echo a ]; }";
-        assert_eq!(
-            reconstruct(
-                SourceFragment::from(shell),
-                &label(SourceFragment::from(shell))
-            ),
-            shell,
-            "subshell lossless"
-        );
-        assert_eq!(
-            tiles(
-                SourceFragment::from(shell),
-                &label(SourceFragment::from(shell))
-            ),
-            vec![
-                (Lexeme::Punct, "#!{".to_owned()),
-                (Lexeme::SubshellOpen, "[".to_owned()),
-                (Lexeme::ShellWord, "echo".to_owned()),
-                (Lexeme::ShellWord, "a".to_owned()),
-                (Lexeme::SubshellClose, "]".to_owned()),
-                (Lexeme::Punct, ";".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-            ]
-        );
-        // A host list literal keeps the plain `[` / `]` punctuation.
-        assert_eq!(
-            tiles(
-                SourceFragment::from("[1, 2]"),
-                &label(SourceFragment::from("[1, 2]"))
-            ),
-            vec![
-                (Lexeme::Punct, "[".to_owned()),
-                (Lexeme::Number, "1".to_owned()),
-                (Lexeme::Punct, ",".to_owned()),
-                (Lexeme::Number, "2".to_owned()),
-                (Lexeme::Punct, "]".to_owned()),
-            ]
-        );
-    }
-    #[test]
-    fn shell_single_and_double_quotes_do_not_cross()
-    {
-        // A `"` inside single quotes is verbatim content, and a `'` inside
-        // double quotes is a literal fragment byte — the two quote modes never
-        // toggle each other, and neither closes the shell block.
-        let src = "#!{ echo 'a \"b' \"c 'd\"; }";
-        let tokens = label(SourceFragment::from(src));
-        assert_eq!(
-            reconstruct(SourceFragment::from(src), &tokens),
-            src,
-            "mixed quotes are lossless"
-        );
-        assert_eq!(tiles(SourceFragment::from(src), &tokens), vec![
-            (Lexeme::Punct, "#!{".to_owned()),
-            (Lexeme::ShellWord, "echo".to_owned()),
-            (Lexeme::Punct, "'".to_owned()),
-            (Lexeme::SingleQuotedContent, "a \"b".to_owned()),
-            (Lexeme::Punct, "'".to_owned()),
-            (Lexeme::Punct, "\"".to_owned()),
-            (Lexeme::ShellStringFragment, "c 'd".to_owned()),
-            (Lexeme::Punct, "\"".to_owned()),
-            (Lexeme::Punct, ";".to_owned()),
-            (Lexeme::Punct, "}".to_owned()),
-        ]);
-    }
-
     #[test]
     fn labels_a_definition_losslessly()
     {
@@ -4365,78 +3169,6 @@ mod tests
         ]);
     }
     #[test]
-    fn shell_env_assignment_is_one_token()
-    {
-        // `NAME=value` munches across the `=` into ONE token — the whole-token
-        // shape the tree-sitter `token(seq(…))` and the PBG's single-tile atom
-        // both expect. Splitting it left the `=` with no admissible
-        // shell mold at all.
-        let src = "#!{ FOO=1 echo }";
-        assert_eq!(
-            tiles(SourceFragment::from(src), &label(SourceFragment::from(src))),
-            vec![
-                (Lexeme::Punct, "#!{".to_owned()),
-                (Lexeme::EnvAssign, "FOO=1".to_owned()),
-                (Lexeme::ShellWord, "echo".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-            ]
-        );
-    }
-    #[test]
-    fn shell_env_assignment_takes_a_quoted_value()
-    {
-        // A `"`-quoted value binds into the same token (the tree-sitter
-        // `choice(pattern_shell_word, /"([^"\\]|\\.)*"/)` value), so an
-        // assignment with an interior space is still ONE assignment.
-        let src = "#!{ FOO=\"a b\" echo }";
-        assert_eq!(
-            tiles(SourceFragment::from(src), &label(SourceFragment::from(src))),
-            vec![
-                (Lexeme::Punct, "#!{".to_owned()),
-                (Lexeme::EnvAssign, "FOO=\"a b\"".to_owned()),
-                (Lexeme::ShellWord, "echo".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-            ]
-        );
-    }
-    #[test]
-    fn shell_words_containing_eq_are_not_assignments()
-    {
-        // The name part must be identifier-shaped, so a flag with an `=` is ONE
-        // ordinary shell word (it was three tiles, with an unmoldable `=`,
-        // before the environment-assignment munch) and a bare `=` — the
-        // `[ "$a" = "$b" ]` test operator — is a plain word rather than
-        // an `UnmoldedTok`.
-        let flag = "#!{ ls --color=auto }";
-        assert_eq!(
-            tiles(
-                SourceFragment::from(flag),
-                &label(SourceFragment::from(flag))
-            ),
-            vec![
-                (Lexeme::Punct, "#!{".to_owned()),
-                (Lexeme::ShellWord, "ls".to_owned()),
-                (Lexeme::ShellWord, "--color=auto".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-            ]
-        );
-        let bare = "#!{ test a = b }";
-        assert_eq!(
-            tiles(
-                SourceFragment::from(bare),
-                &label(SourceFragment::from(bare))
-            ),
-            vec![
-                (Lexeme::Punct, "#!{".to_owned()),
-                (Lexeme::ShellWord, "test".to_owned()),
-                (Lexeme::ShellWord, "a".to_owned()),
-                (Lexeme::ShellWord, "=".to_owned()),
-                (Lexeme::ShellWord, "b".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-            ]
-        );
-    }
-    #[test]
     fn typed_numbers_and_suffix_boundaries()
     {
         assert_eq!(
@@ -4548,8 +3280,8 @@ mod tests
             ),
             vec![(Lexeme::LowerWord, "x′y".to_owned())]
         );
-        // The prime reaches only the word scanner: strings, comments, and shell
-        // words all run their own scanners and are untouched.
+        // The prime reaches only the word scanner: strings and comments run
+        // their own scanners and are untouched.
         assert_eq!(
             tiles(
                 SourceFragment::from("\"a ′ b\""),
@@ -4649,98 +3381,6 @@ mod tests
             (Lexeme::Quote, "\"".to_owned()),
         ]);
     }
-    #[test]
-    fn shell_braced_parameters_nest_and_juxtapose()
-    {
-        // Adjacent and word-embedded braced parameters keep their own `}` and
-        // never leak into the shell block's brace accounting.
-        let adjacent = "#!{ echo ${x}${y}; }";
-        assert_eq!(
-            reconstruct(
-                SourceFragment::from(adjacent),
-                &label(SourceFragment::from(adjacent))
-            ),
-            adjacent
-        );
-        assert_eq!(
-            tiles(
-                SourceFragment::from(adjacent),
-                &label(SourceFragment::from(adjacent))
-            ),
-            vec![
-                (Lexeme::Punct, "#!{".to_owned()),
-                (Lexeme::ShellWord, "echo".to_owned()),
-                (Lexeme::Punct, "${".to_owned()),
-                (Lexeme::VariableName, "x".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-                (Lexeme::Punct, "${".to_owned()),
-                (Lexeme::VariableName, "y".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-                (Lexeme::Punct, ";".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-            ]
-        );
-        // A word-embedded parameter `pre${x}post` splits into three shell
-        // atoms.
-        let embedded = "#!{ echo pre${x}post; }";
-        assert_eq!(
-            reconstruct(
-                SourceFragment::from(embedded),
-                &label(SourceFragment::from(embedded))
-            ),
-            embedded
-        );
-        assert_eq!(
-            tiles(
-                SourceFragment::from(embedded),
-                &label(SourceFragment::from(embedded))
-            ),
-            vec![
-                (Lexeme::Punct, "#!{".to_owned()),
-                (Lexeme::ShellWord, "echo".to_owned()),
-                (Lexeme::ShellWord, "pre".to_owned()),
-                (Lexeme::Punct, "${".to_owned()),
-                (Lexeme::VariableName, "x".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-                (Lexeme::ShellWord, "post".to_owned()),
-                (Lexeme::Punct, ";".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-            ]
-        );
-    }
-    #[test]
-    fn shell_double_quote_lexes_fragments_escapes_and_expansions()
-    {
-        // A shell double-quoted string keeps interior spaces as ONE
-        // `double_string_fragment` run, lexes `\.` escapes, and expands
-        // `$name` / `${name}` — never juxtaposed shell words. The interior `}`
-        // and space stay literal fragment content.
-        let src = "#!{ echo \"a $x ${y}\\tb\"; }";
-        let tokens = label(SourceFragment::from(src));
-        assert_eq!(
-            reconstruct(SourceFragment::from(src), &tokens),
-            src,
-            "shell dquote is lossless"
-        );
-        assert_eq!(tiles(SourceFragment::from(src), &tokens), vec![
-            (Lexeme::Punct, "#!{".to_owned()),
-            (Lexeme::ShellWord, "echo".to_owned()),
-            (Lexeme::Punct, "\"".to_owned()),
-            (Lexeme::ShellStringFragment, "a ".to_owned()),
-            (Lexeme::Punct, "$".to_owned()),
-            (Lexeme::VariableName, "x".to_owned()),
-            (Lexeme::ShellStringFragment, " ".to_owned()),
-            (Lexeme::Punct, "${".to_owned()),
-            (Lexeme::VariableName, "y".to_owned()),
-            (Lexeme::Punct, "}".to_owned()),
-            (Lexeme::EscapeSequence, "\\t".to_owned()),
-            (Lexeme::ShellStringFragment, "b".to_owned()),
-            (Lexeme::Punct, "\"".to_owned()),
-            (Lexeme::Punct, ";".to_owned()),
-            (Lexeme::Punct, "}".to_owned()),
-        ]);
-    }
-
     /// Replace `before`'s bytes in `cut`, its start widened back and its end
     /// forward to character boundaries, with `replacement`.
     ///
@@ -4803,18 +3443,13 @@ mod tests
     #[test]
     fn a_relabel_restarts_before_what_a_token_read()
     {
-        // A dialect run reads to the end of its line, far past the margin; a
-        // newline run reads the byte after it; a string, a shell block, an
-        // interpolation and a block comment hold their modes across lines.
-        let dialect = "a".repeat(96);
-        let before = format!(
-            "def x = 1;\ndef y = \"s ${{ f(\"${{x}}\") }} t\";\n#!{dialect} ;\n\n\n\
-             def z = #!{{ echo \"$HOME ${{X}}\" 'q' 2>&1; }};\n/* a /* b */\n*/ def w = '\\n';\n\
+        // A newline run reads the byte after it; a string, an interpolation
+        // and a block comment hold their modes across lines.
+        let before = "def x = 1;\ndef y = \"s ${ f(\"${x}\") } t\";\n\n\n\
+             /* a /* b */\n*/ def w = '\\n';\n\
              def v = 1.5e+3u32 +U x′y -->;\n"
-        );
-        for replacement in [
-            "", "{", "\n", "\"", "x", "*/", "/*", "'", "#!", "}", "${", "#!{",
-        ] {
+            .to_owned();
+        for replacement in ["", "{", "\n", "\"", "x", "*/", "/*", "'", "#!", "}", "${"] {
             let mut start = 0_usize;
             while start <= before.len() {
                 for length in [0_usize, 1, 3] {
@@ -4856,18 +3491,13 @@ mod tests
         let fragments = vec![
             "def x = 1;\n",
             "\"a ${ f(\"${x}\") } b\"",
-            "#!{ echo \"$HOME ${X}\" 'q' [ a ] 2>&1; }",
             "/* c /* n */ */",
             "// line\n",
             "'\\n' 'x' '",
             "1.5e+3u32 .5 x.f",
-            "#!bash{ ls }",
-            "#!aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(",
             "x′y +U -F +Unit",
             "\n\n\n",
             "\t \u{a0}\u{200b}",
-            "$!{ x }",
-            "NAME=\"v w\"",
             "def f(x : A) -> A =\n  let y = x\n  y\n",
             "\n  match x\n    | a => b\n",
             "\n  match x where\n    | a => b\n",
