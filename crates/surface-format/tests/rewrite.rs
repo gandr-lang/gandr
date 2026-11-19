@@ -1596,6 +1596,30 @@ fn an_obligation_withdraws_only_the_form_that_holds_it_8085()
     );
 }
 
+/// The glued path type lowers its endpoints before its carrier, and the
+/// juxtaposed one lowers its carrier first. So the holes of the omitted
+/// carriers take their names in another order, and the rewrite keeps its
+/// meaning all the same.
+#[test]
+fn a_rewrite_that_nominates_its_holes_in_another_order_keeps_its_meaning_8085()
+{
+    let grammar = grammar();
+    let source = include_str!(
+        "rewrite/unformatted/a-rewrite-that-nominates-its-holes-in-another-order-keeps-its-meaning-8085.gandr"
+    );
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Sugared,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(formatted.withdrawn(), []);
+    assert_eq!(
+        formatted.into_text(),
+        "def d(\n  A : Type,\n  x : A,\n  y : A,\n  g : Path y y,\n  f : Path x y -> Path x y\n) -> Path[.A = Path x y -> Path x y] f (fun (q) { f q } : Path x y -> Path x y) = Path.here f;\n"
+    );
+}
+
 /// The explicit form writes the refused declaration as a signature and a
 /// definition, so its refusal moves from `24..37` to `37..50`. Both copy the
 /// one leaf `selfComposite` of the source, so the refusal keeps its site, and

@@ -82,24 +82,29 @@ def composedAcross(
   x : A,
   y : A,
   z : A,
-  fm : Path[.A = A](x, y),
-  fp : Path[.A = A](x, y),
-  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
-  g : Path(y, z),
-  k : Path(x, z),
-  s : Path[.A = Path[.A = A](x, z)](Path.step fp g, k)
-) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, k)](
-  Path.step (acrossCarriers (type(Path(x, y))) (type(Path(x, z))) (fun (q : Path[.A = A](x, y)) {
+  fm : Path[.A = A] x y,
+  fp : Path[.A = A] x y,
+  fa : Path[.A = Path[.A = A] x y] fm fp,
+  g : Path y z,
+  k : Path x z,
+  s : Path[.A = Path[.A = A] x z] (Path.step fp g) k
+) -> Path[.A = Path[.A = Path[.A = A] x z] (Path.step fm g) k] (
+  Path.step (acrossCarriers (type(Path x y)) (type(Path x z)) (fun (q : Path[.A = A] x y) {
     Path.step q g
-  } : Path(x, y) -> Path(x, z)) fm fp fa) s,
-  Path.step (acrossCarriers (type(Path(x, y))) (type(Path(x, z))) (fun (q : Path[.A = A](x, y)) {
-    Path.step q g
-  } : Path(x, y) -> Path(x, z)) fm fp fa) s
-) =
-  Path.here (Path.step (acrossCarriers (type(Path(x, y))) (type(Path[.A = A](
-    x,
-    z
-  ))) (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path(x, y) -> Path(x, z)) fm fp fa) s)
+  } : Path x y -> Path x z) fm fp fa) s
+) (Path.step (acrossCarriers (type(Path x y)) (type(Path x z)) (fun (q : Path[.A = A] x y) {
+  Path.step q g
+} : Path x y -> Path x z) fm fp fa) s) =
+  Path.here
+    (Path.step
+      (acrossCarriers
+        (type(Path x y))
+        (type(Path[.A = A] x z))
+        (fun (q : Path[.A = A] x y) { Path.step q g } : Path x y -> Path x z)
+        fm
+        fp
+        fa)
+      s)
 
 /// The `composeHere` call uses the separately written composite at its start.
 def passedComposite(
@@ -107,24 +112,29 @@ def passedComposite(
   x : A,
   y : A,
   z : A,
-  fm : Path[.A = A](x, y),
-  fp : Path[.A = A](x, y),
-  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
-  g : Path(y, z),
-  k : Path(x, z),
-  s : Path[.A = Path[.A = A](x, z)](Path.step fp g, k)
-) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, k)](
-  Path.step (acrossCarriers (type(Path(x, y))) (type(Path(x, z))) (fun (q : Path[.A = A](x, y)) {
+  fm : Path[.A = A] x y,
+  fp : Path[.A = A] x y,
+  fa : Path[.A = Path[.A = A] x y] fm fp,
+  g : Path y z,
+  k : Path x z,
+  s : Path[.A = Path[.A = A] x z] (Path.step fp g) k
+) -> Path[.A = Path[.A = Path[.A = A] x z] (Path.step fm g) k] (
+  Path.step (acrossCarriers (type(Path x y)) (type(Path x z)) (fun (q : Path[.A = A] x y) {
     Path.step q g
-  } : Path(x, y) -> Path(x, z)) fm fp fa) s,
-  Path.step (acrossCarriers (type(Path(x, y))) (type(Path(x, z))) (fun (q : Path[.A = A](x, y)) {
-    Path.step q g
-  } : Path(x, y) -> Path(x, z)) fm fp fa) s
-) =
-  composeHere (type(Path[.A = A](
-    x,
-    z
-  ))) (Path.step fm g) (Path.step fp g) k (acrossCarriers (type(Path(x, y))) (type(Path[.A = A](
-    x,
-    z
-  ))) (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path(x, y) -> Path(x, z)) fm fp fa) s
+  } : Path x y -> Path x z) fm fp fa) s
+) (Path.step (acrossCarriers (type(Path x y)) (type(Path x z)) (fun (q : Path[.A = A] x y) {
+  Path.step q g
+} : Path x y -> Path x z) fm fp fa) s) =
+  composeHere
+    (type(Path[.A = A] x z))
+    (Path.step fm g)
+    (Path.step fp g)
+    k
+    (acrossCarriers
+      (type(Path x y))
+      (type(Path[.A = A] x z))
+      (fun (q : Path[.A = A] x y) { Path.step q g } : Path x y -> Path x z)
+      fm
+      fp
+      fa)
+    s

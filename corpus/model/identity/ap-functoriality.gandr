@@ -46,46 +46,42 @@ def apThenThen(
   y : A,
   z : A,
   w : A,
-  g : Path(y, z),
-  h : Path(z, w),
-  fm : Path[.A = A](x, y),
-  fp : Path[.A = A](x, y),
-  fa : Path[.A = Path[.A = A](x, y)](fm, fp)
-) -> Path[.A = Path[.A = Path[.A = A](x, w)](
-  Path.step (Path.step fm g) h,
-  Path.step (Path.step fp g) h
-)](
-  actOn (type(Path(x, z))) (type(Path(x, w))) (fun (r : Path[.A = A](x, z)) {
-    Path.step r h
-  } : Path(x, z) -> Path(x, w)) (Path.step fm g) (Path.step fp g) (actOn (type(Path(
-    x,
-    y
-  ))) (type(Path(x, z))) (fun (q : Path[.A = A](x, y)) {
+  g : Path y z,
+  h : Path z w,
+  fm : Path[.A = A] x y,
+  fp : Path[.A = A] x y,
+  fa : Path[.A = Path[.A = A] x y] fm fp
+) -> Path[
+  .A = Path[.A = Path[.A = A] x w] (Path.step (Path.step fm g) h) (Path.step (Path.step fp g) h)
+] (actOn (type(Path x z)) (type(Path x w)) (fun (r : Path[.A = A] x z) {
+  Path.step r h
+} : Path x z -> Path x w) (Path.step fm g) (Path.step fp g) (
+  actOn (type(Path x y)) (type(Path x z)) (fun (q : Path[.A = A] x y) {
     Path.step q g
-  } : Path(x, y) -> Path(x, z)) fm fp fa),
-  actOn (type(Path(x, y))) (type(Path(x, w))) (fun (q : Path[.A = A](x, y)) {
-    Path.step (Path.step q g) h
-  } : Path(x, y) -> Path(x, w)) fm fp fa
-) =
-  Path.walk ((
-    kp : Path[.A = A](x, y),
-    e : Path[.A = Path[.A = A](x, y)](fm, kp)
-  ) -> Path[.A = Path[.A = Path[.A = A](x, w)](
-    Path.step (Path.step fm g) h,
-    Path.step (Path.step kp g) h
-  )](
-    actOn (type(Path[.A = A](x, z))) (type(Path[.A = A](x, w))) (fun (r : Path[.A = A](x, z)) {
+  } : Path x y -> Path x z) fm fp fa
+)) (actOn (type(Path x y)) (type(Path x w)) (fun (q : Path[.A = A] x y) {
+  Path.step (Path.step q g) h
+} : Path x y -> Path x w) fm fp fa) =
+  Path.walk
+    ((
+      kp : Path[.A = A] x y,
+      e : Path[.A = Path[.A = A] x y] fm kp
+    ) -> Path[.A = Path[.A = Path[.A = A] x w] (Path.step (Path.step fm g) h) (Path.step
+      (Path.step kp g)
+      h)] (actOn (type(Path[.A = A] x z)) (type(Path[.A = A] x w)) (fun (r : Path[.A = A] x z) {
       Path.step r h
-    } : Path[.A = A](x, z) -> Path[.A = A](
-      x,
-      w
-    )) (Path.step fm g) (Path.step kp g) (actOn (type(Path[.A = A](x, y))) (type(Path[.A = A](
-      x,
-      z
-    ))) (fun (q : Path[.A = A](x, y)) {
-      Path.step q g
-    } : Path[.A = A](x, y) -> Path[.A = A](x, z)) fm kp e),
-    actOn (type(Path[.A = A](x, y))) (type(Path[.A = A](x, w))) (fun (q : Path[.A = A](x, y)) {
+    } : Path[.A = A] x z -> Path[.A = A] x w) (Path.step fm g) (Path.step kp g) (actOn
+      (type(Path[.A = A] x y))
+      (type(Path[.A = A] x z))
+      (fun (q : Path[.A = A] x y) {
+        Path.step q g
+      } : Path[.A = A] x y -> Path[.A = A] x z)
+      fm
+      kp
+      e)) (actOn (type(Path[.A = A] x y)) (type(Path[.A = A] x w)) (fun (q : Path[.A = A] x y) {
       Path.step (Path.step q g) h
-    } : Path[.A = A](x, y) -> Path[.A = A](x, w)) fm kp e
-  )) fa (Path.here fm) (Path.here fa) (Path.here (Path.here (Path.step (Path.step fm g) h)))
+    } : Path[.A = A] x y -> Path[.A = A] x w) fm kp e))
+    fa
+    (Path.here fm)
+    (Path.here fa)
+    (Path.here (Path.here (Path.step (Path.step fm g) h)))

@@ -1467,7 +1467,9 @@ enum Reading<'signatures>
     /// does, and a stage is part of its type.
     Syntax,
     /// As the bridge erases it: the syntax, but a returned composite as the
-    /// fold it realises, which is all of it the kernel reads (#4057).
+    /// fold it realises, which is all of it the kernel reads (#4057), and an
+    /// omitted implicit as any other at its place. Two lowerings of one text
+    /// can nominate their holes in another order (#8085).
     Folded,
     /// As a printed type reads back: the words of the signatures' presented
     /// types as the path at their point, two session types by their protocols'
@@ -1625,7 +1627,8 @@ pub fn equal_comp_type_syntax(
 /// - requires: nothing; unreadable roots or children fail closed.
 /// - ensures: [`CertificateEquality::Equal`] exactly when every reached pair
 ///   agrees as [`equal_certificate_syntax`] compares it, each computation
-///   returning a composite read as its fold ([`folded_computation`]).
+///   returning a composite read as its fold ([`folded_computation`]), and two
+///   holes nominated for an omitted implicit read as one omission.
 /// - provides: the comparison a rewrite of a source keeps its meaning under: `p
 ///   then q` lowers to the binary composite, and its explicit spelling to the
 ///   transport the composite folds to (#4057).
@@ -4411,8 +4414,10 @@ fn comp_type_formers(
 ///   otherwise [`CertificateEquality::Equal`], with each pair of children the
 ///   two must agree on pushed onto `pending`. Under [`Reading::Printed`] a pair
 ///   the printed reading identifies outright is `Equal` with nothing pushed,
-///   and the reading's other identifications push the pairs they read; under
-///   [`Reading::Syntax`] the step leaves `arena` borrowed.
+///   and the reading's other identifications push the pairs they read. Under
+///   [`Reading::Folded`] two holes nominated for an omitted implicit are
+///   `Equal` with nothing pushed. Under [`Reading::Syntax`] the step leaves
+///   `arena` borrowed.
 /// - panics: none.
 /// - executable: none — the contract is the former's comparison, which the body
 ///   states once.
@@ -4423,6 +4428,10 @@ fn comp_type_formers(
 /// - witness: `syntax::tests::each_value_former_equals_its_twin_and_differs_where_its_guard_does`
 /// - witness: `syntax::tests::each_computation_former_equals_its_twin_and_differs_where_its_guard_does`
 /// - witness: `syntax::tests::each_type_former_equals_its_twin_and_differs_where_its_guard_does`
+///
+/// # Cost
+/// - allocation: the arena's own copy and the shifted types that the printed
+///   reading mints, growth within the compared types
 fn pair_step<P>(
     arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
     reading: Reading<'_>,
@@ -4471,9 +4480,11 @@ where
                 },
                 // An implicit a call omits prints as nothing: the call writes
                 // what the source wrote. Read back, the lowering nominates a
-                // fresh hole in its place, which is the same omission.
+                // fresh hole in its place, which is the same omission. Two
+                // spellings of one text nominate their holes in their own
+                // order, and each is the same omission at its place.
                 (&Value::Hole(left), &Value::Hole(right))
-                    if matches!(reading, Reading::Printed(_))
+                    if matches!(reading, Reading::Printed(_) | Reading::Folded)
                         && left.origin() == crate::hole::HoleOrigin::Nominated
                         && right.origin() == crate::hole::HoleOrigin::Nominated =>
                 {
