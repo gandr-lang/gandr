@@ -1048,9 +1048,9 @@ impl<T> core::ops::Deref for Snapshot<T>
     /// trivial.
     fn deref(&self) -> &Self::Target
     {
-        match self {
-            Self::Owned(value) => value,
-            Self::Shared(value) => value.as_ref(),
+        match *self {
+            Self::Owned(ref value) => value,
+            Self::Shared(ref value) => value.as_ref(),
         }
     }
 }
@@ -1063,9 +1063,9 @@ impl<T: Clone> core::ops::DerefMut for Snapshot<T>
     /// trivial.
     fn deref_mut(&mut self) -> &mut Self::Target
     {
-        match self {
-            Self::Owned(value) => value,
-            Self::Shared(value) => Arc::make_mut(value),
+        match *self {
+            Self::Owned(ref mut value) => value,
+            Self::Shared(ref mut value) => Arc::make_mut(value),
         }
     }
 }
@@ -1078,14 +1078,10 @@ impl<T: Default> Snapshot<T>
     /// trivial.
     fn share(&mut self) -> Arc<T>
     {
-        match self {
-            Self::Shared(value) => Arc::clone(value),
-            Self::Owned(_) => {
-                let value = mem::replace(self, Self::Owned(T::default()));
-                let shared = Arc::new(match value {
-                    Self::Owned(value) => value,
-                    Self::Shared(_) => unreachable!("the owned arm was selected"),
-                });
+        match *self {
+            Self::Shared(ref mut value) => Arc::clone(value),
+            Self::Owned(ref mut value) => {
+                let shared = Arc::new(mem::take(value));
                 *self = Self::Shared(Arc::clone(&shared));
                 shared
             },
