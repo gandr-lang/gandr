@@ -1,0 +1,133 @@
+# The rollbacks of the arena in the files `__FILES__` where its name stands
+# (#7558). Under the brand, an id that the arena mints past a mark keeps the
+# brand after the truncate, so the compiler accepts it and it dangles. Only a
+# child's brand refuses it, so each rollback becomes a fork of one child.
+#
+# A rollback in the one-exit shape is a mark, one binding, and the truncate to
+# the mark, each the next statement of the one before. The binding leaves the
+# block only at its end: no `return` or `?` outside a closure or a nested
+# function, and no `break` or `continue` outside a loop in the binding. The
+# arena is a binding, not a field.
+#
+# - A speculation truncates always. Its binding is the reason of a drop, and
+#   the fork's family is `Infallible`.
+# - A transaction truncates when its binding is `Err`. Its binding is the
+#   child's answer: `Ok` keeps the suffix, and `Err` drops it.
+#
+# The fork borrows the parent's `mint`, and its run enters the one child on
+# the calling thread. A rollback in another shape stays, and
+# `rollback-left` counts it for the hand.
+id: rollback-speculation
+language: Rust
+severity: hint
+files: __FILES__
+message: a speculation of the arena takes a fork of one child that drops
+utils:
+  leaves-early:
+    any:
+      - has:
+          any:
+            - kind: return_expression
+            - kind: try_expression
+          stopBy:
+            any:
+              - kind: closure_expression
+              - kind: function_item
+      - has:
+          any:
+            - kind: break_expression
+            - kind: continue_expression
+          stopBy:
+            any:
+              - kind: closure_expression
+              - kind: function_item
+              - kind: loop_expression
+              - kind: while_expression
+              - kind: for_expression
+rule:
+  kind: let_declaration
+  pattern: let $R = $E;
+  not:
+    matches: leaves-early
+  follows:
+    stopBy: neighbor
+    pattern: let $M = $A.watermark();
+  precedes:
+    stopBy: neighbor
+    pattern: $A.truncate_to($M);
+constraints:
+  A:
+    kind: identifier
+fix:
+  template: |-
+    let Err($R) = $A
+        .forks::<Infallible, _, _, _>(&mut mint, Width::ONE, &|_sibling, $A, mint, adopt| Err($E), |children| children.iter_mut().for_each(Child::enter))?
+        .into_first();
+  expandStart:
+    pattern: let $M = $A.watermark();
+  expandEnd:
+    pattern: $A.truncate_to($M);
+---
+id: rollback-transaction
+language: Rust
+severity: hint
+files: __FILES__
+message: a transaction of the arena takes a fork of one child that keeps or drops
+utils:
+  leaves-early:
+    any:
+      - has:
+          any:
+            - kind: return_expression
+            - kind: try_expression
+          stopBy:
+            any:
+              - kind: closure_expression
+              - kind: function_item
+      - has:
+          any:
+            - kind: break_expression
+            - kind: continue_expression
+          stopBy:
+            any:
+              - kind: closure_expression
+              - kind: function_item
+              - kind: loop_expression
+              - kind: while_expression
+              - kind: for_expression
+rule:
+  kind: let_declaration
+  pattern: let $R = $E;
+  not:
+    matches: leaves-early
+  follows:
+    stopBy: neighbor
+    pattern: let $M = $A.watermark();
+  precedes:
+    stopBy: neighbor
+    kind: expression_statement
+    has:
+      pattern: "if $R.is_err() { $A.truncate_to($M); }"
+constraints:
+  A:
+    kind: identifier
+fix:
+  template: |-
+    let $R = $A
+        .forks(&mut mint, Width::ONE, &|_sibling, $A, mint, adopt| $E, |children| children.iter_mut().for_each(Child::enter))?
+        .into_first();
+  expandStart:
+    pattern: let $M = $A.watermark();
+  expandEnd:
+    kind: expression_statement
+    has:
+      pattern: "if $R.is_err() { $A.truncate_to($M); }"
+---
+id: rollback-left
+language: Rust
+severity: hint
+files: __FILES__
+message: a rollback of the arena in another shape stays for the hand
+rule:
+  kind: expression_statement
+  pattern: $A.truncate_to($M);

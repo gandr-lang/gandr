@@ -1,0 +1,5 @@
+# The reader is a workspace of its own. Its build goes under the root's
+# ignored target directory, so a build from this directory leaves nothing in
+# the tree.
+[build]
+target-dir = "../../target/rust-reader"

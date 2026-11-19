@@ -1,0 +1,21 @@
+// A continuation named outside its clause.
+//
+// An operation clause binds the continuation it resumes, and no other place
+// names it.
+//
+// `stray` resumes `k` in the handled subject, where no clause binds it, and
+// the lowering refuses the name.
+//
+// - see: corpus/ledger/syntax/handle-expression.gandr
+
+// Early exit's host interface.
+import std.process;
+
+@[refuses("UnresolvedName")]
+def stray() -> Unit =
+  handle c : std.process.Exit.Eff {
+    k *{}
+  } with {
+    | pure(x) => pure x
+    | oper exit(code, k) => k *{}
+  }
