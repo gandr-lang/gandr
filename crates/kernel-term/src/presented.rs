@@ -80,6 +80,7 @@
 
 use alloc::alloc::Global;
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 
 use anodized::spec;
 use gandr_kernel_data::Count;
@@ -1698,9 +1699,9 @@ fn substituted(
 pub struct FreeCell
 {
     /// The cell's source, in pre-order.
-    source: Box<[RuleNode]>,
+    source: Arc<[RuleNode]>,
     /// The cell's target, in pre-order.
-    target: Box<[RuleNode]>,
+    target: Arc<[RuleNode]>,
 }
 
 impl FreeCell
@@ -1711,9 +1712,23 @@ impl FreeCell
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn new(
+    pub fn new(
         source: Box<[RuleNode]>,
         target: Box<[RuleNode]>,
+    ) -> Self
+    {
+        Self::shared(Arc::from(source), Arc::from(target))
+    }
+
+    /// The cell from the shared `source` to the shared `target`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn shared(
+        source: Arc<[RuleNode]>,
+        target: Arc<[RuleNode]>,
     ) -> Self
     {
         Self { source, target }

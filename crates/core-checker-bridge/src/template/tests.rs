@@ -149,6 +149,7 @@ fn every_member_admits_as_its_plain_replay()
         panic!("paying family");
     };
     let token = arena.alloc_type(Type::In(Model(0))).unwrap();
+    let production = Production::Go(template.clone());
     for step in &family {
         assert_eq!(
             template.admit(&arena, step.source, &mut Budget(100_000)),
@@ -169,7 +170,7 @@ fn every_member_admits_as_its_plain_replay()
             &mut arena,
             &[token],
             &certificate,
-            &[Production::Go(template.clone())],
+            core::slice::from_ref(&production),
             &mut Budget(100_000),
         );
         assert_eq!(compressed, plain);

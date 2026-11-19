@@ -1815,13 +1815,14 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
         sink.origins.record_value_type(id, origin);
         let mut states: BTreeMap<ProtocolState, ValueTypeId> = BTreeMap::new();
         let _root = states.insert(root, id);
-        let context: Vec<String> = self
-            .cx()
-            .scope
-            .telescope_names(written.frame, self.host_ref().telescope_at(origin.node()))
-            .into_iter()
-            .map(|name| String::from(name.as_ref()))
-            .collect();
+        let context: Arc<Vec<String>> = Arc::new(
+            self.cx()
+                .scope
+                .telescope_names(written.frame, self.host_ref().telescope_at(origin.node()))
+                .into_iter()
+                .map(|name| String::from(name.as_ref()))
+                .collect(),
+        );
         for site in &written.sites {
             if site.naming != Naming::Form || site.at.node == origin.node() {
                 continue;

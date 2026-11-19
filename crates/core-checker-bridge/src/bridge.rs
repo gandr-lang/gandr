@@ -6897,6 +6897,7 @@ where
         )
     };
     let mut witnesses = Vec::with_capacity(rounds.len().saturating_mul(2));
+    let mut fixed_record = Some(fixed_record);
     for (index, round) in rounds.iter().enumerate() {
         // Round zero is the fixed record with its meets in place; a later
         // round is its meets' record, which the key holds already.
@@ -6905,7 +6906,7 @@ where
             body,
             types,
         } = match (index, round.is_empty()) {
-            (0, true) => fixed_record.clone(),
+            (0, true) => fixed_record.take().ok_or_else(invariant)?,
             (0, false) => record_of(
                 arena,
                 &fields,
@@ -13424,12 +13425,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         if inner.row.iter().any(|held| held.name() != signature.name()) {
                             return Err(uncovered);
                         }
-                        let here = Programmed {
-                            result: self.shifted(handled.subject, Binders::from(past(depth)?)),
-                            row: program.row.clone(),
-                            level: program.level.clone(),
-                        };
-                        self.fold((current, &inner), next, (model, &here))?
+                        let result = self.shifted(handled.subject, Binders::from(past(depth)?));
+                        self.fold((current, &inner), result, next, (model, &program))?
                     },
                     // The subject's last step is checked at its result, as
                     // the judgement checked it; a bound step is synthesised,
@@ -13632,7 +13629,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     });
                 };
                 let model = self.free_model(&program.row, &program.level)?;
-                self.fold((resumed, &inner), continued, (model, &program))
+                self.fold(
+                    (resumed, &inner),
+                    inner.result,
+                    continued,
+                    (model, &program),
+                )
             },
         }
     }
@@ -13841,6 +13843,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     fn fold(
         &mut self,
         (step, inner): (ComputationId, &Programmed),
+        result: ValueTypeId,
         continued: ComputationId,
         (model, program): (ConstantIndex, &Programmed),
     ) -> Result<ComputationId, Refusal>
@@ -13910,7 +13913,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             .computation_fixpoint(fold, gandr_kernel_term::FixpointEvidence::StructuralDescent);
         // The fold's classifier stands beneath the two parameters and the
         // program's binder.
-        let result = self.shifted(inner.result, Binders::from(3_u32));
+        let result = self.shifted(result, Binders::from(3_u32));
         let code = self.arena.value_quote(result);
         let domain = self.arena.value_type_data(source, Vec::from([code]));
         let codomain = self.answer(model, program, Binders::from(3_u32));
@@ -13925,13 +13928,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         let body = self.arena.computation_bind(ran, folded);
         let body = self.arena.computation_lambda(body);
         let body = self.arena.computation_lambda(body);
-        let code = self.arena.value_quote(inner.result);
+        let code = self.arena.value_quote(result);
         let ran = self.arena.value_type_data(source, Vec::from([code]));
         let ran = self.arena.comp_type_returner(ran);
         let ran = self.arena.value_type_thunk(ran);
         let answered = self.answer(model, program, Binders::from(0_u32));
         let answered = self.arena.comp_type_returner(answered);
-        let continuation = self.arena.comp_type_arrow(inner.result, answered);
+        let continuation = self.arena.comp_type_arrow(result, answered);
         let continuation = self.arena.value_type_thunk(continuation);
         let classifier = self.arena.comp_type_arrow(continuation, answered);
         let classifier = self.arena.comp_type_arrow(ran, classifier);
@@ -14308,7 +14311,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 return match self.imaged(step)? {
                     Imaged::Pure => Ok(None),
                     Imaged::Program(inner) => self
-                        .fold((bound, &inner), body, (model, &program))
+                        .fold((bound, &inner), inner.result, body, (model, &program))
                         .map(Some),
                 };
             },
@@ -14368,7 +14371,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         let rest = returned(self);
         match imaged {
             Imaged::Pure => Ok(Some(self.arena.computation_bind(copy, rest))),
-            Imaged::Program(inner) => self.fold((copy, &inner), rest, (model, &program)).map(Some),
+            Imaged::Program(inner) => self
+                .fold((copy, &inner), inner.result, rest, (model, &program))
+                .map(Some),
         }
     }
 

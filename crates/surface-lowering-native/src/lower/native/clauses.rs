@@ -477,18 +477,30 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                 }
                 choices.push(read);
             }
-            let mut combined: Vec<Vec<PatternAt>> = Vec::from([Vec::new()]);
+            let mut paths: Vec<(Option<usize>, PatternAt)> = Vec::new();
+            let mut frontier = Vec::from([None]);
             for column in &choices {
-                combined = combined
-                    .iter()
-                    .flat_map(|prefix| {
-                        column.iter().map(move |&root| {
-                            let mut row = prefix.clone();
-                            row.push(root);
-                            row
-                        })
-                    })
-                    .collect();
+                let mut next = Vec::with_capacity(frontier.len().saturating_mul(column.len()));
+                for parent in frontier {
+                    for &root in column {
+                        let index = paths.len();
+                        paths.push((parent, root));
+                        next.push(Some(index));
+                    }
+                }
+                frontier = next;
+            }
+            let mut combined = Vec::with_capacity(frontier.len());
+            for leaf in frontier {
+                let mut columns = Vec::with_capacity(choices.len());
+                let mut current = leaf;
+                while let Some(index) = current {
+                    let (parent, root) = paths[index];
+                    columns.push(root);
+                    current = parent;
+                }
+                columns.reverse();
+                combined.push(columns);
             }
             rows.extend(combined.into_iter().map(|columns| Row {
                 columns,

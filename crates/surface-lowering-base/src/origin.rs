@@ -96,6 +96,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -660,7 +661,7 @@ pub enum Omitted
     Classifier
     {
         /// The family the constructor belongs to.
-        family: String,
+        family: Arc<String>,
         /// The parameter or the index the argument stands for: its name, or
         /// its place among the family's arguments, counted from one.
         parameter: String,
@@ -2963,7 +2964,7 @@ pub enum Labelled
         /// The type.
         ty: ValueTypeId,
         /// The binders' names, outermost first.
-        context: Vec<String>,
+        context: Arc<Vec<String>>,
     },
     /// An observation's computation type, read in `context`.
     CompType

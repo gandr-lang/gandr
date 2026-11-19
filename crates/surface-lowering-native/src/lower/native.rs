@@ -8555,11 +8555,12 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                 constructors.extend([Vec::from([word]), Vec::from([word])]);
                 names.extend([String::from(letter), alloc::format!("back({letter})")]);
             }
+            let point = Arc::from(words.point.clone());
             let cells = words
                 .loops
                 .iter()
                 .map(|_bound| {
-                    gandr_core_term::FreeCell::new(words.point.clone(), words.point.clone())
+                    gandr_core_term::FreeCell::shared(Arc::clone(&point), Arc::clone(&point))
                 })
                 .collect();
             let presentation = gandr_core_term::Presentation::words(
@@ -13974,12 +13975,13 @@ impl<'source> NativeRef<'_, '_, 'source>
                 Maybe::Present(named) => Some(named),
                 Maybe::Absent(_) => None,
             }));
-        let family_name = self
-            .cx
-            .collected
-            .slots
-            .get(usize::from(fielded.family))
-            .map_or_else(String::new, |slot| String::from(slot.name.as_ref()));
+        let family_name = Arc::new(
+            self.cx()
+                .collected
+                .slots
+                .get(usize::from(fielded.family))
+                .map_or_else(String::new, |slot| String::from(slot.name.as_ref())),
+        );
         let classified = origin.inserted(Insertion::Classifier);
         let mut arguments = Vec::with_capacity(arity);
         for (place, written) in (first ..).zip(names) {
