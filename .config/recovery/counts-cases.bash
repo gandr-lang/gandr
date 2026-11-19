@@ -4,6 +4,7 @@
 # `ledger:recovery`: it prints the line of `counts.txt` in the tree it runs in.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "$here/../cases/scratch.bash"
 counts=$here/counts.bash
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -24,9 +25,7 @@ repository() {
   local repo=$work/repo
   rm -rf "$repo"
   git init --quiet "$repo"
-  git -C "$repo" config user.email cases@example.invalid
-  git -C "$repo" config user.name cases
-  git -C "$repo" config commit.gpgsign false
+  identity "$repo"
   printf '%s\n' "$line_base" > "$repo/counts.txt"
   mkdir -p "$repo/crates/surface-parser" "$repo/docs"
   echo a > "$repo/crates/surface-parser/a.rs"
