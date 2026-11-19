@@ -1824,8 +1824,7 @@ pending/surface/desc-declined-metadata.gandr:Declared:3c7079fcd8fbb7e1 uncomment
 sketch/environments/tactics.gandr:module_declaration:45f4db7b2d0d6ab2 uncommented
 sketch/environments/tactics.gandr:module_declaration:a93c288035ae3d0e uncommented
 sketch/foreign/mlir.gandr:module_declaration:2d8db61181a80077 uncommented
-sketch/model-refinement/forgetting.gandr:T:3d96d4236b429d0e uncommented
-sketch/model-refinement/forgetting.gandr:T:d69655d4d013e040 uncommented
+sketch/model-refinement/forgetting.gandr:T:f7d85ed8d2c13eaf uncommented
 sketch/model-refinement/operations.gandr:size:0a036c2d7559492b uncommented
 sketch/model-refinement/operations.gandr:size:50869f15b3c8224c uncommented
 sketch/model-refinement/operations.gandr:size:ff1eb19b0d239f31 uncommented
