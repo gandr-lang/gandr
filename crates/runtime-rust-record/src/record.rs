@@ -113,6 +113,7 @@ pub enum Staging
 ///
 /// A node names a child by its [`NodeIndex`], which is below the node's own
 /// place. So the nodes form one tree, and a reader folds them in order.
+#[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Body
 {

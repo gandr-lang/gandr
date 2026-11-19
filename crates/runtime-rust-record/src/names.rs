@@ -222,17 +222,3 @@ number! {
     /// The place of a node in its body, counted from the first node.
     pub struct NodeIndex(u32);
 }
-
-impl NodeIndex
-{
-    /// The place as an index into the body's nodes.
-    ///
-    /// # Specification
-    /// trivial.
-    #[must_use]
-    #[inline]
-    pub fn place(self) -> usize
-    {
-        usize::try_from(self.0).unwrap_or(usize::MAX)
-    }
-}

@@ -917,8 +917,8 @@ impl Reader<'_>
                     return Err(Undecoded::Body(counted));
                 }
                 let mut nodes = Vec::new();
-                for place in 0 .. count.0 {
-                    nodes.push(self.node(place)?);
+                for place in (0_u32 ..).take(count.0) {
+                    nodes.push(self.node(NodeIndex::from(place))?);
                 }
                 Ok(Staging::Staged(Body { nodes }))
             },
@@ -943,7 +943,7 @@ impl Reader<'_>
     /// trivial.
     fn node(
         &mut self,
-        place: usize,
+        place: NodeIndex,
     ) -> Result<Node, Undecoded>
     {
         let at = self.offset();
@@ -988,12 +988,12 @@ impl Reader<'_>
     /// trivial.
     fn index(
         &mut self,
-        place: usize,
+        place: NodeIndex,
         at: Offset,
     ) -> Result<NodeIndex, Undecoded>
     {
         let index = NodeIndex::from(u32::from_le_bytes(self.take::<4>()?.0));
-        if index.place() < place {
+        if index < place {
             Ok(index)
         }
         else {
