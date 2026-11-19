@@ -30,6 +30,7 @@ use gandr_kernel_core::verdict::VerdictRecord;
 use gandr_kernel_core::verdict::VerdictSource;
 use gandr_kernel_core::verdict::stored;
 use gandr_kernel_core::verdict::verdict_image;
+use gandr_kernel_data::Shared;
 use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AdmissionMark;
@@ -56,7 +57,7 @@ use quenchant_shape::shape::Maybe;
 /// trivial.
 #[derive(Clone, Debug, Default)]
 #[repr(transparent)]
-struct Store(BTreeMap<VerdictKey, Vec<Arc<StoredReceipt>>>);
+struct Store(BTreeMap<VerdictKey, Vec<Shared<StoredReceipt, Global>>>);
 
 impl Store
 {
@@ -67,14 +68,14 @@ impl Store
     /// trivial.
     fn holding(stored: &[&StoredReceipt]) -> Arc<Self>
     {
-        let mut index: BTreeMap<VerdictKey, Vec<Arc<StoredReceipt>>> = BTreeMap::new();
+        let mut index: BTreeMap<VerdictKey, Vec<Shared<StoredReceipt, Global>>> = BTreeMap::new();
         for &receipt in stored {
-            let receipt = Arc::new(receipt.clone());
+            let receipt = Shared::new(receipt.clone());
             for record in receipt.records() {
                 index
                     .entry(record.key())
                     .or_default()
-                    .push(Arc::clone(&receipt));
+                    .push(Shared::clone(&receipt));
             }
         }
         Arc::new(Self(index))
@@ -90,7 +91,7 @@ impl VerdictSource for Store
     fn receipts(
         &self,
         key: VerdictKey,
-    ) -> &[Arc<StoredReceipt>]
+    ) -> &[Shared<StoredReceipt, Global>]
     {
         self.0.get(&key).map_or(&[], Vec::as_slice)
     }
@@ -246,7 +247,7 @@ fn a_tampered_record_recalls_nothing()
     };
     assert_ne!(tampered, first);
     *records.first_mut().expect("the receipt holds records") = tampered;
-    let altered = StoredReceipt::new(receipt.receipt(), records);
+    let altered = StoredReceipt::new(receipt.receipt(), records.into_iter().collect());
     let mut environment = Environment::recalling(trusting(&signer), Store::holding(&[&altered]));
     assert_eq!(
         admit(&mut environment, named),
@@ -747,7 +748,7 @@ fn a_stratum_receipt_is_believed_only_as_signed_4034()
 
     let named = ConstantIndex::from(0_usize);
     let admitted = recorded(&signer, named);
-    let borrowed = StoredReceipt::new(receipt, admitted.records().to_vec());
+    let borrowed = StoredReceipt::new(receipt, admitted.records().iter().cloned().collect());
     let mut again = Environment::recalling(policy, Store::holding(&[&borrowed]));
     assert_eq!(
         admit(&mut again, named),

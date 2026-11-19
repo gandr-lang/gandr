@@ -46,14 +46,14 @@
 //!   storage-programme-gluing — an admission recalls its verdict by its entry
 //!   key alone, and no key names a place in the admission order.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
-use gandr_kernel_data::Shared;
-use alloc::alloc::Global;
-use gandr_kernel_data::Count;
-use gandr_kernel_data::SmallVec;
 
 use ed25519_dalek::Signer as _;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::EncodedArtifact;
 use gandr_kernel_term::StagedPosition;
 use quenchant_shape::shape::Maybe;
@@ -561,7 +561,9 @@ impl VerdictImage<'_>
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn variances(&mut self) -> Maybe<SmallVec<Variance, 0, Global>, verdict_image::Absent>
+    pub(crate) fn variances(
+        &mut self
+    ) -> Maybe<SmallVec<Variance, 0, Global>, verdict_image::Absent>
     {
         let Maybe::Present(VerdictCount(count)) = self.count()
         else {
@@ -1301,6 +1303,20 @@ impl VerdictSource for NoVerdicts
     }
 }
 
+/// The source of recorded verdicts that the embedding program gives, shared
+/// with each copy of the environment.
+///
+/// # Specification
+/// trivial.
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        std_container,
+        reason = "the embedding program gives the source of verdicts as a handle, and the kernel allocates no such object, so no region of the kernel holds it"
+    )
+)]
+pub type SourceHandle = alloc::sync::Arc<dyn VerdictSource>;
+
 quenchant_shape::reason_enum! {
     /// Why an admission computes no verdict key.
     pub mod keyed {
@@ -1332,8 +1348,8 @@ pub struct Verdicts
 {
     /// The signers believed.
     trusted: BTreeSet<KernelIdentity>,
-    /// Where recorded verdicts are found.
-    source: alloc::sync::Arc<dyn VerdictSource>,
+    /// Where recorded verdicts are found: none for a run with no store.
+    source: Option<SourceHandle>,
     /// The receipts already verified, each with whether it attested.
     verified: BTreeMap<Receipt, Attestation>,
     /// The readings of the records a verified receipt attested, by key.
@@ -1359,7 +1375,7 @@ impl Default for Verdicts
     #[inline]
     fn default() -> Self
     {
-        Self::rechecking(alloc::sync::Arc::new(NoVerdicts))
+        Self::rechecking()
     }
 }
 
@@ -1409,11 +1425,11 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
-    fn rechecking(source: alloc::sync::Arc<dyn VerdictSource>) -> Self
+    fn rechecking() -> Self
     {
         Self {
             trusted: BTreeSet::new(),
-            source,
+            source: None,
             verified: BTreeMap::new(),
             recalled: BTreeMap::new(),
             checked: SmallVec::<_, 0, Global>::new(),
@@ -1431,16 +1447,20 @@ impl Verdicts
     #[inline]
     pub fn under(
         policy: TrustPolicy,
-        source: alloc::sync::Arc<dyn VerdictSource>,
+        source: SourceHandle,
         build: BuildIdentity,
     ) -> Self
     {
         match policy {
-            TrustPolicy::Recheck => Self::rechecking(source),
+            TrustPolicy::Recheck => Self {
+                source: Some(source),
+                ..Self::rechecking()
+            },
             TrustPolicy::Trusted(trusted) => Self {
                 trusted,
+                source: Some(source),
                 build: Maybe::Present(build),
-                ..Self::rechecking(source)
+                ..Self::rechecking()
             },
         }
     }
@@ -1457,7 +1477,7 @@ impl Verdicts
     {
         Self {
             trusted: self.trusted.clone(),
-            source: alloc::sync::Arc::clone(&self.source),
+            source: self.source.clone(),
             verified: self.verified.clone(),
             recalled: self.recalled.clone(),
             checked: SmallVec::<_, 0, Global>::new(),
@@ -1475,10 +1495,10 @@ impl Verdicts
     #[inline]
     pub fn reading(
         &mut self,
-        source: alloc::sync::Arc<dyn VerdictSource>,
+        source: SourceHandle,
     )
     {
-        self.source = source;
+        self.source = Some(source);
     }
 
     /// The reading a verified receipt attests for `key`, trying each receipt
@@ -1501,7 +1521,10 @@ impl Verdicts
             ..
         } = *self;
         if !recalled.contains_key(&key) {
-            for stored in source.receipts(key) {
+            for stored in source
+                .as_deref()
+                .map_or(&[][..], |source| source.receipts(key))
+            {
                 if verified.contains_key(&stored.receipt) {
                     continue;
                 }

@@ -2242,7 +2242,7 @@ fn a_metered_readmission_counts_the_allocations_of_each_admission()
 /// trivial.
 #[repr(transparent)]
 #[derive(Debug)]
-struct Held(Arc<StoredReceipt>);
+struct Held(gandr_kernel_data::Shared<StoredReceipt, alloc::alloc::Global>);
 
 impl VerdictSource for Held
 {
@@ -2253,7 +2253,7 @@ impl VerdictSource for Held
     fn receipts(
         &self,
         key: VerdictKey,
-    ) -> &[Arc<StoredReceipt>]
+    ) -> &[gandr_kernel_data::Shared<StoredReceipt, alloc::alloc::Global>]
     {
         if self.0.records().iter().any(|record| record.key() == key) {
             core::slice::from_ref(&self.0)
@@ -2309,7 +2309,7 @@ fn a_readmission_recalls_what_its_own_receipt_recorded()
         checked,
         "every declaration the kernel checked is recorded"
     );
-    let held: Arc<dyn VerdictSource> = Arc::new(Held(Arc::new(receipt)));
+    let held: Arc<dyn VerdictSource> = Arc::new(Held(gandr_kernel_data::Shared::new(receipt)));
     let warm = readmitted_under(&Recall::trusting(trusting(&signer), Arc::clone(&held)));
     assert_eq!(usize::from(warm.environment().recalls()), checked);
     assert_eq!(warm.readmitted(), cold.readmitted());
@@ -2356,7 +2356,10 @@ fn a_resumed_readmission_recalls_from_its_own_source_6566()
         &mut arena,
         &report,
         (LeadingCount(1), Maybe::Present(&record)),
-        &Recall::trusting(trusting, Arc::new(Held(Arc::new(receipt)))),
+        &Recall::trusting(
+            trusting,
+            Arc::new(Held(gandr_kernel_data::Shared::new(receipt))),
+        ),
         &Unretired,
         &mut Untimed,
         &Serial,

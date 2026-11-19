@@ -1891,6 +1891,7 @@ dependencies = [
  "gandr-core-term",
  "gandr-kernel-check-memo",
  "gandr-kernel-core",
+ "gandr-kernel-data",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-runtime-emitter",

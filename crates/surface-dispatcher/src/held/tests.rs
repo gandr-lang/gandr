@@ -50,7 +50,7 @@ fn a_kept_receipt_is_answered_by_the_next_snapshot_alone()
     let before = held.snapshot();
     held.keep(receipt.clone());
     let after = held.snapshot();
-    let answered = [Arc::new(receipt.clone())];
+    let answered = [gandr_kernel_data::Shared::new(receipt.clone())];
     for record in receipt.records() {
         assert!(
             before.receipts(record.key()).is_empty(),
@@ -77,7 +77,7 @@ fn past_the_bound_the_oldest_receipt_goes()
     held.keep(older);
     held.keep(newer.clone());
     let snapshot = held.snapshot();
-    let answered = [Arc::new(newer.clone())];
+    let answered = [gandr_kernel_data::Shared::new(newer.clone())];
     for record in newer.records() {
         assert_eq!(
             snapshot.receipts(record.key()),

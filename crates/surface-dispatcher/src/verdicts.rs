@@ -152,7 +152,7 @@ impl VerdictSource for Layered
     fn receipts(
         &self,
         key: VerdictKey,
-    ) -> &[Arc<StoredReceipt>]
+    ) -> &[gandr_kernel_data::Shared<StoredReceipt, alloc::alloc::Global>]
     {
         let held = self.held.receipts(key);
         if held.is_empty() {
@@ -1045,7 +1045,10 @@ mod tests
             &KernelSigner::from([5_u8; 32]),
             SourceText::from(READMITTED),
         );
-        let forged = StoredReceipt::new(signed.receipt(), unsigned.records().to_vec());
+        let forged = StoredReceipt::new(
+            signed.receipt(),
+            unsigned.records().iter().cloned().collect(),
+        );
         let (store, mut register) = StoredVerdicts::open(&directory).expect("the store opens");
         store.keep(&forged).expect("the receipt is written");
         register.drain().expect("the register names the receipt");

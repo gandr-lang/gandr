@@ -129,6 +129,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::ArenaWatermark;
@@ -1419,7 +1420,7 @@ impl Environment
                     declaration: declaration.clone(),
                     admission,
                     rested_on,
-                    references: alloc::sync::Arc::clone(&named),
+                    references: named.clone(),
                     block: check::occurrence::Block::lone(position),
                     accessibility,
                     key_name,
@@ -2723,7 +2724,7 @@ impl Environment
                 declaration: member.clone(),
                 admission: Admission::Checked,
                 rested_on,
-                references: alloc::sync::Arc::clone(&named),
+                references: named.clone(),
                 block: if offset < families {
                     check::occurrence::Block::new(first, past_families, end)
                 }
@@ -6064,7 +6065,7 @@ fn block_references(
     arena: &TermArena,
     members: &[Declaration],
     first: ConstantIndex,
-) -> alloc::sync::Arc<[ConstantIndex]>
+) -> ThinShared<(), ConstantIndex, Global>
 {
     let mut found = BTreeSet::new();
     for member in members {
@@ -6213,7 +6214,7 @@ struct Lone
     /// Its own content key and entry key.
     keys: EntryKeys,
     /// The positions that its content names.
-    references: alloc::sync::Arc<[ConstantIndex]>,
+    references: ThinShared<(), ConstantIndex, Global>,
     /// What its check charged.
     census: ExpansionCensus,
     /// The admitted results that its check took.
@@ -6257,7 +6258,7 @@ pub struct Pending
     /// Its own content key and entry key.
     keys: EntryKeys,
     /// The positions that its content names.
-    references: alloc::sync::Arc<[ConstantIndex]>,
+    references: ThinShared<(), ConstantIndex, Global>,
     /// The arena's mark past its content, and the mark that a refusal
     /// truncates to.
     marks: (ArenaWatermark, ArenaWatermark),
@@ -7498,7 +7499,7 @@ mod tests
             let _discarded = abandoned.arena().value_unit();
         }
         assert_eq!(before, environment.arena().watermark());
-        assert_eq!(vec![first.content_start()], environment.outstanding.marks);
+        assert_eq!(environment.outstanding.marks, [first.content_start()]);
         assert!(
             environment.add_decl(first).is_ok(),
             "implicit abandonment cannot block an earlier declaration"
@@ -9294,7 +9295,7 @@ mod tests
     /// every key.
     #[derive(Debug)]
     #[repr(transparent)]
-    struct Recorded(Vec<alloc::sync::Arc<crate::verdict::StoredReceipt>>);
+    struct Recorded(Vec<gandr_kernel_data::Shared<crate::verdict::StoredReceipt, Global>>);
 
     impl crate::verdict::VerdictSource for Recorded
     {
@@ -9305,7 +9306,7 @@ mod tests
         fn receipts(
             &self,
             _key: crate::verdict::VerdictKey,
-        ) -> &[alloc::sync::Arc<crate::verdict::StoredReceipt>]
+        ) -> &[gandr_kernel_data::Shared<crate::verdict::StoredReceipt, Global>]
         {
             &self.0
         }
@@ -9346,7 +9347,7 @@ mod tests
                 let mut recording = keyed();
                 let _recorded = admit_serially(&mut recording, &source, ranking);
                 let store: Vec<_> = match recording.receipt(&signer) {
-                    Maybe::Present(stored) => vec![alloc::sync::Arc::new(stored)],
+                    Maybe::Present(stored) => vec![gandr_kernel_data::Shared::new(stored)],
                     Maybe::Absent(_) => Vec::new(),
                 };
                 let store: alloc::sync::Arc<dyn crate::verdict::VerdictSource> =
@@ -10491,7 +10492,7 @@ mod tests
     /// A source that answers one receipt for each key its records hold.
     #[derive(Debug)]
     #[repr(transparent)]
-    struct Held(alloc::sync::Arc<crate::verdict::StoredReceipt>);
+    struct Held(gandr_kernel_data::Shared<crate::verdict::StoredReceipt, Global>);
 
     impl crate::verdict::VerdictSource for Held
     {
@@ -10502,7 +10503,7 @@ mod tests
         fn receipts(
             &self,
             key: crate::verdict::VerdictKey,
-        ) -> &[alloc::sync::Arc<crate::verdict::StoredReceipt>]
+        ) -> &[gandr_kernel_data::Shared<crate::verdict::StoredReceipt, Global>]
         {
             if self.0.records().iter().any(|record| record.key() == key) {
                 core::slice::from_ref(&self.0)
@@ -10542,7 +10543,7 @@ mod tests
             panic!("a keyed environment gives a receipt");
         };
         let held: alloc::sync::Arc<dyn crate::verdict::VerdictSource> =
-            alloc::sync::Arc::new(Held(alloc::sync::Arc::new(receipt)));
+            alloc::sync::Arc::new(Held(gandr_kernel_data::Shared::new(receipt)));
         let mut again = base.handed_on();
         again.reading(alloc::sync::Arc::clone(&held));
         let _d = d(&mut again);

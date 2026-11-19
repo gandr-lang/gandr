@@ -183,6 +183,20 @@ impl fmt::Debug for Forking<'_>
     }
 }
 
+/// The fork that the embedding program gives, shared with each copy of the
+/// environment.
+///
+/// # Specification
+/// trivial.
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        std_container,
+        reason = "the embedding program gives the fork as a handle, and the kernel allocates no such object, so no region of the kernel holds it"
+    )
+)]
+pub type ForkHandle = alloc::sync::Arc<dyn ObligationFork + Send>;
+
 /// The fork that an environment's checks run their obligations through,
 /// shared with each copy of the environment: none by default, so each check
 /// runs its obligations on the calling thread.
@@ -191,14 +205,7 @@ impl fmt::Debug for Forking<'_>
 /// trivial.
 #[derive(Clone, Default)]
 #[repr(transparent)]
-#[cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        std_container,
-        reason = "the embedding program gives the fork as a handle, and the kernel allocates no such object, so no region of the kernel holds it"
-    )
-)]
-pub struct SharedFork(Option<alloc::sync::Arc<dyn ObligationFork + Send>>);
+pub struct SharedFork(Option<ForkHandle>);
 
 impl SharedFork
 {
@@ -220,7 +227,7 @@ impl SharedFork
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn through(fork: alloc::sync::Arc<dyn ObligationFork + Send>) -> Self
+    pub fn through(fork: ForkHandle) -> Self
     {
         Self(Some(fork))
     }

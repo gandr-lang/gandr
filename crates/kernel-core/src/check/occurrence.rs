@@ -1326,7 +1326,10 @@ pub(super) fn occurrences<Earlier>(
 where
     Earlier: Admitted + ?Sized,
 {
-    let mut variances = alloc::vec![Variance::StrictlyPositive; parameters.len()];
+    let mut variances = SmallVec::<_, 0, Global>::from_iter(core::iter::repeat_n(
+        Variance::StrictlyPositive,
+        parameters.len(),
+    ));
     let mut stratification = Stratification::Positive;
     for (index, &parameter) in parameters.iter().enumerate() {
         let site = OccurrenceSite::Parameter(ParameterPosition::from(index));

@@ -953,7 +953,7 @@ fn a_keep_whose_precedence_changed_is_refused_6621()
 /// trivial.
 #[derive(Debug)]
 #[repr(transparent)]
-struct Kept(Vec<Arc<StoredReceipt>>);
+struct Kept(Vec<gandr_kernel_data::Shared<StoredReceipt, alloc::alloc::Global>>);
 
 impl VerdictSource for Kept
 {
@@ -964,7 +964,7 @@ impl VerdictSource for Kept
     fn receipts(
         &self,
         _key: VerdictKey,
-    ) -> &[Arc<StoredReceipt>]
+    ) -> &[gandr_kernel_data::Shared<StoredReceipt, alloc::alloc::Global>]
     {
         &self.0
     }
@@ -1028,7 +1028,8 @@ fn a_ruled_definition_is_keyed_by_the_rank_order_of_what_it_names_6621()
     else {
         panic!("a run that checked keyed declarations gives a receipt");
     };
-    let source: Arc<dyn VerdictSource> = Arc::new(Kept(vec![Arc::new(receipt)]));
+    let source: Arc<dyn VerdictSource> =
+        Arc::new(Kept(vec![gandr_kernel_data::Shared::new(receipt)]));
     let admissions = |environment: &Environment| {
         environment
             .entries()

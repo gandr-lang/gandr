@@ -24,6 +24,7 @@
 //!   kernel-verdict-reuse — a recalled verdict is the kernel's own, under its
 //!   whole input, and the source never admits.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
@@ -35,6 +36,8 @@ use anodized::spec;
 use gandr_kernel_core::verdict::StoredReceipt;
 use gandr_kernel_core::verdict::VerdictKey;
 use gandr_kernel_core::verdict::VerdictSource;
+use gandr_kernel_data::Identity;
+use gandr_kernel_data::Shared;
 
 /// The record counts a held source keeps to.
 ///
@@ -65,9 +68,9 @@ const BOUNDS: Bounds = Bounds {
 struct Index
 {
     /// Every receipt held, by each key its records hold.
-    by_key: BTreeMap<VerdictKey, Vec<Arc<StoredReceipt>>>,
+    by_key: BTreeMap<VerdictKey, Vec<Shared<StoredReceipt, Global>>>,
     /// The receipts held, the oldest first.
-    order: VecDeque<Arc<StoredReceipt>>,
+    order: VecDeque<Shared<StoredReceipt, Global>>,
     /// How many records the held receipts hold.
     records: usize,
 }
@@ -80,14 +83,14 @@ impl Index
     /// trivial.
     fn hold(
         &mut self,
-        receipt: Arc<StoredReceipt>,
+        receipt: Shared<StoredReceipt, Global>,
     )
     {
         for record in receipt.records() {
             self.by_key
                 .entry(record.key())
                 .or_default()
-                .push(Arc::clone(&receipt));
+                .push(Shared::clone(&receipt));
         }
         self.records = self.records.saturating_add(receipt.records().len());
         self.order.push_back(receipt);
@@ -110,7 +113,7 @@ impl Index
             };
             for record in oldest.records() {
                 if let Some(held) = self.by_key.get_mut(&record.key()) {
-                    held.retain(|kept| !Arc::ptr_eq(kept, &oldest));
+                    held.retain(|kept| Shared::ptr_eq(kept, &oldest) == Identity::Distinct);
                     if held.is_empty() {
                         let _gone = self.by_key.remove(&record.key());
                     }
@@ -127,7 +130,7 @@ impl Index
     fn receipts(
         &self,
         key: VerdictKey,
-    ) -> &[Arc<StoredReceipt>]
+    ) -> &[Shared<StoredReceipt, Global>]
     {
         self.by_key.get(&key).map_or(&[], Vec::as_slice)
     }
@@ -172,7 +175,7 @@ impl Held
         // A snapshot a readmission still reads keeps what it holds: the
         // settlement copies the two pointers, then the small index alone.
         let small = Arc::make_mut(&mut self.small);
-        small.hold(Arc::new(receipt));
+        small.hold(Shared::new(receipt));
         if small.records > bounds.recent {
             let merged = core::mem::take(small);
             let mut large = Index::clone(&self.large);
@@ -196,7 +199,7 @@ impl VerdictSource for Held
     fn receipts(
         &self,
         key: VerdictKey,
-    ) -> &[Arc<StoredReceipt>]
+    ) -> &[Shared<StoredReceipt, Global>]
     {
         let recent = self.small.receipts(key);
         if recent.is_empty() {

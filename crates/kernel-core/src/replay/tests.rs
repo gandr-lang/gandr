@@ -6525,7 +6525,7 @@ fn an_unload_mints_each_shared_node_once_3859()
     // sixteen million values inside 63 charges (#3859).
     let head = |redex, passed| Head { redex, passed };
     let program = Program {
-        steps: Vec::from([
+        steps: gandr_kernel_data::SmallVec::from_iter([
             Step::Redex(head(Redex::Recurse(1), true)),
             Step::With,
             Step::Force,
@@ -6537,7 +6537,7 @@ fn an_unload_mints_each_shared_node_once_3859()
             Step::Returned,
             Step::Fold,
         ]),
-        heads: Vec::from([head(Redex::Beta, false)]),
+        heads: gandr_kernel_data::SmallVec::from_iter([head(Redex::Beta, false)]),
     };
     for reduction in [super::Reduction::Plain, super::Reduction::Endpoint] {
         let mut arena = TermArena::new();

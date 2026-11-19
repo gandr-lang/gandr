@@ -26,7 +26,6 @@
 
 use alloc::collections::BTreeMap;
 use alloc::format;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use std::path::Path;
 
@@ -179,7 +178,7 @@ impl CanonicalValue for Kept
                 KernelIdentity::from(signer),
                 ReceiptSignature::from(signature),
             ),
-            records,
+            records.into_iter().collect(),
         )))
     }
 }
@@ -223,7 +222,8 @@ pub struct StoredVerdicts
     /// The namer that hands each receipt's root to the store's register.
     namer: Namer,
     /// Every receipt read at open, by each key its records hold.
-    index: BTreeMap<VerdictKey, Vec<Arc<StoredReceipt>>>,
+    index:
+        BTreeMap<VerdictKey, Vec<gandr_kernel_data::Shared<StoredReceipt, alloc::alloc::Global>>>,
     /// How many receipts did not read.
     damaged: DamagedCount,
 }
@@ -274,12 +274,12 @@ impl StoredVerdicts
                 damaged = damaged.saturating_add(1);
                 continue;
             };
-            let receipt = Arc::new(receipt);
+            let receipt = gandr_kernel_data::Shared::new(receipt);
             for record in receipt.records() {
                 index
                     .entry(record.key())
                     .or_insert_with(Vec::new)
-                    .push(Arc::clone(&receipt));
+                    .push(gandr_kernel_data::Shared::clone(&receipt));
             }
         }
         Ok((
@@ -352,7 +352,7 @@ impl VerdictSource for StoredVerdicts
     fn receipts(
         &self,
         key: VerdictKey,
-    ) -> &[Arc<StoredReceipt>]
+    ) -> &[gandr_kernel_data::Shared<StoredReceipt, alloc::alloc::Global>]
     {
         self.index.get(&key).map_or(&[], Vec::as_slice)
     }
@@ -434,7 +434,7 @@ mod tests
         );
         register.drain().expect("the register names the receipt");
         let (reopened, _register) = StoredVerdicts::open(&directory).expect("the store reopens");
-        let held = [Arc::new(receipt.clone())];
+        let held = [gandr_kernel_data::Shared::new(receipt.clone())];
         for record in receipt.records() {
             assert_eq!(
                 reopened.receipts(record.key()),
@@ -462,7 +462,10 @@ mod tests
         store.keep(&theirs).expect("theirs is written");
         register.drain().expect("the register names both receipts");
         let (reopened, _register) = StoredVerdicts::open(&directory).expect("the store reopens");
-        let (ours_held, theirs_held) = (Arc::new(ours.clone()), Arc::new(theirs));
+        let (ours_held, theirs_held) = (
+            gandr_kernel_data::Shared::new(ours.clone()),
+            gandr_kernel_data::Shared::new(theirs),
+        );
         for record in ours.records() {
             let answered = reopened.receipts(record.key());
             assert_eq!(answered.len(), 2, "both signers' receipts hold the key");
@@ -497,7 +500,7 @@ mod tests
         else {
             panic!("the receipt's root names its pointer");
         };
-        let held = [Arc::new(receipt.clone())];
+        let held = [gandr_kernel_data::Shared::new(receipt.clone())];
         for (damage, what) in [
             (Damage::Truncate, "a truncated chunk"),
             (Damage::Flip, "a changed chunk byte"),
