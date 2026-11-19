@@ -24,6 +24,9 @@
 //!   builtin table is a declaration of `std` with its type and no body, under
 //!   `@[builtin("key")]`. The checker compares the declared type with the row,
 //!   and only a package of the toolchain writes the mark.
+//! - `vault:01a1ebc5-2ff2-7833-b871-85901e734925` — anchor: §
+//!   boot-data-builtins, the two directions of a binding. The toolchain gives a
+//!   native value, and the library gives the declaration of a role.
 
 use alloc::collections::BTreeSet;
 use alloc::collections::btree_map::Entry;
