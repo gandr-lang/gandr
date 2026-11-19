@@ -1491,7 +1491,7 @@ impl fmt::Display for MessageText<'_>
     /// - witness: `message::tests::every_refusal_name_has_a_plain_message`
     /// - witness: `tests::diagnostics::a_mismatch_label_spells_both_types`
     /// - witness: `tests::diagnostics::a_parting_pair_names_its_peak_and_both_normal_forms`
-    /// - witness: `tests::corpus::every_refusing_source_renders_as_its_golden`
+    /// - witness: `gandr-surface-render-terminal::tests::corpus::every_refusing_source_renders_as_its_golden`
     ///
     /// # Cost
     /// - allocation: the text of the message, diagnostic
