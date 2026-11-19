@@ -46,6 +46,9 @@ impl Request
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the fourteen flags of the command, setup
     #[must_use]
     #[inline]
     pub fn flags(

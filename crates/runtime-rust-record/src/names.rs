@@ -38,6 +38,9 @@ macro_rules! text {
             ///
             /// # Specification
             /// trivial.
+            ///
+            /// # Cost
+            /// - allocation: the copy of the text, durable by the name
             #[inline]
             fn from(value: &str) -> Self
             {

@@ -196,6 +196,13 @@ impl Cache
     /// # Errors
     /// [`Unread`], as above.
     ///
+    /// # Cost
+    /// - allocation: the entry's bytes and each source's bytes for its digest,
+    ///   growth within the entry and its sources
+    /// - allocation: the paths, the list of functions and the reader's
+    ///   diagnostics, growth within the request
+    /// - allocation: the decoded record, durable by the answer
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a reader that counts its runs runs once for two
     ///   requests; an edit of a source the entry names runs it again; a failing
@@ -291,6 +298,10 @@ impl Cache
 /// # Errors
 /// [`Unread::Program`], as above.
 ///
+/// # Cost
+/// - allocation: the program's metadata and the name of the entry, durable by
+///   the key
+///
 /// # Adequacy
 /// - hypothesis: L3 — a change of each part of the key gives another name.
 /// - witness: `tests::each_part_of_the_key_changes_the_name`
@@ -353,6 +364,10 @@ impl Scratch
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the directory's path and the file system's own buffers,
+    ///   setup
     fn new(directory: &Path) -> Result<Self, Unread>
     {
         let count = SCRATCH.fetch_add(1, Ordering::Relaxed);
@@ -369,6 +384,9 @@ impl Drop for Scratch
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the file system's buffers of the removal, setup
     fn drop(&mut self)
     {
         let _removed: Result<(), io::Error> = fs::remove_dir_all(&self.0);
