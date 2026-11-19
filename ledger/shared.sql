@@ -37,12 +37,10 @@ INSERT INTO shared VALUES('crates/kernel-core-base/src/env.rs','AdmittedParts.re
 INSERT INTO shared VALUES('crates/kernel-core-base/src/env.rs','Entries.log','chunked',NULL,'A write copies the log''s shell of a bound size, and its family, its maps and its presented table each hold a row of their own.');
 INSERT INTO shared VALUES('crates/kernel-core-base/src/env.rs','Entries.spares','grows with the module','#7406','Each spare support holds one stamp for each position of the module.');
 INSERT INTO shared VALUES('crates/kernel-core-base/src/env.rs','Entries.support','grows with the module','#7406','The support of the running check holds one stamp for each position of the module, which its reads write in place.');
-INSERT INTO shared VALUES('crates/kernel-core-base/src/fork.rs','SharedFork.0','read only',NULL,'A handle to the pool that runs the forked goals, which no write changes.');
 INSERT INTO shared VALUES('crates/kernel-core-base/src/presented.rs','Presentations.table','copied whole','#7407','A write beside an open view copies the map of presented types and the map of words whole.');
 INSERT INTO shared VALUES('crates/kernel-core-base/src/presented.rs','PresentedType.arities','read only',NULL,'The field counts of a presented type, which its admission writes once.');
 INSERT INTO shared VALUES('crates/kernel-core-base/src/presented.rs','PresentedType.sort_arities','read only',NULL,'The field counts of a presented type''s sort, which its admission writes once.');
 INSERT INTO shared VALUES('crates/kernel-core-base/src/support.rs','Owed.0','read only',NULL,'The keys that a formation owes, which its record writes once.');
-INSERT INTO shared VALUES('crates/kernel-core-base/src/verdict.rs','Verdicts.source','read only',NULL,'The source of the recorded verdicts, which no write changes.');
 INSERT INTO shared VALUES('crates/kernel-core/src/environment.rs','Environment.commits','copied whole','#7404','A write while a handed-on state holds the commit log copies it whole, with its rows for each admitted position.');
 INSERT INTO shared VALUES('crates/kernel-core/src/environment.rs','Lone.references','read only',NULL,'The positions that a checked declaration''s content names, which its check writes once and its entry shares.');
 INSERT INTO shared VALUES('crates/kernel-core/src/environment.rs','Names.shared','copied whole','#4369','The first check of a handed-on environment copies the shared session''s content table and kept memo whole.');
