@@ -59,8 +59,72 @@ gate() {
 # Whether a read of `check:dylint` holds, as `held` or `runs`.
 reads() { if "$verdict" read check:dylint 2> /dev/null; then echo held; else echo runs; fi; }
 
+# A `git` wrapper whose signer fails as its mode states, then delegates every
+# other call to the real Git.
+signer() {
+  local mode=$1 bin=$2
+  mkdir -p "$bin"
+  case $mode in
+    once)
+      printf '%s\n' \
+        '#!/usr/bin/env bash' \
+        'if [[ $1 == commit-tree && ! -e $GATE_VERDICT_CASE_FAILURE ]]; then' \
+        '  : > "$GATE_VERDICT_CASE_FAILURE"' \
+        '  echo "case signer failed" >&2' \
+        '  exit 1' \
+        'fi' \
+        'exec "$GATE_VERDICT_CASE_GIT" "$@"' \
+        > "$bin/git"
+      ;;
+    always)
+      printf '%s\n' \
+        '#!/usr/bin/env bash' \
+        'if [[ $1 == commit-tree ]]; then' \
+        '  echo "case signer failed" >&2' \
+        '  exit 1' \
+        'fi' \
+        'exec "$GATE_VERDICT_CASE_GIT" "$@"' \
+        > "$bin/git"
+      ;;
+  esac
+  chmod +x "$bin/git"
+}
+
 got=$(setup "$scratch/same" && gate && reads)
 [[ $got == held ]] || fail "#7684: a run on the gated tree with the gate's key reads the record" "$got"
+
+got=$(
+  setup "$scratch/retry-once"
+  signer once "$scratch/retry-once-bin"
+  tree=$(git rev-parse 'HEAD^{tree}')
+  status=0
+  output=$(PATH="$scratch/retry-once-bin:$PATH" GATE_VERDICT_CASE_FAILURE="$scratch/retry-once.failed" \
+    GATE_VERDICT_CASE_GIT="$(command -v git)" "$verdict" write "$tree" check:dylint 2>&1) || status=$?
+  "$verdict" publish HEAD > /dev/null 2>&1
+  if [[ $status == 0 && -e $scratch/retry-once.failed && $output == *"signing attempt 1 of 2 failed"* ]]; then
+    reads
+  else
+    printf 'status %s, output %s\n' "$status" "$output"
+  fi
+)
+[[ $got == held ]] || fail "#8147: a second signing attempt writes the passed check's record" "$got"
+
+got=$(
+  setup "$scratch/retry-always"
+  signer always "$scratch/retry-always-bin"
+  tree=$(git rev-parse 'HEAD^{tree}')
+  status=0
+  output=$(PATH="$scratch/retry-always-bin:$PATH" GATE_VERDICT_CASE_GIT="$(command -v git)" \
+    "$verdict" write "$tree" check:dylint 2>&1) || status=$?
+  ref=$(git for-each-ref --count=1 refs/verdicts/)
+  if [[ $status == 1 && -z $ref && $output == *"record did not sign after 2 attempts"* \
+    && $output == *"verdict.bash write"* ]]; then
+    echo refused
+  else
+    printf 'status %s, ref %s, output %s\n' "$status" "$ref" "$output"
+  fi
+)
+[[ $got == refused ]] || fail "#8147: a failed record names its no-gate write command" "$got"
 
 got=$(setup "$scratch/tree" && gate && commit file two other > /dev/null && reads)
 [[ $got == runs ]] || fail "#7684: a run on another tree reads no record" "$got"
@@ -139,4 +203,4 @@ got=$(
 [[ $got == work ]] || fail "#7740: an edit that keeps a file's size and stamp is the tree of the work" "$got"
 
 (( failed == 0 )) || exit 1
-echo "verdict OK: 12 cases read, refuse and write records as recorded"
+echo "verdict OK: 14 cases read, refuse and write records as recorded"
