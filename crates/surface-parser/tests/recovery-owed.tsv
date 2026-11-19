@@ -212,9 +212,6 @@ fixture/model/desc/theory-constructor-qualified.gandr	47	3	2440
 fixture/model/desc/theory-constructor-qualified.gandr	48	1	2440
 fixture/model/desc/theory-constructor-qualified.gandr	50	1	2440
 fixture/model/desc/wide-face-poset.gandr	237	1	2440
-fixture/model/distribution/ping.gandr	50	1	2440
-fixture/model/distribution/ping.gandr	117	1	2440
-fixture/model/distribution/ping.gandr	290	5	2440
 fixture/model/drop/unwound.gandr	50	1	2440
 fixture/model/drop/unwound.gandr	170	1	2440
 fixture/model/drop/unwritten.gandr	29	1	2440
@@ -714,8 +711,6 @@ fixture/pathological/effects/rows.gandr	270	1	2440
 fixture/pathological/effects/rows.gandr	313	1	2440
 fixture/pathological/effects/rows.gandr	315	4	2440
 fixture/pathological/effects/rows.gandr	317	4	2440
-fixture/pathological/effects/state-handler.gandr	307	1	2440
-fixture/pathological/effects/state-handler.gandr	518	1	2440
 fixture/pathological/effects/state.gandr	83	1	2440
 fixture/pathological/effects/state.gandr	182	1	2440
 fixture/pathological/effects/state.gandr	322	1	2440
