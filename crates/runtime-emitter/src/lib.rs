@@ -78,8 +78,10 @@
 //! refusing explicit addends would refuse every RIP-relative operand; the
 //! arm64 object carries none, and the build script refuses one. Executable
 //! memory is a `MAP_JIT` mapping toggled per thread on macOS and a `memfd`
-//! mapped twice, writable and executable, on Linux — the executable view below
-//! 2 GiB on x86-64; the region module states why.
+//! mapped twice, writable and executable, on Linux. On x86-64 the executable
+//! view is below 2 GiB. A riscv64 host has no patcher, but it maps the blocks
+//! of machine code and clears its instruction cache after each write. The
+//! module of executable memory states why.
 //!
 //! # The runtime support
 //!
