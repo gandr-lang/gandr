@@ -623,6 +623,8 @@ impl<'source> Collected<'source>
     ///
     /// # Specification
     /// trivial.
+    #[must_use]
+    #[inline]
     pub fn presentation_of(
         &self,
         position: SlotIndex,

@@ -426,11 +426,11 @@ struct Minting<'source, 'model>
 {
     /// Where the type reads the sorts and operations it names.
     members: Members<'source, 'model>,
+    /// The origin every minted node carries.
+    origin: Origin,
     /// The type member that each port sort of the theory's source names,
     /// which a sort no member of the model names reads (#8139).
     ported: &'model [(Name, crate::module::TypeComponent<'source>)],
-    /// The origin every minted node carries.
-    origin: Origin,
 }
 
 /// A theory whose components
@@ -1543,9 +1543,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                 },
                 Maybe::Absent(_) => Err(Missing::Unlowered),
             },
-            (TypeMeaning::Builtin(_), false) => Err(Missing::Unlowered),
             (
-                TypeMeaning::Manifest(_) | TypeMeaning::Sealed | TypeMeaning::Instantiated { .. },
+                TypeMeaning::Manifest(_)
+                | TypeMeaning::Sealed
+                | TypeMeaning::Instantiated { .. }
+                | TypeMeaning::Builtin(_),
                 false,
             )
             | (TypeMeaning::Family(_), true) => Err(Missing::Unlowered),

@@ -1526,11 +1526,6 @@ pub struct Collected<'source>
     pub descriptions: Layered<NodeIndex, crate::description::DescribedDeclaration>,
     /// Member-local diagnostics retained independently of native admission.
     pub description_diagnostics: Vec<crate::description::DescriptionDiagnostic>,
-    /// The type member that each kept port sort of a theory names, keyed by
-    /// the theory's written declaration: the resolve of its source's scope,
-    /// kept apart from the descriptions that a layer can share (#8139).
-    pub port_sorts:
-        BTreeMap<NodeIndex, Vec<(gandr_theory_levitation::Name, TypeComponent<'source>)>>,
     /// The data families the native reading owns whole, where their members
     /// are written.
     pub natives: Vec<crate::description::NativeFamily>,
@@ -1713,6 +1708,11 @@ pub struct Collected<'source>
     /// Each source's offer, `offers [ … ] ;`, by the source: what a site
     /// answers the rows of the worlds placed at it with.
     pub offers: BTreeMap<SourceIndex, world::SiteOffer>,
+    /// The type member that each kept port sort of a theory names, keyed by
+    /// the theory's written declaration: the resolve of its source's scope,
+    /// kept apart from the descriptions that a layer can share (#8139).
+    pub port_sorts:
+        BTreeMap<NodeIndex, Vec<(gandr_theory_levitation::Name, TypeComponent<'source>)>>,
 }
 
 quenchant_shape::reason_enum! {
@@ -7243,7 +7243,7 @@ struct Opened<'source>
 enum Header<'source>
 {
     /// A module whose body is read.
-    Opened(Opened<'source>),
+    Opened(alloc::boxed::Box<Opened<'source>>),
     /// A path, its two bodies read as flows' headers.
     Path(alloc::boxed::Box<path::PathHeader<'source>>),
     /// A functor application binding its instance.
@@ -7544,7 +7544,7 @@ impl<'source> Collector<'_, 'source>
                     let refusal = misplaced_in(FormName::MODULE, segment.span);
                     let _held = self.refuse_held(top, opened.name, module, opened.named, refusal);
                 },
-                (Ok(within), _) => self.open(within, module, opened, &mut stack),
+                (Ok(within), _) => self.open(within, module, *opened, &mut stack),
                 (Err(refusal), _) => {
                     let _held = self.refuse_held(top, opened.name, module, opened.named, refusal);
                 },
@@ -7847,7 +7847,7 @@ impl<'source> Collector<'_, 'source>
             return refused(misplaced_in(FormName::MODULE, cursor.here()));
         }
 
-        Ok(Header::Opened(Opened {
+        Ok(Header::Opened(alloc::boxed::Box::new(Opened {
             name,
             named,
             ascription,
@@ -7855,7 +7855,7 @@ impl<'source> Collector<'_, 'source>
             sealed,
             members,
             parameter,
-        }))
+        })))
     }
 
     /// Read a flow's header past its `flow` keyword: its name, its domain and
@@ -7959,7 +7959,7 @@ impl<'source> Collector<'_, 'source>
         self.collected.declared_uses.push(domain_used);
         self.collected.declared_uses.push(used);
 
-        Header::Opened(Opened {
+        Header::Opened(alloc::boxed::Box::new(Opened {
             name,
             named,
             ascription: Maybe::Present(components),
@@ -7982,7 +7982,7 @@ impl<'source> Collector<'_, 'source>
                     },
                 },
             }),
-        })
+        }))
     }
 
     /// Read a functor application's tail past its `=`: `F(P(.p)*) ;`, or a
@@ -8793,7 +8793,7 @@ impl<'source> Collector<'_, 'source>
             return Ok(());
         }
         match self.header(member, pieces)? {
-            Header::Opened(opened) => self.open(container, member, opened, stack),
+            Header::Opened(opened) => self.open(container, member, *opened, stack),
             Header::Path(path) => {
                 self.fault_at(structure, member, misplaced_in(form, path.named().span));
             },

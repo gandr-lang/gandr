@@ -3568,6 +3568,8 @@ fn undeclared_ports(
 ///
 /// # Cost
 /// - allocation: the refusal and its message, error path
+#[must_use]
+#[inline]
 pub fn unknown_port_sort(
     operation: &Name,
     sort: &Name,
