@@ -1806,7 +1806,7 @@ impl CommandArena
     /// - witness: `il::tests::minting_refuses_a_dangling_child`
     /// - witness: `il::tests::every_node_form_checks_its_child_families`
     /// - witness: `il::tests::the_first_dangling_child_wins`
-    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
+    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling_8054`
     #[inline]
     #[spec(
         captures: [entry = self.watermark()],
@@ -1873,7 +1873,7 @@ impl CommandArena
     /// - witness: `il::tests::minting_refuses_a_dangling_child`
     /// - witness: `il::tests::every_node_form_checks_its_child_families`
     /// - witness: `il::tests::the_first_dangling_child_wins`
-    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
+    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling_8054`
     #[inline]
     #[spec(
         captures: [entry = self.watermark()],
@@ -1940,7 +1940,7 @@ impl CommandArena
     /// - witness: `il::tests::minting_refuses_a_dangling_child`
     /// - witness: `il::tests::every_node_form_checks_its_child_families`
     /// - witness: `il::tests::the_first_dangling_child_wins`
-    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
+    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling_8054`
     #[inline]
     #[spec(
         captures: [entry = self.watermark()],

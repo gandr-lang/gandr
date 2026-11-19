@@ -349,7 +349,7 @@ impl Store
     ///   misplaced value. The helper covers the ceiling with families of
     ///   zero-sized nodes; the store is not populated to the ceiling.
     /// - witness: `store::tests::heap_reads_preserve_identity_at_the_end`
-    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
+    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling_8054`
     #[inline]
     #[spec(
         captures: [entry = usize::from(self.values.len())],
