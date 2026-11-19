@@ -5,7 +5,7 @@ Generated from the built-in grammar by `mise run ledger:syntax`; never edited by
 - Grammar fingerprint: `0x70295d0d7c35ff4d`
 - Rules: 176 — 175 committed, 1 internal
 - Molds: 3159
-- Attributes: 21
+- Attributes: 20
 
 ## Reading a form
 
@@ -243,12 +243,14 @@ A rule no source can mold, with the reason and what the reason is read from: the
 | ---- | ---- | ---- | ------ | --------- |
 | `instantiation.type` | instantiation | `TYPE` | the form holds no tile, so no tree names the rule | grammar |
 
-## Superseded — 14 spellings
+## Superseded — 16 spellings
 
 An old spelling and the spelling that replaces it. A spelling the grammar still parses, so that a stale source reaches the decline of the elaborator, names the open issue that removes it, and `check:ledger` refuses a row whose issue does not stand open. A spelling that a source meets as a refusal names the refusal, and `check:ledger` refuses a row whose exemplar under `corpus/ledger/syntax/superseded/` does not state it.
 
 | Rule | Old spelling | Replaced by | Removal | Why the record stands |
 | ---- | ------------ | ----------- | ------- | --------------------- |
+| `attribute_block` | `native_attribute` | `builtin` | refused as [`RetiredSpelling.native_attribute`](../corpus/ledger/syntax/superseded/native-attribute.gandr) | a native value is a row of the builtin table: `@[builtin("key")]` binds it, and the reader refuses `native` by name |
+| `attribute_block` | `builtin_word` | `builtin("key")` | refused as [`RetiredSpelling.builtin_word`](../corpus/ledger/syntax/superseded/builtin-word.gandr) | a `builtin` mark names its row by a key in quotes, as each row of the builtin table: the reader refuses a bare word by name |
 | `tuple_pattern` | `parenthesized_product_pattern` | `*{p, q}` | refused as [`RetiredSpelling.parenthesized_product_pattern`](../corpus/ledger/syntax/superseded/parenthesized-product-pattern.gandr) | a group in parentheses over a stored product, in a `let` or a match arm, is refused by name: `*{p, q}` is the pattern; a group over a call's outputs keeps its reading |
 | `telescope_expression` | `unit_value` | `*{}` | refused as [`RetiredSpelling.unit_value`](../corpus/ledger/syntax/superseded/unit-value.gandr) | the unit value is the empty telescope `*{}`: the name `unit`, where no declaration binds it, is refused by name |
 | `function_type` | `fat_arrow_box` | `A -> B` | refused as [`RetiredSpelling.fat_arrow_box`](../corpus/ledger/syntax/superseded/fat-arrow-box.gandr) | the box `A => B` in a signature, a nested box, a group in parentheses or a record field is refused by name; a parameter, a result and a constructor field keep their faults, and a box in an expression hole is not named |
@@ -264,7 +266,7 @@ An old spelling and the spelling that replaces it. A spelling the grammar still 
 | `theory_declaration` | `empty_operation_inputs` | `oper c : T` | refused as [`RetiredSpelling.empty_operation_inputs`](../corpus/ledger/syntax/superseded/empty-operation-inputs.gandr) | an operation of no input is a constant: `oper c : T` states it, and the reader refuses `() -->` by name |
 | `theory_declaration` | `empty_operation_call` | `c` | refused as [`RetiredSpelling.empty_operation_call`](../corpus/ledger/syntax/superseded/empty-operation-call.gandr) | a constant is its bare name in a term: the reader refuses `c ()` by name |
 
-## Attributes — 21 attributes
+## Attributes — 20 attributes
 
 Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes, linking its exemplar, which the exemplar gate lowers and checks the attribute is filed.
 
@@ -288,9 +290,8 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`identity`](../corpus/ledger/attributes/identity.gandr) | a tuple of two or three declared names: a relation, its reflexivity and optionally its transport law |
 | [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` |
 | [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
-| [`builtin`](../corpus/ledger/attributes/builtin.gandr) | one of the words `irSignature`, `irPair`, `irArgs`, `irDecode` |
+| [`builtin`](../corpus/ledger/attributes/builtin.gandr) | a text payload |
 | [`inert`](../corpus/ledger/attributes/inert.gandr) | no payload |
-| [`native`](../corpus/ledger/attributes/native.gandr) | a text payload |
 
 ## Decisions — 118 of 176 rules decided at every token
 

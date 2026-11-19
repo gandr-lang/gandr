@@ -73,6 +73,7 @@ digraph crates {
     label = "runtime";
     "runtime-emitter";
     "runtime-net";
+    "runtime-rust-record";
     "runtime-scope";
     "runtime-stencils";
     "runtime-uring";
@@ -246,6 +247,7 @@ digraph crates {
   "runtime-emitter" -> "theory-cell-complexes";
   "runtime-net" -> "core-term";
   "runtime-net" -> "storage-values";
+  "runtime-rust-record" -> "core-publish";
   "runtime-scope" -> "runtime-uring";
   "storage-artifact" -> "kernel-term";
   "storage-artifact" -> "storage-chunker";

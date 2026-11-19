@@ -986,7 +986,7 @@ struct Header
 ///   one of them: in the attribute table, or, for `doc`, as documentation
 ///   holding more lines than `header`. The source lowers alone, so its imports
 ///   resolve to nothing here, and `check:exemplars` settles what they bind
-///   under the fixture root. A `native` exemplar lowers as a module of `std`,
+///   under the fixture root. A `builtin` exemplar lowers as a module of `std`,
 ///   the one place its mark stands.
 /// - fails: the lowering refuses, or the attribute is filed nowhere.
 /// - panics: none.
@@ -1013,7 +1013,7 @@ fn filed(
 ) -> Result<(), ExemplarFault>
 {
     let mut arena = CoreArena::new();
-    let lowered = if attribute == RegisteredAttribute::NATIVE {
+    let lowered = if attribute == RegisteredAttribute::BUILTIN {
         let unit = Unit::new(vec![
             UnitSource::new(ByteOffset::from(0_usize), Vec::new())
                 .homed(SurfaceName::from("std.exemplar")),

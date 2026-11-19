@@ -23,6 +23,7 @@ members = [
   "crates/kernel-term",
   "crates/runtime-emitter",
   "crates/runtime-net",
+  "crates/runtime-rust-record",
   "crates/runtime-scope",
   "crates/runtime-stencils",
   "crates/runtime-uring",
@@ -102,6 +103,11 @@ members = [
   "crates/workflow-sweep",
   "crates/workflow-test-timing",
 ]
+# The reader links rustc's own libraries, which the `rustc-dev` component
+# supplies and which no other crate links. So it builds in a workspace of its
+# own, under `check:rust-record`, and no build of this workspace needs the
+# component.
+exclude = ["crates/runtime-rust-reader"]
 
 [workspace.package]
 version = "0.0.0"
@@ -172,6 +178,7 @@ default-features = false
 # - kernel-strata
 # - kernel-term
 # - runtime-net
+# - runtime-rust-record
 # - storage-artifact
 # - storage-chunker
 # - storage-records
@@ -302,6 +309,7 @@ default-features = false
 # - core-incremental
 # - kernel-core (and its build script)
 # - runtime-emitter
+# - runtime-rust-record
 # - storage-artifact
 # - storage-records
 # - storage-schema
@@ -539,6 +547,7 @@ path = "crates/core-nbe-base"
 # exclusively, then renamed onto its name.
 # consumers:
 # - core-incremental
+# - runtime-rust-record
 [workspace.dependencies.gandr-core-publish]
 path = "crates/core-publish"
 

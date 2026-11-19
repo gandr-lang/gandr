@@ -1074,6 +1074,11 @@ INSERT INTO purpose VALUES('core-term','arena::Minted','enum','Where a node stan
 INSERT INTO purpose VALUES('core-term','arena::QubitPrecedence','enum','Where a value type stands against its arena''s first qubit type: a type minted before it holds no qubit.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','arena::ValueId','struct','The arena-relative allocation index of a Value node, valid while its node remains live.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','arena::ValueTypeId','struct','The arena-relative allocation index of a ValueType node, valid while its node remains live.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','builtin::Direction','enum','Who gives the meaning of a builtin row: the toolchain gives a native value, and the library gives the declaration of a role.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','builtin::Key','struct','The text that names a row of the builtin table, as the payload of a `builtin` mark spells it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','builtin::Kind','enum','What a builtin row is: a native value or a role.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','builtin::Row','enum','One row of the builtin table, so a declaration of `std` takes each built-in name by one key.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','builtin::row','module','Names the reason a key names no row.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','children::Visit','trait','What a walk does with each child of a core node, one method per family, each handed the binders of each zone the former opens over that child.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','children::of_comp_type','function','Hands each child of a computation type to a visit, in order, with the binders its former opens over it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','children::of_computation','function','Hands each child of a computation to a visit, in order, with the binders of each zone its former opens over it.',NULL,'fits','sound',NULL);
@@ -3534,6 +3539,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','doc::documentation','module'
 INSERT INTO purpose VALUES('surface-lowering-base','doc::entry','module','Names the reason none is held: the node is not a `doc("…")` entry.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','doc::read_doc','function','Reads a declaration''s `///` lines and `doc("…")` entries into one text, so the text''s links are resolved against the module''s declared names.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','error::AscriptionForm','enum','Names the form an ascription takes, so an ascription''s form is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','error::BuiltinFault','enum','Names why a `builtin` mark binds no row of the builtin table, so each fault of the mark is refused apart.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','error::CrossedExit','enum','Names an exit that crosses a handler''s frame, so the refusal names the fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','error::FormFault','enum','Names a form''s fault, so a repaired form is refused where it stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','error::FragmentBoundary','enum','Names the boundary a form out of the fragment crossed, so the refusal names the boundary.',NULL,'fits','sound',NULL);
@@ -3541,7 +3547,6 @@ INSERT INTO purpose VALUES('surface-lowering-base','error::FragmentSort','enum',
 INSERT INTO purpose VALUES('surface-lowering-base','error::LoopExit','enum','Names a loop''s exit, so a `break` or a `continue` on no path through a loop''s body is refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','error::LoweringRefusal','enum','Names the crate''s typed refusal vocabulary, so a refusal''s span is named.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','error::MatchFault','enum','Names how an import''s signature misses its source''s interface, so a missing member, one at another type and one with no written type are refused apart.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-lowering-base','error::NativeFault','enum','Names why a `native` mark declares no row of the native table, so each fault of the mark is refused apart.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','error::TelescopeFault','enum','Names a telescope''s fault, so the refusal names the fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','error::Unexported','enum','Names why an imported name is not exported, so a private name and an undefined one are refused apart.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','error::description_subject','module','Names the reason the name is absent.',NULL,'fits','sound',NULL);

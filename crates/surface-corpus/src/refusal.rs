@@ -120,12 +120,12 @@ use gandr_core_term::FailureClass;
 use gandr_core_term::generic::Uncovered;
 use gandr_kernel_term::StringLiteral;
 use gandr_surface_grammar::RetiredForm;
+use gandr_surface_lowering::BuiltinFault;
 use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::FragmentFeature;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
-use gandr_surface_lowering::NativeFault;
 use gandr_surface_lowering::OperandCount;
 use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::Unbuilt;
@@ -757,12 +757,6 @@ pub enum RefusalName
     BridgeAtSealedType,
     /// The checker reports `SealSiteRepeated`.
     SealSiteRepeated,
-    /// The checker reports `BuiltinRepeated`.
-    BuiltinRepeated,
-    /// The checker reports `BuiltinMisplaced`.
-    BuiltinMisplaced,
-    /// The checker reports `BuiltinNotCanonical`.
-    BuiltinNotCanonical,
     /// The checker reports `DataArgumentArity`.
     DataArgumentArity,
     /// The checker reports `UnknownConstructor`.
@@ -945,9 +939,10 @@ pub enum RefusalName
     /// A declaration of a source whose import is written at a signature its
     /// source's `pub` interface does not hold, qualified by how.
     SignatureMismatch(Tag),
-    /// A `native` mark that declares no row of the native table, qualified by
+    /// A `builtin` mark that binds its declaration to no row of the builtin
+    /// table, or a holder of a role that the checker refuses, qualified by
     /// why.
-    NativeMark(Tag),
+    BuiltinMark(Tag),
     /// A name an import binds and another binding of the source binds too.
     ImportShadows,
     /// A name an import answers with a declaration its source does not export.
@@ -1351,7 +1346,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 252_usize] = [
+    pub const VOCABULARY: [Self; 249_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1366,9 +1361,6 @@ impl RefusalName
         Self::AtomTransport,
         Self::BridgeAtSealedType,
         Self::SealSiteRepeated,
-        Self::BuiltinRepeated,
-        Self::BuiltinMisplaced,
-        Self::BuiltinNotCanonical,
         Self::DataArgumentArity,
         Self::UnknownConstructor,
         Self::ConstructorArity,
@@ -1642,7 +1634,7 @@ impl RefusalName
             .chain(MEMBER_FAULTS.map(|fault| Self::UndescribedMember(member_tag(fault))))
             .chain(BOUNDARY_CLAUSES.map(|clause| Self::BoundaryUnrealised(clause.tag())))
             .chain(SIGNATURE_FAULTS.map(|fault| Self::SignatureMismatch(signature_tag(fault))))
-            .chain(NATIVE_FAULTS.map(|fault| Self::NativeMark(native_tag(fault))))
+            .chain(BUILTIN_TAGS.map(Self::BuiltinMark))
             .chain([
                 Self::UnprovenLaw,
                 Self::NoFiller(FillerAsk::Omitted),
@@ -1682,7 +1674,7 @@ impl RefusalName
         b"DuplicateSignature") | (Self::DuplicateDefinition, b"DuplicateDefinition") |
         (Self::DuplicateImportAlias, b"DuplicateImportAlias") | (Self::ImportUnresolved,
         b"ImportUnresolved") | (Self::ImportCycle, b"ImportCycle") | (Self::UnlockedDependency,
-        b"UnlockedDependency") | (Self::SignatureMismatch(_), b"SignatureMismatch") | (Self::NativeMark(_), b"NativeMark") | (Self::ImportShadows,
+        b"UnlockedDependency") | (Self::SignatureMismatch(_), b"SignatureMismatch") | (Self::BuiltinMark(_), b"BuiltinMark") | (Self::ImportShadows,
         b"ImportShadows") | (Self::UnexportedName, b"UnexportedName") | (Self::ShadowedBuiltin,
         b"ShadowedBuiltin") | (Self::OutOfFragment(_), b"OutOfFragment") |
         (Self::BareFeedback, b"BareFeedback") |
@@ -1782,9 +1774,6 @@ impl RefusalName
         | (Self::AtomTransport, b"AtomTransport")
         | (Self::BridgeAtSealedType, b"BridgeAtSealedType")
         | (Self::SealSiteRepeated, b"SealSiteRepeated")
-        | (Self::BuiltinRepeated, b"BuiltinRepeated")
-        | (Self::BuiltinMisplaced, b"BuiltinMisplaced")
-        | (Self::BuiltinNotCanonical, b"BuiltinNotCanonical")
         | (Self::DataArgumentArity, b"DataArgumentArity")
         | (Self::UnknownConstructor, b"UnknownConstructor")
         | (Self::ConstructorArity, b"ConstructorArity")
@@ -1912,7 +1901,7 @@ impl RefusalName
         | (Self::DialogueInverted, b"DialogueInverted")
         | (Self::ForwardUnsupported, b"ForwardUnsupported")
         | (Self::Boundary, b"Boundary")
-    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::SignatureMismatch(_) | Self::NativeMark(_) | Self::RetiredSpelling(_) | Self::UnprovenLaw | Self::NoFiller(FillerAsk::Omitted) | Self::GenericUncovered(GenericCoverage::Dependent) | Self::Immobile(CrossingRead::Capture | CrossingRead::Homed) | Self::NotOpen(CrossingRead::Capture | CrossingRead::Homed))
+    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::SignatureMismatch(_) | Self::BuiltinMark(_) | Self::RetiredSpelling(_) | Self::UnprovenLaw | Self::NoFiller(FillerAsk::Omitted) | Self::GenericUncovered(GenericCoverage::Dependent) | Self::Immobile(CrossingRead::Capture | CrossingRead::Homed) | Self::NotOpen(CrossingRead::Capture | CrossingRead::Homed))
         == ret.qualifier.is_some()
 },
     )]
@@ -1935,9 +1924,6 @@ impl RefusalName
             Self::AtomTransport => "AtomTransport",
             Self::BridgeAtSealedType => "BridgeAtSealedType",
             Self::SealSiteRepeated => "SealSiteRepeated",
-            Self::BuiltinRepeated => "BuiltinRepeated",
-            Self::BuiltinMisplaced => "BuiltinMisplaced",
-            Self::BuiltinNotCanonical => "BuiltinNotCanonical",
             Self::DataArgumentArity => "DataArgumentArity",
             Self::UnknownConstructor => "UnknownConstructor",
             Self::ConstructorArity => "ConstructorArity",
@@ -1972,7 +1958,7 @@ impl RefusalName
             Self::ImportCycle => "ImportCycle",
             Self::UnlockedDependency => "UnlockedDependency",
             Self::SignatureMismatch(_) => "SignatureMismatch",
-            Self::NativeMark(_) => "NativeMark",
+            Self::BuiltinMark(_) => "BuiltinMark",
             Self::RetiredSpelling(_) => "RetiredSpelling",
             Self::ImportShadows => "ImportShadows",
             Self::UnexportedName => "UnexportedName",
@@ -2189,7 +2175,7 @@ impl RefusalName
         | Self::UndescribedMember(fault)
         | Self::BoundaryUnrealised(fault)
         | Self::SignatureMismatch(fault)
-        | Self::NativeMark(fault) = self
+        | Self::BuiltinMark(fault) = self
         {
             Some(Qualifier::Named(fault))
         }
@@ -2290,7 +2276,7 @@ impl RefusalName
                 "SignatureMismatch" => {
                     tagged(&SIGNATURE_FAULTS.map(signature_tag)).map(Self::SignatureMismatch)
                 },
-                "NativeMark" => tagged(&NATIVE_FAULTS.map(native_tag)).map(Self::NativeMark),
+                "BuiltinMark" => tagged(&BUILTIN_TAGS).map(Self::BuiltinMark),
                 "RetiredSpelling" => RetiredForm::ALL
                     .into_iter()
                     .find(|form| form.surface().0 == rest)
@@ -2392,13 +2378,25 @@ const MODEL_FAULTS: [ModelFault; 13_usize] = [
 const SIGNATURE_FAULTS: [MatchFault; 3_usize] =
     [MatchFault::Missing, MatchFault::Sort, MatchFault::Unstated];
 
-/// Every fault a `native` mark carries.
-const NATIVE_FAULTS: [NativeFault; 5_usize] = [
-    NativeFault::NoRow,
-    NativeFault::Bodied,
-    NativeFault::OutsideStd,
-    NativeFault::TypeDiffers,
-    NativeFault::SecondDeclaration,
+/// The tag of the checker's refusal of a role's holder whose judgement is not
+/// the role's.
+const MISPLACED: Tag = Tag("Misplaced");
+
+/// The tag of the checker's refusal of a role's holder that departs from the
+/// canonical form of the role.
+const NOT_CANONICAL: Tag = Tag("NotCanonical");
+
+/// Every tag of the family `BuiltinMark`: each fault of a `builtin` mark,
+/// then the checker's two refusals of a role's holder.
+const BUILTIN_TAGS: [Tag; 8_usize] = [
+    builtin_tag(BuiltinFault::OutsideToolchain),
+    builtin_tag(BuiltinFault::NoRow),
+    builtin_tag(BuiltinFault::Bodied),
+    builtin_tag(BuiltinFault::Unbodied),
+    builtin_tag(BuiltinFault::Repeated),
+    builtin_tag(BuiltinFault::TypeDiffers),
+    MISPLACED,
+    NOT_CANONICAL,
 ];
 
 /// Every fault a member the description does not read carries.
@@ -2670,16 +2668,17 @@ const fn signature_tag(fault: MatchFault) -> Tag
 ///   would restate. The witness reads each minted name back.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `NativeMark.NoRow` is minted by its fault's tag.
+/// - hypothesis: L3 — `BuiltinMark.NoRow` is minted by its fault's tag.
 /// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
-const fn native_tag(fault: NativeFault) -> Tag
+const fn builtin_tag(fault: BuiltinFault) -> Tag
 {
     Tag(match fault {
-        NativeFault::NoRow => "NoRow",
-        NativeFault::Bodied => "Bodied",
-        NativeFault::OutsideStd => "OutsideStd",
-        NativeFault::TypeDiffers => "TypeDiffers",
-        NativeFault::SecondDeclaration => "SecondDeclaration",
+        BuiltinFault::NoRow => "NoRow",
+        BuiltinFault::Bodied => "Bodied",
+        BuiltinFault::Unbodied => "Unbodied",
+        BuiltinFault::OutsideToolchain => "OutsideToolchain",
+        BuiltinFault::TypeDiffers => "TypeDiffers",
+        BuiltinFault::Repeated => "Repeated",
     })
 }
 
@@ -2963,8 +2962,8 @@ impl<'source> RefusalOf<'source, Arena>
         RefusalName::UnreadAscription) | (LoweringRefusal::UnreadCells { .. },
         RefusalName::UnreadCells) | (LoweringRefusal::UnstatedComponent { .. },
         RefusalName::UnstatedComponent(_)) | (LoweringRefusal::SignatureMismatch { .. },
-        RefusalName::SignatureMismatch(_)) | (LoweringRefusal::NativeMark { .. },
-        RefusalName::NativeMark(_)) | (LoweringRefusal::UndescribedMember { .. },
+        RefusalName::SignatureMismatch(_)) | (LoweringRefusal::BuiltinMark { .. },
+        RefusalName::BuiltinMark(_)) | (LoweringRefusal::UndescribedMember { .. },
         RefusalName::UndescribedMember(_)) | (LoweringRefusal::FamilyTelescope { .. },
         RefusalName::FamilyTelescope) | (LoweringRefusal::NonUniformResult { .. },
         RefusalName::NonUniformResult) | (LoweringRefusal::UninterfacedMember { .. },
@@ -3024,8 +3023,8 @@ impl<'source> RefusalOf<'source, Arena>
         ret == RefusalName::UndescribedMember(member_tag(fault))
     } else if let LoweringRefusal::SignatureMismatch { fault, .. } = refusal {
         ret == RefusalName::SignatureMismatch(signature_tag(fault))
-    } else if let LoweringRefusal::NativeMark { fault, .. } = refusal {
-        ret == RefusalName::NativeMark(native_tag(fault))
+    } else if let LoweringRefusal::BuiltinMark { fault, .. } = refusal {
+        ret == RefusalName::BuiltinMark(builtin_tag(fault))
     } else if let LoweringRefusal::MalformedForm {
         fault: FormFault::Retired(form) | FormFault::Repaired(Repair::Retired(form)),
         ..
@@ -3103,7 +3102,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::SignatureMismatch { fault, .. } => {
             RefusalName::SignatureMismatch(signature_tag(fault))
         },
-        LoweringRefusal::NativeMark { fault, .. } => RefusalName::NativeMark(native_tag(fault)),
+        LoweringRefusal::BuiltinMark { fault, .. } => RefusalName::BuiltinMark(builtin_tag(fault)),
         LoweringRefusal::UndescribedMember { fault, .. } => {
             RefusalName::UndescribedMember(member_tag(fault))
         },
@@ -3213,9 +3212,12 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusalOf::AtomTransport { .. }, RefusalName::AtomTransport)
         | (CheckRefusalOf::BridgeAtSealedType { .. }, RefusalName::BridgeAtSealedType)
         | (CheckRefusalOf::SealSiteRepeated(_), RefusalName::SealSiteRepeated)
-        | (CheckRefusalOf::BuiltinRepeated { .. }, RefusalName::BuiltinRepeated)
-        | (CheckRefusalOf::BuiltinMisplaced(_), RefusalName::BuiltinMisplaced)
-        | (CheckRefusalOf::BuiltinNotCanonical { .. }, RefusalName::BuiltinNotCanonical)
+        | (
+            CheckRefusalOf::BuiltinRepeated { .. }
+            | CheckRefusalOf::BuiltinMisplaced(_)
+            | CheckRefusalOf::BuiltinNotCanonical { .. },
+            RefusalName::BuiltinMark(_),
+        )
         | (CheckRefusalOf::DataArgumentArity(_), RefusalName::DataArgumentArity)
         | (CheckRefusalOf::UnknownConstructor { .. }, RefusalName::UnknownConstructor)
         | (CheckRefusalOf::ConstructorArity(_), RefusalName::ConstructorArity)
@@ -3378,9 +3380,11 @@ where
         CheckRefusalOf::AtomTransport { .. } => RefusalName::AtomTransport,
         CheckRefusalOf::BridgeAtSealedType { .. } => RefusalName::BridgeAtSealedType,
         CheckRefusalOf::SealSiteRepeated(_) => RefusalName::SealSiteRepeated,
-        CheckRefusalOf::BuiltinRepeated { .. } => RefusalName::BuiltinRepeated,
-        CheckRefusalOf::BuiltinMisplaced(_) => RefusalName::BuiltinMisplaced,
-        CheckRefusalOf::BuiltinNotCanonical { .. } => RefusalName::BuiltinNotCanonical,
+        CheckRefusalOf::BuiltinRepeated { .. } => {
+            RefusalName::BuiltinMark(builtin_tag(BuiltinFault::Repeated))
+        },
+        CheckRefusalOf::BuiltinMisplaced(_) => RefusalName::BuiltinMark(MISPLACED),
+        CheckRefusalOf::BuiltinNotCanonical { .. } => RefusalName::BuiltinMark(NOT_CANONICAL),
         CheckRefusalOf::DataArgumentArity(_) => RefusalName::DataArgumentArity,
         CheckRefusalOf::UnknownConstructor { .. } => RefusalName::UnknownConstructor,
         CheckRefusalOf::ConstructorArity(_) => RefusalName::ConstructorArity,
@@ -3748,10 +3752,10 @@ mod tests
         use gandr_surface_lowering::OperandCount;
         use gandr_surface_lowering::Unbuilt;
 
+        use super::BUILTIN_TAGS;
         use super::FORMERS;
         use super::MEMBER_FAULTS;
         use super::MODEL_FAULTS;
-        use super::NATIVE_FAULTS;
         use super::Qualifier;
         use super::Refusal;
         use super::SIGNATURE_FAULTS;
@@ -3761,7 +3765,6 @@ mod tests
         use super::former_tag;
         use super::member_tag;
         use super::model_tag;
-        use super::native_tag;
         use super::signature_tag;
 
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
@@ -3815,7 +3818,7 @@ mod tests
             .chain(
                 SIGNATURE_FAULTS.map(|fault| RefusalName::SignatureMismatch(signature_tag(fault))),
             )
-            .chain(NATIVE_FAULTS.map(|fault| RefusalName::NativeMark(native_tag(fault))))
+            .chain(BUILTIN_TAGS.map(RefusalName::BuiltinMark))
             .chain(
                 crossed()
                     .into_iter()

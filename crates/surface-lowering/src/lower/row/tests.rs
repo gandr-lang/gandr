@@ -9,7 +9,7 @@ use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 
-use crate::NativeFault;
+use crate::BuiltinFault;
 use crate::error::LoweringRefusal;
 use crate::lower::native::tests::assert_accepted;
 use crate::lower::native::tests::body_named;
@@ -35,13 +35,14 @@ fn homed() -> Unit
     .expect("one source starts at zero")
 }
 
-/// #7961: a signature of `std` that `native` marks takes the row's value at
-/// its declared type, and the checker accepts it. A call of the declaration
-/// lowers to the same term as a call of the row's own name.
+/// #8071: a signature of `std` that a `builtin` mark binds to a given row
+/// takes the row's value at its declared type, and the checker accepts it. A
+/// call of the declaration lowers to the same term as a call of the row's own
+/// name.
 #[test]
-fn a_native_signature_lowers_to_its_row_7961()
+fn a_given_row_lowers_to_its_value_8071()
 {
-    let text = include_str!("tests/unformatted/a-native-signature-lowers-to-its-row-7961.gandr");
+    let text = include_str!("tests/unformatted/a-given-row-lowers-to-its-value-8071.gandr");
     let mut arena = CoreArena::new();
     let module = preluded(SourceText::from(text), &homed(), &mut arena);
     let DeclarationOutcome::Completed { body, .. } =
@@ -69,18 +70,23 @@ fn a_native_signature_lowers_to_its_row_7961()
     assert_accepted(&judged(&module, &mut arena));
 }
 
-/// #7961: each fault of a `native` mark is refused by name at the mark. The
-/// mark names no row; it decorates a body; its type is not the row's; an
-/// earlier declaration declares the row; the source is no module of `std`.
+/// #8071: each fault of a `builtin` mark is refused by name at the mark. In a
+/// module of `std`: the key names no row; a given row's declaration has a
+/// body; its type is not the row's; an earlier declaration holds the given
+/// row; a found row's declaration has no body; an earlier declaration holds
+/// the role. Outside `std`, the mark is refused as outside the toolchain
+/// first, also when its key names no row.
 #[test]
-fn a_faulty_native_mark_is_refused_by_name_7961()
+fn each_fault_of_a_builtin_mark_is_refused_by_name_8071()
 {
-    let text = include_str!("tests/unformatted/a-faulty-native-mark-is-refused-by-name-7961.gandr");
-    // The span of the `n`-th `native` mark of a text, from its name through
+    let text = include_str!(
+        "tests/unformatted/each-fault-of-a-builtin-mark-is-refused-by-name-8071.gandr"
+    );
+    // The span of the `n`-th `builtin` mark of a text, from its name through
     // its closing parenthesis.
     let mark = |text: &str, n| {
         let start = text
-            .match_indices("native(")
+            .match_indices("builtin(")
             .nth(n)
             .map_or(0_usize, |(at, _)| at);
         let end = text
@@ -94,14 +100,16 @@ fn a_faulty_native_mark_is_refused_by_name_7961()
     let mut arena = CoreArena::new();
     let module = preluded(SourceText::from(text), &homed(), &mut arena);
     for (name, n, fault) in [
-        ("unrowed", 0_usize, NativeFault::NoRow),
-        ("bodied", 1_usize, NativeFault::Bodied),
-        ("narrow", 2_usize, NativeFault::TypeDiffers),
-        ("second", 4_usize, NativeFault::SecondDeclaration),
+        ("unrowed", 0_usize, BuiltinFault::NoRow),
+        ("bodied", 1_usize, BuiltinFault::Bodied),
+        ("narrow", 2_usize, BuiltinFault::TypeDiffers),
+        ("second", 4_usize, BuiltinFault::Repeated),
+        ("unbodied", 5_usize, BuiltinFault::Unbodied),
+        ("again", 7_usize, BuiltinFault::Repeated),
     ] {
         assert_eq!(
             refusal_of(&module, SurfaceName::from(name)),
-            LoweringRefusal::NativeMark {
+            LoweringRefusal::BuiltinMark {
                 span: mark(text, n),
                 fault,
             },
@@ -111,17 +119,18 @@ fn a_faulty_native_mark_is_refused_by_name_7961()
     let first = outcome_of(&module, SurfaceName::from("first"));
     assert!(
         matches!(first, DeclarationOutcome::Completed { .. }),
-        "the first declaration of a row stands: {first:?}"
+        "the first declaration of a given row stands: {first:?}"
     );
 
-    let outside = include_str!("tests/unformatted/a-native-signature-lowers-to-its-row-7961.gandr");
-    let module = preluded(SourceText::from(outside), &Unit::single(), &mut arena);
-    assert_eq!(
-        refusal_of(&module, SurfaceName::from("append")),
-        LoweringRefusal::NativeMark {
-            span: mark(outside, 0_usize),
-            fault: NativeFault::OutsideStd,
-        },
-        "a source that is no module of `std` writes no `native` mark"
-    );
+    let module = preluded(SourceText::from(text), &Unit::single(), &mut arena);
+    for (name, n) in [("unrowed", 0_usize), ("first", 3_usize), ("held", 6_usize)] {
+        assert_eq!(
+            refusal_of(&module, SurfaceName::from(name)),
+            LoweringRefusal::BuiltinMark {
+                span: mark(text, n),
+                fault: BuiltinFault::OutsideToolchain,
+            },
+            "`{name}` outside `std` is refused as outside the toolchain"
+        );
+    }
 }

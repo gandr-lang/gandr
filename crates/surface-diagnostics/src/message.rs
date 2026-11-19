@@ -65,13 +65,13 @@ use gandr_core_term::compose::Form;
 use gandr_surface_corpus::BoundaryClause;
 use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::RefusalOf;
+use gandr_surface_lowering::BuiltinFault;
 use gandr_surface_lowering::Ending;
 use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
-use gandr_surface_lowering::NativeFault;
 use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::Unexported;
 use gandr_surface_syntax::ClosingClass;
@@ -279,12 +279,15 @@ fn lowered(
             form.written().0,
             form.replaced_by().0
         ),
-        LoweringRefusal::NativeMark { fault, .. } => f.write_str(match fault {
-            NativeFault::NoRow => "the `native` mark names no row of the native table",
-            NativeFault::Bodied => "a declaration with a `native` mark has no body",
-            NativeFault::OutsideStd => "only a module of `std` writes a `native` mark",
-            NativeFault::TypeDiffers => "the declared type is not the type of the native row",
-            NativeFault::SecondDeclaration => "an earlier declaration declares this native row",
+        LoweringRefusal::BuiltinMark { fault, .. } => f.write_str(match fault {
+            BuiltinFault::NoRow => "the `builtin` key names no row of the builtin table",
+            BuiltinFault::Bodied => "a declaration of a given row has no body",
+            BuiltinFault::Unbodied => "a declaration of a found row has a body",
+            BuiltinFault::OutsideToolchain => {
+                "only a package of the toolchain writes a `builtin` mark"
+            },
+            BuiltinFault::TypeDiffers => "the declared type is not the type of the builtin row",
+            BuiltinFault::Repeated => "an earlier declaration holds this builtin row",
         }),
         LoweringRefusal::UnresolvedDocLink { name, .. } => {
             write!(

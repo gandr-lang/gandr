@@ -769,6 +769,35 @@ policy {{ env.GATE_SCOPE | default(value='--workspace') }} $features || status=$
 .config/policy/library-cases.bash
 '''
 
+# The reader links the libraries of rustc. So it is no member of the
+# workspace, and only this task builds it. The task adds the `rustc-dev`
+# component, as `check:dylint` does. The reader's own Cargo configuration puts
+# its build in the root's target directory.
+#
+# The task lints the reader with Clippy's groups and runs its tests on the
+# toolchain of the host. Each record agrees with the `define` line that rustc
+# emits and with `std.layout`. Each refusal names its cause. A second request
+# starts no process.
+#
+# Last, the task refuses `rustc_private` in each other crate. So no other
+# crate links a library of rustc.
+#
+# - see: .config/rust-record/linked.bash
+["check:rust-record"]
+description = "The reader of a Rust crate: its lints and its tests, and no other crate on rustc's libraries"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+rustup component add rustc-dev llvm-tools
+(
+  cd crates/runtime-rust-reader
+  cargo clippy --locked --release --all-targets -- --deny warnings
+  cargo test --locked --release
+)
+.config/rust-record/linked.bash
+.config/rust-record/linked-cases.bash
+'''
+
 # External workflow consumers use one full revision in Dylint metadata for
 # both the compiler plugin and this executable. Cargo's installation record
 # tracks that revision; --locked uses the source repository's lockfile.

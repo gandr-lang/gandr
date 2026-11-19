@@ -12,6 +12,7 @@
       "check:dylint",
       "check:landing",
       "check:obligations",
+      "check:rust-record",
       "check:tests-enforcing",
       "check:tests-plain-only",
       "check:witnesses"

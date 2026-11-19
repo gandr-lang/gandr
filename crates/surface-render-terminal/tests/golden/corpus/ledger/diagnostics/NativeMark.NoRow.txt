@@ -1,8 +1,0 @@
-error[NativeMark.NoRow]: the `native` mark names no row of the native table
-  ╭▸ corpus/ledger/diagnostics/NativeMark.NoRow.gandr:4:3
-  │
-4 │ @[native("string.join")]
-  │   ━━━━━━━━━━━━━━━━━━━━━ names no row of the native table
-  │
-  ├ note: `join` is refused with NativeMark.NoRow, as its expectation states
-  ╰ help: name a row of the native table, as `string.append`

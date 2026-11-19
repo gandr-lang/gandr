@@ -40,7 +40,7 @@ flowchart BT
   storage -->|1| kernel
   runtime -->|1| theory
   runtime -->|2| kernel
-  runtime -->|6| core
+  runtime -->|7| core
   runtime -->|3| storage
   surface -->|38| theory
   surface -->|31| kernel
@@ -82,6 +82,8 @@ crates/
 ├── kernel-term/                   the term arena, native universe paths, Empty, List and session codes, hypothesis-indexed stage syntax, the sharing format and decode budgets
 ├── runtime-emitter/               the L machine's commands copy-and-patched into native code under a content cache, or run on the portable executor
 ├── runtime-net/                   the network a host holds: streams to peers named by key, chunk fetches and migrations, over iroh
+├── runtime-rust-reader/           the reader of a Rust crate on rustc's own libraries: each requested function's symbol, convention and layouts, written as an entry of the record; no member, since it links rustc
+├── runtime-rust-record/           the record of a Rust function: its symbol, each operand's passage and each layout under the toolchain's identity, its canonical bytes and its cache
 ├── runtime-scope/                 the owner's scoped runtime on the ring: one thread drives a scope's futures, and the scope's end drains every operation it lent memory to
 ├── runtime-stencils/              the L machine's transitions written once: the stencils the emitter copies and patches, and the portable executor that dispatches them
 ├── runtime-uring/                 the kernel's io_uring as the owner wrote it: the ring, its queues, its registrar, a preparer for each operation, and his system-call base beside them
@@ -162,7 +164,7 @@ crates/
 └── workflow-test-timing/          the `test-timing` binary: nextest priorities from merge-queue timings
 ```
 
-The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins.
+The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins. `runtime-rust-reader` is not a member either: it links rustc's own libraries, so it is a workspace of its own, and `check:rust-record` builds it.
 
 A crate README's shape is [`ledger/README.md` § Crate READMEs](../ledger/README.md#crate-readmes).
 

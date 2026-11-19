@@ -270,8 +270,6 @@ fixture/model/higher-cells/path-cells.gandr	194	1	2440
 fixture/model/higher-cells/path-cells.gandr	197	1	2440
 fixture/model/higher-cells/path-cells.gandr	198	1	2440
 fixture/model/higher-cells/path-cells.gandr	199	1	2440
-fixture/model/higher-cells/ua-by-hand.gandr	433	3	2440
-fixture/model/higher-cells/ua-by-hand.gandr	620	3	2440
 fixture/model/higher-cells/ua-corolla-rig.gandr	23	3	2440
 fixture/model/higher-cells/ua-corolla-rig.gandr	24	1	2440
 fixture/model/higher-cells/ua-corolla-rig.gandr	42	3	2440
@@ -890,11 +888,6 @@ fixture/pathological/specification/specification-monad.gandr	168	4	2440
 fixture/pathological/specification/specification-monad.gandr	171	1	2440
 fixture/pathological/strings/joining.gandr	33	1	2440
 fixture/pathological/strings/method-ambiguity.gandr	52	1	2440
-fixture/pathological/strings/methods.gandr	55	1	2440
-fixture/pathological/strings/methods.gandr	113	1	2440
-fixture/pathological/strings/methods.gandr	166	1	2440
-fixture/pathological/strings/methods.gandr	223	1	2440
-fixture/pathological/strings/methods.gandr	308	1	2440
 fixture/pathological/strings/views.gandr	32	1	2440
 fixture/pathological/strings/views.gandr	85	1	2440
 fixture/pathological/strings/views.gandr	134	1	2440

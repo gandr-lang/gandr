@@ -54,7 +54,8 @@ The expression part of gandr's lowering. It plans and mints each expression and 
 - `vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576` — background: the layouts design — a boundary check is the layout program's verdict.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: `compose[n, k]` reads its stratum as `ua[n, k]` does.
 - `vault:01a15b47-4304-793b-a542-d12afcf732a6` — anchor: the methods design (§ methods-desugaring) — no view leaves its access, so a name read as a value is refused when its method needs the caller's hold.
-- `vault:01a1ebc5-2ff2-7833-b871-85901e734925` — anchor: a builtin is a declaration of `std` under `native`, with its type and no body. The lowering checks the declared type against the row.
+- `vault:01a1f320-0881-7ed1-9a54-c0c713ccf7cf` — anchor: the builtin-bindings design (§ builtin-binding) — a `builtin` mark binds a declaration of `std` to a row of the one table by its key. The lowering refuses each fault of the mark by name, and checks a given row's declared type against the row.
+- `vault:01a1ebc5-2ff2-7833-b871-85901e734925` — anchor: the bootstrap design (§ boot-data-builtins) — the toolchain gives a native value, and the library gives the declaration of a role.
 
 ## License
 

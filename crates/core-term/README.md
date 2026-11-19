@@ -105,6 +105,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: a composite is a former holding its cells' fold.
 - `Wood-2024-framework_semiringannotated_type_systems` — newest: Wood, PhD thesis, University of Strathclyde, 2024 — a grade as a semiring bound on uses.
 - `vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e` — anchor: the ambient primitive policy — a computational kernel primitive is admissible, priced as permanent trusted surface; the four identity rows of `primitive` compute in the kernel, and every other row stays an opaque assumption.
+- `vault:01a1f320-0881-7ed1-9a54-c0c713ccf7cf` — anchor: § builtin-binding, the one keyed table of builtins that `builtin` holds.
 - `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — newest: § implicits-rule-forced-solutions, a body read with the solutions of its implicits; `Rewrite::Solved` reads them in one walk.
 - `Liesnikov-2025-filling_gaps_polarity_implementing_dependent_data_codata_types_implicit_arguments` — newest: Liesnikov, Binder and Süberkrüb, "Filling the Gaps of Polarity", Programming 10(3) 19, 2025, `doi:10.22152/programming-journal.org/2025/10/19` — § 9.3's rule Env-∆.
 - `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's action of a map out of a sphere on its cell (`identity::cong_above`).

@@ -200,9 +200,8 @@
     {"exemplar":"../corpus/ledger/attributes/identity.gandr","name":"identity","payload":{"schema":"interface"},"reads":"a tuple of two or three declared names: a relation, its reflexivity and optionally its transport law"},
     {"exemplar":"../corpus/ledger/attributes/deprecated.gandr","name":"deprecated","payload":{"fields":["since","note"],"schema":"marker_or_record"},"reads":"no payload or a record of the texts `since`, `note`"},
     {"exemplar":"../corpus/ledger/attributes/boundary.gandr","name":"boundary","payload":{"schema":"names"},"reads":"a declared name or a tuple of declared names"},
-    {"exemplar":"../corpus/ledger/attributes/builtin.gandr","name":"builtin","payload":{"schema":"word","words":["irSignature","irPair","irArgs","irDecode"]},"reads":"one of the words `irSignature`, `irPair`, `irArgs`, `irDecode`"},
-    {"exemplar":"../corpus/ledger/attributes/inert.gandr","name":"inert","payload":{"schema":"marker"},"reads":"no payload"},
-    {"exemplar":"../corpus/ledger/attributes/native.gandr","name":"native","payload":{"schema":"text"},"reads":"a text payload"}
+    {"exemplar":"../corpus/ledger/attributes/builtin.gandr","name":"builtin","payload":{"schema":"text"},"reads":"a text payload"},
+    {"exemplar":"../corpus/ledger/attributes/inert.gandr","name":"inert","payload":{"schema":"marker"},"reads":"no payload"}
   ],
   "menus": [
     {"label":"identifier","molds":433,"opening":3,"rules":59},
@@ -420,6 +419,8 @@
     {"label":"≅","molds":1,"opening":1,"rules":1}
   ],
   "superseded": [
+    {"exemplar":"../corpus/ledger/syntax/superseded/native-attribute.gandr","reason":"a native value is a row of the builtin table: `@[builtin(\"key\")]` binds it, and the reader refuses `native` by name","refused":"RetiredSpelling.native_attribute","replaced_by":"builtin","rule":"attribute_block","surface":"native_attribute"},
+    {"exemplar":"../corpus/ledger/syntax/superseded/builtin-word.gandr","reason":"a `builtin` mark names its row by a key in quotes, as each row of the builtin table: the reader refuses a bare word by name","refused":"RetiredSpelling.builtin_word","replaced_by":"builtin(\"key\")","rule":"attribute_block","surface":"builtin_word"},
     {"exemplar":"../corpus/ledger/syntax/superseded/parenthesized-product-pattern.gandr","reason":"a group in parentheses over a stored product, in a `let` or a match arm, is refused by name: `*{p, q}` is the pattern; a group over a call's outputs keeps its reading","refused":"RetiredSpelling.parenthesized_product_pattern","replaced_by":"*{p, q}","rule":"tuple_pattern","surface":"parenthesized_product_pattern"},
     {"exemplar":"../corpus/ledger/syntax/superseded/unit-value.gandr","reason":"the unit value is the empty telescope `*{}`: the name `unit`, where no declaration binds it, is refused by name","refused":"RetiredSpelling.unit_value","replaced_by":"*{}","rule":"telescope_expression","surface":"unit_value"},
     {"exemplar":"../corpus/ledger/syntax/superseded/fat-arrow-box.gandr","reason":"the box `A => B` in a signature, a nested box, a group in parentheses or a record field is refused by name; a parameter, a result and a constructor field keep their faults, and a box in an expression hole is not named","refused":"RetiredSpelling.fat_arrow_box","replaced_by":"A -> B","rule":"function_type","surface":"fat_arrow_box"},
