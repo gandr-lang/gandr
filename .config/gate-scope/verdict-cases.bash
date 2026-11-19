@@ -177,14 +177,19 @@ got=$(
 )
 [[ $got == runs ]] || fail "#7684: a record whose body is not the run's key is refused" "$got"
 
-# Work that is not the tree of HEAD writes no record.
+# A completed gate writes the record of work before a commit holds it. The
+# later commit keeps that tree, publishes its record and reads it.
 got=$(
-  setup "$scratch/dirty"
+  setup "$scratch/uncommitted"
   printf 'two\n' > file
-  "$verdict" write "$("$here/passed.bash" tree)" check:clippy-arch 2> /dev/null
-  git for-each-ref --count=1 refs/verdicts/ | wc -l | tr -d ' '
+  tree=$("$here/passed.bash" tree)
+  "$verdict" write "$tree" check:clippy-arch 2> /dev/null
+  ref=$(git for-each-ref --count=1 "refs/verdicts/$tree/")
+  commit file two later > /dev/null
+  "$verdict" publish HEAD 2> /dev/null
+  if [[ -n $ref ]]; then reads; else echo no-record; fi
 )
-[[ $got == 0 ]] || fail "#7684: work that is not the tree of HEAD writes no record" "$got"
+[[ $got == held ]] || fail "#8169: an uncommitted gate record serves a later commit with its tree" "$got"
 
 # A merge group on a newer base reads the record of a base that the trunk
 # holds. The group's own `GATE_BASE` does not enter the key.
