@@ -726,10 +726,7 @@ impl Report<'_>
             identifier: self.identifier(),
             message: Message {
                 key: self.key(),
-                text: alloc::format!("{}", MessageText {
-                    subject: self.subject,
-                    marks: self.marks,
-                }),
+                text: alloc::format!("{}", MessageText(self.subject, self.marks)),
             },
             detail: DiagnosticDetail {
                 class: self.class(),
@@ -1455,15 +1452,10 @@ impl fmt::Display for TitleText<'_>
     }
 }
 
-/// The message a report leads with, and the marks of its source.
+/// The message a report leads with: its subject, and the marks of its
+/// source, which name what each `thir` mark staged.
 #[derive(Clone, Copy, Debug)]
-struct MessageText<'step>
-{
-    /// What the report is about.
-    subject: Subject<'step>,
-    /// What the source's `thir` marks staged.
-    marks: &'step [Staged],
-}
+struct MessageText<'step>(Subject<'step>, &'step [Staged]);
 
 impl fmt::Display for MessageText<'_>
 {
@@ -1509,7 +1501,7 @@ impl fmt::Display for MessageText<'_>
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
-        match self.subject {
+        match self.0 {
             Subject::Refused {
                 refusal:
                     refusal @ Refusal::Checking(CheckRefusalOf::ImplicitUnsolved { reason, .. }),
@@ -1746,7 +1738,7 @@ impl fmt::Display for MessageText<'_>
             Subject::Refused {
                 refusal: refusal @ Refusal::Lowering(LoweringRefusal::StagedBody { fault, .. }),
                 ..
-            } => match staged_name(self.marks, fault) {
+            } => match staged_name(self.1, fault) {
                 Maybe::Present(StagedName::Node(name)) => write!(
                     f,
                     "the staged body holds `{}`, a node outside the fragment",
@@ -1794,7 +1786,7 @@ impl fmt::Display for MessageText<'_>
             | Subject::InferredExit(_)
             | Subject::InferredRun(_)
             | Subject::Deprecated(_)
-            | Subject::Ledger { .. } => fmt::Display::fmt(&TitleText(self.subject), f),
+            | Subject::Ledger { .. } => fmt::Display::fmt(&TitleText(self.0), f),
         }
     }
 }
