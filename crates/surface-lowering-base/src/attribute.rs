@@ -550,6 +550,14 @@ impl RegisteredAttribute
     /// given row's declaration is a signature that states the row's type, and
     /// a found row's declaration has the body that a core former reads.
     pub const BUILTIN: Self = Self("builtin");
+    /// `thir`: the signature it decorates has no body, and its value is the
+    /// staged THIR of a Rust function. The payload names the Rust file beside
+    /// the source and the function's path inside that crate, both texts.
+    pub const THIR: Self = Self("thir");
+    /// `item`: the constructor it decorates stands for the Rust item whose
+    /// path its text names, so a staged call of that item is this
+    /// constructor.
+    pub const ITEM: Self = Self("item");
     /// `traces`: the run of the declaration it decorates is recorded, and the
     /// payload states the web one channel's play decomposes to. It is the one
     /// attribute written more than once on a name, once per channel.
@@ -772,7 +780,7 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 20_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 22_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
@@ -804,6 +812,8 @@ const REGISTRY: [(&str, AttributeSchema); 20_usize] = [
     ),
     (RegisteredAttribute::BOUNDARY.0, AttributeSchema::Names),
     (RegisteredAttribute::BUILTIN.0, AttributeSchema::Text),
+    (RegisteredAttribute::THIR.0, AttributeSchema::Texts),
+    (RegisteredAttribute::ITEM.0, AttributeSchema::Text),
     (RegisteredAttribute::INERT.0, AttributeSchema::Marker),
 ];
 
@@ -1975,6 +1985,8 @@ mod tests
             ),
             ("boundary", AttributeSchema::Names),
             ("builtin", AttributeSchema::Text),
+            ("thir", AttributeSchema::Texts),
+            ("item", AttributeSchema::Text),
             ("inert", AttributeSchema::Marker),
         ];
 
@@ -2037,6 +2049,8 @@ mod tests
             ("distribute", "distributes"),
             ("boundary", "boundary"),
             ("builtins", "builtin"),
+            ("the", "thir"),
+            ("items", "item"),
             ("inrt", "inert"),
         ];
 
