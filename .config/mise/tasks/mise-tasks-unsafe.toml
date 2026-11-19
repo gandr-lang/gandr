@@ -1,0 +1,36 @@
+#:tombi toml-version = "v1.0.0"
+#:schema https://mise.jdx.dev/schema/mise-task.json
+
+# The crates that hold `unsafe` (`.config/unsafe/crates.json`), their tests
+# under Miri and under cargo-careful, one task for each check (#7642).
+# `.config/unsafe/run.bash` says what each check runs and how a test is
+# skipped by name. The night runs the three over the crates whose files moved
+# (`nightly-sweeps.yml`'s `unsafe`). No landing runs them: their names keep
+# them out of the `check:*` glob of `gate:all`. Each task takes packages of
+# the list, and every crate of the list with none.
+["unsafe:miri-tree"]
+description = "The tests of the crates that hold unsafe under Miri with tree borrows and strict provenance"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+exec .config/unsafe/run.bash miri-tree "$@"
+'''
+
+["unsafe:miri-stacked"]
+description = "The tests of the crates that hold unsafe under Miri with stacked borrows and strict provenance"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+exec .config/unsafe/run.bash miri-stacked "$@"
+'''
+
+# The release ships no Apple-silicon binary and no Linux arm64 binary, so the
+# pin stays `cargo:`, as cargo-mutants' does (binstall fetches the rest).
+["unsafe:careful"]
+description = "The tests of the crates that hold unsafe under cargo-careful, with implicit provenance casts denied"
+tools.jq = "1.8.1"
+tools."cargo:cargo-careful" = "0.4.10"
+run = '''
+#!/usr/bin/env bash
+exec .config/unsafe/run.bash careful "$@"
+'''

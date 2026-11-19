@@ -1,0 +1,6618 @@
+//! The append-only term arena: the single owner of every term and type node,
+//! addressed by four typed `u32`-backed node ids.
+//!
+//! # Why an arena rather than owned trees
+//!
+//! A deep uniquely-owned tree still recurses on destruction, and a decoder can
+//! build an arbitrarily deep graph from bytes: an adversary offers one, has it
+//! rejected, and overflows the stack *dropping* it. Iterative decode and
+//! iterative checking do not cover deallocation, so under owned pointers the
+//! answer is a hand-written iterative destructor that becomes a permanent
+//! fixture of the trusted base.
+//!
+//! The arena **dissolves** that obligation rather than managing it. Ids are
+//! `Copy`, so no deep clone exists to make iterative; teardown is a flat vector
+//! drop with no recursive drop glue; and the derived equality, hashing and
+//! debug instances are shallow over ids. This is also the sanctioned form of
+//! the flat-representation rule: recursive owned data is id-addressed, so the
+//! type plane has no owning-pointer cycle to reject.
+//!
+//! # Constructor and admission disciplines
+//!
+//! - **Constructor-only minting.** A constructor appends to one family over
+//!   caller-supplied live children. Within that family, a new index follows its
+//!   children while the family length fits u32; cross-family ids have no common
+//!   ordering. Ids carry no arena provenance or reuse generation: lookup checks
+//!   the family index, truncation permits index reuse, and minting saturates
+//!   the returned index at the `u32` ceiling.
+//! - **The admission watermark.** [`TermArena::watermark`] snapshots four
+//!   family lengths. [`TermArena::truncate_to`] removes suffixes but cannot
+//!   grow a shorter family or restore overwritten nodes; a stale mark past a
+//!   family's end leaves that family unchanged. The caller keeps removed ids
+//!   unreachable from retained content and pairs each mark with its arena;
+//!   these obligations are not encoded in the mark.
+//!
+//! # The watermark
+//!
+//! A choke point takes an [`ArenaWatermark`] before staging a declaration and
+//! truncates after the verdict, on rejection and on success alike.
+//! [`DeclarationBuilder`] records its own mark and truncates each family to
+//! `min(current_len, content_start)` when abandoned. Its mutable arena borrow
+//! also permits shrinking and reminting below that mark: abandonment preserves
+//! those leading nodes rather than restoring an earlier snapshot. A
+//! [`Declaration`] carries no watermark: decode builds one table for the whole
+//! artifact, so a decoded declaration has no meaningful content-start mark.
+//! [`ArenaWatermark::clamped_into`] is the clamp a rollback needs when staging
+//! order differs from admission order.
+//!
+//! **Choice.** The mark stores lengths rather than copied nodes, keeping
+//! truncation allocation-free. **Alternative.** Snapshot restoration, which
+//! must retain overwritten content. **Reversal.** Staging that must restore
+//! arbitrary edits rather than discard an appended suffix.
+//!
+//! # The honest cost
+//!
+//! An owned tree cannot be ill-formed; a `u32` id *can* name no node, or a node
+//! in another arena. The mitigations that keep that fail-closed are
+//! constructor-only minting, one arena per environment, a checked lookup
+//! returning an option rather than an index, and decode-side validation of
+//! every child reference before it mints.
+//!
+//! [`DeclarationBuilder`]: crate::DeclarationBuilder
+//! [`Declaration`]: crate::Declaration
+
+use alloc::alloc::Global;
+
+use anodized::spec;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::Identity;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
+use gandr_kernel_strata::Level;
+use quenchant_shape::shape::Maybe;
+
+use crate::base::BaseType;
+use crate::base::Literal;
+use crate::support::Reads;
+use crate::term::Computation;
+use crate::term::ConstantIndex;
+use crate::term::DeBruijnIndex;
+use crate::term::EquationCount;
+use crate::term::Summand;
+use crate::term::Value;
+use crate::types::CompType;
+use crate::types::GroundSort;
+use crate::types::ValueType;
+
+/// The id of a [`Value`] node in a [`TermArena`].
+///
+/// A family ordinal minted by a [`TermArena`] constructor. It can dangle after
+/// truncation or alias a reminted or foreign ordinal; it carries no arena
+/// provenance. Only same-family children share its allocation order.
+///
+/// # Specification
+/// - requires: all ordinals are representable; resolution depends on the
+///   selected arena’s current values family.
+/// - ensures: carries a family-specific u32 ordinal, not arena provenance or a
+///   reuse generation.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes all four family prefixes before and after
+///   truncation, stale marks, dangling ids, reminting and a foreign id with a
+///   coincident ordinal. Exact retained variants and dense indices separate
+///   prefix damage, accidental growth, wrong-family lookup and
+///   generation/provenance assumptions. Allocation at the u32 ceiling is not
+///   exercised; its conversion is checked separately.
+/// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ValueId(u32);
+
+/// The id of a [`Computation`] node in a [`TermArena`].
+///
+/// # Specification
+/// - requires: all ordinals are representable; resolution depends on the
+///   selected arena’s current computations family.
+/// - ensures: carries a family-specific u32 ordinal, not arena provenance or a
+///   reuse generation.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes all four family prefixes before and after
+///   truncation, stale marks, dangling ids, reminting and a foreign id with a
+///   coincident ordinal. Exact retained variants and dense indices separate
+///   prefix damage, accidental growth, wrong-family lookup and
+///   generation/provenance assumptions. Allocation at the u32 ceiling is not
+///   exercised; its conversion is checked separately.
+/// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ComputationId(u32);
+
+/// The id of a [`ValueType`] node in a [`TermArena`].
+///
+/// # Specification
+/// - requires: all ordinals are representable; resolution depends on the
+///   selected arena’s current value-type family.
+/// - ensures: carries a family-specific u32 ordinal, not arena provenance or a
+///   reuse generation.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes all four family prefixes before and after
+///   truncation, stale marks, dangling ids, reminting and a foreign id with a
+///   coincident ordinal. Exact retained variants and dense indices separate
+///   prefix damage, accidental growth, wrong-family lookup and
+///   generation/provenance assumptions. Allocation at the u32 ceiling is not
+///   exercised; its conversion is checked separately.
+/// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ValueTypeId(u32);
+
+// The const projection lives beside the id representation so its predicate
+// can compare private ordinals without exposing a scalar observer.
+impl crate::decl::DeclarationContent
+{
+    /// The declared value-type root: the declared type of a definition or an
+    /// axiom, and the kind of an abstract type.
+    ///
+    /// The three share one accessor because they share one well-formedness
+    /// obligation — whatever the root is, it must form. What differs is what
+    /// admission additionally demands of it, which is not this crate's plane.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the declared value-type root, whichever of the three
+    ///   forms the content takes.
+    /// - provides: the one root every form owes well-formedness for, so a
+    ///   consumer checking that obligation cannot reach a form it forgot.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 checks distinct selected roots across all content forms
+    ///   and evaluates each projection in a const context. This separates
+    ///   wrong-variant selection and incorrect root ordinals without claiming
+    ///   that the root is well formed.
+    /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
+    /// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
+    #[spec(
+        ensures: |ret| ret.0 == match *self { Self::Def { declared, .. } | Self::Axiom { declared } | Self::LiteralIdentity { declared, .. } | Self::AbstractType { kind: declared, .. } | Self::Data { kind: declared, .. } | Self::Codata { kind: declared, .. } => declared.0 },
+    )]
+    #[inline]
+    #[must_use]
+    pub const fn declared_id(&self) -> ValueTypeId
+    {
+        match *self {
+            Self::Def { declared, .. }
+            | Self::Axiom { declared }
+            | Self::LiteralIdentity { declared, .. }
+            | Self::Data { kind: declared, .. }
+            | Self::Codata { kind: declared, .. }
+            | Self::AbstractType { kind: declared, .. } => declared,
+        }
+    }
+}
+
+/// The id of a [`CompType`] node in a [`TermArena`].
+///
+/// # Specification
+/// - requires: all ordinals are representable; resolution depends on the
+///   selected arena’s current computation-type family.
+/// - ensures: carries a family-specific u32 ordinal, not arena provenance or a
+///   reuse generation.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes all four family prefixes before and after
+///   truncation, stale marks, dangling ids, reminting and a foreign id with a
+///   coincident ordinal. Exact retained variants and dense indices separate
+///   prefix damage, accidental growth, wrong-family lookup and
+///   generation/provenance assumptions. Allocation at the u32 ceiling is not
+///   exercised; its conversion is checked separately.
+/// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CompTypeId(u32);
+
+/// A cross-family node reference: the work item every walk over the arena's
+/// edge relation carries.
+///
+/// # Specification
+/// - requires: all four typed node ids are admitted, including dangling ones.
+/// - ensures: retains the node family together with its ordinal; no
+///   cross-family allocation ordering is implied.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 builds all former families with distinguishable children,
+///   nonzero levels and literal payloads, observes the exact stored nodes and
+///   ordered edges, and checks each operation changes only its own family
+///   length. Quote decoding covers matching, crossed and non-quote codes
+///   without allocating an alias node. These distinguish child permutations,
+///   payload loss, wrong-family minting and accidental hash-consing; the probes
+///   are not a typing or arena-provenance proof.
+/// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AnyNode
+{
+    /// A value node.
+    Value(ValueId),
+    /// A computation node.
+    Computation(ComputationId),
+    /// A value-type node.
+    ValueType(ValueTypeId),
+    /// A computation-type node.
+    CompType(CompTypeId),
+}
+
+impl AnyNode
+{
+    /// The node's offset within its own family: where a column indexed by
+    /// family position holds it.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling id has an offset as a live one does.
+    /// - ensures: the id's ordinal as an offset, lossless on every supported
+    ///   platform of at least 32 bits. Two nodes of one family share an offset
+    ///   exactly when they are one node.
+    /// - provides: the dense index a per-family column reads a node at, without
+    ///   arena provenance.
+    /// - fails: never; it saturates at the offset ceiling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nodes at distinct offsets in each family, and one
+    ///   offset in two families, separate a wrong ordinal and a family-blind
+    ///   column.
+    /// - witness: `arena::tests::a_node_offset_is_its_family_ordinal`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.0 == usize::try_from(match self {
+        Self::Value(ValueId(ordinal)) | Self::Computation(ComputationId(ordinal))
+        | Self::ValueType(ValueTypeId(ordinal)) | Self::CompType(CompTypeId(ordinal)) => ordinal,
+    }).unwrap_or(usize::MAX))]
+    pub fn offset(self) -> ArenaLength
+    {
+        let (Self::Value(ValueId(ordinal))
+        | Self::Computation(ComputationId(ordinal))
+        | Self::ValueType(ValueTypeId(ordinal))
+        | Self::CompType(CompTypeId(ordinal))) = self;
+        ArenaLength(usize::try_from(ordinal).unwrap_or(usize::MAX))
+    }
+}
+
+/// The number of nodes allocated in one arena family, or an offset into it.
+///
+/// # Specification
+/// - requires: all usize counts are representable.
+/// - ensures: distinguishes a host family length or offset from a compact
+///   ordinal.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 enumerates ordered, equal and inverted clamp bounds over
+///   zero, small values and the usize ceiling, with different coordinates in
+///   each watermark. Widened numeric observations cover id conversion at zero,
+///   the u32 ceiling and the target ceiling without allocating huge arenas.
+///   These separate wraparound, min/max reversal and coordinate substitution;
+///   hypothetical pointer widths are not emulated.
+/// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ArenaLength(usize);
+
+impl From<usize> for ArenaLength
+{
+    /// The length of `length` nodes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(length: usize) -> Self
+    {
+        Self(length)
+    }
+}
+
+impl From<ArenaLength> for usize
+{
+    /// The node count `length` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(length: ArenaLength) -> Self
+    {
+        length.0
+    }
+}
+
+impl From<ArenaLength> for ConstantIndex
+{
+    /// The position past `length` admitted declarations: the one the next
+    /// admission takes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(length: ArenaLength) -> Self
+    {
+        Self::from(length.0)
+    }
+}
+
+impl PartialEq<usize> for ArenaLength
+{
+    /// The length names `other` nodes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &usize,
+    ) -> bool
+    {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<ArenaLength> for usize
+{
+    /// `other` names this many nodes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &ArenaLength,
+    ) -> bool
+    {
+        *self == other.0
+    }
+}
+
+/// The stored index of one node within its arena family.
+///
+/// # Specification
+/// - requires: all u32 ordinals are representable.
+/// - ensures: distinguishes the compact id width from a host family length.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 enumerates ordered, equal and inverted clamp bounds over
+///   zero, small values and the usize ceiling, with different coordinates in
+///   each watermark. Widened numeric observations cover id conversion at zero,
+///   the u32 ceiling and the target ceiling without allocating huge arenas.
+///   These separate wraparound, min/max reversal and coordinate substitution;
+///   hypothetical pointer widths are not emulated.
+/// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct ArenaIndex(u32);
+
+/// Convert an arena length to the `u32` an id wraps, saturating at the ceiling.
+///
+/// # Specification
+/// - requires: `length` is a family length within an arena.
+/// - ensures: the equal index when representable, otherwise the u32 ceiling.
+///   The decode entry cap stays below this ceiling; unrestricted constructor
+///   calls have no corresponding allocation cap.
+/// - provides: a total, panic-free length-to-index conversion, without arena
+///   provenance.
+/// - fails: never; it saturates.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 enumerates ordered, equal and inverted clamp bounds over
+///   zero, small values and the usize ceiling, with different coordinates in
+///   each watermark. Widened numeric observations cover id conversion at zero,
+///   the u32 ceiling and the target ceiling without allocating huge arenas.
+///   These separate wraparound, min/max reversal and coordinate substitution;
+///   hypothetical pointer widths are not emulated.
+/// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
+#[inline]
+#[spec(ensures: |ret| ret.0 == u32::try_from(length.0).unwrap_or(u32::MAX))]
+fn id_index(length: ArenaLength) -> ArenaIndex
+{
+    ArenaIndex(u32::try_from(length.0).unwrap_or(u32::MAX))
+}
+
+/// Convert an id's index to the offset a checked vector read takes.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the equal offset, lossless on every supported platform of at
+///   least 32 bits.
+/// - provides: the total, panic-free index-to-offset conversion.
+/// - fails: never; it saturates at the offset ceiling, which a checked read
+///   then rejects.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 enumerates ordered, equal and inverted clamp bounds over
+///   zero, small values and the usize ceiling, with different coordinates in
+///   each watermark. Widened numeric observations cover id conversion at zero,
+///   the u32 ceiling and the target ceiling without allocating huge arenas.
+///   These separate wraparound, min/max reversal and coordinate substitution;
+///   hypothetical pointer widths are not emulated.
+/// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
+#[inline]
+#[spec(ensures: |ret| ret.0 == usize::try_from(index.0).unwrap_or(usize::MAX))]
+fn id_offset(index: ArenaIndex) -> ArenaLength
+{
+    ArenaLength(usize::try_from(index.0).unwrap_or(usize::MAX))
+}
+
+/// Clamp one family length into an inclusive length interval.
+///
+/// # Specification
+/// - requires: all lengths and both ordered and inverted bounds are admitted.
+/// - ensures: returns low for an inverted interval; otherwise returns low below
+///   the interval, high above it and value inside it.
+/// - provides: the total per-coordinate clamp used by [`ArenaWatermark`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 enumerates ordered, equal and inverted clamp bounds over
+///   zero, small values and the usize ceiling, with different coordinates in
+///   each watermark. Widened numeric observations cover id conversion at zero,
+///   the u32 ceiling and the target ceiling without allocating huge arenas.
+///   These separate wraparound, min/max reversal and coordinate substitution;
+///   hypothetical pointer widths are not emulated.
+/// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
+#[spec(
+    ensures: |ret| ret.0 == if low.0 >= high.0 || value.0 < low.0 { low.0 }
+        else if value.0 > high.0 { high.0 }
+        else { value.0 },
+)]
+#[inline]
+const fn clamp_length(
+    value: ArenaLength,
+    low: ArenaLength,
+    high: ArenaLength,
+) -> ArenaLength
+{
+    let capped = if value.0 < high.0 { value.0 } else { high.0 };
+    ArenaLength(if capped > low.0 { capped } else { low.0 })
+}
+
+/// A snapshot of the four family lengths: the admission watermark.
+///
+/// Truncation removes a suffix from each family without growing a shorter
+/// family or restoring overwritten content. The default is the empty
+/// arena's watermark, which is the floor an environment starts at.
+///
+/// # Specification
+/// - requires: each coordinate is an independent host length; no relation to a
+///   particular arena is encoded.
+/// - ensures: carries four family lengths; the default coordinates are zero and
+///   clamping is componentwise.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 enumerates ordered, equal and inverted clamp bounds over
+///   zero, small values and the usize ceiling, with different coordinates in
+///   each watermark. Widened numeric observations cover id conversion at zero,
+///   the u32 ceiling and the target ceiling without allocating huge arenas.
+///   These separate wraparound, min/max reversal and coordinate substitution;
+///   hypothetical pointer widths are not emulated.
+/// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ArenaWatermark
+{
+    /// The [`Value`] family length.
+    values: usize,
+    /// The [`Computation`] family length.
+    computations: usize,
+    /// The [`ValueType`] family length.
+    value_types: usize,
+    /// The [`CompType`] family length.
+    comp_types: usize,
+}
+
+impl ArenaWatermark
+{
+    /// Clamp this watermark, family by family, into the inclusive interval
+    /// `[low, high]`.
+    ///
+    /// This is the rollback mark an admission choke point truncates to when it
+    /// rejects: the declaration's content-start mark, clamped between the
+    /// admission floor and the mark taken on entry. The clamp is what stops a
+    /// rollback from reaching below content a prior admission committed when
+    /// staging order is not admission order, and from leaving an intermediate
+    /// behind when the content-start mark is not the one the arena grew from.
+    ///
+    /// # Specification
+    /// - requires: all component values and both ordered and inverted bounds
+    ///   are admitted.
+    /// - ensures: clamps each coordinate independently into its inclusive
+    ///   interval; an inverted coordinate interval returns its low component.
+    /// - provides: the rejection rollback mark without changing any arena or
+    ///   allocating a snapshot.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 enumerates ordered, equal and inverted clamp bounds
+    ///   over zero, small values and the usize ceiling, with different
+    ///   coordinates in each watermark. Widened numeric observations cover id
+    ///   conversion at zero, the u32 ceiling and the target ceiling without
+    ///   allocating huge arenas. These separate wraparound, min/max reversal
+    ///   and coordinate substitution; hypothetical pointer widths are not
+    ///   emulated.
+    /// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
+    /// - witness: `arena::tests::a_watermark_clamps_into_its_interval`
+    #[spec(
+        ensures: |ret| ret.values == if low.values >= high.values || self.values < low.values { low.values }
+            else if self.values > high.values { high.values }
+            else { self.values }
+                && ret.computations == if low.computations >= high.computations || self.computations < low.computations { low.computations }
+            else if self.computations > high.computations { high.computations }
+            else { self.computations }
+                && ret.value_types == if low.value_types >= high.value_types || self.value_types < low.value_types { low.value_types }
+            else if self.value_types > high.value_types { high.value_types }
+            else { self.value_types }
+                && ret.comp_types == if low.comp_types >= high.comp_types || self.comp_types < low.comp_types { low.comp_types }
+            else if self.comp_types > high.comp_types { high.comp_types }
+            else { self.comp_types },
+    )]
+    #[inline]
+    #[must_use]
+    pub const fn clamped_into(
+        self,
+        low: Self,
+        high: Self,
+    ) -> Self
+    {
+        Self {
+            values: clamp_length(
+                ArenaLength(self.values),
+                ArenaLength(low.values),
+                ArenaLength(high.values),
+            )
+            .0,
+            computations: clamp_length(
+                ArenaLength(self.computations),
+                ArenaLength(low.computations),
+                ArenaLength(high.computations),
+            )
+            .0,
+            value_types: clamp_length(
+                ArenaLength(self.value_types),
+                ArenaLength(low.value_types),
+                ArenaLength(high.value_types),
+            )
+            .0,
+            comp_types: clamp_length(
+                ArenaLength(self.comp_types),
+                ArenaLength(low.comp_types),
+                ArenaLength(high.comp_types),
+            )
+            .0,
+        }
+    }
+
+    /// The [`Value`] family's length.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn values(self) -> ArenaLength
+    {
+        ArenaLength(self.values)
+    }
+
+    /// The [`Computation`] family's length.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn computations(self) -> ArenaLength
+    {
+        ArenaLength(self.computations)
+    }
+
+    /// The [`ValueType`] family's length.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn value_types(self) -> ArenaLength
+    {
+        ArenaLength(self.value_types)
+    }
+
+    /// The [`CompType`] family's length.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn comp_types(self) -> ArenaLength
+    {
+        ArenaLength(self.comp_types)
+    }
+}
+
+/// How many truncations that dropped a node an arena has made.
+///
+/// A reader that names an arena's nodes by their positions keeps the stamp it
+/// last read, and [`TermArena::truncated_since`] tells it the lowest length
+/// each family reached after that stamp: every position at or above it may
+/// hold another node now.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TruncationStamp(u64);
+
+/// What a reader that last read a stamp learns from its arena: the stamp now,
+/// and the lowest length each family reached since.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Truncated
+{
+    /// The stamp to read from next.
+    now: TruncationStamp,
+    /// Each family's lowest length since the stamp read from: its present
+    /// length where no truncation since dropped one of its nodes.
+    floor: ArenaWatermark,
+}
+
+impl Truncated
+{
+    /// The stamp to read from next.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn now(self) -> TruncationStamp
+    {
+        self.now
+    }
+
+    /// Each family's lowest length since the stamp read from.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn floor(self) -> ArenaWatermark
+    {
+        self.floor
+    }
+}
+
+/// One truncation of one family: the length it left, and the stamp it took.
+#[derive(Clone, Copy, Debug)]
+struct Floor
+{
+    /// The stamp the truncation took.
+    stamp: TruncationStamp,
+    /// The length it left the family at.
+    length: ArenaLength,
+}
+
+/// One family's floors, oldest first, ascending in stamp and in length.
+///
+/// A truncation drops every floor at or above the length it leaves before it
+/// records its own, so the oldest floor after a stamp is the lowest length the
+/// family reached since, and the stack holds one floor per length still
+/// standing above a lower one.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default)]
+struct Floors(SmallVec<Floor, 0, Global>);
+
+impl Floors
+{
+    /// Record a truncation to `length` that took `stamp`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the truncation's floor, growth within the arena's length
+    #[inline]
+    fn lower(
+        &mut self,
+        stamp: TruncationStamp,
+        length: ArenaLength,
+    )
+    {
+        while self.0.last().is_some_and(|floor| floor.length >= length) {
+            let _dropped = self.0.pop();
+        }
+        self.0.push(Floor { stamp, length });
+    }
+
+    /// The lowest length a truncation after `stamp` left, or `present` when
+    /// none did.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn since(
+        &self,
+        stamp: TruncationStamp,
+        present: ArenaLength,
+    ) -> ArenaLength
+    {
+        self.0
+            .iter()
+            .rev()
+            .take_while(|floor| floor.stamp > stamp)
+            .last()
+            .map_or(present, |floor| floor.length)
+    }
+}
+
+/// The truncations an arena has made, for the readers that name its nodes by
+/// their positions.
+///
+/// Not part of the arena's content: two arenas holding the same nodes are
+/// equal whatever truncations brought each there.
+#[derive(Clone, Debug, Default)]
+struct Truncations
+{
+    /// How many truncations dropped a node.
+    stamp: TruncationStamp,
+    /// The [`Value`] family's floors.
+    values: Floors,
+    /// The [`Computation`] family's floors.
+    computations: Floors,
+    /// The [`ValueType`] family's floors.
+    value_types: Floors,
+    /// The [`CompType`] family's floors.
+    comp_types: Floors,
+}
+
+impl PartialEq for Truncations
+{
+    /// Always: the record is how an arena reached its nodes, not what it
+    /// holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        _other: &Self,
+    ) -> bool
+    {
+        true
+    }
+}
+
+impl Eq for Truncations
+{
+}
+
+impl Truncations
+{
+    /// Record a truncation from `before` to `after`, when it dropped a node.
+    ///
+    /// The stamp saturates at a count no session reaches.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn record(
+        &mut self,
+        before: ArenaWatermark,
+        after: ArenaWatermark,
+    )
+    {
+        if after == before {
+            return;
+        }
+        self.stamp = TruncationStamp(self.stamp.0.saturating_add(1));
+        let stamp = self.stamp;
+        for (floors, was, now) in [
+            (&mut self.values, before.values, after.values),
+            (
+                &mut self.computations,
+                before.computations,
+                after.computations,
+            ),
+            (&mut self.value_types, before.value_types, after.value_types),
+            (&mut self.comp_types, before.comp_types, after.comp_types),
+        ] {
+            if now < was {
+                floors.lower(stamp, ArenaLength(now));
+            }
+        }
+    }
+
+    /// Record that a clone, whose stamp reached `theirs`, minted or truncated
+    /// past `now`: a stamp past this record's and the clone's, and a floor at
+    /// `now` in each family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn absorb(
+        &mut self,
+        theirs: TruncationStamp,
+        now: ArenaWatermark,
+    )
+    {
+        self.stamp = TruncationStamp(self.stamp.0.max(theirs.0).saturating_add(1));
+        let stamp = self.stamp;
+        for (floors, length) in [
+            (&mut self.values, now.values),
+            (&mut self.computations, now.computations),
+            (&mut self.value_types, now.value_types),
+            (&mut self.comp_types, now.comp_types),
+        ] {
+            floors.lower(stamp, ArenaLength(length));
+        }
+    }
+}
+
+/// The append-only arena owning every term and type node of one environment.
+///
+/// The four families are parallel append-only vectors and a node's children are
+/// ids into the same arena. Beside each family runs a column of the supports
+/// its nodes carry, each gathered when its node is minted (the support
+/// module), so the column holds exactly one support per node. The node enums
+/// derive shallow clone and drop, so cloning or dropping a whole arena is a
+/// flat per-family vector operation, total on any term depth.
+///
+/// # Specification
+/// - requires: callers retain only live reachable ids when truncating and
+///   supply live children to constructors.
+/// - ensures: stores four flat family vectors; construction does not hash-cons,
+///   provenance is external and truncation permits index reuse.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 builds all former families with distinguishable children,
+///   nonzero levels and literal payloads, observes the exact stored nodes and
+///   ordered edges, and checks each operation changes only its own family
+///   length. Quote decoding covers matching, crossed and non-quote codes
+///   without allocating an alias node. These distinguish child permutations,
+///   payload loss, wrong-family minting and accidental hash-consing; the probes
+///   are not a typing or arena-provenance proof. L3 observes all four family
+///   prefixes before and after truncation, stale marks, dangling ids, reminting
+///   and a foreign id with a coincident ordinal. Exact retained variants and
+///   dense indices separate prefix damage, accidental growth, wrong-family
+///   lookup and generation/provenance assumptions. Allocation at the u32
+///   ceiling is not exercised; its conversion is checked separately.
+/// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+/// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TermArena
+{
+    /// The value nodes, in allocation order, which is child-before-parent.
+    values: Family<Value>,
+    /// The support each value node carries, at its node's offset.
+    value_supports: Family<Reads>,
+    /// The computation nodes.
+    computations: Family<Computation>,
+    /// The support each computation node carries.
+    computation_supports: Family<Reads>,
+    /// The value-type nodes.
+    value_types: Family<ValueType>,
+    /// The support each value-type node carries.
+    value_type_supports: Family<Reads>,
+    /// The computation-type nodes.
+    comp_types: Family<CompType>,
+    /// The support each computation-type node carries.
+    comp_type_supports: Family<Reads>,
+    /// The empty endpoint dialogues every reflexivity minted without a
+    /// dialogue shares, so minting one allocates no evidence.
+    unrelated: Shared<crate::EndpointDialogues, Global>,
+    /// The truncations that dropped a node, for the readers that name nodes
+    /// by position; not part of the arena's content.
+    truncations: Truncations,
+}
+
+/// One family's nodes in allocation order.
+///
+/// Those frozen by [`Family::freeze`] come first, shared with every clone of
+/// the family made after, then the nodes minted since. The frozen nodes stand
+/// in whole chunks of 64 nodes and a shorter tail after them. A chunk holds
+/// its nodes inline after its counts, so a read finds a frozen node by its
+/// offset in one step, with one load past the list. The tail is a run of at
+/// most five segments. A freeze adds to the newest segment in place while no
+/// clone shares it, and starts a new segment when one does. So a clone held
+/// beside each freeze costs a few copies of each node, not a copy of the tail.
+/// A write to one frozen node copies the list of chunks and the
+/// chunk or the segment that holds the node, and no other node. [`TermArena`]
+/// keeps its four families so, and an arena outside the kernel may keep its
+/// own.
+///
+/// # Specification
+/// - executable: none — a data declaration; [`Self::get`], [`Self::get_mut`],
+///   [`Self::truncate`] and [`Self::freeze`] state what a read, a write, a
+///   truncation and a freeze see.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a family read, minted into, written, truncated and
+///   compared across a freeze answers as one never frozen does.
+/// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_nodes_alone`
+/// - witness: `arena::tests::a_family_frozen_many_times_reads_each_node_where_it_was_minted_3476`
+/// - witness: `arena::tests::a_write_to_a_frozen_node_copies_its_chunk_alone_7243`
+/// - witness: `arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335`
+#[derive(Clone, Debug)]
+pub struct Family<Node>
+{
+    /// The whole chunks of the frozen nodes, [`CHUNK`] nodes each, oldest
+    /// first. Each clone shares the list and each chunk by reference.
+    frozen: Option<Shared<SmallVec<Chunk<Node>, 0, Global>, Global>>,
+    /// The frozen nodes after the whole chunks, fewer than [`CHUNK`], in
+    /// segments oldest first, each shared by reference with each clone. Each
+    /// segment holds more than twice the nodes of the next, so the tail keeps
+    /// at most five segments.
+    tail: SmallVec<Shared<SmallVec<Node, 0, Global>, Global>, 0, Global>,
+    /// Where each segment of the tail ends, past the whole chunks, oldest
+    /// first, and `u8::MAX` past the last segment. A read finds its segment
+    /// by four comparisons, with no walk of the tail. Each end is below
+    /// [`CHUNK`], so a byte holds it and the family stays small.
+    ends: [u8; SEGMENTS],
+    /// How many nodes the chunks and the tail hold, so a read finds its side
+    /// at once.
+    frozen_len: usize,
+    /// The nodes minted after them.
+    own: SmallVec<Node, 0, Global>,
+}
+
+/// A whole chunk of a family's frozen nodes: [`CHUNK`] nodes inline after the
+/// reference counts, shared by reference with each clone of the family.
+type Chunk<Node> = ThinShared<(), Node, Global>;
+
+/// Where the tail of a family holds one frozen node: its segment, from the
+/// oldest, and the node's place in that segment.
+#[derive(Clone, Copy, Debug)]
+struct TailPlace
+{
+    /// The segment, from the oldest.
+    segment: usize,
+    /// The node's place in the segment.
+    place: usize,
+}
+
+/// The binary logarithm of [`CHUNK`]: a frozen node's chunk is its offset
+/// shifted right by it.
+const CHUNK_SHIFT: u32 = 6;
+
+/// How many nodes a whole chunk holds: a write to one frozen node copies at
+/// most this many nodes.
+const CHUNK: usize = 1 << CHUNK_SHIFT;
+
+/// The mask of a frozen node's place in its chunk.
+const WITHIN: usize = CHUNK.wrapping_sub(1);
+
+/// The most segments that a family's tail holds: each holds more than twice
+/// the nodes of the next, and the tail holds fewer than [`CHUNK`].
+const SEGMENTS: usize = 5;
+
+impl<Node> Default for Family<Node>
+{
+    /// The empty family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self {
+            frozen: None,
+            tail: SmallVec::<_, 0, Global>::new(),
+            ends: [u8::MAX; SEGMENTS],
+            frozen_len: 0,
+            own: SmallVec::<_, 0, Global>::new(),
+        }
+    }
+}
+
+impl<Node> From<SmallVec<Node, 0, Global>> for Family<Node>
+{
+    /// The family holding `nodes` as its own, in order, nothing frozen.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(nodes: SmallVec<Node, 0, Global>) -> Self
+    {
+        Self {
+            frozen: None,
+            tail: SmallVec::<_, 0, Global>::new(),
+            ends: [u8::MAX; SEGMENTS],
+            frozen_len: 0,
+            own: nodes,
+        }
+    }
+}
+
+impl<Node: PartialEq> PartialEq for Family<Node>
+{
+    /// Two families hold the same nodes in the same order, wherever each node
+    /// is kept.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        // Two families frozen over one shared list and one shared tail hold
+        // their frozen nodes alike, so only the nodes minted since are read.
+        if self.frozen.as_ref().map(Shared::as_ptr) == other.frozen.as_ref().map(Shared::as_ptr)
+            && self.shared_tail(other).is_some()
+        {
+            return self.own == other.own;
+        }
+        self.len() == other.len() && self.iter().eq(other.iter())
+    }
+}
+
+impl<Node: Eq> Eq for Family<Node>
+{
+}
+
+impl<Node> Family<Node>
+{
+    /// The empty family, for a constant or a static.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new() -> Self
+    {
+        Self {
+            frozen: None,
+            tail: SmallVec::<_, 0, Global>::new(),
+            ends: [u8::MAX; SEGMENTS],
+            frozen_len: 0,
+            own: SmallVec::<_, 0, Global>::new(),
+        }
+    }
+
+    /// How many of this family's frozen nodes `other` holds by the same
+    /// reference: the nodes of each whole chunk, from the oldest, that both
+    /// hold at one place, and the tail when both share every chunk and every
+    /// segment of the tail. Zero when they share no chunk.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn shared_frozen(
+        &self,
+        other: &Self,
+    ) -> ArenaLength
+    {
+        let (mine, theirs) = (self.chunks(), other.chunks());
+        let whole = mine
+            .iter()
+            .zip(theirs)
+            .take_while(|&(left, right)| ThinShared::ptr_eq(left, right) == Identity::Same)
+            .count();
+        let tail = if whole == mine.len() && whole == theirs.len() {
+            self.shared_tail(other).map_or(0, |length| length.0)
+        }
+        else {
+            0
+        };
+        ArenaLength(whole.saturating_mul(CHUNK).saturating_add(tail))
+    }
+
+    /// How many nodes this family's tail holds, when `other` holds each of
+    /// its segments by the same reference and no other segment; `None`
+    /// otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn shared_tail(
+        &self,
+        other: &Self,
+    ) -> Option<ArenaLength>
+    {
+        (self.tail.len() == other.tail.len()
+            && self
+                .tail
+                .iter()
+                .zip(&other.tail)
+                .all(|(mine, theirs)| Shared::ptr_eq(mine, theirs) == Identity::Same))
+        .then(|| ArenaLength(self.tail.iter().map(|segment| segment.len()).sum()))
+    }
+
+    /// The whole chunks of the frozen nodes, oldest first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn chunks(&self) -> &[Chunk<Node>]
+    {
+        self.frozen.as_deref().map_or(&[], SmallVec::as_slice)
+    }
+
+    /// Where the tail holds the frozen node `within` places past the whole
+    /// chunks; `None` past the tail. The segment is the count of the ends at
+    /// or below the place, so the read compares four ends and walks nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn segment_of(
+        &self,
+        within: ArenaLength,
+    ) -> Option<TailPlace>
+    {
+        let [first, second, third, fourth, _] = self.ends;
+        let segment = usize::from(usize::from(first) <= within.0)
+            .saturating_add(usize::from(usize::from(second) <= within.0))
+            .saturating_add(usize::from(usize::from(third) <= within.0))
+            .saturating_add(usize::from(usize::from(fourth) <= within.0));
+        let start = segment
+            .checked_sub(1)
+            .and_then(|before| self.ends.get(before))
+            .map_or(0, |&end| usize::from(end));
+        let place = within.0.checked_sub(start)?;
+        (place < self.tail.get(segment)?.len()).then_some(TailPlace { segment, place })
+    }
+
+    /// Write where each segment of the tail ends, as [`Self::segment_of`]
+    /// reads it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn mark_ends(&mut self)
+    {
+        let mut ends = [u8::MAX; SEGMENTS];
+        let mut end = 0_usize;
+        for (slot, segment) in ends.iter_mut().zip(&self.tail) {
+            end = end.saturating_add(segment.len());
+            *slot = u8::try_from(end).unwrap_or(u8::MAX);
+        }
+        self.ends = ends;
+    }
+
+    /// The frozen node at `offset`, or `None` at or past the frozen length:
+    /// the chunk the offset's high bits name, or the segment of the tail after
+    /// the last chunk that holds the place its low bits name.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn frozen_at(
+        &self,
+        offset: ArenaLength,
+    ) -> Option<&Node>
+    {
+        let (at, within) = (offset.0 >> CHUNK_SHIFT, offset.0 & WITHIN);
+        let chunks = self.chunks();
+        match chunks.get(at) {
+            Some(chunk) => chunk.get(within),
+            None if at == chunks.len() => {
+                let found = self.segment_of(ArenaLength(within))?;
+                self.tail.get(found.segment)?.get(found.place)
+            },
+            None => None,
+        }
+    }
+
+    /// The nodes minted since the last freeze: what a clone copies.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn own(&self) -> &[Node]
+    {
+        self.own.as_slice()
+    }
+
+    /// How many nodes the family holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn len(&self) -> ArenaLength
+    {
+        ArenaLength(self.frozen_len.saturating_add(self.own.len()))
+    }
+
+    /// The node at `offset` in allocation order, or `None` past the family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn get<Offset>(
+        &self,
+        offset: Offset,
+    ) -> Option<&Node>
+    where
+        Offset: Into<ArenaLength>,
+    {
+        let offset = offset.into();
+        offset
+            .0
+            .checked_sub(self.frozen_len)
+            .map_or_else(|| self.frozen_at(offset), |own| self.own.get(own))
+    }
+
+    /// The node minted last, or `None` for an empty family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn last(&self) -> Option<&Node>
+    {
+        self.own
+            .last()
+            .or_else(|| self.tail.last()?.last())
+            .or_else(|| self.chunks().last().and_then(|chunk| chunk.last()))
+    }
+
+    /// Every node, in allocation order, read from either end.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = &Node>
+    {
+        self.chunks()
+            .iter()
+            .flat_map(|chunk| chunk.iter())
+            .chain(self.tail.iter().flat_map(|segment| segment.iter()))
+            .chain(&self.own)
+    }
+
+    /// Mint `node` after every node the family holds.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the node's place in the family, growth within the family's
+    ///   nodes
+    #[inline]
+    pub fn push(
+        &mut self,
+        node: Node,
+    )
+    {
+        self.own.push(node);
+    }
+}
+
+impl<Node: Clone> Family<Node>
+{
+    /// Keep the first `length` nodes, dropping later ones; a length at or past
+    /// the family's end keeps every node.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the family holds its first `length.min(entry)` nodes, each as
+    ///   it was. A truncation into the frozen nodes keeps each chunk below
+    ///   `length` by reference. The nodes that `length` keeps of the chunk it
+    ///   cuts become the tail, and a cut in the tail keeps the segments below
+    ///   it by reference. The nodes kept of the segment it cuts stay in place
+    ///   when no clone shares it; otherwise the family takes its own copy of
+    ///   them. So no clone made before the truncation changes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the kept nodes of a chunk or segment that a
+    ///   clone shares, growth within the family's nodes
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — truncations past the frozen nodes and into them, each
+    ///   read back beside a clone taken before.
+    /// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_nodes_alone`
+    #[spec(
+        captures: entry = self.len(),
+        ensures: self.len() == length.min(entry),
+    )]
+    #[inline]
+    pub fn truncate(
+        &mut self,
+        length: ArenaLength,
+    )
+    {
+        if let Some(own) = length.0.checked_sub(self.frozen_len) {
+            self.own.truncate(Count::from(own));
+            return;
+        }
+        self.own.clear();
+        let (whole, cut) = (length.0 >> CHUNK_SHIFT, length.0 & WITHIN);
+        if let Some(list) = self.frozen.as_mut()
+            && whole < list.len()
+        {
+            // A cut chunk: the chunks from it on go, and the nodes it keeps
+            // take a tail of their own.
+            let chunks = Shared::make_mut(list);
+            let kept = chunks.get(whole).filter(|_| cut != 0).map(|chunk| {
+                SmallVec::<_, 0, Global>::from_iter(
+                    chunk.get(.. cut).unwrap_or_default().iter().cloned(),
+                )
+            });
+            chunks.truncate(Count::from(whole));
+            self.tail = kept.map(Shared::new).into_iter().collect();
+        }
+        else if let Some(TailPlace { segment, place }) = self.segment_of(ArenaLength(cut)) {
+            self.tail.truncate(Count::from(segment.saturating_add(1)));
+            if let Some(last) = self.tail.last_mut() {
+                if let Maybe::Present(nodes) = Shared::get_mut(last) {
+                    nodes.truncate(Count::from(place));
+                }
+                else {
+                    *last = Shared::new(SmallVec::<_, 0, Global>::from_iter(
+                        last.get(.. place).unwrap_or_default().iter().cloned(),
+                    ));
+                }
+            }
+        }
+        if self.chunks().is_empty() {
+            self.frozen = None;
+        }
+        if self.tail.last().is_some_and(|segment| segment.is_empty()) {
+            let _empty = self.tail.pop();
+        }
+        self.mark_ends();
+        self.frozen_len = length.0;
+    }
+
+    /// Share every node the family holds with every clone made after: the
+    /// nodes minted so far join the frozen ones.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the family holds the same nodes in the same order, all of
+    ///   them frozen. The freeze moves the nodes minted since the last one.
+    ///   When the tail and those nodes reach 64, the tail and the first of them
+    ///   make a whole chunk. Each run of 64 nodes after it makes another. A
+    ///   segment of the tail gives up its nodes to the chunk when no clone
+    ///   shares it, and is copied when one does. The rest join the newest
+    ///   segment in place when no clone shares it, or start a new segment. Then
+    ///   the newest two segments merge while the older holds at most twice the
+    ///   nodes of the newer. The older is copied first when a clone shares it,
+    ///   and each such copy makes a node's segment half as long again. So a
+    ///   freeze copies a node at most eleven times before its chunk is whole,
+    ///   where a copy of the whole tail at each freeze copied it up to 63
+    ///   times. The list of chunks is copied first when a clone shares it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the frozen chunks, the tail segments and the copies of
+    ///   shared segments, growth within the family's nodes
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a family frozen many times, with nodes minted between
+    ///   and a clone taken after some of the freezes, reads back every node at
+    ///   its offset, and each clone keeps the nodes it shares.
+    /// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_nodes_alone`
+    /// - witness: `arena::tests::a_family_frozen_many_times_reads_each_node_where_it_was_minted_3476`
+    /// - witness: `arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335`
+    #[spec(
+        captures: entry = self.len(),
+        ensures: self.len() == entry && self.own.is_empty(),
+    )]
+    #[inline]
+    pub fn freeze(&mut self)
+    {
+        if self.own.is_empty() {
+            return;
+        }
+        self.frozen_len = self.frozen_len.saturating_add(self.own.len());
+        let mut nodes = self.own.drain(..);
+        let held = self.tail.iter().map(|segment| segment.len()).sum::<usize>();
+        if held.saturating_add(nodes.len()) >= CHUNK {
+            let mut chunk = SmallVec::<_, 0, Global>::with_capacity(Count::from(CHUNK));
+            for segment in self.tail.drain(..) {
+                match Shared::try_unwrap(segment) {
+                    Ok(owned) => chunk.extend(owned),
+                    Err(shared) => chunk.extend(shared.iter().cloned()),
+                }
+            }
+            chunk.extend(nodes.by_ref().take(CHUNK.saturating_sub(held)));
+            let chunks = Shared::make_mut(self.frozen.get_or_insert_default());
+            chunks.push(chunk.into());
+            while nodes.len() >= CHUNK {
+                chunks.push(nodes.by_ref().take(CHUNK).collect());
+            }
+        }
+        if nodes.as_slice().is_empty() {
+            drop(nodes);
+            self.mark_ends();
+            return;
+        }
+        if let Some(newest) = self
+            .tail
+            .last_mut()
+            .and_then(|last| match Shared::get_mut(last) {
+                Maybe::Present(nodes) => Some(nodes),
+                Maybe::Absent(_) => None,
+            })
+        {
+            newest.extend(nodes);
+        }
+        else {
+            self.tail.push(Shared::new(nodes.collect()));
+        }
+        self.merge_tail();
+        self.mark_ends();
+    }
+
+    /// Merge the newest two segments of the tail while the older holds at
+    /// most twice the nodes of the newer. The newer is the family's own, so it
+    /// gives up its nodes; the older is copied first when a clone shares it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the merged segment and a copy of a segment that a clone
+    ///   shares, growth within the family's nodes
+    #[inline]
+    fn merge_tail(&mut self)
+    {
+        while let [.., ref older, ref newer] = *self.tail.as_slice()
+            && older.len() <= newer.len().saturating_mul(2)
+            && let Some(newer) = self.tail.pop()
+            && let Some(older) = self.tail.last_mut()
+        {
+            let nodes = Shared::make_mut(older);
+            match Shared::try_unwrap(newer) {
+                Ok(owned) => nodes.extend(owned),
+                Err(shared) => nodes.extend(shared.iter().cloned()),
+            }
+        }
+    }
+
+    /// The node at `offset`, to change in place, or `None` past the family.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the node [`Self::get`] reads at `offset`. A node among the
+    ///   frozen ones is reached through the family's own copy of the list of
+    ///   chunks and of the chunk that holds it, or of the segment of the tail,
+    ///   each taken when another clone shares it. So the write copies at most
+    ///   64 nodes, and no clone made before the change sees it; the family's
+    ///   length is unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer borrows the family mutably, so no clause
+    ///   can read the family beside it; the witness reads it after.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the chunk list, chunk, or tail segment that a
+    ///   clone shares, growth within the family's nodes
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a frozen node and a node minted since, each changed
+    ///   through one clone and read back beside a clone taken before; a write
+    ///   to one frozen node leaves every other chunk shared.
+    /// - witness: `arena::tests::a_family_changed_in_place_leaves_its_earlier_clones_alone`
+    /// - witness: `arena::tests::a_write_to_a_frozen_node_copies_its_chunk_alone_7243`
+    #[inline]
+    pub fn get_mut<Offset>(
+        &mut self,
+        offset: Offset,
+    ) -> Option<&mut Node>
+    where
+        Offset: Into<ArenaLength>,
+    {
+        let offset = offset.into();
+        if let Some(own) = offset.0.checked_sub(self.frozen_len) {
+            return self.own.get_mut(own);
+        }
+        let (at, within) = (offset.0 >> CHUNK_SHIFT, offset.0 & WITHIN);
+        if let Some(list) = self.frozen.as_mut()
+            && at < list.len()
+        {
+            let chunk = Shared::make_mut(list).get_mut(at)?;
+            return ThinShared::make_mut(chunk).get_mut(within);
+        }
+        let TailPlace { segment, place } = self.segment_of(ArenaLength(within))?;
+        Shared::make_mut(self.tail.get_mut(segment)?).get_mut(place)
+    }
+}
+
+impl TermArena
+{
+    /// Share every node minted so far with every clone of the arena made
+    /// after: such a clone copies, and its drop releases, only the nodes
+    /// minted after the freeze.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the watermark is unchanged and every id resolves to the node
+    ///   it did; minting, truncation and comparison answer as they would have
+    ///   unfrozen.
+    /// - provides: the arena of a readmission's recorded environment, which
+    ///   each readmission resuming it copies and drops at the cost of the nodes
+    ///   it mints.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an arena frozen, cloned, minted into on both sides,
+    ///   frozen again and truncated past and into its frozen nodes, each read
+    ///   against an arena built alike and never frozen.
+    /// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_nodes_alone`
+    #[spec(
+        captures: entry = self.watermark(),
+        ensures: self.watermark() == entry,
+    )]
+    #[inline]
+    pub fn freeze(&mut self)
+    {
+        self.values.freeze();
+        self.value_supports.freeze();
+        self.computations.freeze();
+        self.computation_supports.freeze();
+        self.value_types.freeze();
+        self.value_type_supports.freeze();
+        self.comp_types.freeze();
+        self.comp_type_supports.freeze();
+    }
+}
+
+impl TermArena
+{
+    /// Append raw finite session-code syntax; admission checks its invariants.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_session(
+        &mut self,
+        graph: Shared<crate::session::Graph, Global>,
+        payloads: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Session { graph, payloads })
+    }
+
+    /// Append an untrusted session-path introduction.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_session_path(
+        &mut self,
+        path_type: ValueTypeId,
+        evidence: Shared<crate::session::Evidence, Global>,
+        payload_paths: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::SessionPath {
+            path_type,
+            evidence,
+            payload_paths,
+        })
+    }
+
+    /// Append an untrusted session-simulation introduction.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_session_flow(
+        &mut self,
+        flow_type: ValueTypeId,
+        evidence: Shared<crate::session::Evidence, Global>,
+        payload_paths: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::SessionFlow {
+            flow_type,
+            evidence,
+            payload_paths,
+        })
+    }
+
+    /// Mint `Flow_U source target` without claiming that its codes form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_flow_universe(
+        &mut self,
+        source: ValueId,
+        target: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::FlowUniverse(source, target))
+    }
+
+    /// An empty arena.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new() -> Self
+    {
+        Self::default()
+    }
+
+    /// The current watermark: the four family lengths.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the four families' current lengths.
+    /// - provides: the mark [`Self::truncate_to`] takes, truncating each family
+    ///   to `min(current_len, mark)`, so a checker's intermediates are dropped
+    ///   after a verdict. The mark carries no arena identity, so pairing it
+    ///   with the arena it came from is the caller's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes all four family prefixes before and after
+    ///   truncation, stale marks, dangling ids, reminting and a foreign id with
+    ///   a coincident ordinal. Exact retained variants and dense indices
+    ///   separate prefix damage, accidental growth, wrong-family lookup and
+    ///   generation/provenance assumptions. Allocation at the u32 ceiling is
+    ///   not exercised; its conversion is checked separately.
+    /// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
+    #[spec(
+        ensures: |ret| ret.values == self.values.len()
+                && ret.computations == self.computations.len()
+                && ret.value_types == self.value_types.len()
+                && ret.comp_types == self.comp_types.len(),
+    )]
+    #[inline]
+    #[must_use]
+    pub fn watermark(&self) -> ArenaWatermark
+    {
+        ArenaWatermark {
+            values: usize::from(self.values.len()),
+            computations: usize::from(self.computations.len()),
+            value_types: usize::from(self.value_types.len()),
+            comp_types: usize::from(self.comp_types.len()),
+        }
+    }
+
+    /// Truncate each family to `min(current_len, watermark)`, dropping later
+    /// allocations.
+    ///
+    /// # Specification
+    /// - requires: `watermark` was taken from this arena, and every id minted
+    ///   after it is unreachable from content the caller retains, which the
+    ///   admission discipline establishes. A family already shorter than the
+    ///   mark is admissible: its truncation is a no-op.
+    /// - ensures: each family's length becomes `min(entry_len, watermark)` —
+    ///   the mark's length where the family is longer, the length it already
+    ///   has where it is shorter; an id whose index is at or past the resulting
+    ///   length dangles, and a lookup of one fails closed rather than resolving
+    ///   to a later node.
+    /// - provides: the truncation an admission choke point performs after a
+    ///   verdict, on rejection and on success alike. The clause checks family
+    ///   lengths, including the stale-mark no-op. Arena provenance,
+    ///   retained-node identity and external reachability stay prose: the
+    ///   watermark has no arena identity, and checking retained nodes would
+    ///   require an owned arena snapshot.
+    /// - fails: never — a truncation past the end is a no-op, so a stale
+    ///   watermark cannot grow the arena.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes all four family prefixes before and after
+    ///   truncation, stale marks, dangling ids, reminting and a foreign id with
+    ///   a coincident ordinal. Exact retained variants and dense indices
+    ///   separate prefix damage, accidental growth, wrong-family lookup and
+    ///   generation/provenance assumptions. Allocation at the u32 ceiling is
+    ///   not exercised; its conversion is checked separately.
+    /// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
+    #[spec(
+        captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.min(watermark.values)
+                && self.computations.len() == before.computations.min(watermark.computations)
+                && self.value_types.len() == before.value_types.min(watermark.value_types)
+                && self.comp_types.len() == before.comp_types.min(watermark.comp_types),
+    )]
+    #[inline]
+    pub fn truncate_to(
+        &mut self,
+        watermark: ArenaWatermark,
+    )
+    {
+        let before = self.watermark();
+        self.values.truncate(ArenaLength(watermark.values));
+        self.value_supports.truncate(ArenaLength(watermark.values));
+        self.computations
+            .truncate(ArenaLength(watermark.computations));
+        self.computation_supports
+            .truncate(ArenaLength(watermark.computations));
+        self.value_types
+            .truncate(ArenaLength(watermark.value_types));
+        self.value_type_supports
+            .truncate(ArenaLength(watermark.value_types));
+        self.comp_types.truncate(ArenaLength(watermark.comp_types));
+        self.comp_type_supports
+            .truncate(ArenaLength(watermark.comp_types));
+        let after = self.watermark();
+        self.truncations.record(before, after);
+    }
+
+    /// Record that `clone`, taken at this arena's watermark, minted nodes or
+    /// truncated them, and is dropped: a reader that names nodes by their
+    /// positions, through this arena or through the clone, forgets every name
+    /// at or past this arena's watermark, as if this arena minted the clone's
+    /// nodes itself and truncated them.
+    ///
+    /// # Specification
+    /// - requires: `clone` is a clone of this arena, and this arena minted and
+    ///   truncated nothing since the clone was taken.
+    /// - ensures: the watermark and every node are unchanged. When the clone
+    ///   minted or truncated, the stamp passes each stamp of this arena and of
+    ///   the clone, and [`Self::truncated_since`] answers a truncation to the
+    ///   watermark from each of them. Otherwise nothing changes.
+    /// - provides: the check against a clone (`Environment::within_view`),
+    ///   whose intermediates leave with the clone.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a clone that mints, truncates and drops reads, to a
+    ///   reader at a stamp of either arena, as the arena that mints and
+    ///   truncates itself.
+    /// - witness: `arena::tests::a_clone_that_drops_its_nodes_reads_as_a_truncation_3476`
+    #[spec(
+        captures: entry = self.watermark(),
+        ensures: self.watermark() == entry,
+    )]
+    #[inline]
+    pub fn dropped(
+        &mut self,
+        clone: &Self,
+    )
+    {
+        let now = self.watermark();
+        if clone.truncations.stamp != self.truncations.stamp || clone.watermark() != now {
+            self.truncations.absorb(clone.truncations.stamp, now);
+        }
+    }
+
+    /// What a reader that last read `since` learns: the stamp now, and the
+    /// lowest length each family was truncated to after it.
+    ///
+    /// A reader that names this arena's nodes by their positions, as the
+    /// kernel's content table does, forgets every name at or above the floor
+    /// before it reads one, so no name outlives a truncation below it,
+    /// whichever of the arena's truncation sites made it.
+    ///
+    /// # Specification
+    /// - requires: `since` is the default stamp, one this arena returned, or
+    ///   one a clone of it returned before [`Self::dropped`] read the clone.
+    /// - ensures: `None` exactly when no truncation after `since` dropped a
+    ///   node; otherwise the present stamp, and per family the lowest length a
+    ///   truncation after `since` left, or the present length where none did.
+    /// - provides: the epoch a position-keyed reader syncs against.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — truncations to lower, higher and equal lengths, read
+    ///   from stamps before, between and after them, with each family truncated
+    ///   apart; a truncation that drops nothing takes no stamp. Reading the
+    ///   newest floor rather than the lowest, or stamping a no-op, changes an
+    ///   answer.
+    /// - witness: `arena::tests::a_reader_learns_the_lowest_length_truncated_to_since_its_stamp`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.map_or(self.truncations.stamp == since, |truncated| {
+        truncated.now == self.truncations.stamp
+            && truncated.floor.clamped_into(ArenaWatermark::default(), self.watermark())
+                == truncated.floor
+    }))]
+    pub fn truncated_since(
+        &self,
+        since: TruncationStamp,
+    ) -> Option<Truncated>
+    {
+        let truncations = &self.truncations;
+        if truncations.stamp == since {
+            return None;
+        }
+        let present = self.watermark();
+        Some(Truncated {
+            now: truncations.stamp,
+            floor: ArenaWatermark {
+                values: truncations.values.since(since, present.values()).0,
+                computations: truncations
+                    .computations
+                    .since(since, present.computations())
+                    .0,
+                value_types: truncations
+                    .value_types
+                    .since(since, present.value_types())
+                    .0,
+                comp_types: truncations.comp_types.since(since, present.comp_types()).0,
+            },
+        })
+    }
+
+    /// Resolve a value id, or `None` when it dangles.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling or foreign id is admissible input.
+    /// - ensures: returns the value node `id` names, and `None` exactly when
+    ///   the id's index is past this family's length — after a truncation past
+    ///   it, or for an id this arena never minted.
+    /// - provides: the checked lookup that keeps a `u32` id fail-closed; no
+    ///   unchecked resolution path exists.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes all four family prefixes before and after
+    ///   truncation, stale marks, dangling ids, reminting and a foreign id with
+    ///   a coincident ordinal. Exact retained variants and dense indices
+    ///   separate prefix damage, accidental growth, wrong-family lookup and
+    ///   generation/provenance assumptions. Allocation at the u32 ceiling is
+    ///   not exercised; its conversion is checked separately.
+    /// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
+    #[spec(
+        ensures: |ret| match (ret, self.values.get(ArenaLength(usize::try_from(id.0).unwrap_or(usize::MAX)))) { (Some(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (None, None) => true, _ => false },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn value(
+        &self,
+        id: ValueId,
+    ) -> Option<&Value>
+    {
+        self.values.get(id_offset(ArenaIndex(id.0)))
+    }
+
+    /// Resolve a computation id, or `None` when it dangles.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling or foreign id is admissible input.
+    /// - ensures: returns the computation node `id` names, and `None` exactly
+    ///   when the id's index is past this family's length.
+    /// - provides: the checked lookup that keeps a `u32` id fail-closed; no
+    ///   unchecked resolution path exists.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes all four family prefixes before and after
+    ///   truncation, stale marks, dangling ids, reminting and a foreign id with
+    ///   a coincident ordinal. Exact retained variants and dense indices
+    ///   separate prefix damage, accidental growth, wrong-family lookup and
+    ///   generation/provenance assumptions. Allocation at the u32 ceiling is
+    ///   not exercised; its conversion is checked separately.
+    /// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
+    #[spec(
+        ensures: |ret| match (ret, self.computations.get(ArenaLength(usize::try_from(id.0).unwrap_or(usize::MAX)))) { (Some(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (None, None) => true, _ => false },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn computation(
+        &self,
+        id: ComputationId,
+    ) -> Option<&Computation>
+    {
+        self.computations.get(id_offset(ArenaIndex(id.0)))
+    }
+
+    /// Resolve a value-type id, or `None` when it dangles.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling or foreign id is admissible input.
+    /// - ensures: returns the value-type node `id` names, and `None` exactly
+    ///   when the id's index is past this family's length.
+    /// - provides: the checked lookup that keeps a `u32` id fail-closed; no
+    ///   unchecked resolution path exists.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes all four family prefixes before and after
+    ///   truncation, stale marks, dangling ids, reminting and a foreign id with
+    ///   a coincident ordinal. Exact retained variants and dense indices
+    ///   separate prefix damage, accidental growth, wrong-family lookup and
+    ///   generation/provenance assumptions. Allocation at the u32 ceiling is
+    ///   not exercised; its conversion is checked separately.
+    /// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
+    #[spec(
+        ensures: |ret| match (ret, self.value_types.get(ArenaLength(usize::try_from(id.0).unwrap_or(usize::MAX)))) { (Some(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (None, None) => true, _ => false },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn value_type(
+        &self,
+        id: ValueTypeId,
+    ) -> Option<&ValueType>
+    {
+        self.value_types.get(id_offset(ArenaIndex(id.0)))
+    }
+
+    /// Resolve a computation-type id, or `None` when it dangles.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling or foreign id is admissible input.
+    /// - ensures: returns the computation-type node `id` names, and `None`
+    ///   exactly when the id's index is past this family's length.
+    /// - provides: the checked lookup that keeps a `u32` id fail-closed; no
+    ///   unchecked resolution path exists.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes all four family prefixes before and after
+    ///   truncation, stale marks, dangling ids, reminting and a foreign id with
+    ///   a coincident ordinal. Exact retained variants and dense indices
+    ///   separate prefix damage, accidental growth, wrong-family lookup and
+    ///   generation/provenance assumptions. Allocation at the u32 ceiling is
+    ///   not exercised; its conversion is checked separately.
+    /// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
+    #[spec(
+        ensures: |ret| match (ret, self.comp_types.get(ArenaLength(usize::try_from(id.0).unwrap_or(usize::MAX)))) { (Some(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (None, None) => true, _ => false },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn comp_type(
+        &self,
+        id: CompTypeId,
+    ) -> Option<&CompType>
+    {
+        self.comp_types.get(id_offset(ArenaIndex(id.0)))
+    }
+
+    /// The support a value carries: the free de Bruijn indices it mentions,
+    /// read off its column, never a walk below it.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling or foreign id is admissible input.
+    /// - ensures: the support gathered when the node `id` names was minted, and
+    ///   every binder when `id` dangles, so a gap widens what a reader takes
+    ///   into account and never narrows it.
+    /// - provides: the one read of a value's support.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — values on both sides of the word's width, a binder
+    ///   former of each kind, and an id truncated away, each support read back
+    ///   exactly.
+    /// - witness: `support::tests::reads_are_exactly_the_free_indices`
+    /// - witness: `support::tests::an_unresolved_node_reads_every_binder`
+    #[spec(ensures: |ret| self.value(id).is_some() || *ret == crate::support::WIDEST)]
+    #[inline]
+    #[must_use]
+    pub fn value_support(
+        &self,
+        id: ValueId,
+    ) -> &Reads
+    {
+        self.value_supports
+            .get(id_offset(ArenaIndex(id.0)))
+            .unwrap_or(&crate::support::WIDEST)
+    }
+
+    /// The support a computation carries; see [`Self::value_support`].
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling or foreign id is admissible input.
+    /// - ensures: as [`Self::value_support`], on the computation family.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value_support`].
+    /// - witness: `support::tests::every_binding_former_closes_what_it_binds`
+    /// - witness: `support::tests::an_unresolved_node_reads_every_binder`
+    #[spec(ensures: |ret| self.computation(id).is_some() || *ret == crate::support::WIDEST)]
+    #[inline]
+    #[must_use]
+    pub fn computation_support(
+        &self,
+        id: ComputationId,
+    ) -> &Reads
+    {
+        self.computation_supports
+            .get(id_offset(ArenaIndex(id.0)))
+            .unwrap_or(&crate::support::WIDEST)
+    }
+
+    /// The support a value type carries; see [`Self::value_support`].
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling or foreign id is admissible input.
+    /// - ensures: as [`Self::value_support`], on the value-type family.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value_support`].
+    /// - witness: `support::tests::a_type_reads_through_its_codes`
+    /// - witness: `support::tests::an_unresolved_node_reads_every_binder`
+    #[spec(ensures: |ret| self.value_type(id).is_some() || *ret == crate::support::WIDEST)]
+    #[inline]
+    #[must_use]
+    pub fn value_type_support(
+        &self,
+        id: ValueTypeId,
+    ) -> &Reads
+    {
+        self.value_type_supports
+            .get(id_offset(ArenaIndex(id.0)))
+            .unwrap_or(&crate::support::WIDEST)
+    }
+
+    /// The support a computation type carries; see [`Self::value_support`].
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling or foreign id is admissible input.
+    /// - ensures: as [`Self::value_support`], on the computation-type family.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value_support`].
+    /// - witness: `support::tests::a_type_reads_through_its_codes`
+    /// - witness: `support::tests::an_unresolved_node_reads_every_binder`
+    #[spec(ensures: |ret| self.comp_type(id).is_some() || *ret == crate::support::WIDEST)]
+    #[inline]
+    #[must_use]
+    pub fn comp_type_support(
+        &self,
+        id: CompTypeId,
+    ) -> &Reads
+    {
+        self.comp_type_supports
+            .get(id_offset(ArenaIndex(id.0)))
+            .unwrap_or(&crate::support::WIDEST)
+    }
+
+    /// Append a value node and return the id that names it.
+    ///
+    /// # Specification
+    /// - requires: every child id inside `value` resolves in this arena.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
+    ///   the id names the appended node and is greater than every value id
+    ///   currently live in this arena.
+    /// - provides: the single minting site for a [`ValueId`], which is what
+    ///   puts constructor-only minting in one checkable place. An id is a
+    ///   family index, so [`Self::truncate_to`] makes index reuse a supported
+    ///   path: after a truncation the next push mints an id equal to one minted
+    ///   before it; and above the ceiling [`id_index`] saturates at, the
+    ///   returned id does not name the appended node.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: match value {
+            Value::Constructor { datatype, ref fields, .. } => self.value_type(datatype).is_some() && fields.iter().all(|field| self.value(*field).is_some()),
+            Value::Record(ref fields) => fields.values().all(|field| self.value(*field).is_some()),
+            Value::Restrict { value: restricted, ref fixed } => self.value(restricted).is_some() && fixed.values().all(|field| self.value(*field).is_some()),
+            Value::ListCons(first, second) | Value::StaticApplication(first, second) | Value::PathProduct(first, second) | Value::FlowProduct(first, second) | Value::Then { first, second, .. } => self.value(first).is_some() && self.value(second).is_some(),
+            Value::Tuple(ref components) => components.iter().all(|component| self.value(*component).is_some()),
+            Value::Injection(_, body) | Value::Lift { body, .. } | Value::PathRefl(body) | Value::Univalence(body) | Value::Here { point: body, .. } | Value::Stay { point: body, .. } => self.value(body).is_some(),
+            Value::ForwardFlow { flow_type, translator, ref outputs, .. } => self.value_type(flow_type).is_some() && self.value(translator).is_some() && outputs.iter().all(|output| self.value(*output).is_some()),
+            Value::FunctionFlow { flow_type, domain, codomain } => self.value_type(flow_type).is_some() && self.value(domain).is_some() && self.value(codomain).is_some(),
+            Value::Higher { ref evidence, .. } => evidence.iter().all(|item| self.value(*item).is_some()),
+            Value::HigherEvaluation { ref components, .. } => components.iter().all(|component| self.value(component.left).is_some() && self.value(component.right).is_some() && self.value(component.evidence).is_some()),
+            Value::QuantifiedEvaluation { ref children, .. } => children.iter().all(|item| self.value(*item).is_some()),
+            Value::PathEquiv { path_type, forward, backward, .. } => self.value_type(path_type).is_some() && self.value(forward).is_some() && self.value(backward).is_some(),
+            Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => self.value_type(classifier).is_some() && self.value(payload_paths).is_some(),
+            Value::Thunk(body) | Value::Returned(body) => self.computation(body).is_some(),
+            Value::Quote(quoted) => self.value_type(quoted).is_some(),
+            Value::QuoteComputation(quoted) => self.comp_type(quoted).is_some(),
+            Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => true,
+        }, captures: entry = (self.watermark(), core::mem::discriminant(&value)),
+        ensures: |ret| self.values.len() == entry.0.values.saturating_add(1)
+                && self.computations.len() == entry.0.computations
+                && self.value_types.len() == entry.0.value_types
+                && self.comp_types.len() == entry.0.comp_types
+                && ret.0 == u32::try_from(entry.0.values).unwrap_or(u32::MAX)
+                && self.values.last().map(core::mem::discriminant) == Some(entry.1),
+    )]
+    #[inline]
+    fn alloc_value(
+        &mut self,
+        value: Value,
+    ) -> ValueId
+    {
+        let id = ValueId(id_index(self.values.len()).0);
+        let support = self.value_carried(&value);
+        self.values.push(value);
+        self.value_supports.push(support);
+        id
+    }
+
+    /// Append a computation node and return the id that names it.
+    ///
+    /// # Specification
+    /// - requires: every child id inside `computation` resolves in this arena.
+    /// - ensures: appends the node and returns the computation family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   computation id currently live in this arena.
+    /// - provides: the single minting site for a [`ComputationId`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: match computation {
+            Computation::DataCase { scrutinee, motive, ref branches, .. } => self.value(scrutinee).is_some() && self.comp_type(motive).is_some() && branches.iter().all(|branch| self.computation(*branch).is_some()),
+            Computation::SigmaSplit { scrutinee, motive, body } => self.value(scrutinee).is_some() && self.comp_type(motive).is_some() && self.computation(body).is_some(),
+            Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => self.value(record).is_some(),
+            Computation::Lambda(body) | Computation::Fixpoint { body, .. } => self.computation(body).is_some(),
+            Computation::Application(head, argument) => self.computation(head).is_some() && self.value(argument).is_some(),
+            Computation::Return(value) | Computation::Force(value) => self.value(value).is_some(),
+            Computation::Transport(path, value) => self.value(path).is_some() && self.value(value).is_some(),
+            Computation::PathTransport { motive, path, value } | Computation::Ride { motive, flow: path, value } => self.value_type(motive).is_some() && self.value(path).is_some() && self.value(value).is_some(),
+            Computation::TelescopeTransport { motive, path, start, over, value } | Computation::TelescopeRide { motive, flow: path, start, over, value } => self.comp_type(motive).is_some() && self.value(path).is_some() && self.value(start).is_some() && self.value(over).is_some() && self.value(value).is_some(),
+            Computation::RelatedApplication { path, left, right, evidence, body } => self.value(path).is_some() && self.value(left).is_some() && self.value(right).is_some() && self.value(evidence).is_some() && self.computation(body).is_some(),
+            Computation::Bind(bound, body) | Computation::BindAll { bound, body, .. } => self.computation(bound).is_some() && self.computation(body).is_some(),
+            Computation::ReturnAll(ref values) => values.iter().all(|value| self.value(*value).is_some()),
+            Computation::With(ref components) => components.iter().all(|component| self.computation(*component).is_some()),
+            Computation::Project(_, pair) => self.computation(pair).is_some(),
+            Computation::Case { scrutinee, ref branches } => self.value(scrutinee).is_some() && branches.iter().all(|branch| self.computation(*branch).is_some()),
+            Computation::ListFold { element, result, list, on_nil, on_cons } => self.value_type(element).is_some() && self.value_type(result).is_some() && self.value(list).is_some() && self.computation(on_nil).is_some() && self.computation(on_cons).is_some(),
+            Computation::ListCase { list, on_nil, on_cons } => self.value(list).is_some() && self.computation(on_nil).is_some() && self.computation(on_cons).is_some(),
+        }, captures: entry = (self.watermark(), core::mem::discriminant(&computation)),
+        ensures: |ret| self.values.len() == entry.0.values
+                && self.computations.len() == entry.0.computations.saturating_add(1)
+                && self.value_types.len() == entry.0.value_types
+                && self.comp_types.len() == entry.0.comp_types
+                && ret.0 == u32::try_from(entry.0.computations).unwrap_or(u32::MAX)
+                && self.computations.last().map(core::mem::discriminant) == Some(entry.1),
+    )]
+    #[inline]
+    fn alloc_computation(
+        &mut self,
+        computation: Computation,
+    ) -> ComputationId
+    {
+        let id = ComputationId(id_index(self.computations.len()).0);
+        let support = self.computation_carried(&computation);
+        self.computations.push(computation);
+        self.computation_supports.push(support);
+        id
+    }
+
+    /// Append a value-type node and return the id that names it.
+    ///
+    /// # Specification
+    /// - requires: every child id inside `value_type` resolves in this arena.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   value-type id currently live in this arena.
+    /// - provides: the single minting site for a [`ValueTypeId`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: match value_type {
+            ValueType::Data { ref arguments, .. } => arguments.iter().all(|argument| self.value(*argument).is_some()),
+            ValueType::Record(ref fields) => fields.values().all(|field| self.value_type(*field).is_some()),
+            ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().all(|part| self.value_type(*part).is_some()),
+            ValueType::StaticPi { domain: first, codomain: second } | ValueType::Sigma { first, second } => self.value_type(first).is_some() && self.value_type(second).is_some(),
+            ValueType::PathUniverse(first, second) | ValueType::FlowUniverse(first, second) => self.value(first).is_some() && self.value(second).is_some(),
+            ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } | ValueType::Bridge { domain, left, right } => self.value_type(domain).is_some() && self.value(left).is_some() && self.value(right).is_some(),
+            ValueType::Thunk(body) => self.comp_type(body).is_some(),
+            ValueType::Session { payloads, .. } => self.value_type(payloads).is_some(),
+            ValueType::Lift { inner, .. } | ValueType::List(inner) | ValueType::Staged { base: inner, .. } => self.value_type(inner).is_some(),
+            ValueType::Element { code, .. } => self.value(code).is_some(),
+            ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => true,
+        }, captures: entry = (self.watermark(), core::mem::discriminant(&value_type)),
+        ensures: |ret| self.values.len() == entry.0.values
+                && self.computations.len() == entry.0.computations
+                && self.value_types.len() == entry.0.value_types.saturating_add(1)
+                && self.comp_types.len() == entry.0.comp_types
+                && ret.0 == u32::try_from(entry.0.value_types).unwrap_or(u32::MAX)
+                && self.value_types.last().map(core::mem::discriminant) == Some(entry.1),
+    )]
+    #[inline]
+    fn alloc_value_type(
+        &mut self,
+        value_type: ValueType,
+    ) -> ValueTypeId
+    {
+        let id = ValueTypeId(id_index(self.value_types.len()).0);
+        let support = self.value_type_carried(&value_type);
+        self.value_types.push(value_type);
+        self.value_type_supports.push(support);
+        id
+    }
+
+    /// Append a computation-type node and return the id that names it.
+    ///
+    /// # Specification
+    /// - requires: every child id inside `comp_type` resolves in this arena.
+    /// - ensures: appends the node and returns the computation-type family's
+    ///   length before the push, saturated at the `u32` ceiling; while that
+    ///   length fits `u32` the id names the appended node and is greater than
+    ///   every computation-type id currently live in this arena.
+    /// - provides: the single minting site for a [`CompTypeId`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: match comp_type { CompType::Returner(result) => self.value_type(result).is_some(), CompType::Returns(ref results) => results.iter().all(|result| self.value_type(*result).is_some()), CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => self.value_type(domain).is_some()
+                && self.comp_type(codomain).is_some(), CompType::Element { code, .. } => self.value(code).is_some(), CompType::With(ref components) => components.iter().all(|component| self.comp_type(*component).is_some()), CompType::Codata { ref arguments, .. } => arguments.iter().all(|argument| self.value(*argument).is_some()) }, captures: entry = (self.watermark(), core::mem::discriminant(&comp_type)),
+        ensures: |ret| self.values.len() == entry.0.values
+                && self.computations.len() == entry.0.computations
+                && self.value_types.len() == entry.0.value_types
+                && self.comp_types.len() == entry.0.comp_types.saturating_add(1)
+                && ret.0 == u32::try_from(entry.0.comp_types).unwrap_or(u32::MAX)
+                && self.comp_types.last().map(core::mem::discriminant) == Some(entry.1),
+    )]
+    #[inline]
+    fn alloc_comp_type(
+        &mut self,
+        comp_type: CompType,
+    ) -> CompTypeId
+    {
+        let id = CompTypeId(id_index(self.comp_types.len()).0);
+        let support = self.comp_type_carried(&comp_type);
+        self.comp_types.push(comp_type);
+        self.comp_type_supports.push(support);
+        id
+    }
+
+    // Value constructors mint over live children. Only same-family indices
+    // share an order, and the returned index saturates at the u32 ceiling.
+
+    /// Mint a bound value variable.
+    ///
+    /// # Specification
+    /// - requires: nothing; a de Bruijn index is an inline payload, and whether
+    ///   it names an enclosing binder is a typing fact.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
+    ///   the id names the appended node and is greater than every value id
+    ///   currently live in this arena.
+    /// - provides: the only way to obtain a [`ValueId`] for a bound variable.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::Variable(actual)) if actual == index),
+    )]
+    #[inline]
+    pub fn value_variable(
+        &mut self,
+        index: DeBruijnIndex,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Variable(index))
+    }
+
+    /// Mint a constant reference to a prior declaration.
+    ///
+    /// # Specification
+    /// - requires: nothing; whether the admission position names an admitted
+    ///   declaration is a typing fact, refused at the choke point rather than
+    ///   here.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
+    ///   the id names the appended node and is greater than every value id
+    ///   currently live in this arena.
+    /// - provides: the only way to obtain a [`ValueId`] for a constant
+    ///   reference.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::Constant(actual)) if actual == index),
+    )]
+    #[inline]
+    pub fn value_constant(
+        &mut self,
+        index: ConstantIndex,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Constant(index))
+    }
+
+    /// Mint the unit value.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
+    ///   the id names the appended node and is greater than every value id
+    ///   currently live in this arena.
+    /// - provides: the only way to obtain a [`ValueId`] for the unit value.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && self.values.last().is_some_and(|node| node.components().is_some_and(<[_]>::is_empty)),
+    )]
+    #[inline]
+    pub fn value_unit(&mut self) -> ValueId
+    {
+        self.value_tuple(&[])
+    }
+
+    /// Mint a base-type literal value.
+    ///
+    /// # Specification
+    /// - requires: nothing; the literal is an inline payload, and whether it
+    ///   inhabits its base type is a typing fact.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
+    ///   the id names the appended node and is greater than every value id
+    ///   currently live in this arena.
+    /// - provides: the only way to obtain a [`ValueId`] for a literal.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        captures: before = (self.watermark(), literal.base_type()),
+        ensures: |ret| self.values.len() == before.0.values.saturating_add(1)
+                && self.computations.len() == before.0.computations
+                && self.value_types.len() == before.0.value_types
+                && self.comp_types.len() == before.0.comp_types
+                && ret.0 == u32::try_from(before.0.values).unwrap_or(u32::MAX)
+                && self.values.last().is_some_and(|node| match *node { Value::Literal(ref actual) => actual.base_type() == before.1, Value::Constructor { .. } | Value::Record(_) | Value::Restrict { .. } | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Univalence { .. } | Value::Here { .. } | Value::Returned(_) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. } | Value::Variable(_) | Value::Constant(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticApplication(..) => false }),
+    )]
+    #[inline]
+    pub fn value_literal(
+        &mut self,
+        literal: Literal,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Literal(literal))
+    }
+
+    /// Mint a tuple over already-allocated value components, in order.
+    ///
+    /// # Specification
+    /// - requires: every component resolves in this arena.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
+    ///   the id names the appended node and is strictly greater than every
+    ///   component id, which the precondition keeps live.
+    /// - provides: the tuple node, acyclic by construction; the id ordering is
+    ///   what the subterm table's strictly-earlier invariant rests on.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: components.iter().all(|&component| self.value(component).is_some()), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && self.values.last().and_then(Value::components) == Some(components),
+    )]
+    #[inline]
+    pub fn value_tuple(
+        &mut self,
+        components: &[ValueId],
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Tuple(components.into()))
+    }
+
+    /// Mint a sum injection over an already-allocated value body.
+    ///
+    /// # Specification
+    /// - requires: `body` resolves in this arena.
+    /// - ensures: appends the node at the named summand and returns the value
+    ///   family's length before the push, saturated at the `u32` ceiling; while
+    ///   that length fits `u32` the id names the appended node and is strictly
+    ///   greater than `body`, which the precondition keeps live.
+    /// - provides: the injection node, acyclic by construction; whether the
+    ///   summand exists is a typing fact.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(body).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::Injection(actual, actual_body)) if actual == summand
+                && actual_body == body),
+    )]
+    #[inline]
+    pub fn value_injection(
+        &mut self,
+        summand: Summand,
+        body: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Injection(summand, body))
+    }
+
+    /// Mint a thunk over an already-allocated computation body.
+    ///
+    /// # Specification
+    /// - requires: `body` resolves in this arena's computation family.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
+    ///   the id names the appended node and is greater than every value id
+    ///   currently live in this arena.
+    /// - provides: the value form suspending a computation rather than running
+    ///   it. The child crosses families, so the two ids share no allocation
+    ///   order and none is claimed.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.computation(body).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::Thunk(actual)) if actual == body),
+    )]
+    #[inline]
+    pub fn value_thunk(
+        &mut self,
+        body: ComputationId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Thunk(body))
+    }
+
+    /// Mint a value lift over an already-allocated value body.
+    ///
+    /// # Specification
+    /// - requires: `body` resolves in this arena; whether its type's level sits
+    ///   strictly below `target` is a typing fact.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
+    ///   the id names the appended node and is strictly greater than `body`,
+    ///   which the precondition keeps live.
+    /// - provides: the written lift; there is no implicit cumulativity, so a
+    ///   lift exists only where a producer minted one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(body).is_some(), captures: before = (self.watermark(), target.constant_part()),
+        ensures: |ret| self.values.len() == before.0.values.saturating_add(1)
+                && self.computations.len() == before.0.computations
+                && self.value_types.len() == before.0.value_types
+                && self.comp_types.len() == before.0.comp_types
+                && ret.0 == u32::try_from(before.0.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::Lift { ref target, body: actual }) if actual == body
+                && target.constant_part() == before.1),
+    )]
+    #[inline]
+    pub fn value_lift(
+        &mut self,
+        target: Level,
+        body: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Lift { target, body })
+    }
+
+    /// Mint the code of an already-allocated value type.
+    ///
+    /// # Specification
+    /// - requires: `quoted` resolves in this arena's value-type family.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling.
+    /// - provides: the quote `⌜A⌝`; its universe level is formation's to read.
+    ///   The child crosses families, so the two ids share no allocation order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value_type(quoted).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::Quote(actual)) if actual == quoted),
+    )]
+    #[inline]
+    pub fn value_quote(
+        &mut self,
+        quoted: ValueTypeId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Quote(quoted))
+    }
+
+    /// Mint the code of an already-allocated computation type.
+    ///
+    /// # Specification
+    /// - requires: `quoted` resolves in this arena's computation-type family.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling.
+    /// - provides: the quote `⌜C⌝` of a computation type, which is a value like
+    ///   every code.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.comp_type(quoted).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::QuoteComputation(actual)) if actual == quoted),
+    )]
+    #[inline]
+    pub fn value_quote_computation(
+        &mut self,
+        quoted: CompTypeId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::QuoteComputation(quoted))
+    }
+
+    /// Mint a static application of an already-allocated type operator to an
+    /// already-allocated code.
+    ///
+    /// # Specification
+    /// - requires: `head` and `argument` resolve in this arena; whether `head`
+    ///   inhabits a static Pi whose domain `argument` checks against is checked
+    ///   at the choke point.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
+    ///   the id names the appended node and is strictly greater than both child
+    ///   ids, which the precondition keeps live.
+    /// - provides: the neutral static application: the vocabulary has no static
+    ///   lambda, so no arena holds a static redex and the node never reduces.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(head).is_some()
+                && self.value(argument).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::StaticApplication(left, right)) if left == head
+                && right == argument),
+    )]
+    #[inline]
+    pub fn value_static_application(
+        &mut self,
+        head: ValueId,
+        argument: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::StaticApplication(head, argument))
+    }
+
+    // Computation constructors.
+
+    /// Mint a lambda over an already-allocated computation body.
+    ///
+    /// # Specification
+    /// - requires: `body` resolves in this arena.
+    /// - ensures: appends the node and returns the computation family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   `body`, which the precondition keeps live.
+    /// - provides: the lambda node, acyclic by construction; the binder is
+    ///   positional, so no name is represented.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.computation(body).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations.saturating_add(1)
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && matches!(self.computations.last(), Some(&Computation::Lambda(actual)) if actual == body),
+    )]
+    #[inline]
+    pub fn computation_lambda(
+        &mut self,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Lambda(body))
+    }
+
+    /// Mint a fixpoint over an already-allocated body, carrying its
+    /// termination claim.
+    ///
+    /// # Specification
+    /// - requires: `body` resolves in this arena.
+    /// - ensures: appends the node and returns the computation family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   `body`, which the precondition keeps live.
+    /// - provides: the fixpoint node, acyclic by construction; its self binder
+    ///   is positional, so no name is represented.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children and observes the exact stored nodes and ordered edges; a
+    ///   fixpoint minted as a lambda, over a different body, or with the other
+    ///   claim changes the stored node.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.computation(body).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations.saturating_add(1)
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && matches!(self.computations.last(), Some(&Computation::Fixpoint { body: actual, evidence: claimed }) if actual == body && claimed == evidence),
+    )]
+    #[inline]
+    pub fn computation_fixpoint(
+        &mut self,
+        body: ComputationId,
+        evidence: crate::FixpointEvidence,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Fixpoint { body, evidence })
+    }
+
+    /// Mint an application over an already-allocated head and argument.
+    ///
+    /// # Specification
+    /// - requires: `head` and `argument` resolve in this arena, in its
+    ///   computation and value families respectively.
+    /// - ensures: appends the node and returns the computation family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   computation id currently live in this arena, `head` included.
+    /// - provides: the application node; whether the argument matches the
+    ///   head's domain is a typing fact.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.computation(head).is_some()
+                && self.value(argument).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations.saturating_add(1)
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && matches!(self.computations.last(), Some(&Computation::Application(left, right)) if left == head
+                && right == argument),
+    )]
+    #[inline]
+    pub fn computation_application(
+        &mut self,
+        head: ComputationId,
+        argument: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Application(head, argument))
+    }
+
+    /// Mint a returner over an already-allocated value.
+    ///
+    /// # Specification
+    /// - requires: `value` resolves in this arena's value family.
+    /// - ensures: appends the node and returns the computation family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   computation id currently live in this arena.
+    /// - provides: the returner node. The child crosses families, so the two
+    ///   ids share no allocation order and none is claimed.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(value).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations.saturating_add(1)
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && matches!(self.computations.last(), Some(&Computation::Return(actual)) if actual == value),
+    )]
+    #[inline]
+    pub fn computation_return(
+        &mut self,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Return(value))
+    }
+
+    /// Mint a bind over an already-allocated bound computation and body.
+    ///
+    /// # Specification
+    /// - requires: `bound` and `body` resolve in this arena.
+    /// - ensures: appends the node and returns the computation family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   both child ids, which the precondition keeps live.
+    /// - provides: the sequencing node; the value `bound` returns is bound
+    ///   positionally in `body`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.computation(bound).is_some()
+                && self.computation(body).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations.saturating_add(1)
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && matches!(self.computations.last(), Some(&Computation::Bind(left, right)) if left == bound
+                && right == body),
+    )]
+    #[inline]
+    pub fn computation_bind(
+        &mut self,
+        bound: ComputationId,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Bind(bound, body))
+    }
+
+    /// Mint a return of the already-allocated values `values`: the return of
+    /// the one value when there is one, the return of several otherwise.
+    ///
+    /// # Specification
+    /// - requires: every value resolves in this arena's value family.
+    /// - ensures: appends [`Computation::Return`] of the value when `values`
+    ///   holds one and [`Computation::ReturnAll`] of `values` in order
+    ///   otherwise, and returns the computation family's length before the
+    ///   push, saturated at the `u32` ceiling.
+    /// - provides: the only way to mint a return of several values, which keeps
+    ///   one value's return in its one spelling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — no values, one and two mint the return of none, the
+    ///   return and the return of two in order.
+    /// - witness: `arena::tests::a_many_value_former_of_one_is_its_one_value_former`
+    #[spec(
+        requires: values.iter().all(|&value| self.value(value).is_some()), captures: before = self.watermark(),
+        ensures: |ret| self.computations.len() == before.computations.saturating_add(1)
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && match *values {
+                    | [value] => matches!(self.computations.last(), Some(&Computation::Return(actual)) if actual == value),
+                    | _ => matches!(self.computations.last(), Some(Computation::ReturnAll(actual)) if **actual == *values),
+                },
+    )]
+    #[inline]
+    pub fn computation_return_all(
+        &mut self,
+        values: &[ValueId],
+    ) -> ComputationId
+    {
+        match *values {
+            [value] => self.computation_return(value),
+            _ => self.alloc_computation(Computation::ReturnAll(values.into())),
+        }
+    }
+
+    /// Mint a bind of the `arity` values `bound` returns into `body`: the bind
+    /// of the one value when `arity` is one, the bind of several otherwise.
+    ///
+    /// # Specification
+    /// - requires: `bound` and `body` resolve in this arena.
+    /// - ensures: appends [`Computation::Bind`] when `arity` is one and
+    ///   [`Computation::BindAll`] otherwise, and returns the computation
+    ///   family's length before the push, saturated at the `u32` ceiling.
+    /// - provides: the only way to mint a bind of several values, which keeps
+    ///   one value's bind in its one spelling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::computation_return_all`].
+    /// - witness: `arena::tests::a_many_value_former_of_one_is_its_one_value_former`
+    #[spec(
+        requires: self.computation(bound).is_some()
+                && self.computation(body).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.computations.len() == before.computations.saturating_add(1)
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && if usize::from(arity) == 1 {
+                    matches!(self.computations.last(), Some(&Computation::Bind(left, right)) if left == bound && right == body)
+                } else {
+                    self.computations.last() == Some(&Computation::BindAll { bound, arity, body })
+                },
+    )]
+    #[inline]
+    pub fn computation_bind_all(
+        &mut self,
+        bound: ComputationId,
+        arity: crate::ResultCount,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        if usize::from(arity) == 1 {
+            self.computation_bind(bound, body)
+        }
+        else {
+            self.alloc_computation(Computation::BindAll { bound, arity, body })
+        }
+    }
+
+    /// Mint a force over an already-allocated value.
+    ///
+    /// # Specification
+    /// - requires: `value` resolves in this arena's value family.
+    /// - ensures: appends the node and returns the computation family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   computation id currently live in this arena.
+    /// - provides: the force node. Whether `value` is a thunk is a typing fact,
+    ///   and the child crosses families, so no id ordering is claimed.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(value).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations.saturating_add(1)
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && matches!(self.computations.last(), Some(&Computation::Force(actual)) if actual == value),
+    )]
+    #[inline]
+    pub fn computation_force(
+        &mut self,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Force(value))
+    }
+
+    /// Mint a case over an already-allocated scrutinee and its branches, one
+    /// per summand in summand order.
+    ///
+    /// # Specification
+    /// - requires: `scrutinee` resolves in this arena's value family and every
+    ///   branch in its computation family.
+    /// - ensures: appends the node and returns the computation family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   every branch id, which the precondition keeps live.
+    /// - provides: the sum elimination; each branch is checked with the
+    ///   injected value bound, which is a typing fact rather than a
+    ///   representation one. A case of no branches eliminates the empty sum.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(scrutinee).is_some()
+                && branches.iter().all(|&branch| self.computation(branch).is_some()), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations.saturating_add(1)
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && matches!(self.computations.last(), Some(&Computation::Case { scrutinee: actual, branches: ref minted }) if actual == scrutinee
+                && **minted == *branches),
+    )]
+    #[inline]
+    pub fn computation_case(
+        &mut self,
+        scrutinee: ValueId,
+        branches: &[ComputationId],
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Case {
+            scrutinee,
+            branches: branches.into(),
+        })
+    }
+
+    /// Mint the dependent pair's eliminator over an already-allocated
+    /// scrutinee, motive and body.
+    ///
+    /// # Specification
+    /// - requires: `scrutinee` resolves in this arena's value family, `motive`
+    ///   in its computation-type family and `body` in its computation family.
+    /// - ensures: appends the node and returns the computation family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   the body's id, which the precondition keeps live.
+    /// - provides: the dependent split; the motive is scoped under one binder
+    ///   and the body under two, which is a typing fact rather than a
+    ///   representation one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children and observes the exact stored nodes and ordered edges; a
+    ///   swapped child or a dropped motive changes the stored node.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(scrutinee).is_some() && self.comp_type(motive).is_some()
+                && self.computation(body).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations.saturating_add(1)
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && self.computations.last() == Some(&Computation::SigmaSplit { scrutinee, motive, body }),
+    )]
+    #[inline]
+    pub fn computation_sigma_split(
+        &mut self,
+        scrutinee: ValueId,
+        motive: CompTypeId,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::SigmaSplit {
+            scrutinee,
+            motive,
+            body,
+        })
+    }
+
+    /// Mint the empty value type: the sum of no summands.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_empty(&mut self) -> ValueTypeId
+    {
+        self.value_type_sum(&[])
+    }
+
+    // Value-type constructors.
+
+    /// Mint a base value type.
+    ///
+    /// # Specification
+    /// - requires: nothing; the base type is an inline payload.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   value-type id currently live in this arena.
+    /// - provides: the only way to obtain a [`ValueTypeId`] for a base type.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types.saturating_add(1)
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(&ValueType::Base(actual)) if actual == base),
+    )]
+    #[inline]
+    pub fn value_type_base(
+        &mut self,
+        base: BaseType,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Base(base))
+    }
+
+    /// Mint the unit value type: the product of no components.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   value-type id currently live in this arena.
+    /// - provides: the only way to obtain a [`ValueTypeId`] for the unit type.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types.saturating_add(1)
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(ValueType::Product(components)) if components.is_empty()),
+    )]
+    #[inline]
+    pub fn value_type_unit(&mut self) -> ValueTypeId
+    {
+        self.value_type_product(&[])
+    }
+
+    /// Mint a product over already-allocated value types, in order.
+    ///
+    /// # Specification
+    /// - requires: every component resolves in this arena.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   every component id, which the precondition keeps live.
+    /// - provides: the product type, acyclic by construction.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: components.iter().all(|&component| self.value_type(component).is_some()), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types.saturating_add(1)
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(ValueType::Product(minted)) if **minted == *components),
+    )]
+    #[inline]
+    pub fn value_type_product(
+        &mut self,
+        components: &[ValueTypeId],
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Product(components.into()))
+    }
+
+    /// Mint a dependent pair over an already-allocated first factor and a
+    /// second factor scoped under its binder.
+    ///
+    /// # Specification
+    /// - requires: `first` and `second` resolve in this arena.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   both factor ids, which the precondition keeps live.
+    /// - provides: the dependent pair type, acyclic by construction; whether
+    ///   the second factor reads the binder is a typing fact.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children and observes the exact stored nodes and ordered edges; a
+    ///   swapped factor or a dependent pair minted as a product changes the
+    ///   stored node.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value_type(first).is_some() && self.value_type(second).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types.saturating_add(1)
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
+                && self.value_types.last() == Some(&ValueType::Sigma { first, second }),
+    )]
+    #[inline]
+    pub fn value_type_sigma(
+        &mut self,
+        first: ValueTypeId,
+        second: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Sigma { first, second })
+    }
+
+    /// Mint a sum over already-allocated value types, in summand order.
+    ///
+    /// # Specification
+    /// - requires: every summand resolves in this arena.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   every summand id, which the precondition keeps live.
+    /// - provides: the sum type, acyclic by construction; the summand order is
+    ///   the order the slice gives.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: summands.iter().all(|&summand| self.value_type(summand).is_some()), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types.saturating_add(1)
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(ValueType::Sum(minted)) if **minted == *summands),
+    )]
+    #[inline]
+    pub fn value_type_sum(
+        &mut self,
+        summands: &[ValueTypeId],
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Sum(summands.into()))
+    }
+
+    /// Allocate the strictly positive list code over an element type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_list(
+        &mut self,
+        element: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::List(element))
+    }
+
+    /// Mint a thunk type over an already-allocated computation type.
+    ///
+    /// # Specification
+    /// - requires: `body` resolves in this arena's computation-type family.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   value-type id currently live in this arena.
+    /// - provides: the thunk type `U C`. The child crosses families, so the two
+    ///   ids share no allocation order and none is claimed.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.comp_type(body).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types.saturating_add(1)
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(&ValueType::Thunk(actual)) if actual == body),
+    )]
+    #[inline]
+    pub fn value_type_thunk(
+        &mut self,
+        body: CompTypeId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Thunk(body))
+    }
+
+    /// Mint the universe of one ground sort at a canonical level.
+    ///
+    /// # Specification
+    /// - requires: `level` is a canonical level; the arena stores it as given.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   value-type id currently live in this arena.
+    /// - provides: the universe of `sort` at that level.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        captures: before = (self.watermark(), level.constant_part()),
+        ensures: |ret| self.values.len() == before.0.values
+                && self.computations.len() == before.0.computations
+                && self.value_types.len() == before.0.value_types.saturating_add(1)
+                && self.comp_types.len() == before.0.comp_types
+                && ret.0 == u32::try_from(before.0.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(&ValueType::Universe { sort: actual, ref level }) if actual == sort
+                && level.constant_part() == before.1),
+    )]
+    #[inline]
+    pub fn value_type_universe(
+        &mut self,
+        sort: GroundSort,
+        level: Level,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Universe { sort, level })
+    }
+
+    /// Mint a reference to a sealed abstract type by its declaration's
+    /// admission position.
+    ///
+    /// Minting does not check the position: whether it names an admitted
+    /// abstract-type declaration is a typing fact, so an unadmitted position is
+    /// a rejection at the choke point rather than an unrepresentable node here.
+    ///
+    /// # Specification
+    /// - requires: nothing; the admission position is checked at the choke
+    ///   point rather than here.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   value-type id currently live in this arena.
+    /// - provides: the reference to a sealed abstract type, representable
+    ///   whether or not the position is admitted.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types.saturating_add(1)
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(&ValueType::Abstract(actual)) if actual == atom),
+    )]
+    #[inline]
+    pub fn value_type_abstract(
+        &mut self,
+        atom: ConstantIndex,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Abstract(atom))
+    }
+
+    /// Mint `base` refined at `stage`, the refinement of a staged `base`
+    /// replacing its stage.
+    ///
+    /// # Specification
+    /// - requires: `base` names a value-type node already allocated in this
+    ///   arena.
+    /// - ensures: a fresh staged node at `stage` whose base is `base`, or the
+    ///   base `base` refines when `base` is itself staged; never a stage over a
+    ///   stage.
+    /// - provides: the only way to mint this former.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a plain base and a staged one separate the
+    ///   replacement from a nested stage.
+    /// - witness: `arena::tests::a_stage_refines_its_base_once`
+    #[spec(ensures: |ret| matches!(self.value_type(ret), Some(&ValueType::Staged { base: minted, stage: held }) if held == stage && !matches!(self.value_type(minted), Some(ValueType::Staged { .. }))))]
+    #[inline]
+    pub fn value_type_staged(
+        &mut self,
+        base: ValueTypeId,
+        stage: crate::Stage,
+    ) -> ValueTypeId
+    {
+        let base = match self.value_type(base) {
+            Some(&ValueType::Staged { base: refined, .. }) => refined,
+            Some(_) | None => base,
+        };
+        self.alloc_value_type(ValueType::Staged { base, stage })
+    }
+
+    /// Mint the type a code denotes, over an already-allocated code value,
+    /// decoding a value quote on mint.
+    ///
+    /// Minting checks neither the code nor the level: that the code inhabits
+    /// the value universe at `target` is a typing fact, so a mismatched pair is
+    /// a rejection at the choke point rather than an unrepresentable node
+    /// here. A code that is a quote is the one exception, because `El ⌜A⌝` is
+    /// `A` by the decoding rule: the quoted type is returned and nothing is
+    /// minted, whatever level was written, since the quoted type carries its
+    /// own.
+    ///
+    /// # Specification
+    /// - requires: `code` resolves in this arena's value family; whether it
+    ///   inhabits the value universe at `target` is checked at the choke point.
+    /// - ensures: when `code` is a value quote `⌜A⌝`, returns `A` and mints
+    ///   nothing; otherwise appends the node and returns the value-type
+    ///   family's length before the push, saturated at the `u32` ceiling; while
+    ///   that length fits `u32` the id names the appended node and is greater
+    ///   than every value-type id currently live in this arena.
+    /// - provides: the type a code denotes, with its β-rule fired at the one
+    ///   place a decode is made, so no arena ever holds the redex. The child
+    ///   crosses families, so the two ids share no allocation order and none is
+    ///   claimed.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(code).is_some(), captures: before = (self.watermark(), match self.value(code) { Some(&Value::Quote(quoted)) => Some(quoted), _ => None }, target.constant_part()),
+        ensures: |ret| match before.1 { Some(quoted) => ret == quoted
+                && self.watermark() == before.0, None => self.values.len() == before.0.values
+                && self.computations.len() == before.0.computations
+                && self.value_types.len() == before.0.value_types.saturating_add(1)
+                && self.comp_types.len() == before.0.comp_types
+                && ret.0 == u32::try_from(before.0.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(&ValueType::Element { code: actual, ref target }) if actual == code
+                && target.constant_part() == before.2) },
+    )]
+    #[inline]
+    pub fn value_type_element(
+        &mut self,
+        code: ValueId,
+        target: Level,
+    ) -> ValueTypeId
+    {
+        if let Some(&Value::Quote(quoted)) = self.value(code) {
+            return quoted;
+        }
+        self.alloc_value_type(ValueType::Element { code, target })
+    }
+
+    /// Mint a static Pi over two already-allocated value types.
+    ///
+    /// # Specification
+    /// - requires: `domain` and `codomain` resolve in this arena; whether both
+    ///   are static classifiers is formation's to check.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   both child ids, which the precondition keeps live.
+    /// - provides: the classifier of a type operator. Its codomain stands in
+    ///   the ambient context, so the former binds nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value_type(domain).is_some()
+                && self.value_type(codomain).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types.saturating_add(1)
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(&ValueType::StaticPi { domain: left, codomain: right }) if left == domain
+                && right == codomain),
+    )]
+    #[inline]
+    pub fn value_type_static_pi(
+        &mut self,
+        domain: ValueTypeId,
+        codomain: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::StaticPi { domain, codomain })
+    }
+
+    /// Mint a value-type lift over an already-allocated inner value type.
+    ///
+    /// # Specification
+    /// - requires: `inner` resolves in this arena.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   `inner`, which the precondition keeps live.
+    /// - provides: the written type-level lift; whether `inner`'s level sits
+    ///   below `target` is a typing fact.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value_type(inner).is_some(), captures: before = (self.watermark(), target.constant_part()),
+        ensures: |ret| self.values.len() == before.0.values
+                && self.computations.len() == before.0.computations
+                && self.value_types.len() == before.0.value_types.saturating_add(1)
+                && self.comp_types.len() == before.0.comp_types
+                && ret.0 == u32::try_from(before.0.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(&ValueType::Lift { inner: actual, ref target }) if actual == inner
+                && target.constant_part() == before.1),
+    )]
+    #[inline]
+    pub fn value_type_lift(
+        &mut self,
+        inner: ValueTypeId,
+        target: Level,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Lift { inner, target })
+    }
+
+    // Computation-type constructors.
+
+    /// Mint a returner type over an already-allocated value type.
+    ///
+    /// # Specification
+    /// - requires: `result` resolves in this arena's value-type family.
+    /// - ensures: appends the node and returns the computation-type family's
+    ///   length before the push, saturated at the `u32` ceiling; while that
+    ///   length fits `u32` the id names the appended node and is greater than
+    ///   every computation-type id currently live in this arena.
+    /// - provides: the returner type `F A`. The child crosses families, so the
+    ///   two ids share no allocation order and none is claimed.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value_type(result).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types.saturating_add(1)
+                && ret.0 == u32::try_from(before.comp_types).unwrap_or(u32::MAX)
+                && matches!(self.comp_types.last(), Some(&CompType::Returner(actual)) if actual == result),
+    )]
+    #[inline]
+    pub fn comp_type_returner(
+        &mut self,
+        result: ValueTypeId,
+    ) -> CompTypeId
+    {
+        self.alloc_comp_type(CompType::Returner(result))
+    }
+
+    /// Mint the returner of the already-allocated value types `results`: the
+    /// returner of the one result when there is one, the returner of several
+    /// otherwise.
+    ///
+    /// # Specification
+    /// - requires: every result resolves in this arena's value-type family,
+    ///   each under the binders of the results before it.
+    /// - ensures: appends [`CompType::Returner`] of the result when `results`
+    ///   holds one and [`CompType::Returns`] of `results` in order otherwise,
+    ///   and returns the computation-type family's length before the push,
+    ///   saturated at the `u32` ceiling.
+    /// - provides: the only way to mint a returner of several values, which
+    ///   keeps one result's returner in its one spelling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::computation_return_all`].
+    /// - witness: `arena::tests::a_many_value_former_of_one_is_its_one_value_former`
+    #[spec(
+        requires: results.iter().all(|&result| self.value_type(result).is_some()), captures: before = self.watermark(),
+        ensures: |ret| self.comp_types.len() == before.comp_types.saturating_add(1)
+                && ret.0 == u32::try_from(before.comp_types).unwrap_or(u32::MAX)
+                && match *results {
+                    | [result] => matches!(self.comp_types.last(), Some(&CompType::Returner(actual)) if actual == result),
+                    | _ => matches!(self.comp_types.last(), Some(CompType::Returns(actual)) if **actual == *results),
+                },
+    )]
+    #[inline]
+    pub fn comp_type_returns(
+        &mut self,
+        results: &[ValueTypeId],
+    ) -> CompTypeId
+    {
+        match *results {
+            [result] => self.comp_type_returner(result),
+            _ => self.alloc_comp_type(CompType::Returns(results.into())),
+        }
+    }
+
+    /// Mint an arrow type over an already-allocated domain and codomain.
+    ///
+    /// # Specification
+    /// - requires: `domain` and `codomain` resolve in this arena, in its
+    ///   value-type and computation-type families respectively.
+    /// - ensures: appends the node and returns the computation-type family's
+    ///   length before the push, saturated at the `u32` ceiling; while that
+    ///   length fits `u32` the id names the appended node and is strictly
+    ///   greater than `codomain`, which the precondition keeps live.
+    /// - provides: the non-dependent arrow, where the codomain does not read
+    ///   the domain's binder.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value_type(domain).is_some()
+                && self.comp_type(codomain).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types.saturating_add(1)
+                && ret.0 == u32::try_from(before.comp_types).unwrap_or(u32::MAX)
+                && matches!(self.comp_types.last(), Some(&CompType::Arrow { domain: left, codomain: right }) if left == domain
+                && right == codomain),
+    )]
+    #[inline]
+    pub fn comp_type_arrow(
+        &mut self,
+        domain: ValueTypeId,
+        codomain: CompTypeId,
+    ) -> CompTypeId
+    {
+        self.alloc_comp_type(CompType::Arrow { domain, codomain })
+    }
+
+    /// Mint a dependent arrow over an already-allocated domain and a codomain
+    /// scoped under the domain's binder.
+    ///
+    /// Minting does not check the scoping: whether the codomain reads the
+    /// binder is a typing fact rather than a representation one, so a
+    /// codomain that ignores it is representable here and is the producer's
+    /// obligation rather than an unrepresentable node.
+    ///
+    /// # Specification
+    /// - requires: `domain` and `codomain` resolve in this arena, in its
+    ///   value-type and computation-type families respectively.
+    /// - ensures: appends the node and returns the computation-type family's
+    ///   length before the push, saturated at the `u32` ceiling; while that
+    ///   length fits `u32` the id names the appended node and is strictly
+    ///   greater than `codomain`, which the precondition keeps live.
+    /// - provides: the dependent arrow. Whether the codomain reads the domain's
+    ///   binder is the producer's obligation, not a representation one, so a
+    ///   codomain that ignores it is still representable.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value_type(domain).is_some()
+                && self.comp_type(codomain).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types.saturating_add(1)
+                && ret.0 == u32::try_from(before.comp_types).unwrap_or(u32::MAX)
+                && matches!(self.comp_types.last(), Some(&CompType::Pi { domain: left, codomain: right }) if left == domain
+                && right == codomain),
+    )]
+    #[inline]
+    pub fn comp_type_pi(
+        &mut self,
+        domain: ValueTypeId,
+        codomain: CompTypeId,
+    ) -> CompTypeId
+    {
+        self.alloc_comp_type(CompType::Pi { domain, codomain })
+    }
+
+    /// Mint the computation type a code denotes, decoding a computation quote
+    /// on mint.
+    ///
+    /// # Specification
+    /// - requires: `code` resolves in this arena's value family; whether it
+    ///   inhabits the computation universe at `target` is checked at the choke
+    ///   point.
+    /// - ensures: when `code` is a computation quote `⌜C⌝`, returns `C` and
+    ///   mints nothing; otherwise appends the decode and returns the
+    ///   computation-type family's length before the push, saturated at the
+    ///   `u32` ceiling.
+    /// - provides: the computation decode, with its β-rule fired at the one
+    ///   place a decode is made, so no arena ever holds the redex.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(code).is_some(), captures: before = (self.watermark(), match self.value(code) { Some(&Value::QuoteComputation(quoted)) => Some(quoted), _ => None }, target.constant_part()),
+        ensures: |ret| match before.1 { Some(quoted) => ret == quoted
+                && self.watermark() == before.0, None => self.values.len() == before.0.values
+                && self.computations.len() == before.0.computations
+                && self.value_types.len() == before.0.value_types
+                && self.comp_types.len() == before.0.comp_types.saturating_add(1)
+                && ret.0 == u32::try_from(before.0.comp_types).unwrap_or(u32::MAX)
+                && matches!(self.comp_types.last(), Some(&CompType::Element { code: actual, ref target }) if actual == code
+                && target.constant_part() == before.2) },
+    )]
+    #[inline]
+    pub fn comp_type_element(
+        &mut self,
+        code: ValueId,
+        target: Level,
+    ) -> CompTypeId
+    {
+        if let Some(&Value::QuoteComputation(quoted)) = self.value(code) {
+            return quoted;
+        }
+        self.alloc_comp_type(CompType::Element { code, target })
+    }
+
+    /// Mint the native universe-path classifier over quoted codes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_path_universe(
+        &mut self,
+        source: ValueId,
+        target: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::PathUniverse(source, target))
+    }
+
+    /// Mint reflexivity without claiming that its code forms.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_refl(
+        &mut self,
+        code: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::PathRefl(code))
+    }
+
+    /// Mint a componentwise product of universe paths.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_product(
+        &mut self,
+        first: ValueId,
+        second: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::PathProduct(first, second))
+    }
+
+    /// Mint an untrusted equivalence with portable round-trip evidence.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_equiv(
+        &mut self,
+        path_type: ValueTypeId,
+        forward: ValueId,
+        backward: ValueId,
+        evidence: Shared<crate::PathEvidence, Global>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::PathEquiv {
+            path_type,
+            forward,
+            backward,
+            evidence,
+        })
+    }
+
+    /// Mint univalence `ua(e)` of the record `equivalence`, without claiming
+    /// that it checks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_univalence(
+        &mut self,
+        equivalence: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Univalence(equivalence))
+    }
+
+    /// Mint transport; admission derives its source and result types.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_transport(
+        &mut self,
+        path: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Transport(path, value))
+    }
+
+    /// Mint element identity `Path[.A = A](a, b)` without claiming that it
+    /// forms.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_path(
+        &mut self,
+        domain: ValueTypeId,
+        left: ValueId,
+        right: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Path {
+            domain,
+            left,
+            right,
+        })
+    }
+
+    /// Mint the bridge `Br(A, a, b)` without claiming that it forms.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_bridge(
+        &mut self,
+        domain: ValueTypeId,
+        left: ValueId,
+        right: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Bridge {
+            domain,
+            left,
+            right,
+        })
+    }
+
+    /// Mint the diagonal `here(a)` with no endpoint dialogue, without claiming
+    /// that it checks.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: appends a `here` over `point` whose two dialogues are empty,
+    ///   sharing the arena's one empty payload.
+    /// - provides: the reflexivity the kernel mints itself, and any whose point
+    ///   is its endpoints as written.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a minted diagonal holds its point and no dialogue,
+    ///   and decoding a `here` whose dialogues are empty mints it, where one
+    ///   carrying a decision keeps that decision on its side.
+    /// - witness: `decode::tests::identity_nodes_round_trip_and_refuse_their_malformed_sites`
+    #[spec(ensures: |ret| matches!(self.value(ret), Some(Value::Here { point: held, dialogues })
+        if *held == point && dialogues.left.is_empty() && dialogues.right.is_empty()))]
+    #[inline]
+    pub fn value_here(
+        &mut self,
+        point: ValueId,
+    ) -> ValueId
+    {
+        let dialogues = Shared::clone(&self.unrelated);
+        self.alloc_value(Value::Here { point, dialogues })
+    }
+
+    /// Mint the diagonal `here(a)` with the dialogues relating its point to
+    /// each endpoint, without claiming that it checks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_here_relating(
+        &mut self,
+        point: ValueId,
+        dialogues: Shared<crate::EndpointDialogues, Global>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Here { point, dialogues })
+    }
+
+    /// Mint `Flow[.A = A](x, y)` without claiming that it forms.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_flow(
+        &mut self,
+        domain: ValueTypeId,
+        source: ValueId,
+        target: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Flow {
+            domain,
+            source,
+            target,
+        })
+    }
+
+    /// Mint directed reflexivity `stay(a)` with no endpoint dialogue, without
+    /// claiming that it checks.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: appends a `stay` over `point` whose two dialogues are empty,
+    ///   sharing the arena's one empty payload.
+    /// - provides: the reflexivity the kernel mints itself, and any whose point
+    ///   is its endpoints as written.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a minted `stay` holds its point and no dialogue, and
+    ///   decoding a `stay` whose dialogues are empty mints it, where one
+    ///   carrying a decision keeps that decision on its side.
+    /// - witness: `decode::tests::flow_nodes_round_trip_and_refuse_their_malformed_sites`
+    #[spec(ensures: |ret| matches!(self.value(ret), Some(Value::Stay { point: held, dialogues })
+        if *held == point && dialogues.left.is_empty() && dialogues.right.is_empty()))]
+    #[inline]
+    pub fn value_stay(
+        &mut self,
+        point: ValueId,
+    ) -> ValueId
+    {
+        let dialogues = Shared::clone(&self.unrelated);
+        self.alloc_value(Value::Stay { point, dialogues })
+    }
+
+    /// Mint `stay(a)` with the dialogues relating its point to each endpoint,
+    /// without claiming that it checks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_stay_relating(
+        &mut self,
+        point: ValueId,
+        dialogues: Shared<crate::EndpointDialogues, Global>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Stay { point, dialogues })
+    }
+
+    /// Mint an untrusted forward flow: one image and one dialogue per source
+    /// pattern.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_forward_flow(
+        &mut self,
+        flow_type: ValueTypeId,
+        translator: ValueId,
+        outputs: alloc::boxed::Box<[ValueId]>,
+        dialogues: ThinShared<(), crate::Dialogue, Global>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::ForwardFlow {
+            flow_type,
+            translator,
+            outputs,
+            dialogues,
+        })
+    }
+
+    /// Mint an untrusted function flow over two boundary flows.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_function_flow(
+        &mut self,
+        flow_type: ValueTypeId,
+        domain: ValueId,
+        codomain: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::FunctionFlow {
+            flow_type,
+            domain,
+            codomain,
+        })
+    }
+
+    /// Mint the composition `then(first, second)` over a seam, without
+    /// claiming that it checks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_then(
+        &mut self,
+        first: ValueId,
+        second: ValueId,
+        seam: crate::Seam,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Then {
+            first,
+            second,
+            seam,
+        })
+    }
+
+    /// Mint a componentwise product of universe flows, without claiming that
+    /// it checks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_flow_product(
+        &mut self,
+        first: ValueId,
+        second: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::FlowProduct(first, second))
+    }
+
+    /// Mint the directed transport `ride` without claiming that it checks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_ride(
+        &mut self,
+        motive: ValueTypeId,
+        flow: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Ride {
+            motive,
+            flow,
+            value,
+        })
+    }
+
+    /// Mint the directed transport over a two-entry telescope without
+    /// claiming that it checks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_telescope_ride(
+        &mut self,
+        motive: CompTypeId,
+        flow: ValueId,
+        start: ValueId,
+        over: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::TelescopeRide {
+            motive,
+            flow,
+            start,
+            over,
+            value,
+        })
+    }
+
+    /// Mint a returned endpoint over an already-allocated computation, without
+    /// claiming that it returns.
+    ///
+    /// # Specification
+    /// - requires: `computation` resolves in this arena's computation family.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling.
+    /// - provides: the value form standing for what a pure computation returns.
+    ///   The child crosses families, so the two ids share no allocation order
+    ///   and none is claimed.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the minted node holds exactly its computation child
+    ///   and grows the value family alone; a thunk over the same child is a
+    ///   different node.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.computation(computation).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::Returned(actual)) if actual == computation),
+    )]
+    #[inline]
+    pub fn value_returned(
+        &mut self,
+        computation: ComputationId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Returned(computation))
+    }
+
+    /// Mint a guarded higher field over its untrusted program and evidence.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_higher(
+        &mut self,
+        program: Shared<crate::HigherProgram, Global>,
+        evidence: alloc::boxed::Box<[ValueId]>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Higher { program, evidence })
+    }
+
+    /// Mint a higher-evaluation introduction over untrusted dialogues and
+    /// components.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_higher_evaluation(
+        &mut self,
+        dialogues: ThinShared<(), crate::EvaluationDialogues, Global>,
+        components: alloc::boxed::Box<[crate::EvaluationComponent]>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::HigherEvaluation {
+            dialogues,
+            components,
+        })
+    }
+
+    /// Mint a quantified-evaluation introduction over untrusted steps and
+    /// their value children.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_quantified_evaluation(
+        &mut self,
+        steps: ThinShared<(), crate::QuantifiedStep, Global>,
+        children: alloc::boxed::Box<[ValueId]>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::QuantifiedEvaluation { steps, children })
+    }
+
+    /// Mint dependent transport along an element path; admission derives its
+    /// source and result types from the motive.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_path_transport(
+        &mut self,
+        motive: ValueTypeId,
+        path: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::PathTransport {
+            motive,
+            path,
+            value,
+        })
+    }
+
+    /// Mint transport over a two-entry telescope; admission reads the
+    /// telescope off the motive and derives the source and result types.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_telescope_transport(
+        &mut self,
+        motive: CompTypeId,
+        path: ValueId,
+        start: ValueId,
+        over: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::TelescopeTransport {
+            motive,
+            path,
+            start,
+            over,
+            value,
+        })
+    }
+
+    /// Mint application of a function identity at related inputs.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_related_application(
+        &mut self,
+        path: ValueId,
+        arguments: (ValueId, ValueId),
+        evidence: ValueId,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::RelatedApplication {
+            path,
+            left: arguments.0,
+            right: arguments.1,
+            evidence,
+            body,
+        })
+    }
+
+    /// The immediate child references of `node`, in the order the format writes
+    /// them.
+    ///
+    /// # Specification
+    /// - requires: all family ids are admitted, including dangling ids.
+    /// - ensures: returns exactly the resolved node’s children in wire-field
+    ///   order, retaining their family and multiplicity; leaves and dangling
+    ///   nodes return an empty vector.
+    /// - provides: cross-family edges for the encoder, budget walk and arity
+    ///   oracle. Numeric ordering applies only within a family, under the
+    ///   constructor and truncation disciplines.
+    /// - fails: never; a missing node has no observable children.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the list of the node's direct children, growth within the
+    ///   node's fields and components
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[must_use]
+    #[spec(ensures: |ret| match node {
+        AnyNode::Value(id) => self.value(id).map_or(ret.is_empty(), |matched_native_node| match *matched_native_node {
+Value::Constructor { datatype, ref fields, .. } => ret.iter().copied().eq(core::iter::once(AnyNode::ValueType(datatype)).chain(fields.iter().copied().map(AnyNode::Value))),
+Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(AnyNode::Value)),
+Value::Restrict { value: restricted, ref fixed } => ret.iter().copied().eq(core::iter::once(AnyNode::Value(restricted)).chain(fixed.values().copied().map(AnyNode::Value))),
+Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => ret.is_empty(),
+Value::Tuple(ref components) => ret.iter().copied().eq(components.iter().copied().map(AnyNode::Value)),
+Value::PathEquiv { path_type, forward, backward, .. } =>
+                ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)],
+Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => ret.as_slice() == [AnyNode::ValueType(classifier), AnyNode::Value(payload_paths)],
+Value::PathRefl(code) | Value::Univalence(code) | Value::Here { point: code, .. } | Value::Stay { point: code, .. } => ret.as_slice() == [AnyNode::Value(code)],
+Value::ForwardFlow { flow_type, translator, ref outputs, .. } => ret.iter().copied().eq([AnyNode::ValueType(flow_type), AnyNode::Value(translator)].into_iter().chain(outputs.iter().copied().map(AnyNode::Value))),
+Value::FunctionFlow { flow_type, domain, codomain } => ret.as_slice() == [AnyNode::ValueType(flow_type), AnyNode::Value(domain), AnyNode::Value(codomain)],
+Value::Higher { ref evidence, .. } => ret.iter().copied().eq(evidence.iter().copied().map(AnyNode::Value)),
+Value::HigherEvaluation { ref components, .. } => ret.iter().copied().eq(components.iter().flat_map(|component| [AnyNode::Value(component.left), AnyNode::Value(component.right), AnyNode::Value(component.evidence)])),
+Value::QuantifiedEvaluation { ref children, .. } => ret.iter().copied().eq(children.iter().copied().map(AnyNode::Value)),
+Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::FlowProduct(first, second) | Value::StaticApplication(first, second) | Value::Then { first, second, .. } =>
+                ret.as_slice() == [AnyNode::Value(first), AnyNode::Value(second)],
+Value::Injection(_, body) | Value::Lift { body, .. } =>
+                ret.as_slice() == [AnyNode::Value(body)],
+Value::Thunk(body) | Value::Returned(body) => ret.as_slice() == [AnyNode::Computation(body)],
+Value::Quote(quoted) => ret.as_slice() == [AnyNode::ValueType(quoted)],
+Value::QuoteComputation(quoted) => ret.as_slice() == [AnyNode::CompType(quoted)],
+}),
+        AnyNode::Computation(id) => match self.computation(id) {
+            Some(&Computation::DataCase { scrutinee, motive, ref branches, .. }) => ret.iter().copied().eq([AnyNode::Value(scrutinee), AnyNode::CompType(motive)].into_iter().chain(branches.iter().copied().map(AnyNode::Computation))),
+            Some(&Computation::SigmaSplit { scrutinee, motive, body }) => ret.as_slice() == [AnyNode::Value(scrutinee), AnyNode::CompType(motive), AnyNode::Computation(body)],
+            Some(&(Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _))) => ret.as_slice() == [AnyNode::Value(record)],
+            None => ret.is_empty(),
+            Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => ret.as_slice() == [AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)],
+            Some(&Computation::ListCase { list, on_nil, on_cons }) => ret.as_slice() == [AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)],
+            Some(&Computation::Transport(path, value)) => ret.as_slice() == [AnyNode::Value(path), AnyNode::Value(value)],
+            Some(&(Computation::PathTransport { motive, path, value } | Computation::Ride { motive, flow: path, value })) => ret.as_slice() == [AnyNode::ValueType(motive), AnyNode::Value(path), AnyNode::Value(value)],
+            Some(&(Computation::TelescopeTransport { motive, path, start, over, value } | Computation::TelescopeRide { motive, flow: path, start, over, value })) => ret.as_slice() == [AnyNode::CompType(motive), AnyNode::Value(path), AnyNode::Value(start), AnyNode::Value(over), AnyNode::Value(value)],
+            Some(&Computation::RelatedApplication { path, left, right, evidence, body }) => ret.as_slice() == [AnyNode::Value(path), AnyNode::Value(left), AnyNode::Value(right), AnyNode::Value(evidence), AnyNode::Computation(body)],
+            Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => ret.as_slice() == [AnyNode::Computation(body)],
+            Some(&Computation::Application(head, argument)) =>
+                ret.as_slice() == [AnyNode::Computation(head), AnyNode::Value(argument)],
+            Some(&Computation::Return(value) | &Computation::Force(value)) =>
+                ret.as_slice() == [AnyNode::Value(value)],
+            Some(&(Computation::Bind(bound, body) | Computation::BindAll { bound, body, .. })) =>
+                ret.as_slice() == [AnyNode::Computation(bound), AnyNode::Computation(body)],
+            Some(&Computation::ReturnAll(ref values)) =>
+                ret.iter().copied().eq(values.iter().copied().map(AnyNode::Value)),
+            Some(&Computation::With(ref components)) =>
+                ret.iter().copied().eq(components.iter().copied().map(AnyNode::Computation)),
+            Some(&Computation::Project(_, pair)) => ret.as_slice() == [AnyNode::Computation(pair)],
+            Some(&Computation::Case { scrutinee, ref branches }) =>
+                ret.iter().copied().eq(core::iter::once(AnyNode::Value(scrutinee)).chain(branches.iter().copied().map(AnyNode::Computation))),
+        },
+        AnyNode::ValueType(id) => self.value_type(id).map_or(ret.is_empty(), |matched_native_node| match *matched_native_node {
+ValueType::Data { ref arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(AnyNode::Value)),
+ValueType::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(AnyNode::ValueType)),
+ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => ret.is_empty(),
+ValueType::Product(ref parts) | ValueType::Sum(ref parts) => ret.iter().copied().eq(parts.iter().copied().map(AnyNode::ValueType)),
+ValueType::StaticPi { domain: first, codomain: second } | ValueType::Sigma { first, second } =>
+                ret.as_slice() == [AnyNode::ValueType(first), AnyNode::ValueType(second)],
+ValueType::Session { payloads, .. } => ret.as_slice() == [AnyNode::ValueType(payloads)],
+ValueType::PathUniverse(source, target) | ValueType::FlowUniverse(source, target) => ret.as_slice() == [AnyNode::Value(source), AnyNode::Value(target)],
+ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } | ValueType::Bridge { domain, left, right } => ret.as_slice() == [AnyNode::ValueType(domain), AnyNode::Value(left), AnyNode::Value(right)],
+ValueType::Thunk(body) => ret.as_slice() == [AnyNode::CompType(body)],
+ValueType::Lift { inner, .. } | ValueType::List(inner) | ValueType::Staged { base: inner, .. } => ret.as_slice() == [AnyNode::ValueType(inner)],
+ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
+}),
+        AnyNode::CompType(id) => match self.comp_type(id) {
+            None => ret.is_empty(),
+            Some(&CompType::Returner(result)) => ret.as_slice() == [AnyNode::ValueType(result)],
+            Some(&CompType::Returns(ref results)) => ret.iter().copied().eq(results.iter().copied().map(AnyNode::ValueType)),
+            Some(&CompType::Arrow { domain, codomain } | &CompType::Pi { domain, codomain }) =>
+                ret.as_slice() == [AnyNode::ValueType(domain), AnyNode::CompType(codomain)],
+            Some(&CompType::Element { code, .. }) => ret.as_slice() == [AnyNode::Value(code)],
+            Some(&CompType::With(ref components)) => ret.iter().copied().eq(components.iter().copied().map(AnyNode::CompType)),
+            Some(&CompType::Codata { ref arguments, .. }) => ret.iter().copied().eq(arguments.iter().copied().map(AnyNode::Value)),
+        },
+    })]
+    pub(crate) fn children_of(
+        &self,
+        node: AnyNode,
+    ) -> SmallVec<AnyNode, 0, Global>
+    {
+        let mut children: SmallVec<AnyNode, 0, Global> = SmallVec::<_, 0, Global>::new();
+        match node {
+            AnyNode::Value(id) => match self.value(id) {
+                Some(&Value::Constructor {
+                    datatype,
+                    ref fields,
+                    ..
+                }) => {
+                    children.push(AnyNode::ValueType(datatype));
+                    children.extend(fields.iter().copied().map(AnyNode::Value));
+                },
+                Some(&Value::Record(ref fields)) => {
+                    children.extend(fields.values().copied().map(AnyNode::Value));
+                },
+                Some(&Value::Restrict {
+                    value: restricted,
+                    ref fixed,
+                }) => {
+                    children.push(AnyNode::Value(restricted));
+                    children.extend(fixed.values().copied().map(AnyNode::Value));
+                },
+                Some(
+                    &Value::ListNil
+                    | &Value::Variable(_)
+                    | &Value::Constant(_)
+                    | &Value::Literal(_),
+                )
+                | None => {},
+                Some(&Value::Tuple(ref components)) => {
+                    children.extend(components.iter().copied().map(AnyNode::Value));
+                },
+                Some(&Value::PathEquiv {
+                    path_type,
+                    forward,
+                    backward,
+                    ..
+                }) => {
+                    children.push(AnyNode::ValueType(path_type));
+                    children.push(AnyNode::Value(forward));
+                    children.push(AnyNode::Value(backward));
+                },
+                Some(
+                    &Value::SessionPath {
+                        path_type,
+                        payload_paths,
+                        ..
+                    }
+                    | &Value::SessionFlow {
+                        flow_type: path_type,
+                        payload_paths,
+                        ..
+                    },
+                ) => {
+                    children.push(AnyNode::ValueType(path_type));
+                    children.push(AnyNode::Value(payload_paths));
+                },
+                Some(
+                    &Value::PathRefl(code)
+                    | &Value::Univalence(code)
+                    | &Value::Here { point: code, .. }
+                    | &Value::Stay { point: code, .. },
+                ) => {
+                    children.push(AnyNode::Value(code));
+                },
+                Some(&Value::ForwardFlow {
+                    flow_type,
+                    translator,
+                    ref outputs,
+                    ..
+                }) => {
+                    children.push(AnyNode::ValueType(flow_type));
+                    children.push(AnyNode::Value(translator));
+                    children.extend(outputs.iter().copied().map(AnyNode::Value));
+                },
+                Some(&Value::FunctionFlow {
+                    flow_type,
+                    domain,
+                    codomain,
+                }) => {
+                    children.push(AnyNode::ValueType(flow_type));
+                    children.push(AnyNode::Value(domain));
+                    children.push(AnyNode::Value(codomain));
+                },
+                Some(
+                    &Value::Higher {
+                        evidence: ref values,
+                        ..
+                    }
+                    | &Value::QuantifiedEvaluation {
+                        children: ref values,
+                        ..
+                    },
+                ) => {
+                    children.extend(values.iter().copied().map(AnyNode::Value));
+                },
+                Some(&Value::HigherEvaluation { ref components, .. }) => {
+                    for component in components {
+                        children.extend([
+                            AnyNode::Value(component.left),
+                            AnyNode::Value(component.right),
+                            AnyNode::Value(component.evidence),
+                        ]);
+                    }
+                },
+                Some(
+                    &Value::PathProduct(first, second)
+                    | &Value::FlowProduct(first, second)
+                    | &Value::ListCons(first, second)
+                    | &Value::StaticApplication(first, second)
+                    | &Value::Then { first, second, .. },
+                ) => {
+                    children.push(AnyNode::Value(first));
+                    children.push(AnyNode::Value(second));
+                },
+                Some(&Value::Injection(_, body) | &Value::Lift { body, .. }) => {
+                    children.push(AnyNode::Value(body));
+                },
+                Some(&Value::Thunk(body) | &Value::Returned(body)) => {
+                    children.push(AnyNode::Computation(body));
+                },
+                Some(&Value::Quote(quoted)) => children.push(AnyNode::ValueType(quoted)),
+                Some(&Value::QuoteComputation(quoted)) => {
+                    children.push(AnyNode::CompType(quoted));
+                },
+            },
+            AnyNode::Computation(id) => match self.computation(id) {
+                Some(&Computation::DataCase {
+                    scrutinee,
+                    motive,
+                    ref branches,
+                    ..
+                }) => {
+                    children.extend([AnyNode::Value(scrutinee), AnyNode::CompType(motive)]);
+                    children.extend(branches.iter().copied().map(AnyNode::Computation));
+                },
+                Some(&Computation::SigmaSplit {
+                    scrutinee,
+                    motive,
+                    body,
+                }) => {
+                    children.extend([
+                        AnyNode::Value(scrutinee),
+                        AnyNode::CompType(motive),
+                        AnyNode::Computation(body),
+                    ]);
+                },
+                Some(
+                    &(Computation::RecordProjection(record, _)
+                    | Computation::TupleProjection(record, _)),
+                ) => {
+                    children.push(AnyNode::Value(record));
+                },
+                None => {},
+                Some(&Computation::ListFold {
+                    element,
+                    result,
+                    list,
+                    on_nil,
+                    on_cons,
+                }) => {
+                    children.extend([
+                        AnyNode::ValueType(element),
+                        AnyNode::ValueType(result),
+                        AnyNode::Value(list),
+                        AnyNode::Computation(on_nil),
+                        AnyNode::Computation(on_cons),
+                    ]);
+                },
+                Some(&Computation::ListCase {
+                    list,
+                    on_nil,
+                    on_cons,
+                }) => {
+                    children.extend([
+                        AnyNode::Value(list),
+                        AnyNode::Computation(on_nil),
+                        AnyNode::Computation(on_cons),
+                    ]);
+                },
+                Some(&Computation::Transport(path, value)) => {
+                    children.push(AnyNode::Value(path));
+                    children.push(AnyNode::Value(value));
+                },
+                Some(
+                    &Computation::PathTransport {
+                        motive,
+                        path,
+                        value,
+                    }
+                    | &Computation::Ride {
+                        motive,
+                        flow: path,
+                        value,
+                    },
+                ) => {
+                    children.extend([
+                        AnyNode::ValueType(motive),
+                        AnyNode::Value(path),
+                        AnyNode::Value(value),
+                    ]);
+                },
+                Some(
+                    &Computation::TelescopeTransport {
+                        motive,
+                        path,
+                        start,
+                        over,
+                        value,
+                    }
+                    | &Computation::TelescopeRide {
+                        motive,
+                        flow: path,
+                        start,
+                        over,
+                        value,
+                    },
+                ) => {
+                    children.extend([
+                        AnyNode::CompType(motive),
+                        AnyNode::Value(path),
+                        AnyNode::Value(start),
+                        AnyNode::Value(over),
+                        AnyNode::Value(value),
+                    ]);
+                },
+                Some(&Computation::RelatedApplication {
+                    path,
+                    left,
+                    right,
+                    evidence,
+                    body,
+                }) => {
+                    children.extend([
+                        AnyNode::Value(path),
+                        AnyNode::Value(left),
+                        AnyNode::Value(right),
+                        AnyNode::Value(evidence),
+                        AnyNode::Computation(body),
+                    ]);
+                },
+                Some(
+                    &Computation::Lambda(body)
+                    | &Computation::Fixpoint { body, .. }
+                    | &Computation::Project(_, body),
+                ) => {
+                    children.push(AnyNode::Computation(body));
+                },
+                Some(&Computation::Application(head, argument)) => {
+                    children.push(AnyNode::Computation(head));
+                    children.push(AnyNode::Value(argument));
+                },
+                Some(&Computation::Return(value) | &Computation::Force(value)) => {
+                    children.push(AnyNode::Value(value));
+                },
+                Some(
+                    &(Computation::Bind(bound, body) | Computation::BindAll { bound, body, .. }),
+                ) => {
+                    children.push(AnyNode::Computation(bound));
+                    children.push(AnyNode::Computation(body));
+                },
+                Some(&Computation::ReturnAll(ref values)) => {
+                    children.extend(values.iter().copied().map(AnyNode::Value));
+                },
+                Some(&Computation::With(ref components)) => {
+                    children.extend(components.iter().copied().map(AnyNode::Computation));
+                },
+                Some(&Computation::Case {
+                    scrutinee,
+                    ref branches,
+                }) => {
+                    children.push(AnyNode::Value(scrutinee));
+                    children.extend(branches.iter().copied().map(AnyNode::Computation));
+                },
+            },
+            AnyNode::ValueType(id) => match self.value_type(id) {
+                Some(&ValueType::Data { ref arguments, .. }) => {
+                    children.extend(arguments.iter().copied().map(AnyNode::Value));
+                },
+                Some(&ValueType::Record(ref fields)) => {
+                    children.extend(fields.values().copied().map(AnyNode::ValueType));
+                },
+                Some(
+                    &ValueType::Base(_) | &ValueType::Universe { .. } | &ValueType::Abstract(_),
+                )
+                | None => {},
+                Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) => {
+                    children.extend(parts.iter().copied().map(AnyNode::ValueType));
+                },
+                Some(
+                    &ValueType::StaticPi {
+                        domain: first,
+                        codomain: second,
+                    }
+                    | &ValueType::Sigma { first, second },
+                ) => {
+                    children.push(AnyNode::ValueType(first));
+                    children.push(AnyNode::ValueType(second));
+                },
+                Some(&ValueType::Session { payloads, .. }) => {
+                    children.push(AnyNode::ValueType(payloads));
+                },
+                Some(
+                    &ValueType::PathUniverse(source, target)
+                    | &ValueType::FlowUniverse(source, target),
+                ) => {
+                    children.push(AnyNode::Value(source));
+                    children.push(AnyNode::Value(target));
+                },
+                Some(
+                    &ValueType::Path {
+                        domain,
+                        left,
+                        right,
+                    }
+                    | &ValueType::Flow {
+                        domain,
+                        source: left,
+                        target: right,
+                    }
+                    | &ValueType::Bridge {
+                        domain,
+                        left,
+                        right,
+                    },
+                ) => {
+                    children.extend([
+                        AnyNode::ValueType(domain),
+                        AnyNode::Value(left),
+                        AnyNode::Value(right),
+                    ]);
+                },
+                Some(&ValueType::Thunk(body)) => children.push(AnyNode::CompType(body)),
+                Some(
+                    &ValueType::Lift { inner, .. }
+                    | &ValueType::List(inner)
+                    | &ValueType::Staged { base: inner, .. },
+                ) => {
+                    children.push(AnyNode::ValueType(inner));
+                },
+                // The one edge that leaves the type language: a code is a value,
+                // which is what lets a type mention a bound variable at all.
+                Some(&ValueType::Element { code, .. }) => children.push(AnyNode::Value(code)),
+            },
+            AnyNode::CompType(id) => match self.comp_type(id) {
+                None => {},
+                Some(&CompType::Returner(result)) => children.push(AnyNode::ValueType(result)),
+                Some(&CompType::Returns(ref results)) => {
+                    children.extend(results.iter().copied().map(AnyNode::ValueType));
+                },
+                Some(
+                    &CompType::Arrow { domain, codomain } | &CompType::Pi { domain, codomain },
+                ) => {
+                    children.push(AnyNode::ValueType(domain));
+                    children.push(AnyNode::CompType(codomain));
+                },
+                Some(&CompType::Element { code, .. }) => children.push(AnyNode::Value(code)),
+                Some(&CompType::With(ref components)) => {
+                    children.extend(components.iter().copied().map(AnyNode::CompType));
+                },
+                Some(&CompType::Codata { ref arguments, .. }) => {
+                    children.extend(arguments.iter().copied().map(AnyNode::Value));
+                },
+            },
+        }
+        children
+    }
+
+    /// Mint the empty native list.
+    ///
+    /// # Specification
+    /// - ensures: returns a native empty-list node, not a sum injection.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the native tag and decoder distinguish nil from other
+    ///   leaves.
+    /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::ListNil))]
+    #[inline]
+    pub fn value_list_nil(&mut self) -> ValueId
+    {
+        self.alloc_value(Value::ListNil)
+    }
+
+    /// Mint a native cell over its existing head and tail.
+    ///
+    /// # Specification
+    /// - requires: the head and tail resolve in this arena.
+    /// - ensures: preserves both children in head-then-tail order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — native List round trips preserve child order and
+    ///   family.
+    /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
+    #[spec(requires: self.value(head).is_some() && self.value(tail).is_some(),
+        ensures: |ret| self.value(ret) == Some(&Value::ListCons(head, tail)))]
+    #[inline]
+    pub fn value_list_cons(
+        &mut self,
+        head: ValueId,
+        tail: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::ListCons(head, tail))
+    }
+
+    /// Mint a pure right fold; the cell branch binds head then folded tail.
+    ///
+    /// # Specification
+    /// - requires: both annotations, the list and the branches resolve in this
+    ///   arena.
+    /// - ensures: preserves annotations and branches without changing their
+    ///   scope.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — native List wire arity distinguishes the five ordered
+    ///   children.
+    /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
+    #[spec(requires: self.value_type(element).is_some() && self.value_type(result).is_some() && self.value(list).is_some() && self.computation(on_nil).is_some() && self.computation(on_cons).is_some(),
+        ensures: |ret| self.computation(ret) == Some(&Computation::ListFold { element, result, list, on_nil, on_cons }))]
+    #[inline]
+    pub fn computation_list_fold(
+        &mut self,
+        element: ValueTypeId,
+        result: ValueTypeId,
+        list: ValueId,
+        on_nil: ComputationId,
+        on_cons: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::ListFold {
+            element,
+            result,
+            list,
+            on_nil,
+            on_cons,
+        })
+    }
+
+    /// Mint a case on a native list; the cell branch binds head then tail.
+    ///
+    /// # Specification
+    /// - requires: the list and the branches resolve in this arena.
+    /// - ensures: preserves the branches without changing their scope.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — native List wire arity distinguishes the three
+    ///   ordered children.
+    /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
+    #[spec(requires: self.value(list).is_some() && self.computation(on_nil).is_some() && self.computation(on_cons).is_some(),
+        ensures: |ret| self.computation(ret) == Some(&Computation::ListCase { list, on_nil, on_cons }))]
+    #[inline]
+    pub fn computation_list_case(
+        &mut self,
+        list: ValueId,
+        on_nil: ComputationId,
+        on_cons: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::ListCase {
+            list,
+            on_nil,
+            on_cons,
+        })
+    }
+}
+
+impl TermArena
+{
+    /// Mint a nominal datatype application without claiming formation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_data(
+        &mut self,
+        declaration: ConstantIndex,
+        arguments: SmallVec<ValueId, 0, Global>,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Data {
+            declaration,
+            arguments,
+        })
+    }
+
+    /// Mint a structural record classifier in canonical label order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_record(
+        &mut self,
+        fields: alloc::collections::BTreeMap<crate::FieldLabel, ValueTypeId>,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Record(fields))
+    }
+
+    /// Mint a constructor of `family` without claiming its tag, arity or field
+    /// types.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_constructor(
+        &mut self,
+        family: crate::ConstantIndex,
+        datatype: ValueTypeId,
+        tag: crate::ConstructorTag,
+        fields: SmallVec<ValueId, 0, Global>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Constructor {
+            family,
+            datatype,
+            tag,
+            fields,
+        })
+    }
+
+    /// Mint the constructor `tag` of `family` over `fields`, at the data
+    /// classifier `family` applied to `arguments`, minted beside it: the
+    /// constructor's family and its classifier's declaration are one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_constructor_of(
+        &mut self,
+        family: crate::ConstantIndex,
+        arguments: SmallVec<ValueId, 0, Global>,
+        tag: crate::ConstructorTag,
+        fields: SmallVec<ValueId, 0, Global>,
+    ) -> ValueId
+    {
+        let datatype = self.value_type_data(family, arguments);
+        self.value_constructor(family, datatype, tag, fields)
+    }
+
+    /// Mint a record value in canonical label order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_record(
+        &mut self,
+        fields: alloc::collections::BTreeMap<crate::FieldLabel, ValueId>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Record(fields))
+    }
+
+    /// Mint a restriction of a record value to the fields it does not fix.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_restrict(
+        &mut self,
+        value: ValueId,
+        fixed: alloc::collections::BTreeMap<crate::FieldLabel, ValueId>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Restrict { value, fixed })
+    }
+
+    /// Mint a case whose motive binds its scrutinee and branches bind fields,
+    /// over a family indexed by nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_data_case(
+        &mut self,
+        scrutinee: ValueId,
+        motive: CompTypeId,
+        branches: SmallVec<ComputationId, 0, Global>,
+    ) -> ComputationId
+    {
+        self.computation_data_case_with_equations(scrutinee, motive, branches, EquationCount::NONE)
+    }
+
+    /// Mint a case whose branches bind their fields, then `equations` index
+    /// equations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_data_case_with_equations(
+        &mut self,
+        scrutinee: ValueId,
+        motive: CompTypeId,
+        branches: SmallVec<ComputationId, 0, Global>,
+        equations: EquationCount,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::DataCase {
+            scrutinee,
+            motive,
+            branches,
+            equations,
+        })
+    }
+
+    /// Mint a named record projection without claiming the field exists.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_record_projection(
+        &mut self,
+        record: ValueId,
+        label: crate::FieldLabel,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::RecordProjection(record, label))
+    }
+
+    /// Mint a positional tuple projection without claiming the component
+    /// exists.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_tuple_projection(
+        &mut self,
+        tuple: ValueId,
+        component: crate::Component,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::TupleProjection(tuple, component))
+    }
+
+    /// Mint the lazy product `C₀ & … & Cₙ₋₁` of computation types.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn comp_type_with(
+        &mut self,
+        components: &[CompTypeId],
+    ) -> CompTypeId
+    {
+        self.alloc_comp_type(CompType::With(components.into()))
+    }
+
+    /// Mint a nominal codata application without claiming formation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn comp_type_codata(
+        &mut self,
+        declaration: ConstantIndex,
+        arguments: SmallVec<ValueId, 0, Global>,
+    ) -> CompTypeId
+    {
+        self.alloc_comp_type(CompType::Codata {
+            declaration,
+            arguments,
+        })
+    }
+
+    /// Mint a lazy pairing of computations without claiming its type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_with(
+        &mut self,
+        components: &[ComputationId],
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::With(components.into()))
+    }
+
+    /// Mint the projection of a lazy pairing's component without claiming
+    /// the subject is one or the component exists.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_project(
+        &mut self,
+        component: crate::Component,
+        pair: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Project(component, pair))
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::AnyNode;
+    use super::ArenaWatermark;
+    use super::TermArena;
+    use super::ValueId;
+
+    #[test]
+    fn scalar_clamps_and_index_ceilings_match_widened_models()
+    {
+        let selected = const {
+            [
+                crate::decl::DeclarationContent::Def {
+                    declared: super::ValueTypeId(7),
+                    body: ValueId(99),
+                }
+                .declared_id()
+                .0,
+                crate::decl::DeclarationContent::Axiom {
+                    declared: super::ValueTypeId(11),
+                }
+                .declared_id()
+                .0,
+                crate::decl::DeclarationContent::AbstractType {
+                    kind: super::ValueTypeId(17),
+                    representation: super::ValueTypeId(19),
+                    scope: crate::decl::SealScope::Open,
+                    interface: quenchant_shape::shape::Maybe::Absent(
+                        crate::decl::interface::Absent::Unstated,
+                    ),
+                }
+                .declared_id()
+                .0,
+            ]
+        };
+        assert_eq!(selected, [7_u32, 11, 17]);
+        let lengths = [0_usize, 1, 7, usize::MAX.saturating_sub(1), usize::MAX];
+        for value in lengths {
+            for low in lengths {
+                for high in lengths {
+                    let model = if low > high {
+                        low
+                    }
+                    else {
+                        value.clamp(low, high)
+                    };
+                    assert_eq!(
+                        super::clamp_length(
+                            super::ArenaLength(value),
+                            super::ArenaLength(low),
+                            super::ArenaLength(high)
+                        )
+                        .0,
+                        model
+                    );
+                    let input = ArenaWatermark {
+                        values: value,
+                        computations: low,
+                        value_types: high,
+                        comp_types: usize::MAX.saturating_sub(value),
+                    };
+                    let floor = ArenaWatermark {
+                        values: low,
+                        computations: high,
+                        value_types: value,
+                        comp_types: 0,
+                    };
+                    let ceiling = ArenaWatermark {
+                        values: high,
+                        computations: value,
+                        value_types: low,
+                        comp_types: usize::MAX,
+                    };
+                    let actual = input.clamped_into(floor, ceiling);
+                    for (observed, scalar, lower, upper) in [
+                        (actual.values, input.values, floor.values, ceiling.values),
+                        (
+                            actual.computations,
+                            input.computations,
+                            floor.computations,
+                            ceiling.computations,
+                        ),
+                        (
+                            actual.value_types,
+                            input.value_types,
+                            floor.value_types,
+                            ceiling.value_types,
+                        ),
+                        (
+                            actual.comp_types,
+                            input.comp_types,
+                            floor.comp_types,
+                            ceiling.comp_types,
+                        ),
+                    ] {
+                        assert_eq!(
+                            observed,
+                            if lower > upper {
+                                lower
+                            }
+                            else {
+                                scalar.clamp(lower, upper)
+                            }
+                        );
+                    }
+                }
+            }
+        }
+        for length in lengths
+            .into_iter()
+            .chain([usize::try_from(u32::MAX).unwrap_or(usize::MAX)])
+        {
+            let widened = u128::try_from(length).expect("host lengths fit u128");
+            assert_eq!(
+                u128::from(super::id_index(super::ArenaLength(length)).0),
+                widened.min(u128::from(u32::MAX))
+            );
+        }
+        for index in [0_u32, 1, u32::MAX.saturating_sub(1), u32::MAX] {
+            let observed = super::id_offset(super::ArenaIndex(index)).0;
+            assert_eq!(
+                u128::try_from(observed).expect("host offsets fit u128"),
+                u128::from(index).min(u128::try_from(usize::MAX).expect("host ceiling fits u128"))
+            );
+        }
+    }
+
+    /// A family changed in place through one clone, at a frozen node and at a
+    /// node minted since, reads the change there alone: a clone taken before
+    /// keeps every node, and the length holds.
+    #[test]
+    fn a_family_changed_in_place_leaves_its_earlier_clones_alone()
+    {
+        let rows = |family: &super::Family<char>| {
+            family.iter().copied().collect::<alloc::string::String>()
+        };
+        let mut family = super::Family::default();
+        for node in ['a', 'b'] {
+            family.push(node);
+        }
+        family.freeze();
+        family.push('c');
+        let before = family.clone();
+        if let Some(node) = family.get_mut(super::ArenaLength::from(0_usize)) {
+            *node = 'x';
+        }
+        if let Some(node) = family.get_mut(super::ArenaLength::from(2_usize)) {
+            *node = 'z';
+        }
+        assert_eq!(
+            None,
+            family.get_mut(super::ArenaLength::from(3_usize)),
+            "past the end"
+        );
+        assert_eq!(
+            "xbz",
+            rows(&family),
+            "the changes read back where they were made"
+        );
+        assert_eq!(
+            "abc",
+            rows(&before),
+            "a clone taken before keeps every node"
+        );
+        assert_eq!(before.len(), family.len(), "and the length holds");
+    }
+
+    /// #3476: a family frozen after each of many runs of mints, some of them
+    /// empty, reads each node at the offset it was minted at, from either
+    /// end. Some freezes find a clone that shares the last chunk, and the
+    /// others add to it in place. Each clone keeps its nodes after the family
+    /// freezes, truncates and changes a frozen node. A truncation inside the
+    /// last chunk and to nothing reads as the same truncation of a family
+    /// never frozen, with a clone beside it and with none.
+    #[test]
+    fn a_family_frozen_many_times_reads_each_node_where_it_was_minted_3476()
+    {
+        use alloc::alloc::Global;
+
+        use gandr_kernel_data::SmallVec;
+
+        let rows = |family: &super::Family<u32>| {
+            family.iter().copied().collect::<SmallVec<_, 0, Global>>()
+        };
+        let mut family = super::Family::default();
+        let mut plain = SmallVec::<_, 0, Global>::new();
+        let mut clones = SmallVec::<_, 0, Global>::new();
+        let mut next = 0_u32;
+        for (round, run) in [3_u32, 0, 1, 5, 2, 0, 7, 1].into_iter().enumerate() {
+            for _ in 0 .. run {
+                family.push(next);
+                plain.push(next);
+                next = next.saturating_add(1);
+            }
+            family.freeze();
+            assert!(family.own().is_empty(), "a freeze leaves no own node");
+            if matches!(round, 3 | 6) {
+                clones.push((family.clone(), plain.clone()));
+            }
+        }
+        family.push(next);
+        plain.push(next);
+        assert_eq!(rows(&family), plain, "every node in allocation order");
+        assert_eq!(
+            family
+                .iter()
+                .rev()
+                .copied()
+                .collect::<SmallVec<_, 0, Global>>(),
+            plain
+                .iter()
+                .rev()
+                .copied()
+                .collect::<SmallVec<_, 0, Global>>(),
+            "and from the other end"
+        );
+        for (offset, node) in plain.iter().enumerate() {
+            assert_eq!(family.get(offset), Some(node), "the node at {offset}");
+        }
+        assert_eq!(family.get(plain.len()), None, "nothing past the end");
+        assert_eq!(family.last(), plain.last());
+        let (shared, kept) = clones
+            .first()
+            .cloned()
+            .expect("a clone at the fourth freeze");
+        assert_eq!(
+            shared.shared_frozen(&family),
+            super::ArenaLength::from(usize::from(shared.len()) & !super::WITHIN),
+            "a clone shares each whole chunk frozen before it"
+        );
+        if let Some(node) = family.get_mut(super::ArenaLength::from(1_usize)) {
+            *node = 100;
+        }
+        assert_eq!(
+            family.get(1_usize),
+            Some(&100),
+            "a frozen node changes in place"
+        );
+        for length in [19_usize, 15, 11, 6, 4, 0] {
+            let mut cut = family.clone();
+            cut.truncate(super::ArenaLength::from(length));
+            let mut expected = rows(&family);
+            expected.truncate(gandr_kernel_data::Count::from(length));
+            assert_eq!(rows(&cut), expected, "a truncation to {length}");
+            assert_eq!(usize::from(cut.len()), length);
+            cut.push(200);
+            assert_eq!(cut.get(length), Some(&200), "a mint after it at {length}");
+        }
+        for length in [19_usize, 15, 11, 6, 4, 0] {
+            let mut alone = super::Family::default();
+            for (offset, &node) in plain.iter().enumerate() {
+                alone.push(node);
+                if offset.is_multiple_of(3) {
+                    alone.freeze();
+                }
+            }
+            alone.freeze();
+            alone.truncate(super::ArenaLength::from(length));
+            let mut expected = plain.clone();
+            expected.truncate(gandr_kernel_data::Count::from(length));
+            assert_eq!(rows(&alone), expected, "a truncation to {length}, alone");
+            alone.push(200);
+            assert_eq!(
+                alone.get(length),
+                Some(&200),
+                "a mint after it at {length}, alone"
+            );
+        }
+        for &(ref clone, ref nodes) in &clones {
+            assert_eq!(&rows(clone), nodes, "each clone keeps the nodes it took");
+        }
+        assert_eq!(rows(&shared), kept);
+    }
+
+    /// #7243: a write to one frozen node copies the chunk that holds it
+    /// alone. A clone taken before keeps the chunks below the write shared,
+    /// and each side reads its own node there.
+    #[test]
+    fn a_write_to_a_frozen_node_copies_its_chunk_alone_7243()
+    {
+        let mut family = super::Family::default();
+        for node in 0 .. 200_u32 {
+            family.push(node);
+        }
+        family.freeze();
+        let before = family.clone();
+        if let Some(node) = family.get_mut(super::ArenaLength::from(199_usize)) {
+            *node = 1000;
+        }
+        assert_eq!(
+            before.shared_frozen(&family),
+            super::ArenaLength::from(192_usize),
+            "the three whole chunks below the write stay shared"
+        );
+        assert_eq!(family.get(199_usize), Some(&1000), "the write reads back");
+        assert_eq!(
+            before.get(199_usize),
+            Some(&199),
+            "the clone keeps its node"
+        );
+        if let Some(node) = family.get_mut(super::ArenaLength::from(70_usize)) {
+            *node = 2000;
+        }
+        assert_eq!(
+            before.shared_frozen(&family),
+            super::ArenaLength::from(64_usize),
+            "a write in the second chunk leaves the first shared"
+        );
+    }
+
+    /// #7335: a family frozen after each node it mints, with the clones of
+    /// the last eight freezes held beside it, copies each node at most eleven
+    /// times and reads each node where it was minted. A freeze that copied
+    /// the whole shared tail copied each node 31 times on average.
+    #[test]
+    fn a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335()
+    {
+        use alloc::collections::VecDeque;
+        use core::sync::atomic::AtomicUsize;
+        use core::sync::atomic::Ordering;
+
+        /// How many times a node of this test was copied.
+        static COPIES: AtomicUsize = AtomicUsize::new(0);
+
+        /// A node that counts its copies.
+        #[repr(transparent)]
+        #[derive(Debug)]
+        struct Counted(usize);
+
+        impl Clone for Counted
+        {
+            fn clone(&self) -> Self
+            {
+                let _before = COPIES.fetch_add(1, Ordering::Relaxed);
+                Self(self.0)
+            }
+        }
+
+        let count = 1024_usize;
+        let mut family = super::Family::default();
+        let mut clones = VecDeque::new();
+        for node in 0 .. count {
+            family.push(Counted(node));
+            family.freeze();
+            assert!(
+                (node.saturating_sub(super::CHUNK) ..= node)
+                    .all(|offset| family.get(offset).is_some_and(|held| held.0 == offset)),
+                "each node of the tail reads where it was minted after freeze {node}"
+            );
+            clones.push_back(family.clone());
+            if clones.len() > 8 {
+                let _oldest = clones.pop_front();
+            }
+        }
+        let copies = COPIES.load(Ordering::Relaxed);
+        assert!(
+            copies <= count.saturating_mul(11),
+            "{copies} copies of {count} nodes"
+        );
+        assert!(
+            (0 .. count).all(|offset| family.get(offset).is_some_and(|held| held.0 == offset)),
+            "each node reads where it was minted"
+        );
+    }
+
+    /// #3476: a check that mints its intermediates into a clone and drops it
+    /// reads, to a reader that names nodes by their positions, as a check
+    /// that mints them into the arena and truncates them. A clone that mints
+    /// nothing reads as no truncation.
+    #[test]
+    fn a_clone_that_drops_its_nodes_reads_as_a_truncation_3476()
+    {
+        let content = |arena: &mut TermArena| {
+            let value = arena.value_constant(super::ConstantIndex::from(0_usize));
+            let _returned = arena.computation_return(value);
+        };
+        let intermediates = |arena: &mut TermArena| {
+            let value = arena.value_unit();
+            let _type = arena.value_type_unit();
+            let _returned = arena.computation_return(value);
+        };
+        let since = super::TruncationStamp::default();
+        let mut plain = TermArena::new();
+        content(&mut plain);
+        let mark = plain.watermark();
+        intermediates(&mut plain);
+        plain.truncate_to(mark);
+        let mut kept = TermArena::new();
+        content(&mut kept);
+        kept.freeze();
+        let mut clone = kept.clone();
+        intermediates(&mut clone);
+        kept.dropped(&clone);
+        assert_eq!(kept.watermark(), mark, "the arena keeps its content alone");
+        assert_eq!(plain, kept, "and every node of it");
+        assert!(
+            kept.truncated_since(since).is_some(),
+            "a reader learns that the clone's nodes are gone"
+        );
+        assert_eq!(
+            kept.truncated_since(since),
+            plain.truncated_since(since),
+            "at the floor that the truncation gives"
+        );
+        let unchanged = kept.truncated_since(since).map(super::Truncated::now);
+        let idle = kept.clone();
+        kept.dropped(&idle);
+        assert_eq!(
+            kept.truncated_since(since).map(super::Truncated::now),
+            unchanged,
+            "a clone that mints nothing takes no stamp"
+        );
+        // A clone that mints and truncates back to its start leaves its
+        // watermark where it found it. A reader at the clone's own stamp still
+        // learns that the clone's nodes are gone.
+        let mut back = kept.clone();
+        let start = back.watermark();
+        intermediates(&mut back);
+        back.truncate_to(start);
+        let read = back
+            .truncated_since(since)
+            .map(super::Truncated::now)
+            .expect("the clone's truncation takes a stamp");
+        kept.dropped(&back);
+        assert_eq!(
+            kept.truncated_since(read).map(super::Truncated::floor),
+            Some(start),
+            "a reader at the clone's stamp forgets each name past the start"
+        );
+    }
+
+    /// #3476, #2802: a fork at a grain smaller than a declaration takes a
+    /// clone of a check's clone. Two clones of a check and a clone of one of
+    /// them each mint and drop into their parent, and one of them truncates
+    /// too. The check then holds its own nodes alone. A reader from before
+    /// the forks, and a reader at the stamp of the innermost clone, each
+    /// forget every name past the check's nodes.
+    #[test]
+    fn clones_of_a_clone_drop_into_their_parents_as_truncations_3476()
+    {
+        let intermediates = |arena: &mut TermArena| {
+            let value = arena.value_unit();
+            let _type = arena.value_type_unit();
+            let _returned = arena.computation_return(value);
+        };
+        let since = super::TruncationStamp::default();
+        let mut environment = TermArena::new();
+        let value = environment.value_constant(super::ConstantIndex::from(0_usize));
+        let _returned = environment.computation_return(value);
+        environment.freeze();
+        let mut check = environment.clone();
+        intermediates(&mut check);
+        let before = check.clone();
+        let mark = check.watermark();
+        // Each fork freezes its parent first, so each child shares the
+        // parent's nodes and copies none.
+        check.freeze();
+        let mut left = check.clone();
+        let mut right = check.clone();
+        intermediates(&mut left);
+        left.freeze();
+        let mut inner = left.clone();
+        let start = inner.watermark();
+        intermediates(&mut inner);
+        inner.truncate_to(start);
+        intermediates(&mut inner);
+        let read = inner
+            .truncated_since(since)
+            .map(super::Truncated::now)
+            .expect("the innermost clone's truncation takes a stamp");
+        left.dropped(&inner);
+        intermediates(&mut right);
+        check.dropped(&left);
+        check.dropped(&right);
+        assert_eq!(
+            check.watermark(),
+            mark,
+            "the check keeps its own nodes alone"
+        );
+        assert_eq!(check, before, "and every node of them");
+        assert_eq!(
+            check.truncated_since(since).map(super::Truncated::floor),
+            Some(mark),
+            "a reader from before the forks forgets each name past the check's nodes"
+        );
+        assert_eq!(
+            check.truncated_since(read).map(super::Truncated::floor),
+            Some(mark),
+            "and so does a reader at the innermost clone's stamp"
+        );
+    }
+
+    /// An arena frozen part way answers every read, mint, truncation and
+    /// comparison as one built alike and never frozen does; a clone of it
+    /// shares the frozen nodes and owns only those minted after, and a
+    /// truncation into the frozen nodes leaves a clone taken before untouched.
+    #[test]
+    fn a_frozen_arena_answers_as_it_did_and_clones_its_own_nodes_alone()
+    {
+        // Each round mints its own content, so a read off by one across the
+        // frozen boundary finds another node.
+        let round = |arena: &mut TermArena, constant: usize, ty: Option<super::BaseType>| {
+            let value = arena.value_constant(super::ConstantIndex::from(constant));
+            let value_type = match ty {
+                Some(ty) => arena.value_type_base(ty),
+                None => arena.value_type_unit(),
+            };
+            let computation = arena.computation_return(value);
+            let comp_type = arena.comp_type_returner(value_type);
+            (value, value_type, computation, comp_type)
+        };
+        let shares = |left: &TermArena, right: &TermArena| {
+            left.values.shared_frozen(&right.values) != 0_usize
+        };
+        let constant = |index: usize| super::Value::Constant(super::ConstantIndex::from(index));
+        let mut plain = TermArena::new();
+        let mut frozen = TermArena::new();
+        let first = round(&mut plain, 0, Some(super::BaseType::Integer));
+        assert_eq!(first, round(&mut frozen, 0, Some(super::BaseType::Integer)));
+        let mark = frozen.watermark();
+        frozen.freeze();
+        assert_eq!(mark, frozen.watermark(), "a freeze keeps the watermark");
+        assert_eq!(plain, frozen, "and every node");
+        assert!(frozen.values.own().is_empty(), "every node is frozen");
+
+        let mut copy = frozen.clone();
+        assert!(shares(&copy, &frozen), "a clone shares the frozen nodes");
+        let second = round(&mut plain, 1, None);
+        assert_eq!(
+            second,
+            round(&mut copy, 1, None),
+            "ids continue past the frozen nodes"
+        );
+        assert_eq!(
+            copy.values.own().len(),
+            1,
+            "the clone owns only what it minted"
+        );
+        assert_eq!(plain, copy);
+        assert_eq!(copy.value(first.0), Some(&constant(0)));
+        assert_eq!(copy.value(second.0), Some(&constant(1)));
+        assert_eq!(copy.computation(second.2), plain.computation(second.2));
+        assert_eq!(copy.value_type(second.1), plain.value_type(second.1));
+        assert_eq!(copy.comp_type(second.3), plain.comp_type(second.3));
+        assert_eq!(
+            frozen.value(second.0),
+            None,
+            "the frozen arena never sees the clone's nodes"
+        );
+
+        copy.freeze();
+        assert_eq!(
+            plain, copy,
+            "a second freeze keeps the nodes on both sides of the first"
+        );
+        let before = copy.clone();
+        assert!(shares(&before, &copy));
+        let third = round(&mut plain, 2, Some(super::BaseType::Integer));
+        assert_eq!(third, round(&mut copy, 2, Some(super::BaseType::Integer)));
+
+        let past = before.watermark();
+        plain.truncate_to(past);
+        copy.truncate_to(past);
+        assert_eq!(plain, copy, "a truncation past the frozen nodes");
+        assert_eq!(copy.value(third.0), None);
+        plain.truncate_to(mark);
+        copy.truncate_to(mark);
+        assert_eq!(plain, copy, "a truncation into them");
+        assert_eq!(copy.value(second.0), None);
+        assert_eq!(
+            before.value(second.0),
+            Some(&constant(1)),
+            "and a clone taken before keeps its nodes"
+        );
+        let again = round(&mut plain, 3, None);
+        assert_eq!(
+            again,
+            round(&mut copy, 3, None),
+            "a truncated index is minted again"
+        );
+        assert_eq!(plain, copy);
+    }
+
+    #[test]
+    fn a_node_offset_is_its_family_ordinal()
+    {
+        let mut arena = TermArena::new();
+        let first = arena.value_unit();
+        let second = arena.value_variable(super::DeBruijnIndex::from(0_u32));
+        let returner = arena.computation_return(second);
+        let integer = arena.value_type_base(super::BaseType::Integer);
+        let unit = arena.value_type_unit();
+        let arrow = arena.comp_type_returner(unit);
+        let offsets = [
+            AnyNode::Value(first),
+            AnyNode::Value(second),
+            AnyNode::Computation(returner),
+            AnyNode::ValueType(integer),
+            AnyNode::ValueType(unit),
+            AnyNode::CompType(arrow),
+        ]
+        .map(|node| usize::from(node.offset()));
+        assert_eq!(
+            offsets,
+            [0, 1, 0, 0, 1, 0],
+            "each family counts from zero on its own"
+        );
+    }
+
+    #[test]
+    fn truncation_preserves_prefixes_reuses_indices_and_checks_all_families()
+    {
+        let mut arena = TermArena::new();
+        let value = arena.value_variable(super::DeBruijnIndex::from(3_u32));
+        let computation = arena.computation_return(value);
+        let value_type = arena.value_type_base(super::BaseType::Integer);
+        let comp_type = arena.comp_type_returner(value_type);
+        let kept = arena.clone();
+        let low = arena.watermark();
+        let removed_value = arena.value_unit();
+        let removed_computation = arena.computation_force(value);
+        let removed_value_type = arena.value_type_unit();
+        let removed_comp_type = arena.comp_type_arrow(value_type, comp_type);
+        let stale = arena.watermark();
+        arena.truncate_to(low);
+        assert_eq!(arena, kept);
+        assert_eq!(arena.value(removed_value), None);
+        assert_eq!(arena.computation(removed_computation), None);
+        assert_eq!(arena.value_type(removed_value_type), None);
+        assert_eq!(arena.comp_type(removed_comp_type), None);
+        for node in [
+            AnyNode::Value(removed_value),
+            AnyNode::Computation(removed_computation),
+            AnyNode::ValueType(removed_value_type),
+            AnyNode::CompType(removed_comp_type),
+        ] {
+            assert!(arena.children_of(node).is_empty());
+        }
+        arena.truncate_to(stale);
+        assert_eq!(arena, kept, "a stale high mark cannot grow a family");
+        assert_eq!(
+            arena.value_variable(super::DeBruijnIndex::from(9_u32)),
+            removed_value
+        );
+        assert_eq!(arena.computation_lambda(computation), removed_computation);
+        assert_eq!(
+            arena.value_type_base(super::BaseType::String),
+            removed_value_type
+        );
+        assert_eq!(arena.comp_type_pi(value_type, comp_type), removed_comp_type);
+        assert_eq!(
+            arena.value(removed_value),
+            Some(&super::Value::Variable(super::DeBruijnIndex::from(9_u32)))
+        );
+        assert_eq!(
+            arena.computation(removed_computation),
+            Some(&super::Computation::Lambda(computation))
+        );
+        assert_eq!(
+            arena.value_type(removed_value_type),
+            Some(&super::ValueType::Base(super::BaseType::String))
+        );
+        assert_eq!(
+            arena.comp_type(removed_comp_type),
+            Some(&super::CompType::Pi {
+                domain: value_type,
+                codomain: comp_type
+            })
+        );
+        let mut foreign = TermArena::new();
+        let foreign_value = foreign.value_unit();
+        let foreign_computation = foreign.computation_force(foreign_value);
+        let foreign_value_type = foreign.value_type_unit();
+        let foreign_comp_type = foreign.comp_type_returner(foreign_value_type);
+        assert_eq!(arena.value(foreign_value), kept.value(value));
+        assert_eq!(
+            arena.computation(foreign_computation),
+            kept.computation(computation)
+        );
+        assert_eq!(
+            arena.value_type(foreign_value_type),
+            kept.value_type(value_type)
+        );
+        assert_eq!(
+            arena.comp_type(foreign_comp_type),
+            kept.comp_type(comp_type)
+        );
+        arena.truncate_to(ArenaWatermark::default());
+        assert_eq!(arena, TermArena::new());
+    }
+
+    #[test]
+    fn a_reader_learns_the_lowest_length_truncated_to_since_its_stamp()
+    {
+        use super::ArenaLength;
+        use super::TruncationStamp;
+
+        let floor = |arena: &TermArena, since: TruncationStamp| {
+            arena
+                .truncated_since(since)
+                .map(|truncated| (truncated.floor().values(), truncated.floor().value_types()))
+        };
+        let length = ArenaLength::from;
+        let mut arena = TermArena::new();
+        let start = TruncationStamp::default();
+        assert_eq!(
+            floor(&arena, start),
+            None,
+            "a fresh arena has truncated nothing"
+        );
+        let _first = arena.value_unit();
+        let low = arena.watermark();
+        let _second = arena.value_unit();
+        let _type = arena.value_type_unit();
+        let middle = arena.watermark();
+        let _third = arena.value_unit();
+        let here = arena.watermark();
+        arena.truncate_to(here);
+        assert_eq!(
+            floor(&arena, start),
+            None,
+            "a truncation that drops nothing takes no stamp"
+        );
+        arena.truncate_to(middle);
+        assert_eq!(
+            floor(&arena, start),
+            Some((length(2), length(1))),
+            "values fall to two; the value types, untruncated, read their present length"
+        );
+        let between = arena
+            .truncated_since(start)
+            .map_or(start, super::Truncated::now);
+        assert_eq!(
+            floor(&arena, between),
+            None,
+            "nothing since the stamp just read"
+        );
+        let _again = arena.value_unit();
+        let _more = arena.value_unit();
+        arena.truncate_to(low);
+        let after_low = arena
+            .truncated_since(between)
+            .map_or(between, super::Truncated::now);
+        let _regrown = arena.value_unit();
+        let higher = arena.watermark();
+        let _past = arena.value_unit();
+        arena.truncate_to(higher);
+        assert_eq!(
+            floor(&arena, between),
+            Some((length(1), length(0))),
+            "the lowest truncation since the stamp, not the newest one"
+        );
+        assert_eq!(
+            floor(&arena, start),
+            Some((length(1), length(0))),
+            "an older stamp reads the same lowest floor"
+        );
+        assert_eq!(
+            floor(&arena, after_low),
+            Some((length(2), length(0))),
+            "a stamp after the low truncation reads only the higher one"
+        );
+    }
+
+    #[test]
+    fn a_stage_refines_its_base_once()
+    {
+        use super::ValueType;
+
+        let mut arena = TermArena::new();
+        let integer = arena.value_type_base(super::BaseType::Integer);
+        let root = crate::StageId::from(0_usize);
+        let child = crate::StageId::from(1_usize);
+        let at_root = arena.value_type_staged(integer, crate::Stage::At(root));
+        assert_eq!(
+            Some(&ValueType::Staged {
+                base: integer,
+                stage: crate::Stage::At(root),
+            }),
+            arena.value_type(at_root),
+            "a plain base is refined as it stands"
+        );
+        let below = crate::Stage::Below {
+            anchor: child,
+            depth: crate::StageDepth::ONE,
+        };
+        let restaged = arena.value_type_staged(at_root, below);
+        assert_eq!(
+            Some(&ValueType::Staged {
+                base: integer,
+                stage: below,
+            }),
+            arena.value_type(restaged),
+            "a staged base gives up its stage rather than nesting it"
+        );
+    }
+
+    #[test]
+    fn the_unit_and_the_empty_type_are_zero_ary()
+    {
+        use super::Value;
+        use super::ValueType;
+
+        let mut arena = TermArena::new();
+        let unit = arena.value_unit();
+        let first = arena.value_variable(super::DeBruijnIndex::from(0_u32));
+        let pair = arena.value_tuple(&[unit, first]);
+        let injection = arena.value_injection(super::Summand::from(0_usize), unit);
+        assert_eq!(arena.value(unit), Some(&Value::unit()));
+        assert_eq!(
+            arena.value(unit).and_then(Value::components),
+            Some([].as_slice())
+        );
+        assert_eq!(
+            arena.value(pair).and_then(Value::components),
+            Some([unit, first].as_slice()),
+            "a tuple reads its components in order"
+        );
+        assert_ne!(arena.value(pair), Some(&Value::unit()));
+        assert_eq!(arena.value(injection).and_then(Value::components), None);
+        let unit_type = arena.value_type_unit();
+        let empty = arena.value_type_empty();
+        let product = arena.value_type_product(&[unit_type, unit_type]);
+        assert_eq!(arena.value_type(unit_type), Some(&ValueType::unit()));
+        assert_eq!(arena.value_type(empty), Some(&ValueType::empty()));
+        assert_ne!(ValueType::unit(), ValueType::empty());
+        assert_ne!(arena.value_type(product), Some(&ValueType::unit()));
+        assert_eq!(
+            arena.value_type(product).and_then(ValueType::product_parts),
+            Some([unit_type, unit_type].as_slice())
+        );
+        assert_eq!(
+            arena
+                .value_type(unit_type)
+                .and_then(ValueType::product_parts),
+            Some([].as_slice())
+        );
+        assert_eq!(
+            arena.value_type(empty).and_then(ValueType::product_parts),
+            None
+        );
+        assert_eq!(
+            arena.value_type(empty).and_then(ValueType::summands),
+            Some([].as_slice())
+        );
+        assert_eq!(
+            arena.value_type(product).and_then(ValueType::summands),
+            None
+        );
+    }
+
+    #[test]
+    fn a_many_value_former_of_one_is_its_one_value_former()
+    {
+        use super::CompType;
+        use super::Computation;
+        use crate::ResultCount;
+
+        let mut arena = TermArena::new();
+        let first = arena.value_unit();
+        let second = arena.value_variable(super::DeBruijnIndex::from(0_u32));
+        let none = arena.computation_return_all(&[]);
+        let one = arena.computation_return_all(&[first]);
+        let two = arena.computation_return_all(&[second, first]);
+        assert_eq!(
+            arena.computation(none),
+            Some(&Computation::ReturnAll([].into()))
+        );
+        assert_eq!(
+            arena.computation(one),
+            Some(&Computation::Return(first)),
+            "a return of one value is the return"
+        );
+        assert_eq!(
+            arena.computation(two),
+            Some(&Computation::ReturnAll([second, first].into())),
+            "a return of two keeps their order"
+        );
+        let bound_one = arena.computation_bind_all(two, ResultCount::from(1_usize), one);
+        let bound_two = arena.computation_bind_all(two, ResultCount::from(2_usize), one);
+        let bound_none = arena.computation_bind_all(none, ResultCount::from(0_usize), one);
+        assert_eq!(
+            arena.computation(bound_one),
+            Some(&Computation::Bind(two, one)),
+            "a bind of one value is the bind"
+        );
+        assert_eq!(
+            arena.computation(bound_two),
+            Some(&Computation::BindAll {
+                bound: two,
+                arity: ResultCount::from(2_usize),
+                body: one,
+            })
+        );
+        assert_eq!(
+            arena.computation(bound_none),
+            Some(&Computation::BindAll {
+                bound: none,
+                arity: ResultCount::from(0_usize),
+                body: one,
+            })
+        );
+        let unit = arena.value_type_unit();
+        let empty = arena.value_type_empty();
+        let no_results = arena.comp_type_returns(&[]);
+        let one_result = arena.comp_type_returns(&[unit]);
+        let two_results = arena.comp_type_returns(&[empty, unit]);
+        assert_eq!(
+            arena.comp_type(no_results),
+            Some(&CompType::Returns([].into()))
+        );
+        assert_eq!(
+            arena.comp_type(one_result),
+            Some(&CompType::Returner(unit)),
+            "a returner of one result is the returner"
+        );
+        assert_eq!(
+            arena.comp_type(two_results),
+            Some(&CompType::Returns([empty, unit].into())),
+            "a returner of two keeps their order"
+        );
+    }
+
+    #[test]
+    fn ordered_edges_preserve_distinct_children_and_quote_boundaries()
+    {
+        use super::CompType;
+        use super::Computation;
+        use super::GroundSort;
+        use super::Summand;
+        use super::Value;
+        use super::ValueType;
+
+        let mut arena = TermArena::new();
+        let v0 = arena.value_variable(super::DeBruijnIndex::from(u32::MAX));
+        let v1 = arena.value_variable(super::DeBruijnIndex::from(7_u32));
+        let c0 = arena.computation_return(v0);
+        let c1 = arena.computation_force(v1);
+        let t0 = arena.value_type_unit();
+        let t1 = arena.value_type_base(super::BaseType::Integer);
+        let k0 = arena.comp_type_returner(t0);
+        let k1 = arena.comp_type_returner(t1);
+        assert_eq!(arena.watermark(), ArenaWatermark {
+            values: 2,
+            computations: 2,
+            value_types: 2,
+            comp_types: 2
+        });
+        let level =
+            gandr_kernel_strata::Level::constant(gandr_kernel_strata::LevelConstant::from(7_u64))
+                .max(&gandr_kernel_strata::Level::var(
+                    gandr_kernel_strata::LevelVar::new(gandr_kernel_strata::LevelVarIndex::from(
+                        2_u32,
+                    )),
+                ));
+        let literal = super::Literal::Text(crate::base::StringLiteral::new(
+            alloc::string::String::from("a\0é"),
+        ));
+        let start = arena.watermark();
+        let values: &[(super::ValueId, Value, &[AnyNode])] = &[
+            (
+                arena.value_variable(super::DeBruijnIndex::from(u32::MAX)),
+                Value::Variable(super::DeBruijnIndex::from(u32::MAX)),
+                &[],
+            ),
+            (
+                arena.value_constant(super::ConstantIndex::from(usize::MAX)),
+                Value::Constant(super::ConstantIndex::from(usize::MAX)),
+                &[],
+            ),
+            (arena.value_unit(), Value::unit(), &[]),
+            (
+                arena.value_literal(literal.clone()),
+                Value::Literal(literal),
+                &[],
+            ),
+            (
+                arena.value_tuple(&[v0, v1]),
+                Value::Tuple([v0, v1].into()),
+                &[AnyNode::Value(v0), AnyNode::Value(v1)],
+            ),
+            (
+                arena.value_tuple(&[v1, v0, v1]),
+                Value::Tuple([v1, v0, v1].into()),
+                &[AnyNode::Value(v1), AnyNode::Value(v0), AnyNode::Value(v1)],
+            ),
+            (
+                arena.value_injection(Summand::from(0_usize), v0),
+                Value::Injection(Summand::from(0_usize), v0),
+                &[AnyNode::Value(v0)],
+            ),
+            (
+                arena.value_injection(Summand::from(2_usize), v1),
+                Value::Injection(Summand::from(2_usize), v1),
+                &[AnyNode::Value(v1)],
+            ),
+            (arena.value_thunk(c1), Value::Thunk(c1), &[
+                AnyNode::Computation(c1),
+            ]),
+            (arena.value_returned(c1), Value::Returned(c1), &[
+                AnyNode::Computation(c1),
+            ]),
+            (
+                arena.value_lift(level.clone(), v1),
+                Value::Lift {
+                    target: level.clone(),
+                    body: v1,
+                },
+                &[AnyNode::Value(v1)],
+            ),
+            (arena.value_quote(t1), Value::Quote(t1), &[
+                AnyNode::ValueType(t1),
+            ]),
+            (
+                arena.value_quote_computation(k1),
+                Value::QuoteComputation(k1),
+                &[AnyNode::CompType(k1)],
+            ),
+            (
+                arena.value_static_application(v0, v1),
+                Value::StaticApplication(v0, v1),
+                &[AnyNode::Value(v0), AnyNode::Value(v1)],
+            ),
+        ];
+        for (offset, &(id, ref expected, children)) in values.iter().enumerate() {
+            assert_eq!(
+                usize::try_from(id.0).expect("small id"),
+                start.values.saturating_add(offset)
+            );
+            assert_eq!(arena.value(id), Some(expected));
+            assert_eq!(arena.children_of(AnyNode::Value(id)).as_slice(), children);
+        }
+        assert_eq!(arena.watermark(), ArenaWatermark {
+            values: start.values.saturating_add(values.len()),
+            ..start
+        });
+        let start = arena.watermark();
+        let computations: &[(super::ComputationId, Computation, &[AnyNode])] = &[
+            (arena.computation_lambda(c1), Computation::Lambda(c1), &[
+                AnyNode::Computation(c1),
+            ]),
+            (
+                arena.computation_fixpoint(c0, crate::FixpointEvidence::Partial),
+                Computation::Fixpoint {
+                    body: c0,
+                    evidence: crate::FixpointEvidence::Partial,
+                },
+                &[AnyNode::Computation(c0)],
+            ),
+            (
+                arena.computation_fixpoint(c0, crate::FixpointEvidence::StructuralDescent),
+                Computation::Fixpoint {
+                    body: c0,
+                    evidence: crate::FixpointEvidence::StructuralDescent,
+                },
+                &[AnyNode::Computation(c0)],
+            ),
+            (
+                arena.computation_application(c0, v1),
+                Computation::Application(c0, v1),
+                &[AnyNode::Computation(c0), AnyNode::Value(v1)],
+            ),
+            (arena.computation_return(v1), Computation::Return(v1), &[
+                AnyNode::Value(v1),
+            ]),
+            (
+                arena.computation_bind(c0, c1),
+                Computation::Bind(c0, c1),
+                &[AnyNode::Computation(c0), AnyNode::Computation(c1)],
+            ),
+            (arena.computation_force(v0), Computation::Force(v0), &[
+                AnyNode::Value(v0),
+            ]),
+            (
+                arena.computation_case(v1, &[c0, c1]),
+                Computation::Case {
+                    scrutinee: v1,
+                    branches: [c0, c1].into(),
+                },
+                &[
+                    AnyNode::Value(v1),
+                    AnyNode::Computation(c0),
+                    AnyNode::Computation(c1),
+                ],
+            ),
+            (
+                arena.computation_case(v0, &[]),
+                Computation::Case {
+                    scrutinee: v0,
+                    branches: alloc::boxed::Box::default(),
+                },
+                &[AnyNode::Value(v0)],
+            ),
+        ];
+        for (offset, &(id, ref expected, children)) in computations.iter().enumerate() {
+            assert_eq!(
+                usize::try_from(id.0).expect("small id"),
+                start.computations.saturating_add(offset)
+            );
+            assert_eq!(arena.computation(id), Some(expected));
+            assert_eq!(
+                arena.children_of(AnyNode::Computation(id)).as_slice(),
+                children
+            );
+        }
+        assert_eq!(arena.watermark(), ArenaWatermark {
+            computations: start.computations.saturating_add(computations.len()),
+            ..start
+        });
+        let start = arena.watermark();
+        let value_types: &[(super::ValueTypeId, ValueType, &[AnyNode])] = &[
+            (
+                arena.value_type_base(super::BaseType::String),
+                ValueType::Base(super::BaseType::String),
+                &[],
+            ),
+            (arena.value_type_unit(), ValueType::unit(), &[]),
+            (arena.value_type_empty(), ValueType::empty(), &[]),
+            (
+                arena.value_type_product(&[t0, t1]),
+                ValueType::Product([t0, t1].into()),
+                &[AnyNode::ValueType(t0), AnyNode::ValueType(t1)],
+            ),
+            (
+                arena.value_type_sum(&[t1, t0, t1]),
+                ValueType::Sum([t1, t0, t1].into()),
+                &[
+                    AnyNode::ValueType(t1),
+                    AnyNode::ValueType(t0),
+                    AnyNode::ValueType(t1),
+                ],
+            ),
+            (arena.value_type_thunk(k1), ValueType::Thunk(k1), &[
+                AnyNode::CompType(k1),
+            ]),
+            (
+                arena.value_type_universe(GroundSort::Value, level.clone()),
+                ValueType::Universe {
+                    sort: GroundSort::Value,
+                    level: level.clone(),
+                },
+                &[],
+            ),
+            (
+                arena.value_type_universe(GroundSort::Computation, level.clone()),
+                ValueType::Universe {
+                    sort: GroundSort::Computation,
+                    level: level.clone(),
+                },
+                &[],
+            ),
+            (
+                arena.value_type_abstract(super::ConstantIndex::from(usize::MAX)),
+                ValueType::Abstract(super::ConstantIndex::from(usize::MAX)),
+                &[],
+            ),
+            (
+                arena.value_type_element(v1, level.clone()),
+                ValueType::Element {
+                    code: v1,
+                    target: level.clone(),
+                },
+                &[AnyNode::Value(v1)],
+            ),
+            (
+                arena.value_type_static_pi(t0, t1),
+                ValueType::StaticPi {
+                    domain: t0,
+                    codomain: t1,
+                },
+                &[AnyNode::ValueType(t0), AnyNode::ValueType(t1)],
+            ),
+            (
+                arena.value_type_lift(t1, level.clone()),
+                ValueType::Lift {
+                    inner: t1,
+                    target: level.clone(),
+                },
+                &[AnyNode::ValueType(t1)],
+            ),
+        ];
+        for (offset, &(id, ref expected, children)) in value_types.iter().enumerate() {
+            assert_eq!(
+                usize::try_from(id.0).expect("small id"),
+                start.value_types.saturating_add(offset)
+            );
+            assert_eq!(arena.value_type(id), Some(expected));
+            assert_eq!(
+                arena.children_of(AnyNode::ValueType(id)).as_slice(),
+                children
+            );
+        }
+        assert_eq!(arena.watermark(), ArenaWatermark {
+            value_types: start.value_types.saturating_add(value_types.len()),
+            ..start
+        });
+        let start = arena.watermark();
+        let comp_types: &[(super::CompTypeId, CompType, &[AnyNode])] = &[
+            (arena.comp_type_returner(t1), CompType::Returner(t1), &[
+                AnyNode::ValueType(t1),
+            ]),
+            (
+                arena.comp_type_arrow(t0, k1),
+                CompType::Arrow {
+                    domain: t0,
+                    codomain: k1,
+                },
+                &[AnyNode::ValueType(t0), AnyNode::CompType(k1)],
+            ),
+            (
+                arena.comp_type_pi(t1, k0),
+                CompType::Pi {
+                    domain: t1,
+                    codomain: k0,
+                },
+                &[AnyNode::ValueType(t1), AnyNode::CompType(k0)],
+            ),
+            (
+                arena.comp_type_element(v0, level.clone()),
+                CompType::Element {
+                    code: v0,
+                    target: level.clone(),
+                },
+                &[AnyNode::Value(v0)],
+            ),
+        ];
+        for (offset, &(id, ref expected, children)) in comp_types.iter().enumerate() {
+            assert_eq!(
+                usize::try_from(id.0).expect("small id"),
+                start.comp_types.saturating_add(offset)
+            );
+            assert_eq!(arena.comp_type(id), Some(expected));
+            assert_eq!(
+                arena.children_of(AnyNode::CompType(id)).as_slice(),
+                children
+            );
+        }
+        assert_eq!(arena.watermark(), ArenaWatermark {
+            comp_types: start.comp_types.saturating_add(comp_types.len()),
+            ..start
+        });
+        let quote = arena.value_quote(t0);
+        let quote_computation = arena.value_quote_computation(k0);
+        let before = arena.watermark();
+        assert_eq!(
+            arena.value_type_element(quote, gandr_kernel_strata::Level::zero()),
+            t0
+        );
+        assert_eq!(
+            arena.comp_type_element(quote_computation, gandr_kernel_strata::Level::zero()),
+            k0
+        );
+        assert_eq!(
+            arena.watermark(),
+            before,
+            "matching quotes discard the written target without minting"
+        );
+        let crossed = arena.comp_type_element(quote, level.clone());
+        assert_eq!(
+            arena.comp_type(crossed),
+            Some(&CompType::Element {
+                code: quote,
+                target: level.clone()
+            })
+        );
+        assert_eq!(arena.watermark(), ArenaWatermark {
+            comp_types: before.comp_types.saturating_add(1),
+            ..before
+        });
+        let before = arena.watermark();
+        let crossed = arena.value_type_element(quote_computation, level.clone());
+        assert_eq!(
+            arena.value_type(crossed),
+            Some(&ValueType::Element {
+                code: quote_computation,
+                target: level
+            })
+        );
+        assert_eq!(arena.watermark(), ArenaWatermark {
+            value_types: before.value_types.saturating_add(1),
+            ..before
+        });
+    }
+
+    #[test]
+    fn a_child_id_is_strictly_below_its_parent()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_unit();
+        let pair = arena.value_tuple(&[unit, unit]);
+        assert!(
+            unit < pair,
+            "constructor-only minting orders child below parent"
+        );
+    }
+
+    #[test]
+    fn truncating_to_a_watermark_drops_later_nodes()
+    {
+        let mut arena = TermArena::new();
+        let kept = arena.value_unit();
+        let mark = arena.watermark();
+        let dropped = arena.value_unit();
+        arena.truncate_to(mark);
+        assert!(
+            arena.value(kept).is_some(),
+            "content below the mark survives"
+        );
+        assert!(
+            arena.value(dropped).is_none(),
+            "an id minted past the mark dangles after truncation"
+        );
+        arena.truncate_to(mark);
+        assert!(
+            arena.value(kept).is_some(),
+            "truncating twice to the same mark is a no-op"
+        );
+    }
+
+    #[test]
+    fn a_watermark_clamps_into_its_interval()
+    {
+        let mut arena = TermArena::new();
+        let low = arena.watermark();
+        let _first = arena.value_unit();
+        let middle = arena.watermark();
+        let _second = arena.value_unit();
+        let high = arena.watermark();
+
+        assert_eq!(
+            low,
+            low.clamped_into(low, high),
+            "a mark at the floor holds"
+        );
+        assert_eq!(
+            middle,
+            middle.clamped_into(low, high),
+            "a mark inside the interval holds"
+        );
+        assert_eq!(
+            middle,
+            high.clamped_into(low, middle),
+            "a mark above the ceiling clamps down"
+        );
+        assert_eq!(
+            middle,
+            low.clamped_into(middle, high),
+            "a mark below the floor clamps up"
+        );
+        assert_eq!(
+            high,
+            middle.clamped_into(high, low),
+            "an inverted interval resolves to its floor"
+        );
+    }
+
+    #[test]
+    fn a_dangling_node_has_no_children()
+    {
+        let arena = TermArena::new();
+        let dangling = AnyNode::Value(ValueId(7));
+        assert!(
+            arena.children_of(dangling).is_empty(),
+            "an unresolvable id yields no children rather than panicking"
+        );
+    }
+
+    #[test]
+    fn the_default_watermark_is_the_empty_arena()
+    {
+        let arena = TermArena::new();
+        assert_eq!(
+            ArenaWatermark::default(),
+            arena.watermark(),
+            "an empty arena sits at the admission floor"
+        );
+    }
+
+    #[test]
+    fn a_decoded_quote_is_the_quoted_type()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let quote = arena.value_quote(unit);
+        let level = gandr_kernel_strata::Level::zero();
+        assert_eq!(
+            unit,
+            arena.value_type_element(quote, level.clone()),
+            "a value decode of a value quote is the quoted type itself"
+        );
+        let returner = arena.comp_type_returner(unit);
+        let quoted = arena.value_quote_computation(returner);
+        assert_eq!(
+            returner,
+            arena.comp_type_element(quoted, level.clone()),
+            "and a computation decode of a computation quote is the quoted computation type"
+        );
+        let crossed = arena.comp_type_element(quote, level);
+        assert!(
+            matches!(
+                arena.comp_type(crossed),
+                Some(&super::CompType::Element { code, .. }) if code == quote
+            ),
+            "while a decode across the families is minted as written, for the checker to refuse"
+        );
+    }
+}

@@ -1,0 +1,12 @@
+[
+  {
+    "name": "#3871: a transcript of 4 KiB reaches observed.jq and witnesses",
+    "bytes": 4096,
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [x] observed — `crates/p/tests/debug-traces/t.txt` stops `t` at `a.rs:1:1`.\n<!-- gandr-observed:end -->\n"
+  },
+  {
+    "name": "#3871: a transcript above 128 KiB reaches observed.jq and witnesses",
+    "bytes": 200000,
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [x] observed — `crates/p/tests/debug-traces/t.txt` stops `t` at `a.rs:1:1`.\n<!-- gandr-observed:end -->\n"
+  }
+]

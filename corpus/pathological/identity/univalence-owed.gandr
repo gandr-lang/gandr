@@ -1,0 +1,44 @@
+// What `univalence`'s owed laws need and the checker does not have.
+// `ua` after `idtoequiv` is the path once `J` reaches reflexivity, where `ua`
+// of the identity record is not reflexivity: two paths between types that
+// transport alike are not one path. `idtoequiv` after `ua` is the record once
+// its inverses are determined by its map, which needs function extensionality
+// from a homotopy at any two functions; `Path.funext`
+// decides closed first-order
+// functions only, and `ua` gives the rest
+// (`../../model/identity/funext-from-ua.gandr`).
+//
+// - see: #520 — `uaEtaRefl`, `uaEtaStratum`, `funextFromHomotopy`
+
+// Univalence over the user universe: `idtoequiv`.
+import "../../model/identity/univalence.gandr";
+// The magma's degree telescope and its path at the stratum code.
+import "../../model/higher-cells/ua-type.gandr";
+
+/// `ua` of the identity record at reflexivity, read as reflexivity: the case
+/// `J` leaves of `uaEta`, refused.
+@[refuses("EndpointMismatch")]
+def uaEtaRefl(a : Type) -> Path[.A = Path[.A = Type](a, a)] (ua (idtoequiv a a (Path.here a))) (
+  Path.here a
+) =
+  Path.here (Path.here a)
+
+/// `ua` of the packaged stratum path, read as the path itself: refused at the
+/// stratum code as at reflexivity.
+@[refuses("EndpointMismatch")]
+def uaEtaStratum() -> Path[.A = Path[.A = Type](AtStratum.Tel, AtStratum.Tel)] (
+  ua (idtoequiv AtStratum.Tel AtStratum.Tel AtStratum.opposite)
+) AtStratum.opposite =
+  Path.here AtStratum.opposite
+
+/// Two functions that agree at every point are one function, from the
+/// homotopy: past the functions `Path.funext` decides, refused.
+@[refuses("FunextUnsupported")]
+def funextFromHomotopy(
+  a : Type,
+  b : Type,
+  f : a -> b,
+  g : a -> b,
+  h : (x : a) -> Path[.A = b] (f x) (g x)
+) -> Path[.A = a -> b] f g =
+  Path.funext f g

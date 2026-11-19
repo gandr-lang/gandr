@@ -1,0 +1,20 @@
+[
+  {
+    "name": "#6399: a stack on an old lineage of the trunk, noted by the landing rebase, which changed a landed file, replays each member once and queues nothing",
+    "setup": "rewritten",
+    "note": true,
+    "output": "status 3; #2 stood on an old lineage of main, with 4 commit(s) that main holds under other hashes: #2 ← #3 replayed onto main, and the stack lands once the new heads' checks pass; lower holds lower's own; upper holds upper's own, lower's own; gh: replay lower | replay upper"
+  },
+  {
+    "name": "#6399: the same stack with no note replays from the newest commit that the trunk holds by patch",
+    "setup": "rewritten",
+    "note": false,
+    "output": "status 3; #2 stood on an old lineage of main, with 4 commit(s) that main holds under other hashes: #2 ← #3 replayed onto main, and the stack lands once the new heads' checks pass; lower holds lower's own; upper holds upper's own, lower's own; gh: replay lower | replay upper"
+  },
+  {
+    "name": "#6399: a stack that is only behind the trunk is queued as it stands",
+    "setup": "behind",
+    "note": false,
+    "output": "status 0; queued the stack up to #3; lower holds lower's own; upper holds upper's own, lower's own; gh: queue up to 3"
+  }
+]

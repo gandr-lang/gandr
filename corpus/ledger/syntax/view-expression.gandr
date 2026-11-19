@@ -1,0 +1,15 @@
+/// `view_expression`: a call's place lent to a block, at the mode it asks.
+
+// The native finite lists.
+import std.list (List);
+
+/// Two integers in a list.
+def pair : List Integer = cons 1 (cons 2 nil);
+module Places where {
+  @[checks]
+  def first[m : Mode](self : m List Integer) -> View[m](Integer) = self.#[0];
+}
+def raised() -> List Integer =
+  var xs = pair
+  (xs.first ()) as w { resume w 2 };
+  pure xs

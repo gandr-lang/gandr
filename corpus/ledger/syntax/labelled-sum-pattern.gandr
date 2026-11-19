@@ -1,0 +1,4 @@
+/// `labelled_sum_pattern`: a labelled sum pattern: one label and its payload.
+def unwrap(v : +{only : Integer}) -> Integer =
+  match v where
+    | +{.only = n} => n
