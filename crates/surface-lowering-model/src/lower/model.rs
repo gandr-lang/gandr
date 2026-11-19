@@ -726,6 +726,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     ///   member are each read at their own sort.
     /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_type_3080`
     /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_member_or_application_3089`
+    ///
+    /// # Cost
+    /// - allocation: the computation member it records, durable by the context
+    /// - allocation: a refusal, error path
     #[spec(ensures: |ret| match ret {
         Ok(Reading::CompType(read)) => read == frame && self.cx().computation_members.contains(&defined),
         Ok(Reading::ValueType(read)) => read == frame,
@@ -784,7 +788,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
                             .is_some_and(|member| {
                                 self.cx().computation_members.contains(&member.defined.node)
                             }),
-                        TypeMeaning::Sealed => false,
+                        TypeMeaning::Sealed | TypeMeaning::Builtin(_) => false,
                     };
                     if computation {
                         let _fresh = self.cx_mut().computation_members.insert(defined);
@@ -1386,6 +1390,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_type_is_the_record_its_theory_derives`
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_family_sort_is_a_function_into_the_universe`
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_model_type_writes_its_sort_as_its_type`
+    ///
+    /// # Cost
+    /// - allocation: the values of the indices, growth within the sort's
+    ///   indices
+    /// - allocation: each type the arena mints and its origin, durable by the
+    ///   arena
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
     fn sort_type(
         &self,
@@ -1516,6 +1526,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                 TypeMeaning::Manifest(_) | TypeMeaning::Sealed | TypeMeaning::Instantiated { .. },
                 false,
             )
+            | (TypeMeaning::Builtin(_), _)
             | (TypeMeaning::Family(_), true) => Err(Missing::Unlowered),
         }
     }
@@ -1596,6 +1607,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// - hypothesis: L3 — the `CatShape` law endpoints mint the written
     ///   endpoints' values.
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    ///
+    /// # Cost
+    /// - allocation: the steps still to read and the values built, growth
+    ///   within the term
+    /// - allocation: each value the arena mints and its origin, durable by the
+    ///   arena
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value(id).is_some()))]
     fn term_value(
         &self,
@@ -1639,7 +1656,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                             .value_injection(gandr_kernel_term::Summand::from(side), unit);
                         sink.origins.record_value(injected, origin);
                         let Lowered::ValueType(boolean) = sink.atom(
-                            crate::resolve::TypeAtom::Boolean,
+                            gandr_core_term::builtin::TypeAtom::Boolean,
                             origin.inserted(Insertion::Classifier),
                         )
                         else {
@@ -3386,7 +3403,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
                             Maybe::Present(
                                 TypeMeaning::Manifest(_) | TypeMeaning::Instantiated { .. },
                             ) => {},
-                            Maybe::Present(TypeMeaning::Sealed | TypeMeaning::Family(_)) => {
+                            Maybe::Present(
+                                TypeMeaning::Sealed
+                                | TypeMeaning::Builtin(_)
+                                | TypeMeaning::Family(_),
+                            ) => {
                                 return Err(
                                     site.out(FragmentBoundary::Unadmitted(Unbuilt::PackModel))
                                 );
@@ -3732,6 +3753,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// # Adequacy
     /// - hypothesis: L3 — as [`Models::pack_model`].
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_module_packs_as_the_record_of_its_members`
+    ///
+    /// # Cost
+    /// - allocation: the quote the arena mints and its origin, durable by the
+    ///   arena
     #[spec(ensures: |ret| ret.is_none_or(|id| matches!(sink.arena.value(id), Some(&Value::Quote(_)))))]
     fn packed_sort(
         &self,
@@ -3760,7 +3785,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                     Some(&InstanceType::Computation(_)) | None => return None,
                 }
             },
-            TypeMeaning::Sealed | TypeMeaning::Family(_) => return None,
+            TypeMeaning::Sealed | TypeMeaning::Builtin(_) | TypeMeaning::Family(_) => return None,
         };
         let id = sink.arena.value_quote(stated);
         sink.origins.record_value(id, origin);

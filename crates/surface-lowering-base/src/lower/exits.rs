@@ -328,8 +328,7 @@ pub fn label_replaced(
                 if !matches!(sink.arena.value(replaced), Some(&Value::Variable { .. })) {
                     continue;
                 }
-                sink.origins
-                    .relabel(&Labelled::Value(replaced), &Labelled::Value(standing));
+                sink.origins.relabel_value(replaced, standing);
                 let (Maybe::Present(written), Maybe::Present(now)) =
                     (sink.origins.value(replaced), sink.origins.value(standing))
                 else {

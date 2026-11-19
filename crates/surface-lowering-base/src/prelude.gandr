@@ -89,6 +89,10 @@ pub def gt[o : Model Ord](a : o.Carrier, b : o.Carrier) -> Bool = o.gt a b;
 /// At least, through the operands' model of `Ord`: what `a >= b` calls.
 pub def ge[o : Model Ord](a : o.Carrier, b : o.Carrier) -> Bool = o.ge a b;
 
+/// The integers of no fixed width, a value type that the toolchain gives.
+@[builtin("integer")]
+pub type Integer : Type;
+
 /// A positive number in binary, its least digit outermost, as Isabelle/HOL's
 /// `num`: one, or twice a positive, or twice a positive and one.
 pub data Pos : Type where

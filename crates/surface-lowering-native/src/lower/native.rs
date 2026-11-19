@@ -380,6 +380,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::builtin::TypeAtom;
 use gandr_core_term::hole::HoleId;
 use gandr_core_term::hole::TermId;
 use gandr_core_term::pattern::Pattern;
@@ -540,7 +541,6 @@ use crate::resolve::OperandCount;
 use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
-use crate::resolve::TypeAtom;
 use crate::resolve::TypeFormer;
 use crate::resolve::binder_site;
 use crate::resolve::binder_type;
@@ -6925,6 +6925,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// - witness: `gandr-surface-lowering::lower::native::tests::sum_patterns_case_on_the_stated_arity`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_sum_pattern_reads_bool_as_its_sum_815`
     /// - witness: `gandr-surface-lowering::lower::native::tests::indexed_arms_settle_their_sum_1169`
+    ///
+    /// # Cost
+    /// - allocation: the patterns of the payload queued, growth within the
+    ///   pattern
+    /// - allocation: a refusal, error path
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |shape| matches!(*shape, Matcher::Injection { summand, arity, .. } if summand < arity)))]
     fn injected(
         &mut self,

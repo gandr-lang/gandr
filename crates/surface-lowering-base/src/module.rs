@@ -4624,7 +4624,7 @@ impl<'source> Collector<'_, 'source>
                 read_pieces(self.pbg, self.tree, child.node, &mut pieces)?;
                 if Self::opens_type_member(&pieces).0 {
                     let top = self.collected.top(child.span.start());
-                    return self.type_member(top, child, &pieces);
+                    return self.type_member(top, child, &pieces, &[]);
                 }
                 self.module(child)
             },
@@ -5076,6 +5076,11 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — an attributed member at the top level is read past
     ///   its block and refused at its type, as a module body's is.
     /// - witness: `gandr-surface-lowering::tests::modules::an_attributed_top_level_type_member_is_read_as_the_plain_one_4464`
+    ///
+    /// # Cost
+    /// - allocation: the attributes joined on the member's slot, durable by the
+    ///   member's slot
+    /// - allocation: as [`Self::type_member`]
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: |ret| ret.is_err()
@@ -5092,7 +5097,12 @@ impl<'source> Collector<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let held = SlotIndex(self.collected.slots.len());
-        self.type_member(self.collected.top(member.span.start()), member, pieces)?;
+        self.type_member(
+            self.collected.top(member.span.start()),
+            member,
+            pieces,
+            &attributes,
+        )?;
         if let Some(slot) = self.collected.slots.get_mut(held.0) {
             attributes.append(&mut slot.attributes);
             slot.attributes = attributes;
@@ -8671,7 +8681,7 @@ impl<'source> Collector<'_, 'source>
             return Ok(());
         }
         if Self::opens_type_member(pieces).0 {
-            if let Err(refusal) = self.type_member(container, member, pieces) {
+            if let Err(refusal) = self.type_member(container, member, pieces, &[]) {
                 self.fault_at(structure, member, refusal);
             }
             return Ok(());
@@ -14105,7 +14115,11 @@ impl<'source> LoweredModule<'source>
                     Maybe::Present(gandr_core_term::builtin::Row::Role(role)) => {
                         Maybe::Present(role)
                     },
-                    Maybe::Present(gandr_core_term::builtin::Row::Native(_)) | Maybe::Absent(_) => {
+                    Maybe::Present(
+                        gandr_core_term::builtin::Row::Native(_)
+                        | gandr_core_term::builtin::Row::Atom(_),
+                    )
+                    | Maybe::Absent(_) => {
                         Maybe::Absent(gandr_kernel_term::builtin_role::Absent::Unnamed)
                     },
                 },

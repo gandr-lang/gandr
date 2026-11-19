@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # The cases of the records of a check's pass. `check:gate-scope` runs them.
 # Each case builds a scratch repository with a bare remote. It writes a record
-# of `check:clippy-plain-only` on the tree of HEAD, pushes it and reads it as
-# a runner does. The last cases take a record of the inputs of
-# `check:dylint`, in a scratch workspace of three crates.
+# of `check:clippy-arch` on the tree of HEAD, pushes it and reads it as a
+# runner does. The last cases take a record of the inputs of `check:dylint`
+# and of `check:clippy-plain-only`, in a scratch workspace of three crates.
 # - see: #7684, `verdict.bash`
 #
 # A stub compiler and a fixed policy revision stand for the toolchain, so no
@@ -13,6 +13,7 @@
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 verdict=$here/verdict.bash
+push=$here/push.bash
 source "$here/../cases/scratch.bash"
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
@@ -51,14 +52,14 @@ setup() {
   export GATE_VERDICT_TRUNK_OK=$GATE_BASE GATE_VERDICT_SCOPE=--workspace
 }
 
-# Writes and pushes the record of `check:clippy-plain-only` on the tree of HEAD.
+# Writes and pushes the record of `check:clippy-arch` on the tree of HEAD.
 gate() {
-  "$verdict" write "$(git rev-parse 'HEAD^{tree}')" check:clippy-plain-only 2> /dev/null
+  "$verdict" write "$(git rev-parse 'HEAD^{tree}')" check:clippy-arch 2> /dev/null
   "$verdict" publish HEAD 2> /dev/null
 }
 
-# Whether a read of `check:clippy-plain-only` holds, as `held` or `runs`.
-reads() { if "$verdict" read check:clippy-plain-only 2> /dev/null; then echo held; else echo runs; fi; }
+# Whether a read of `check:clippy-arch` holds, as `held` or `runs`.
+reads() { if "$verdict" read check:clippy-arch 2> /dev/null; then echo held; else echo runs; fi; }
 
 # A `git` wrapper whose signer fails as its mode states, then delegates every
 # other call to the real Git.
@@ -94,13 +95,24 @@ signer() {
 got=$(setup "$scratch/same" && gate && reads)
 [[ $got == held ]] || fail "#7684: a run on the gated tree with the gate's key reads the record" "$got"
 
+# The push hook sends a passed head's record before the head moves the remote.
+got=$(
+  setup "$scratch/pushed"
+  commit file two pushed > /dev/null
+  "$verdict" write "$(git rev-parse 'HEAD^{tree}')" check:clippy-arch 2> /dev/null
+  PRE_COMMIT_TO_REF=$(git rev-parse HEAD) PRE_COMMIT_REMOTE_BRANCH=refs/heads/main "$push" > /dev/null 2>&1
+  git push --quiet --no-verify origin main
+  reads
+)
+[[ $got == held ]] || fail "#8166: a gated head pushes its record without pr:open" "$got"
+
 got=$(
   setup "$scratch/retry-once"
   signer once "$scratch/retry-once-bin"
   tree=$(git rev-parse 'HEAD^{tree}')
   status=0
   output=$(PATH="$scratch/retry-once-bin:$PATH" GATE_VERDICT_CASE_FAILURE="$scratch/retry-once.failed" \
-    GATE_VERDICT_CASE_GIT="$(command -v git)" "$verdict" write "$tree" check:clippy-plain-only 2>&1) || status=$?
+    GATE_VERDICT_CASE_GIT="$(command -v git)" "$verdict" write "$tree" check:clippy-arch 2>&1) || status=$?
   "$verdict" publish HEAD > /dev/null 2>&1
   if [[ $status == 0 && -e $scratch/retry-once.failed && $output == *"signing attempt 1 of 2 failed"* ]]; then
     reads
@@ -116,7 +128,7 @@ got=$(
   tree=$(git rev-parse 'HEAD^{tree}')
   status=0
   output=$(PATH="$scratch/retry-always-bin:$PATH" GATE_VERDICT_CASE_GIT="$(command -v git)" \
-    "$verdict" write "$tree" check:clippy-plain-only 2>&1) || status=$?
+    "$verdict" write "$tree" check:clippy-arch 2>&1) || status=$?
   ref=$(git for-each-ref --count=1 refs/verdicts/)
   if [[ $status == 1 && -z $ref && $output == *"record did not sign after 2 attempts"* \
     && $output == *"verdict.bash write"* ]]; then
@@ -156,23 +168,28 @@ got=$(
 got=$(
   setup "$scratch/forged"
   tree=$(git rev-parse 'HEAD^{tree}')
-  key=$("$verdict" key check:clippy-plain-only)
+  key=$("$verdict" key check:clippy-arch)
   hash=$(printf '%s' "$key" | sha256sum | cut -c1-16)
-  forged=$(git commit-tree -S -m "verdict: check:clippy-plain-only passes" -m "$(jq -c '.policy = "policy-0"' <<< "$key")" "$tree")
-  git update-ref "refs/verdicts/$tree/check-clippy-plain-only/$hash" "$forged"
+  forged=$(git commit-tree -S -m "verdict: check:clippy-arch passes" -m "$(jq -c '.policy = "policy-0"' <<< "$key")" "$tree")
+  git update-ref "refs/verdicts/$tree/check-clippy-arch/$hash" "$forged"
   "$verdict" publish HEAD 2> /dev/null
   reads
 )
 [[ $got == runs ]] || fail "#7684: a record whose body is not the run's key is refused" "$got"
 
-# Work that is not the tree of HEAD writes no record.
+# A completed gate writes the record of work before a commit holds it. The
+# later commit keeps that tree, publishes its record and reads it.
 got=$(
-  setup "$scratch/dirty"
+  setup "$scratch/uncommitted"
   printf 'two\n' > file
-  "$verdict" write "$("$here/passed.bash" tree)" check:clippy-plain-only 2> /dev/null
-  git for-each-ref --count=1 refs/verdicts/ | wc -l | tr -d ' '
+  tree=$("$here/passed.bash" tree)
+  "$verdict" write "$tree" check:clippy-arch 2> /dev/null
+  ref=$(git for-each-ref --count=1 "refs/verdicts/$tree/")
+  commit file two later > /dev/null
+  "$verdict" publish HEAD 2> /dev/null
+  if [[ -n $ref ]]; then reads; else echo no-record; fi
 )
-[[ $got == 0 ]] || fail "#7684: work that is not the tree of HEAD writes no record" "$got"
+[[ $got == held ]] || fail "#8169: an uncommitted gate record serves a later commit with its tree" "$got"
 
 # A merge group on a newer base reads the record of a base that the trunk
 # holds. The group's own `GATE_BASE` does not enter the key.
@@ -188,10 +205,10 @@ got=$(
   setup "$scratch/unverified"
   gate
   GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=gpg.ssh.program GIT_CONFIG_VALUE_0="$scratch/no-ssh-keygen" \
-    "$verdict" read check:clippy-plain-only 2>&1 || true
+    "$verdict" read check:clippy-arch 2>&1 || true
 )
-[[ $got == *"of check:clippy-plain-only does not hold: its signature does not verify: "*"$scratch/no-ssh-keygen"*"No such file or directory"* \
-  && $got == *"no record holds check:clippy-plain-only on "* ]] \
+[[ $got == *"of check:clippy-arch does not hold: its signature does not verify: "*"$scratch/no-ssh-keygen"*"No such file or directory"* \
+  && $got == *"no record holds check:clippy-arch on "* ]] \
   || fail "#7684: a record whose signature does not verify states why" "$got"
 
 # An edit that keeps the size and the stamp of a file. Before it, git writes
@@ -234,12 +251,12 @@ workspace() {
   GATE_BASE=$(git rev-parse HEAD)
 }
 
-# Gates a change of `a` on a branch and pushes the record of the policy's
-# inputs, over the scope that `$1` names.
+# Gates a change of `a` on a branch over the scope that `$1` names. Then it
+# pushes the record of the inputs of the check `$2`, the policy by default.
 gate_inputs() {
   git switch --quiet --create change
   commit crates/a/src/lib.rs '//! a, changed' change > /dev/null
-  GATE_SCOPE=$1 "$verdict" write "$(git rev-parse 'HEAD^{tree}')" check:dylint 2> /dev/null
+  GATE_SCOPE=$1 "$verdict" write "$(git rev-parse 'HEAD^{tree}')" "${2:-check:dylint}" 2> /dev/null
   "$verdict" publish HEAD 2> /dev/null
 }
 
@@ -252,8 +269,9 @@ group() {
   git merge --quiet --no-edit change
 }
 
-# Whether a read of the policy holds over the scope `$1`, as `held` or `runs`.
-reads_inputs() { if GATE_VERDICT_SCOPE=$1 "$verdict" read check:dylint 2> /dev/null; then echo held; else echo runs; fi; }
+# Whether a read of the check `$2`, the policy by default, holds over the
+# scope `$1`, as `held` or `runs`.
+reads_inputs() { if GATE_VERDICT_SCOPE=$1 "$verdict" read "${2:-check:dylint}" 2> /dev/null; then echo held; else echo runs; fi; }
 
 got=$(setup "$scratch/inputs-moved" && workspace && gate_inputs --workspace && group notes notes.txt && reads_inputs --workspace)
 [[ $got == held ]] || fail "#7684: a group whose base moved holds the record when no input of the check changed" "$got"
@@ -269,6 +287,38 @@ got=$(setup "$scratch/inputs-manifest" && workspace && gate_inputs '--workspace 
   && group "$(printf '[package]\nname = "c"\nversion = "0.2.0"\nedition = "2024"')" crates/c/Cargo.toml \
   && reads_inputs '--workspace --exclude c')
 [[ $got == runs ]] || fail "#7684: a change of a manifest outside the scope's closure runs the check" "$got"
+
+# The plain Clippy pass greps each crate for its pattern. So a file outside
+# the closure that gains the pattern runs it, and another change keeps it.
+got=$(setup "$scratch/grep-other" && workspace && gate_inputs '--workspace --exclude c' check:clippy-plain-only \
+  && group '//! c, moved' crates/c/src/lib.rs && reads_inputs '--workspace --exclude c' check:clippy-plain-only)
+[[ $got == held ]] || fail "#7684: a change outside the closure that the plain pass's grep does not find holds its record" "$got"
+
+got=$(setup "$scratch/grep-found" && workspace && gate_inputs '--workspace --exclude c' check:clippy-plain-only \
+  && group '#[cfg(not(anodized_panic))] fn plain() {}' crates/c/src/lib.rs \
+  && reads_inputs '--workspace --exclude c' check:clippy-plain-only)
+[[ $got == runs ]] || fail "#7684: a file outside the closure that gains the plain pass's pattern runs it" "$got"
+
+# A table whose row gives `check:purposes` the crate `a` alone. The record of
+# the check binds the paths of the row and the text of its lists.
+table() {
+  mkdir -p .config/gate-scope
+  printf '{"reads": {"every": ["Cargo.toml"], "checks": {"check:purposes": [%s]}}}\n' "$1" > .config/gate-scope/table.json
+  git add .config/gate-scope/table.json
+  git commit --quiet --message table
+  GATE_BASE=$(git rev-parse HEAD)
+}
+
+got=$(setup "$scratch/table-other" && workspace && table '"crates/a/"' \
+  && gate_inputs --workspace check:purposes && group '//! c, moved' crates/c/src/lib.rs \
+  && reads_inputs --workspace check:purposes)
+[[ $got == held ]] || fail "#7684: a change outside the row of a check of the table holds its record" "$got"
+
+got=$(setup "$scratch/table-row" && workspace && table '"crates/a/"' \
+  && gate_inputs --workspace check:purposes \
+  && group '{"reads": {"every": ["Cargo.toml"], "checks": {"check:purposes": ["crates/a/", "notes/"]}}}' .config/gate-scope/table.json \
+  && reads_inputs --workspace check:purposes)
+[[ $got == runs ]] || fail "#7684: a path that joins the row of a check of the table runs it" "$got"
 
 # A dep-info file of the crate `a` that names a file outside its crate. The
 # check refuses it by its path, until the table names it for `a`.
@@ -290,4 +340,4 @@ got=$(
   || fail "#7684: the dep-info check refuses a file outside the inputs by its path" "$got"
 
 (( failed == 0 )) || exit 1
-echo "verdict OK: 20 cases read, refuse and write records as recorded"
+echo "verdict OK: 24 cases read, refuse and write records as recorded"

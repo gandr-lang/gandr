@@ -200,7 +200,7 @@ const fn written(meaning: TypeMeaning) -> Option<NodeIndex>
         TypeMeaning::Manifest(defined) | TypeMeaning::Instantiated { defined, .. } => {
             Some(defined.node)
         },
-        TypeMeaning::Sealed | TypeMeaning::Family(_) => None,
+        TypeMeaning::Sealed | TypeMeaning::Builtin(_) | TypeMeaning::Family(_) => None,
     }
 }
 

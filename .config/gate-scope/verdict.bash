@@ -10,9 +10,9 @@
 # ref is `refs/verdicts/inputs/<check>/<hash>`.
 # - see: #7684, `inputs.bash`
 #
-# A lane's gate writes the record, `pr:open` pushes it, and the jobs of the
-# pull request and of the merge group read it. A job that reads a record for
-# each of its checks runs none of them.
+# A lane gate writes the record. The pre-push hook sends it. Every pull
+# request and merge group job uses it. A job with records for each check runs
+# none of them.
 #
 # A write retries one failed signing call. The tree, check and key stay fixed,
 # so the retry writes the same record. A second failure leaves no record and
@@ -45,9 +45,9 @@
 #     Prints the key of <check> for the tree at HEAD, as one line of JSON.
 #   verdict.bash write <tree> <check>...
 #     Writes a record for each <check>, and each check that one of them
-#     depends on, that `verdicts.json` names, when HEAD's tree is <tree>.
-#     Else it writes nothing and says why: a record of work that is not a
-#     commit is of no use to a runner.
+#     depends on, that `verdicts.json` names. A completed gate can pass a tree
+#     that no commit holds. A later commit with that tree can publish and read
+#     the record.
 #   verdict.bash publish <commit>
 #     Pushes each record of the tree of <commit> to the remote
 #     `GATE_VERDICT_REMOTE`, `origin` by default: each ref under the tree, and
@@ -116,17 +116,16 @@ host_flags() {
   fi
 }
 
-# The part of the key that each check of one run shares: the tree, the
+# The part of the key that each check of one run shares: the passed tree, the
 # compiler, the policy, the flags and the target features. A run reads it
 # once.
 common() {
-  local tree version target compiler policy read_features on
-  tree=$(git rev-parse 'HEAD^{tree}')
+  local tree=${1:-$(git rev-parse 'HEAD^{tree}')} version target compiler policy read_features on
   version=$("${GATE_VERDICT_RUSTC:-rustc}" -vV)
   target=$(awk '/^host:/ { print $2 }' <<< "$version")
   compiler=$(awk '/^commit-hash:/ { print $2 }' <<< "$version")
   policy=${GATE_VERDICT_POLICY:-$(mise run --quiet workflow:revision)}
-  read_features=$(git grep -h -o -E 'target_feature *= *"[^"]+"' HEAD -- 'crates/*.rs' 2> /dev/null \
+  read_features=$(git grep -h -o -E 'target_feature *= *"[^"]+"' "$tree" -- 'crates/*.rs' 2> /dev/null \
     | sed -E 's/.*"([^"]+)"/\1/' | LC_ALL=C sort -u || true)
   on=
   if [[ -n $read_features ]]; then
@@ -142,18 +141,19 @@ common() {
      target_features: (($on | split("\n")) as $on | [$read | split("\n")[] | select(length > 0) | {(.): IN($on[])}] | add // {})}'
 }
 
-# Whether the record of <check> binds the digest of its inputs, which
-# `verdicts.json` lists for the check, in place of the tree.
-digested() { jq -e --arg check "$1" '.checks[$check].inputs != null' "$table" > /dev/null; }
+# Whether the record of <check> binds the digest of its inputs in place of
+# the tree. `verdicts.json` lists the inputs for the check, or takes them from
+# its row of `table.json`.
+digested() { jq -e --arg check "$1" '.checks[$check] | .inputs != null or .table == true' "$table" > /dev/null; }
 
 # The key of <check>: the run's common part, the check, its profile and the
 # scope `GATE_SCOPE`. A check of inputs binds their digest at HEAD in place of
 # the tree, and their digest at `GATE_BASE` when it reads its base. Another
 # check binds the tree and the base `GATE_BASE`.
 key() {
-  local check=$1 scope=${GATE_SCOPE:---workspace} inputs= base_inputs=
+  local check=$1 tree=${2:-$(git rev-parse 'HEAD^{tree}')} scope=${GATE_SCOPE:---workspace} inputs='' base_inputs=''
   if digested "$check"; then
-    inputs=$("$here/inputs.bash" digest HEAD "$scope" "$check")
+    inputs=$("$here/inputs.bash" digest "$tree" "$scope" "$check")
     if [[ -n ${GATE_BASE:-} ]] && jq -e --arg check "$check" '.checks[$check].base == true' "$table" > /dev/null; then
       base_inputs=$("$here/inputs.bash" digest "$GATE_BASE" "$scope" "$check")
     fi
@@ -163,7 +163,7 @@ key() {
     ($table[0].checks[$check].profile // error("verdict: \($check) holds no row in verdicts.json")) as $profile
     | if $inputs == "" then . + {check: $check, profile: $profile, base: $base, scope: $scope}
       else del(.tree) + {check: $check, profile: $profile, scope: $scope, inputs: $inputs, base_inputs: $base_inputs} end' \
-    <<< "${common_key:-$(common)}"
+    <<< "${common_key:-$(common "$tree")}"
 }
 
 # The ref of the record of <check> on <tree> under the key <key>.
@@ -231,11 +231,7 @@ case ${1:-} in
     (( $# >= 3 )) || { echo 'usage: verdict.bash write <tree> <check>...' >&2; exit 2; }
     tree=$2
     shift 2
-    if [[ $(git rev-parse 'HEAD^{tree}') != "$tree" ]]; then
-      echo "verdict: the work is not the tree of HEAD, so no record is written; commit the work and gate again for a record" >&2
-      exit 0
-    fi
-    common_key=$(common)
+    common_key=$(common "$tree")
     # A check that the gate runs by its name runs each of its `depends` too:
     # `check:landing` runs Clippy and the policy. Without the task list, the
     # gate takes the names as the caller gives them.
@@ -245,7 +241,7 @@ case ${1:-} in
     failed=0
     for check in "${ran[@]}"; do
       jq -e --arg check "$check" '.checks | has($check)' "$table" > /dev/null || continue
-      k=$(key "$check")
+      k=$(key "$check" "$tree")
       signed=false
       for attempt in 1 2; do
         if commit=$(git commit-tree -S -m "verdict: $check passes on ${tree:0:12}" -m "$k" "$tree"); then
@@ -284,7 +280,7 @@ case ${1:-} in
     tree=$(git rev-parse 'HEAD^{tree}')
     # The common part of the key holds for each check of this run, so the run
     # reads it once.
-    common_key=$(common)
+    common_key=$(common "$tree")
     allowed=$(mktemp)
     trap 'rm -f "$allowed"' EXIT
     signers "$allowed"
@@ -297,7 +293,7 @@ case ${1:-} in
         if ! scope=${GATE_VERDICT_SCOPE:-$("$here/scope.bash" --lints 2> /dev/null)}; then
           echo "verdict: the scope of $check did not read, so the run reads no record of it" >&2
         else
-          k=$(GATE_SCOPE=$scope key "$check")
+          k=$(GATE_SCOPE=$scope key "$check" "$tree")
           ref=$(ref_of "$check" "$tree" "$k")
           if ! remote_git fetch --quiet --no-tags "$remote" "+$ref:$ref" 2> /dev/null; then
             echo "verdict: no record binds the inputs of $check in this run, $(key_hash "$k")" >&2
@@ -317,7 +313,7 @@ case ${1:-} in
           on_trunk "$base" || { refused "$ref" "$check" "the trunk does not hold its base ${base:0:12}"; continue; }
           scope=${GATE_VERDICT_SCOPE:-$(GATE_BASE=$base "$here/scope.bash" --lints 2> /dev/null)} \
             || { refused "$ref" "$check" "the scope against its base ${base:0:12} did not read"; continue; }
-          k=$(GATE_BASE=$base GATE_SCOPE=$scope key "$check")
+          k=$(GATE_BASE=$base GATE_SCOPE=$scope key "$check" "$tree")
           [[ ${ref##*/} == "$(key_hash "$k")" ]] || { refused "$ref" "$check" "its key is not the run's key, $(key_hash "$k")"; continue; }
           if reason=$(verify "$commit" "$k" "$allowed"); then held=$commit; break; fi
           refused "$ref" "$check" "$reason"

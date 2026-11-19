@@ -20,6 +20,7 @@ use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::Value;
 use gandr_core_term::Zone;
+use gandr_core_term::builtin::TypeAtom;
 use gandr_core_term::instantiate_computation_traced;
 use gandr_kernel_term::DeBruijnIndex;
 pub(super) use gandr_surface_lowering_base::lower::conditional::Conditional;
@@ -55,7 +56,6 @@ use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
-use crate::resolve::TypeAtom;
 use crate::resolve::binder_site;
 
 impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<'host, F>
@@ -378,6 +378,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     ///   states none.
     /// - witness: `gandr-surface-lowering::lower::conditional::tests::a_conditional_runs_the_branch_its_condition_selects`
     /// - witness: `gandr-surface-lowering::lower::conditional::tests::a_written_answer_ascribes_the_conditional_2089`
+    ///
+    /// # Cost
+    /// - allocation: the computation the arena mints and its origin, durable by
+    ///   the arena
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(self.cx().computation_at(condition), Maybe::Present(_)))]
     fn tested(
         &self,

@@ -736,6 +736,12 @@ impl Typer<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the steps still to read, growth within the term
+    /// - allocation: the values built, growth within the term
+    /// - allocation: the arguments of an application, growth within the term
+    /// - allocation: each value the arena mints, durable by the arena
     fn value(
         &mut self,
         scope: &Scope,
@@ -770,7 +776,8 @@ impl Typer<'_>
                         let injected = self
                             .arena
                             .value_injection(gandr_kernel_term::Summand::from(side), unit);
-                        let boolean = atom_type(self.arena, crate::resolve::TypeAtom::Boolean);
+                        let boolean =
+                            atom_type(self.arena, gandr_core_term::builtin::TypeAtom::Boolean);
                         built.push(self.arena.value_ascribe(injected, boolean));
                     },
                     TermView::Ctor { .. }
@@ -824,6 +831,11 @@ impl Typer<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the values of the indices, growth within the sort's
+    ///   indices
+    /// - allocation: each value and type the arena mints, durable by the arena
     fn sort(
         &mut self,
         scope: &Scope,
@@ -999,6 +1011,12 @@ impl Typer<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the context of the closed scope, setup
+    /// - allocation: the described type and the use it records, durable by the
+    ///   described types of the theory
+    /// - allocation: each universe the arena mints, durable by the arena
     fn occurrence(
         &mut self,
         written: &WrittenSort,

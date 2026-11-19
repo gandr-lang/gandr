@@ -1592,6 +1592,10 @@ fn action(
 /// - witness: `tests::run::rides_run_by_the_motives_action`
 /// - witness: `tests::run::transports_run_by_the_motives_action`
 /// - witness: `tests::run::a_run_moves_its_payloads_along_a_path`
+///
+/// # Cost
+/// - allocation: core nodes in `scratch`, growth within the scratch arena
+///   capacity.
 #[spec(ensures: |ret| match ret {
     | Ok(id) => scratch.computation(id).is_some(),
     | Err(_) => true,
@@ -1819,11 +1823,11 @@ fn fieldwise(
 
 /// One complete run a session admits: its moves, and the payload type of each
 /// send and receive among them, in order.
-type Shape = (Arc<[RecordedMove<()>]>, Vec<ValueTypeId>);
+type Shape = (Arc<[RecordedMove<()>]>, Arc<[ValueTypeId]>);
 
 /// A run part way through a session: where it stands, its moves so far, and
 /// their payload types.
-type Partial = (SessionType, Vec<RecordedMove<()>>, Vec<ValueTypeId>);
+type Partial = (SessionType, Vec<RecordedMove<()>>, Arc<[ValueTypeId]>);
 
 /// Every complete run a session with no recursion admits.
 ///
@@ -1847,24 +1851,32 @@ type Partial = (SessionType, Vec<RecordedMove<()>>, Vec<ValueTypeId>);
 /// - hypothesis: L3 — a choice's two runs each match their own arm, which a
 ///   missing or merged arm would not.
 /// - witness: `tests::run::a_run_moves_its_payloads_along_a_path`
+///
+/// # Cost
+/// - allocation: pending run state, setup.
+/// - allocation: completed run shapes, durable by the returned run list.
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |all| all.iter().all(|&(ref moves, _)| matches!(moves.last(), Some(&RecordedMove::Closed)))))]
 fn shapes(session: &SessionType) -> Result<Vec<Shape>, FocusRefusal>
 {
     let broken =
         |_broken: gandr_core_term::session::ProtocolError| FocusRefusal::TranslationInvariant;
     let mut complete = Vec::new();
-    let mut pending: Vec<Partial> = Vec::from([(session.clone(), Vec::new(), Vec::new())]);
-    while let Some((standing, mut moves, mut payloads)) = pending.pop() {
+    let mut pending: Vec<Partial> = Vec::from([(session.clone(), Vec::new(), Arc::from([]))]);
+    while let Some((standing, mut moves, payloads)) = pending.pop() {
         match standing.step().map_err(broken)? {
             Step::Send { payload, next } => {
                 moves.push(RecordedMove::Sent(()));
-                payloads.push(payload);
-                pending.push((next, moves, payloads));
+                let mut extended = Vec::with_capacity(payloads.len().saturating_add(1));
+                extended.extend(payloads.iter().copied());
+                extended.push(payload);
+                pending.push((next, moves, Arc::from(extended)));
             },
             Step::Receive { payload, next } => {
                 moves.push(RecordedMove::Received(()));
-                payloads.push(payload);
-                pending.push((next, moves, payloads));
+                let mut extended = Vec::with_capacity(payloads.len().saturating_add(1));
+                extended.extend(payloads.iter().copied());
+                extended.push(payload);
+                pending.push((next, moves, Arc::from(extended)));
             },
             Step::Select(ref branches) => {
                 branch(
@@ -1907,10 +1919,13 @@ fn shapes(session: &SessionType) -> Result<Vec<Shape>, FocusRefusal>
 /// # Adequacy
 /// - hypothesis: L3 — a choice's two runs each match their own arm.
 /// - witness: `tests::run::a_run_moves_its_payloads_along_a_path`
+///
+/// # Cost
+/// - allocation: each branch move list, durable by the pending run.
 #[spec(captures: before = pending.len(), ensures: |ret| ret.is_err() || before.checked_add(branches.labels().len()) == Some(pending.len()))]
 fn branch(
     branches: &gandr_core_term::session::Branches<'_>,
-    (moves, payloads): (&[RecordedMove<()>], &[ValueTypeId]),
+    (moves, payloads): (&[RecordedMove<()>], &Arc<[ValueTypeId]>),
     chosen: fn(gandr_core_term::FieldLabel) -> RecordedMove<()>,
     pending: &mut Vec<Partial>,
 ) -> Result<(), FocusRefusal>
@@ -1922,9 +1937,10 @@ fn branch(
         else {
             return Err(FocusRefusal::TranslationInvariant);
         };
-        let mut taken = moves.to_vec();
+        let mut taken = Vec::with_capacity(moves.len().saturating_add(1));
+        taken.extend(moves.iter().cloned());
         taken.push(chosen(label.clone()));
-        pending.push((standing, taken, payloads.to_vec()));
+        pending.push((standing, taken, Arc::clone(payloads)));
     }
     Ok(())
 }

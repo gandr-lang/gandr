@@ -229,6 +229,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::mem;
 
@@ -1015,6 +1016,104 @@ enum Collapse
     Shared,
 }
 
+/// State that becomes copy-on-write only when a choice forks it.
+#[derive(Clone, Debug)]
+enum Snapshot<T>
+{
+    /// The state has one owner.
+    Owned(T),
+    /// Choice branches share the state until one changes it.
+    Shared(Arc<T>),
+}
+
+impl<T> From<T> for Snapshot<T>
+{
+    /// Wrap one owned state.
+    ///
+    /// # Specification
+    /// trivial.
+    fn from(value: T) -> Self
+    {
+        Self::Owned(value)
+    }
+}
+
+impl<T> core::ops::Deref for Snapshot<T>
+{
+    type Target = T;
+
+    /// Borrow the state.
+    ///
+    /// # Specification
+    /// trivial.
+    fn deref(&self) -> &Self::Target
+    {
+        match *self {
+            Self::Owned(ref value) => value,
+            Self::Shared(ref value) => value.as_ref(),
+        }
+    }
+}
+
+impl<T: Clone> core::ops::DerefMut for Snapshot<T>
+{
+    /// Mutably borrow the state, cloning it only after a fork.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: copy-on-write snapshot state, durable by the snapshot.
+    fn deref_mut(&mut self) -> &mut Self::Target
+    {
+        match *self {
+            Self::Owned(ref mut value) => value,
+            Self::Shared(ref mut value) => Arc::make_mut(value),
+        }
+    }
+}
+
+impl<T: Default> Snapshot<T>
+{
+    /// Share the state with a choice branch.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: shared snapshot state, durable by the fork branch.
+    fn share(&mut self) -> Arc<T>
+    {
+        match *self {
+            Self::Shared(ref mut value) => Arc::clone(value),
+            Self::Owned(ref mut value) => {
+                let shared = Arc::new(mem::take(value));
+                *self = Self::Shared(Arc::clone(&shared));
+                shared
+            },
+        }
+    }
+}
+
+impl<T: PartialEq> PartialEq for Snapshot<T>
+{
+    /// Compare the state without exposing its sharing mode.
+    ///
+    /// # Specification
+    /// trivial.
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        **self == **other
+    }
+}
+
+impl<T: Eq> Eq for Snapshot<T>
+{
+}
+
 /// A goal: two sides and what it does next.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Goal
@@ -1026,9 +1125,9 @@ struct Goal
     /// The first binder level neither side mentions.
     depth: BinderLevel,
     /// The constants frozen on each side.
-    frozen: Frozen,
+    frozen: Snapshot<Frozen>,
     /// What each side has unfolded since the goal's last decomposition.
-    chain: Chain,
+    chain: Snapshot<Chain>,
     /// The next step.
     next: Next,
 }
@@ -1628,24 +1727,24 @@ where
                 left: Slot::Waiting(self.enter_channel(left)?),
                 right: Slot::Waiting(self.enter_channel(right)?),
                 depth: level,
-                frozen: Frozen::default(),
-                chain: Chain::default(),
+                frozen: Frozen::default().into(),
+                chain: Chain::default().into(),
                 next: Next::Classify,
             },
             SupportSides::Heads(left, right) => Goal {
                 left: Slot::Ready(left),
                 right: Slot::Ready(right),
                 depth: level,
-                frozen: Frozen::default(),
-                chain: Chain::default(),
+                frozen: Frozen::default().into(),
+                chain: Chain::default().into(),
                 next: Next::Classify,
             },
             SupportSides::OpenedUnder(left, right, count) => Goal {
                 left: Slot::Waiting(self.open_channel(left, level, Opening::Many(count))?),
                 right: Slot::Waiting(self.open_channel(right, level, Opening::Many(count))?),
                 depth: (0_usize .. usize::from(count)).try_fold(level, |at, _| deeper(at))?,
-                frozen: Frozen::default(),
-                chain: Chain::default(),
+                frozen: Frozen::default().into(),
+                chain: Chain::default().into(),
                 next: Next::Classify,
             },
             SupportSides::Opened(left, right) => {
@@ -1656,8 +1755,8 @@ where
                     left: Slot::Waiting(left),
                     right: Slot::Waiting(right),
                     depth: deeper,
-                    frozen: Frozen::default(),
-                    chain: Chain::default(),
+                    frozen: Frozen::default().into(),
+                    chain: Chain::default().into(),
                     next: Next::Classify,
                 }
             },
@@ -1672,8 +1771,8 @@ where
                     left,
                     right,
                     depth: deeper,
-                    frozen: Frozen::default(),
-                    chain: Chain::default(),
+                    frozen: Frozen::default().into(),
+                    chain: Chain::default().into(),
                     next: Next::Classify,
                 }
             },
@@ -1687,8 +1786,8 @@ where
                     left,
                     right,
                     depth: level,
-                    frozen: Frozen::default(),
-                    chain: Chain::default(),
+                    frozen: Frozen::default().into(),
+                    chain: Chain::default().into(),
                     next: Next::Classify,
                 }
             },
@@ -3924,6 +4023,9 @@ where
     /// - witness: `machine::tests::unfolding_one_function_twice_is_not_a_cycle`
     /// - witness: `machine::tests::a_definition_cycle_declines_rather_than_unfolding_forever`
     /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
+    ///
+    /// # Cost
+    /// - allocation: unfolded spine copies, durable by the frozen goal state.
     #[spec(
         captures: [left = goal.left, right = goal.right],
         ensures: |ret| match ret {
@@ -4432,13 +4534,10 @@ where
     /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
     /// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body clones the goal's frozen constants and chain into every alternative; the check compares each clone once"
-        )
-    )]
+    ///
+    /// # Cost
+    /// - allocation: child goal list, setup.
+    /// - allocation: shared fork snapshots, durable by the child goals.
     #[spec(
         captures: [before = self.spent.0],
         ensures: |ret| ret.is_err() || (ret == Ok(Turn::Wait) && {
@@ -4472,14 +4571,16 @@ where
         let (combination, moves) = choice.alternatives();
         let branches = u64::try_from(moves.len()).unwrap_or(u64::MAX);
         self.charge(StepCount(branches));
+        let frozen = goal.frozen.share();
+        let chain = goal.chain.share();
         let mut children = Vec::with_capacity(moves.len());
         for chosen in moves {
             let child = self.start_goal(Goal {
                 left: goal.left,
                 right: goal.right,
                 depth: goal.depth,
-                frozen: goal.frozen.clone(),
-                chain: goal.chain.clone(),
+                frozen: Snapshot::Shared(Arc::clone(&frozen)),
+                chain: Snapshot::Shared(Arc::clone(&chain)),
                 next: Next::Move(chosen),
             })?;
             self.depend(id, child)?;

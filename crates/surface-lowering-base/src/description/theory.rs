@@ -3515,6 +3515,9 @@ fn surface_span(span: ByteSpan) -> SurfaceSpan
 /// - hypothesis: L3 — a result naming nothing is refused at its bytes, while a
 ///   declared sort, an included one and a builtin type are read.
 /// - witness: `description::theory::tests::a_port_at_a_sort_nothing_declares_is_refused_2410`
+///
+/// # Cost
+/// - allocation: the refusals of the ports, error path
 #[spec(ensures: |ref refused| refused.iter().all(|refusal| matches!(refusal.fault,
     DescriptionFault::IllFormed(ref diagnostic) if diagnostic.kind == WfKind::UnknownPortSort))
     && (operation.kind != OperationKind::Nested || refused.is_empty()))]

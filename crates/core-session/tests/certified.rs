@@ -2,7 +2,6 @@
 
 use alloc::alloc::Global;
 use alloc::vec;
-use alloc::vec::Vec;
 
 use gandr_core_session::Completion;
 use gandr_core_session::Move;
@@ -316,7 +315,7 @@ fn recorded_runs_transport_only_forward()
             ReplayBudget::DEFAULT,
         )
         .expect("forward recorded run");
-        assert_eq!(&out, run);
+        assert_eq!(out.as_slice(), run.as_slice());
         assert_eq!(replay(&wide, &out), Ok(Completion));
         assert_eq!(arena.watermark(), before);
     }
@@ -502,7 +501,7 @@ fn a_prefix_advances_open_and_refuses_by_move()
     );
     assert_eq!(
         advance_prefix((&old, &wide), &evidence, &[]).expect("the empty play"),
-        Vec::<Move>::new()
+        []
     );
     // A complete run moves as the complete-run transport moves it.
     let complete = [

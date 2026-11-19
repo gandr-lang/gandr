@@ -601,7 +601,7 @@ impl Attr
 pub struct Attrs
 {
     /// The markers, in declaration order.
-    pub markers: Box<[Attr]>,
+    pub markers: Arc<[Attr]>,
 }
 
 impl Attrs
@@ -610,12 +610,15 @@ impl Attrs
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the marker array, durable by the returned attributes.
     #[inline]
     #[must_use]
     pub fn empty() -> Self
     {
         Self {
-            markers: Box::default(),
+            markers: Arc::from([]),
         }
     }
 
@@ -623,6 +626,9 @@ impl Attrs
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the marker array, durable by the returned attributes.
     #[inline]
     #[must_use]
     pub fn new<M>(markers: M) -> Self
@@ -630,7 +636,7 @@ impl Attrs
         M: Into<Box<[Attr]>>,
     {
         Self {
-            markers: markers.into(),
+            markers: Arc::from(markers.into()),
         }
     }
 

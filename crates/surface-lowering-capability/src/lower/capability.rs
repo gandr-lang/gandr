@@ -1162,6 +1162,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_stays_open_through_its_tail_2270`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
+    ///
+    /// # Cost
+    /// - allocation: the plan, the fixed carriers, the resolutions and the
+    ///   reached imports, durable by the source
+    /// - allocation: the refusal of a label naming no region, error path
     #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Effectful(_, child)) if child == argument.node))]
     #[inline]
     pub fn effectful(
@@ -1178,16 +1183,26 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             self.host().read(ty.node, Reading::ValueType(frame));
             self.cx_mut().fixed_carriers.push(ty);
         }
-        // Each host interface the row names reaches the import of its module.
+        // Each interface the row names reaches the import it is read through:
+        // a host interface its module's, a block of another source the import
+        // that opens it.
         for interface in row
             .interfaces
             .iter()
             .chain(row.labels.iter().map(|&(_, ref held)| held))
         {
-            if let Interface::Host(ref named) = *interface {
-                self.cx_mut()
-                    .collected
-                    .reach_host(site.at.span.start(), named);
+            match *interface {
+                Interface::Host(ref named) => {
+                    self.cx_mut()
+                        .collected
+                        .reach_host(site.at.span.start(), named);
+                },
+                Interface::Foreign(ref foreign) => {
+                    self.cx_mut()
+                        .collected
+                        .reach_block(site.at.span.start(), &foreign.name);
+                },
+                Interface::Theory(_) => {},
             }
         }
         for &(span, theory) in &row.named {
@@ -1319,6 +1334,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// - witness: `gandr-surface-lowering::lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_handles_its_capability_and_resumes`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::an_operation_is_performed_by_its_interface_s_name_2279`
+    ///
+    /// # Cost
+    /// - allocation: the plan and the reached imports, durable by the source
+    /// - allocation: the refusal of an operation no interface offers, error
+    ///   path
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Exercise(_))))]
     #[inline]
     pub fn exercise(
@@ -1338,6 +1358,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         };
         if let Performer::Interface(ref named) = performer {
             self.cx_mut().collected.reach_host(head.span.start(), named);
+            self.cx_mut()
+                .collected
+                .reach_block(head.span.start(), named);
         }
         let name = self.cx().name_at(selected);
         let operation = OperationName::from(name.as_ref());

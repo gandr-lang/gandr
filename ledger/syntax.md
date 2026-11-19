@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x0a284f2c8dea26c3`
+- Grammar fingerprint: `0x3ad2f3030abb0fbf`
 - Rules: 161 — 160 committed, 1 internal
-- Molds: 3120
+- Molds: 3124
 - Attributes: 22
 
 ## Reading a form
@@ -208,7 +208,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | ---- | ---- | ----- | ---- | --------- | ----- |
 | [`module_definition_member`](../corpus/ledger/syntax/module-definition-member.gandr) | `def ⦅ rec ‹identifier› ⦅ [ ⦅ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆* ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆* ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ -> TYPE ⦆? ⦅ { ⦅ ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦅ , ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦆* ⦅ , ⦆? ‖ ⦅ let PATTERN ⦅ : TYPE ⦆? = EXPRESSION ; ‖ module ‹identifier› = EXPRESSION ; ‖ var ⦅ [ ‹number› ] ⦆? ‹identifier› ⦅ : TYPE ⦆? = EXPRESSION ; ‖ EXPRESSION ; ‖ EXPRESSION ⦅ = ‖ += ‖ -= ‖ *= ⦆ EXPRESSION ; ‖ import ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ; ⦆* ⦅ EXPRESSION ⦆? ⦆ } ‖ = EXPRESSION ; ⦆ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ ‹identifier› ⦅ [ ⦅ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ : TYPE ⦅ ⦅ = EXPRESSION ⦆? ; ‖ where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ = EXPRESSION ; ‖ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆* ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆* ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ ⦅ -> ‖ ⊸ ⦆ TYPE ⦆? ⦅ ⟨block⟩ ‖ = EXPRESSION ; ⦆ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ⦆ ⦆` or `def ⦅ rec ‹identifier› ⦅ [ ⦅ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆* ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆* ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ -> TYPE ⦆? ⦅ { ⦅ ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦅ , ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦆* ⦅ , ⦆? ‖ ⦅ let PATTERN ⦅ : TYPE ⦆? = EXPRESSION ; ‖ module ‹identifier› = EXPRESSION ; ‖ var ⦅ [ ‹number› ] ⦆? ‹identifier› ⦅ : TYPE ⦆? = EXPRESSION ; ‖ EXPRESSION ; ‖ EXPRESSION ⦅ = ‖ += ‖ -= ‖ *= ⦆ EXPRESSION ; ‖ import ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ; ⦆* ⦅ EXPRESSION ⦆? ⦆ } ‖ = EXPRESSION ; ⦆ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ ‹identifier› ⦅ [ ⦅ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ : TYPE ⦅ ⦅ = EXPRESSION ⦆? ; ‖ where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ = EXPRESSION ; ‖ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆* ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆* ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ ⦅ -> ‖ -o ⦆ TYPE ⦆? ⦅ ⟨block⟩ ‖ = EXPRESSION ; ⦆ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ⦆ ⦆` | `item.singleton` | `module_declaration` | admitted | Keyword, FunctionDef, Other, VariableParam, TypeVariable, Type, Operator, Member, Variable, VariableDef, Number |
 | [`attributed_module_member`](../corpus/ledger/syntax/attributed-module-member.gandr) | `⟨attribute_block⟩ ⦅ ⟨attribute_block⟩ ⦆* ⦅ ⟨def_value⟩ ‖ ⟨module_type_member⟩ ‖ ⟨module_law_member⟩ ⦆` | `item.singleton` | `module_declaration` | admitted | Other, Keyword, FunctionDef, VariableParam, TypeVariable, Type, Operator, Member, Variable, VariableDef, Number |
-| [`module_type_member`](../corpus/ledger/syntax/module-type-member.gandr) | `type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? = TYPE ⦅ ; ‖ where { ⦅ face ‹identifier› = { ⦅ ‹identifier› ⦅ , ‹identifier› ⦆* ⦆? } ; ⦆* } ⦆` | `item.singleton` | `module_declaration` | admitted | Keyword, Type, Other, TypeVariable, Member |
+| [`module_type_member`](../corpus/ledger/syntax/module-type-member.gandr) | `type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ⦅ ; ‖ where { ⦅ face ‹identifier› = { ⦅ ‹identifier› ⦅ , ‹identifier› ⦆* ⦆? } ; ⦆* } ⦆ ‖ : TYPE ; ⦆` | `item.singleton` | `module_declaration` | admitted | Keyword, Type, Other, TypeVariable, Member |
 | [`nested_module_member`](../corpus/ledger/syntax/nested-module-member.gandr) | `module ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ *{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ) ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ‖ :> ⦅ *{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ) ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ⦆? where { ⦅ MODULE_MEMBER ⦆* }` | `item.singleton` | `module_declaration` | admitted | Keyword, VariableDef, Type, Other, Member, TypeVariable, Operator |
 | [`module_include_member`](../corpus/ledger/syntax/module-include-member.gandr) | `include ‹type_identifier› ;` | `item.singleton` | `module_declaration` | admitted | Keyword, Type, Other |
 | [`module_law_member`](../corpus/ledger/syntax/module-law-member.gandr) | `law ‹identifier› = EXPRESSION ;` | `item.singleton` | `module_declaration` | admitted | Keyword, FunctionDef, Other |
@@ -303,8 +303,8 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `inner_attribute_block` | item | 12 | `@![` | — | 4 |
 | `extern_block` | item | 49 | `extern` | — | 18 |
 | `module_definition_member` | module_member | 201 | `def` | — | 52 |
-| `attributed_module_member` | module_member | 253 | `@[` | — | 64 |
-| `module_type_member` | module_member | 24 | `type` | — | 4 |
+| `attributed_module_member` | module_member | 255 | `@[` | — | 64 |
+| `module_type_member` | module_member | 26 | `type` | — | 4 |
 | `nested_module_member` | module_member | 106 | `module` | — | 40 |
 | `module_include_member` | module_member | 3 | `include` | — | 0 |
 | `module_law_member` | module_member | 4 | `law` | — | 0 |
@@ -458,10 +458,10 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | ----- | ----- | ----- | ------- |
 | `identifier` | 433 | 59 | 3 |
 | `,` | 282 | 47 | 0 |
-| `:` | 251 | 33 | 0 |
+| `:` | 253 | 33 | 0 |
 | `type_identifier` | 221 | 34 | 2 |
 | `=` | 152 | 38 | 0 |
-| `;` | 135 | 25 | 0 |
+| `;` | 137 | 25 | 0 |
 | `)` | 131 | 32 | 0 |
 | `(` | 127 | 31 | 5 |
 | `.` | 99 | 47 | 3 |
