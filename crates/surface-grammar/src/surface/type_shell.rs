@@ -856,9 +856,9 @@ fn add_type_rules(
     // `Integer >! String >? end` reads the send first. The retired step with a
     // lead `!` or `?`, `! T . S` or `! T >> S`, stays an alternative so that
     // the lowering refuses it by name.
-    let step = |infix: &'static str, lead: &'static str, name, form, reason| {
+    let step = |name: RuleName, infix: &'static str, lead: &'static str, form, reason| {
         let mut step = rule(
-            RuleName(name),
+            name,
             ty,
             type_arrow,
             Regex::alt([
@@ -871,24 +871,21 @@ fn add_type_rules(
                 ]),
             ]),
         );
-        step.adaptations.push(Adaptation::refused(
-            RuleName(name),
-            form,
-            AdaptationReason(reason),
-        ));
+        step.adaptations
+            .push(Adaptation::refused(name, form, AdaptationReason(reason)));
         step
     };
     rules.push(step(
+        RuleName("send_session_type"),
         ">!",
         "!",
-        "send_session_type",
         RetiredForm::PrefixSendStep,
         "the send step with a lead `!`, `! T . S` or `! T >> S`, is refused by name: `T >! S` is the send. A form that takes the prefix `!` in a type removes this alternative, and its parser refuses the old text by name",
     ));
     rules.push(step(
+        RuleName("receive_session_type"),
         ">?",
         "?",
-        "receive_session_type",
         RetiredForm::PrefixReceiveStep,
         "the receive step with a lead `?`, `? T . S` or `? T >> S`, is refused by name: `T >? S` is the receive. A form that takes the prefix `?` in a type removes this alternative, and its parser refuses the old text by name",
     ));

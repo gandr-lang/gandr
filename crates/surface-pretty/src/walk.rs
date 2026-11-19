@@ -2410,6 +2410,10 @@ impl Nesting
 /// - hypothesis: L3 — a recursive protocol with every former spells as the
 ///   grammar writes it at its root and at a state inside its recursion.
 /// - witness: `tests::goldens::session_types_spell_their_protocol_and_payloads`
+///
+/// # Cost
+/// - allocation: the segments, the text and the pending steps of the spelling,
+///   growth within the protocol's nodes
 #[spec(ensures: |ret| ret.0.iter().all(|segment| match *segment {
     | Segment::Text(ref text) => !text.is_empty(),
     | Segment::Payload(slot) => protocol.nodes().iter().any(|node| {
@@ -2465,14 +2469,6 @@ fn protocol_template(
                 text.push_str(" >! ");
                 pending.push(Spelling::State(next));
             },
-            #[cfg_attr(
-                dylint_lib = "quenchant_dylints",
-                expect(
-                    answer_totality,
-                    reason = "the receive session type's own `A >? S`, which \
-                              `receive_session_type` reads: an answer, not a placeholder"
-                )
-            )]
             Ok(&ProtocolNode::Receive { payload, next }) => {
                 if !text.is_empty() {
                     segments.push(Segment::Text(core::mem::take(&mut text)));
