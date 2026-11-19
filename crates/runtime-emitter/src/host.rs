@@ -130,7 +130,10 @@ use crate::lower::Path;
 use crate::lower::Reach;
 use crate::lower::Reified;
 use crate::lower::Slot;
+use crate::lower::Unfixed;
 use crate::lower::Window;
+use crate::lower::fixed_of;
+use crate::lower::fixed_words;
 use crate::lower::integer_word;
 use crate::lower::lower_suspended;
 use crate::regions;
@@ -592,6 +595,10 @@ impl<'run, 'host> Calls<'run, 'host>
     ///
     /// # Errors
     /// [`Refusal::Operands`] for an object that is neither.
+    ///
+    /// # Cost
+    /// - allocation: the operand's integer or text, read from its word or
+    ///   copied from its literal, growth within the row's arity.
     fn scalar(
         &self,
         word: Word,
@@ -604,7 +611,11 @@ impl<'run, 'host> Calls<'run, 'host>
             Ok(Kind::Integer) => {
                 // SAFETY: an integer object holds its bits in its second word.
                 let bits = unsafe { *object.wrapping_add(1) };
-                Ok(Scalar::Integer(integer_literal(bits)))
+                match fixed_of(header, bits) {
+                    Ok(fixed) => Ok(Scalar::Fixed(fixed)),
+                    Err(Unfixed::Integer) => Ok(Scalar::Integer(integer_literal(bits))),
+                    Err(Unfixed::Tag(_) | Unfixed::Wider) => Err(Refusal::Operands),
+                }
             },
             Ok(Kind::Literal) => match usize::try_from(header.family())
                 .ok()
@@ -875,13 +886,13 @@ impl<'run, 'host> Calls<'run, 'host>
             },
             Scalar::Text(text) => self.literal(runtime, Literal::Text(text)),
             Scalar::Float64(float) => self.literal(runtime, Literal::Float64(float)),
-            Scalar::Fixed(fixed) => self.literal(runtime, Literal::Fixed(fixed)),
+            Scalar::Fixed(fixed) => allocate(runtime, &fixed_words(fixed)),
             // A checked answer is the left injection of its value, or the
             // right injection of the unit tuple.
             Scalar::Checked(checked) => {
                 let (summand, held) = match checked {
                     CheckedFixed::Present(fixed) => {
-                        (0_usize, self.literal(runtime, Literal::Fixed(fixed))?)
+                        (0_usize, allocate(runtime, &fixed_words(fixed))?)
                     },
                     CheckedFixed::Absent(_) => {
                         let unit = Header::new(
@@ -2132,6 +2143,10 @@ impl Laying<'_>
     ///
     /// # Errors
     /// As [`Self::laid`].
+    ///
+    /// # Cost
+    /// - allocation: the object's words, its captures and a literal's row,
+    ///   growth within the store's values.
     fn object(
         &mut self,
         runtime: &mut Runtime,
@@ -2151,6 +2166,7 @@ impl Laying<'_>
         };
         let value = self.store.value(id).ok_or(Unlaid::Value(id))?;
         let words = match *value {
+            HeapValue::Literal(Literal::Fixed(fixed)) => Vec::from(fixed_words(fixed)),
             HeapValue::Literal(ref literal) => {
                 let bits = match *literal {
                     Literal::Integer(ref integer) => integer_word(integer),

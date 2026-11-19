@@ -645,6 +645,157 @@ pub const INTEGER_HEADER: Word = Word(1_u64.wrapping_shl(ARITY_SHIFT));
 pub const BLOCK_OPERANDS: usize = ARITY_MASK;
 /// The bit of a block entry's operand B that says the block answers.
 pub const BLOCK_ANSWERS: usize = 1_usize.wrapping_shl(ARITY_SHIFT);
+/// Where a block entry's operand B holds the tag of the integer form that
+/// the block's answer takes: past the bit that says the block answers.
+pub const BLOCK_FORM_SHIFT: u32 = ARITY_SHIFT.wrapping_add(1);
+
+/// The form of a machine integer, which its header's tag carries.
+///
+/// Tag 0 is the integer that one word holds, and each width has one tag of
+/// its own. So a reader of the store tells a value of a width from an
+/// integer by the header alone, and the value needs no row of the literal
+/// table. The field of a width holds its two's complement at its own width,
+/// zero-extended to the word: the one image of each value.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum IntegerForm
+{
+    /// An integer that one word holds, in two's complement.
+    Integer,
+    /// A `u8`, zero-extended to the word.
+    U8,
+    /// A `u16`, zero-extended to the word.
+    U16,
+    /// A `u32`, zero-extended to the word.
+    U32,
+    /// A `u64`.
+    U64,
+    /// A `usize`, which is 64 bits on each target.
+    Usize,
+    /// An `i8`: its two's complement at 8 bits.
+    I8,
+    /// An `i16`: its two's complement at 16 bits.
+    I16,
+    /// An `i32`: its two's complement at 32 bits.
+    I32,
+    /// An `i64`.
+    I64,
+    /// An `isize`, which is 64 bits on each target.
+    Isize,
+}
+
+/// The integer forms, by their tag.
+const INTEGER_FORMS: [IntegerForm; 11] = [
+    IntegerForm::Integer,
+    IntegerForm::U8,
+    IntegerForm::U16,
+    IntegerForm::U32,
+    IntegerForm::U64,
+    IntegerForm::Usize,
+    IntegerForm::I8,
+    IntegerForm::I16,
+    IntegerForm::I32,
+    IntegerForm::I64,
+    IntegerForm::Isize,
+];
+
+impl From<IntegerForm> for Tag
+{
+    /// The tag of an integer form: its place in the table of the forms.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(form: IntegerForm) -> Self
+    {
+        Self(match form {
+            IntegerForm::Integer => 0,
+            IntegerForm::U8 => 1,
+            IntegerForm::U16 => 2,
+            IntegerForm::U32 => 3,
+            IntegerForm::U64 => 4,
+            IntegerForm::Usize => 5,
+            IntegerForm::I8 => 6,
+            IntegerForm::I16 => 7,
+            IntegerForm::I32 => 8,
+            IntegerForm::I64 => 9,
+            IntegerForm::Isize => 10,
+        })
+    }
+}
+
+impl TryFrom<Tag> for IntegerForm
+{
+    type Error = Tag;
+
+    /// The integer form that a machine integer's tag names.
+    ///
+    /// # Specification
+    /// - ensures: `Ok` exactly for a tag that [`Tag::from`] gives for a form,
+    ///   and that form; `Err` gives the tag back.
+    /// - executable: none — the table is the body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each form reads back from its own tag, and the first
+    ///   tag past the table is refused; a table out of the order of the tags
+    ///   changes one.
+    /// - witness: `tests::layout::each_integer_form_reads_back_from_its_tag_8002`
+    #[inline]
+    fn try_from(tag: Tag) -> Result<Self, Tag>
+    {
+        INTEGER_FORMS.get(usize::from(tag.0)).copied().ok_or(tag)
+    }
+}
+
+impl IntegerForm
+{
+    /// The header of a machine integer of this form: [`INTEGER_HEADER`] with
+    /// the form's tag.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn header(self) -> Word
+    {
+        Word(INTEGER_HEADER.0 | u64::from(Tag::from(self).0).wrapping_shl(TAG_SHIFT))
+    }
+
+    /// The bits of a block entry's operand B that ask for the block's answer
+    /// as a machine integer of this form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn answered(self) -> Word
+    {
+        Word::from(BLOCK_ANSWERS | usize::from(Tag::from(self).0).wrapping_shl(BLOCK_FORM_SHIFT))
+    }
+}
+
+/// The header of the machine integer that answers a block entry whose
+/// operand B is `operands`: [`INTEGER_HEADER`] with the tag that B holds.
+///
+/// # Specification
+/// - ensures: for B from [`IntegerForm::answered`], the header is that form's
+///   [`IntegerForm::header`].
+/// - executable: none — the masks are the body.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each form's entry answers a machine integer with that
+///   form's header, from the integer of tag 0 to the widest tag; a tag lost or
+///   shifted into the count changes one.
+/// - witness: `tests::machine::a_block_answers_in_the_form_its_entry_names_8002`
+#[inline]
+#[must_use]
+pub fn answer_header(operands: Word) -> Word
+{
+    let tag = Word::from(usize::from(operands).wrapping_shr(BLOCK_FORM_SHIFT) & TAG_MASK);
+    Word(INTEGER_HEADER.0 | tag.0.wrapping_shl(TAG_SHIFT))
+}
 
 /// Why a run returned to its entry.
 ///

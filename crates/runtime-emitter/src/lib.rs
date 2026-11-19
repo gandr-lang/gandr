@@ -199,6 +199,7 @@ mod run;
 mod seam;
 mod trace;
 mod transfer;
+pub mod widths;
 pub mod world;
 
 pub use gandr_runtime_stencils::Fuel;

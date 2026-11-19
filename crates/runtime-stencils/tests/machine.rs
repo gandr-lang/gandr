@@ -20,6 +20,7 @@ use gandr_runtime_stencils::COUNT_IMMORTAL;
 use gandr_runtime_stencils::Fuel;
 use gandr_runtime_stencils::INTEGER_HEADER;
 use gandr_runtime_stencils::Instruction;
+use gandr_runtime_stencils::IntegerForm;
 use gandr_runtime_stencils::Runtime;
 use gandr_runtime_stencils::Status;
 use gandr_runtime_stencils::StencilId;
@@ -236,4 +237,39 @@ fn a_block_that_answers_nothing_allocates_nothing()
         },
         exit
     );
+}
+
+/// A block entry that names an integer form answers a machine integer of
+/// that form: the header carries the form's tag, and the field is the sum.
+/// The forms run from the integer of tag 0 to the widest tag, so a tag lost,
+/// shifted into the count or into the bit that asks for the answer changes
+/// one header.
+#[test]
+fn a_block_answers_in_the_form_its_entry_names_8002()
+{
+    let block = mapped(&adding());
+    let (forty, two) = (integer(Word::from(40_i64)), integer(Word::from(2_i64)));
+    for form in [
+        IntegerForm::Integer,
+        IntegerForm::U8,
+        IntegerForm::U16,
+        IntegerForm::U32,
+        IntegerForm::U64,
+        IntegerForm::Usize,
+        IntegerForm::I8,
+        IntegerForm::I16,
+        IntegerForm::I32,
+        IntegerForm::I64,
+        IntegerForm::Isize,
+    ] {
+        let operands = Word::from(2 | usize::from(form.answered()));
+        let exit = run(block, operands, (&forty, &two), Words(3));
+        assert_eq!(Status::Halted, exit.status, "{form:?}");
+        assert_eq!(
+            Some([form.header(), Word::from(42_i64)]),
+            exit.object,
+            "{form:?}"
+        );
+    }
+    assert_eq!(INTEGER_HEADER, IntegerForm::Integer.header());
 }

@@ -9,6 +9,8 @@ use gandr_runtime_stencils::Arity;
 use gandr_runtime_stencils::Family;
 use gandr_runtime_stencils::FieldOverflow;
 use gandr_runtime_stencils::Header;
+use gandr_runtime_stencils::INTEGER_HEADER;
+use gandr_runtime_stencils::IntegerForm;
 use gandr_runtime_stencils::Kind;
 use gandr_runtime_stencils::StencilId;
 use gandr_runtime_stencils::Symbol;
@@ -53,6 +55,37 @@ fn the_header_fields_refuse_values_past_their_width()
         usize::try_from(Family::UNNAMED).is_err(),
         "an unnamed family has no position"
     );
+}
+
+/// Each integer form reads back from its own tag, through the header of a
+/// machine integer, and the first tag past the table is refused. The forms
+/// start at the integer of tag 0, which [`INTEGER_HEADER`] holds, so a
+/// table out of the order of the tags changes one.
+#[test]
+fn each_integer_form_reads_back_from_its_tag_8002()
+{
+    let forms = [
+        IntegerForm::Integer,
+        IntegerForm::U8,
+        IntegerForm::U16,
+        IntegerForm::U32,
+        IntegerForm::U64,
+        IntegerForm::Usize,
+        IntegerForm::I8,
+        IntegerForm::I16,
+        IntegerForm::I32,
+        IntegerForm::I64,
+        IntegerForm::Isize,
+    ];
+    for (place, form) in forms.into_iter().enumerate() {
+        let header = Header::from_word(form.header());
+        assert_eq!(Ok(Kind::Integer), header.kind(), "{form:?}: the kind");
+        assert_eq!(place, usize::from(header.tag()), "{form:?}: the tag");
+        assert_eq!(Ok(form), IntegerForm::try_from(header.tag()), "{form:?}");
+    }
+    assert_eq!(INTEGER_HEADER, IntegerForm::Integer.header());
+    let past = Tag::try_from(forms.len()).expect("a tag past the table");
+    assert_eq!(Err(past), IntegerForm::try_from(past));
 }
 
 /// Every kind with the widest tag, arity and family reads each field back,
