@@ -1,0 +1,124 @@
+#:tombi toml-version = "v1.0.0"
+
+# Every test finishes within 30 s, plain and with specifications enforced. A
+# test over the budget is split, sampled or made cheaper; no profile a gate
+# runs raises the budget for one. Locally (`default`) and in CI (`ci` and
+# `ci-enforcing`, on each pull request and merge-queue entry) a test past the
+# budget is marked slow and runs on, so a loaded host lengthens a gate and
+# never fails it (#3912), and a slow test never dequeues a pull request:
+# `mise run ci:slow-file` files it for triage (#3752). Only a test past
+# 5 minutes, a hang, is killed and fails the run.
+# `status-level = "pass"` keeps every test's elapsed time on the local run, and
+# the CI profile's JUnit report carries per-test durations, so timing outliers
+# stay visible without a separate instrumentation pass.
+[profile.default]
+status-level = "pass"
+final-status-level = "slow"
+failure-output = "immediate"
+slow-timeout = { period = "30s", terminate-after = 10 }
+
+# The sweeps that are wide by design reserve every thread of the run. Each
+# one asks for `Width::Reserved` in its own body and takes the host's width,
+# so nextest runs no other test beside it. nextest passes no
+# `threads-required` to a test, so the test states its width itself, and
+# `check:reserved-width` holds this filter and those tests equal (#7539). An
+# override of the default profile holds in every profile.
+[[profile.default.overrides]]
+filter = "test(=editor::scenarios::sweeps::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful) or test(=editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault) or test(=editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful)"
+threads-required = "num-test-threads"
+
+# The arm64 runner runs four tests at once in 16.7 GB. The dispatcher's
+# corpus walks need no group of their own since #4869 (#4854): a walk holds
+# 1.1 GB, and the shard peaks at 4.3 GB on a local four-thread run (#4874).
+[profile.ci]
+status-level = "slow"
+final-status-level = "slow"
+failure-output = "immediate-final"
+fail-fast = false
+slow-timeout = { period = "30s", terminate-after = 10 }
+
+[profile.ci.junit]
+path = "junit.xml"
+
+# Nextest stores reports by profile, independently of Cargo's target directory.
+# Separate names prevent the enforcing pass from overwriting the plain report.
+[profile.ci-enforcing]
+inherits = "ci"
+
+# The riscv64 lane runs the tests from an archive that an x86-64 runner
+# builds (`nightly-riscv64-tests.yml`). The driver runs itself, not the default toolchain,
+# when its directory holds Cargo's `.cargo-lock` (#4510). So the archive
+# carries that file, and the extracted directory is a profile directory, as
+# the build's directory is.
+[profile.riscv64]
+inherits = "ci"
+
+[profile.riscv64.archive]
+include = [
+  { path = "riscv64gc-unknown-linux-gnu/debug/.cargo-lock", relative-to = "target", on-missing = "error" },
+]
+
+# The sweeps whole. A sweep drives the whole corpus through one feature and
+# sits in a `sweeps` module, which is all this filter names: a new sweep joins
+# by where it is written. Under every other profile but `nightly` a sweep
+# visits its stated sample, so it never leaves the pull-request lanes; under
+# this one it visits every source (`gandr-workflow-sweep` reads the profile's
+# name) and prints what it counts — the hover coverage by node kind, the
+# read-back census by class — as a report, held to no ceiling (#467). This
+# profile is the local whole run and the records' rewrite (`mise run
+# ci:recovery`); its limit is a slow local machine's.
+[profile.sweeps]
+default-filter = "test(/(^|::)sweeps::/)"
+status-level = "pass"
+final-status-level = "slow"
+failure-output = "immediate-final"
+fail-fast = false
+slow-timeout = { period = "60s", terminate-after = 20 }
+
+# The nightly run (`mise run ci:sweeps-nightly`), held to fifteen minutes
+# summed over the whole workflow, twenty at the most, the sweeps job to its
+# 504 s share, its 458 s in nightly 40667395217 scaled by 900/818 (#3013).
+# A sweep too costly to visit the whole corpus inside its
+# share rotates (`gandr-workflow-sweep`'s rotation), each over the nights it
+# states beside its sample, sized from the nightly's timings: the sweeps share
+# one count, seven, and a sweep whose night would pass half the share's test
+# wall takes its own, so the typing cuts every source into 136 parts, the
+# table sweep visits a fourteenth, the hovers at every position rotate over
+# seventeen and the token drops over twenty-six. The six cheapest sweeps
+# visit the corpus whole.
+# nextest does not inherit a default filter, so the profile states it again.
+# The limit is the slowest sweep's share of the budget: a sweep's night is
+# sized to at most 170 s. A sweep that outgrows it ends there and passes
+# (`on-timeout = "pass"`, nextest's `TIMEOUT-PASS`), so a timeout never turns
+# the night red (#3975): the night's reports job reads this profile's JUnit
+# report and files the sweep on its own collector (`mise run ci:slow-file`,
+# 240 s its budget). A failed assertion still fails the night.
+[profile.nightly]
+inherits = "sweeps"
+default-filter = "test(/(^|::)sweeps::/)"
+slow-timeout = { period = "60s", terminate-after = 4, on-timeout = "pass" }
+
+[profile.nightly.junit]
+path = "junit.xml"
+
+# The instrumented enforcing run is a report, never a gate, and instrumentation
+# multiplies the specification cost several times over, so its limit is its
+# own: ten minutes, which the first hosted measurement's slowest test needed.
+# The sweeps run their samples here, as in every pull-request lane.
+[profile.coverage]
+inherits = "ci-enforcing"
+slow-timeout = { period = "60s", terminate-after = 10 }
+
+# A sweep that reaches the coverage limit ends there and passes, so the upload
+# still runs (#3975); `report-coverage.yml` files it as the nightly does.
+[[profile.coverage.overrides]]
+filter = "test(/(^|::)sweeps::/)"
+slow-timeout = { period = "60s", terminate-after = 10, on-timeout = "pass" }
+
+# A witnessed mutation run (`mise run mutants:witnessed`). A witness the
+# default profile ends at five minutes fails, and a failed witness reads its
+# mutant caught, so on a loaded machine a slow witness would catch what it
+# misses. Nothing is ended here: cargo-mutants' own `--timeout` bounds each
+# mutant and reads an overrun as a timeout. The sweeps run their samples.
+[profile.mutants]
+slow-timeout = { period = "60s" }
