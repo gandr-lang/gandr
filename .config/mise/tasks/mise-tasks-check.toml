@@ -2338,10 +2338,11 @@ echo "positions check OK: $structs structs, each with its row; rows: $kept kept,
 
 # The sharing ledger holds a row in `shared` for every shared field. A shared
 # field is a field whose type holds an `Arc`, or a `Shared` or a `ThinShared`
-# of `gandr-kernel-data`. The type can hold it alone or in an `Option`, a
-# `Maybe`, a `Vec` or a `SmallVec`. The field is in a struct or an enum of a
-# kernel crate, or of the fork crate outside its tests. Every row names such a
-# field.
+# of `gandr-kernel-data`, or an alias of one. The type can hold it alone or in
+# an `Option`, a `Maybe`, a `Vec` or a `SmallVec`. An alias is a `type`
+# declaration of the read sources whose right side holds such a pointer in the
+# same way. The field is in a struct or an enum of a kernel crate, or of the
+# fork crate outside its tests. Every row names such a field.
 # - see: #7339, `ledger/shared.sql`
 #
 # A freeze, a fork or a hand-on clones such a field by a count. So the row
@@ -2375,15 +2376,22 @@ if ! cmp -s "$fresh/shared.sql" ledger/shared.sql; then
   failed=1
 fi
 visibility='(pub(\([a-z]+\))?\s+)?'
-holds='((Option|Maybe|Vec|alloc::vec::Vec|SmallVec)<)?((alloc::sync::|std::sync::|core::sync::)?Arc|(gandr_kernel_data::)?(Shared|ThinShared))<'
+containers='((Option|Maybe|Vec|alloc::vec::Vec|SmallVec)<)?'
+pointer='((alloc::sync::|std::sync::|core::sync::)?Arc|(gandr_kernel_data::)?(Shared|ThinShared))<'
+sources=(':(glob)crates/kernel-*/src/**' ':(glob)crates/core-fork/src/**'
+  ':(exclude,glob)crates/*/src/**/tests.rs' ':(exclude,glob)crates/*/src/**/*_tests.rs' ':(exclude,glob)crates/*/src/**/tests/**')
+alias="^\s*${visibility}type\s+[A-Z]\w*(<[^>]*>)?\s*=\s*${containers}${pointer}"
+# Each alias of a shared pointer, so that a field of the alias is read too.
+aliases=$(git grep -h -I -o -P "^\s*${visibility}type\s+\K[A-Z]\w*(?=(<[^>]*>)?\s*=\s*${containers}${pointer})" -- "${sources[@]}" \
+  | sort -u | paste -sd '|' || true)
+holds="${containers}(${pointer}${aliases:+|(\w+::)*(${aliases})\b(?!::)})"
 field="^\s*${visibility}[a-z_][a-z0-9_]*:\s*${holds}"
 tuple="^\s*([A-Z]\w*|${visibility}struct\s+[A-Z]\w*(<[^>]*>)?)\(${visibility}${holds}"
 opener="^\s*${visibility}(struct|enum|union)\s+[A-Z]"
 function="^\s*${visibility}(const\s+)?(async\s+)?(unsafe\s+)?fn\s+\w+"
 test_cfg='^\s*#\[cfg\((all\()?test\b'
 module="^\s*${visibility}mod\s+\w+\s*(\{.*)?$"
-git grep -n -I -P -e "$field" -e "$tuple" -e "$opener" -e "$function" -e "$test_cfg" -e "$module" -- ':(glob)crates/kernel-*/src/**' ':(glob)crates/core-fork/src/**' \
-  ':(exclude,glob)crates/*/src/**/tests.rs' ':(exclude,glob)crates/*/src/**/*_tests.rs' ':(exclude,glob)crates/*/src/**/tests/**' \
+git grep -n -I -P -e "$field" -e "$tuple" -e "$alias" -e "$opener" -e "$function" -e "$test_cfg" -e "$module" -- "${sources[@]}" \
   | jq -R -s 'split("\n")' | jq -r -f .config/shared/hits.jq > "$fresh/hits.tsv"
 git grep -I -o -P "^\s*${visibility}(struct|enum|union|type|const|static)\s+\K[A-Z]\w*" -- ':(glob)crates/*/src/**' \
   | tr ':' '\t' > "$fresh/declared.tsv"

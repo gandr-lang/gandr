@@ -75,6 +75,33 @@
     "output": "crates/kernel-core/src/environment.rs\tNames.shared"
   },
   {
+    "name": "a field whose type is an alias of a shared pointer is a hit, alone, behind a path or in an Option, and the alias's line closes the type before it",
+    "input": [
+      "crates/kernel-core-base/src/fork.rs:198:pub type ForkHandle = alloc::sync::Arc<dyn ObligationFork + Send>;",
+      "crates/kernel-core-base/src/fork.rs:208:pub struct SharedFork(Option<ForkHandle>);",
+      "crates/kernel-core-base/src/verdict.rs:1300:pub struct Earlier",
+      "crates/kernel-core-base/src/verdict.rs:1318:pub type SourceHandle = alloc::sync::Arc<dyn VerdictSource>;",
+      "crates/kernel-core-base/src/verdict.rs:1345:pub struct Verdicts",
+      "crates/kernel-core-base/src/verdict.rs:1350:    source: Option<SourceHandle>,",
+      "crates/kernel-check-memo/src/overlay.rs:176:struct Frozen<Support, Outcome>",
+      "crates/kernel-check-memo/src/overlay.rs:186:    fork: crate::fork::ForkHandle,",
+      ""
+    ],
+    "output": "crates/kernel-check-memo/src/overlay.rs\tFrozen.fork\ncrates/kernel-core-base/src/fork.rs\tSharedFork.0\ncrates/kernel-core-base/src/verdict.rs\tVerdicts.source"
+  },
+  {
+    "name": "an alias of another type is no alias of a pointer, and a name that only starts with an alias's name is no field of it",
+    "input": [
+      "crates/kernel-core-base/src/fork.rs:198:pub type ForkHandle = alloc::sync::Arc<dyn ObligationFork + Send>;",
+      "crates/kernel-core-base/src/fork.rs:199:pub type ForkWidth = core::num::NonZeroUsize;",
+      "crates/kernel-core-base/src/fork.rs:208:pub struct Forking",
+      "crates/kernel-core-base/src/fork.rs:210:    width: Option<ForkWidth>,",
+      "crates/kernel-core-base/src/fork.rs:211:    handles: ForkHandles,",
+      ""
+    ],
+    "output": ""
+  },
+  {
     "name": "no line gives no hit",
     "input": [],
     "output": ""
