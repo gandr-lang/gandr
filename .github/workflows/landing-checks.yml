@@ -1819,6 +1819,13 @@ jobs:
         id: policy-rest
         if: ${{ github.event_name == 'merge_group' && env.GATE_SCOPE != '' && env.GATE_SCOPE != '--workspace' && steps.verdict.outputs.held != 'true' }}
         run: env -u GATE_SCOPE mise run check:dylint
+      # The reader of a Rust crate links rustc's own libraries, so it is no
+      # member of the workspace, and the lint above never reaches it. This
+      # job holds the pinned toolchain, so the reader builds and its tests
+      # read real crates here.
+      - name: check the reader of a Rust crate
+        if: ${{ steps.verdict.outputs.held != 'true' }}
+        run: mise run check:rust-record
       # The specification gates run from the gate binary installed at the
       # policy's metadata revision: the invocation state and the enforcing
       # requirement. The enforcing test lane resolves adequacy witnesses.
