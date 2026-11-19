@@ -186,6 +186,8 @@
     {"exemplar":"../corpus/ledger/attributes/deprecated.gandr","name":"deprecated","payload":{"fields":["since","note"],"schema":"marker_or_record"},"reads":"no payload or a record of the texts `since`, `note`"},
     {"exemplar":"../corpus/ledger/attributes/boundary.gandr","name":"boundary","payload":{"schema":"names"},"reads":"a declared name or a tuple of declared names"},
     {"exemplar":"../corpus/ledger/attributes/builtin.gandr","name":"builtin","payload":{"schema":"text"},"reads":"a text payload"},
+    {"exemplar":"../corpus/ledger/attributes/thir.gandr","name":"thir","payload":{"schema":"texts"},"reads":"a text or a tuple of texts"},
+    {"exemplar":"../corpus/ledger/attributes/item.gandr","name":"item","payload":{"schema":"texts"},"reads":"a text or a tuple of texts"},
     {"exemplar":"../corpus/ledger/attributes/inert.gandr","name":"inert","payload":{"schema":"marker"},"reads":"no payload"}
   ],
   "menus": [

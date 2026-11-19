@@ -62,6 +62,7 @@ use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::NodeKey;
 use quenchant_shape::shape::Maybe;
 
+use crate::error::StagedFault;
 use crate::resolve::SurfaceName;
 
 /// A source's position in its unit, which is the order the unit admits its
@@ -240,8 +241,8 @@ pub enum ImportTarget
 }
 
 /// One source of a unit: where its text starts, what its imports resolved
-/// to, the `std` module it is, when it is one, and the name its caller gives
-/// it.
+/// to, what each of its `thir` marks staged, the `std` module it is, when it
+/// is one, and the name its caller gives it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UnitSource
 {
@@ -251,6 +252,9 @@ pub struct UnitSource
     /// the source writes them; an import whose address has a scheme takes no
     /// entry.
     imports: Vec<ImportTarget>,
+    /// What the caller read for each `thir` mark of the source: a Rust
+    /// function's staged body, or why it read none.
+    staged: Vec<Staged>,
     /// The module path of the standard library's source this source is,
     /// `std.io`: the module whose host interfaces it names without importing
     /// it (#4523).
@@ -260,6 +264,164 @@ pub struct UnitSource
     /// source's items from another source's items of the same name, in every
     /// unit that lays the source (#6522).
     name: Option<Arc<str>>,
+}
+
+/// What the caller read for one `thir` mark: the Rust file and the function
+/// that the mark names, and the function's staging.
+///
+/// The lowering lowers no file and runs no process. So the caller reads each
+/// mark's file through the reader of a Rust crate before the lowering runs,
+/// as it resolves each import's path.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Staged
+{
+    /// The Rust file, as the mark writes it.
+    pub file: Arc<str>,
+    /// The function's path inside its crate, as the mark writes it.
+    pub function: gandr_runtime_rust_record::FunctionPath,
+    /// The function's staging, or why the caller read none.
+    pub staging: Result<gandr_runtime_rust_record::Staging, Unstaged>,
+}
+
+/// Why the caller read no staging for a `thir` mark.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Unstaged
+{
+    /// The host holds no reader of a Rust crate for the pinned toolchain.
+    NoReader,
+    /// The reader read no record: its cause, as the cache states it.
+    Unread(Arc<str>),
+    /// The record refuses the function: its cause, as the record states it.
+    Refused(Arc<str>),
+}
+
+/// The place of a `thir` mark among the marks of its source, the first
+/// mark at zero.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MarkIndex(usize);
+
+impl From<usize> for MarkIndex
+{
+    /// The mark at `place`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(place: usize) -> Self
+    {
+        Self(place)
+    }
+}
+
+impl From<MarkIndex> for usize
+{
+    /// The place of `index`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: MarkIndex) -> Self
+    {
+        index.0
+    }
+}
+
+/// What a staged-body fault names, read from the marks of its source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StagedName<'marks>
+{
+    /// A node of THIR outside the fragment, by rustc's name of its kind.
+    Node(&'marks gandr_runtime_rust_record::NodeName),
+    /// The path of a callee: a call outside the request, or a call that no
+    /// text of the item mark states.
+    Callee(&'marks str),
+    /// A body past the most nodes that a staged body holds.
+    Large,
+    /// Why the caller read no staging.
+    Cause(&'marks Unstaged),
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a staged-body fault names nothing.
+    pub mod staged_name {
+        /// The reason no name is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The fault names no mark.
+            Unnamed,
+            /// The fault's mark stands past the marks of its source.
+            NoMark,
+            /// The mark's answer is not of the fault's kind.
+            Unmatched,
+            /// The fault's node stands past the body, or is no call.
+            NoNode,
+        }
+    }
+}
+
+/// What `fault` names, read from `marks`, the marks of its source.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for [`StagedFault::Unread`], the mark's cause; for
+///   [`StagedFault::Outside`], the node, the callee or the ceiling of the
+///   mark's staging; for [`StagedFault::Unmapped`], the callee of the call node
+///   at its place. Otherwise, or with no such mark or node, an absence with its
+///   reason.
+/// - panics: none.
+/// - executable: none — the name borrows from the marks, and a predicate would
+///   repeat the match that computes it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each fault that names a mark gives its name, and an index
+///   past the marks gives its absence.
+/// - witness: `unit::tests::each_staged_fault_reads_its_name_from_its_mark`
+#[inline]
+pub fn staged_name(
+    marks: &[Staged],
+    fault: StagedFault,
+) -> Maybe<StagedName<'_>, staged_name::Absent>
+{
+    use gandr_runtime_rust_record::Node;
+    use gandr_runtime_rust_record::Outside;
+    use gandr_runtime_rust_record::Staging;
+    let mark = match fault {
+        StagedFault::Unread(mark)
+        | StagedFault::Outside(mark)
+        | StagedFault::Unmapped { mark, .. } => mark,
+        StagedFault::Bodied
+        | StagedFault::NoReader
+        | StagedFault::Unanswered
+        | StagedFault::NotExpr
+        | StagedFault::ItemMark => return Maybe::Absent(staged_name::Absent::Unnamed),
+    };
+    let Some(staged) = marks.get(usize::from(mark))
+    else {
+        return Maybe::Absent(staged_name::Absent::NoMark);
+    };
+    match (fault, &staged.staging) {
+        (StagedFault::Unread(_), &Err(ref unstaged)) => Maybe::Present(StagedName::Cause(unstaged)),
+        (StagedFault::Outside(_), &Ok(Staging::Outside(Outside::Node(ref name)))) => {
+            Maybe::Present(StagedName::Node(name))
+        },
+        (StagedFault::Outside(_), &Ok(Staging::Outside(Outside::Callee(ref path)))) => {
+            Maybe::Present(StagedName::Callee(path.as_ref()))
+        },
+        (StagedFault::Outside(_), &Ok(Staging::Outside(Outside::Large))) => {
+            Maybe::Present(StagedName::Large)
+        },
+        (StagedFault::Unmapped { node, .. }, &Ok(Staging::Staged(ref body))) => {
+            let place = usize::try_from(u32::from(node)).ok();
+            match place.and_then(|place| body.nodes.get(place)) {
+                Some(&Node::Call { ref callee, .. }) => {
+                    Maybe::Present(StagedName::Callee(callee.as_ref()))
+                },
+                Some(_) | None => Maybe::Absent(staged_name::Absent::NoNode),
+            }
+        },
+        _ => Maybe::Absent(staged_name::Absent::Unmatched),
+    }
 }
 
 quenchant_shape::reason_enum! {
@@ -305,15 +467,44 @@ impl UnitSource
         Self {
             start,
             imports,
+            staged: Vec::new(),
             home: None,
             name: None,
         }
+    }
+
+    /// The source, with `staged` read for its `thir` marks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn staged(
+        self,
+        staged: Vec<Staged>,
+    ) -> Self
+    {
+        Self { staged, ..self }
+    }
+
+    /// What the caller read for each `thir` mark, laid by [`Self::staged`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn marks(&self) -> &[Staged]
+    {
+        &self.staged
     }
 
     /// The source, laid as the standard library's module `module`.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the module's name, setup
     #[inline]
     #[must_use]
     pub fn homed(
@@ -331,6 +522,9 @@ impl UnitSource
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the source's name, setup
     #[inline]
     #[must_use]
     pub fn named(
@@ -897,5 +1091,98 @@ mod tests
             "the closure before the importer keeps the prelude"
         );
         assert_eq!(Unit::single().before_last(), Err(UnitFault::Empty));
+    }
+
+    #[test]
+    fn each_staged_fault_reads_its_name_from_its_mark()
+    {
+        use gandr_runtime_rust_record::Body;
+        use gandr_runtime_rust_record::Node;
+        use gandr_runtime_rust_record::NodeIndex;
+        use gandr_runtime_rust_record::NodeName;
+        use gandr_runtime_rust_record::Outside;
+        use gandr_runtime_rust_record::Staging;
+        use quenchant_shape::shape::Maybe;
+
+        use super::MarkIndex;
+        use super::Staged;
+        use super::StagedName;
+        use super::Unstaged;
+        use super::staged_name;
+        use crate::error::StagedFault;
+
+        let mark = |staging| Staged {
+            file: "example.rs".into(),
+            function: "example".into(),
+            staging,
+        };
+        let marks = [
+            mark(Err(Unstaged::Unread("the crate does not build".into()))),
+            mark(Ok(Staging::Outside(Outside::Node("Binary".into())))),
+            mark(Ok(Staging::Outside(Outside::Callee("helper".into())))),
+            mark(Ok(Staging::Outside(Outside::Large))),
+            mark(Ok(Staging::Staged(Body {
+                nodes: Vec::from([Node::Parameter, Node::Call {
+                    callee: "identity".into(),
+                    argument: NodeIndex::from(0_u32),
+                }]),
+            }))),
+        ];
+        let unread = Unstaged::Unread("the crate does not build".into());
+        let binary = NodeName::from("Binary");
+        let at = |place: usize| MarkIndex::from(place);
+        let unmapped = |node: u32| StagedFault::Unmapped {
+            mark: at(4),
+            node: NodeIndex::from(node),
+        };
+        for (fault, named) in [
+            (
+                StagedFault::Unread(at(0)),
+                Maybe::Present(StagedName::Cause(&unread)),
+            ),
+            (
+                StagedFault::Outside(at(1)),
+                Maybe::Present(StagedName::Node(&binary)),
+            ),
+            (
+                StagedFault::Outside(at(2)),
+                Maybe::Present(StagedName::Callee("helper")),
+            ),
+            (
+                StagedFault::Outside(at(3)),
+                Maybe::Present(StagedName::Large),
+            ),
+            (unmapped(1), Maybe::Present(StagedName::Callee("identity"))),
+            (
+                unmapped(0),
+                Maybe::Absent(super::staged_name::Absent::NoNode),
+            ),
+            (
+                unmapped(2),
+                Maybe::Absent(super::staged_name::Absent::NoNode),
+            ),
+            (
+                StagedFault::Outside(at(5)),
+                Maybe::Absent(super::staged_name::Absent::NoMark),
+            ),
+            (
+                StagedFault::Unread(at(1)),
+                Maybe::Absent(super::staged_name::Absent::Unmatched),
+            ),
+            (
+                StagedFault::Outside(at(0)),
+                Maybe::Absent(super::staged_name::Absent::Unmatched),
+            ),
+            (
+                StagedFault::Bodied,
+                Maybe::Absent(super::staged_name::Absent::Unnamed),
+            ),
+            (
+                StagedFault::ItemMark,
+                Maybe::Absent(super::staged_name::Absent::Unnamed),
+            ),
+        ] {
+            assert_eq!(staged_name(&marks, fault), named, "{fault:?}");
+        }
     }
 }

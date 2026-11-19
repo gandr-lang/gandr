@@ -55,9 +55,12 @@ self_cell.workspace = true
 # e-graph suite closes each corpus block under congruence. The base crate's
 # `fixture` feature gives the tests its parsed and hand-built trees. A module
 # case reads a record type's faces as finite Stone duality's orders.
+#
+# A staged case lays the records of Rust functions that a `thir` mark names.
 [dev-dependencies]
 gandr-core-checker.workspace = true
 gandr-kernel-core.workspace = true
+gandr-runtime-rust-record.workspace = true
 gandr-surface-lowering-base = { workspace = true, features = ["fixture"] }
 gandr-surface-parser.workspace = true
 gandr-theory-discrete-morse.workspace = true

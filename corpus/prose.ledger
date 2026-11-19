@@ -2437,6 +2437,8 @@ corpus/surface/typed-bind.gandr STE-6.4 7ffeb0f63edb2700
 corpus/surface/typed-bind.gandr STE-6.5 f2786d197cd49fb9
 corpus/surface/unit-pattern.gandr STE-9.3 1e5a0fa8f008c9f8
 corpus/surface/unit-pattern.gandr STE-6.4 7ffeb0f63edb2700
+crates/runtime-rust-reader/tests/corpus/thir/example.gandr STE-3.2 1c678696471ba75f
+crates/runtime-rust-reader/tests/corpus/thir/example.gandr STE-3.2 200db78bced9f276
 crates/surface-corpus/tests/comments/judge/fixtures/tile-members.gandr STE-9.3 9804a5271eec37cb
 crates/surface-format/tests/unformatted/members.gandr STE-3.5 85901dfc0d83fdff
 crates/surface-lowering-base/src/prelude.gandr STE-3.6 37115528dc68192c

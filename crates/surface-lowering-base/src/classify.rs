@@ -243,6 +243,7 @@ impl LoweringRefusal<'_>
             | Self::UnresolvedName { .. }
             | Self::RetiredName { .. }
             | Self::BuiltinMark { .. }
+            | Self::StagedBody { .. }
             | Self::UnresolvedDocLink { .. }
             | Self::UnresolvedTypeHead { .. }
             | Self::DuplicateSignature { .. }
@@ -326,6 +327,7 @@ impl LoweringRefusal<'_>
             Self::UnresolvedName { .. }
             | Self::RetiredName { .. }
             | Self::BuiltinMark { .. }
+            | Self::StagedBody { .. }
             | Self::UnresolvedDocLink { .. }
             | Self::UnresolvedTypeHead { .. }
             | Self::DuplicateSignature { .. }

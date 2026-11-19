@@ -73,6 +73,7 @@ use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
 use gandr_surface_lowering::Repair;
+use gandr_surface_lowering::StagedFault;
 use gandr_surface_lowering::Unexported;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::GroutShape;
@@ -288,6 +289,16 @@ fn lowered(
             },
             BuiltinFault::TypeDiffers => "the declared type is not the type of the builtin row",
             BuiltinFault::Repeated => "an earlier declaration holds this builtin row",
+        }),
+        LoweringRefusal::StagedBody { fault, .. } => f.write_str(match fault {
+            StagedFault::Bodied => "a staged signature has a body",
+            StagedFault::NoReader => "no reader of a Rust crate is installed",
+            StagedFault::Unanswered => "no staged answer matches the `thir` mark's file and function",
+            StagedFault::Unread(_) => "the reader gives no body for the function",
+            StagedFault::Outside(_) => "the staged body is outside the fragment",
+            StagedFault::NotExpr => "the type of a staged signature is no `Expr` of an item type",
+            StagedFault::Unmapped { .. } => "a staged call names a path that the item mark does not state",
+            StagedFault::ItemMark => "a text of the item mark names no path and constructor of the type",
         }),
         LoweringRefusal::UnresolvedDocLink { name, .. } => {
             write!(

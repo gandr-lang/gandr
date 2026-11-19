@@ -56,6 +56,7 @@ use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::InferredExit;
 use gandr_surface_lowering::InferredRun;
 use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::Staged;
 use gandr_surface_lowering::desc_cells::CellDiagnostic;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
 use gandr_surface_pretty::Spelling;
@@ -132,6 +133,9 @@ impl Line<'_>
     ///   names bytes inside its own file.
     /// - witness: `tests::entry::each_verb_prints_its_entries`
     /// - witness: `tests::entry::an_importer_s_ledger_line_names_its_own_bytes`
+    ///
+    /// # Cost
+    /// - allocation: the ledger line and its diagnostic, diagnostic
     #[spec(ensures: |ref ret| ret.severity == Severity::Ledger)]
     fn diagnostic(
         self,
@@ -167,7 +171,7 @@ impl Line<'_>
                 Maybe::Absent(report_span::Absent::Standing),
             ),
         };
-        diagnose(path, text, Subject::Ledger { line: &line, at })
+        diagnose(path, text, &[], Subject::Ledger { line: &line, at })
     }
 }
 
@@ -285,6 +289,9 @@ pub struct Entries<'step, E>
     text: SourceText<'step>,
     /// Where the source's own text starts in `text`.
     start: SourceStart,
+    /// What the source's `thir` marks staged, which a refusal of a staged
+    /// body reads its name from.
+    marks: &'step [Staged],
     /// The verb the walk runs under.
     verb: Verb,
     /// Where each lint reports its findings.
@@ -357,11 +364,12 @@ pub fn entries<'step, E>(
     verb: Verb,
 ) -> Entries<'step, E>
 {
-    let (path, text, base, cursor) = match *step {
+    let (path, text, base, marks, cursor) = match *step {
         Step::Fault { path, .. } => (
             path,
             SourceText::from(""),
             ByteOffset::from(0_usize),
+            [].as_slice(),
             Cursor::Done,
         ),
         Step::Source {
@@ -371,12 +379,22 @@ pub fn entries<'step, E>(
             ref composed,
             standing,
             ..
-        } => (path, text, base, cursor(verb, standing, composed)),
+        } => (
+            path,
+            text,
+            base,
+            match *composed {
+                Composed::Settled { ref marks, .. } => marks.as_slice(),
+                Composed::Refused(_) => [].as_slice(),
+            },
+            cursor(verb, standing, composed),
+        ),
     };
     Entries {
         path,
         text,
         start: SourceStart::of(text, base),
+        marks,
         verb,
         lints: Lints::default(),
         refusals: Refusals::Unsettling,
@@ -1106,6 +1124,9 @@ where
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the diagnostic and the repair that it checks, diagnostic
     fn build(
         &mut self,
         printed: Printed<'_>,
@@ -1114,7 +1135,7 @@ where
         match printed {
             Printed::Line(line) => line.diagnostic(self.path, self.text, self.start),
             Printed::Subject(subject) => {
-                let mut diagnostic = diagnose(self.path, self.text, subject);
+                let mut diagnostic = diagnose(self.path, self.text, self.marks, subject);
                 if let Subject::Refused { declaration, .. } = subject
                     && let Maybe::Present(ref named) = diagnostic.repair
                     && self.repairs == Repairs::Checked
@@ -1233,6 +1254,9 @@ where
     /// - witness: `tests::entry::counted_declarations_preserve_visible_order_and_exhaustion`
     /// - witness: `tests::entry::faults_and_empty_sources_stay_exhausted`
     /// - witness: `tests::entry::an_inferred_exit_is_reported_where_a_lint_reaches`
+    ///
+    /// # Cost
+    /// - allocation: the next diagnostic, diagnostic
     #[spec(
         captures: [before = match self.cursor {
             Cursor::Done => 0_usize,
@@ -1280,6 +1304,9 @@ where
     /// - witness: `tests::entry::each_verb_prints_its_entries`
     /// - witness: `tests::entry::an_inferred_exit_is_reported_where_a_lint_reaches`
     /// - witness: `tests::entry::an_inferred_run_is_reported_where_a_lint_reaches`
+    ///
+    /// # Cost
+    /// - allocation: the diagnostic of the entry reached, diagnostic
     #[spec(ensures: |ref ret| ret.as_ref().is_none_or(|diagnostic| diagnostic.path.as_path() == self.path))]
     fn reached(&mut self) -> Option<Diagnostic>
     {
@@ -1288,9 +1315,12 @@ where
             Cursor::Last(Last::Line(refusal)) => {
                 Some(Line::Pending(refusal).diagnostic(self.path, self.text, self.start))
             },
-            Cursor::Last(Last::Source(refusal)) => {
-                Some(diagnose(self.path, self.text, Subject::Source(refusal)))
-            },
+            Cursor::Last(Last::Source(refusal)) => Some(diagnose(
+                self.path,
+                self.text,
+                &[],
+                Subject::Source(refusal),
+            )),
             Cursor::Lowered(held) => {
                 self.cursor = Cursor::Declarations(held);
                 Some(Line::Lowered.diagnostic(self.path, self.text, self.start))
@@ -1303,7 +1333,12 @@ where
             Cursor::Declarations(mut held) => {
                 if let Some(warned) = held.shadowed.next() {
                     self.cursor = Cursor::Declarations(held);
-                    return Some(diagnose(self.path, self.text, Subject::Shadowed(warned)));
+                    return Some(diagnose(
+                        self.path,
+                        self.text,
+                        self.marks,
+                        Subject::Shadowed(warned),
+                    ));
                 }
                 while let Some(inferred) = held.inferred.next() {
                     if inferred.explicitness == Explicitness::Asked
@@ -1313,6 +1348,7 @@ where
                         return Some(diagnose(
                             self.path,
                             self.text,
+                            self.marks,
                             Subject::InferredExit(inferred),
                         ));
                     }
@@ -1328,13 +1364,19 @@ where
                         return Some(diagnose(
                             self.path,
                             self.text,
+                            self.marks,
                             Subject::InferredRun(inferred),
                         ));
                     }
                 }
                 if let Some(used) = held.deprecated.next() {
                     self.cursor = Cursor::Declarations(held);
-                    return Some(diagnose(self.path, self.text, Subject::Deprecated(used)));
+                    return Some(diagnose(
+                        self.path,
+                        self.text,
+                        self.marks,
+                        Subject::Deprecated(used),
+                    ));
                 }
                 let verb = self.verb;
                 while held.leading > 0 {

@@ -79,6 +79,7 @@
 //! let diagnostic = diagnose(
 //!     std::path::Path::new("broken.gandr"),
 //!     text,
+//!     &[],
 //!     Subject::Source(LoweringRefusal::UnresolvedName {
 //!         span,
 //!         name: "missing".into(),

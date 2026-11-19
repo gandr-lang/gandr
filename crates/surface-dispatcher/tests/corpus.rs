@@ -3061,6 +3061,7 @@ mod sweeps
         gandr_surface_diagnostics::diagnose(
             path,
             text,
+            &[],
             gandr_surface_diagnostics::Subject::Refused {
                 declaration,
                 refusal,

@@ -192,6 +192,7 @@ mod script;
 mod stage;
 mod stored;
 mod strata;
+mod thir;
 mod tier;
 mod typed;
 #[cfg(feature = "unfolding-probe")]
@@ -496,6 +497,8 @@ pub use crate::strata::StoredStrata;
 pub use crate::strata::StrataTally;
 pub use crate::strata::install_stratum_store;
 pub use crate::strata::strata_tally;
+pub use crate::thir::Stager;
+pub use crate::thir::install_stager;
 pub use crate::tier::AdmittedTally;
 pub use crate::tier::Admitting;
 pub use crate::tier::admitted_tally;

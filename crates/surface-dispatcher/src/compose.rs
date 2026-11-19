@@ -277,6 +277,7 @@ use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::Resolution;
 use gandr_surface_lowering::Role;
 use gandr_surface_lowering::Sealing;
+use gandr_surface_lowering::Staged;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::coincide::Decisions;
 use gandr_surface_lowering::desc_cells::CellDiagnostic;
@@ -509,6 +510,9 @@ pub enum Composed<'source>
         /// part, in source order: the cell diagnostic that holds the pair,
         /// which a refused declaration's obstruction borrows.
         parted: Vec<CellDiagnostic>,
+        /// What the source's `thir` marks staged, in the order written: what
+        /// a refusal of a staged body reads its name from.
+        marks: Vec<Staged>,
         /// Every binder a lambda or a bind opens, written in a declaration
         /// the checker accepted, that no variable reads, ascending: each a
         /// hint the editor fades. An unused consumable capability is the
@@ -642,6 +646,7 @@ impl Composed<'_>
                 runs,
                 deprecated,
                 parted,
+                marks,
                 unused,
                 unreached,
                 program,
@@ -661,6 +666,7 @@ impl Composed<'_>
                     runs,
                     deprecated,
                     parted,
+                    marks,
                     unused,
                     unreached,
                     kernel: Maybe::Present(kernel),
@@ -3483,6 +3489,8 @@ struct Share<'source>
     deprecated: Vec<DeprecatedUse<'source>>,
     /// Its refusals of a block's rules for a critical pair whose sides part.
     parted: Vec<CellDiagnostic>,
+    /// What its `thir` marks staged.
+    marks: Vec<Staged>,
     /// The binders its accepted declarations write and never read.
     unused: Vec<ByteSpan>,
     /// The path imports it writes that no use of its own reaches.
@@ -4060,6 +4068,15 @@ fn share<'source>(
         })
         .cloned()
         .collect();
+    // A refusal of a staged body names its node through the marks. The
+    // share copies the source's marks out of the unit, which the
+    // composition does not keep.
+    let marks = module
+        .unit()
+        .sources()
+        .iter()
+        .find(|source| source.start() == member.start)
+        .map_or_else(Vec::new, |source| source.marks().to_vec());
     Share {
         report,
         exercised,
@@ -4070,6 +4087,7 @@ fn share<'source>(
         runs,
         deprecated,
         parted,
+        marks,
         unused,
         unreached,
     }
@@ -4292,6 +4310,7 @@ fn settled<'source>(
         runs: share.runs,
         deprecated: share.deprecated,
         parted: share.parted,
+        marks: share.marks,
         kernel: Maybe::Absent(admitted::Absent::Pending),
         keys: Names::default(),
         positions: Maybe::Absent(positioned::Absent::Pending),

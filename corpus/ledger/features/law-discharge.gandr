@@ -20,15 +20,15 @@
 theory Equivalence where
   sort Carrier : Type;
   oper alike : (a : Carrier, b : Carrier) --> Bool;
-  law refl : (a : Carrier) -> Path[.A = Bool](alike a a, true);
-  law sym : (a : Carrier, b : Carrier) -> Path[.A = Bool](alike a b, alike b a);
+  law refl : (a : Carrier) -> Path[.A = Bool] (alike a a) true;
+  law sym : (a : Carrier, b : Carrier) -> Path[.A = Bool] (alike a b) (alike b a);
   law trans : (
     a : Carrier,
     b : Carrier,
     c : Carrier,
-    p : Path[.A = Bool](alike a b, true),
-    q : Path[.A = Bool](alike b c, true)
-  ) -> Path[.A = Bool](alike a c, true);
+    p : Path[.A = Bool] (alike a b) true,
+    q : Path[.A = Bool] (alike b c) true
+  ) -> Path[.A = Bool] (alike a c) true;
 
 /// One value.
 data Single : Type where
@@ -42,4 +42,4 @@ module Omitting : Model(Equivalence) with sort Carrier = Single where
 
 /// The discharged law is a component as a written one is: `Omitting.refl` reads
 /// at a value.
-def reflexive(a : Single) -> Path(Omitting.alike a a, true) = Omitting.refl a;
+def reflexive(a : Single) -> Path (Omitting.alike a a) true = Omitting.refl a;
