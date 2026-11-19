@@ -1,0 +1,5 @@
+module M where {
+  type = Type;
+}
+
+def after = 1;

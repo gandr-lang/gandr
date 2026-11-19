@@ -1,0 +1,368 @@
+#:tombi toml-version = "v1.0.0"
+#:schema https://mise.jdx.dev/schema/mise-task.json
+
+# The features ledger (`ledger/README.md`). `ledger/features.sql` is tracked;
+# `ledger/features.db` is built from it and ignored. The `feature` table is
+# `WITHOUT ROWID`, so `.dump` writes its rows in primary-key order: the dump
+# depends on the rows, never on the order they were written in, and two
+# branches adding rows touch different lines. `check:ledger` in
+# `mise-tasks-check.toml` holds the round trip and the paths.
+
+["ledger:build"]
+description = "Build ledger/features.db from the tracked dump ledger/features.sql"
+# Built beside the target and moved over it, so a refused row leaves the
+# previous database in place.
+run = '''
+set -eu
+rm -f ledger/features.db.new
+sqlite3 -bail ledger/features.db.new < ledger/features.sql
+mv ledger/features.db.new ledger/features.db
+'''
+
+["ledger:dump"]
+description = "Dump ledger/features.db to the tracked ledger/features.sql, rows in id order"
+run = "sqlite3 ledger/features.db .dump > ledger/features.sql"
+
+# The crate map: the dot file and the category graph between the markers of
+# the crates' README. The task makes both from `cargo metadata` and the sites
+# of the concerns ledger, in the layering of the crates' README.
+# `check:crate-map` holds their currency, the layering and the concerns'
+# sites.
+# - see: #2290, #3890, #7689
+# - see: `.config/crate-map/map.jq`, `ledger/crates.dot`, `crates/README.md` § Map
+["ledger:crate-map"]
+description = "Generate ledger/crates.dot and crates/README.md's category map from cargo metadata and the concerns"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+metadata=$(cargo metadata --locked --no-deps --format-version 1)
+sites=$(sqlite3 -json :memory: '.read ledger/concerns.sql' 'SELECT DISTINCT concern, crate FROM site ORDER BY concern, crate;')
+map() { jq "$1" --arg form "$2" --rawfile readme crates/README.md --rawfile page crates/README.md --argjson concerns "${sites:-[]}" -f .config/crate-map/map.jq <<< "$metadata"; }
+map -r dot > ledger/crates.dot.new
+map -j readme > crates/README.md.new
+mv ledger/crates.dot.new ledger/crates.dot
+mv crates/README.md.new crates/README.md
+'''
+
+# The concerns ledger, `ledger/concerns.sql`, is edited by hand: an `INSERT`
+# added or changed. This task rewrites it as `sqlite3`'s own dump, rows in
+# key order, refusing a row that breaks a constraint and leaving the file as
+# it was. `check:crate-map` holds the round trip.
+["ledger:concerns"]
+description = "Normalize ledger/concerns.sql as its own sqlite3 dump"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+sqlite3 -bail "$fresh/concerns.db" < ledger/concerns.sql
+sqlite3 "$fresh/concerns.db" .dump > ledger/concerns.sql
+'''
+
+# The purposes ledger, `ledger/purposes.sql`, is edited by hand: an `INSERT`
+# added or changed. This task rewrites it as `sqlite3`'s own dump, rows in
+# key order, refusing a row that breaks a constraint and leaving the file as
+# it was. `check:purposes` holds the round trip.
+["ledger:purposes"]
+description = "Normalize ledger/purposes.sql as its own sqlite3 dump"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+sqlite3 -bail "$fresh/purposes.db" < ledger/purposes.sql
+sqlite3 "$fresh/purposes.db" .dump > ledger/purposes.sql
+'''
+
+# The positions ledger, `ledger/positions.sql`, is edited by hand: an `INSERT`
+# added or changed. This task rewrites it as `sqlite3`'s own dump, rows in
+# key order, refusing a row that breaks a constraint and leaving the file as
+# it was. `check:positions` holds the round trip.
+["ledger:positions"]
+description = "Normalize ledger/positions.sql as its own sqlite3 dump"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+sqlite3 -bail "$fresh/positions.db" < ledger/positions.sql
+sqlite3 "$fresh/positions.db" .dump > ledger/positions.sql
+'''
+
+# The sharing ledger, `ledger/shared.sql`, is edited by hand: an `INSERT`
+# added or changed. This task rewrites it as `sqlite3`'s own dump, rows in
+# key order, refusing a row that breaks a constraint and leaving the file as
+# it was. `check:shared` holds the round trip.
+["ledger:shared"]
+description = "Normalize ledger/shared.sql as its own sqlite3 dump"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+sqlite3 -bail "$fresh/shared.db" < ledger/shared.sql
+sqlite3 "$fresh/shared.db" .dump > ledger/shared.sql
+'''
+
+# A person writes each change of the listing of the builtins as an `INSERT`.
+# This task rewrites the listing as the own dump of `sqlite3`, with its rows in
+# key order. A row that breaks a constraint is refused, and the file stays as
+# it was. `check:builtins` holds the round trip.
+# - see: `ledger/builtins.sql`
+["ledger:builtins"]
+description = "Normalize ledger/builtins.sql as its own sqlite3 dump"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+sqlite3 -bail "$fresh/builtins.db" < ledger/builtins.sql
+sqlite3 "$fresh/builtins.db" .dump > ledger/builtins.sql
+'''
+
+# The entries the purposes ledger rows: each named crate's library documented
+# as rustdoc JSON without private items, each read by
+# `.config/purposes/items.jq`, one tab-separated line per entry: crate, path,
+# kind, location. With no crate named, every crate with a library; a name
+# with no library under `crates/` prints nothing. The JSON builds in a target
+# directory of its own, so `check:doc`'s HTML and `evidence:rustdoc`'s JSON,
+# both with private items, are not rebuilt under its flags.
+["purposes:items"]
+description = "Print the public items, modules and crate root of each named crate's library"
+tools.jq = "1.8.1"
+usage = '''
+arg "[crate]..." help="crate directories under crates/; every crate with a library when none is named" var=#true
+'''
+env.RUSTDOCFLAGS = "-Z unstable-options --output-format json"
+env.CARGO_TARGET_DIR = "{{ config_root }}/target/purposes"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+read -ra named <<< "${usage_crate:-}"
+selected=()
+packages=()
+while IFS=$'\t' read -r crate package library; do
+  if (( ${#named[@]} == 0 )) || [[ " ${named[*]} " == *" $crate "* ]]; then
+    selected+=("$crate:$library")
+    packages+=(--package "$package")
+  fi
+done < <(cargo metadata --locked --no-deps --format-version 1 | jq -r '
+  (.workspace_root + "/crates/") as $crates
+  | .packages[]
+  | select(.manifest_path | startswith($crates))
+  | (.manifest_path | ltrimstr($crates) | split("/")[0]) as $crate
+  | .name as $package
+  | .targets[]
+  | select(any(.kind[]; . == "lib"))
+  | [$crate, $package, (.name | gsub("-"; "_"))]
+  | @tsv')
+(( ${#selected[@]} )) || exit 0
+.config/mise/scope cargo doc --locked --no-deps --lib --quiet "${packages[@]}"
+for entry in "${selected[@]}"; do
+  jq -r --arg crate "${entry%%:*}" -f .config/purposes/items.jq "$CARGO_TARGET_DIR/doc/${entry#*:}.json"
+done
+{% endraw %}'''
+
+# Each entry of the named crate, or of every crate with a library, beside its
+# row of `ledger/purposes.sql`: one tab-separated line per entry under a
+# header, `no row` in the purpose column of an entry the ledger lacks.
+["purposes:list"]
+description = "List a crate's public items, modules and root beside their purposes"
+usage = '''
+arg "[crate]" help="the crate's directory under crates/; every crate with a library when omitted"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+mise run --quiet purposes:items ${usage_crate:+"$usage_crate"} > "$fresh/entries.tsv"
+if [[ ! -s $fresh/entries.tsv ]]; then
+  echo "${usage_crate:-}: no crate under crates/ with that directory has a library" >&2
+  exit 1
+fi
+db="$fresh/purposes.db"
+sqlite3 -bail "$db" < ledger/purposes.sql
+sqlite3 -bail -tabs "$db" 'CREATE TABLE entry(crate TEXT, path TEXT, kind TEXT, location TEXT, stands TEXT);' ".import $fresh/entries.tsv entry"
+sqlite3 -bail -header -separator $'\t' "$db" "
+  SELECT e.crate, e.path, e.kind, e.location,
+    coalesce(p.purpose, 'no row') AS purpose, p.concerns, p.naming, p.doc, p.finding
+  FROM entry e LEFT JOIN purpose p USING (crate, path, kind)
+  ORDER BY e.crate, e.path, e.kind;"
+'''
+
+# The references ledger, `ledger/references.sql`, is the crates'
+# documentation read by `.config/references/cites.awk`: one row per source a
+# module cites, by a key line of its `# References` or by a DOI or arXiv
+# locator, its README's at the crate root. Beside them, its `work` rows state
+# the year of a work the crates or the corpus cite, written by hand; a row no
+# citation names is dropped. Its `fidelity` rows, written by hand, record the
+# sites the citation refresh has read, and are kept as written (#4533). This
+# task rewrites the file from the tree, each row keeping its committed
+# reading, as `sqlite3`'s own dump.
+# `check:references` fails while the file is not what this task writes.
+["ledger:references"]
+description = "Write ledger/references.sql from the citations in the crates' documentation"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+source .config/references/ledger.bash
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+references_load "$fresh/references.db"
+references_fresh "$fresh/references.db"
+sqlite3 "$fresh/fresh.db" .dump > ledger/references.sql
+'''
+
+# Each row of `ledger/references.sql`, of the named crate or of every crate:
+# one tab-separated line per source and site under a header, its status
+# `unread` until the site is read, then `current` while the module's source
+# is the blob it was read against, `stale` once it has changed. A `vault:`
+# key shows its page's filename beside the mint, read through the vault
+# checkout `$XDG_CONFIG_HOME/gandr/references` names (#2793), so a reader
+# never meets a bare uuid; without the checkout the key is shown alone.
+["refs:list"]
+description = "List the sources the crates cite, each at each site, with the status of its last reading"
+usage = '''
+arg "[crate]" help="the crate's directory under crates/; every crate when omitted"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+source .config/references/ledger.bash
+source .config/references/vault.bash
+crate=${usage_crate:-}
+if [[ -n $crate && ! ( $crate =~ ^[a-z][a-z0-9-]*$ && -d crates/$crate ) ]]; then
+  echo "$crate: no crate under crates/ has that directory" >&2
+  exit 1
+fi
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+references_load "$fresh/references.db"
+vault_pages | jq -r 'if . == null then empty else to_entries[] | .key as $name | .value[] | select(. != null) | "vault:\(.)\t\($name)" end' > "$fresh/pages.tsv"
+sqlite3 -bail -tabs "$fresh/references.db" 'CREATE TABLE page(key TEXT, name TEXT);' ".import $fresh/pages.tsv page"
+sqlite3 -bail -header -separator $'\t' "$fresh/references.db" "
+  SELECT r.key || coalesce(' (' || p.name || ')', '') AS key, r.role, r.crate, r.module,
+    CASE WHEN r.read_blob IS NULL THEN 'unread' WHEN r.read_blob = s.blob THEN 'current' ELSE 'stale' END AS status,
+    substr(r.read_commit, 1, 12) AS read_commit, r.read_date
+  FROM reference r LEFT JOIN source s USING (crate, module) LEFT JOIN (SELECT key, min(name) AS name FROM page GROUP BY key) p ON p.key = r.key
+  WHERE '$crate' IN ('', r.crate)
+  ORDER BY r.key, r.crate, r.module;"
+'''
+
+# Records a reading: each source the site cites, or each key named, read
+# against the module's source as it stands. The site is a crate's directory,
+# then `::` and the module unless it is the crate root. The ledger is first
+# written from the tree, as `ledger:references` writes it, so a key line just
+# added can be read; each row read takes the commit checked out, today's date
+# in UTC and the blob id of the module's source.
+["refs:read"]
+description = "Stamp a site's sources, or the keys named, as read against the module's source now"
+usage = '''
+arg "<site>" help="<crate>, or <crate>::<module>"
+arg "[key]..." help="the keys read; every key the site cites when none is named" var=#true
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+source .config/references/ledger.bash
+site=${usage_site:?}
+crate=${site%%::*}
+module=
+if [[ $site == *::* ]]; then module=${site#*::}; fi
+if ! [[ $crate =~ ^[a-z][a-z0-9-]*$ && $module =~ ^[a-z0-9_:]*$ ]]; then
+  echo "$site: a site is a crate's directory under crates/, then ::<module> unless it is the crate root" >&2
+  exit 2
+fi
+read -ra keys <<< "${usage_key:-}"
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+references_load "$fresh/references.db"
+references_fresh "$fresh/references.db"
+db=$fresh/fresh.db
+at="crate = '$crate' AND module = '$module'"
+where=$at
+if (( $(sqlite3 "$db" "SELECT count(*) FROM reference WHERE $where;") == 0 )); then
+  echo "$site cites nothing; \`mise run refs:list $crate\` lists what $crate cites, by site" >&2
+  exit 1
+fi
+if (( ${#keys[@]} )); then
+  quoted=()
+  for key in "${keys[@]}"; do
+    quoted+=("'${key//\'/\'\'}'")
+    if (( $(sqlite3 "$db" "SELECT count(*) FROM reference WHERE $where AND key = ${quoted[-1]};") == 0 )); then
+      echo "$site does not cite \`$key\`; \`mise run refs:list $crate\` lists what it cites" >&2
+      exit 1
+    fi
+  done
+  where+=" AND key IN ($(IFS=,; echo "${quoted[*]}"))"
+fi
+IFS=$'\t' read -r path blob < <(sqlite3 -separator $'\t' "$fresh/references.db" "SELECT path, blob FROM source WHERE $at;")
+read=$(sqlite3 "$db" "UPDATE reference SET read_commit = '$(git rev-parse HEAD)', read_date = '$(date -u +%F)', read_blob = '$blob' WHERE $where RETURNING key;" | wc -l)
+sqlite3 "$db" .dump > ledger/references.sql
+echo "read $((read)) at $site, against $path as blob ${blob:0:12}"
+{% endraw %}'''
+
+# The weekly paper watch (#2544, `.config/references/watch.bash`): asks
+# OpenAlex for the works published since the last run that cite a work the
+# tree cites, that a library author wrote, or that a library venue printed on
+# a subject of the term map, and comments them on the one open issue titled
+# `Paper watch` in the configured repository, opening it when none is open.
+# A work the state already reported, or the vault ledger's `paper` table
+# holds, is never reported again. It reads the research library, which no
+# tree holds, so it runs on a local host, never in CI.
+["refs:watch"]
+description = "Comment the works new since the last run, by seed, on the paper watch's review issue"
+tools.jq = "1.8.1"
+tools.yq = "4.54.1"
+usage = '''
+flag "--dry-run" help="print the review comment; file nothing and leave the state"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+source .config/references/ledger.bash
+source .config/references/watch.bash
+trap 'rm -rf "${WATCH_DIR:-}"' EXIT
+references_watch "${usage_dry_run:-false}"
+{% endraw %}'''
+
+# The recovery sweep over the syntax exemplars (`gandr-workflow-ledger-tasks`'s
+# `ledger::recovery` module): every literal tile written as its near miss and
+# deleted, each mutant's first error read against the mutation. The whole
+# report goes to the file named, `target/recovery.txt` by default; its causes
+# and its count are printed. A mutant marked elsewhere is the report's content,
+# not a failure: the task fails only when the sweep cannot run. The nightly
+# workflow runs it and `ci:recovery-file` files each cause.
+["ledger:recovery"]
+description = "Sweep the syntax exemplars for recovery: each tile missed and deleted, the first error read"
+tools.jq = "1.8.1"
+usage = '''
+arg "[report]" help="the file the whole report is written to" default="target/recovery.txt"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+report={{ usage.report }}
+mkdir -p "$(dirname "$report")"
+status=0
+.config/mise/scope cargo run --locked --quiet --profile test --package gandr-workflow-ledger-tasks -- recovery corpus/ledger > "$report" || status=$?
+if (( status > 1 )); then
+  cat "$report"
+  exit "$status"
+fi
+grep -e '^cause: ' -e ' mutants swept: ' "$report" || true
+'''
+
+# The syntax ledger regenerated by the worktree's own build (#4500): `cargo
+# run` runs the `ledger` it builds, whatever toolchain the host selects
+# (#4511), so the ledger is the branch's grammar's. `check:syntax-ledger`
+# regenerates through this task into a temporary directory, and a stale
+# ledger names it.
+["ledger:syntax"]
+description = "Write ledger/syntax.md and ledger/syntax.json from the worktree's grammar and exemplars"
+usage = '''
+arg "[directory]" help="the directory the two files are written to" default="ledger"
+'''
+run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-workflow-ledger-tasks -- syntax --write {{ usage.directory }} --exemplars corpus/ledger"
