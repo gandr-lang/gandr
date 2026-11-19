@@ -234,8 +234,8 @@ workspace() {
   GATE_BASE=$(git rev-parse HEAD)
 }
 
-# Gates a change of `a` on a branch and pushes the record of the inputs of the
-# check `$2`, the policy by default, over the scope that `$1` names.
+# Gates a change of `a` on a branch over the scope that `$1` names. Then it
+# pushes the record of the inputs of the check `$2`, the policy by default.
 gate_inputs() {
   git switch --quiet --create change
   commit crates/a/src/lib.rs '//! a, changed' change > /dev/null
