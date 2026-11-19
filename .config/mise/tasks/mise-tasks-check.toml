@@ -765,11 +765,13 @@ policy {{ env.GATE_SCOPE | default(value='--workspace') }} $features || status=$
 # starts no process.
 #
 # Then the task builds the driver and puts the reader beside it, where the
-# driver finds it. It settles the reader's staged corpus with them: each
-# staged body meets its specification, and each mark that stages no body is
-# refused by name. The corpus stands under the reader's tests, outside
-# `corpus/`. So no other task walks it, and the main corpus task gives one
-# result on a host with a reader and on a host with none.
+# driver finds it. It settles the reader's corpus with them. Each body from the
+# reader meets its specification. The lowering refuses by name each mark that
+# gives no body.
+#
+# No other task walks this corpus. So the main corpus task gives one result on
+# a host with a reader and on a host with none.
+# - see: `crates/runtime-rust-reader/tests/corpus`
 #
 # Last, the task refuses `rustc_private` in each other crate. So no other
 # crate links a library of rustc.
