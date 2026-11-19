@@ -1662,13 +1662,17 @@ mod sweeps
                             .filter(|declaration| {
                                 declaration.role() == gandr_surface_lowering::Role::Terms
                             })
+                            // The slot prints as the type that asked for it,
+                            // `Terms S` or, kept in a call, `Terms(S)`.
                             .filter_map(|declaration| {
-                                declaration
-                                    .name()
-                                    .as_ref()
-                                    .strip_prefix("Terms(")
-                                    .and_then(|named| named.strip_suffix(')'))
-                                    .map(|named| String::from(named.trim()))
+                                let name = declaration.name();
+                                let named = name.as_ref().strip_prefix("Terms")?;
+                                let named = named.trim();
+                                let named = named
+                                    .strip_prefix('(')
+                                    .and_then(|inner| inner.strip_suffix(')'))
+                                    .unwrap_or(named);
+                                Some(String::from(named.trim()))
                             }),
                     );
                 }
