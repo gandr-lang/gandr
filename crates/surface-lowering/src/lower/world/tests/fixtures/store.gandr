@@ -1,0 +1,6 @@
+theory Store where {
+  sort V : Type+;
+  sort C : Type;
+  oper get : (key : V, k : pi+ (v : V). C) --> C;
+  oper put : (key : V, value : V, k : C) --> C;
+}
