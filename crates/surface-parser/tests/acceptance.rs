@@ -1985,9 +1985,9 @@ fn a_torn_form_ends_before_a_juxtaposed_type_as_before_its_call_6027() -> Result
 /// A token left out before the group of a juxtaposed type in a binder owes
 /// what the call form owes, and the intact result type owes nothing.
 ///
-/// A `?` left out of `Run (?(Seat.Dispatch). end)` leaves the `.` of a type
-/// path open in the binder. The slot below `Run` in the result type then
-/// reads as the slot of an expression, and the group of `Run` read as an
+/// A name left out of `Run ((Seat.Dispatch) >? end)` leaves the `.` of a
+/// type path open in the binder. The slot below `Run` in the result type then
+/// read as the slot of an expression, and the group of `Run` read as an
 /// expression. Three of its tiles each owed a repair (#6102). The call form
 /// `Run(` opens a form whose slot holds a type, so it owed none. The argument
 /// of a juxtaposition takes the sort of its head. Each row leaves out one
@@ -2014,12 +2014,12 @@ fn a_token_left_out_before_a_juxtaposed_type_s_group_owes_what_its_call_owes_610
     };
     for (juxtaposed, call) in [
         (
-            declaration("Run ((Seat.Dispatch). end)", "Run (?(Seat.Dispatch). end)"),
-            declaration("Run((Seat.Dispatch). end)", "Run(?(Seat.Dispatch). end)"),
+            declaration("Run ((Seat.) >? end)", "Run ((Seat.Dispatch) >? end)"),
+            declaration("Run((Seat.) >? end)", "Run((Seat.Dispatch) >? end)"),
         ),
         (
-            declaration("Run (?(Seat.). end)", "Run (?(Seat.Dispatch). end)"),
-            declaration("Run(?(Seat.). end)", "Run(?(Seat.Dispatch). end)"),
+            declaration("Run ((Seat.Dispatch) >? )", "Run ((Seat.Dispatch) >? end)"),
+            declaration("Run((Seat.Dispatch) >? )", "Run((Seat.Dispatch) >? end)"),
         ),
     ] {
         let called = owed(&call)?;

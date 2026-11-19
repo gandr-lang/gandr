@@ -48,9 +48,8 @@ use crate::failure::Failure;
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
-/// the protocol step `! T >> S` and the recursive protocol `rec X => S`, read
-/// beside the dotted forms until the corpus moves, then by the block's own
-/// sort, which every block after a tile reaches through one hole, then by a
+/// the recursive protocol `rec X => S`, then by the block's own sort, which
+/// every block after a tile reaches through one hole, then by a
 /// module member taking the top level's definition family (#4145), then by a
 /// record type's faces block (#4453), then by the lambda keyword `fun` (#4484),
 /// then by the static abstraction folding into `fun` (#4508),
