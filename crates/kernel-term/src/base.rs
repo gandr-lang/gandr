@@ -214,23 +214,38 @@ pub enum Sign
 /// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
 /// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
 #[repr(transparent)]
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-#[cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        std_container,
-        reason = "about 70 files in about 25 crates outside `kernel-term` build a magnitude from their own `String`"
-    )
-)]
-pub struct Magnitude(String);
+#[derive(Debug, Eq, Hash, PartialEq)]
+pub struct Magnitude(
+    #[cfg_attr(
+        all(dylint_lib = "quenchant_dylints", not(test)),
+        expect(
+            std_container,
+            reason = "about 70 files in about 25 crates outside `kernel-term` build a magnitude from their own `String`"
+        )
+    )]
+    String,
+);
 
-#[cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        std_container,
-        reason = "about 70 files in about 25 crates outside `kernel-term` build a magnitude from their own `String`"
-    )
-)]
+impl Clone for Magnitude
+{
+    /// A copy of the digits.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[cfg_attr(
+        all(dylint_lib = "quenchant_dylints", not(test)),
+        expect(
+            std_container,
+            reason = "a magnitude's digits are a `String`, since crates outside `kernel-term` build them"
+        )
+    )]
+    fn clone(&self) -> Self
+    {
+        Self(self.0.clone())
+    }
+}
+
 impl Magnitude
 {
     /// The canonical zero magnitude.
@@ -257,6 +272,13 @@ impl Magnitude
     )]
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        all(dylint_lib = "quenchant_dylints", not(test)),
+        expect(
+            std_container,
+            reason = "a magnitude's digits are a `String`, since crates outside `kernel-term` build them"
+        )
+    )]
     pub fn zero() -> Self
     {
         Self(String::from("0"))
@@ -299,6 +321,13 @@ impl Magnitude
     )]
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        all(dylint_lib = "quenchant_dylints", not(test)),
+        expect(
+            std_container,
+            reason = "about 70 files in about 25 crates outside `kernel-term` build a magnitude from their own `String`"
+        )
+    )]
     pub fn from_decimal_text(mut text: String) -> Option<Self>
     {
         if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -318,6 +347,13 @@ impl Magnitude
     /// trivial.
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        all(dylint_lib = "quenchant_dylints", not(test)),
+        expect(
+            std_container,
+            reason = "a magnitude's digits are a `String`, since crates outside `kernel-term` build them"
+        )
+    )]
     pub(crate) fn to_digits(&self) -> String
     {
         self.0.clone()
