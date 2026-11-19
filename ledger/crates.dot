@@ -288,6 +288,7 @@ digraph crates {
   "surface-diagnostics" -> "core-checker";
   "surface-diagnostics" -> "core-term";
   "surface-diagnostics" -> "kernel-term";
+  "surface-diagnostics" -> "runtime-rust-record";
   "surface-diagnostics" -> "surface-corpus";
   "surface-diagnostics" -> "surface-lowering";
   "surface-diagnostics" -> "surface-parser";
@@ -309,6 +310,7 @@ digraph crates {
   "surface-dispatcher" -> "kernel-term";
   "surface-dispatcher" -> "runtime-emitter";
   "surface-dispatcher" -> "runtime-net";
+  "surface-dispatcher" -> "runtime-rust-record";
   "surface-dispatcher" -> "runtime-scope";
   "surface-dispatcher" -> "storage-artifact";
   "surface-dispatcher" -> "storage-store";
@@ -395,6 +397,7 @@ digraph crates {
   "surface-lowering-base" -> "kernel-data";
   "surface-lowering-base" -> "kernel-strata";
   "surface-lowering-base" -> "kernel-term";
+  "surface-lowering-base" -> "runtime-rust-record";
   "surface-lowering-base" -> "surface-grammar";
   "surface-lowering-base" -> "surface-parser";
   "surface-lowering-base" -> "surface-syntax";
@@ -421,6 +424,7 @@ digraph crates {
   "surface-lowering-expression" -> "core-term";
   "surface-lowering-expression" -> "kernel-strata";
   "surface-lowering-expression" -> "kernel-term";
+  "surface-lowering-expression" -> "runtime-rust-record";
   "surface-lowering-expression" -> "surface-grammar";
   "surface-lowering-expression" -> "surface-lowering-base";
   "surface-lowering-expression" -> "surface-lowering-capability";
