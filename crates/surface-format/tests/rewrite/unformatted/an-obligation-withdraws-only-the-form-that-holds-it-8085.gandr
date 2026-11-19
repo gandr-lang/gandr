@@ -1,0 +1,3 @@
+def first(a : Type, x : a, p : Path[.A = a](x, x)) -> a = x;
+
+def second(a : Type, x : a, p : Path[.A = Type](Path[.A = a](x, x), _)) -> a = x;

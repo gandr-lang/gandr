@@ -1,0 +1,30 @@
+// A workspace is the packages that its `workspace.gandr` names. The checker
+// finds it above them. It is not a package. It states what its members share
+// as a model of `Gandr.Workspace`, which the package source of each member
+// imports. Each member that it names is a directory below it that roots a
+// package.
+//
+// `gandr check` here checks this source and every member. It writes the
+// `package.gandr.toml` of each member and the `workspace.gandr.toml` of this
+// workspace. It also writes the one `workspace.gandr.lock` that the members
+// share.
+// The manifest theories.
+//
+// - see: #2687
+import std.build (Gandr);
+// The native finite lists.
+import std.list (List);
+
+/// What the members share: the version each states. Each member reads what it
+/// asks of the toolchain here unless it asks more.
+pub module Workspace : Model(Gandr.Workspace) where
+  def version = "0.1.0";
+  /// The least language version the members ask for.
+  def gandr = ">= 0.0";
+  /// The features every member uses.
+  def features = "project-manifest";
+  /// The systems the members build on: any.
+  def systems = "";
+
+/// The workspace's packages, each a directory below it.
+pub def members : List String = #["hello", "tools"];
