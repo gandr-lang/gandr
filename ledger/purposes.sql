@@ -1115,6 +1115,7 @@ INSERT INTO purpose VALUES('core-term','builtin::Direction','enum','Who gives th
 INSERT INTO purpose VALUES('core-term','builtin::Key','struct','The text that names a row of the builtin table, as the payload of a `builtin` mark spells it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','builtin::Kind','enum','What a builtin row is: a native value or a role.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','builtin::Row','enum','One row of the builtin table, so a declaration of `std` takes each built-in name by one key.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','builtin::TypeAtom','enum','Names a nullary value type that the toolchain gives, so the one table keys it as a row.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','builtin::row','module','Names the reason a key names no row.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','children::Visit','trait','What a walk does with each child of a core node, one method per family, each handed the binders of each zone the former opens over that child.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','children::of_comp_type','function','Hands each child of a computation type to a visit, in order, with the binders its former opens over it.',NULL,'fits','sound',NULL);
@@ -4178,7 +4179,6 @@ INSERT INTO purpose VALUES('surface-lowering-base','resolve::ScopeId','struct','
 INSERT INTO purpose VALUES('surface-lowering-base','resolve::Shadow','struct','Holds a written binder and the binding it hides, so a face reads what the binder shadows.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','resolve::SurfaceName','struct','Holds an identifier as the source wrote it, so the name''s sort is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','resolve::Telescope','enum','Names a telescope''s reading, so the reading''s kind is read.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-lowering-base','resolve::TypeAtom','enum','Names a type atom, so the atom''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','resolve::TypeFormer','enum','Names a type former, so the former''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','resolve::atom_type','function','Mints the value type a builtin type names, so a type head lowers to its type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','resolve::binder','module','Names the reason none is held: no enclosing binder carries the name.',NULL,'fits','sound',NULL);
