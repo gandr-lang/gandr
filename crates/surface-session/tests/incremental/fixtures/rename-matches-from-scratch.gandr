@@ -1,0 +1,2 @@
+def bar = 1;
+def keep = 9;

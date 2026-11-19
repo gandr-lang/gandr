@@ -1,0 +1,37 @@
+//! `ring` represents a cyclic structure with arena indexes.
+//!
+//! A node does not store its address. The structure can move or copy. A
+//! program hides heap symmetries when it does not observe locations.
+//!
+//! `node` follows indexes. The loop uses `Partial` and reads four links. The
+//! source runs to `1`.
+//!
+//! - see: #1183 — `ring`
+//! - see: #1481 — `ring`
+//! - cites: [Sterling-2023-univalent_reference_types]
+//!
+//! [Sterling-2023-univalent_reference_types]: https://doi.org/10.4230/LIPIcs.CSL.2024.19 "Sterling, Gratzer and Birkedal, Towards univalent reference types"
+
+// The source imports definitions for lists.
+import "../data/data-base.gandr";
+
+/// `node` reads the integer at an arena index.
+def rec node(nodes : List Integer, i : Integer) -> Integer =
+  match nodes where
+    | Nil => pure 0
+    | Cons(n, rest) => {
+      let here = i == 0;
+      match here { | true => pure n | false => node[<] rest (i - 1) }
+    }
+
+/// `ring` follows a four-link cycle from the first node.
+@[runs("1")]
+def ring() -> [Partial] Integer =
+  var i = 0
+  var steps = 4
+  while steps > 0 {
+    let j = node (Cons 1 (Cons 2 (Cons 0 Nil)) : List Integer) i;
+    access i as v { resume v j };
+    access steps as s { resume s (s - 1) }
+  };
+  pure i

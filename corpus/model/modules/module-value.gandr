@@ -1,0 +1,50 @@
+/// This source shows a module as a model value.
+///
+/// `Up` has the model type that `Ticker` defines.
+///
+/// The checker reads a module name as a packed model value.
+///
+/// - see: #4485
+/// - see: pathological/modules/module-value.gandr
+/// - cites: [Rossberg-2014-fing_modules]
+///
+/// [Rossberg-2014-fing_modules]: https://doi.org/10.1017/S0956796814000264 "Rossberg, Russo and Dreyer, F-ing Modules"
+
+/// `Ticker` states a carrier, a start and a step.
+theory Ticker where
+  /// `C` names the carrier.
+  sort C : Type;
+
+  /// `start` gives the initial value.
+  oper start : C;
+  /// `step` advances the carrier.
+  oper step : (c : C) --> C;
+
+/// `Up` models an integer ticker.
+module Up : Model(Ticker) where
+  /// `C` names `Integer`.
+  type C = Integer;
+
+  /// `start` gives zero.
+  def start : Integer = 0;
+
+  /// `step` adds one.
+  def step(n : Integer) -> Integer = n + 1;
+
+/// `packed` writes `Up` with `pack`.
+def packed : Model Ticker = pack Up at Model Ticker;
+
+/// `named` writes `Up` as a module name.
+def named : Model Ticker = Up;
+
+/// `namedIsPacked` equates both spellings.
+def namedIsPacked() -> Path named packed = Path.here named;
+
+/// `ticked` steps any ticker value.
+def ticked(c : Model Ticker, n : c.C) -> c.C =
+  let step = c.step
+  step n
+
+/// `upTicked` passes `Up` as a ticker value.
+@[runs("2")]
+def upTicked() -> Integer = ticked Up 1;

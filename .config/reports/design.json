@@ -1,0 +1,122 @@
+[
+  {
+    "name": "#3401: without a vault checkout, as in CI, nothing is printed",
+    "input": {
+      "absorption": null,
+      "pages": null,
+      "issues": [{ "number": 1, "body": "plain" }]
+    },
+    "output": ""
+  },
+  {
+    "name": "#3401: a design page an open unit's `## Sources` names prints nothing, by its filename or by a path ending in it",
+    "input": {
+      "absorption": {
+        "plan.md": [{ "path": "plans/plan.md", "status": "design" }],
+        "other.md": [{ "path": "docs/programme/other.md", "status": "design" }]
+      },
+      "pages": [],
+      "issues": [
+        {
+          "number": 1,
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `plan.md` | primary | the plan |\n"
+        },
+        {
+          "number": 2,
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `docs/programme/other.md` § part | secondary | the part |\n"
+        }
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "#3401: a design page no open unit names prints its line; a page named in prose alone is not named",
+    "input": {
+      "absorption": { "plan.md": [{ "path": "plans/plan.md", "status": "design" }] },
+      "pages": [],
+      "issues": [{ "number": 1, "body": "See plan.md for the plan." }]
+    },
+    "output": "design page plan.md: no open unit names it"
+  },
+  {
+    "name": "#3401: a partly, absorbed, concept or stale page prints nothing",
+    "input": {
+      "absorption": {
+        "a.md": [{ "path": "plans/a.md", "status": "partly" }],
+        "b.md": [{ "path": "plans/b.md", "status": "absorbed" }],
+        "c.md": [{ "path": "plans/c.md", "status": "concept" }],
+        "d.md": [{ "path": "plans/d.md", "status": "stale" }]
+      },
+      "pages": [],
+      "issues": []
+    },
+    "output": ""
+  },
+  {
+    "name": "#3401: a ticked row prints nothing, and an empty box no issue cites prints its unit",
+    "input": {
+      "absorption": null,
+      "pages": [
+        {
+          "name": "draft.md",
+          "text": "## units\n\n| number | unit | complete |\n| ------ | ---- | -------- |\n| 1 | done | [x] |\n| 2 | open | [ ] |\n"
+        }
+      ],
+      "issues": []
+    },
+    "output": "design page draft.md unit 2: no open unit names it"
+  },
+  {
+    "name": "#3401: an open issue naming the page holds the units it cites alone, in a list and in a range",
+    "input": {
+      "absorption": null,
+      "pages": [
+        {
+          "name": "draft.md",
+          "text": "| number | unit | complete |\n| --- | --- | --- |\n| 6 | a | [ ] |\n| 16 | b | [ ] |\n| 17 | c | [ ] |\n| 18 | d | [ ] |\n| 22 | e | [ ] |\n| 23 | f | [ ] |\n| 51 | g | [ ] |\n| 53 | h | [ ] |\n| 58 | i | [ ] |\n| 59 | j | [ ] |\n"
+        }
+      ],
+      "issues": [
+        { "number": 1, "body": "Unit 6 of the vault page `draft.md` § candidate-units." },
+        { "number": 2, "body": "The phase-6 units 16 to 18 of `draft.md`, and unit 22." },
+        { "number": 3, "body": "`draft.md`: units 51, 53 and 58." }
+      ]
+    },
+    "output": "design page draft.md unit 23: no open unit names it\ndesign page draft.md unit 59: no open unit names it"
+  },
+  {
+    "name": "#3401: a unit only a closed issue cites, or that an issue cites without naming the page, prints its line",
+    "input": {
+      "absorption": null,
+      "pages": [
+        {
+          "name": "draft.md",
+          "text": "| number | unit | complete |\n| --- | --- | --- |\n| 7 | a | [ ] |\n| 8 | b | [ ] |\n"
+        }
+      ],
+      "issues": [
+        { "number": 1, "state": "closed", "body": "Unit 7 of `draft.md`." },
+        { "number": 2, "state": "open", "body": "Unit 8 of another page." }
+      ]
+    },
+    "output": "design page draft.md unit 7: no open unit names it\ndesign page draft.md unit 8: no open unit names it"
+  },
+  {
+    "name": "#3401: a table with no complete column, or with a row that holds no box, is no unit table",
+    "input": {
+      "absorption": null,
+      "pages": [
+        {
+          "name": "programme.md",
+          "text": "| unit | question | acceptance |\n| --- | --- | --- |\n| kernel-replay | why | a test |\n"
+        },
+        {
+          "name": "ragged.md",
+          "text": "| number | unit | complete |\n| --- | --- | --- |\n| 1 | a | [ ] |\n| 2 | b | soon |\n"
+        }
+      ],
+      "issues": []
+    },
+    "output": ""
+  }
+]

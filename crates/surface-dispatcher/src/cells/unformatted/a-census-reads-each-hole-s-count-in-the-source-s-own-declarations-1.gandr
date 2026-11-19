@@ -1,0 +1,11 @@
+pub data Tree : Type where {
+  | Leaf : Tree
+  | Node : (l : Tree, r : Tree) --> Tree
+  oper left : (t : Tree) --> Tree;
+  oper twice : (t : Tree) --> Tree;
+  oper thrice : (t : Tree) --> Tree;
+  rule : left(Leaf) ==> Leaf;
+  rule : left (Node l r) ==> l;
+  rule : twice t ==> Node t t;
+  rule : thrice t ==> Node t (Node t t);
+}

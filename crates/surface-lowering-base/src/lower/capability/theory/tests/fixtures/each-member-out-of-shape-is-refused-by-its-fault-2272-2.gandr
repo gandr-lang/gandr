@@ -1,0 +1,6 @@
+theory Peek where {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S). C) --> C;
+  oper peek : (k : C) --> S;
+}
