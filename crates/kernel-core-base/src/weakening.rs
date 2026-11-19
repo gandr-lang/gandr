@@ -30,7 +30,8 @@
 //!   discipline. The kernel checks the support as a bound on what a check
 //!   reads, and never trusts it.
 
-use alloc::vec::Vec;
+use alloc::alloc::Global;
+use gandr_kernel_data::SmallVec;
 use core::sync::atomic::AtomicU32;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
@@ -82,7 +83,7 @@ pub struct Support
 {
     /// For each entry, the check that last joined it, doubled; the low bit is
     /// set once its own references joined too.
-    stamps: Vec<AtomicU32>,
+    stamps: SmallVec<AtomicU32, 0, Global>,
     /// The number of the last check opened.
     last: u32,
     /// The stamp of an entry that the running check joined, and zero while no

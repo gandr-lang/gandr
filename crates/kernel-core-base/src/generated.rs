@@ -7,7 +7,8 @@
 //! its variables read binders of its own and binders past it.
 
 use alloc::alloc::Global;
-use alloc::vec::Vec;
+use alloc::alloc::Global;
+use gandr_kernel_data::SmallVec;
 
 use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::Component;
@@ -28,9 +29,9 @@ use gandr_kernel_term::ValueId;
 pub struct Program
 {
     /// The steps, in order.
-    pub steps: Vec<Step>,
+    pub steps: SmallVec<Step, 0, Global>,
     /// The redexes applied after them, the last at the head.
-    pub heads: Vec<Head>,
+    pub heads: SmallVec<Head, 0, Global>,
 }
 
 /// Programs of up to forty steps and one to three redexes, so that every
@@ -232,7 +233,7 @@ fn step() -> impl proptest::strategy::Strategy<Value = Step>
 /// trivial.
 fn popped_value(
     arena: &mut TermArena,
-    values: &mut Vec<ValueId>,
+    values: &mut SmallVec<ValueId, 0, Global>,
 ) -> ValueId
 {
     values
@@ -247,7 +248,7 @@ fn popped_value(
 /// trivial.
 fn popped_computation(
     arena: &mut TermArena,
-    computations: &mut Vec<ComputationId>,
+    computations: &mut SmallVec<ComputationId, 0, Global>,
 ) -> ComputationId
 {
     computations.pop().unwrap_or_else(|| {
@@ -272,8 +273,8 @@ pub fn generated(
 {
     let unit_type = arena.value_type_unit();
     let motive = arena.comp_type_returner(unit_type);
-    let mut values = Vec::new();
-    let mut computations = Vec::new();
+    let mut values = SmallVec::<_, 0, Global>::new();
+    let mut computations = SmallVec::<_, 0, Global>::new();
     for &step in &program.steps {
         match step {
             Step::Variable(index) => {
@@ -418,7 +419,7 @@ pub fn generated(
 /// - allocation: the constructor's index and its field, setup
 fn constructed(
     arena: &mut TermArena,
-    values: &mut Vec<ValueId>,
+    values: &mut SmallVec<ValueId, 0, Global>,
     tag: ConstructorTag,
 ) -> ValueId
 {
@@ -448,7 +449,7 @@ struct Cells(u8);
 /// trivial.
 fn listed(
     arena: &mut TermArena,
-    values: &mut Vec<ValueId>,
+    values: &mut SmallVec<ValueId, 0, Global>,
     cells: Cells,
 ) -> ValueId
 {
@@ -491,8 +492,8 @@ fn scrutinised(
 fn redexed(
     arena: &mut TermArena,
     head: Head,
-    values: &mut Vec<ValueId>,
-    computations: &mut Vec<ComputationId>,
+    values: &mut SmallVec<ValueId, 0, Global>,
+    computations: &mut SmallVec<ComputationId, 0, Global>,
 ) -> ComputationId
 {
     let unit_type = arena.value_type_unit();

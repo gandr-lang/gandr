@@ -3,7 +3,8 @@
 
 use alloc::alloc::Global;
 use alloc::string::String;
-use alloc::vec::Vec;
+use alloc::alloc::Global;
+use gandr_kernel_data::SmallVec;
 
 use anodized::spec;
 use gandr_kernel_check_memo::CheckMemo as _;
@@ -1008,7 +1009,7 @@ fn result_stack_preserves_order_and_falls_back_only_when_empty()
     let original = AnyNode::Value(value);
     let first = super::RewriteOutcome::ValueType(value_type);
     let second = super::RewriteOutcome::Value(value);
-    let mut results = alloc::vec![first, second];
+    let mut results = SmallVec::<_, 0, Global>::from_iter([first, second]);
     assert_eq!(super::popped(&mut results, original), second);
     assert_eq!(results.as_slice(), &[first]);
     assert_eq!(super::popped(&mut results, original), first);
@@ -1053,7 +1054,7 @@ fn unreadable_subjects_rewrite_to_their_original_ids()
     let value_type = arena.value_type_unit();
     let comp_type = arena.comp_type_returner(value_type);
     arena.truncate_to(floor);
-    let mut results = alloc::vec![];
+    let mut results = SmallVec::<_, 0, Global>::new();
     let step = super::Rewrite::Shift {
         cutoff: BinderDepth::NONE,
         amount: BinderDepth::from(1_u32),

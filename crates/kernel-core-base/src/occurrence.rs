@@ -5,7 +5,8 @@
 //! is admitted in. `check::occurrence` computes them, and the record keeps
 //! them.
 
-use alloc::vec::Vec;
+use alloc::alloc::Global;
+use gandr_kernel_data::SmallVec;
 
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ParameterPosition;
@@ -35,7 +36,7 @@ pub struct Accessibility
     /// How the family's own occurrences stand.
     stratification: Stratification,
     /// How each parameter stands, in telescope order.
-    parameters: Vec<Variance>,
+    parameters: SmallVec<Variance, 0, Global>,
     /// The position of the parameter a definition's result stands at the
     /// stage of, when its own recursion was judged to return at it.
     result: Maybe<StagedPosition, Unstaged>,
@@ -54,7 +55,7 @@ impl Accessibility
     {
         Self {
             stratification: Stratification::Stratified,
-            parameters: Vec::new(),
+            parameters: SmallVec::<_, 0, Global>::new(),
             result: Maybe::Absent(Unstaged::Plain),
         }
     }
@@ -68,7 +69,7 @@ impl Accessibility
     #[must_use]
     pub const fn new(
         stratification: Stratification,
-        parameters: Vec<Variance>,
+        parameters: SmallVec<Variance, 0, Global>,
         result: Maybe<StagedPosition, Unstaged>,
     ) -> Self
     {

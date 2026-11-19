@@ -48,8 +48,10 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+use gandr_kernel_data::Shared;
+use alloc::alloc::Global;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 
 use ed25519_dalek::Signer as _;
 use gandr_kernel_term::EncodedArtifact;
@@ -376,7 +378,7 @@ impl EntryContentKeyer
 /// trivial.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct EncodedVerdict(Vec<u8>);
+pub struct EncodedVerdict(SmallVec<u8, 0, Global>);
 
 impl AsRef<[u8]> for EncodedVerdict
 {
@@ -559,7 +561,7 @@ impl VerdictImage<'_>
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn variances(&mut self) -> Maybe<Vec<Variance>, verdict_image::Absent>
+    pub(crate) fn variances(&mut self) -> Maybe<SmallVec<Variance, 0, Global>, verdict_image::Absent>
     {
         let Maybe::Present(VerdictCount(count)) = self.count()
         else {
@@ -568,7 +570,7 @@ impl VerdictImage<'_>
         if count > self.rest.len() {
             return Maybe::Absent(verdict_image::Absent::Malformed);
         }
-        let mut variances = Vec::with_capacity(count);
+        let mut variances = SmallVec::<_, 0, Global>::with_capacity(Count::from(count));
         for _ in 0 .. count {
             match self.tag() {
                 Maybe::Present(VerdictTag(0)) => variances.push(Variance::StrictlyPositive),
@@ -661,7 +663,7 @@ impl VerdictRecord
     #[must_use]
     pub fn encoded(&self) -> EncodedVerdict
     {
-        let mut out = EncodedVerdict(Vec::from([VERDICT_VERSION]));
+        let mut out = EncodedVerdict(SmallVec::<_, 0, Global>::from_iter([VERDICT_VERSION]));
         self.accessibility.write(&mut out);
         out
     }
@@ -1181,7 +1183,7 @@ pub struct StoredReceipt
     /// The receipt.
     receipt: Receipt,
     /// The records it attests, in key order.
-    records: Vec<VerdictRecord>,
+    records: SmallVec<VerdictRecord, 0, Global>,
 }
 
 impl StoredReceipt
@@ -1194,7 +1196,7 @@ impl StoredReceipt
     #[must_use]
     pub fn new(
         receipt: Receipt,
-        mut records: Vec<VerdictRecord>,
+        mut records: SmallVec<VerdictRecord, 0, Global>,
     ) -> Self
     {
         records.sort_by_key(|record| record.key);
@@ -1273,7 +1275,7 @@ pub trait VerdictSource: core::fmt::Debug + Send + Sync
     fn receipts(
         &self,
         key: VerdictKey,
-    ) -> &[Arc<StoredReceipt>];
+    ) -> &[Shared<StoredReceipt, Global>];
 }
 
 /// A source holding nothing, for a run with no store.
@@ -1293,7 +1295,7 @@ impl VerdictSource for NoVerdicts
     fn receipts(
         &self,
         _key: VerdictKey,
-    ) -> &[Arc<StoredReceipt>]
+    ) -> &[Shared<StoredReceipt, Global>]
     {
         &[]
     }
@@ -1331,13 +1333,13 @@ pub struct Verdicts
     /// The signers believed.
     trusted: BTreeSet<KernelIdentity>,
     /// Where recorded verdicts are found.
-    source: Arc<dyn VerdictSource>,
+    source: Shared<dyn VerdictSource, Global>,
     /// The receipts already verified, each with whether it attested.
     verified: BTreeMap<Receipt, Attestation>,
     /// The readings of the records a verified receipt attested, by key.
     recalled: BTreeMap<VerdictKey, Accessibility>,
     /// The records this kernel checked itself, in admission order.
-    checked: Vec<VerdictRecord>,
+    checked: SmallVec<VerdictRecord, 0, Global>,
     /// How many admissions a recorded verdict answered.
     recalls: usize,
     /// How many admissions this kernel checked and recorded under their entry
@@ -1357,7 +1359,7 @@ impl Default for Verdicts
     #[inline]
     fn default() -> Self
     {
-        Self::rechecking(Arc::new(NoVerdicts))
+        Self::rechecking(Shared::new(NoVerdicts))
     }
 }
 
@@ -1407,14 +1409,14 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
-    fn rechecking(source: Arc<dyn VerdictSource>) -> Self
+    fn rechecking(source: Shared<dyn VerdictSource, Global>) -> Self
     {
         Self {
             trusted: BTreeSet::new(),
             source,
             verified: BTreeMap::new(),
             recalled: BTreeMap::new(),
-            checked: Vec::new(),
+            checked: SmallVec::<_, 0, Global>::new(),
             recalls: 0,
             recorded: 0,
             build: Maybe::Absent(keyed::Absent::Rechecking),
@@ -1429,7 +1431,7 @@ impl Verdicts
     #[inline]
     pub fn under(
         policy: TrustPolicy,
-        source: Arc<dyn VerdictSource>,
+        source: Shared<dyn VerdictSource, Global>,
         build: BuildIdentity,
     ) -> Self
     {
@@ -1455,10 +1457,10 @@ impl Verdicts
     {
         Self {
             trusted: self.trusted.clone(),
-            source: Arc::clone(&self.source),
+            source: Shared::clone(&self.source),
             verified: self.verified.clone(),
             recalled: self.recalled.clone(),
-            checked: Vec::new(),
+            checked: SmallVec::<_, 0, Global>::new(),
             recalls: 0,
             recorded: 0,
             build: self.build,
@@ -1473,7 +1475,7 @@ impl Verdicts
     #[inline]
     pub fn reading(
         &mut self,
-        source: Arc<dyn VerdictSource>,
+        source: Shared<dyn VerdictSource, Global>,
     )
     {
         self.source = source;

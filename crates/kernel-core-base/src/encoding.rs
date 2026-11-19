@@ -144,8 +144,6 @@
 //!   `REWRITE_KEY_WORDS` states its derivation from the form of the key.
 
 use alloc::alloc::Global;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
 use core::alloc::Allocator;
 use core::marker::PhantomData;
 
@@ -157,6 +155,8 @@ use gandr_kernel_check_memo::Probe;
 use gandr_kernel_check_memo::TableHash;
 use gandr_kernel_check_memo::TablePosition;
 use gandr_kernel_check_memo::TableSlot;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::Shared;
 use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelOffset;
@@ -556,7 +556,7 @@ impl DanglingFamily
 /// and each number below 2^31. A record compares and hashes a word at a time.
 #[repr(transparent)]
 #[derive(Clone, Debug)]
-pub struct ContentEncoding<A: Allocator>(Vec<u32, A>);
+pub struct ContentEncoding<A: Allocator>(SmallVec<u32, 0, A>);
 
 impl<A: Allocator> PartialEq for ContentEncoding<A>
 {
@@ -600,7 +600,7 @@ impl<A: Allocator> ContentEncoding<A>
     #[inline]
     fn new_in(allocator: A) -> Self
     {
-        Self(Vec::new_in(allocator))
+        Self(SmallVec::<_, 0, _>::new_in(allocator))
     }
 
     /// Append one tag word.
@@ -1056,10 +1056,10 @@ struct RecordSink<'record, A: Allocator, const NAMED: bool>
     /// the members.
     words: &'record mut ContentEncoding<A>,
     /// With `NAMED`, each member's name in the record's order.
-    members: Option<&'record mut Vec<RecordName, A>>,
+    members: Option<&'record mut SmallVec<RecordName, 0, A>>,
     /// With `NAMED`, how many words precede each member, in the record's
     /// order.
-    at: Option<&'record mut Vec<WordOffset, A>>,
+    at: Option<&'record mut SmallVec<WordOffset, 0, A>>,
     /// With `NAMED`, the table's names by content id.
     column: NameColumn<'record, A>,
 }
@@ -1160,8 +1160,8 @@ impl<'record, A: Allocator + Clone> RecordSink<'record, A, true>
     const fn named(
         payload: &'record mut ContentEncoding<A>,
         (members, at): (
-            &'record mut Vec<RecordName, A>,
-            &'record mut Vec<WordOffset, A>,
+            &'record mut SmallVec<RecordName, 0, A>,
+            &'record mut SmallVec<WordOffset, 0, A>,
         ),
         column: NameColumn<'record, A>,
     ) -> Self
@@ -1278,19 +1278,19 @@ impl<A: Allocator + Clone, const NAMED: bool> RecordSink<'_, A, NAMED>
 struct Names<A: Allocator>
 {
     /// Each own record's name, by content id from the table's first own id.
-    column: Vec<RecordName, A>,
+    column: SmallVec<RecordName, 0, A>,
     /// The fresh record's payload.
     payload: ContentEncoding<A>,
     /// The fresh record's members' names.
-    members: Vec<RecordName, A>,
+    members: SmallVec<RecordName, 0, A>,
     /// How many payload words precede each member of the fresh record.
-    at: Vec<WordOffset, A>,
+    at: SmallVec<WordOffset, 0, A>,
     /// Over a frozen layer, the payload words before each member of each own
     /// record, record after record: what a fold reads to write the members'
     /// ids again.
-    positions: Vec<WordOffset, A>,
+    positions: SmallVec<WordOffset, 0, A>,
     /// Over a frozen layer, where each own record's run of `positions` ends.
-    ends: Vec<RunEnd, A>,
+    ends: SmallVec<RunEnd, 0, A>,
     /// The key every name hashes under, derived from [`Exact::CONTEXT`].
     key: NameKey,
 }
@@ -1309,12 +1309,12 @@ impl<A: Allocator + Clone> Names<A>
     ) -> Self
     {
         Self {
-            column: Vec::new_in(allocator.clone()),
+            column: SmallVec::<_, 0, _>::new_in(allocator.clone()),
             payload: ContentEncoding::new_in(allocator.clone()),
-            members: Vec::new_in(allocator.clone()),
-            at: Vec::new_in(allocator.clone()),
-            positions: Vec::new_in(allocator.clone()),
-            ends: Vec::new_in(allocator.clone()),
+            members: SmallVec::<_, 0, _>::new_in(allocator.clone()),
+            at: SmallVec::<_, 0, _>::new_in(allocator.clone()),
+            positions: SmallVec::<_, 0, _>::new_in(allocator.clone()),
+            ends: SmallVec::<_, 0, _>::new_in(allocator.clone()),
             key,
         }
     }
@@ -1407,9 +1407,9 @@ impl<A: Allocator + Clone> Names<A>
     {
         let allocator = self.column.allocator().clone();
         RecordNames {
-            column: core::mem::replace(&mut self.column, Vec::new_in(allocator.clone())),
-            positions: core::mem::replace(&mut self.positions, Vec::new_in(allocator.clone())),
-            ends: core::mem::replace(&mut self.ends, Vec::new_in(allocator)),
+            column: core::mem::replace(&mut self.column, SmallVec::<_, 0, _>::new_in(allocator.clone())),
+            positions: core::mem::replace(&mut self.positions, SmallVec::<_, 0, _>::new_in(allocator.clone())),
+            ends: core::mem::replace(&mut self.ends, SmallVec::<_, 0, _>::new_in(allocator)),
         }
     }
 
@@ -1450,12 +1450,12 @@ enum Naming<A: Allocator>
 struct RecordNames<A: Allocator>
 {
     /// Each record's name.
-    column: Vec<RecordName, A>,
+    column: SmallVec<RecordName, 0, A>,
     /// The payload words before each member of each record, record after
     /// record; empty when the run keeps none.
-    positions: Vec<WordOffset, A>,
+    positions: SmallVec<WordOffset, 0, A>,
     /// Where each record's run of `positions` ends.
-    ends: Vec<RunEnd, A>,
+    ends: SmallVec<RunEnd, 0, A>,
 }
 
 impl<A: Allocator + Clone> RecordNames<A>
@@ -1468,9 +1468,9 @@ impl<A: Allocator + Clone> RecordNames<A>
     fn new_in(allocator: &A) -> Self
     {
         Self {
-            column: Vec::new_in(allocator.clone()),
-            positions: Vec::new_in(allocator.clone()),
-            ends: Vec::new_in(allocator.clone()),
+            column: SmallVec::<_, 0, _>::new_in(allocator.clone()),
+            positions: SmallVec::<_, 0, _>::new_in(allocator.clone()),
+            ends: SmallVec::<_, 0, _>::new_in(allocator.clone()),
         }
     }
 }
@@ -1593,7 +1593,7 @@ pub struct ContentTable<A: Allocator>
     /// record's words, once.
     stream: ContentEncoding<A>,
     /// Where each own record's words sit in the stream, in id order.
-    spans: Vec<RecordSpan, A>,
+    spans: SmallVec<RecordSpan, 0, A>,
     /// Each own record's offset from [`Self::base`], filed under its digest's
     /// hash.
     interned: HashIndex<A>,
@@ -1621,9 +1621,9 @@ pub struct ContentTable<A: Allocator>
     scratch: ContentEncoding<A>,
     /// The binder names of the goal, or the members of the parameters, being
     /// written.
-    members: Vec<ContentId, A>,
+    members: SmallVec<ContentId, 0, A>,
     /// The placement walk's task stack.
-    tasks: Vec<EncodeTask, A>,
+    tasks: SmallVec<EncodeTask, 0, A>,
     /// How each admitted constant is named, by admission position; a position
     /// past the end is named by itself. The names stay frozen, so an overlay
     /// shares them with the table below, and a naming copies at most the 63
@@ -1681,7 +1681,7 @@ struct Placements<A: Allocator>
     count: PlacementCount,
     /// The frozen layers below the table these placements belong to, oldest
     /// first: their records, and their placements, each read under its reach.
-    layers: Vec<LayerView<A>, A>,
+    layers: SmallVec<LayerView<A>, 0, A>,
 }
 
 /// One frozen layer of a [`ContentTable`]: the records and the placements
@@ -1695,7 +1695,7 @@ struct TableLayer<A: Allocator>
     /// The layer's records, framed, in id order.
     stream: ContentEncoding<A>,
     /// Where each record's words sit in the stream, in id order.
-    spans: Vec<RecordSpan, A>,
+    spans: SmallVec<RecordSpan, 0, A>,
     /// Each record's offset from `base`, filed under its digest's hash.
     interned: HashIndex<A>,
     /// The records' names; empty for a table that names nothing.
@@ -1713,7 +1713,7 @@ struct LayerView<A: Allocator>
 {
     /// The layer, shared by reference. The count of its holders stays on the
     /// global allocator, and the layer's words are in `A`.
-    layer: Arc<TableLayer<A>>,
+    layer: Shared<TableLayer<A>, Global>,
     /// The length, family by family, under which the layer's placements hold
     /// for this table: the arena at the freeze, lowered by each truncation
     /// since.
@@ -1953,7 +1953,7 @@ impl Family
 struct PlacementColumn<A: Allocator>
 {
     /// The pages, by page number; an empty page has never been written.
-    pages: Vec<Vec<PlacementSlot, A>, A>,
+    pages: SmallVec<SmallVec<PlacementSlot, 0, A>, 0, A>,
 }
 
 /// One node's slot in its column.
@@ -2041,7 +2041,7 @@ impl<A: Allocator + Clone> PlacementColumn<A>
     fn new_in(allocator: &A) -> Self
     {
         Self {
-            pages: Vec::new_in(allocator.clone()),
+            pages: SmallVec::<_, 0, _>::new_in(allocator.clone()),
         }
     }
 
@@ -2106,7 +2106,7 @@ impl<A: Allocator + Clone> PlacementColumn<A>
         if self.pages.len() <= number {
             let allocator = self.pages.allocator().clone();
             self.pages
-                .resize_with(number.saturating_add(1), || Vec::new_in(allocator.clone()));
+                .resize_with(number.saturating_add(1), || SmallVec::<_, 0, _>::new_in(allocator.clone()));
         }
         let Some(page) = self.pages.get_mut(number)
         else {
@@ -2197,7 +2197,7 @@ impl<A: Allocator + Clone> Placements<A>
             value_types: PlacementColumn::new_in(allocator),
             comp_types: PlacementColumn::new_in(allocator),
             count: PlacementCount(0),
-            layers: Vec::new_in(allocator.clone()),
+            layers: SmallVec::<_, 0, _>::new_in(allocator.clone()),
         }
     }
 
@@ -2590,7 +2590,7 @@ impl<A: Allocator + Clone> ContentTable<A>
         Self {
             base: 0,
             stream: ContentEncoding::new_in(allocator.clone()),
-            spans: Vec::new_in(allocator.clone()),
+            spans: SmallVec::<_, 0, _>::new_in(allocator.clone()),
             interned: HashIndex::new_in(allocator.clone()),
             placed: Placements::new_in(&allocator),
             seen: TruncationStamp::default(),
@@ -2599,8 +2599,8 @@ impl<A: Allocator + Clone> ContentTable<A>
             records: 0,
             floor: 0,
             scratch: ContentEncoding::new_in(allocator.clone()),
-            members: Vec::new_in(allocator.clone()),
-            tasks: Vec::new_in(allocator),
+            members: SmallVec::<_, 0, _>::new_in(allocator.clone()),
+            tasks: SmallVec::<_, 0, _>::new_in(allocator),
             constants: gandr_kernel_term::Family::default(),
             naming: Naming::Off,
         }
@@ -2652,9 +2652,9 @@ impl<A: Allocator + Clone> ContentTable<A>
     /// # Specification
     /// trivial.
     #[inline]
-    fn take_members(&mut self) -> Vec<ContentId, A>
+    fn take_members(&mut self) -> SmallVec<ContentId, 0, A>
     {
-        let empty = Vec::new_in(self.spans.allocator().clone());
+        let empty = SmallVec::<_, 0, _>::new_in(self.spans.allocator().clone());
         core::mem::replace(&mut self.members, empty)
     }
 
@@ -2664,9 +2664,9 @@ impl<A: Allocator + Clone> ContentTable<A>
     /// # Specification
     /// trivial.
     #[inline]
-    fn take_tasks(&mut self) -> Vec<EncodeTask, A>
+    fn take_tasks(&mut self) -> SmallVec<EncodeTask, 0, A>
     {
-        let empty = Vec::new_in(self.spans.allocator().clone());
+        let empty = SmallVec::<_, 0, _>::new_in(self.spans.allocator().clone());
         core::mem::replace(&mut self.tasks, empty)
     }
 
@@ -4644,14 +4644,14 @@ impl<A: Allocator + Clone> ContentTable<A>
                 &mut self.stream,
                 ContentEncoding::new_in(allocator.clone()),
             ),
-            spans: core::mem::replace(&mut self.spans, Vec::new_in(allocator.clone())),
+            spans: core::mem::replace(&mut self.spans, SmallVec::<_, 0, _>::new_in(allocator.clone())),
             interned: core::mem::replace(&mut self.interned, HashIndex::new_in(allocator)),
             names,
             columns,
             count,
         };
         self.placed.layers.push(LayerView {
-            layer: Arc::new(layer),
+            layer: Shared::new(layer),
             reach: arena.watermark(),
         });
         self.base = self.records;
@@ -4816,7 +4816,7 @@ impl<A: Allocator + Clone> ContentTable<A>
             return;
         };
         let base = ContentId(base);
-        let mut map = Vec::with_capacity_in(spans.len(), self.spans.allocator().clone());
+        let mut map = SmallVec::<_, 0, _>::with_capacity_in(Count::from(spans.len()), self.spans.allocator().clone());
         let mut start = 0_usize;
         for (index, &span) in spans.iter().enumerate() {
             let end = names.ends.get(index).map_or(start, |&RunEnd(end)| {
@@ -4899,7 +4899,7 @@ impl<A: Allocator + Clone> ContentTable<A>
     pub fn settle(&mut self)
     {
         while let Some(view) = self.placed.layers.pop() {
-            match Arc::try_unwrap(view.layer) {
+            match Shared::try_unwrap(view.layer) {
                 Ok(layer) => self.merge((layer, view.reach)),
                 Err(layer) => {
                     self.placed.layers.push(LayerView {
@@ -4999,7 +4999,7 @@ impl<A: Allocator + Clone> ContentTable<A>
             return;
         };
         let reach = older.reach;
-        Arc::make_mut(&mut older.layer).absorb(reach, (&newer.layer, newer.reach));
+        Shared::make_mut(&mut older.layer).absorb(reach, (&newer.layer, newer.reach));
         older.reach = now;
     }
 
@@ -5055,7 +5055,7 @@ impl<A: Allocator + Clone> ContentTable<A>
     /// trivial.
     fn append(
         &mut self,
-        (stream, spans, interned): (ContentEncoding<A>, Vec<RecordSpan, A>, HashIndex<A>),
+        (stream, spans, interned): (ContentEncoding<A>, SmallVec<RecordSpan, 0, A>, HashIndex<A>),
         names: Option<RecordNames<A>>,
     )
     {
@@ -5412,7 +5412,7 @@ fn push_children<A>(
     arena: &TermArena,
     constants: &gandr_kernel_term::Family<ConstantName>,
     node: AnyNode,
-    tasks: &mut Vec<EncodeTask, A>,
+    tasks: &mut SmallVec<EncodeTask, 0, A>,
 ) where
     A: Allocator,
 {
@@ -5952,7 +5952,7 @@ const fn sign_tag(sign: Sign) -> WireTag
     ensures: {
         let packed = |text: &str| text.as_bytes().chunks(4).map(|chunk|
             u32::from_le_bytes(core::array::from_fn(|index| chunk.get(index).copied().unwrap_or(0_u8))))
-            .collect::<Vec<u32>>();
+            .collect::<SmallVec<u32, 0, Global>>();
         match *literal {
         Literal::Integer(ref integer) => record.words.0.get(entry_len) == Some(&u32::from(u8::from(gandr_kernel_term::LITERAL_INTEGER)))
             && record.words.0.get(entry_len.saturating_add(1)) == Some(&u32::from(u8::from(sign_tag(integer.sign()))))
@@ -6052,7 +6052,7 @@ fn put_level<A, const NAMED: bool>(
     A: Allocator + Clone,
 {
     record.put_word(EncodedWord(u64::from(level.constant_part())));
-    let atoms: Vec<(LevelVar, LevelOffset)> = level.atoms().collect();
+    let atoms: SmallVec<(LevelVar, LevelOffset), 0, Global> = level.atoms().collect();
     record.put_count(ComponentCount(atoms.len()));
     for (variable, offset) in atoms {
         record.put_word(EncodedWord(u64::from(u32::from(variable.index()))));
@@ -6417,7 +6417,7 @@ impl<'context> Telescope<'context>
     ///
     /// # Specification
     /// trivial.
-    fn types(self) -> Vec<ValueTypeId>
+    fn types(self) -> SmallVec<ValueTypeId, 0, Global>
     {
         self.entries().collect()
     }

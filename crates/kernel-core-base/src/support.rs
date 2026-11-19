@@ -81,10 +81,11 @@
 
 use alloc::alloc::Global;
 use alloc::collections::BTreeSet;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_check_memo::CheckMemo;
 use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::ContentDigest;
@@ -154,11 +155,11 @@ pub struct SupportContext
     /// each record it admits fresh, so a definition's naming reads two names.
     table: SessionTable,
     /// The read binders of the goal being keyed, reused across goals.
-    read: Vec<(DeBruijnIndex, ValueTypeId)>,
+    read: SmallVec<(DeBruijnIndex, ValueTypeId), 0, Global>,
     /// The session's shifting and substitution memo.
     rewrites: RewriteMemo,
     /// The goals open on the session's machines, innermost last.
-    open: Vec<Accrual>,
+    open: SmallVec<Accrual, 0, Global>,
     /// The content outcomes the environment's earlier admissions answered.
     kept: KeptMemo,
     /// The names of the keys of the obligations this declaration's check owes.
@@ -183,9 +184,9 @@ impl Default for SupportContext
     {
         Self {
             table: ContentTable::named_in(Global),
-            read: Vec::new(),
+            read: SmallVec::<_, 0, Global>::new(),
             rewrites: RewriteMemo::default(),
-            open: Vec::new(),
+            open: SmallVec::<_, 0, Global>::new(),
             kept: KeptMemo::default(),
             owing: BTreeSet::new(),
             drained: DrainLedger::default(),
@@ -208,7 +209,7 @@ enum Accrual
         /// The binders read so far.
         reads: Reads,
         /// The keys of the obligations owed so far, each one time.
-        owed: Vec<NodeSupport>,
+        owed: SmallVec<NodeSupport, 0, Global>,
     },
     /// The machine swapped its context for one that does not extend the open
     /// goal's, so nothing read until the barrier closes is a binder of it.
@@ -355,7 +356,7 @@ pub struct DrainLedger
     /// The keys of the obligations the drain checked, each with the
     /// parameters its verdict is kept under. A check owes obligations of its
     /// own, so its verdict holds only when the whole drain passes.
-    passed: Vec<(NodeSupport, Option<RecordName>)>,
+    passed: SmallVec<(NodeSupport, Option<RecordName>), 0, Global>,
     /// The names of the keys the drain met. A key it met already is not
     /// checked again.
     seen: BTreeSet<(RecordName, RecordName)>,
@@ -620,9 +621,9 @@ impl SupportContext
     {
         Self {
             table: self.table.fork(arena),
-            read: Vec::new(),
+            read: SmallVec::<_, 0, Global>::new(),
             rewrites: RewriteMemo::new(),
-            open: Vec::new(),
+            open: SmallVec::<_, 0, Global>::new(),
             kept: self.kept.fork(),
             owing: BTreeSet::new(),
             drained: DrainLedger::default(),
@@ -748,7 +749,7 @@ impl SupportContext
                 Accrual::Goal { depth, .. } => Accrual::Goal {
                     depth,
                     reads: Reads::closed(),
-                    owed: Vec::new(),
+                    owed: SmallVec::<_, 0, Global>::new(),
                 },
                 Accrual::Barrier => Accrual::Barrier,
             }));
@@ -1147,7 +1148,7 @@ impl SupportContext
         self.open.push(Accrual::Goal {
             depth: depth_of(context),
             reads: Reads::closed(),
-            owed: Vec::new(),
+            owed: SmallVec::<_, 0, Global>::new(),
         });
         at
     }
@@ -1356,7 +1357,7 @@ impl SupportContext
     /// # Specification
     /// trivial.
     #[inline]
-    fn close_innermost(&mut self) -> (Reads, Vec<NodeSupport>)
+    fn close_innermost(&mut self) -> (Reads, SmallVec<NodeSupport, 0, Global>)
     {
         match self.open.pop() {
             Some(Accrual::Goal { depth, reads, owed }) => {
@@ -1364,7 +1365,7 @@ impl SupportContext
                 owe_into(&mut self.open, &owed);
                 (reads, owed)
             },
-            Some(Accrual::Barrier) | None => (Reads::closed(), Vec::new()),
+            Some(Accrual::Barrier) | None => (Reads::closed(), SmallVec::<_, 0, Global>::new()),
         }
     }
 
@@ -1532,7 +1533,7 @@ impl NodeOutcome
 /// that owes nothing holds no allocation.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Owed(Option<Arc<[NodeSupport]>>);
+pub struct Owed(Option<ThinShared<(), NodeSupport, Global>>);
 
 impl Owed
 {
@@ -2080,7 +2081,7 @@ quenchant_shape::reason_enum! {
 fn read_binders<'buffer>(
     context: &[ValueTypeId],
     reads: &Reads,
-    read: &'buffer mut Vec<(DeBruijnIndex, ValueTypeId)>,
+    read: &'buffer mut SmallVec<(DeBruijnIndex, ValueTypeId), 0, Global>,
 ) -> Maybe<&'buffer [(DeBruijnIndex, ValueTypeId)], read_telescope::Absent>
 {
     read.clear();

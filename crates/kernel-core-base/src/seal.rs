@@ -59,7 +59,8 @@
 //! a third rewrite beside shifting and substitution.
 
 use alloc::collections::BTreeMap;
-use alloc::vec::Vec;
+use alloc::alloc::Global;
+use gandr_kernel_data::SmallVec;
 
 use anodized::spec;
 use gandr_kernel_term::CompType;
@@ -255,7 +256,7 @@ pub fn unseal(
         return Ok(root);
     }
     let mut done = Unsealed::default();
-    let mut steps = Vec::from([Step::Enter(Node::ValueType(root))]);
+    let mut steps = SmallVec::<_, 0, Global>::from_iter([Step::Enter(Node::ValueType(root))]);
     while let Some(step) = steps.pop() {
         match step {
             Step::Enter(node) => enter(arena, entries, manifest, &done, node, &mut steps)?,
@@ -296,7 +297,7 @@ fn enter(
     manifest: &[ConstantIndex],
     done: &Unsealed,
     node: Node,
-    steps: &mut Vec<Step>,
+    steps: &mut SmallVec<Step, 0, Global>,
 ) -> Result<(), KernelError>
 {
     match node {
@@ -573,7 +574,7 @@ fn exit_value_type(
 fn rebuilt_parts(
     done: &Unsealed,
     parts: &[ValueTypeId],
-) -> Result<Vec<ValueTypeId>, KernelError>
+) -> Result<SmallVec<ValueTypeId, 0, Global>, KernelError>
 {
     parts.iter().map(|&part| done.value_type(part)).collect()
 }
@@ -617,7 +618,7 @@ fn exit_comp_type(
             let rebuilt = results
                 .iter()
                 .map(|&result| done.value_type(result))
-                .collect::<Result<Vec<_>, _>>()?;
+                .collect::<Result<SmallVec<_, 0, Global>, _>>()?;
             if *rebuilt == *results {
                 id
             }
@@ -649,7 +650,7 @@ fn exit_comp_type(
             let rebuilt = components
                 .iter()
                 .map(|&component| done.comp_type(component))
-                .collect::<Result<Vec<_>, _>>()?;
+                .collect::<Result<SmallVec<_, 0, Global>, _>>()?;
             if *rebuilt == *components {
                 id
             }

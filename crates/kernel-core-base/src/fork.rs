@@ -25,7 +25,8 @@
 //!   kernel-reassessment-design item 11 — the independent obligations of one
 //!   check fork under one seam, and the serial check is the reference.
 
-use alloc::sync::Arc;
+use alloc::alloc::Global;
+use gandr_kernel_data::Shared;
 use core::fmt;
 use core::num::NonZeroUsize;
 
@@ -192,7 +193,7 @@ impl fmt::Debug for Forking<'_>
 /// trivial.
 #[derive(Clone, Default)]
 #[repr(transparent)]
-pub struct SharedFork(Option<Arc<dyn ObligationFork + Send>>);
+pub struct SharedFork(Option<Shared<dyn ObligationFork + Send, Global>>);
 
 impl SharedFork
 {
@@ -214,7 +215,7 @@ impl SharedFork
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn through(fork: Arc<dyn ObligationFork + Send>) -> Self
+    pub fn through(fork: Shared<dyn ObligationFork + Send, Global>) -> Self
     {
         Self(Some(fork))
     }

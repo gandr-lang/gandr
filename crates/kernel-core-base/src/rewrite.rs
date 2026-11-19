@@ -62,7 +62,8 @@
 //! base still takes no interning table of *decoded* values.
 
 use alloc::collections::BTreeSet;
-use alloc::vec::Vec;
+use alloc::alloc::Global;
+use gandr_kernel_data::SmallVec;
 use core::alloc::Allocator;
 
 use anodized::spec;
@@ -1662,8 +1663,8 @@ where
     if !readable {
         return outcome_of(root);
     }
-    let mut tasks: Vec<RewriteTask> = Vec::new();
-    let mut results: Vec<RewriteOutcome> = Vec::new();
+    let mut tasks: SmallVec<RewriteTask, 0, Global> = SmallVec::<_, 0, Global>::new();
+    let mut results: SmallVec<RewriteOutcome, 0, Global> = SmallVec::<_, 0, Global>::new();
     // The walk's own memo holds every goal the session memo does not store:
     // one it does not key, every goal under an inactive memo, and one a memo
     // at its ceiling declines. So a node its subject shares between
@@ -1673,7 +1674,7 @@ where
     let mut local: HashedMap<(AnyNode, BinderDepth, Rewrite), RewriteOutcome> =
         HashedMap::default();
     let mut reads: BTreeSet<(AnyNode, BinderDepth)> = BTreeSet::new();
-    let mut reading: Vec<Mention> = Vec::new();
+    let mut reading: SmallVec<Mention, 0, Global> = SmallVec::<_, 0, Global>::new();
     tasks.push(RewriteTask::Open(root, initial_depth, rewrite));
     while let Some(task) = tasks.pop() {
         match task {
@@ -2327,7 +2328,7 @@ fn push_rewrite_children(
     arena: &TermArena,
     node: AnyNode,
     depth: BinderDepth,
-    tasks: &mut Vec<RewriteTask>,
+    tasks: &mut SmallVec<RewriteTask, 0, Global>,
     rewrite: Rewrite,
 )
 {
@@ -2929,7 +2930,7 @@ fn close_rewrite(
     rewrite: Rewrite,
     node: AnyNode,
     depth: BinderDepth,
-    results: &mut Vec<RewriteOutcome>,
+    results: &mut SmallVec<RewriteOutcome, 0, Global>,
 ) -> RewriteOutcome
 {
     match node {
@@ -2970,7 +2971,7 @@ fn close_rewrite(
         && ret == before.1.unwrap_or_else(|| outcome_of(original)))]
 #[inline]
 fn popped(
-    results: &mut Vec<RewriteOutcome>,
+    results: &mut SmallVec<RewriteOutcome, 0, Global>,
     original: AnyNode,
 ) -> RewriteOutcome
 {
@@ -3040,7 +3041,7 @@ fn close_value(
     rewrite: Rewrite,
     id: ValueId,
     depth: BinderDepth,
-    results: &mut Vec<RewriteOutcome>,
+    results: &mut SmallVec<RewriteOutcome, 0, Global>,
 ) -> ValueId
 {
     let Some(node) = arena.value(id)
@@ -3713,7 +3714,7 @@ Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computati
 fn close_computation(
     arena: &mut TermArena,
     id: ComputationId,
-    results: &mut Vec<RewriteOutcome>,
+    results: &mut SmallVec<RewriteOutcome, 0, Global>,
 ) -> ComputationId
 {
     let Some(node) = arena.computation(id)
@@ -4026,7 +4027,7 @@ fn close_computation(
                 let result = popped(results, AnyNode::Value(original)).value_or(original);
                 if result != original
                     && let Some(slot) = rewritten
-                        .get_or_insert_with(|| values.to_vec())
+                        .get_or_insert_with(|| SmallVec::<_, 0, Global>::from_iter(values.iter().cloned()))
                         .get_mut(index)
                 {
                     *slot = result;
@@ -4041,7 +4042,7 @@ fn close_computation(
                     popped(results, AnyNode::Computation(original)).computation_or(original);
                 if result != original
                     && let Some(slot) = rewritten
-                        .get_or_insert_with(|| components.to_vec())
+                        .get_or_insert_with(|| SmallVec::<_, 0, Global>::from_iter(components.iter().cloned()))
                         .get_mut(index)
                 {
                     *slot = result;
@@ -4128,7 +4129,7 @@ ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0,
 fn close_value_type(
     arena: &mut TermArena,
     id: ValueTypeId,
-    results: &mut Vec<RewriteOutcome>,
+    results: &mut SmallVec<RewriteOutcome, 0, Global>,
 ) -> ValueTypeId
 {
     let Some(node) = arena.value_type(id)
@@ -4375,7 +4376,7 @@ fn close_value_type(
 fn close_comp_type(
     arena: &mut TermArena,
     id: CompTypeId,
-    results: &mut Vec<RewriteOutcome>,
+    results: &mut SmallVec<RewriteOutcome, 0, Global>,
 ) -> CompTypeId
 {
     let Some(node) = arena.comp_type(id)
@@ -4398,7 +4399,7 @@ fn close_comp_type(
                 let result = popped(results, AnyNode::ValueType(original)).value_type_or(original);
                 if result != original
                     && let Some(slot) = rewritten
-                        .get_or_insert_with(|| outcomes.to_vec())
+                        .get_or_insert_with(|| SmallVec::<_, 0, Global>::from_iter(outcomes.iter().cloned()))
                         .get_mut(index)
                 {
                     *slot = result;
@@ -4448,7 +4449,7 @@ fn close_comp_type(
                 let result = popped(results, AnyNode::CompType(original)).comp_type_or(original);
                 if result != original
                     && let Some(slot) = rewritten
-                        .get_or_insert_with(|| components.to_vec())
+                        .get_or_insert_with(|| SmallVec::<_, 0, Global>::from_iter(components.iter().cloned()))
                         .get_mut(index)
                 {
                     *slot = result;

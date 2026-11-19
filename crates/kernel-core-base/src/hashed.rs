@@ -8,7 +8,6 @@
 //! narrows; it never answers for a key that is not equal.
 
 use alloc::alloc::Global;
-use alloc::vec::Vec;
 use core::hash::Hash;
 
 use anodized::spec;
@@ -16,6 +15,7 @@ use gandr_kernel_check_memo::HashIndex;
 use gandr_kernel_check_memo::Probe;
 use gandr_kernel_check_memo::TableHash;
 use gandr_kernel_check_memo::TablePosition;
+use gandr_kernel_data::SmallVec;
 use quenchant_shape::shape::Maybe;
 
 quenchant_shape::reason_enum! {
@@ -50,7 +50,7 @@ quenchant_shape::reason_enum! {
 pub struct HashedMap<Key, Value>
 {
     /// The entries, in first-insertion order.
-    entries: Vec<(Key, Value)>,
+    entries: SmallVec<(Key, Value), 0, Global>,
     /// Each entry's position, filed under its key's hash.
     index: HashIndex<Global>,
 }
@@ -68,7 +68,7 @@ impl<Key, Value> Default for HashedMap<Key, Value>
     fn default() -> Self
     {
         Self {
-            entries: Vec::new(),
+            entries: SmallVec::<_, 0, Global>::new(),
             index: HashIndex::new_in(Global),
         }
     }

@@ -72,11 +72,12 @@
 
 use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::Shared;
 use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_term::Apartness;
 use gandr_kernel_term::CellFault;
 use gandr_kernel_term::ConstantIndex;
@@ -122,11 +123,11 @@ pub struct PresentedType
     /// The rules, in written order.
     presentation: Presentation,
     /// Each constructor's field count, in tag order.
-    arities: Arc<[FieldCount]>,
+    arities: ThinShared<(), FieldCount, Global>,
     /// For a type of words, the field count of each constructor of the sort
     /// its cells loop in, in tag order: where a case over the sort keeps its
     /// loop arms, and how the cells' point builds.
-    sort_arities: Option<Arc<[FieldCount]>>,
+    sort_arities: Option<ThinShared<(), FieldCount, Global>>,
     /// The rank of the declaration that presents it.
     rank: SourceRank,
 }
@@ -168,7 +169,7 @@ impl PresentedType
 pub struct Presentations
 {
     /// The rows, shared with every reading of them.
-    table: Option<Arc<Table>>,
+    table: Option<Shared<Table, Global>>,
     /// The rank every row a reading answers stands below.
     horizon: SourceRank,
 }
@@ -181,7 +182,7 @@ struct Table
     types: BTreeMap<ConstantIndex, PresentedType>,
     /// The types of words whose cells loop in each sort, each with its rank,
     /// by rank ascending.
-    words: BTreeMap<ConstantIndex, Vec<(SourceRank, ConstantIndex)>>,
+    words: BTreeMap<ConstantIndex, SmallVec<(SourceRank, ConstantIndex), 0, Global>>,
 }
 
 /// The presentations of an environment presenting no type.
@@ -286,13 +287,13 @@ impl Presentations
         else {
             return;
         };
-        let arities = |table: &[SmallVec<ValueTypeId, 0, Global>]| -> Arc<[FieldCount]> {
+        let arities = |table: &[SmallVec<ValueTypeId, 0, Global>]| -> ThinShared<(), FieldCount, Global> {
             table
                 .iter()
                 .map(|fields| FieldCount::from(fields.len()))
                 .collect()
         };
-        let table = Arc::make_mut(self.table.get_or_insert_with(Arc::default));
+        let table = Shared::make_mut(self.table.get_or_insert_with(Arc::default));
         if let Some(cells) = declaration.presentation().cells() {
             let words = table.words.entry(cells.sort()).or_default();
             let at = words.partition_point(|&(held, _)| held < rank);
@@ -324,7 +325,7 @@ impl Presentations
         if shared.types.range(first ..).next().is_none() {
             return;
         }
-        let table = Arc::make_mut(shared);
+        let table = Shared::make_mut(shared);
         let _forgotten = table.types.split_off(&first);
         table.words.retain(|_, words| {
             words.retain(|&(_, held)| held < first);
@@ -357,7 +358,7 @@ impl Presentations
         else {
             return;
         };
-        let table = Arc::make_mut(shared);
+        let table = Shared::make_mut(shared);
         let _retired = table.types.remove(&position);
         if let Some(sort) = sort
             && let Some(words) = table.words.get_mut(&sort)
@@ -388,7 +389,7 @@ impl Presentations
         else {
             return;
         };
-        let table = Arc::make_mut(shared);
+        let table = Shared::make_mut(shared);
         for (position, presented) in &mut table.types {
             if let Some(&rank) = ranks.get(position) {
                 presented.rank = rank;
@@ -876,7 +877,7 @@ fn spells(
     side: &[RuleNode],
 ) -> Spelling
 {
-    let mut pending = Vec::with_capacity(side.len());
+    let mut pending = SmallVec::<_, 0, Global>::with_capacity(Count::from(side.len()));
     pending.push(value);
     for &node in side {
         let (Some(at), RuleNode::Constructor(tag)) = (pending.pop(), node)
@@ -1190,7 +1191,7 @@ pub fn normal_form(
     };
     let mut term: SmallVec<RuleTerm<(ValueTypeId, Origin), ValueId>, 0, Global> =
         SmallVec::<_, 0, Global>::new();
-    let mut pending = Vec::from([value]);
+    let mut pending = SmallVec::<_, 0, Global>::from_iter([value]);
     while let Some(id) = pending.pop() {
         match arena.value(id) {
             Some(&Value::Constructor {
@@ -1218,7 +1219,7 @@ pub fn normal_form(
     if normalized == Normalized::Unchanged {
         return Ok(value);
     }
-    let mut built: Vec<ValueId> = Vec::new();
+    let mut built: SmallVec<ValueId, 0, Global> = SmallVec::<_, 0, Global>::new();
     while let Some(node) = term.pop() {
         match node {
             RuleTerm::Leaf(id) => built.push(id),

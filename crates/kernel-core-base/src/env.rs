@@ -8,12 +8,13 @@
 use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
-use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_data::Count;
 use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::ArenaWatermark;
 use gandr_kernel_term::ChunkedMap;
@@ -633,7 +634,7 @@ impl From<UnsettledCount> for usize
 pub struct StagedMarks
 {
     /// The outstanding marks, in registration order.
-    pub marks: Vec<ArenaWatermark>,
+    pub marks: SmallVec<ArenaWatermark, 0, Global>,
 }
 
 impl StagedMarks
@@ -1295,7 +1296,7 @@ pub struct AdmittedDeclaration
     /// The positions its content names, ascending: what joins a check's
     /// support when the check reads it. A mutual block's members each keep the
     /// references of the whole block, and share one slice of them.
-    references: alloc::sync::Arc<[ConstantIndex]>,
+    references: ThinShared<(), ConstantIndex, Global>,
     /// The block it was admitted in: its own position alone unless a mutual
     /// block admitted it, whose families share one stage.
     block: crate::occurrence::Block,
@@ -1340,7 +1341,7 @@ pub struct AdmittedParts
     /// The positions its content names, ascending: what joins a check's
     /// support when the check reads it. A mutual block's members each keep the
     /// references of the whole block, and share one slice of them.
-    pub references: alloc::sync::Arc<[ConstantIndex]>,
+    pub references: ThinShared<(), ConstantIndex, Global>,
     /// The block it was admitted in: its own position alone unless a mutual
     /// block admitted it, whose families share one stage.
     pub block: crate::occurrence::Block,
@@ -1784,15 +1785,15 @@ pub struct Entries
 {
     /// The entries and the tables kept beside them, shared with every clone
     /// and with every reading a check makes, until one of them admits more.
-    log: Option<alloc::sync::Arc<EntryLog>>,
+    log: Option<Shared<EntryLog, Global>>,
     /// The support of the check that runs over the entries: none until a
     /// check opens one, and never shared with a clone.
-    support: Option<alloc::sync::Arc<crate::weakening::Support>>,
+    support: Option<Shared<crate::weakening::Support, Global>>,
     /// The supports that closed checks gave back beside the one above, which
     /// the next views take. A view beside an open one then reuses a support
     /// under a fresh stamp, and allocates and clears no stamp for each
     /// position. They number at most the checks open at once.
-    spares: alloc::vec::Vec<alloc::sync::Arc<crate::weakening::Support>>,
+    spares: SmallVec<alloc::sync::Arc<crate::weakening::Support>, 0, Global>,
     /// The rank the check that runs reads below: none until a check opens
     /// one, and never shared with a clone.
     horizon: Option<Horizon>,
@@ -1966,7 +1967,7 @@ impl Clone for Entries
         Self {
             log: self.log.clone(),
             support: None,
-            spares: alloc::vec::Vec::new(),
+            spares: SmallVec::<_, 0, Global>::new(),
             horizon: None,
         }
     }
@@ -1985,7 +1986,7 @@ impl PartialEq for Entries
     ) -> bool
     {
         match (self.log.as_ref(), other.log.as_ref()) {
-            (Some(mine), Some(theirs)) => alloc::sync::Arc::ptr_eq(mine, theirs),
+            (Some(mine), Some(theirs)) => Shared::ptr_eq(mine, theirs),
             (None, None) => true,
             (Some(_), None) | (None, Some(_)) => false,
         }
@@ -2009,7 +2010,7 @@ impl Entries
         Self {
             log: None,
             support: None,
-            spares: alloc::vec::Vec::new(),
+            spares: SmallVec::<_, 0, Global>::new(),
             horizon: None,
         }
     }
@@ -2501,7 +2502,7 @@ impl Entries
         Self {
             log: self.log.clone(),
             support: self.support.clone(),
-            spares: alloc::vec::Vec::new(),
+            spares: SmallVec::<_, 0, Global>::new(),
             horizon: self.horizon.clone(),
         }
     }
@@ -2521,12 +2522,12 @@ impl Entries
         // A freeze moves the slots admitted since the last one into a shared
         // chunk, so the log that the view shares holds no slot of its own.
         if let Some(log) = self.log.as_mut() {
-            alloc::sync::Arc::make_mut(log).family.freeze();
+            Shared::make_mut(log).family.freeze();
         }
         Self {
             log: self.log.clone(),
             support: self.support.take().or_else(|| self.spares.pop()),
-            spares: alloc::vec::Vec::new(),
+            spares: SmallVec::<_, 0, Global>::new(),
             horizon: None,
         }
     }
@@ -2563,7 +2564,7 @@ impl Entries
     #[inline]
     fn log_mut(&mut self) -> &mut EntryLog
     {
-        alloc::sync::Arc::make_mut(self.log.get_or_insert_with(alloc::sync::Arc::default))
+        Shared::make_mut(self.log.get_or_insert_with(alloc::sync::Arc::default))
     }
 
     /// Admit `entry` after every entry, its content in `arena`.
@@ -2933,7 +2934,7 @@ impl Entries
         };
         // The rewrite writes only the contents whose definitions it takes out
         // of rank order, so it copies their chunks alone.
-        let unsorted: Vec<ContentDigest> = definitions
+        let unsorted: SmallVec<ContentDigest, 0, Global> = definitions
             .iter()
             .filter(|&(_, positions)| !positions.is_sorted_by_key(rank_of))
             .map(|(&digest, _)| digest)
@@ -3123,10 +3124,10 @@ impl Entries
         let length = self.len();
         let fresh = alloc::sync::Arc::default;
         let support = self.support.get_or_insert_with(fresh);
-        if alloc::sync::Arc::get_mut(support).is_none() {
+        if Shared::get_mut(support).is_none() {
             *support = fresh();
         }
-        let Some(support) = alloc::sync::Arc::get_mut(support)
+        let Some(support) = Shared::get_mut(support)
         else {
             return;
         };
@@ -3147,7 +3148,7 @@ impl Entries
     pub fn close(&mut self) -> Option<ConstantIndex>
     {
         self.horizon = None;
-        alloc::sync::Arc::get_mut(self.support.as_mut()?)?.close()
+        Shared::get_mut(self.support.as_mut()?)?.close()
     }
 
     /// How many entries the last check read.
@@ -3409,7 +3410,7 @@ pub fn collect_reachable(
 pub fn references(
     arena: &TermArena,
     declaration: &Declaration,
-) -> alloc::sync::Arc<[ConstantIndex]>
+) -> ThinShared<(), ConstantIndex, Global>
 {
     let mut found = BTreeSet::new();
     {
@@ -3571,7 +3572,7 @@ struct Walk
     /// Every node expanded so far, each once.
     seen: BTreeSet<AnyNode>,
     /// The nodes met and not yet expanded.
-    pending: Vec<AnyNode>,
+    pending: SmallVec<AnyNode, 0, Global>,
 }
 
 /// Expand every node reachable from `root` that `walk` has not expanded,
