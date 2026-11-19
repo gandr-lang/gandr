@@ -1,0 +1,32 @@
+[package]
+name = "gandr-boot-alloc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Memory for the bootstrap from the kernel's mapping calls with no libc: whole pages, and an allocator in size classes over them"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["allocator", "gandr", "mmap", "no-std"]
+categories = ["memory-management", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One target for the mapping calls and the heap, each area a module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The count of the process's mapped pages reads the whole process, so its
+# one test runs in a target of its own, with no other test beside it.
+[[test]]
+name = "pages"
+path = "tests/pages.rs"
+
+# No dependencies. On Linux each mapping call is a system call by the
+# crate's own function in assembly. On macOS it is a declared function of
+# the system library, which each program there links.
+
+[lints]
+workspace = true

@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+  "crates/boot-alloc",
   "crates/core-checker",
   "crates/core-checker-base",
   "crates/core-checker-bridge",
