@@ -3502,9 +3502,10 @@ impl<'source> Respelling<'_, 'source>
         .then_some(Operation::Action { map, path: along })
     }
 
-    /// Write the supplied path type whose parts are `parts`, `Path(x, y)` or
-    /// `Path[.A = T](x, y)`, as the juxtaposition `Path x y`. Each endpoint is
-    /// an atom or in its parentheses, and the carrier stays in its brackets.
+    /// Write the supplied path type whose parts are `parts`, `Path(x, y)`,
+    /// `Path[.A = T](x, y)` or `Path[.A](x, y)`, as the juxtaposition `Path x
+    /// y`. Each endpoint is an atom or in its parentheses, and the carrier
+    /// stays in its brackets.
     /// Nothing is written for a list that holds a comment, or for parts that
     /// leave a list or a carrier open. The path binds as [`juxtaposition`]
     /// states, so a kept form and a rewritten one agree.
@@ -3598,7 +3599,8 @@ impl<'source> Respelling<'_, 'source>
         let (&head, rest) = owns.split_first()?;
         let head_text = <&str>::from(head);
         // The carrier between `=` and `]` is an operand, or a keyword the
-        // grammar spells as its own tile, `Path[.A = Type](X, Y)`.
+        // grammar spells as its own tile, `Path[.A = Type](X, Y)`. A carrier
+        // by name, `Path[.A](X, Y)`, writes no `=` and no carrier.
         let carried = rest.len().checked_sub(4_usize).and_then(|end| {
             Some((
                 rest.get(.. 3_usize)?,
@@ -3606,19 +3608,24 @@ impl<'source> Respelling<'_, 'source>
                 rest.get(end ..)?,
             ))
         });
+        let punned = rest
+            .iter()
+            .map(|&own| <&str>::from(own))
+            .eq(["[", ".", "]", "(", ",", ")"]);
         let supplied = matches!(head_text, "Path" | "Bridge")
-            && carried.is_some_and(|(lead, carrier, tail)| {
-                lead.iter()
-                    .map(|&own| <&str>::from(own))
-                    .eq(["[", ".", "="])
-                    && tail
-                        .iter()
+            && (punned
+                || carried.is_some_and(|(lead, carrier, tail)| {
+                    lead.iter()
                         .map(|&own| <&str>::from(own))
-                        .eq(["]", "(", ",", ")"])
-                    && carrier
-                        .iter()
-                        .all(|&own| !matches!(<&str>::from(own), "[" | "]" | "(" | ")" | ","))
-            });
+                        .eq(["[", ".", "="])
+                        && tail
+                            .iter()
+                            .map(|&own| <&str>::from(own))
+                            .eq(["]", "(", ",", ")"])
+                        && carrier
+                            .iter()
+                            .all(|&own| !matches!(<&str>::from(own), "[" | "]" | "(" | ")" | ","))
+                }));
         let opens = rest
             .iter()
             .filter(|&&own| <&str>::from(own) == OPEN_PAREN.0)

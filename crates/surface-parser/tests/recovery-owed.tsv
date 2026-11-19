@@ -2560,10 +2560,6 @@ fixture/model/identity/bridge.gandr	91	2	8031
 fixture/model/identity/bridge.gandr	184	2	8031
 fixture/model/identity/call-under-constructor.gandr	0	0	8030
 fixture/model/identity/call-under-constructor.gandr	5	0	8030
-fixture/model/identity/carrier-by-name.gandr	78	2	8031
-fixture/model/identity/carrier-by-name.gandr	92	5	8031
-fixture/model/identity/carrier-by-name.gandr	128	5	8031
-fixture/model/identity/carrier-by-name.gandr	135	7	8031
 fixture/model/identity/certificate-transport.gandr	0	0	8030
 fixture/model/identity/certificate-transport.gandr	251	2	8072
 fixture/model/identity/certificate-transport.gandr	370	1	8072

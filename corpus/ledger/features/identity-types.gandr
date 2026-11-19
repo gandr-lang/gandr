@@ -20,5 +20,5 @@ def joined() -> Path 4 4 = join 4 4 4 four_eq_four four_eq_four;
 def four_named : Path[.A = Integer] 4 4 = Path.here 4;
 
 /// A point identified with itself, the carrier supplied from `A`.
-def itself(A : Type, x : A) -> Path[.A](x, x) =
+def itself(A : Type, x : A) -> Path[.A] x x =
   Path.here x
