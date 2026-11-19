@@ -238,6 +238,7 @@ impl From<GitHubError> for TimingError
     }
 }
 
+/// The small string of `text`. The allocator holds it, or the call panics.
 macro_rules! held {
     ($text:expr) => {
         gandr_kernel_data::SmallString::try_from($text).expect("the allocator holds the text")

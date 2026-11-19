@@ -308,7 +308,7 @@ pub fn download(
         .args([
             "run",
             "download",
-            &destination_of(store, run)
+            destination_of(store, run)
                 .file_name()
                 .and_then(|name| name.to_str())
                 .unwrap_or(""),

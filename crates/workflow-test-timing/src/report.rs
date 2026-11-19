@@ -418,7 +418,7 @@ impl Timing
         samples: &[Duration],
     ) -> Maybe<Self, summary::Absent>
     {
-        let mut sorted = SmallVec::<_, 0, Global>::from_iter(samples.iter().cloned());
+        let mut sorted = SmallVec::<_, 0, Global>::from_iter(samples.iter().copied());
         sorted.sort_unstable();
         let middle = sorted
             .len()
@@ -483,6 +483,9 @@ pub enum Stability
     Unsteady,
 }
 
+/// The durations of one test in one binary and one lane.
+type Durations = SmallVec<Duration, 0, Global>;
+
 /// Durations recorded per test, per binary and per lane.
 ///
 /// # Specification
@@ -490,7 +493,7 @@ pub enum Stability
 ///   is one lookup.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct History(BTreeMap<TestName, BTreeMap<(BinaryId, Lane), SmallVec<Duration, 0, Global>>>);
+pub struct History(BTreeMap<TestName, BTreeMap<(BinaryId, Lane), Durations>>);
 
 impl History
 {

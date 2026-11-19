@@ -20,7 +20,6 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anodized::spec;
-use gandr_kernel_data::SmallString;
 use gandr_kernel_data::SmallVec;
 use gandr_workflow_test_timing::ConfigText;
 use gandr_workflow_test_timing::Generated;
@@ -37,13 +36,16 @@ use gandr_workflow_test_timing::read_run;
 use gandr_workflow_test_timing::recent_runs;
 use gandr_workflow_test_timing::stored_runs;
 
+/// The small string of `text`. The allocator holds it, or the call panics.
 macro_rules! held {
     ($text:expr) => {
         gandr_kernel_data::SmallString::try_from($text).expect("the allocator holds the text")
     };
 }
 
+/// The exit code of a refusal or a malformed invocation.
 const REFUSED: u8 = 2;
+/// The repository name clap parses. Clap builds a `String`.
 #[cfg_attr(
     all(dylint_lib = "quenchant_dylints", not(test)),
     expect(
