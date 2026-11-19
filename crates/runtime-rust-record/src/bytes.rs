@@ -179,8 +179,7 @@ impl Entry
     /// - executable: none — the inverse is the decoder, which the witness runs.
     ///
     /// # Cost
-    /// - allocation: the canonical bytes, growth within the entry's sources,
-    ///   functions and refusals
+    /// - allocation: the canonical bytes, growth within the entry
     ///
     /// # Adequacy
     /// - hypothesis: L2 — a round trip through the decoder over an entry that
@@ -235,8 +234,7 @@ impl Entry
     /// [`Undecoded`], as above.
     ///
     /// # Cost
-    /// - allocation: the decoded sources, functions, layouts and names, growth
-    ///   within the bytes, which bound each count
+    /// - allocation: the decoded entry, growth within the length of the bytes
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each proper prefix of an entry's bytes is truncated,
@@ -749,8 +747,7 @@ impl Reader<'_>
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: the arguments, growth within the bytes, which bound the
-    ///   count
+    /// - allocation: the arguments, growth within the length of the bytes
     fn function(&mut self) -> Result<Function, Undecoded>
     {
         let path = FunctionPath::from(self.text()?);
@@ -798,8 +795,7 @@ impl Reader<'_>
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: the arms of an enum, growth within the bytes, which bound
-    ///   the count
+    /// - allocation: the arms of an enum, growth within the length of the bytes
     fn layout(&mut self) -> Result<Layout, Undecoded>
     {
         let ty = TypeName::from(self.text()?);
@@ -870,7 +866,7 @@ impl Reader<'_>
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: the fields, growth within the bytes, which bound the count
+    /// - allocation: the fields, growth within the length of the bytes
     fn fields(&mut self) -> Result<Vec<Field>, Undecoded>
     {
         let count = self.count()?;
