@@ -1,0 +1,23 @@
+/// `Immobile.Capture`: a thunk crossing to another world over a capture whose
+/// type does not cross.
+module Seat :> *{
+  type Dispatch,
+  task : Dispatch
+} where {
+  type Dispatch = String;
+  /// The dispatch a seat receives.
+  @[checks]
+  def task = "task";
+}
+
+world operator;
+
+world seat;
+
+@[refuses("Immobile.Capture")]
+@[entry(*{operator, seat})]
+def dispatched() -> () -> Seat.Dispatch =
+  migrate [seat] {
+    let task = Seat.task;
+    pure thunk { pure task }
+  }
