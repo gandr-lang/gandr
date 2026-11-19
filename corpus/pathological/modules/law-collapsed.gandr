@@ -22,7 +22,7 @@ theory Collapsed where
   /// The loops.
   sort Loop : Type;
   /// Any two loops are one path.
-  law one : (p : Loop, q : Loop) -> Path[.A = Loop](p, q);
+  law one : (p : Loop, q : Loop) -> Path[.A = Loop] p q;
 
 /// Two integers differ, so no proof exists and no host asserts one.
 module CollapsedInteger : Model(Collapsed) with sort Loop = Integer where {
