@@ -2264,7 +2264,6 @@ fixture/model/identity/a-composite-lambda-against-its-two-lambdas.gandr	680	4	80
 fixture/model/identity/a-composite-lambda-against-its-two-lambdas.gandr	747	5	8030
 fixture/model/identity/a-composite-lambda-against-its-two-lambdas.gandr	750	4	8030
 fixture/model/identity/a-composite-lambda-against-its-two-lambdas.gandr	861	6	8072
-fixture/model/identity/a-composite-lambda-against-its-two-lambdas.gandr	864	5	8072
 fixture/model/identity/a-held-run-through-two-definitions.gandr	112	7	8072
 fixture/model/identity/a-run-through-a-held-path.gandr	32	4	8030
 fixture/model/identity/a-run-through-a-held-path.gandr	35	4	8030
@@ -2421,7 +2420,6 @@ fixture/model/identity/ap-functoriality.gandr	760	11	7881
 fixture/model/identity/ap-functoriality.gandr	763	11	7881
 fixture/model/identity/ap-functoriality.gandr	776	11	7881
 fixture/model/identity/ap-functoriality.gandr	779	11	7881
-fixture/model/identity/ap-functoriality.gandr	832	9	7881
 fixture/model/identity/ap-functoriality.gandr	863	13	7881
 fixture/model/identity/ap-functoriality.gandr	879	13	7881
 fixture/model/identity/ap-functoriality.gandr	932	11	7881
