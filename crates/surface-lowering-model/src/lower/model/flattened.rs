@@ -1,0 +1,1361 @@
+//! Model implicits, flattened: a function quantifying over a model in its
+//! prefix block, `[s : Model(S)]`, binds one implicit parameter per component
+//! of the signature `S` derives — each sort at its universe, each operation,
+//! constant and law at its derived type, in signature order, each later one
+//! read under the ones before it — and no parameter holding a record of the
+//! model.
+//!
+//! # The flattening is the dictionary
+//!
+//! A model passed to a function is its components, passed as ordinary
+//! arguments: the core holds no record of a model, and a body reads `s.x` and
+//! `s.op` as the variables of their parameters. A model a function quantifies
+//! over is never a value of its own, so `s` named alone is refused,
+//! [`LoweringRefusal::ModelImplicitValue`]. A sort a manifest model type
+//! fixes, `[s : Model(S) with sort x = A]`, binds no parameter: `s.x` reads
+//! `A`, as it reads off a binder held at that type. A nested component's model
+//! stays the record of its theory, one parameter.
+//!
+//! # A supply names a module or a model
+//!
+//! `f[.s = M]` passes the module `M`'s members, one per component, as `pack M
+//! at Model(S)` reads them: a module of a theory that includes `S` passes the
+//! members `S` places, its reduct, and a module wanting one is refused as the
+//! pack is. `f[.s = t]`, for a model implicit `t` of the caller's, passes `t`'s
+//! component of each name. Anything else a slot is supplied is refused,
+//! [`LoweringRefusal::ModelImplicitValue`]: a model implicit is supplied by a
+//! path, never by a value.
+//!
+//! # An omitted slot is resolved
+//!
+//! A call omitting the slot nominates one hole per component, and plans its
+//! candidates: every top-level module declared before the call whose
+//! ascription `Model(T)` names `S` or a theory `T` including `S`, each packed
+//! as a supply naming it would be, in the order the modules are declared. No
+//! module is marked as an instance: being a model of `S` is the whole
+//! condition. A module that cannot be packed at `S` is no candidate. The
+//! checker solves the explicit arguments first, then keeps the one candidate
+//! whose components the solved holes admit; it refuses a slot none answers
+//! and one two or more answer, naming every candidate left. A slot at a
+//! manifest model type, `Model(S) with sort C = A`, has no hole for a sort it
+//! fixes: it carries the code of `A`, each candidate the code of its own sort
+//! `C`, and the trial poses the two equal, so a candidate of another sort is
+//! refuted. A fixed type that reads a binder of the callee is not posed, and
+//! leaves its candidates untested on that sort.
+//!
+//! # A scope names a model or leaves it to the models in scope
+//!
+//! A capability scope over a theory may name a module in place of its clauses,
+//! `handle c : T with sort x = A { M } with N`: the slot is the theory's at
+//! the manifest's sorts, as a model implicit at `Model(T) with sort x = A`
+//! reads it, and `N` passes its members as a supply naming it does. Each
+//! operation's component is stated at its derived type, the carrier read as
+//! the type `N` gives it. A scope writing no `with` leaves the slot to the
+//! models in scope as a call omitting it does: a hole per component, the slot
+//! planned at the scope with its candidates.
+
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_term::Binders;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_surface_lowering_base::lower::families::Families;
+pub(in crate::lower) use gandr_surface_lowering_base::lower::model::flattened::ComponentPlace;
+use gandr_surface_lowering_base::lower::model::flattened::FlatComponent;
+pub(in crate::lower) use gandr_surface_lowering_base::lower::model::flattened::Flattened;
+pub(in crate::lower) use gandr_surface_lowering_base::lower::model::flattened::ModelSlot;
+pub(in crate::lower) use gandr_surface_lowering_base::lower::model::flattened::PlannedModel;
+pub(in crate::lower) use gandr_surface_lowering_base::lower::model::flattened::Supplied;
+pub(in crate::lower) use gandr_surface_lowering_base::lower::model::flattened::WrittenSlot;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeIndex;
+use gandr_theory_levitation::Name;
+use quenchant_shape::shape::Maybe;
+
+use super::Fields;
+use super::Members;
+use super::Minting;
+use super::Models;
+use super::ModelsRef;
+use crate::by_form::FormStretch;
+use crate::error::FragmentBoundary;
+use crate::error::LoweringRefusal;
+use crate::form::Cursor;
+use crate::form::Former;
+use crate::form::Pieces;
+use crate::form::Placed;
+use crate::form::TileName;
+use crate::form::Universe;
+use crate::form::read_pieces;
+use crate::lower::Code;
+use crate::lower::Parameter;
+use crate::lower::Plan;
+use crate::lower::Produced;
+use crate::lower::Reading;
+use crate::lower::Resolved;
+use crate::lower::Sink;
+use crate::lower::Site;
+use crate::lower::arity;
+use crate::lower::closed;
+use crate::lower::implicit::Nomination;
+use crate::lower::lowered;
+use crate::model::Dependent;
+use crate::model::ModelComponent;
+use crate::model::ModelForm;
+use crate::module::Container;
+use crate::module::Stratum;
+use crate::module::StructureIndex;
+use crate::module::TelescopeEntry;
+use crate::origin::Insertion;
+use crate::origin::Omitted;
+use crate::origin::Origin;
+use crate::resolve::Bound;
+use crate::resolve::Frame;
+use crate::resolve::ScopeId;
+use crate::resolve::SurfaceName;
+
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host, F>
+{
+    /// The theory the type `declared` names when it is a model type,
+    /// `Model(S)` or `Model(S) with sort x = A …`.
+    ///
+    /// # Specification
+    /// - requires: `declared` is a parameter's written type in `site`.
+    /// - ensures: the slot of the theory `S` names, its outermost theory
+    ///   holding no sort the type fixes, each fixed sort beside the type it is,
+    ///   when the type is a model type; nothing for any other type.
+    /// - fails: a manifest type's bindings out of shape; the refusals
+    ///   [`Self::bundled`] yields for a theory nothing presents.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a model implicit binds its components, a manifest one
+    ///   all but the sorts it fixes, and an implicit at any other type binds as
+    ///   written.
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_manifest_model_implicit_binds_no_fixed_sort_739`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |slot| slot.as_ref().is_none_or(|slot| !slot.theories.is_empty())))]
+    #[inline]
+    pub fn model_slot(
+        &mut self,
+        site: Site,
+        declared: Placed,
+    ) -> Result<Option<ModelSlot>, LoweringRefusal<'source>>
+    {
+        let written = Site {
+            at: declared,
+            ..site
+        };
+        let (applied, bound) = match self.cx().form_at(declared)? {
+            Some((_, Former::TypeApplication)) => (declared, None),
+            Some((_, Former::ManifestType)) => {
+                let mut pieces = Pieces::new();
+                read_pieces(self.cx().pbg, self.cx().tree, declared.node, &mut pieces)?;
+                let mut cursor = Cursor::new(&pieces.pieces, declared.span);
+                let applied = written.one(cursor.operands())?;
+                closed(written, &mut cursor, TileName::WITH)?;
+                let bound = written.one(cursor.operands())?;
+                (applied, Some(bound))
+            },
+            _ => return Ok(None),
+        };
+        let at_applied = Site {
+            at: applied,
+            ..site
+        };
+        let Ok(theory) = self
+            .shared()
+            .stated_theory(at_applied, at_applied.out(FragmentBoundary::WrongSort))
+        else {
+            return Ok(None);
+        };
+        let mut sorts = Vec::new();
+        if let Some(bound) = bound {
+            let mut scratch = Pieces::new();
+            self.shared()
+                .bindings(written, bound, &mut scratch, &mut sorts)?;
+        }
+        let named = Site {
+            at: theory.last,
+            ..site
+        };
+
+        self.theory_slot(named, &theory, declared.span.start(), &sorts)
+            .map(Some)
+    }
+
+    /// The sorts the type a module packed at `site` is checked against fixes,
+    /// each sort's name beside the type it is, when that type is a manifest
+    /// model type of the theory the path `theory` names (#4826).
+    ///
+    /// The type is the one a call's parameter writes, a definition's
+    /// signature, or an annotation: where a constructor reads its classifier.
+    ///
+    /// # Specification
+    /// - requires: `theory` is the path of the model type the module is packed
+    ///   at, written in `site`.
+    /// - ensures: [`Self::model_slot`]'s fixed sorts for that type when its
+    ///   slot is the theory's bundle with those sorts left out; nothing for a
+    ///   site no type is written for, a type no model type is, a model type of
+    ///   another theory, and one that fixes no sort.
+    /// - fails: the budget's refusal; every other refusal leaves the type to
+    ///   the check that reads it.
+    /// - panics: none.
+    /// - executable: none — the answer reads the tree and the theory's bundle,
+    ///   which a clause would read again whole.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module packed for a definition's signature and
+    ///   passed for a parameter, each at a model type fixing every sort or only
+    ///   some, drops the fixed sorts; one at the unfixed model type keeps them.
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_module_packs_at_a_model_type_fixing_its_sorts_4826`
+    pub(in crate::lower) fn expected_fixed(
+        &mut self,
+        site: Site,
+        theory: &crate::form::WrittenPath,
+    ) -> Result<BTreeMap<Name, Placed>, LoweringRefusal<'source>>
+    {
+        let node = site.at.node;
+        let expected = self
+            .cx()
+            .parameter_typed
+            .get(&node)
+            .map(|called| called.typed.node)
+            .or_else(|| match self.cx().inherited.get(&node) {
+                Some(&crate::lower::native::Classifier::Written(typed)) => Some(typed),
+                _ => None,
+            })
+            .or_else(|| self.cx().classifiers.get(&node).copied());
+        let Some(expected) =
+            expected.and_then(|typed| self.cx().tree.node(typed).map(|at| Placed::of(typed, at)))
+        else {
+            return Ok(BTreeMap::new());
+        };
+        let slot = match self.model_slot(site, expected) {
+            Ok(Some(slot)) if !slot.fixed.is_empty() => slot,
+            Err(refusal @ LoweringRefusal::BudgetExceeded { .. }) => return Err(refusal),
+            Ok(_) | Err(_) => return Ok(BTreeMap::new()),
+        };
+        let written = Site {
+            at: theory.last,
+            ..site
+        };
+        let mut ours = match self.bundled(written, (site.at.span.start(), theory)) {
+            Ok(ours) => ours,
+            Err(refusal @ LoweringRefusal::BudgetExceeded { .. }) => return Err(refusal),
+            Err(_) => return Ok(BTreeMap::new()),
+        };
+        if let Some(outermost) = ours.first_mut() {
+            outermost
+                .signature
+                .components
+                .retain(|component| !slot.fixed.contains_key(&component.name));
+        }
+
+        Ok(if ours == slot.theories {
+            slot.fixed
+        }
+        else {
+            BTreeMap::new()
+        })
+    }
+
+    /// The slot of the theory the path `theory` names, its refusals placed at
+    /// `named`, read where a form starting at `at` reads it, each sort `sorts`
+    /// names fixed to the type written beside it.
+    ///
+    /// # Specification
+    /// - requires: `named` is at the last name of `theory`, a theory's name or
+    ///   dotted path; each of `sorts` is a sort's name tile beside the type
+    ///   written for it.
+    /// - ensures: the slot of the theory, its outermost theory holding no sort
+    ///   `sorts` names, each named sort beside its type.
+    /// - fails: the refusals [`Self::bundled`] yields for a theory nothing
+    ///   presents.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::model_slot`], and a scope over `State`
+    ///   fixing its state names a model of it; one over a theory another source
+    ///   declares at a dotted path names a module of it.
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_manifest_model_implicit_binds_no_fixed_sort_739`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_imported_theory_at_a_dotted_path_is_named_wherever_a_theory_is_4514`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |slot| !slot.theories.is_empty() && slot.fixed.len() <= sorts.len()))]
+    #[inline]
+    pub fn theory_slot(
+        &mut self,
+        named: Site,
+        theory: &crate::form::WrittenPath,
+        at: ByteOffset,
+        sorts: &[(Placed, Placed)],
+    ) -> Result<ModelSlot, LoweringRefusal<'source>>
+    {
+        let fixed: BTreeMap<Name, Placed> = sorts
+            .iter()
+            .map(|&(sort, stated)| (Name::from(self.cx().name_at(sort).as_ref()), stated))
+            .collect();
+        let mut theories = self.bundled(named, (at, theory))?;
+        if let Some(outermost) = theories.first_mut() {
+            outermost
+                .signature
+                .components
+                .retain(|component| !fixed.contains_key(&component.name));
+        }
+
+        Ok(ModelSlot {
+            theories,
+            fixed,
+            theory: theory.clone(),
+        })
+    }
+
+    /// What the module whose name `module` writes in `site` passes for the
+    /// slot `slot`.
+    ///
+    /// # Specification
+    /// - requires: `module` is a capitalised name written in `site`.
+    /// - ensures: the module's members, as [`Self::packed_module`] reads them
+    ///   at the slot's theory and its fixed sorts.
+    /// - fails: the refusals [`Self::packed_module`] yields.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope over `State` naming a state-passing module
+    ///   runs, and one naming no module is refused at the name.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |supplied| matches!(*supplied, Supplied::Module(_))))]
+    #[inline]
+    pub fn named_model(
+        &mut self,
+        site: Site,
+        module: Placed,
+        slot: &ModelSlot,
+    ) -> Result<Supplied, LoweringRefusal<'source>>
+    {
+        let packed = self.packed_module(site, module, &slot.theory, &slot.fixed)?;
+
+        Ok(Supplied::Module(Arc::new(packed)))
+    }
+
+    /// The model answering the capability scope at `site` over `theory`,
+    /// which names none: one hole per component of `slot`, each nominated as
+    /// the scope's, the slot planned at the scope with every module of the
+    /// theory in scope
+    /// ([`Families::plan_slot`]).
+    ///
+    ///
+    /// # Specification
+    /// - requires: `slot` is the theory's slot at the scope's manifest sorts.
+    /// - ensures: one hole per component of `slot`, in signature order, each
+    ///   nominated as answering a scope over `theory`, kept and planned as
+    ///   [`Families::plan_slot`] keeps and plans them.
+    /// - fails: the refusals [`Families::plan_slot`] yields; the budget refusal
+    ///   once no hole can be nominated.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope over `State` writing no `with` runs as one
+    ///   naming the one model in scope; with none in scope it is refused, and
+    ///   with two it is refused naming both.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_is_answered_by_the_model_in_scope_2272`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Supplied::Nominated(ref holes)) => holes.len() == slot.components().len(),
+        | Ok(Supplied::Module(_) | Supplied::Bound(_)) => false,
+        | Err(_) => true,
+    })]
+    #[inline]
+    pub fn answering_model(
+        &mut self,
+        site: Site,
+        theory: SurfaceName<'source>,
+        slot: &ModelSlot,
+    ) -> Result<Supplied, LoweringRefusal<'source>>
+    {
+        let mut holes = Vec::with_capacity(slot.components().len());
+        for _ in slot.components() {
+            holes.push(self.host().nominate(Nomination::Answering { theory })?);
+        }
+        self.host().plan_slot(site, slot, holes.clone())?;
+
+        Ok(Supplied::Nominated(holes))
+    }
+}
+
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'host, F>
+{
+    /// The slot `slot`'s carrier, its one unfixed unindexed sort, beside the
+    /// type `supplied` gives it.
+    ///
+    /// # Specification
+    /// - requires: `supplied` was read for `slot`.
+    /// - ensures: the sort's name and the decoding of the code `supplied`
+    ///   passes for it, at `origin`; nothing for a slot leaving no unindexed
+    ///   sort, or a code that did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a state-passing module's carrier is the function type
+    ///   it writes.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present((_, id)) if sink.arena.value_type(id).is_some()))]
+    #[inline]
+    pub fn supplied_carrier(
+        &self,
+        slot: &ModelSlot,
+        supplied: &Supplied,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<(Name, ValueTypeId), lowered::Absent>
+    {
+        let Some((place, carrier)) =
+            slot.components()
+                .iter()
+                .enumerate()
+                .find(|&(_, component)| {
+                    matches!(component.form, Ok(ModelForm::Sort { ref indices, .. }) if indices.is_empty())
+                })
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let name = carrier.name.clone();
+        self.mint_supplied(
+            supplied,
+            ComponentPlace::from(place),
+            Binders::NONE,
+            sink,
+            origin,
+        )
+        .map(|code| {
+            // A quoted code decodes to the type it quotes, which keeps the
+            // origin it was minted with; only a fresh element takes one.
+            let mark = sink.arena.watermark();
+            let id = sink
+                .arena
+                .value_type_element(code, Level::constant(Universe::FUSS_FREE.level));
+            if sink.arena.value_types_since(mark).next().is_some() {
+                sink.origins
+                    .record_value_type(id, origin.inserted(Insertion::Decode));
+            }
+            (name, id)
+        })
+    }
+
+    /// The type of the operation at `place` of the slot `slot`, each sort it
+    /// reads stated by `sorts`, a sort's name beside its type.
+    ///
+    /// # Specification
+    /// - requires: `sorts` states every sort the operation reads.
+    /// - ensures: the operation's type as a model's component states it, each
+    ///   sort read as its type in `sorts`, every node carrying `origin`;
+    ///   nothing for a place holding no operation, or a type that does not
+    ///   mint.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `State`'s `get` and `put` at an integer state and a
+    ///   state-passing carrier, as the module's members are declared.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+    #[inline]
+    pub fn operation_domain(
+        &self,
+        slot: &ModelSlot,
+        place: ComponentPlace,
+        sorts: &[(&Name, ValueTypeId)],
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        let place = usize::from(place);
+        let components = slot.components();
+        let Some(&ModelComponent {
+            form: Ok(ref form @ ModelForm::Operation { .. }),
+            ..
+        }) = components.get(place)
+        else {
+            return unminted;
+        };
+        let binds = vec![Dependent(false); place];
+        let minting = Minting {
+            members: Members::Fields(Fields {
+                before: components.get(.. place).unwrap_or_default(),
+                binds: &binds,
+                manifests: sorts,
+            }),
+            origin,
+        };
+        self.mint_form(form, &minting, sink)
+            .map_or(unminted, Maybe::Present)
+    }
+}
+
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host, F>
+{
+    /// Bind the model implicit `entry`, written at the model type `declared`
+    /// whose slot is `slot`, as one parameter per component under `frame`.
+    ///
+    /// # Specification
+    /// - requires: `slot` is [`Self::model_slot`]'s answer for `declared`, and
+    ///   states a component.
+    /// - ensures: the type is read as a value type under `frame`; one frame per
+    ///   component, in signature order, each named as the implicit is and held
+    ///   at its type, mentioned so the declared type binds it, each extending
+    ///   the one before it and recorded as a parameter of its component's
+    ///   place; the last frame keeps the components, and is returned.
+    /// - fails: the binder's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a counter's model implicit binds its sort, its zero,
+    ///   its step and its reading, in order.
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
+    #[spec(
+        captures: before = self.cx().parameters.mark(),
+        ensures: |ret| ret.is_err() || usize::from(self.cx().parameters.mark()) == usize::from(before).saturating_add(slot.components().len()),
+    )]
+    #[inline]
+    pub fn flatten_implicit(
+        &mut self,
+        entry: TelescopeEntry<'source>,
+        declared: Placed,
+        slot: &ModelSlot,
+        frame: Frame,
+    ) -> Result<Frame, LoweringRefusal<'source>>
+    {
+        self.host().read(declared.node, Reading::ValueType(frame));
+        self.host().note_binder(entry.binder, frame, entry.name)?;
+        let written = Maybe::Present(entry.binder.span);
+        let mut frame = frame;
+        let mut components = Vec::with_capacity(slot.components().len());
+        for (place, component) in slot.components().iter().enumerate() {
+            let bound = self
+                .cx_mut()
+                .scope
+                .extend_typed(frame, entry.name, declared.node, written);
+            self.cx_mut().scope.mention(bound);
+            self.cx_mut().parameters.push(Parameter::component(
+                entry.binder.node,
+                bound,
+                declared.node,
+                ComponentPlace::from(place),
+            ));
+            components.push(FlatComponent {
+                name: component.name.clone(),
+                frame: bound,
+                sort: matches!(component.form, Ok(ModelForm::Sort { ref indices, .. }) if indices.is_empty()),
+            });
+            frame = Frame::Inner(bound);
+        }
+        if let Frame::Inner(last) = frame {
+            let _first = self.cx_mut().flattened.insert(last, Flattened {
+                binder: entry.binder,
+                components,
+                fixed: slot.fixed.clone(),
+            });
+        }
+
+        Ok(frame)
+    }
+}
+
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'host, F>
+{
+    /// The model implicit `entry`, whose slot is `slot`, as its declaration
+    /// writes it.
+    ///
+    /// # Specification
+    /// - requires: `slot` is [`Models::model_slot`]'s answer for `entry`'s
+    ///   type, which `declared` writes.
+    /// - ensures: the implicit's name and where it and `declared` are written,
+    ///   the theory's, each component's name with whether it is a sort, in
+    ///   signature order, and each fixed sort beside its type's node.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a counter's implicit writes its theory and its four
+    ///   components, the first a sort.
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_telescope_writes_its_model_implicit_as_one_slot_2364`
+    #[spec(ensures: |ret| ret.components.len() == slot.components().len() && ret.fixed.len() == slot.fixed.len())]
+    #[inline]
+    #[must_use]
+    pub fn written_slot(
+        &self,
+        entry: TelescopeEntry<'source>,
+        declared: Placed,
+        slot: &ModelSlot,
+    ) -> WrittenSlot<'source>
+    {
+        WrittenSlot {
+            name: entry.name,
+            named: entry.binder.span,
+            declared: declared.node,
+            theory: slot.theory.name(self.cx().tree),
+            components: slot
+                .components()
+                .iter()
+                .map(|component| {
+                    let sort = matches!(component.form, Ok(ModelForm::Sort { .. }));
+                    (component.name.clone(), sort)
+                })
+                .collect(),
+            fixed: slot
+                .fixed
+                .iter()
+                .map(|(name, stated)| (name.clone(), stated.node))
+                .collect(),
+        }
+    }
+
+    /// Refuse `resolved`, the binder a name written at `site` names, when it
+    /// is a flattened model implicit: the model is its components, no value.
+    ///
+    /// # Specification
+    /// - requires: `resolved` is what the name at `site` resolved to.
+    /// - ensures: `Ok` for a declaration and for any other binder.
+    /// - fails: [`LoweringRefusal::ModelImplicitValue`] at `site` for a model
+    ///   implicit.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a model implicit named alone is refused, its
+    ///   components read.
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_model_implicit_named_alone_is_refused_739`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(resolved, Resolved::Binder(bound) if self.cx().flattened.contains_key(&bound.binder)))]
+    #[inline]
+    pub fn unflattened(
+        &self,
+        site: Site,
+        resolved: Resolved,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        match resolved {
+            Resolved::Binder(bound) => {
+                self.cx()
+                    .flattened
+                    .get(&bound.binder)
+                    .map_or(Ok(()), |flattened| {
+                        Err(LoweringRefusal::ModelImplicitValue {
+                            span: site.at.span,
+                            implicit: self.cx().name_at(flattened.binder),
+                        })
+                    })
+            },
+            Resolved::Declaration { .. } => Ok(()),
+        }
+    }
+
+    /// The flattened model implicit the frame `binder` binds, if any.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(in crate::lower) fn flattened_at(
+        &self,
+        binder: ScopeId,
+    ) -> Option<Flattened>
+    {
+        self.cx().flattened.get(&binder).cloned()
+    }
+}
+
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host, F>
+{
+    /// Classify `s.x`, written at `site` with the model implicit `s` at
+    /// `head` flattened as `flattened`, where a type is read: the sort `x`.
+    ///
+    /// # Specification
+    /// - requires: `head` names the binder `flattened` is kept by, `member` the
+    ///   sort.
+    /// - ensures: a sort the model type fixes is planned as the type it is
+    ///   fixed to, raised past the components' binders; any other unindexed
+    ///   sort as its parameter's code decoded in the fuss-free universe, the
+    ///   parameter named in the type.
+    /// - fails: [`LoweringRefusal::UnknownMember`] for a name no component
+    ///   bears; the wrong-sort refusal for a component that is no unindexed
+    ///   sort, and where no value type is read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a counter's carrier read off its model implicit, and
+    ///   a fixed one.
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_manifest_model_implicit_binds_no_fixed_sort_739`
+    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Decode(..) | Plan::FixedCarrier(..)))))]
+    pub(in crate::lower) fn flattened_sort(
+        &mut self,
+        site: Site,
+        head: Placed,
+        member: Placed,
+        flattened: &Flattened,
+    ) -> Result<arity::Planned, LoweringRefusal<'source>>
+    {
+        let frame = site.reading.frame();
+        let name = self.cx().name_at(member);
+        let Some(first) = flattened
+            .components
+            .first()
+            .map(|component| component.frame)
+        else {
+            return Ok(arity::Planned(false));
+        };
+        if let Some((_, &written)) = flattened
+            .fixed
+            .iter()
+            .find(|&(sort, _)| sort.as_ref() == name.as_ref())
+        {
+            let _frame = self.host().require(site, Produced::ValueType)?;
+            self.cx_mut().fixed_carriers.push(written);
+            let telescope = self.host().telescope_at(site.at.node);
+            self.host().plan(
+                site,
+                Plan::FixedCarrier(
+                    Code::Bound {
+                        from: frame,
+                        binder: first,
+                        telescope,
+                    },
+                    written.node,
+                ),
+            );
+            return Ok(arity::Planned(true));
+        }
+        let Some(component) = flattened
+            .components
+            .iter()
+            .find(|component| component.name.as_ref() == name.as_ref())
+        else {
+            return Err(LoweringRefusal::UnknownMember {
+                span: member.span,
+                module: self.cx().name_at(head),
+                member: name,
+            });
+        };
+        if !component.sort {
+            return Err(site.out(FragmentBoundary::WrongSort));
+        }
+        let _frame = self.host().require(site, Produced::ValueType)?;
+        let telescope = self.host().name_in_type(site.at.node, component.frame);
+        self.host().plan(
+            site,
+            Plan::Decode(
+                Code::Bound {
+                    from: frame,
+                    binder: component.frame,
+                    telescope,
+                },
+                FormStretch::default(),
+                Universe::FUSS_FREE,
+            ),
+        );
+
+        Ok(arity::Planned(true))
+    }
+
+    /// Classify `s.x`, written at `site` with the model implicit `s` at
+    /// `target` bound as `bound` and flattened as `flattened`, where a value is
+    /// read: the component `x`'s parameter.
+    ///
+    /// # Specification
+    /// - requires: `target` names the binder `flattened` is kept by, and
+    ///   `bound` is what it resolved to; `selected` is the component's name.
+    /// - ensures: the component's variable — counted from the reading as a type
+    ///   counts its binders where a type is read, and past every frame between
+    ///   otherwise — standing as a value; the name `s` is kept as resolved to
+    ///   the implicit.
+    /// - fails: [`LoweringRefusal::UnknownMember`] for a name no component
+    ///   bears; the wrong-sort refusal for a sort the model type fixes, and
+    ///   where no value is read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a counter's step and reading read off its model
+    ///   implicit and run.
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
+    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Variable(..) | Plan::StaticApplication(..)))))]
+    pub(in crate::lower) fn flattened_member(
+        &mut self,
+        site: Site,
+        (target, selected): (Placed, Placed),
+        bound: Bound,
+        flattened: &Flattened,
+    ) -> Result<arity::Planned, LoweringRefusal<'source>>
+    {
+        let name = self.cx().name_at(selected);
+        if flattened
+            .fixed
+            .iter()
+            .any(|(sort, _)| sort.as_ref() == name.as_ref())
+        {
+            return Err(site.out(FragmentBoundary::WrongSort));
+        }
+        let Some(place) = flattened
+            .components
+            .iter()
+            .position(|component| component.name.as_ref() == name.as_ref())
+        else {
+            return Err(LoweringRefusal::UnknownMember {
+                span: selected.span,
+                module: self.cx().name_at(target),
+                member: name,
+            });
+        };
+        let Some(component) = flattened.components.get(place)
+        else {
+            return Ok(arity::Planned(false));
+        };
+        let frame = self.host().require(site, Produced::Value)?;
+        self.host().resolved(target.span, Resolved::Binder(bound));
+        let plan = if self.cx().in_type.contains(&site.at.node) {
+            let telescope = self.host().name_in_type(site.at.node, component.frame);
+            Plan::StaticApplication(
+                Code::Bound {
+                    from: frame,
+                    binder: component.frame,
+                    telescope,
+                },
+                FormStretch::default(),
+            )
+        }
+        else {
+            let behind = flattened
+                .components
+                .len()
+                .saturating_sub(place)
+                .saturating_sub(1);
+            let index =
+                u32::from(bound.index).saturating_add(u32::try_from(behind).unwrap_or(u32::MAX));
+            Plan::Variable(DeBruijnIndex::from(index), component.frame)
+        };
+        self.host().plan(site, plan);
+
+        Ok(arity::Planned(true))
+    }
+
+    /// What the resident `value` a call at `site`, read under `frame`, writes
+    /// for the model implicit `implicit`, of the slot `slot`, passes.
+    ///
+    /// # Specification
+    /// - requires: `value` is the resident's value, `slot` the implicit's slot.
+    /// - ensures: a capitalised name passes the members of the module it names,
+    ///   as [`Self::packed_module`] reads them at the slot's theory; the name
+    ///   of a model implicit of the caller's passes, for each component of the
+    ///   slot, the variable of its component of that name, and is kept as
+    ///   resolved.
+    /// - fails: the refusals [`Self::packed_module`] yields;
+    ///   [`LoweringRefusal::UnresolvedName`] for a name no binder answers;
+    ///   [`LoweringRefusal::UnknownMember`] for a component the caller's model
+    ///   lacks; [`LoweringRefusal::ModelImplicitValue`] naming `implicit` at a
+    ///   resident that is neither.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module supplied by name runs as its pack does, a
+    ///   module of an including theory passes its reduct, a model implicit
+    ///   passes itself on, and a value is refused.
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_model_implicit_supplied_by_a_value_is_refused_739`
+    #[spec(ensures: |ret| match ret {
+        Ok(Supplied::Bound(ref variables)) => variables.len() == slot.components().len(),
+        Ok(Supplied::Module(_) | Supplied::Nominated(_)) | Err(_) => true,
+    })]
+    #[inline]
+    pub fn supply_model(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        (implicit, slot): (SurfaceName<'source>, &ModelSlot),
+        value: NodeIndex,
+    ) -> Result<Supplied, LoweringRefusal<'source>>
+    {
+        let Some(node) = self.cx().tree.node(value)
+        else {
+            return Err(LoweringRefusal::ModelImplicitValue {
+                span: site.at.span,
+                implicit,
+            });
+        };
+        let resident = Placed::of(value, node);
+        let unnamed = LoweringRefusal::ModelImplicitValue {
+            span: resident.span,
+            implicit,
+        };
+        match self.cx().form_at(resident)? {
+            Some((_, Former::Constructor | Former::TypeHead)) => {
+                let packed = self.packed_module(site, resident, &slot.theory, &slot.fixed)?;
+                Ok(Supplied::Module(Arc::new(packed)))
+            },
+            Some((_, Former::Name)) => {
+                let name = self.cx().name_at(resident);
+                let cx = self.cx_mut();
+                let Maybe::Present(bound) = cx.scope.resolve(frame, name, &mut cx.fuel)?
+                else {
+                    return Err(LoweringRefusal::UnresolvedName {
+                        span: resident.span,
+                        name,
+                    });
+                };
+                let Some(flattened) = self.shared().flattened_at(bound.binder)
+                else {
+                    return Err(unnamed);
+                };
+                let count = flattened.components.len();
+                let mut variables = Vec::with_capacity(slot.components().len());
+                for component in slot.components() {
+                    let Some((place, own)) = flattened
+                        .components
+                        .iter()
+                        .enumerate()
+                        .find(|&(_, own)| own.name == component.name)
+                    else {
+                        return Err(LoweringRefusal::UnknownMember {
+                            span: resident.span,
+                            module: name,
+                            member: self.cx().name_at(component.named),
+                        });
+                    };
+                    let behind = count.saturating_sub(place).saturating_sub(1);
+                    let index = u32::from(bound.index)
+                        .saturating_add(u32::try_from(behind).unwrap_or(u32::MAX));
+                    variables.push((DeBruijnIndex::from(index), own.frame));
+                }
+                self.host().resolved(resident.span, Resolved::Binder(bound));
+                Ok(Supplied::Bound(variables))
+            },
+            _ => Err(unnamed),
+        }
+    }
+
+    /// The modules that may answer the slot `slot` a call at `site` omits,
+    /// each beside what it passes, as [`Self::supply_model`] reads a module a
+    /// supply names.
+    ///
+    /// # Specification
+    /// - requires: `slot` is the slot of a model implicit the call omits.
+    /// - ensures: each top-level module declared before `site` whose ascription
+    ///   names the slot's theory, or a theory including it, and that
+    ///   [`Self::packed_structure`] packs at the slot, in declaration order.
+    /// - fails: the refusals [`crate::module::Collected::presented_theory_in`]
+    ///   yields for the slot's theory path; the budget refusal a pack yields.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a counter's slot plans its two modules, one through
+    ///   an include, and leaves a module of another theory out.
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|&(_, ref supplied)| matches!(*supplied, Supplied::Module(_)))))]
+    #[cfg_attr(feature = "hotpath", hotpath::measure(impl_type = "Lowerer"))]
+    #[inline]
+    pub fn model_candidates(
+        &mut self,
+        site: Site,
+        slot: &ModelSlot,
+    ) -> Result<Vec<(SurfaceName<'source>, Supplied)>, LoweringRefusal<'source>>
+    {
+        let (wanted, _) = self.cx().collected.presented_theory_in(
+            slot.theory.last.span.start(),
+            &self.shared().theory_prefix(&slot.theory),
+            slot.theory.last.span,
+            self.cx().name_at(slot.theory.last),
+        )?;
+        let mut answering = BTreeSet::from([wanted]);
+        for (&theory, included) in &self.cx().collected.included {
+            for &(reached, _) in included {
+                if reached == wanted {
+                    let _fresh = answering.insert(theory);
+                }
+            }
+        }
+        let modules: Vec<(StructureIndex, ByteSpan, SurfaceName<'source>)> = self
+            .cx()
+            .collected
+            .structures
+            .iter()
+            .enumerate()
+            .filter(|&(_, structure)| {
+                matches!(structure.container, Container::TopLevel(_))
+                    && matches!(structure.stratum, Stratum::Module)
+                    && structure.declared_by.span.end() <= site.at.span.start()
+                    && match structure.model {
+                        Maybe::Present(model) => self
+                            .cx()
+                            .collected
+                            .model_theories
+                            .get(&model)
+                            .is_some_and(|theory| answering.contains(theory)),
+                        Maybe::Absent(_) => false,
+                    }
+            })
+            .map(|(at, structure)| {
+                (
+                    StructureIndex::from(at),
+                    structure.named.span,
+                    structure.name,
+                )
+            })
+            .collect();
+        let mut candidates = Vec::with_capacity(modules.len());
+        for module in modules {
+            match self.packed_structure(site, module, &slot.theory, &slot.fixed) {
+                Ok(packed) => candidates.push((module.2, Supplied::Module(Arc::new(packed)))),
+                Err(refusal @ LoweringRefusal::BudgetExceeded { .. }) => return Err(refusal),
+                Err(_) => {},
+            }
+        }
+        Ok(candidates)
+    }
+}
+
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'host, F>
+{
+    /// Mint the value `supplied` passes for the component at `place` of its
+    /// slot, raised past `under` binders a standing supply opens.
+    ///
+    /// # Specification
+    /// - requires: `place` is a component of the slot `supplied` was read for.
+    /// - ensures: a module's member as [`Self::packed_member`] mints it, or the
+    ///   record of its nested module as [`Self::packed_records`] mints it, for
+    ///   a module; the variable of the caller's component for a model implicit,
+    ///   raised past `under`; the component's hole for a scope naming no model,
+    ///   recorded as the scope's with its candidates; every node carrying
+    ///   `origin` marked [`Insertion::Implicit`]; nothing when a member did not
+    ///   lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Models::supply_model`].
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value(id).is_some()))]
+    #[inline]
+    pub fn mint_supplied(
+        &self,
+        supplied: &Supplied,
+        place: ComponentPlace,
+        under: Binders,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueId, lowered::Absent>
+    {
+        let place = usize::from(place);
+        let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        let inserted = origin.inserted(Insertion::Implicit);
+        match *supplied {
+            Supplied::Module(ref packed) => {
+                let (Some(theory), Some(&module)) =
+                    (packed.theories.first(), packed.modules.first())
+                else {
+                    return unminted;
+                };
+                let Some(component) = theory.signature.components.get(place)
+                else {
+                    return unminted;
+                };
+                let value = if let Ok(ModelForm::Nested(_)) = component.form {
+                    let before = theory
+                        .signature
+                        .components
+                        .iter()
+                        .take(place)
+                        .filter(|earlier| matches!(earlier.form, Ok(ModelForm::Nested(_))))
+                        .count();
+                    theory.nested.get(before).and_then(|&inner| {
+                        self.packed_records(packed, sink, inserted)?
+                            .get(inner)
+                            .copied()
+                            .flatten()
+                    })
+                }
+                else {
+                    self.packed_member(module, component, sink, inserted)
+                };
+                value.map_or(unminted, Maybe::Present)
+            },
+            Supplied::Bound(ref variables) => {
+                let Some(&(index, binder)) = variables.get(place)
+                else {
+                    return unminted;
+                };
+                let id = sink
+                    .arena
+                    .value_variable(self.cx().scope.zone(binder), index);
+                sink.origins.record_value(id, inserted);
+                let raised = if under == Binders::NONE {
+                    id
+                }
+                else {
+                    gandr_core_term::shift_value(sink.arena, id, under).settle(sink.arena)
+                };
+                Maybe::Present(raised)
+            },
+            Supplied::Nominated(ref holes) => {
+                let Some(&hole) = holes.get(place)
+                else {
+                    return unminted;
+                };
+                let id = sink.arena.value_hole(hole);
+                sink.origins.record_value(id, inserted);
+                if let Some(&Nomination::Answering { theory }) = self.cx().nominations.get(&hole) {
+                    sink.origins.record_omitted(id, Omitted::Scope {
+                        theory: String::from(theory.as_ref()),
+                        candidates: self
+                            .cx()
+                            .model_candidates
+                            .get(&hole)
+                            .cloned()
+                            .unwrap_or_default(),
+                    });
+                }
+                Maybe::Present(id)
+            },
+        }
+    }
+}
+
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host, F>
+{
+    /// File the model slot `planned` a call omits with its declaration's,
+    /// each candidate's components minted as
+    /// [`ModelsRef::mint_supplied`]
+    /// mints a supply's, carrying the call's `origin`.
+    ///
+    /// # Specification
+    /// - requires: the call's own plan has been minted.
+    /// - ensures: one slot filed under the caller, its holes the call's and the
+    ///   code of each type its model type fixes a sort to, each candidate
+    ///   holding one minted value per hole, in place order, and the code of its
+    ///   own sort of each fixed name ([`ModelsRef::packed_sort`]), up to the
+    ///   first it has none of, so that the checker refutes it; nothing filed
+    ///   when a candidate's component or a fixed type did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the effect is a slot filed in the lowerer's table
+    ///   of slots, whose contents before the call the predicate cannot read.
+    ///
+    /// # Termination
+    /// One mint per component and fixed sort of each finite candidate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::model_candidates`]; a manifest slot files
+    ///   the code of its fixed type and each candidate's own.
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_manifest_model_implicit_files_its_fixed_sorts_2317`
+    #[inline]
+    pub fn mint_model(
+        &mut self,
+        planned: PlannedModel<'source>,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    )
+    {
+        let inserted = origin.inserted(Insertion::Implicit);
+        let mut fixed = Vec::with_capacity(planned.fixed.len());
+        for &(_, stated) in &planned.fixed {
+            let Maybe::Present(ty) = self.cx().value_type_at(stated.node)
+            else {
+                return;
+            };
+            let code = sink.arena.value_quote(ty);
+            sink.origins.record_value(code, inserted);
+            fixed.push(code);
+        }
+        let mut candidates = Vec::with_capacity(planned.candidates.len());
+        for &(_, ref supplied) in &planned.candidates {
+            let mut components = Vec::with_capacity(planned.holes.len());
+            for place in 0 .. planned.holes.len() {
+                match self.shared().mint_supplied(
+                    supplied,
+                    ComponentPlace::from(place),
+                    Binders::NONE,
+                    sink,
+                    origin,
+                ) {
+                    Maybe::Present(id) => components.push(id),
+                    Maybe::Absent(_) => return,
+                }
+            }
+            let module = match *supplied {
+                Supplied::Module(ref packed) => packed.modules.first().copied(),
+                Supplied::Bound(_) | Supplied::Nominated(_) => None,
+            };
+            let mut own = Vec::with_capacity(planned.fixed.len());
+            for &(ref name, _) in &planned.fixed {
+                let code = module.and_then(|module| {
+                    let sort = self
+                        .cx()
+                        .collected
+                        .structures
+                        .get(usize::from(module))?
+                        .types
+                        .iter()
+                        .find(|component| component.name.as_ref() == name.as_ref())?
+                        .name;
+                    self.shared().packed_sort(module, sort, sink, inserted)
+                });
+                let Some(code) = code
+                else {
+                    break;
+                };
+                own.push(code);
+            }
+            candidates.push(gandr_core_term::model::Candidate {
+                components,
+                fixed: own,
+            });
+        }
+        self.cx_mut()
+            .models
+            .entry(planned.caller)
+            .or_default()
+            .push(gandr_core_term::model::ModelSlot {
+                holes: planned.holes,
+                fixed,
+                candidates,
+            });
+    }
+}
+
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'host, F>
+{
+    /// The types of the parameters a model implicit written at `declared`
+    /// binds, one per component, each read under the ones before it.
+    ///
+    /// # Specification
+    /// - requires: the mint sweep has minted the model type at `declared`.
+    /// - ensures: one type per component of the outermost theory, in signature
+    ///   order, as [`Self::bundle_fields`] states it with every link binding —
+    ///   a component it names read as the variable of the parameter before it —
+    ///   a nested model as its bundled record, each sort the type fixes as its
+    ///   type raised past the parameters before the reading, every node
+    ///   carrying the theory's origin marked [`Insertion::Model`]; nothing when
+    ///   a type did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// The loop runs once per nested theory of the finite bundle.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a counter's implicit's parameters are its sort's
+    ///   universe, then its zero, step and reading over the sort's variable.
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(ref domains) if !domains.is_empty()))]
+    #[inline]
+    pub fn flattened_domains(
+        &self,
+        declared: NodeIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Vec<ValueTypeId>, lowered::Absent>
+    {
+        let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        let mut node = declared;
+        let bundled = loop {
+            match self.cx().plans.get(node) {
+                Some(&Plan::Transparent(inner)) => node = inner,
+                Some(&Plan::Bundle(ref bundled)) => break Arc::clone(bundled),
+                _ => return unminted,
+            }
+        };
+        let fixed: Option<Vec<(&Name, ValueTypeId)>> = bundled
+            .manifests
+            .iter()
+            .map(
+                |&(ref name, defined)| match self.cx().value_type_at(defined) {
+                    Maybe::Present(id) => Some((name, id)),
+                    Maybe::Absent(_) => None,
+                },
+            )
+            .collect();
+        let Some(fixed) = fixed
+        else {
+            return unminted;
+        };
+        let below = match self.cx().origin_at(bundled.named) {
+            Maybe::Present(named) => named.inserted(Insertion::Model),
+            Maybe::Absent(_) => origin.inserted(Insertion::Model),
+        };
+        let mut minted: Vec<Option<ValueTypeId>> = vec![None; bundled.theories.len()];
+        for (place, theory) in bundled.theories.iter().enumerate().skip(1).rev() {
+            let nested: Option<Vec<ValueTypeId>> = theory
+                .nested
+                .iter()
+                .map(|&inner| minted.get(inner).copied().flatten())
+                .collect();
+            let Some(nested) = nested
+            else {
+                return unminted;
+            };
+            let Ok(id) = self.bundle_type(&theory.signature, &nested, &[], sink, (below, below))
+            else {
+                return unminted;
+            };
+            if let Some(at) = minted.get_mut(place) {
+                *at = Some(id);
+            }
+        }
+        let Some(outermost) = bundled.theories.first()
+        else {
+            return unminted;
+        };
+        let nested: Option<Vec<ValueTypeId>> = outermost
+            .nested
+            .iter()
+            .map(|&inner| minted.get(inner).copied().flatten())
+            .collect();
+        let Some(nested) = nested
+        else {
+            return unminted;
+        };
+        let binds = vec![Dependent(true); outermost.signature.components.len()];
+        match self.bundle_fields(&outermost.signature, &binds, &nested, &fixed, sink, below) {
+            Ok(domains) if !domains.is_empty() => Maybe::Present(domains),
+            Ok(_) | Err(_) => unminted,
+        }
+    }
+}

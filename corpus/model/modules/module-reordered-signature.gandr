@@ -1,0 +1,25 @@
+// This source shows a module with a reordered signature.
+//
+// `Ordered` declares its members in a different order from its signature.
+//
+// The checker matches each member by name.
+//
+// - see: #2917
+
+/// `Ordered` uses a signature with reordered members.
+module Ordered : *{third : Integer, first : Integer, second : Integer} where {
+  /// `first` gives one.
+  def first = 1;
+  /// `hidden` stays outside the signature.
+  def hidden = 99;
+  /// `second` adds one to `first`. The call of the operator is pure, so the
+  /// value stands as what the call returns.
+  @[checks]
+  def second = first + 1;
+  /// `third` adds one to `second`.
+  @[checks]
+  def third = second + 1;
+}
+
+/// `together` gathers every exported member.
+def together = *{a = Ordered.first, b = Ordered.second, c = Ordered.third};

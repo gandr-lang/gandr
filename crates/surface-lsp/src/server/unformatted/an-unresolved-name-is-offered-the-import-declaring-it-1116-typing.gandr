@@ -1,0 +1,2 @@
+def near : Integer ;
+def near = faraway ;
