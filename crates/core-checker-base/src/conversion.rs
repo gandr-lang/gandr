@@ -1962,9 +1962,10 @@ fn agree(
 ///   ambient context past it, a family argument written as a call against the
 ///   value it returns and against another value, a family argument that reduces
 ///   but is no call against its value, a code a family literal returns at a
-///   variable against the call its body makes and against another call, and a
-///   dangling id; the fast path is pinned against the structural decision by
-///   property.
+///   variable against the call its body makes and against another call, a
+///   constructor whose field is a call against the constructor at the value the
+///   call returns and at another value, and a dangling id; the fast path is
+///   pinned against the structural decision by property.
 /// - witness: `conversion::tests::one_id_converts_without_being_read`
 /// - witness: `conversion::tests::equal_trees_at_distinct_ids_convert`
 /// - witness: `conversion::tests::differing_trees_are_apart_in_either_order`
@@ -1988,6 +1989,7 @@ fn agree(
 /// - witness: `tests::native_formers::a_family_argument_written_as_a_call_converts_with_its_value_3579`
 /// - witness: `tests::native_formers::term_indices_are_structural_in_both_checkers`
 /// - witness: `tests::native_formers::a_code_a_family_literal_returns_meets_the_call_it_reduces_to_3733`
+/// - witness: `tests::native_formers::a_constructor_s_field_converts_with_the_field_at_its_place_3516`
 #[spec(ensures: |ret| match root {
     | Pairing::Values(left, right) | Pairing::Assignable(left, right) | Pairing::SubValues(left, right) if left == right => ret == Ok(Agreement::Convertible),
     | Pairing::Comps(left, right) | Pairing::SubComps(left, right) if left == right => ret == Ok(Agreement::Convertible),
@@ -2035,6 +2037,11 @@ fn convert(
                     // a quoted type reads by reduction too (#5381). It
                     // compares every other side as syntax.
                     let arena = context.arena();
+                    if gandr_core_term::equal_certificate_syntax(arena, left, right)
+                        == gandr_core_term::CertificateEquality::Equal
+                    {
+                        continue;
+                    }
                     // Two applications of one constructor convert exactly when
                     // their fields do, so a metavariable under a constructor
                     // meets the field that stands at its place.
@@ -2068,20 +2075,14 @@ fn convert(
                             Some(&(Value::Quote(_) | Value::QuoteComputation(_)))
                         )
                     };
-                    let codes = code(left) && code(right);
-                    let called = [left, right]
-                        .into_iter()
-                        .any(|side| matches!(arena.value(side), Some(&Value::Returned(_))));
-                    if gandr_core_term::equal_certificate_syntax(arena, left, right)
-                        == gandr_core_term::CertificateEquality::Equal
-                    {
-                        true
-                    }
-                    else if codes {
+                    if code(left) && code(right) {
                         pending.push(Pairing::Codes(left, right));
                         true
                     }
                     else {
+                        let called = [left, right]
+                            .into_iter()
+                            .any(|side| matches!(arena.value(side), Some(&Value::Returned(_))));
                         called && endpoints_agree(context, left, right)? == Agreement::Convertible
                     }
                 },

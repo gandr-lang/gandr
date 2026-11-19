@@ -2610,6 +2610,83 @@ fn a_family_argument_written_as_a_call_converts_with_its_value_3579()
     ));
 }
 
+/// #3516: two applications of one constructor convert exactly when their
+/// fields do. The index `Wrap(answer(()))` meets `Wrap(yes)` field by field, so
+/// the call meets the value it returns. A conversion that compares the two
+/// applications whole refuses the first definition.
+#[test]
+fn a_constructor_s_field_converts_with_the_field_at_its_place_3516()
+{
+    use gandr_core_term::Summand;
+    let mut arena = CoreArena::new();
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let truth = arena.value_type_sum(&[unit_type, unit_type]);
+    let returns_truth = arena.comp_type_returner(truth);
+    let asked = arena.comp_type_arrow(unit_type, returns_truth);
+    let asked = arena.value_type_thunk(asked);
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let boxed = ConstantIndex::from(1_usize);
+    let boxed_declaration = Declaration::data(
+        boxed,
+        DataSignature::new(vec![], vec![vec![truth]], kind).into(),
+        OriginToken::from(1_usize),
+    );
+    let boxed_type = arena.value_type_data(boxed, vec![]);
+    let data = ConstantIndex::from(2_usize);
+    let declaration = Declaration::data(
+        data,
+        DataSignature::new(vec![boxed_type], vec![vec![]], kind).into(),
+        OriginToken::from(2_usize),
+    );
+    let yes = arena.value_injection(Summand::from(0_usize), unit);
+    let no = arena.value_injection(Summand::from(1_usize), unit);
+    // `fun (_) { return yes }`, the definition the call unfolds.
+    let answered = arena.computation_return(yes);
+    let answered = arena.computation_lambda(answered);
+    let answered = arena.value_thunk(answered);
+    let answer = arena.value_constant(ConstantIndex::from(0_usize));
+    let answer = arena.computation_force(answer);
+    let call = arena.computation_application(answer, unit);
+    let call = arena.value_returned(call);
+    let tag = ConstructorTag::from(0_usize);
+    let [wrapped_call, wrapped_yes, wrapped_no] =
+        [call, yes, no].map(|field| arena.value_constructor(boxed, boxed_type, tag, vec![field]));
+    let called_type = arena.value_type_data(data, vec![wrapped_call]);
+    let yes_type = arena.value_type_data(data, vec![wrapped_yes]);
+    let no_type = arena.value_type_data(data, vec![wrapped_no]);
+    let called_value = arena.value_constructor(data, called_type, tag, vec![]);
+    let (report, crossed) = run(&mut arena, &[
+        definition(ConstantIndex::from(0_usize), asked, answered),
+        boxed_declaration,
+        declaration,
+        definition(ConstantIndex::from(3_usize), yes_type, called_value),
+        definition(ConstantIndex::from(4_usize), no_type, called_value),
+    ]);
+    assert!(
+        matches!(report.judged()[3].verdict(), Verdict::Checked { .. }),
+        "the call under `Wrap` stands at the value it returns: {:?}",
+        report.judged()[3].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[3].outcome(), Outcome::Defined { .. }),
+        "the kernel reads the call under `Wrap` as its value: {:?}",
+        crossed.readmitted()[3].outcome()
+    );
+    assert!(
+        matches!(
+            report.judged()[4].verdict(),
+            Verdict::Refused(CheckRefusal::TypeMismatch(_))
+        ),
+        "the call under `Wrap` is apart from a value it does not return: {:?}",
+        report.judged()[4].verdict()
+    );
+    assert!(matches!(
+        crossed.readmitted()[4].outcome(),
+        Outcome::Marked(CheckRefusal::TypeMismatch(_))
+    ));
+}
+
 #[test]
 fn a_constructor_annotated_at_a_call_meets_its_stated_index_3627()
 {
