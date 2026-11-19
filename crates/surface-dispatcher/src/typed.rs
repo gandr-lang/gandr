@@ -2021,6 +2021,7 @@ impl TypeTable
                 diagnose(
                     Path::new(PATHLESS),
                     source,
+                    &[],
                     DiagnosedSubject::Source(refusal),
                 )
                 .message

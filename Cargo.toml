@@ -764,6 +764,7 @@ path = "crates/runtime-net"
 # features:
 # - std: set by surface-dispatcher, which reads the cache and runs the reader
 # consumers:
+# - surface-diagnostics
 # - surface-dispatcher
 # - surface-lowering-base
 [workspace.dependencies.gandr-runtime-rust-record]

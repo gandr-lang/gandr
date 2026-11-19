@@ -126,7 +126,11 @@ use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::Omitted;
 use gandr_surface_lowering::RunOperand;
 use gandr_surface_lowering::RunSpelling;
+use gandr_surface_lowering::Staged;
+use gandr_surface_lowering::StagedName;
+use gandr_surface_lowering::Unstaged;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
+use gandr_surface_lowering::staged_name;
 use gandr_surface_parser::Separation;
 use gandr_surface_parser::juxtaposed;
 use gandr_surface_pretty::Presentation;
@@ -475,7 +479,7 @@ pub enum Subject<'step>
 }
 
 /// The diagnostic `subject`, a part of the source at `path` whose text is
-/// `text`, makes.
+/// `text` and whose `thir` marks staged `marks`, makes.
 ///
 /// # Specification
 /// - requires: the subject's spans, origins and spellings were made over
@@ -503,12 +507,14 @@ pub enum Subject<'step>
 pub fn diagnose(
     path: &Path,
     text: SourceText<'_>,
+    marks: &[Staged],
     subject: Subject<'_>,
 ) -> Diagnostic
 {
     Report {
         path,
         text,
+        marks,
         subject,
     }
     .diagnostic()
@@ -525,6 +531,9 @@ struct Report<'step>
     path: &'step Path,
     /// The source's text, which every span of the subject is measured against.
     text: SourceText<'step>,
+    /// What the source's `thir` marks staged, which a staged-body refusal
+    /// reads its name from.
+    marks: &'step [Staged],
     /// What the report is about.
     subject: Subject<'step>,
 }
@@ -716,7 +725,10 @@ impl Report<'_>
             identifier: self.identifier(),
             message: Message {
                 key: self.key(),
-                text: alloc::format!("{}", MessageText(self.subject)),
+                text: alloc::format!("{}", MessageText {
+                    subject: self.subject,
+                    marks: self.marks,
+                }),
             },
             detail: DiagnosticDetail {
                 class: self.class(),
@@ -1442,10 +1454,15 @@ impl fmt::Display for TitleText<'_>
     }
 }
 
-/// The message a report leads with.
-#[repr(transparent)]
+/// The message a report leads with, and the marks of its source.
 #[derive(Clone, Copy, Debug)]
-struct MessageText<'step>(Subject<'step>);
+struct MessageText<'step>
+{
+    /// What the report is about.
+    subject: Subject<'step>,
+    /// What the source's `thir` marks staged.
+    marks: &'step [Staged],
+}
 
 impl fmt::Display for MessageText<'_>
 {
@@ -1462,8 +1479,11 @@ impl fmt::Display for MessageText<'_>
     ///   a scope not shown to satisfy a law names the law, where the origins
     ///   record it; a block's rules refused for a critical pair whose sides
     ///   part name its peak and both normal forms, where the refusal holds the
-    ///   pair; a source refused as a whole says so, then the plain message;
-    ///   every other report writes its title, which is already the user's.
+    ///   pair; a refused staged body names the node, the path, the ceiling or
+    ///   the cause that its mark holds, and its plain message where the mark
+    ///   holds none; a source refused as a whole says so, then the plain
+    ///   message; every other report writes its title, which is already the
+    ///   user's.
     /// - provides: the first line of a diagnostic.
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
@@ -1473,10 +1493,12 @@ impl fmt::Display for MessageText<'_>
     /// - hypothesis: L3 — one refusal of every vocabulary name writes a
     ///   single-line message naming no grammar sort; a type mismatch's message
     ///   differs from its producer's title; a parting pair's message names its
-    ///   peak and its two normal forms in order.
+    ///   peak and its two normal forms in order; a staged body outside the
+    ///   fragment names its node.
     /// - witness: `message::tests::every_refusal_name_has_a_plain_message`
     /// - witness: `tests::diagnostics::a_mismatch_label_spells_both_types`
     /// - witness: `tests::diagnostics::a_parting_pair_names_its_peak_and_both_normal_forms`
+    /// - witness: `tests::corpus::every_refusing_source_renders_as_its_golden`
     ///
     /// # Cost
     /// - allocation: the text of the message, diagnostic
@@ -1486,7 +1508,7 @@ impl fmt::Display for MessageText<'_>
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
-        match self.0 {
+        match self.subject {
             Subject::Refused {
                 refusal:
                     refusal @ Refusal::Checking(CheckRefusalOf::ImplicitUnsolved { reason, .. }),
@@ -1720,6 +1742,39 @@ impl fmt::Display for MessageText<'_>
                  and no rule the order can orient joins them, so the block's rules are refused",
                 pair.cells.peak, pair.witness.earlier, pair.witness.later
             ),
+            Subject::Refused {
+                refusal: refusal @ Refusal::Lowering(LoweringRefusal::StagedBody { fault, .. }),
+                ..
+            } => match staged_name(self.marks, fault) {
+                Maybe::Present(StagedName::Node(name)) => write!(
+                    f,
+                    "the staged body holds `{}`, a node outside the fragment",
+                    name.as_ref()
+                ),
+                Maybe::Present(StagedName::Callee(path)) => match fault {
+                    gandr_surface_lowering::StagedFault::Unmapped { .. } => write!(
+                        f,
+                        "a staged call names `{path}`, and the item mark states no constructor \
+                         for it"
+                    ),
+                    _ => write!(
+                        f,
+                        "the staged body calls `{path}`, which the request does not hold"
+                    ),
+                },
+                Maybe::Present(StagedName::Large) => write!(
+                    f,
+                    "the staged body holds more than {} nodes",
+                    gandr_runtime_rust_record::Body::CEILING
+                ),
+                Maybe::Present(StagedName::Cause(Unstaged::NoReader)) => {
+                    f.write_str("no reader of a Rust crate is installed")
+                },
+                Maybe::Present(StagedName::Cause(
+                    Unstaged::Unread(cause) | Unstaged::Refused(cause),
+                )) => write!(f, "the reader gives no body for the function: {cause}"),
+                Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
+            },
             Subject::Refused { refusal, .. } => fmt::Display::fmt(&Plain(refusal), f),
             Subject::Source(refusal) => write!(
                 f,
@@ -1732,7 +1787,7 @@ impl fmt::Display for MessageText<'_>
             | Subject::InferredExit(_)
             | Subject::InferredRun(_)
             | Subject::Deprecated(_)
-            | Subject::Ledger { .. } => fmt::Display::fmt(&TitleText(self.0), f),
+            | Subject::Ledger { .. } => fmt::Display::fmt(&TitleText(self.subject), f),
         }
     }
 }
@@ -2091,6 +2146,7 @@ mod tests
             let diagnostic = diagnose(
                 Path::new("boundary.gandr"),
                 text,
+                &[],
                 Subject::Source(LoweringRefusal::DuplicateDefinition {
                     span,
                     first,
@@ -2185,7 +2241,7 @@ mod tests
                 },
             };
             for subject in [Subject::InferredExit(&exit), Subject::InferredRun(&run)] {
-                let diagnostic = diagnose(Path::new("lint.gandr"), text, subject);
+                let diagnostic = diagnose(Path::new("lint.gandr"), text, &[], subject);
                 assert_eq!(
                     matches!(diagnostic.fix, Maybe::Present(_)),
                     proposed,
@@ -2208,6 +2264,7 @@ mod tests
             SourceText::from(include_str!(
                 "report/fixtures/a-located-diagnostic-without-its-primary-mark-has-no-primary.gandr"
             )),
+            &[],
             Subject::Source(LoweringRefusal::DuplicateDefinition {
                 span: at(12, 17),
                 first: at(0, 5),
@@ -2249,6 +2306,7 @@ mod tests
             let diagnostic = diagnose(
                 Path::new("twice.gandr"),
                 text,
+                &[],
                 Subject::Source(LoweringRefusal::DuplicateDefinition {
                     span,
                     first: at(0, 5),
@@ -2277,6 +2335,7 @@ mod tests
         let diagnostic = diagnose(
             Path::new("lint.gandr"),
             SourceText::from("def x = 1 ;\n"),
+            &[],
             Subject::InferredExit(&exit),
         );
         assert_eq!(diagnostic.detail.title, diagnostic.message.text);
@@ -2304,6 +2363,7 @@ mod tests
             SourceText::from(include_str!(
                 "report/fixtures/a-located-diagnostic-without-its-primary-mark-has-no-primary.gandr"
             )),
+            &[],
             Subject::Source(LoweringRefusal::DuplicateDefinition {
                 span: at(12, 17),
                 first: at(0, 5),
