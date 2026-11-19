@@ -119,26 +119,34 @@ host_flags() {
 # The part of the key that each check of one run shares: the passed tree, the
 # compiler, the policy, the flags and the target features. A run reads it
 # once.
+#
+# The target is the build target: `CARGO_BUILD_TARGET`, or the host when the
+# variable is empty. Its features are those under the flags of that triple.
+# A cross build binds the host too, since its build scripts and procedural
+# macros run there. A native key holds no host.
+# - see: #7684
 common() {
-  local tree=${1:-$(git rev-parse 'HEAD^{tree}')} version target compiler policy read_features on
+  local tree=${1:-$(git rev-parse 'HEAD^{tree}')} version host target compiler policy read_features on
   version=$("${GATE_VERDICT_RUSTC:-rustc}" -vV)
-  target=$(awk '/^host:/ { print $2 }' <<< "$version")
+  host=$(awk '/^host:/ { print $2 }' <<< "$version")
+  target=${CARGO_BUILD_TARGET:-$host}
   compiler=$(awk '/^commit-hash:/ { print $2 }' <<< "$version")
   policy=${GATE_VERDICT_POLICY:-$(mise run --quiet workflow:revision)}
   read_features=$(git grep -h -o -E 'target_feature *= *"[^"]+"' "$tree" -- 'crates/*.rs' 2> /dev/null \
     | sed -E 's/.*"([^"]+)"/\1/' | LC_ALL=C sort -u || true)
   on=
   if [[ -n $read_features ]]; then
-    local -a host
-    mapfile -t host < <(host_flags "$target")
-    on=$("${GATE_VERDICT_RUSTC:-rustc}" --print cfg --target "$target" "${host[@]}" | sed -n -E 's/^target_feature="([^"]+)"$/\1/p')
+    local -a flags
+    mapfile -t flags < <(host_flags "$target")
+    on=$("${GATE_VERDICT_RUSTC:-rustc}" --print cfg --target "$target" "${flags[@]}" | sed -n -E 's/^target_feature="([^"]+)"$/\1/p')
   fi
-  env | LC_ALL=C sort | jq -R -s -c --arg tree "$tree" --arg target "$target" --arg compiler "$compiler" --arg policy "$policy" \
-    --arg read "$read_features" --arg on "$on" '
+  env | LC_ALL=C sort | jq -R -s -c --arg tree "$tree" --arg host "$host" --arg target "$target" --arg compiler "$compiler" \
+    --arg policy "$policy" --arg read "$read_features" --arg on "$on" '
     {tree: $tree, target: $target, compiler: $compiler, policy: $policy,
      flags: ([split("\n")[] | select(test("^(RUSTFLAGS|RUSTDOCFLAGS|CARGO_ENCODED_RUSTFLAGS|CARGO_ENCODED_RUSTDOCFLAGS|CARGO_BUILD_RUSTFLAGS|CARGO_BUILD_RUSTDOCFLAGS|CARGO_BUILD_TARGET|CARGO_PROFILE_[A-Z0-9_]+|CARGO_TARGET_[A-Z0-9_]+_RUSTFLAGS)="))
        | capture("^(?<k>[^=]+)=(?<v>.*)$") | {(.k): .v}] | add // {}),
-     target_features: (($on | split("\n")) as $on | [$read | split("\n")[] | select(length > 0) | {(.): IN($on[])}] | add // {})}'
+     target_features: (($on | split("\n")) as $on | [$read | split("\n")[] | select(length > 0) | {(.): IN($on[])}] | add // {})}
+    + if $host == $target then {} else {host: $host} end'
 }
 
 # Whether the record of <check> binds the digest of its inputs in place of

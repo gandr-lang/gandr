@@ -25,11 +25,13 @@ fail() {
   failed=1
 }
 
-# A compiler that reports the commit `$1`.
+# A compiler that reports the commit `$1` and the host `$2`. The host is
+# x86-64 when the case names none.
 stub_rustc() {
-  printf '#!/usr/bin/env bash\nprintf "rustc 1.0.0-nightly\\ncommit-hash: %s\\nhost: x86_64-unknown-linux-gnu\\n"\n' "$1" > "$scratch/rustc-$1"
-  chmod +x "$scratch/rustc-$1"
-  printf '%s' "$scratch/rustc-$1"
+  local host=${2:-x86_64-unknown-linux-gnu}
+  printf '#!/usr/bin/env bash\nprintf "rustc 1.0.0-nightly\\ncommit-hash: %s\\nhost: %s\\n"\n' "$1" "$host" > "$scratch/rustc-$1-$host"
+  chmod +x "$scratch/rustc-$1-$host"
+  printf '%s' "$scratch/rustc-$1-$host"
 }
 
 # The scratch repository at `$1` holds one commit of `main`, and it has a
@@ -153,6 +155,18 @@ got=$(setup "$scratch/compiler" && gate && GATE_VERDICT_RUSTC=$(stub_rustc compi
 
 got=$(setup "$scratch/policy" && gate && GATE_VERDICT_POLICY=policy-2 reads)
 [[ $got == runs ]] || fail "#7684: a run under another policy revision reads no record" "$got"
+
+# A build for another target binds that target and the host, since its build
+# scripts and procedural macros run on the host. A native build binds no
+# host. So the record of a native arm64 run does not serve a cross run.
+got=$(setup "$scratch/cross" && CARGO_BUILD_TARGET=aarch64-unknown-linux-gnu "$verdict" key check:clippy-arch | jq -r '"\(.target) \(.host)"')
+[[ $got == 'aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu' ]] || fail "#7684: the key of a cross build binds its build target and its host" "$got"
+
+got=$(setup "$scratch/native" && GATE_VERDICT_RUSTC=$(stub_rustc compiler-1 aarch64-unknown-linux-gnu) "$verdict" key check:clippy-arch | jq -r '"\(.target) \(.host)"')
+[[ $got == 'aarch64-unknown-linux-gnu null' ]] || fail "#7684: the key of a native build holds no host" "$got"
+
+got=$(setup "$scratch/arm-host" && GATE_VERDICT_RUSTC=$(stub_rustc compiler-1 aarch64-unknown-linux-gnu) gate && CARGO_BUILD_TARGET=aarch64-unknown-linux-gnu reads)
+[[ $got == runs ]] || fail "#7684: the record of a native arm64 run does not serve a cross run" "$got"
 
 # A signer outside the allowed signers.
 got=$(
