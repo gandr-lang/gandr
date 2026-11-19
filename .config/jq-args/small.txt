@@ -14,6 +14,7 @@
 --arg at
 --arg b
 --arg base
+--arg base_inputs
 --arg before
 --arg branch
 --arg c
@@ -47,6 +48,7 @@
 --arg home
 --arg host
 --arg id
+--arg inputs
 --arg integration
 --arg issue
 --arg item

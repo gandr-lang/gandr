@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # The cases of the records of a check's pass. `check:gate-scope` runs them.
 # Each case builds a scratch repository with a bare remote. It writes a record
-# of `check:dylint` on the tree of HEAD, pushes it and reads it as a runner
-# does.
+# of `check:clippy-plain-only` on the tree of HEAD, pushes it and reads it as
+# a runner does. The last cases take a record of the inputs of
+# `check:dylint`, in a scratch workspace of three crates.
 # - see: #7684, `verdict.bash`
 #
 # A stub compiler and a fixed policy revision stand for the toolchain, so no
@@ -50,14 +51,14 @@ setup() {
   export GATE_VERDICT_TRUNK_OK=$GATE_BASE GATE_VERDICT_SCOPE=--workspace
 }
 
-# Writes and pushes the record of `check:dylint` on the tree of HEAD.
+# Writes and pushes the record of `check:clippy-plain-only` on the tree of HEAD.
 gate() {
-  "$verdict" write "$(git rev-parse 'HEAD^{tree}')" check:dylint 2> /dev/null
+  "$verdict" write "$(git rev-parse 'HEAD^{tree}')" check:clippy-plain-only 2> /dev/null
   "$verdict" publish HEAD 2> /dev/null
 }
 
-# Whether a read of `check:dylint` holds, as `held` or `runs`.
-reads() { if "$verdict" read check:dylint 2> /dev/null; then echo held; else echo runs; fi; }
+# Whether a read of `check:clippy-plain-only` holds, as `held` or `runs`.
+reads() { if "$verdict" read check:clippy-plain-only 2> /dev/null; then echo held; else echo runs; fi; }
 
 # A `git` wrapper whose signer fails as its mode states, then delegates every
 # other call to the real Git.
@@ -99,7 +100,7 @@ got=$(
   tree=$(git rev-parse 'HEAD^{tree}')
   status=0
   output=$(PATH="$scratch/retry-once-bin:$PATH" GATE_VERDICT_CASE_FAILURE="$scratch/retry-once.failed" \
-    GATE_VERDICT_CASE_GIT="$(command -v git)" "$verdict" write "$tree" check:dylint 2>&1) || status=$?
+    GATE_VERDICT_CASE_GIT="$(command -v git)" "$verdict" write "$tree" check:clippy-plain-only 2>&1) || status=$?
   "$verdict" publish HEAD > /dev/null 2>&1
   if [[ $status == 0 && -e $scratch/retry-once.failed && $output == *"signing attempt 1 of 2 failed"* ]]; then
     reads
@@ -115,7 +116,7 @@ got=$(
   tree=$(git rev-parse 'HEAD^{tree}')
   status=0
   output=$(PATH="$scratch/retry-always-bin:$PATH" GATE_VERDICT_CASE_GIT="$(command -v git)" \
-    "$verdict" write "$tree" check:dylint 2>&1) || status=$?
+    "$verdict" write "$tree" check:clippy-plain-only 2>&1) || status=$?
   ref=$(git for-each-ref --count=1 refs/verdicts/)
   if [[ $status == 1 && -z $ref && $output == *"record did not sign after 2 attempts"* \
     && $output == *"verdict.bash write"* ]]; then
@@ -155,10 +156,10 @@ got=$(
 got=$(
   setup "$scratch/forged"
   tree=$(git rev-parse 'HEAD^{tree}')
-  key=$("$verdict" key check:dylint)
+  key=$("$verdict" key check:clippy-plain-only)
   hash=$(printf '%s' "$key" | sha256sum | cut -c1-16)
-  forged=$(git commit-tree -S -m "verdict: check:dylint passes" -m "$(jq -c '.policy = "policy-0"' <<< "$key")" "$tree")
-  git update-ref "refs/verdicts/$tree/check-dylint/$hash" "$forged"
+  forged=$(git commit-tree -S -m "verdict: check:clippy-plain-only passes" -m "$(jq -c '.policy = "policy-0"' <<< "$key")" "$tree")
+  git update-ref "refs/verdicts/$tree/check-clippy-plain-only/$hash" "$forged"
   "$verdict" publish HEAD 2> /dev/null
   reads
 )
@@ -168,7 +169,7 @@ got=$(
 got=$(
   setup "$scratch/dirty"
   printf 'two\n' > file
-  "$verdict" write "$("$here/passed.bash" tree)" check:dylint 2> /dev/null
+  "$verdict" write "$("$here/passed.bash" tree)" check:clippy-plain-only 2> /dev/null
   git for-each-ref --count=1 refs/verdicts/ | wc -l | tr -d ' '
 )
 [[ $got == 0 ]] || fail "#7684: work that is not the tree of HEAD writes no record" "$got"
@@ -187,10 +188,10 @@ got=$(
   setup "$scratch/unverified"
   gate
   GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=gpg.ssh.program GIT_CONFIG_VALUE_0="$scratch/no-ssh-keygen" \
-    "$verdict" read check:dylint 2>&1 || true
+    "$verdict" read check:clippy-plain-only 2>&1 || true
 )
-[[ $got == *"of check:dylint does not hold: its signature does not verify: "*"$scratch/no-ssh-keygen"*"No such file or directory"* \
-  && $got == *"no record holds check:dylint on "* ]] \
+[[ $got == *"of check:clippy-plain-only does not hold: its signature does not verify: "*"$scratch/no-ssh-keygen"*"No such file or directory"* \
+  && $got == *"no record holds check:clippy-plain-only on "* ]] \
   || fail "#7684: a record whose signature does not verify states why" "$got"
 
 # An edit that keeps the size and the stamp of a file. Before it, git writes
@@ -214,5 +215,79 @@ got=$(
 )
 [[ $got == work ]] || fail "#7740: an edit that keeps a file's size and stamp is the tree of the work" "$got"
 
+# A scratch workspace of three crates: `b` depends on `a`, and `c` stands
+# apart. The task's definition is a fixed text, since the scratch repository
+# holds no task.
+workspace() {
+  local name
+  for name in a b c; do
+    mkdir -p "crates/$name/src"
+    printf '//! %s\n' "$name" > "crates/$name/src/lib.rs"
+    printf '[package]\nname = "%s"\nversion = "0.1.0"\nedition = "2024"\n' "$name" > "crates/$name/Cargo.toml"
+  done
+  printf '\n[dependencies]\na = { path = "../a" }\n' >> crates/b/Cargo.toml
+  printf '[workspace]\nmembers = ["crates/a", "crates/b", "crates/c"]\nresolver = "3"\n' > Cargo.toml
+  cargo generate-lockfile --offline --quiet
+  git add -A
+  git commit --quiet --message workspace
+  export GATE_INPUTS_TASK=case-task GATE_BASE
+  GATE_BASE=$(git rev-parse HEAD)
+}
+
+# Gates a change of `a` on a branch and pushes the record of the policy's
+# inputs, over the scope that `$1` names.
+gate_inputs() {
+  git switch --quiet --create change
+  commit crates/a/src/lib.rs '//! a, changed' change > /dev/null
+  GATE_SCOPE=$1 "$verdict" write "$(git rev-parse 'HEAD^{tree}')" check:dylint 2> /dev/null
+  "$verdict" publish HEAD 2> /dev/null
+}
+
+# Merges the change onto a moved base, as a merge group does. The base moves
+# by the text `$1` at the path `$2`, and it becomes the group's base.
+group() {
+  git switch --quiet --detach "$GATE_BASE"
+  commit "$2" "$1" moved > /dev/null
+  GATE_BASE=$(git rev-parse HEAD)
+  git merge --quiet --no-edit change
+}
+
+# Whether a read of the policy holds over the scope `$1`, as `held` or `runs`.
+reads_inputs() { if GATE_VERDICT_SCOPE=$1 "$verdict" read check:dylint 2> /dev/null; then echo held; else echo runs; fi; }
+
+got=$(setup "$scratch/inputs-moved" && workspace && gate_inputs --workspace && group notes notes.txt && reads_inputs --workspace)
+[[ $got == held ]] || fail "#7684: a group whose base moved holds the record when no input of the check changed" "$got"
+
+got=$(setup "$scratch/inputs-changed" && workspace && gate_inputs --workspace && group '//! b, moved' crates/b/src/lib.rs && reads_inputs --workspace)
+[[ $got == runs ]] || fail "#7684: a group whose base changed an input of the check runs it" "$got"
+
+got=$(setup "$scratch/inputs-apart" && workspace && gate_inputs '--workspace --exclude c' \
+  && group '//! c, moved' crates/c/src/lib.rs && reads_inputs '--workspace --exclude c')
+[[ $got == held ]] || fail "#7684: a change of a crate outside the scope's closure holds the record" "$got"
+
+got=$(setup "$scratch/inputs-manifest" && workspace && gate_inputs '--workspace --exclude c' \
+  && group "$(printf '[package]\nname = "c"\nversion = "0.2.0"\nedition = "2024"')" crates/c/Cargo.toml \
+  && reads_inputs '--workspace --exclude c')
+[[ $got == runs ]] || fail "#7684: a change of a manifest outside the scope's closure runs the check" "$got"
+
+# A dep-info file of the crate `a` that names a file outside its crate. The
+# check refuses it by its path, until the table names it for `a`.
+got=$(
+  setup "$scratch/depinfo"
+  workspace
+  mkdir -p notes
+  commit notes/outside.txt outside notes > /dev/null
+  touch -d '1 hour ago' "$scratch/depinfo.stamp"
+  unit=target/case/build/a/0123456789abcdef/out
+  mkdir -p "$unit"
+  printf 'target/case/liba.rmeta: crates/a/src/lib.rs notes/outside.txt\n\ncrates/a/src/lib.rs:\nnotes/outside.txt:\n' > "$unit/a-0123456789abcdef.d"
+  refused=$("$here/inputs.bash" depinfo "$scratch/depinfo.stamp" --workspace target/case 2>&1) && refused=passed
+  printf '{"workspace": [], "outside": {"a": ["notes/outside.txt"]}}\n' > "$scratch/depinfo.json"
+  declared=$(GATE_INPUTS_TABLE=$scratch/depinfo.json "$here/inputs.bash" depinfo "$scratch/depinfo.stamp" --workspace target/case 2>&1) || declared=refused
+  printf '%s|%s' "$refused" "$declared"
+)
+[[ $got == "inputs: a read notes/outside.txt, which the inputs of its scope do not hold; name it under \`outside.a\` in .config/gate-scope/inputs.json (#7684)|inputs: each file of the tree that the run read is an input of its scope" ]] \
+  || fail "#7684: the dep-info check refuses a file outside the inputs by its path" "$got"
+
 (( failed == 0 )) || exit 1
-echo "verdict OK: 15 cases read, refuse and write records as recorded"
+echo "verdict OK: 20 cases read, refuse and write records as recorded"

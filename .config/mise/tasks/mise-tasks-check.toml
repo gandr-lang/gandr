@@ -90,23 +90,15 @@ if [[ ${usage_no_wait:-false} == true ]]; then export GATE_NO_WAIT=1; fi
 tree=$(.config/gate-scope/passed.bash tree)
 gate_tree=$tree
 selected=$(.config/gate-scope/select.bash --landing)
-heavy=$(jq -r --arg selected "$selected" '[.groups[][]] as $heavy | [$selected | split("\n")[] | select(IN($heavy[]))] | length' .config/gate-scope/table.json)
-if (( heavy > 0 )); then
-  hold_gate_slot "mise run check"
-  gate_bound
-  # The git sources of the workspace, fetched and checked out once before the
-  # checks fork (#7492). The checks share one cargo home. `check:dylint`
-  # checks out quenchant at the rev that the workspace pins, through a
-  # temporary directory. `clippy::cargo` in `check:clippy-enforcing` lists the
-  # same directory in its `cargo metadata`, and failed on the temporary
-  # directory that went away. After the fetch the checkout stands, and no
-  # check writes it during the run.
-  cargo fetch --locked --quiet || { echo "check: cargo fetch --locked failed, so no check runs (#7492)" >&2; exit 1; }
-  echo "check: gate slot $gate_slot of $gate_slots in the lane $gate_lane after $gate_wait_lane s for the lane and $gate_wait_slot s for the slot, $gate_jobs build jobs" >&2
-else
-  echo "check: the change selects no Clippy or compiler policy check, so it takes no gate slot" >&2
-fi
+hold_gate_slot "mise run check"
+gate_bound
+# The gate fetches workspace sources once before fast checks fork.
+# `check:dylint` checks out quenchant at the revision the workspace pins.
+# The checkout stands after this fetch, and no check writes it during the run.
+cargo fetch --locked --quiet || { echo "check: cargo fetch --locked failed, so no check runs (#7492)" >&2; exit 1; }
+echo "check: gate slot $gate_slot of $gate_slots in the lane $gate_lane after $gate_wait_lane s for the lane and $gate_wait_slot s for the slot, $gate_jobs build jobs" >&2
 mapfile -t checks <<< "$selected"
+if [[ " ${checks[*]} " != *" check:landing "* ]]; then checks+=(check:landing); fi
 echo "check: the landing's gate runs ${#checks[@]} of $(mise tasks ls --json | jq '[.[] | select(.name | startswith("check:"))] | length') checks (.config/gate-scope/table.json); the integration cycle and \`mise run gate:all\` run every one" >&2
 GATE_SCOPE=$(.config/gate-scope/scope.bash)
 export GATE_SCOPE
@@ -129,11 +121,11 @@ if [[ " ${checks[*]} " == *" check:witnesses "* || " ${checks[*]} " == *" check:
     if [[ -n $GATE_TEST_KNOWN_RED ]]; then export GATE_TEST_KNOWN_RED; else unset GATE_TEST_KNOWN_RED; fi
   fi
 fi
-tasks=()
-for check in "${checks[@]}"; do tasks+=("$check" :::); done
 mkdir -p target/gate
 SECONDS=0
-{ MISE_TASK_TIMINGS=1 mise run --output prefix "${tasks[@]:0:${#tasks[@]}-1}" 2>&1 1>&3 3>&- | tee target/gate/check.log >&2; } 3>&1
+if ! bash .config/gate-scope/check-run.bash target/gate/check.log "${checks[@]}"; then
+  exit 1
+fi
 .config/gate-scope/passed.bash record check "$tree" target/gate/check.log "$SECONDS" "$(gate_wait)" "${checks[@]}"
 # Each check that a job of the pull request or of the merge group runs again
 # gets a signed record of this pass. `pr:open` pushes the records.
@@ -742,9 +734,16 @@ if [[ -n ${GATE_BASE:-} ]]; then .config/mise/gated .config/policy/base-records.
 features=$(cargo metadata --no-deps --locked --format-version 1 | .config/policy/required.bash {{ env.GATE_SCOPE | default(value='--workspace') }})
 # shellcheck disable=SC2086 # `$features` is `--features` and its list, or nothing.
 status=0
+# The stamp of this run: the dep-info files newer than it are this run's.
+stamp=$(mktemp)
+trap 'rm -f "$stamp"' EXIT
 policy {{ env.GATE_SCOPE | default(value='--workspace') }} $features || status=$?
 .config/policy/held.bash target/allocation-base target/evidence/records "${GATE_BASE:-}" >&2
 (( status == 0 )) || exit "$status"
+# Each file of the tree that the run reads must be an input of its scope. So
+# the record of this pass binds each file that its verdict reads.
+# - see: #7684
+.config/gate-scope/inputs.bash depinfo "$stamp" '{{ env.GATE_SCOPE | default(value='--workspace') }}' target/dylint/target
 .config/policy/scope-cases.bash
 .config/policy/trait-object-cases.bash
 .config/policy/held-cases.bash
@@ -3053,6 +3052,7 @@ set -euo pipefail
 .config/cases/run.bash gate-scope .config/gate-scope/cases.json --programs .config/gate-scope --mode c --raw unmapped.jq --raw reads.jq --raw choose.jq
 .config/gate-scope/carry-cases.bash
 .config/gate-scope/select-cases.bash
+bash .config/gate-scope/check-run-cases.bash
 .config/gate-scope/tests-cases.bash
 .config/gate-scope/comments-cases.bash
 .config/gate-scope/remote-cases.bash

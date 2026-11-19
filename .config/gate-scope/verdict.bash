@@ -2,10 +2,13 @@
 # The verdict of a check on a tree. A pass of a check is a record, a commit
 # with no parent. Its tree is the tree of the check's pass, and its
 # message holds the key of the pass. The writer signs the commit with the key
-# that signs its commits. The record's ref is
-# `refs/verdicts/<tree>/<check>/<hash>`, where <hash> is the first 16 digits
-# of the SHA-256 of the key.
-# - see: #7684
+# that signs its commits.
+#
+# The record's ref is `refs/verdicts/<tree>/<check>/<hash>`, where <hash> is
+# the first 16 digits of the SHA-256 of the key. A check whose inputs
+# `verdicts.json` lists binds their digest in place of the tree. Its record's
+# ref is `refs/verdicts/inputs/<check>/<hash>`.
+# - see: #7684, `inputs.bash`
 #
 # A lane's gate writes the record, `pr:open` pushes it, and the jobs of the
 # pull request and of the merge group read it. A job that reads a record for
@@ -17,12 +20,17 @@
 #
 # The key binds each input that the verdict reads (`verdicts.json` names the
 # checks and the profile of each):
-#   - `tree` and `check`: the tree and the task;
+#   - `check`, and either `tree` and `base` or `inputs`: the task, and the
+#     tree and `GATE_BASE`, or the digest of the inputs of the check over its
+#     scope (`inputs.bash`). A check that reads its base binds the digest of
+#     the same inputs at `GATE_BASE` too, as `base_inputs`. So a merge group
+#     whose base moved reads the record of its pull request's gate, when no
+#     input of the check changed;
 #   - `target` and `compiler`: the host triple and the commit of `rustc -vV`;
 #   - `profile`: the profile that the check builds;
 #   - `policy`: the policy's revision (`mise run workflow:revision`);
-#   - `base` and `scope`: `GATE_BASE`, and `GATE_SCOPE`, which the check
-#     reads its packages and its features from;
+#   - `scope`: `GATE_SCOPE`, which the check reads its packages and its
+#     features from;
 #   - `flags`: each variable of the environment that Cargo reads for the
 #     flags, the target and the profile of the build;
 #   - `target_features`: each value of `target_feature` that a source of the
@@ -42,17 +50,21 @@
 #     commit is of no use to a runner.
 #   verdict.bash publish <commit>
 #     Pushes each record of the tree of <commit> to the remote
-#     `GATE_VERDICT_REMOTE`, `origin` by default.
+#     `GATE_VERDICT_REMOTE`, `origin` by default: each ref under the tree, and
+#     each record of inputs whose commit holds that tree.
 #   verdict.bash read <check>...
-#     Exits 0 when the remote holds a record of each <check> for HEAD's tree
-#     that this run's key matches and an allowed signer signed. Else it names
-#     each check that it holds no record of, and exits 1. Each run takes the
-#     base of each record, when the base is a commit of the trunk, and reads
-#     the scope against it as the merge group does (`scope.bash --lints`).
-#     So a record of a base below the group's base serves the group: each
-#     package outside the record's scope is the base's, and the base passed.
-#     The policy holds each function that the change alters against the
-#     older base, which holds no fewer functions.
+#     Exits 0 when the remote holds a record of each <check> that this run's
+#     key matches and an allowed signer signed. Else it names each check that
+#     it holds no record of, and exits 1. For a check of inputs, the run
+#     computes its key from its own tree, its own base `GATE_BASE` and the
+#     scope against that base (`scope.bash --lints`), and fetches the one ref
+#     of that key. For another check, each run takes the base of each record
+#     of HEAD's tree, when the base is a commit of the trunk, and reads the
+#     scope against it as the merge group does. So a record of a base below
+#     the group's base serves the group: each package outside the record's
+#     scope is the base's, and the base passed. The policy holds each
+#     function that the change alters against the older base, which holds no
+#     fewer functions.
 #
 # `GATE_VERDICT_SIGNERS` names a file of allowed signers in the form of
 # `ssh-keygen -Y verify`. Without it the reader asks GitHub for the signing
@@ -130,12 +142,37 @@ common() {
      target_features: (($on | split("\n")) as $on | [$read | split("\n")[] | select(length > 0) | {(.): IN($on[])}] | add // {})}'
 }
 
-# The key of <check>: the run's common part, the check, its profile, the base
-# `GATE_BASE` and the scope `GATE_SCOPE`.
+# Whether the record of <check> binds the digest of its inputs, which
+# `verdicts.json` lists for the check, in place of the tree.
+digested() { jq -e --arg check "$1" '.checks[$check].inputs != null' "$table" > /dev/null; }
+
+# The key of <check>: the run's common part, the check, its profile and the
+# scope `GATE_SCOPE`. A check of inputs binds their digest at HEAD in place of
+# the tree, and their digest at `GATE_BASE` when it reads its base. Another
+# check binds the tree and the base `GATE_BASE`.
 key() {
-  jq -c -S --arg check "$1" --arg base "${GATE_BASE:-}" --arg scope "${GATE_SCOPE:---workspace}" --slurpfile table "$table" '
+  local check=$1 scope=${GATE_SCOPE:---workspace} inputs= base_inputs=
+  if digested "$check"; then
+    inputs=$("$here/inputs.bash" digest HEAD "$scope" "$check")
+    if [[ -n ${GATE_BASE:-} ]] && jq -e --arg check "$check" '.checks[$check].base == true' "$table" > /dev/null; then
+      base_inputs=$("$here/inputs.bash" digest "$GATE_BASE" "$scope" "$check")
+    fi
+  fi
+  jq -c -S --arg check "$check" --arg base "${GATE_BASE:-}" --arg scope "$scope" --arg inputs "$inputs" \
+    --arg base_inputs "$base_inputs" --slurpfile table "$table" '
     ($table[0].checks[$check].profile // error("verdict: \($check) holds no row in verdicts.json")) as $profile
-    | . + {check: $check, profile: $profile, base: $base, scope: $scope}' <<< "${common_key:-$(common)}"
+    | if $inputs == "" then . + {check: $check, profile: $profile, base: $base, scope: $scope}
+      else del(.tree) + {check: $check, profile: $profile, scope: $scope, inputs: $inputs, base_inputs: $base_inputs} end' \
+    <<< "${common_key:-$(common)}"
+}
+
+# The ref of the record of <check> on <tree> under the key <key>.
+ref_of() {
+  if digested "$1"; then
+    printf 'refs/verdicts/inputs/%s/%s\n' "$(ref_name "$1")" "$(key_hash "$3")"
+  else
+    printf 'refs/verdicts/%s/%s/%s\n' "$2" "$(ref_name "$1")" "$(key_hash "$3")"
+  fi
 }
 
 # The allowed signers, from `GATE_VERDICT_SIGNERS` or from GitHub.
@@ -166,13 +203,16 @@ on_trunk() {
 }
 
 # Verifies the record <commit> against <key>. The status tells. On a refusal
-# it prints the reason, so a job's log shows why its checks run again.
+# it prints the reason, so a job's log shows why its checks run again. A key
+# of inputs binds no tree, so the record's tree is the gate's and stays
+# unread.
 verify() {
-  local commit=$1 key=$2 allowed=$3 parents body signature
+  local commit=$1 key=$2 allowed=$3 parents body signature tree
   [[ $(git cat-file -t "$commit") == commit ]] || { echo 'it is not a commit'; return 1; }
   parents=$(git rev-list --parents -n 1 "$commit")
   [[ $parents == "$commit" ]] || { echo 'it has a parent'; return 1; }
-  [[ $(git rev-parse "$commit^{tree}") == "$(jq -r .tree <<< "$key")" ]] || { echo "its tree is not the run's tree"; return 1; }
+  tree=$(jq -r '.tree // empty' <<< "$key")
+  [[ -z $tree || $(git rev-parse "$commit^{tree}") == "$tree" ]] || { echo "its tree is not the run's tree"; return 1; }
   body=$(git log -1 --format=%b "$commit" | jq -c -S . 2> /dev/null) || { echo 'its body is not a key'; return 1; }
   [[ $body == "$key" ]] || { echo "its body is not the run's key"; return 1; }
   signature=$(git -c gpg.ssh.allowedSignersFile="$allowed" verify-commit "$commit" 2>&1) \
@@ -219,7 +259,7 @@ case ${1:-} in
         failed=1
         continue
       fi
-      git update-ref "refs/verdicts/$tree/$(ref_name "$check")/$(key_hash "$k")" "$commit"
+      git update-ref "$(ref_of "$check" "$tree" "$k")" "$commit"
       echo "verdict: $check passes on ${tree:0:12}; the record is ${commit:0:12}" >&2
     done
     (( failed == 0 )) || exit 1
@@ -227,12 +267,16 @@ case ${1:-} in
   publish)
     (( $# == 2 )) || { echo 'usage: verdict.bash publish <commit>' >&2; exit 2; }
     tree=$(git rev-parse "$2^{tree}")
-    if [[ -z $(git for-each-ref --count=1 "refs/verdicts/$tree/") ]]; then
+    # The refs under the tree, and each record of inputs whose commit holds
+    # the tree. The gate writes such a record on this tree.
+    mapfile -t refs < <(git for-each-ref --format='%(refname)' "refs/verdicts/$tree/"
+      git for-each-ref --format='%(refname) %(tree)' refs/verdicts/inputs/ | awk -v tree="$tree" '$2 == tree { print $1 }')
+    if (( ${#refs[@]} == 0 )); then
       echo "verdict: no record of the tree ${tree:0:12}, so none is pushed" >&2
       exit 0
     fi
-    git push --quiet --no-verify "$remote" "refs/verdicts/$tree/*:refs/verdicts/$tree/*"
-    echo "verdict: pushed the records of the tree ${tree:0:12}: $(git for-each-ref --format='%(refname)' "refs/verdicts/$tree/" | awk -F/ '{ print $4 }' | sort -u | paste -sd ' ')" >&2
+    git push --quiet --no-verify "$remote" "${refs[@]}"
+    echo "verdict: pushed the records of the tree ${tree:0:12}: $(printf '%s\n' "${refs[@]}" | awk -F/ '{ print $(NF - 1) }' | sort -u | paste -sd ' ')" >&2
     ;;
   read)
     (( $# >= 2 )) || { echo 'usage: verdict.bash read <check>...' >&2; exit 2; }
@@ -247,22 +291,40 @@ case ${1:-} in
     missing=()
     for check in "$@"; do
       held=
-      while read -r _ ref; do
-        [[ -n $ref ]] || continue
-        remote_git fetch --quiet --no-tags "$remote" "+$ref:$ref" 2> /dev/null || { refused "$ref" "$check" 'the fetch failed'; continue; }
-        commit=$(git rev-parse "$ref")
-        base=$(git log -1 --format=%b "$commit" | jq -r '.base // empty' 2> /dev/null) || { refused "$ref" "$check" 'its body is not a key'; continue; }
-        [[ -n $base ]] || { refused "$ref" "$check" 'it names no base'; continue; }
-        on_trunk "$base" || { refused "$ref" "$check" "the trunk does not hold its base ${base:0:12}"; continue; }
-        scope=${GATE_VERDICT_SCOPE:-$(GATE_BASE=$base "$here/scope.bash" --lints 2> /dev/null)} \
-          || { refused "$ref" "$check" "the scope against its base ${base:0:12} did not read"; continue; }
-        k=$(GATE_BASE=$base GATE_SCOPE=$scope key "$check")
-        [[ ${ref##*/} == "$(key_hash "$k")" ]] || { refused "$ref" "$check" "its key is not the run's key, $(key_hash "$k")"; continue; }
-        if reason=$(verify "$commit" "$k" "$allowed"); then held=$commit; break; fi
-        refused "$ref" "$check" "$reason"
-      done < <(remote_git ls-remote "$remote" "refs/verdicts/$tree/$(ref_name "$check")/*")
+      if digested "$check"; then
+        # The run's own key: its tree's inputs, its base's inputs and its
+        # scope against its base. One ref holds the record of that key.
+        if ! scope=${GATE_VERDICT_SCOPE:-$("$here/scope.bash" --lints 2> /dev/null)}; then
+          echo "verdict: the scope of $check did not read, so the run reads no record of it" >&2
+        else
+          k=$(GATE_SCOPE=$scope key "$check")
+          ref=$(ref_of "$check" "$tree" "$k")
+          if ! remote_git fetch --quiet --no-tags "$remote" "+$ref:$ref" 2> /dev/null; then
+            echo "verdict: no record binds the inputs of $check in this run, $(key_hash "$k")" >&2
+          elif reason=$(verify "$(git rev-parse "$ref")" "$k" "$allowed"); then
+            held=$(git rev-parse "$ref")
+          else
+            refused "$ref" "$check" "$reason"
+          fi
+        fi
+      else
+        while read -r _ ref; do
+          [[ -n $ref ]] || continue
+          remote_git fetch --quiet --no-tags "$remote" "+$ref:$ref" 2> /dev/null || { refused "$ref" "$check" 'the fetch failed'; continue; }
+          commit=$(git rev-parse "$ref")
+          base=$(git log -1 --format=%b "$commit" | jq -r '.base // empty' 2> /dev/null) || { refused "$ref" "$check" 'its body is not a key'; continue; }
+          [[ -n $base ]] || { refused "$ref" "$check" 'it names no base'; continue; }
+          on_trunk "$base" || { refused "$ref" "$check" "the trunk does not hold its base ${base:0:12}"; continue; }
+          scope=${GATE_VERDICT_SCOPE:-$(GATE_BASE=$base "$here/scope.bash" --lints 2> /dev/null)} \
+            || { refused "$ref" "$check" "the scope against its base ${base:0:12} did not read"; continue; }
+          k=$(GATE_BASE=$base GATE_SCOPE=$scope key "$check")
+          [[ ${ref##*/} == "$(key_hash "$k")" ]] || { refused "$ref" "$check" "its key is not the run's key, $(key_hash "$k")"; continue; }
+          if reason=$(verify "$commit" "$k" "$allowed"); then held=$commit; break; fi
+          refused "$ref" "$check" "$reason"
+        done < <(remote_git ls-remote "$remote" "refs/verdicts/$tree/$(ref_name "$check")/*")
+      fi
       if [[ -n $held ]]; then
-        echo "verdict: $check passed on ${tree:0:12}; the record ${held:0:12} holds, so the check does not run again" >&2
+        echo "verdict: $check holds on ${tree:0:12}: the record ${held:0:12} binds this run's key, so the check does not run again" >&2
       else
         missing+=("$check")
       fi
