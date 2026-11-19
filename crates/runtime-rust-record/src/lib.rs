@@ -48,7 +48,8 @@ mod record;
 #[cfg(feature = "std")]
 mod request;
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
+#[cfg(feature = "std")]
 mod tests;
 
 pub use crate::bytes::Canonical;
