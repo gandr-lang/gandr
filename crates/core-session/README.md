@@ -69,7 +69,7 @@ cargo nextest run -p gandr-core-session
 RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-core-session
 ```
 
-The generator protocol is `rec t => &{next: Y >! t, stop: end}`. Its consumer selects `next`, receives a yield, and eventually selects `stop` and closes. `SeatEnd` is `Dispatch >? rec t => +{report: Report >! &{next: t, retire: end}, handoff: Handoff >! end}`. Independently stated peers witness duality and accepted runs for both protocols.
+The generator protocol is `rec t => &{next: Y >! t, stop: end}`. Its consumer selects `next`, receives a yield, and eventually selects `stop` and closes. `SeatEnd` is `Dispatch >? rec t => +{report: Report >! &{next: t, retire: end}, handoff: Handoff >! end}`. Peers that the tests state apart from the engine show the duality of both protocols and the runs that each protocol takes.
 
 ## Leaf boundary
 
