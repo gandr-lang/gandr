@@ -1716,6 +1716,40 @@ fn a_pub_at_the_margin_closes_a_broken_container_6323() -> Result<(), Failure>
     Ok(())
 }
 
+/// A member of a block that lost a token owes at the place of the loss and
+/// at most once more at its own `;`, and the members after it owe nothing.
+///
+/// The session type `SeatEnd′` lost the `+{` of its choice. Each label of
+/// the choice then owed a `:` of its own, and the definition after the type
+/// owed a `]` of its `Path[…]` (#7881).
+#[test]
+fn a_broken_member_owes_once_and_its_block_owes_no_cascade_7881() -> Result<(), Failure>
+{
+    let damaged = include_str!(
+        "acceptance/unformatted/a-broken-member-owes-once-and-its-block-owes-no-cascade-7881.gandr"
+    );
+    let result = parse(built(), SourceText::from(damaged))?;
+    let member_end = damaged
+        .find("};")
+        .and_then(|at| at.checked_add(2))
+        .ok_or("the broken member ends at its `};`")?;
+    let late: Vec<_> = result
+        .obligations()
+        .iter()
+        .filter(|obligation| usize::from(obligation.span.start()) >= member_end)
+        .collect();
+    assert!(
+        late.is_empty(),
+        "the members after the broken one owe nothing, yet owe {late:?}"
+    );
+    assert!(
+        (1 ..= 2).contains(&result.obligations().len()),
+        "the broken member owes at its loss and at most once at its `;`, yet owes {:?}",
+        result.obligations()
+    );
+    Ok(())
+}
+
 /// A closer reaches its open partner across one free form, and a bracketed
 /// form of its family further down keeps the closer it owns.
 ///
