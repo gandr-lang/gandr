@@ -5893,8 +5893,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     ///   components and a sum pattern's payload are queued with the component's
     ///   or summand's type the queued pattern's stated type writes, when it
     ///   writes one.
-    /// - fails: as [`Self::pattern`]; a group in parentheses, which matches a
-    ///   stored product here, with [`FormFault::product_pattern`].
+    /// - fails: as [`Self::pattern`]; a group in parentheses, which stands
+    ///   where a stored product's pattern belongs, with
+    ///   [`FormFault::MisplacedTile`].
     /// - panics: none.
     ///
     /// # Errors
@@ -5909,7 +5910,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// - witness: `gandr-surface-lowering::lower::native::tests::patterns_outside_the_fragment_are_declined_by_name`
     /// - witness: `gandr-surface-lowering::lower::native::tests::telescope_patterns_split_and_project`
     /// - witness: `gandr-surface-lowering::lower::native::tests::sum_patterns_case_on_the_stated_arity`
-    /// - witness: `gandr-surface-lowering::lower::tests::a_parenthesized_product_pattern_is_refused_by_name_5192`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_parenthesized_product_pattern_is_a_misplaced_tile_5192`
     #[spec(captures: before = patterns.shapes.len(), ensures: patterns.shapes.len() >= before)]
     fn pattern_shape(
         &mut self,

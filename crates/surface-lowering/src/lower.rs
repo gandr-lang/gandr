@@ -7337,6 +7337,66 @@ mod tests
         }
     }
 
+    /// #5192: a group in parentheses receives a call's outputs alone. Over a
+    /// stored product, in a `let` with or without a type and in a match arm,
+    /// the group has a tile out of place: `*{p, q}` is the pattern. A group
+    /// over a call's outputs keeps its reading.
+    #[test]
+    fn a_parenthesized_product_pattern_is_a_misplaced_tile_5192()
+    {
+        let pbg = grammar();
+        let lowered = |source: &'static str| {
+            let tree = gandr_surface_parser::parse(&pbg, SourceText::from(source))
+                .expect("parses")
+                .into_tree();
+            let mut arena = CoreArena::new();
+            let module = lower_module(
+                &pbg,
+                &tree,
+                &mut arena,
+                LoweringBudget::DEFAULT,
+                Recognition::default(),
+            )
+            .expect("lowers");
+            outcomes(&module)
+        };
+        let refused = |start: usize| {
+            [DeclarationOutcome::Refused(
+                LoweringRefusal::MalformedForm {
+                    span: span(ByteOffset::from(start), ByteOffset::from(start + 6)),
+                    form: FormName::TUPLE_PATTERN,
+                    fault: FormFault::MisplacedTile,
+                },
+            )]
+        };
+        for (source, start) in [
+            (
+                "def s() -> Integer { let pair : *{Integer, Integer} = *{1, 2}; let (a, b) = pair; a }\n",
+                67,
+            ),
+            (
+                "def t() -> Integer { let (a, b) : *{Integer, Integer} = *{1, 2}; a }\n",
+                25,
+            ),
+            (
+                include_str!("lower/fixtures/a-match-arm-group-is-a-misplaced-tile-5192.gandr"),
+                70,
+            ),
+        ] {
+            assert_eq!(lowered(source), refused(start), "{source}");
+        }
+        let outputs = lowered(include_str!(
+            "lower/fixtures/a-group-over-outputs-keeps-its-reading-5192.gandr"
+        ));
+        assert!(
+            matches!(outputs.as_slice(), [
+                DeclarationOutcome::Completed { .. },
+                DeclarationOutcome::Completed { .. }
+            ]),
+            "a group over a call's outputs keeps its reading: {outputs:?}"
+        );
+    }
+
     #[test]
     fn an_unended_form_names_its_missing_tile_where_it_belongs()
     {

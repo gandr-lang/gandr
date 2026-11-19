@@ -12152,7 +12152,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::identity::tests::session_statements_lower_to_their_formers`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::an_omitted_carrier_is_a_nominated_hole_4932`
-    /// - witness: `gandr-surface-lowering::lower::identity::tests::a_carrier_written_first_is_refused_5024`
+    /// - witness: `gandr-surface-lowering::lower::identity::tests::a_carrier_written_first_is_an_extra_operand_5024`
     ///
     /// # Cost
     /// - allocation: the refusal of an unresolved head, error path
@@ -14418,7 +14418,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   constructor; empty parentheses are refused by name; a result's group
     ///   of outputs lowers to the many-value returner.
     /// - witness: `gandr-surface-lowering::lower::tests::an_arrow_lowers_under_a_thunk_type`
-    /// - witness: `gandr-surface-lowering::lower::tests::a_parenthesized_product_is_refused_by_name_at_its_opener_8050`
     /// - witness: `gandr-surface-lowering::lower::tests::the_alias_is_the_thunked_arrow`
     /// - witness: `gandr-surface-lowering::lower::tests::the_empty_parentheses_are_never_the_unit`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_type_valued_calls_argument_takes_an_annotation_3633`
@@ -19944,7 +19943,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - witness: `gandr-surface-lowering::lower::tests::a_spelled_payload_is_read_back_where_it_was_filed`
     /// - witness: `gandr-surface-lowering::lower::tests::a_named_payload_is_spelled_with_its_name_2077`
     /// - witness: `gandr-surface-lowering::lower::tests::traces_is_written_once_per_channel_3338`
-    /// - witness: `gandr-surface-lowering::lower::tests::a_retired_builtin_spelling_is_refused_by_name_8071`
     /// - witness: `gandr-surface-lowering::tests::modules::a_sealed_atom_reads_the_identity_its_type_member_states`
     #[spec(
         captures: before = seen.len(),
