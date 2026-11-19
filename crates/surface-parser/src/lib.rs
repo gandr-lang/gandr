@@ -74,9 +74,8 @@
 //! preceding adjacency. They do not scan the whole grammar on each speculative
 //! completion.
 //!
-//! The witnesses do not establish universal malformed-input totality. A
-//! trailing escape in a quoted shell assignment can advance past the source;
-//! batch parsing then refuses source agreement. Checkpoint counts also lack
+//! The witnesses do not establish universal malformed-input totality.
+//! Checkpoint counts lack
 //! allocation bounds, so a maximal encoded count can panic before a typed
 //! decoder refusal. These are runtime limits, not exemptions from the intended
 //! losslessness and decoder contracts.

@@ -89,7 +89,7 @@ use crate::TileLabel;
 use crate::model::RegexShape;
 use crate::model::Sym;
 
-/// Builds every surface rule except the type, shell and circuit forms.
+/// Builds every surface rule except the type and circuit forms.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -104,6 +104,9 @@ use crate::model::Sym;
 /// # Errors
 /// [`PbgError::MissingPrec`] naming the absent group.
 ///
+/// # Cost
+/// - allocation: the surface rules and their adaptation records, setup
+///
 /// # Adequacy
 /// - hypothesis: For complete and missing-band tables, L2 error-order
 ///   observations and L3 grammar identity catch silent omission, reordered
@@ -113,7 +116,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.pipe", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.application", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 113 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=13 => Sort::Item, 14..=20 => Sort::ModuleMember, 21..=32 | 104 => Sort::Pattern, 33..=37 => Sort::Instantiation, 112 => Sort::Block, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "statement_block")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.pipe", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.application", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 112 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=13 => Sort::Item, 14..=20 => Sort::ModuleMember, 21..=32 | 103 => Sort::Pattern, 33..=37 => Sort::Instantiation, 111 => Sort::Block, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "statement_block")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -2052,6 +2055,9 @@ fn instantiations(
 ///   their selected precedence bands.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the expression rules and their adaptation records, setup
+///
 /// # Adequacy
 /// - hypothesis: For the built-in band table, L3 grammar identity and corpus
 ///   role observations catch lost or reordered forms, changed provenance and
@@ -2060,7 +2066,7 @@ fn instantiations(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 66 && added.iter().zip(["pure_expression", "return_expression", "become_expression", "bind_expression", "binary_expression.pipe", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.cons", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "application_expression", "unary_expression", "force_expression", "run_expression", "hold_expression", "splice_expression", "pack_model_expression", "instantiation_expression", "projection_expression", "record_selection_expression", "view_expression", "index_expression", "hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "match_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "fork_expression", "access_expression", "shell_block", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "recv_expression", "acquire_expression", "release_expression", "resume_expression", "abort_expression"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "pure_expression" | "return_expression" | "become_expression" | "bind_expression" | "pack_model_expression" => p.pure, "binary_expression.pipe" => p.pipe, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.cons" => p.cons, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "application_expression" => p.application, "unary_expression" | "force_expression" | "run_expression" | "hold_expression" | "splice_expression" | "send_expression" | "close_expression" | "select_expression" | "dup_expression" | "drop_expression" | "recv_expression" | "acquire_expression" | "release_expression" | "resume_expression" | "abort_expression" => p.unary, "instantiation_expression" | "projection_expression" | "record_selection_expression" | "view_expression" | "index_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == match name { "application_expression" => "call_expression", _ => name.split_once('.').map_or(name, |(stem, _)| stem) })))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 65 && added.iter().zip(["pure_expression", "return_expression", "become_expression", "bind_expression", "binary_expression.pipe", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.cons", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "application_expression", "unary_expression", "force_expression", "run_expression", "hold_expression", "splice_expression", "pack_model_expression", "instantiation_expression", "projection_expression", "record_selection_expression", "view_expression", "index_expression", "hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "match_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "fork_expression", "access_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "recv_expression", "acquire_expression", "release_expression", "resume_expression", "abort_expression"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "pure_expression" | "return_expression" | "become_expression" | "bind_expression" | "pack_model_expression" => p.pure, "binary_expression.pipe" => p.pipe, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.cons" => p.cons, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "application_expression" => p.application, "unary_expression" | "force_expression" | "run_expression" | "hold_expression" | "splice_expression" | "send_expression" | "close_expression" | "select_expression" | "dup_expression" | "drop_expression" | "recv_expression" | "acquire_expression" | "release_expression" | "resume_expression" | "abort_expression" => p.unary, "instantiation_expression" | "projection_expression" | "record_selection_expression" | "view_expression" | "index_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == match name { "application_expression" => "call_expression", _ => name.split_once('.').map_or(name, |(stem, _)| stem) })))]
 fn expressions(
     out: &mut Vec<Rule>,
     p: ExprPrecs,
@@ -2374,6 +2380,9 @@ fn expressions(
 ///   lexical rule reads it.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the lexical rules and their adaptation records, setup
+///
 /// # Adequacy
 /// - hypothesis: For the built-in band table, L3 grammar identity and corpus
 ///   role observations catch lost or reordered forms, changed provenance and
@@ -2472,7 +2481,7 @@ fn lexical(
     string_expr.adaptations.push(Adaptation::new(
         RuleName("string.expression"),
         SurfaceForm("escape_sequence"),
-        AdaptationReason("an escape is a tile of the string forms, lexed only between a string's quotes, so it has no form of its own: the `escape_sequence` named kind is realised by the tile inside `string.expression`, the pattern-position string of `literal_pattern` and the shell `double_quoted_string`"),
+        AdaptationReason("an escape is a tile of the string forms, lexed only between a string's quotes, so it has no form of its own: the `escape_sequence` named kind is realised by the tile inside `string.expression` and the pattern-position string of `literal_pattern`"),
     ));
     out.push(string_expr);
 }
@@ -4282,9 +4291,8 @@ fn h(sort: Sort) -> Regex
 /// # Specification
 /// - requires: nothing.
 /// - ensures: appends the ordered atomic expression families, including the
-///   hole and the wildcard, session forms, temporary access and the shell
-///   block, at the supplied band; each rule's provenance is its name up to the
-///   first `.`.
+///   hole and the wildcard, session forms and temporary access, at the supplied
+///   band; each rule's provenance is its name up to the first `.`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -4299,7 +4307,7 @@ fn h(sort: Sort) -> Regex
 /// # Cost
 /// - allocation: the atomic expression rules and their adaptation records,
 ///   setup
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 26 && added.iter().zip(["hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "match_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "fork_expression", "access_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == p && rule.provenance().0 == name.split_once('.').map_or(name, |(stem, _)| stem))))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 25 && added.iter().zip(["hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "match_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "fork_expression", "access_expression"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == p && rule.provenance().0 == name.split_once('.').map_or(name, |(stem, _)| stem))))]
 fn primary_expressions(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -4630,8 +4638,7 @@ fn primary_expressions(
     // `break(v)` leaves the loop with a value: its parenthesis is a tile of
     // its own form, so the molder settles the two `break` molds by the next
     // tile alone. A prefix `break v` would not settle: an operand may stand
-    // beside an atom, and a `;` reads as the shell's list-operator atom, so
-    // `break v` and `break;` would each mold both ways with no obligation.
+    // beside an atom, so `break v` would mold both ways with no obligation.
     // These are PBG-only, parity-exempt.
     out.push(r(
         RuleName("for_expression"),
@@ -4833,24 +4840,6 @@ fn primary_expressions(
     ));
     session_expressions(out, p);
     access_expressions(out, p);
-    // The shell block's interior is a generic Expression hole: its commands
-    // mold as juxtaposed command atoms (`command_name`,
-    // `single_quoted_string`, …) joined by the separator / operator forms
-    // (`;`, `&&`, the `|` pipeline), the way a POSIX shell reads them. The
-    // `[ … ]` subshell is an Expression-atom form of its own
-    // (`type_shell::add_shell_rules`), molded on distinct shell-context
-    // bracket tiles, so this block does not fold it.
-    out.push(r(
-        RuleName("shell_block"),
-        Provenance("shell_block"),
-        s,
-        p,
-        seq([
-            t(TileLabel("#!{")),
-            opt(h(Sort::Expression)),
-            t(TileLabel("}")),
-        ]),
-    ));
 }
 
 /// The forgetting map written out, `forget[sort C = A, …](m) at Model(T)`.

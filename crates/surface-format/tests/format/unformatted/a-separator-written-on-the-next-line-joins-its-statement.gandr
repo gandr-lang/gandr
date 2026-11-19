@@ -1,5 +1,5 @@
-(f a)
-;
-(g b)
+def c = (f a)
+  ;
+def d = (g b)
 
-;
+  ;

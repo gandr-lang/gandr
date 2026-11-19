@@ -25,11 +25,9 @@
 //!
 //! The classification, in order:
 //!
-//! - Every tile of a shell list separator or a redirection is `Operator`.
-//! - Literals, string pieces, escapes, constructors, type names, type
-//!   variables, hole names, shell variables, environment assignments and shell
-//!   words take their class by label; keywords, operators and primitive types
-//!   take theirs by spelling.
+//! - Literals, string pieces, escapes, constructors, type names, type variables
+//!   and hole names take their class by label; keywords, operators and
+//!   primitive types take theirs by spelling.
 //! - A label several rules share is told apart by its rule or its neighbours:
 //!   `?` is a `Hole`, the gradual type or a receive; `!` is part of `fork!` and
 //!   an operator elsewhere; `+` and `-` are keywords, the sort literals, inside
@@ -60,14 +58,13 @@
 //! multiplicity, overlap and ordering. The highlighter classifies the admitted
 //! tree; it does not validate a source partition.
 //!
-//! Every mold of the built-in surface has a role. Four places the grammar does
+//! Every mold of the built-in surface has a role. Three places the grammar does
 //! not tell apart take a coarse role, which a semantic overlay refines: a
 //! definition's name is a `FunctionDef` whether it names a function or a value;
-//! the head of an application `f(x)` is an expression atom, so a `Variable`; a
-//! shell command's head and its arguments are one `shell_word` class, so all
-//! `Path`; and an entry's key is the atom its hole holds — a shorthand key in
-//! `*{ x = 1, … }` a `Variable`, a type entry's key in `*{ x : A, … }` or `+{
-//! ok : A, … }` a `TypeVariable` — where a leading-dot label is a `Member`.
+//! the head of an application `f(x)` is an expression atom, so a `Variable`;
+//! and an entry's key is the atom its hole holds — a shorthand key in `*{ x =
+//! 1, … }` a `Variable`, a type entry's key in `*{ x : A, … }` or `+{ ok : A,
+//! … }` a `TypeVariable` — where a leading-dot label is a `Member`.
 //!
 //! - Alternatives: a table keyed by a token's lexeme class, which cannot tell a
 //!   definition's name from a reference, or `?` the hole from `?` the receive,
@@ -136,27 +133,11 @@ use crate::parity::NamedKind;
 /// The tiles that open a bracket: every tile after one, up to its closer,
 /// stands inside it.
 const OPENERS: &[&str] = &[
-    "#!{",
-    "#[",
-    "${",
-    "&{",
-    "(",
-    "*{",
-    "+{",
-    ".#[",
-    ".#{",
-    ".*{",
-    "@![",
-    "@[",
-    "[",
-    "command_substitution_start",
-    "subshell_open",
-    "type(",
-    "{",
+    "#[", "${", "&{", "(", "*{", "+{", ".#[", ".#{", ".*{", "@![", "@[", "[", "type(", "{",
 ];
 
 /// The tiles that close the innermost open bracket.
-const CLOSERS: &[&str] = &[")", "]", "subshell_close", "}"];
+const CLOSERS: &[&str] = &[")", "]", "}"];
 
 /// The words the surface reads as keywords where a form molds them, the
 /// compound bridge tiles and the binders' tiles included.
@@ -172,12 +153,11 @@ const KEYWORDS: &[&str] = &[
     "with", "world",
 ];
 
-/// The operators of terms, types, sessions, circuits and shell control, the
-/// shell's separator label included.
+/// The operators of terms, types, sessions and circuits.
 const OPERATORS: &[&str] = &[
-    "!=", "#", "&", "&&", "*", "+", "++", "-", "-->", "->", "..", ":>", "<", "<&", "<-", "<->",
-    "<=", "<=>", "<>", "==", "==>", "=>", ">", ">&", ">=", ">>", "\\", "newline", "|", "|&", "|>",
-    "||", "~>", "↦", "⇝", "∷", "≃", "≅",
+    "!=", "#", "&", "&&", "*", "+", "++", "-", "-->", "->", "..", ":>", "<", "<-", "<->", "<=",
+    "<=>", "==", "==>", "=>", ">", ">=", ">>", "\\", "|", "|>", "||", "~>", "↦", "⇝", "∷", "≃",
+    "≅",
 ];
 
 /// The primitive type spellings, and the universes.
@@ -753,16 +733,14 @@ fn occurrences(pbg: &Pbg) -> Result<Vec<Occurrence<'_>>, PbgError>
 ///
 /// # Specification
 /// - requires: nothing; a label no class names is admissible input.
-/// - ensures: every tile of a shell list separator or a redirection is
-///   [`HlRole::Operator`]. Otherwise by label: `identifier` takes the role of
-///   the place it names ([`identifier_role`]); `_` is a parameter inside a
-///   parenthesised list and a variable elsewhere; `!` is part of the keyword
-///   after `fork` and an operator elsewhere; `?` is a hole under the hole rule,
-///   the gradual type under its rule and an operator elsewhere; `+` and `-` are
-///   the sort literals, keywords, inside a universe and operators elsewhere;
-///   literals, string pieces, escapes, constructors, type names, type
-///   variables, hole names, shell variables, environment assignments and shell
-///   words take their class; keywords, operators and primitive types take
+/// - ensures: by label: `identifier` takes the role of the place it names
+///   ([`identifier_role`]); `_` is a parameter inside a parenthesised list and
+///   a variable elsewhere; `!` is part of the keyword after `fork` and an
+///   operator elsewhere; `?` is a hole under the hole rule, the gradual type
+///   under its rule and an operator elsewhere; `+` and `-` are the sort
+///   literals, keywords, inside a universe and operators elsewhere; literals,
+///   string pieces, escapes, constructors, type names, type variables and hole
+///   names take their class; keywords, operators and primitive types take
 ///   theirs by spelling; every other tile — a bracket, a separator, a
 ///   delimiter, a label no class names — is [`HlRole::Other`].
 /// - panics: none.
@@ -775,40 +753,32 @@ fn occurrences(pbg: &Pbg) -> Result<Vec<Occurrence<'_>>, PbgError>
 /// - witness: `highlight::tests::role_of_pins_context_free_classes`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `highlight::tests::role_priorities_distinguish_competing_contexts`
-#[spec(ensures: |ret| ret == match facts.kind.0 {
-    "list_operator" | "redirection_operator" => HlRole::Operator,
-    _ => match facts.label.0 {
-        "identifier" => identifier_role(facts),
-        "_" if matches!(facts.opener, Opener::Bracket { label: TileLabel("("), .. }) => HlRole::VariableParam,
-        "!" if facts.left.crosses(TileLabel("fork")).0 => HlRole::Keyword,
-        "+" | "-" if facts.kind.0 == "universe_type" => HlRole::Keyword,
-        "?" if facts.kind.0 == "hole" => HlRole::Hole,
-        "?" if facts.kind.0 == "unknown_type" => HlRole::TypeBuiltin,
-        "!" | "?" => HlRole::Operator,
-        "true" | "false" => HlRole::Boolean,
-        "character" => HlRole::Character,
-        "number" | "typed_number" | "ω" | "file_descriptor" => HlRole::Number,
-        "\"" | "'" | "string_fragment" | "double_string_fragment" | "single_quoted_content" => HlRole::StringLit,
-        "escape_sequence" => HlRole::Escape,
-        "constructor" => HlRole::Constructor,
-        "type_identifier" => HlRole::Type,
-        "type_variable" => HlRole::TypeVariable,
-        "hole_name" => HlRole::Label,
-        "_" | "variable_name" => HlRole::Variable,
-        "environment_assignment" => HlRole::VariableParam,
-        "shell_word" => HlRole::Path,
-        label if KEYWORDS.contains(&label) => HlRole::Keyword,
-        label if OPERATORS.contains(&label) => HlRole::Operator,
-        label if PRIMITIVE_TYPES.contains(&label) => HlRole::TypeBuiltin,
-        _ => HlRole::Other,
-    }
+#[spec(ensures: |ret| ret == match facts.label.0 {
+    "identifier" => identifier_role(facts),
+    "_" if matches!(facts.opener, Opener::Bracket { label: TileLabel("("), .. }) => HlRole::VariableParam,
+    "!" if facts.left.crosses(TileLabel("fork")).0 => HlRole::Keyword,
+    "+" | "-" if facts.kind.0 == "universe_type" => HlRole::Keyword,
+    "?" if facts.kind.0 == "hole" => HlRole::Hole,
+    "?" if facts.kind.0 == "unknown_type" => HlRole::TypeBuiltin,
+    "!" | "?" => HlRole::Operator,
+    "true" | "false" => HlRole::Boolean,
+    "character" => HlRole::Character,
+    "number" | "typed_number" | "ω" => HlRole::Number,
+    "\"" | "string_fragment" => HlRole::StringLit,
+    "escape_sequence" => HlRole::Escape,
+    "constructor" => HlRole::Constructor,
+    "type_identifier" => HlRole::Type,
+    "type_variable" => HlRole::TypeVariable,
+    "hole_name" => HlRole::Label,
+    "_" => HlRole::Variable,
+    label if KEYWORDS.contains(&label) => HlRole::Keyword,
+    label if OPERATORS.contains(&label) => HlRole::Operator,
+    label if PRIMITIVE_TYPES.contains(&label) => HlRole::TypeBuiltin,
+    _ => HlRole::Other,
 })]
 fn classify(facts: &MoldFacts<'_>) -> HlRole
 {
     let label = facts.label.0;
-    if matches!(facts.kind.0, "list_operator" | "redirection_operator") {
-        return HlRole::Operator;
-    }
     let left_crosses = |tile: &'static str| bool::from(facts.left.crosses(TileLabel(tile)));
     match label {
         "identifier" => identifier_role(facts),
@@ -829,18 +799,13 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
         },
         "true" | "false" => HlRole::Boolean,
         "character" => HlRole::Character,
-        "number" | "typed_number" | "ω" | "file_descriptor" => HlRole::Number,
-        "\"" | "'" | "string_fragment" | "double_string_fragment" | "single_quoted_content" => {
-            HlRole::StringLit
-        },
+        "number" | "typed_number" | "ω" => HlRole::Number,
+        "\"" | "string_fragment" => HlRole::StringLit,
         "escape_sequence" => HlRole::Escape,
         "constructor" => HlRole::Constructor,
         "type_identifier" => HlRole::Type,
         "type_variable" => HlRole::TypeVariable,
         "hole_name" => HlRole::Label,
-        "variable_name" => HlRole::Variable,
-        "environment_assignment" => HlRole::VariableParam,
-        "shell_word" => HlRole::Path,
         _ if KEYWORDS.contains(&label) => HlRole::Keyword,
         _ if OPERATORS.contains(&label) => HlRole::Operator,
         _ if PRIMITIVE_TYPES.contains(&label) => HlRole::TypeBuiltin,
@@ -1083,18 +1048,7 @@ mod tests
         let closes: &[(&str, &[&str])] = &[
             (")", &["(", "type("]),
             ("]", &["#[", ".#[", "@![", "@[", "["]),
-            ("}", &[
-                "#!{",
-                "${",
-                "&{",
-                "*{",
-                "+{",
-                ".#{",
-                ".*{",
-                "command_substitution_start",
-                "{",
-            ]),
-            ("subshell_close", &["subshell_open"]),
+            ("}", &["${", "&{", "*{", "+{", ".#{", ".*{", "{"]),
         ];
         for ((id, def), occurrence) in pbg.iter_molds().zip(&walk) {
             let at = u32::from(id);
@@ -1153,8 +1107,6 @@ mod tests
             ("def", "def_value", HlRole::Keyword),
             ("let", "block", HlRole::Keyword),
             ("->", "function_type", HlRole::Operator),
-            ("<>", "redirection_operator", HlRole::Operator),
-            (";", "list_operator", HlRole::Operator),
             ("String", "primitive_type", HlRole::TypeBuiltin),
             ("type_identifier", "type_identifier", HlRole::Type),
             ("type_variable", "def_value", HlRole::TypeVariable),
@@ -1162,11 +1114,9 @@ mod tests
             ("number", "number", HlRole::Number),
             ("typed_number", "typed_number", HlRole::Number),
             ("ω", "u_type", HlRole::Number),
-            ("file_descriptor", "file_descriptor", HlRole::Number),
             ("true", "boolean", HlRole::Boolean),
             ("character", "character", HlRole::Character),
             ("\"", "string", HlRole::StringLit),
-            ("\"", "double_quoted_string", HlRole::StringLit),
             ("escape_sequence", "string", HlRole::Escape),
             ("?", "hole", HlRole::Hole),
             ("hole_name", "hole", HlRole::Label),
@@ -1181,13 +1131,6 @@ mod tests
             ("-", "universe_type", HlRole::Keyword),
             ("+", "sum_type", HlRole::Operator),
             ("_", "wildcard", HlRole::Variable),
-            ("shell_word", "shell_word", HlRole::Path),
-            ("variable_name", "variable_name", HlRole::Variable),
-            (
-                "environment_assignment",
-                "environment_assignment",
-                HlRole::VariableParam,
-            ),
             ("(", "parenthesized_expression", HlRole::Other),
             (";", "import_declaration", HlRole::Other),
             ("identifier", "identifier", HlRole::Variable),
@@ -1404,20 +1347,6 @@ mod tests
         let record = Opener::Bracket {
             label: TileLabel("*{"),
         };
-        for kind in ["list_operator", "redirection_operator"] {
-            for label in ["identifier", "number", "+", "unknown"] {
-                assert_eq!(
-                    HlRole::Operator,
-                    classify(&MoldFacts {
-                        label: TileLabel(label),
-                        kind: NamedKind(kind),
-                        left: Side(&definition),
-                        right: Side(&[]),
-                        opener: parens
-                    })
-                );
-            }
-        }
         let cases = [
             (
                 "identifier",

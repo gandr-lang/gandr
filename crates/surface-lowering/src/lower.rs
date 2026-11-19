@@ -4982,7 +4982,7 @@ mod tests
             SourceText::from(
                 "def g = thunk { fun (x) { fun (y) { return x } } } ; def nested = thunk { become \
                  g (g 1 2) 3 } ; def first[a : Type, b : Type](x : a, y : b) -> -F a { return x } \
-                 ; def inferred = thunk { become first 5 7 } ;",
+                 def inferred = thunk { become first 5 7 } ;",
             ),
             &mut arena,
         );
@@ -7425,9 +7425,11 @@ mod tests
             ),
             (
                 "def b = Integer => Integer;\n",
-                27,
-                FormName::from(NamedKind("lambda_expression")),
-                FormFault::Repaired(Repair::GhostClose(ClosingClass::Brace)),
+                15,
+                FormName::from(NamedKind("def_value")),
+                FormFault::Repaired(Repair::Unended(crate::form::Ending::Tile(
+                    crate::form::TileName::SEMICOLON,
+                ))),
             ),
         ] {
             assert_eq!(lowered(source), [refused(at, at, form, fault)], "{source}");

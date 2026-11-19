@@ -86,35 +86,33 @@ use crate::failure::Failure;
 /// `from` bodies (#3487), then by the reader `.#{` that fixes a record type's
 /// fields, `T.#{.l = v}` and `T.#{f ↦ v}` (#6498), then by a definition's
 /// body after `=` (#6318), then by the six machine width atoms, `u8` to
-/// `isize` (#7960).
-const BUILT_IN_FINGERPRINT: u64 = 0x4b36_7932_c2f2_c6e8;
+/// `isize` (#7960), then by the shell block leaving the grammar with its
+/// words, quotes, expansions and operators (#1057).
+const BUILT_IN_FINGERPRINT: u64 = 0x0a28_4f2c_8dea_26c3;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3161);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3120);
 
 /// How many labels the walk index projects to more than one mold.
-const BUILT_IN_MULTI_MOLD_LABELS: usize = 99;
+const BUILT_IN_MULTI_MOLD_LABELS: usize = 94;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     (" ", 2),
     ("!", 2),
     ("!=", 1),
-    ("\"", 14),
+    ("\"", 12),
     ("#", 1),
-    ("#!{", 1),
     ("#[", 2),
-    ("$", 3),
-    ("${", 3),
-    ("&", 2),
+    ("${", 1),
+    ("&", 1),
     ("&&", 1),
     ("&{", 2),
-    ("'", 2),
-    ("(", 128),
-    (")", 132),
+    ("(", 127),
+    (")", 131),
     ("*", 2),
     ("*=", 16),
     ("*{", 9),
@@ -137,21 +135,18 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     (".@", 1),
     (":", 251),
     (":>", 2),
-    (";", 136),
-    ("<", 18),
-    ("<&", 1),
+    (";", 135),
+    ("<", 17),
     ("<->", 24),
     ("<=", 1),
     ("<=>", 27),
-    ("<>", 1),
     ("=", 152),
     ("==", 1),
     ("==>", 27),
     ("=>", 36),
-    (">", 4),
-    (">&", 1),
+    (">", 3),
     (">=", 1),
-    (">>", 3),
+    (">>", 2),
     ("?", 4),
     ("@", 1),
     ("@![", 3),
@@ -189,19 +184,16 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("character", 1),
     ("close", 1),
     ("codata", 1),
-    ("command_substitution_start", 1),
     ("constructor", 6),
     ("consumed", 22),
     ("continue", 1),
     ("data", 12),
     ("def", 4),
-    ("double_string_fragment", 1),
     ("drop", 1),
     ("dup", 1),
     ("else", 3),
     ("end", 1),
-    ("environment_assignment", 1),
-    ("escape_sequence", 7),
+    ("escape_sequence", 6),
     ("exclusive", 1),
     ("ext", 1),
     ("extern", 1),
@@ -210,7 +202,6 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("face", 3),
     ("false", 3),
     ("feed", 3),
-    ("file_descriptor", 1),
     ("flow", 1),
     ("for", 1),
     ("force", 1),
@@ -242,7 +233,6 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("mobile", 10),
     ("module", 18),
     ("mu", 1),
-    ("newline", 1),
     ("node", 3),
     ("number", 58),
     ("obs", 1),
@@ -269,12 +259,8 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("send", 1),
     ("shape", 1),
     ("shared", 23),
-    ("shell_word", 1),
-    ("single_quoted_content", 1),
     ("sort", 14),
     ("string_fragment", 6),
-    ("subshell_close", 1),
-    ("subshell_open", 1),
     ("tail", 1),
     ("theory", 1),
     ("thunk", 1),
@@ -292,18 +278,16 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("unwind", 1),
     ("usize", 1),
     ("var", 16),
-    ("variable_name", 5),
     ("via", 3),
     ("where", 24),
     ("while", 1),
     ("with", 15),
     ("world", 1),
     ("{", 61),
-    ("|", 9),
-    ("|&", 1),
+    ("|", 8),
     ("|>", 1),
     ("||", 1),
-    ("}", 84),
+    ("}", 80),
     ("~", 1),
     ("~>", 3),
     ("ω", 17),

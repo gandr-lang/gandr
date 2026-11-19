@@ -57,7 +57,10 @@
 //! brace or an explicit `}`, and a declaration also ends at the virtual close
 //! of a body, as a braced declaration ends at its brace. The virtual close of
 //! an arm list ends no declaration, since a `match` is an expression: `def f
-//! (x : A) = match x where …` takes its `;` after its arms. A `}` whose `{`
+//! (x : A) = match x where …` takes its `;` after its arms. An arm list takes
+//! no separator, so an explicit `;` in a layout arm list closes that arm list
+//! and each arm list then innermost before it, and the `;` is the enclosing
+//! block's. An arm list in braces and a bracket keep their `;`. A `}` whose `{`
 //! stands right after `=` closes a block expression, and it ends no item, so
 //! `def f() -> T = { … }` takes its `;` as `def f() -> T = e` does. A
 //! declaration body ends only an item a word begins that holds more than that
@@ -68,7 +71,7 @@
 //! No separator is written before a closer or a line-leading `|`, or after an
 //! attribute.
 //!
-//! Inside parentheses, brackets, shell blocks, attributes and the other
+//! Inside parentheses, brackets, attributes and the other
 //! bracketed forms no opener opens and no separator is written.
 
 use alloc::vec::Vec;
@@ -114,7 +117,7 @@ enum Kind
         /// The column its items stand at.
         column: Option<u32>,
     },
-    /// A parenthesis, a bracket, a shell block, an attribute, or a brace
+    /// A parenthesis, a bracket, an attribute, or a brace
     /// some sigil leads.
     Plain,
 }
@@ -395,7 +398,6 @@ impl Plan<'_>
                     || matches!(
                         lexeme,
                         Lexeme::StringFragment
-                            | Lexeme::ShellStringFragment
                             | Lexeme::EscapeSequence
                     )
             },
@@ -541,10 +543,7 @@ pub(super) fn lay_out(
         if let Some(begin) = newline {
             line_begin = u32::try_from(begin).unwrap_or(u32::MAX);
         }
-        let punct = matches!(
-            token.lexeme,
-            Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose
-        );
+        let punct = matches!(token.lexeme, Lexeme::Punct);
         // A token inside a line that is no bracket, no punctuation and no
         // opener's keyword, met while no opener waits, only extends the item.
         if !line_start
@@ -871,6 +870,19 @@ pub(super) fn lay_out(
                     // next. A `,` separates within an item: a clause's
                     // patterns, a call's arguments.
                     restart = spelled == b";";
+                    // An arm list takes no separator, so a `;` in a layout arm
+                    // list belongs to the block around it: each arm list that
+                    // is innermost closes before the `;`. A brace or a bracket
+                    // keeps its `;`.
+                    while restart
+                        && frames.len() > 1
+                        && let Some(&frame) = frames.last()
+                        && frame.sep == Sep::Arms
+                        && matches!(frame.kind, Kind::Layout { .. })
+                    {
+                        plan.close(&frame);
+                        frames.pop();
+                    }
                     if let Pending::Arms { depth, .. } = pending
                         && depth == frames.len()
                     {
@@ -1341,6 +1353,40 @@ mod tests
             }
         }
         out
+    }
+
+    #[test]
+    fn a_semicolon_closes_the_layout_arm_lists_before_it_1057()
+    {
+        // The `;` on the last arm's line is the definition's, so the arm list
+        // closes before it, inside a `rec` block too.
+        assert_eq!(
+            marked("def f(x : A) = match x where\n  | a => x\n  | b => x ;\ndef g : A = x;\n"),
+            "def f(x : A) = match x ⟪where→{⟫\n  | a => x\n  | b => x⟪}⟫ ;\ndef g : A = x;\n"
+        );
+        assert_eq!(
+            marked(
+                "rec {\n  def f(x : A) = match x where\n    | a => x\n    | b => x ;\n  def g : A = x;\n}\n"
+            ),
+            "rec {\n  def f(x : A) = match x ⟪where→{⟫\n    | a => x\n    | b => x⟪}⟫ ;\n  def g : A = x;\n}\n"
+        );
+        // Two arm lists that end on one line both close before the `;`.
+        assert_eq!(
+            marked(
+                "def f(x : A) = match x where\n  | a => match y where\n    | c => x ;\ndef g : A = x;\n"
+            ),
+            "def f(x : A) = match x ⟪where→{⟫\n  | a => match y ⟪where→{⟫\n    | c => x⟪}⟫⟪}⟫ ;\ndef g : A = x;\n"
+        );
+        // An arm list in braces keeps its `;`, and so does a bracket of an
+        // arm.
+        assert_eq!(
+            marked("def f(x : A) = match x {\n  | a => x ;\n}\n"),
+            "def f(x : A) = match x {\n  | a => x ;\n}\n"
+        );
+        assert_eq!(
+            marked("def f(x : A) = match x where\n  | a => g(x ; y)\ndef g : A = x;\n"),
+            "def f(x : A) = match x ⟪where→{⟫\n  | a => g(x ; y)⟪}⟫⟪;⟫\ndef g : A = x;\n"
+        );
     }
 
     #[test]

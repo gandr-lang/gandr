@@ -1,5 +1,5 @@
-//! The built-in surface: the named precedence table, the term, type-and-shell
-//! and circuit rule assemblies, and the named-kind lists.
+//! The built-in surface: the named precedence table, the term, type and
+//! circuit rule assemblies, and the named-kind lists.
 //!
 //! # One delimiter per arity-shaped former
 //!
@@ -53,7 +53,7 @@
 //! # Built-in surface
 //!
 //! `built_in` is the gandr surface: 24 precedence groups and 21 tighter-than
-//! edges, then the term forms, the type-and-shell forms and the circuit forms.
+//! edges, then the term forms, the type forms and the circuit forms.
 //! The groups form one expression chain, one pattern chain and one type chain
 //! whose union and lazy-product bands are mutually incomparable between the
 //! sum band and the relations' band below them; the item group stands apart
@@ -310,11 +310,6 @@ const PREC_EDGES: &[(&str, &str)] = &[
 /// melder pushes it between two expression operands.
 pub const APPLICATION: &str = " ";
 
-/// The tiles that open a shell form: a shell block, a subshell and a command
-/// substitution. A shell form's words stay flat side by side, so the melder
-/// pushes no juxtaposition tile inside one.
-pub const FLAT_OPENERS: &[&str] = &["#!{", "subshell_open", "command_substitution_start"];
-
 /// The reserved lowercase keywords (the tree-sitter grammar's `KW`, the wired
 /// subset).
 ///
@@ -401,9 +396,7 @@ pub const RESERVED_WORDS: &[&str] = &[
 
 /// The named node kinds of the surface's tree-sitter grammar, ascending.
 pub const TREE_SITTER_NAMED_KINDS: &[&str] = &[
-    "and_expression",
     "annotation_expression",
-    "argument",
     "arguments",
     "arm",
     "as_pattern",
@@ -417,33 +410,26 @@ pub const TREE_SITTER_NAMED_KINDS: &[&str] = &[
     "call_expression",
     "character",
     "close_expression",
-    "command",
-    "command_name",
-    "command_substitution",
     "constructor",
     "constructor_pattern",
     "def_function",
     "def_signature",
     "def_value",
-    "double_quoted_string",
     "drop_expression",
     "dup_expression",
     "end_session_type",
-    "environment_assignment",
     "escape_sequence",
     "expression_statement",
     "extern_block",
     "extern_function",
     "extern_type",
     "f_type",
-    "file_descriptor",
     "force_expression",
     "function_type",
     "grade",
     "hold_expression",
     "hole",
     "hole_name",
-    "host_escape",
     "identifier",
     "if_expression",
     "instantiation_expression",
@@ -451,24 +437,20 @@ pub const TREE_SITTER_NAMED_KINDS: &[&str] = &[
     "lazy_product_type",
     "line_comment",
     "list_expression",
-    "list_operator",
     "list_pattern",
     "literal_pattern",
     "match_expression",
     "migrate_expression",
     "module_declaration",
     "mu_session_type",
-    "negation",
     "number",
     "offer_expression",
     "offer_session_type",
-    "or_expression",
     "or_pattern",
     "parameter",
     "parameters",
     "parenthesized_expression",
     "parenthesized_type",
-    "pipeline",
     "primitive_type",
     "product_type",
     "projection_expression",
@@ -480,8 +462,6 @@ pub const TREE_SITTER_NAMED_KINDS: &[&str] = &[
     "record_type",
     "record_type_field",
     "record_update_expression",
-    "redirection",
-    "redirection_operator",
     "rest_pattern",
     "pure_expression",
     "select_expression",
@@ -490,13 +470,8 @@ pub const TREE_SITTER_NAMED_KINDS: &[&str] = &[
     "send_session_type",
     "session_field",
     "shebang",
-    "shell_block",
-    "shell_list",
-    "shell_word",
-    "single_quoted_string",
     "source_file",
     "string",
-    "subshell",
     "sum_type",
     "thunk_expression",
     "tuple_expression",
@@ -510,8 +485,6 @@ pub const TREE_SITTER_NAMED_KINDS: &[&str] = &[
     "unary_expression",
     "union_type",
     "unit",
-    "variable_expansion",
-    "variable_name",
     "wildcard",
 ];
 
@@ -600,7 +573,6 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "world_declaration",
     // reserved / folded / diverged member surfaces (adaptation surfaces)
     "bare_type_params",
-    "braced_variable_expansion",
     "cell_member",
     "circuit_body",
     "circuit_member",
@@ -634,8 +606,8 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
 ///   every gate otherwise; both are the same table.
 /// - fails: a precedence or gate violation in the constant rules.
 /// - panics: none.
-/// - intension: the term rules, then the type-and-shell rules, then the circuit
-///   rules, so mold ids follow that order.
+/// - intension: the term rules, then the type rules, then the circuit rules, so
+///   mold ids follow that order.
 ///
 /// # Errors
 /// Any [`PbgError`] [`built_in_prec_table`] or [`Pbg::build`] reports.
@@ -665,9 +637,9 @@ pub fn built_in() -> Result<Pbg, PbgError>
 ///
 /// # Specification
 /// - requires: `precs` is [`built_in_prec_table`]'s table.
-/// - ensures: the term rules, then the type-and-shell rules, then the circuit
-///   rules, then the forgetting map's form and the labelled rows, last so that
-///   they renumber no mold before them and lose every tie to them.
+/// - ensures: the term rules, then the type rules, then the circuit rules, then
+///   the forgetting map's form and the labelled rows, last so that they
+///   renumber no mold before them and lose every tie to them.
 /// - fails: a group a rule list names is missing from `precs`.
 /// - panics: none.
 ///

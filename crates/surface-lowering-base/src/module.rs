@@ -15005,18 +15005,15 @@ mod tests
     /// An expression the parser did not repair is refused at a source's top
     /// level wherever it stands, the last root child too: each is a held slot
     /// refused at the top level, entered in no name table, the attributes
-    /// before it its own. A source of nothing but an expression is refused
-    /// whole at it; an expression the parser repaired, and a lone closer, stay
-    /// strays of the wrong sort (#2572).
+    /// before it its own. An expression written with a `;` after it is
+    /// refused the same, and the parser owes that `;` alone. A source of
+    /// nothing but an expression is refused whole at it; an expression the
+    /// parser repaired, and a lone closer, stay strays of the wrong sort
+    /// (#2572).
     #[test]
     fn a_root_expression_is_refused_naming_main_2572()
     {
         let pbg = grammar();
-        let text = include_str!(
-            "module/unformatted/a-root-expression-is-refused-naming-main-2572-1.gandr"
-        );
-        let tree = parsed(&pbg, SourceText::from(text));
-        let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
         let top_level = |refusal: &LoweringRefusal<'_>| {
             matches!(refusal, LoweringRefusal::OutOfFragment {
                 sort: FragmentSort::Declaration,
@@ -15024,37 +15021,72 @@ mod tests
                 ..
             })
         };
-        let read: Vec<_> = collected
-            .slots
-            .iter()
-            .map(|slot| {
+        let bare = include_str!(
+            "module/unformatted/a-root-expression-is-refused-naming-main-2572-4.gandr"
+        );
+        let terminated = include_str!(
+            "module/unformatted/a-root-expression-is-refused-naming-main-2572-1.gandr"
+        );
+        let owed = gandr_surface_parser::parse(&pbg, SourceText::from(terminated))
+            .expect("the parser reads the source");
+        assert_eq!(
+            owed.obligations()
+                .iter()
+                .map(|obligation| (
+                    obligation.class,
+                    usize::from(obligation.span.start()),
+                    usize::from(obligation.span.end())
+                ))
+                .collect::<Vec<_>>(),
+            ["1 ;", "3 ;", "4 ;"].map(|written| {
+                let at = terminated
+                    .find(written)
+                    .map_or(0, |start| start.saturating_add(2));
                 (
-                    slot.name,
-                    slot.role,
-                    matches!(slot.refusal, Maybe::Present((_, ref refusal)) if top_level(refusal)),
+                    gandr_surface_parser::Oblig::UnmoldedTok,
+                    at,
+                    at.saturating_add(1),
                 )
-            })
-            .collect();
-        assert_eq!(
-            read,
-            [
-                (SurfaceName::from("1"), Role::Held, true),
-                (SurfaceName::from("a"), Role::Declared, false),
-                (SurfaceName::from("3"), Role::Held, true),
-                (SurfaceName::from("4"), Role::Held, true),
-            ],
-            "every expression at the top level is refused there, the last one too"
+            }),
+            "the `;` after each expression owes itself alone, and nothing after it is owed"
         );
-        assert_eq!(
-            collected.by_name.len(),
-            1,
-            "an expression enters no name table"
-        );
-        assert_eq!(
-            collected.slots.last().map(|slot| slot.attributes.len()),
-            Some(1),
-            "the last expression carries the block before it"
-        );
+        for (tree, written) in [
+            (parsed(&pbg, SourceText::from(bare)), "without a `;`"),
+            (owed.into_tree(), "with a `;`"),
+        ] {
+            let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
+            let read: Vec<_> = collected
+                .slots
+                .iter()
+                .map(|slot| {
+                    (
+                        slot.name,
+                        slot.role,
+                        matches!(slot.refusal, Maybe::Present((_, ref refusal)) if top_level(refusal)),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                read,
+                [
+                    (SurfaceName::from("1"), Role::Held, true),
+                    (SurfaceName::from("a"), Role::Declared, false),
+                    (SurfaceName::from("3"), Role::Held, true),
+                    (SurfaceName::from("4"), Role::Held, true),
+                ],
+                "every expression at the top level {written} is refused there, the last one too"
+            );
+            assert_eq!(
+                collected.by_name.len(),
+                1,
+                "an expression {written} enters no name table"
+            );
+            assert_eq!(
+                collected.slots.last().map(|slot| slot.attributes.len()),
+                Some(1),
+                "the last expression {written} carries the block before it"
+            );
+        }
         assert!(
             collect(
                 &pbg,
@@ -15102,27 +15134,45 @@ mod tests
 
     /// A stray is named by the first token it writes, whatever spacing follows
     /// it, so a source respaced inside its root expressions collects the same
-    /// names (#2758).
+    /// names. A `;` after the stray changes no name, and the parser owes that
+    /// `;` alone (#2758).
     #[test]
     fn a_respaced_stray_keeps_its_name_2758()
     {
         let pbg = grammar();
         let names = |text: &'static str| {
-            collect(
-                &pbg,
-                &parsed(&pbg, SourceText::from(text)),
-                &Unit::single(),
-                &mut tank(),
-            )
-            .expect("the source collects")
-            .slots
-            .iter()
-            .map(|slot| (slot.name, slot.role))
-            .collect::<Vec<_>>()
+            let result = gandr_surface_parser::parse(&pbg, SourceText::from(text))
+                .expect("the parser reads the source");
+            let owed: Vec<_> = result
+                .obligations()
+                .iter()
+                .map(|obligation| {
+                    (
+                        obligation.class,
+                        usize::from(obligation.span.start()),
+                        usize::from(obligation.span.end()),
+                    )
+                })
+                .collect();
+            let named = collect(&pbg, result.tree(), &Unit::single(), &mut tank())
+                .expect("the source collects")
+                .slots
+                .iter()
+                .map(|slot| (slot.name, slot.role))
+                .collect::<Vec<_>>();
+            (named, owed)
         };
-        let hugged = names(include_str!(
-            "module/unformatted/a-respaced-stray-keeps-its-name-2758-hugged.gandr"
-        ));
+        let semicolon = |text: &str| {
+            let at = text.find(";\n").unwrap_or_default();
+            alloc::vec![(
+                gandr_surface_parser::Oblig::UnmoldedTok,
+                at,
+                at.saturating_add(1)
+            )]
+        };
+        let hugged_text =
+            include_str!("module/unformatted/a-respaced-stray-keeps-its-name-2758-hugged.gandr");
+        let (hugged, owed) = names(hugged_text);
         assert_eq!(
             hugged,
             [
@@ -15133,11 +15183,23 @@ mod tests
             "each is named by its first token"
         );
         assert_eq!(
+            owed,
+            semicolon(hugged_text),
+            "the `;` after the stray owes itself alone"
+        );
+        let spaced_text =
+            include_str!("module/unformatted/a-respaced-stray-keeps-its-name-2758-1.gandr");
+        assert_eq!(
+            names(spaced_text),
+            (hugged.clone(), semicolon(spaced_text)),
+            "the spaced spelling collects the same names and owes its `;` alone"
+        );
+        assert_eq!(
             names(include_str!(
-                "module/unformatted/a-respaced-stray-keeps-its-name-2758-1.gandr"
+                "module/unformatted/a-respaced-stray-keeps-its-name-2758-bare.gandr"
             )),
-            hugged,
-            "the spaced spelling collects the same names"
+            (hugged, alloc::vec![]),
+            "the stray without its `;` collects the same names and owes nothing"
         );
     }
 
@@ -15216,12 +15278,9 @@ mod tests
         );
     }
 
-    /// Two faults each refused where it was written, not at the declaration
-    /// after it (#2082). A closer doubled earlier on its line closes the form
-    /// early, and the closer that ends the line stands alone: the line is
-    /// refused once, at the second of the twins. An attribute block with one
-    /// closer too many is refused at that closer, ahead of the declaration
-    /// it decorates.
+    /// A fault refused where it was written, not at the declaration after it
+    /// (#2082). An attribute block with one closer too many is refused at that
+    /// closer, ahead of the declaration it decorates.
     #[test]
     fn a_fault_before_a_declaration_is_refused_where_it_was_written_2082()
     {
@@ -15245,22 +15304,6 @@ mod tests
                 ByteOffset::from(start.saturating_add(1)),
             )
         };
-
-        let shell = include_str!(
-            "module/unformatted/a-fault-before-a-declaration-is-refused-where-it-was-written-2082-shell.gandr"
-        );
-        let refused = refusals(shell);
-        assert!(
-            matches!(
-                refused.as_slice(),
-                [LoweringRefusal::MalformedForm {
-                    span,
-                    fault: FormFault::ExtraClose(ClosingClass::Brace),
-                    ..
-                }] if *span == second(shell, "}}")
-            ),
-            "the line is refused once, at the second of the twins: {refused:?}"
-        );
 
         let attribute = include_str!(
             "module/unformatted/a-fault-before-a-declaration-is-refused-where-it-was-written-2082-attribute.gandr"

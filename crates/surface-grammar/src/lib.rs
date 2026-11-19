@@ -17,7 +17,7 @@
 //!   tile automaton: each mold's kind and observation class, and the sets a
 //!   parser admits by kind and sort, as bitsets derived once per grammar.
 //! - [`built_in`] is the gandr surface: [`built_in_prec_table`]'s groups and
-//!   the term, type-and-shell and circuit forms.
+//!   the term, type and circuit forms.
 //! - [`named_kind_parity`] is the inventory of how each named kind of the
 //!   surface's tree-sitter grammar is realised.
 //! - [`RoleTable`] is the mold highlighter: one highlight role per mold, read

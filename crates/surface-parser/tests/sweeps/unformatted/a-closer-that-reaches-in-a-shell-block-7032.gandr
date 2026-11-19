@@ -1,4 +1,0 @@
-def greeted() -> -F Unit =
-  #!{
-    printf '
-  }
