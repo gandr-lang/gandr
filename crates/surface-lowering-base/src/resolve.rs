@@ -677,6 +677,9 @@ pub fn homed_former(
 /// - hypothesis: L3 — the table is a finite class, each row asserted at its
 ///   home and refused at another module and at a near spelling.
 /// - witness: `resolve::tests::a_homed_atom_answers_only_at_its_home_4522`
+///
+/// # Cost
+/// - allocation: the message of a broken clause, diagnostic
 #[spec(
     ensures: |ret| match ret {
         | Maybe::Present(answer) => HOMED_ATOMS
@@ -2372,6 +2375,10 @@ pub struct Shadow
 /// # Adequacy
 /// - hypothesis: L3 — each builtin type head mints its own core type.
 /// - witness: `tests::described::a_theory_answers_at_every_member`
+///
+/// # Cost
+/// - allocation: each type the arena mints, durable by the arena
+/// - allocation: the message of a broken clause, diagnostic
 #[spec(ensures: |ret| arena.value_type(ret).is_some())]
 #[inline]
 pub fn atom_type(

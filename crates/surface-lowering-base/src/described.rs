@@ -736,6 +736,12 @@ impl Typer<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the steps still to read, growth within the term
+    /// - allocation: the values built, growth within the term
+    /// - allocation: the arguments of an application, growth within the term
+    /// - allocation: each value the arena mints, durable by the arena
     fn value(
         &mut self,
         scope: &Scope,
@@ -825,6 +831,11 @@ impl Typer<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the values of the indices, growth within the sort's
+    ///   indices
+    /// - allocation: each value and type the arena mints, durable by the arena
     fn sort(
         &mut self,
         scope: &Scope,
@@ -1000,6 +1011,12 @@ impl Typer<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the context of the closed scope, setup
+    /// - allocation: the described type and the use it records, durable by the
+    ///   described types of the theory
+    /// - allocation: each universe the arena mints, durable by the arena
     fn occurrence(
         &mut self,
         written: &WrittenSort,

@@ -6925,6 +6925,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// - witness: `gandr-surface-lowering::lower::native::tests::sum_patterns_case_on_the_stated_arity`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_sum_pattern_reads_bool_as_its_sum_815`
     /// - witness: `gandr-surface-lowering::lower::native::tests::indexed_arms_settle_their_sum_1169`
+    ///
+    /// # Cost
+    /// - allocation: the patterns of the payload queued, growth within the
+    ///   pattern
+    /// - allocation: a refusal, error path
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |shape| matches!(*shape, Matcher::Injection { summand, arity, .. } if summand < arity)))]
     fn injected(
         &mut self,

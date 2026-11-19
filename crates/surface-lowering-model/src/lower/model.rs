@@ -726,6 +726,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     ///   member are each read at their own sort.
     /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_type_3080`
     /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_member_or_application_3089`
+    ///
+    /// # Cost
+    /// - allocation: the computation member it records, durable by the context
+    /// - allocation: a refusal, error path
     #[spec(ensures: |ret| match ret {
         Ok(Reading::CompType(read)) => read == frame && self.cx().computation_members.contains(&defined),
         Ok(Reading::ValueType(read)) => read == frame,
@@ -1386,6 +1390,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_type_is_the_record_its_theory_derives`
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_family_sort_is_a_function_into_the_universe`
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_model_type_writes_its_sort_as_its_type`
+    ///
+    /// # Cost
+    /// - allocation: the values of the indices, growth within the sort's
+    ///   indices
+    /// - allocation: each type the arena mints and its origin, durable by the
+    ///   arena
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
     fn sort_type(
         &self,
@@ -1597,6 +1607,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// - hypothesis: L3 — the `CatShape` law endpoints mint the written
     ///   endpoints' values.
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    ///
+    /// # Cost
+    /// - allocation: the steps still to read and the values built, growth
+    ///   within the term
+    /// - allocation: each value the arena mints and its origin, durable by the
+    ///   arena
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value(id).is_some()))]
     fn term_value(
         &self,
@@ -3737,6 +3753,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// # Adequacy
     /// - hypothesis: L3 — as [`Models::pack_model`].
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_module_packs_as_the_record_of_its_members`
+    ///
+    /// # Cost
+    /// - allocation: the quote the arena mints and its origin, durable by the
+    ///   arena
     #[spec(ensures: |ret| ret.is_none_or(|id| matches!(sink.arena.value(id), Some(&Value::Quote(_)))))]
     fn packed_sort(
         &self,

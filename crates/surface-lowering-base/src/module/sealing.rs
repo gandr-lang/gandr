@@ -603,6 +603,14 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `gandr-surface-lowering::tests::modules::a_face_past_a_record_s_labels_is_refused_over_the_record_and_the_label`
     /// - witness: `gandr-surface-lowering::tests::modules::a_type_signature_with_no_body_is_refused_outside_its_place_8073`
     /// - witness: `gandr-surface-lowering::lower::row::tests::a_type_signature_under_builtin_reads_its_atom_8073`
+    ///
+    /// # Cost
+    /// - allocation: the attributes read before the keyword, durable by the
+    ///   member's slot
+    /// - allocation: the parameters and the faces, growth within the member
+    /// - allocation: the held slot, the family and the filed component, durable
+    ///   by the collection
+    /// - allocation: a refusal, error path
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.top_types.len()),
         ensures: |_| {
@@ -966,6 +974,11 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `gandr-surface-lowering::tests::modules::a_kinded_type_component_forms_at_its_classifier`
     /// - witness: `gandr-surface-lowering::tests::modules::a_sealed_atom_reads_the_identity_its_type_member_states`
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_computation_sort_is_a_family_into_computation_types_3050`
+    ///
+    /// # Cost
+    /// - allocation: the abstract slot, its reading and the filed component,
+    ///   durable by the collection
+    /// - allocation: a refusal filed on a slot, error path
     #[spec(
         captures: before = types.len(),
         ensures: |_| types.len() <= before.saturating_add(1),

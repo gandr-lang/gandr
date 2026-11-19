@@ -2777,6 +2777,11 @@ impl Sink<'_>
     ///   and every minted type carries a source origin.
     /// - witness: `gandr-surface-lowering::lower::tests::a_completed_declaration_lowers_both_halves`
     /// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
+    ///
+    /// # Cost
+    /// - allocation: the type the arena mints and its origin, durable by the
+    ///   arena
+    /// - allocation: the message of a broken clause, diagnostic
     #[spec(
         ensures: |ret| match ret {
             | Lowered::ValueType(id) => self.origins.value_type(id) == Maybe::Present(origin) && match atom {

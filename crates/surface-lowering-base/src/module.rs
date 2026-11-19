@@ -5076,6 +5076,11 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — an attributed member at the top level is read past
     ///   its block and refused at its type, as a module body's is.
     /// - witness: `gandr-surface-lowering::tests::modules::an_attributed_top_level_type_member_is_read_as_the_plain_one_4464`
+    ///
+    /// # Cost
+    /// - allocation: the attributes joined on the member's slot, durable by the
+    ///   member's slot
+    /// - allocation: as [`Self::type_member`]
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: |ret| ret.is_err()
