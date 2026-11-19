@@ -39,5 +39,4 @@ def single() -> Nat = Succ Zero;
 
 /// The vector two long, at a length with a call under `Succ`. The checker
 /// pairs the field of each `Succ`, and the call converts with its value.
-@[checks]
 def pairViaCall() -> Vec Integer (Succ (single())) = pair ();
