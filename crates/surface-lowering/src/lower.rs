@@ -647,6 +647,8 @@ mod splice;
 
 mod staged;
 
+mod thir;
+
 mod ua;
 
 mod world;

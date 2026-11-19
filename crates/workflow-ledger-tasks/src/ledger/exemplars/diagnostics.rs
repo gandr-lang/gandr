@@ -111,6 +111,14 @@ const STD_ONLY: Reason = Reason(
      toolchain first",
 );
 
+/// Why no source of the ledger reaches a fault of a staged body past its
+/// mark: the fault needs the reader's answer, and the ledger settles the same
+/// with and without a reader beside the driver.
+const READER: Reason = Reason(
+    "the fault needs the reader's answer, and the ledger settles the same with and without a \
+     reader; `check:rust-record` settles the exemplar under the reader's tests",
+);
+
 /// A tracker issue, by number.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -132,7 +140,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 76_usize] = [
+const OWED: [(&str, Owed); 82_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -372,6 +380,18 @@ const OWED: [(&str, Owed); 76_usize] = [
     ("BuiltinMark.TypeDiffers", Owed::Unreachable(STD_ONLY)),
     ("BuiltinMark.Misplaced", Owed::Unreachable(STD_ONLY)),
     ("BuiltinMark.NotCanonical", Owed::Unreachable(STD_ONLY)),
+    ("StagedBody.Unread", Owed::Unreachable(READER)),
+    ("StagedBody.Outside", Owed::Unreachable(READER)),
+    ("StagedBody.NotExpr", Owed::Unreachable(READER)),
+    ("StagedBody.Unmapped", Owed::Unreachable(READER)),
+    ("StagedBody.ItemMark", Owed::Unreachable(READER)),
+    (
+        "StagedBody.NoReader",
+        Owed::Unreachable(Reason(
+            "the ledger settles the same with and without a reader beside the driver, and a test \
+             of the dispatcher, which installs no stager, gives the refusal",
+        )),
+    ),
     (
         "OutOfFragment.ValueLift",
         Owed::Unreachable(Reason(

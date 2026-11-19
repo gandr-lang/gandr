@@ -54,6 +54,7 @@
 //! let diagnostic = diagnose(
 //!     std::path::Path::new("ledger.gandr"),
 //!     SourceText::from(""),
+//!     &[],
 //!     Subject::Ledger {
 //!         line: "unsettled: a pending source",
 //!         at: quenchant_shape::shape::Maybe::Absent(

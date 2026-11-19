@@ -365,7 +365,7 @@ fn unlocated_rules() -> Diagnostic
         declaration.span(),
         (&primary, text),
     );
-    diagnose(path, text, Subject::Refused {
+    diagnose(path, text, &[], Subject::Refused {
         declaration,
         refusal,
         located: Maybe::Present(&located),

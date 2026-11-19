@@ -251,6 +251,7 @@ mod tests
             let diagnostic = diagnose(
                 Path::new(path),
                 SourceText::from(""),
+                &[],
                 Subject::Source(LoweringRefusal::BudgetExceeded {
                     budget: 0_usize.into(),
                 }),

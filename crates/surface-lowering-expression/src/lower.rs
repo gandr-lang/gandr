@@ -29,6 +29,7 @@ pub mod sealing;
 mod session;
 pub mod splice;
 pub mod staged;
+mod thir;
 pub mod ua;
 pub mod world;
 
@@ -1102,6 +1103,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         CapabilityRef::new(self.host_ref()).mint_foreign(sink);
         self.mint(sink)?;
         self.mint_natives(sink);
+        self.mint_staged(sink);
         Native::new(self.host()).mint_joints(sink);
         self.mint_abstracts(sink);
         Models::new(self.host()).mint_models(sink);
@@ -5041,6 +5043,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
         }
         if let Maybe::Absent(_) = entry.definition
             && !self.cx().natives.contains_key(&target)
+            && !self.cx().natived.contains_key(&target)
         {
             return Err(LoweringRefusal::UnexportedName {
                 span: site.at.span,

@@ -758,6 +758,21 @@ path = "crates/runtime-emitter"
 [workspace.dependencies.gandr-runtime-net]
 path = "crates/runtime-net"
 
+# The record of Rust functions that the pinned toolchain gives, with each
+# staged body. With no default feature, it holds the record and its bytes
+# alone. A consumer that reads the cache sets `std`.
+# features:
+# - std: set by surface-dispatcher, which reads the cache and runs the reader
+# consumers:
+# - surface-diagnostics
+# - surface-dispatcher
+# - surface-lowering (dev)
+# - surface-lowering-base
+# - surface-lowering-expression
+[workspace.dependencies.gandr-runtime-rust-record]
+path = "crates/runtime-rust-record"
+default-features = false
+
 # The owner's scoped runtime: one thread drives a scope's futures over the
 # kernel's ring, and the scope's end drains its operations.
 # consumers:

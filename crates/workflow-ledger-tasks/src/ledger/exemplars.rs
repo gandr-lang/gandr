@@ -101,6 +101,7 @@ use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::RegisteredAttribute;
+use gandr_surface_lowering::StagedFault;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::UnitSource;
@@ -982,12 +983,13 @@ struct Header
 /// - requires: `tree` parsed with no obligation, from a source opening with
 ///   `header`.
 /// - ensures: `Ok` exactly when the lowering accepts the source, refuses none
-///   of its declarations but for an unresolved import, and files `attribute` on
-///   one of them: in the attribute table, or, for `doc`, as documentation
-///   holding more lines than `header`. The source lowers alone, so its imports
-///   resolve to nothing here, and `check:exemplars` settles what they bind
-///   under the fixture root. A `builtin` exemplar lowers as a module of `std`,
-///   the one place its mark stands.
+///   of its declarations but for an unresolved import or an unanswered `thir`
+///   mark, and files `attribute` on one of them: in the attribute table, or,
+///   for `doc`, as documentation holding more lines than `header`. The source
+///   lowers alone, so its imports resolve to nothing here and its `thir` marks
+///   stage nothing, and `check:exemplars` settles what they bind under the
+///   fixture root. A `builtin` exemplar lowers as a module of `std`, the one
+///   place its mark stands.
 /// - fails: the lowering refuses, or the attribute is filed nowhere.
 /// - panics: none.
 ///
@@ -1046,7 +1048,14 @@ fn filed(
     let mut filed = false;
     for declaration in module.declarations() {
         if let DeclarationOutcome::Refused(refusal) = declaration.outcome()
-            && !matches!(refusal, LoweringRefusal::ImportUnresolved { .. })
+            && !matches!(
+                refusal,
+                LoweringRefusal::ImportUnresolved { .. }
+                    | LoweringRefusal::StagedBody {
+                        fault: StagedFault::Unanswered,
+                        ..
+                    }
+            )
         {
             return Err(ExemplarFault::Refused {
                 refusal: refusal.to_string(),

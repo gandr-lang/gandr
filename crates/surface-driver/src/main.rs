@@ -1936,6 +1936,19 @@ fn main() -> ExitCode
                 String::from(gandr_surface_dispatcher::GITHUB),
             ));
     }
+    // A `thir` mark stages a Rust function's body through the reader beside
+    // this executable, and the user's cache keeps each record. With no reader
+    // there, each mark is refused by name.
+    if let Some(reader) = std::env::current_exe()
+        .ok()
+        .and_then(|driver| Some(driver.parent()?.join("gandr-rust-reader")))
+        .filter(|reader| reader.is_file())
+        && let Some(records) = config::rust_records()
+    {
+        let _installed = gandr_surface_dispatcher::install_stager(
+            gandr_surface_dispatcher::Stager::new(records, reader),
+        );
+    }
     // The one reading of the user's file, which the spelling and a check's
     // kernel policy both ask, on the first question asked of it.
     let configuration = config::Configuration::default();
@@ -5450,6 +5463,9 @@ fn attributed(
 ///   package sources sharing an import each write their own.
 /// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
 /// - witness: `tests::cli::a_workspace_checks_each_member_it_names_2687`
+///
+/// # Cost
+/// - allocation: the package's manifest, growth within the packages of the run
 fn read_manifest(
     step: &mut Step<'_>,
     packages: &[Packaged<'_>],
@@ -5497,6 +5513,9 @@ fn read_manifest(
 /// - hypothesis: L3 — a manifold checked is judged as a deployment, and a site
 ///   beside it is not.
 /// - witness: `tests::cli::a_manifold_s_deployment_is_judged_at_its_check_3523`
+///
+/// # Cost
+/// - allocation: the manifold's path, growth within the manifolds of the run
 fn read_manifold(
     step: &Step<'_>,
     manifolds: &mut Vec<PathBuf>,

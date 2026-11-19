@@ -764,12 +764,21 @@ policy {{ env.GATE_SCOPE | default(value='--workspace') }} $features || status=$
 # emits and with `std.layout`. Each refusal names its cause. A second request
 # starts no process.
 #
+# Then the task builds the driver and puts the reader beside it, where the
+# driver finds it. It settles the reader's corpus with them. Each body from the
+# reader meets its specification. The lowering refuses by name each mark that
+# gives no body.
+#
+# No other task walks this corpus. So the main corpus task gives one result on
+# a host with a reader and on a host with none.
+# - see: `crates/runtime-rust-reader/tests/corpus`
+#
 # Last, the task refuses `rustc_private` in each other crate. So no other
 # crate links a library of rustc.
 #
 # - see: .config/rust-record/linked.bash
 ["check:rust-record"]
-description = "The reader of a Rust crate: its lints and its tests, and no other crate on rustc's libraries"
+description = "The reader of a Rust crate: its lints, its tests, the staged corpus, and no other crate on rustc's libraries"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -778,7 +787,11 @@ rustup component add rustc-dev llvm-tools
   cd crates/runtime-rust-reader
   cargo clippy --locked --release --all-targets -- --deny warnings
   cargo test --locked --release
+  cargo build --locked --release
 )
+.config/mise/scope cargo build --locked --quiet --release --package gandr-lang
+cp target/rust-reader/release/gandr-rust-reader target/release/gandr-rust-reader
+target/release/gandr --run-budget 16777216 test crates/runtime-rust-reader/tests/corpus
 .config/rust-record/linked.bash
 .config/rust-record/linked-cases.bash
 '''

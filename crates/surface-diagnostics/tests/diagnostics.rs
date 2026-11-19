@@ -517,7 +517,7 @@ fn force_without_rules(kept: Kept) -> Diagnostic
         declaration.span(),
         (&table, text),
     );
-    diagnose(path, text, Subject::Refused {
+    diagnose(path, text, &[], Subject::Refused {
         declaration,
         refusal,
         located: Maybe::Present(&located),

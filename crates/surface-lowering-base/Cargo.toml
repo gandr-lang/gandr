@@ -35,6 +35,7 @@ gandr-core-term.workspace = true
 gandr-kernel-data.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
+gandr-runtime-rust-record.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-parser = { workspace = true, optional = true }
 gandr-surface-syntax.workspace = true

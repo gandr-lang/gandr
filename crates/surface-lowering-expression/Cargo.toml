@@ -24,6 +24,7 @@ anodized.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
+gandr-runtime-rust-record.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lowering-base.workspace = true
 gandr-surface-lowering-capability.workspace = true

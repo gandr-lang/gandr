@@ -64,6 +64,7 @@ use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
 use gandr_surface_lowering::Offer;
 use gandr_surface_lowering::Repair;
+use gandr_surface_lowering::StagedFault;
 use gandr_surface_lowering::WfKind;
 use gandr_surface_lowering::description::MemberFault;
 use gandr_surface_lowering::head_home;
@@ -184,6 +185,20 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             BuiltinFault::OutsideToolchain => "delete the mark. Use the declaration of `std`",
             BuiltinFault::TypeDiffers => "write the type of the row, its arguments then its result",
             BuiltinFault::Repeated => "delete this declaration. Use the earlier one",
+        }),
+        LoweringRefusal::StagedBody { fault, .. } => String::from(match fault {
+            StagedFault::Bodied => "delete the body, and the staged THIR gives the value",
+            StagedFault::NoReader => "install the reader of a Rust crate for the pinned toolchain",
+            StagedFault::Unanswered => {
+                "write the file and the function as two texts with no escape"
+            },
+            StagedFault::Unread(_) => "make the crate build, and name a public function of it",
+            StagedFault::Outside(_) => "write the function in the fragment of the calculus",
+            StagedFault::NotExpr => "declare the signature at `Expr` of the item type",
+            StagedFault::Unmapped { .. } => "state the path and its constructor in the item mark",
+            StagedFault::ItemMark => {
+                "write each text as a Rust path, a space and a constructor, each one time"
+            },
         }),
         LoweringRefusal::UnresolvedDocLink { name, .. } => {
             format!("declare `{name}`, or link to a name this source declares")
