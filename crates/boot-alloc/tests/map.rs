@@ -1,9 +1,11 @@
 //! The mapping calls against the host: the host is the oracle of what it
 //! maps, protects and unmaps.
 
+use core::num::NonZeroU16;
 use core::num::NonZeroUsize;
 
 use gandr_boot_alloc::Bytes;
+use gandr_boot_alloc::ErrorNumber;
 use gandr_boot_alloc::Operation;
 use gandr_boot_alloc::PageSize;
 use gandr_boot_alloc::Pages;
@@ -13,21 +15,35 @@ use gandr_boot_alloc::Refused;
 use crate::host;
 
 /// The error number of an argument that the call does not take.
-const EINVAL: u16 = 22;
+const EINVAL: ErrorNumber = ErrorNumber(NonZeroU16::new(22).expect("22 is not zero"));
 
 /// The error number of a call that finds no memory.
-const ENOMEM: u16 = 12;
+const ENOMEM: ErrorNumber = ErrorNumber(NonZeroU16::new(12).expect("12 is not zero"));
+
+/// A count of pages that a test asks for.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+struct Count(usize);
 
 /// `count` pages.
-fn pages(count: usize) -> Pages
+///
+/// # Specification
+/// trivial.
+fn pages(count: Count) -> Pages
 {
-    Pages(NonZeroUsize::new(count).expect("a count of pages is not zero"))
+    Pages(NonZeroUsize::new(count.0).expect("a count of pages is not zero"))
 }
 
 /// The operation and the error number of `refused`.
-fn named(refused: Refused) -> (Operation, u16)
+///
+/// # Specification
+/// trivial.
+fn named(refused: Refused) -> (Operation, ErrorNumber)
 {
-    (refused.operation(), refused.number().0.get())
+    (refused.operation(), refused.number())
 }
 
 /// Each page of a readable and writable block takes a byte at its first and
@@ -37,7 +53,7 @@ fn a_block_takes_a_byte_on_each_page()
 {
     let page = host::page();
     let size = page.length().0.get();
-    let block = gandr_boot_alloc::map(page, pages(16), Protection::ReadWrite)
+    let block = gandr_boot_alloc::map(page, pages(Count(16)), Protection::ReadWrite)
         .expect("the host maps 16 pages");
     assert_eq!(16 * size, block.length().0.get());
     let base = block.base().0.as_ptr();
@@ -70,8 +86,8 @@ fn a_block_takes_a_byte_on_each_page()
 fn a_block_made_read_only_reads_its_byte()
 {
     let page = host::page();
-    let block =
-        gandr_boot_alloc::map(page, pages(1), Protection::ReadWrite).expect("the host maps a page");
+    let block = gandr_boot_alloc::map(page, pages(Count(1)), Protection::ReadWrite)
+        .expect("the host maps a page");
     let base = block.base().0.as_ptr();
     // SAFETY: the page is readable and writable.
     unsafe {
@@ -99,17 +115,17 @@ fn a_block_made_read_only_reads_its_byte()
 fn a_count_past_the_address_space_is_refused()
 {
     let page = host::page();
-    let block =
-        gandr_boot_alloc::map(page, pages(1), Protection::ReadWrite).expect("the host maps a page");
+    let block = gandr_boot_alloc::map(page, pages(Count(1)), Protection::ReadWrite)
+        .expect("the host maps a page");
     let base = block.base().0.as_ptr();
     // SAFETY: the page is readable and writable.
     unsafe {
         base.write(0x3C);
     }
-    let overflow = gandr_boot_alloc::map(page, pages(usize::MAX), Protection::ReadWrite);
+    let overflow = gandr_boot_alloc::map(page, pages(Count(usize::MAX)), Protection::ReadWrite);
     assert_eq!(Some((Operation::Map, ENOMEM)), overflow.err().map(named));
     let count = (1_usize << 60_u32) >> page.length().0.trailing_zeros();
-    let past = gandr_boot_alloc::map(page, pages(count), Protection::ReadWrite);
+    let past = gandr_boot_alloc::map(page, pages(Count(count)), Protection::ReadWrite);
     assert_eq!(Some((Operation::Map, ENOMEM)), past.err().map(named));
     // SAFETY: the page is readable.
     assert_eq!(0x3C, unsafe { base.read() });

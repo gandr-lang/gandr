@@ -20,25 +20,36 @@ struct Live
     mark: u8,
 }
 
-/// Fills the first `layout.size()` bytes at `base` with `mark`.
-fn fill(
-    base: Base,
-    layout: Layout,
-    mark: u8,
-)
+/// Fills the first `layout.size()` bytes of `live` with its mark.
+///
+/// # Specification
+/// trivial.
+fn fill(live: &Live)
 {
     // SAFETY: the block holds at least `layout.size()` writable bytes.
     unsafe {
-        base.0.as_ptr().write_bytes(mark, layout.size());
+        live.base
+            .0
+            .as_ptr()
+            .write_bytes(live.mark, live.layout.size());
     }
 }
 
-/// Whether each of the first `layout.size()` bytes of `live` is its mark.
-fn holds(live: &Live) -> bool
+/// Asserts that each of the first `layout.size()` bytes of `live` is its
+/// mark.
+///
+/// # Specification
+/// trivial.
+fn assert_holds(live: &Live)
 {
     // SAFETY: the block holds at least `layout.size()` readable bytes.
     let bytes = unsafe { core::slice::from_raw_parts(live.base.0.as_ptr(), live.layout.size()) };
-    bytes.iter().all(|&byte| byte == live.mark)
+    assert!(
+        bytes.iter().all(|&byte| byte == live.mark),
+        "{:?} at {:?}",
+        live.layout,
+        live.base
+    );
 }
 
 /// Blocks of each class and of whole pages, with alignments from 1 to a
@@ -68,12 +79,13 @@ fn each_block_keeps_its_bytes_and_its_alignment()
             block.0.as_ptr().addr() % align,
             "block {index}: {layout:?}"
         );
-        fill(block, layout, mark);
-        live.push(Live {
+        let block = Live {
             base: block,
             layout,
             mark,
-        });
+        };
+        fill(&block);
+        live.push(block);
         if index % 3 == 2 {
             let gone =
                 live.swap_remove(usize::try_from(seed).expect("a seed fits a word") % live.len());
@@ -82,8 +94,8 @@ fn each_block_keeps_its_bytes_and_its_alignment()
             unsafe { heap.free(gone.base, gone.layout) }.expect("the heap takes the block back");
         }
     }
-    for (index, block) in live.iter().enumerate() {
-        assert!(holds(block), "block {index}: {:?}", block.layout);
+    for block in &live {
+        assert_holds(block);
     }
     let past = Layout::from_size_align(8192, page.length().0.get() * 2).expect("a layout");
     let refused = heap
@@ -109,7 +121,11 @@ fn a_grown_block_keeps_its_bytes()
         .allocate(layout(24))
         .expect("the heap gives a block")
         .base();
-    fill(first, layout(24), 7);
+    fill(&Live {
+        base: first,
+        layout: layout(24),
+        mark: 7,
+    });
     // SAFETY: the heap gave the block for 24 bytes, and the test keeps no
     // reference into it.
     let within = unsafe { heap.grow(first, layout(24), layout(30)) }
@@ -121,21 +137,25 @@ fn a_grown_block_keeps_its_bytes()
         .expect("the block grows")
         .base();
     assert_ne!(within, moved);
-    assert!(holds(&Live {
+    assert_holds(&Live {
         base: moved,
         layout: layout(24),
-        mark: 7
-    }));
-    fill(moved, layout(100), 9);
+        mark: 7,
+    });
+    fill(&Live {
+        base: moved,
+        layout: layout(100),
+        mark: 9,
+    });
     // SAFETY: as above, for 100 bytes.
     let paged = unsafe { heap.grow(moved, layout(100), layout(page + 1)) }
         .expect("the block grows")
         .base();
-    assert!(holds(&Live {
+    assert_holds(&Live {
         base: paged,
         layout: layout(100),
-        mark: 9
-    }));
+        mark: 9,
+    });
     // SAFETY: as above, for one byte past a page.
     let same = unsafe { heap.grow(paged, layout(page + 1), layout(2 * page)) }
         .expect("the block grows")

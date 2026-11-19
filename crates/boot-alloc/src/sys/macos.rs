@@ -38,9 +38,24 @@ struct Size(usize);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct FileOffset(i64);
 
+/// The mapping calls that libSystem declares in `<sys/mman.h>`, and the
+/// thread's error number of `<errno.h>`.
+///
+/// # Safety
+///
+/// - unsafe invariants: each signature matches the declaration, with
+///   transparent wrappers of `size_t`, `int` and `off_t`; a call names a range
+///   of its own mapping, or a range that the kernel picks.
 #[link(name = "System")]
+#[expect(
+    unused_doc_comments,
+    reason = "the policy lint reads this block's safety section; rustdoc renders none on an extern block"
+)]
 unsafe extern "C" {
     /// The system library's `mmap`.
+    ///
+    /// # Specification
+    /// trivial.
     fn mmap(
         address: *mut c_void,
         length: Size,
@@ -51,6 +66,9 @@ unsafe extern "C" {
     ) -> *mut c_void;
 
     /// The system library's `mprotect`.
+    ///
+    /// # Specification
+    /// trivial.
     fn mprotect(
         address: *mut c_void,
         length: Size,
@@ -58,12 +76,18 @@ unsafe extern "C" {
     ) -> Int;
 
     /// The system library's `munmap`.
+    ///
+    /// # Specification
+    /// trivial.
     fn munmap(
         address: *mut c_void,
         length: Size,
     ) -> Int;
 
     /// The address of the calling thread's error number.
+    ///
+    /// # Specification
+    /// trivial.
     fn __error() -> *mut Int;
 }
 
@@ -86,9 +110,11 @@ const MAP_PRIVATE: c_int = 0x02;
 /// - witness: `tests::map::a_count_past_the_address_space_is_refused`
 fn error() -> ErrorNumber
 {
+    // SAFETY: the call reads no argument and writes no memory.
+    let address = unsafe { __error() };
     // SAFETY: the system library gives each thread its own error number, and
     // the address stays valid while the thread lives.
-    let number = unsafe { *__error() };
+    let number = unsafe { address.read() };
     u16::try_from(number.0)
         .ok()
         .and_then(NonZeroU16::new)

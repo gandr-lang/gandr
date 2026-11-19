@@ -11,14 +11,18 @@ mod heap
     use core::alloc::Layout;
 
     use gandr_boot_alloc::Base;
+    use gandr_boot_alloc::Bytes;
     use gandr_boot_alloc::Heap;
 
     use crate::host;
 
     /// The bytes that the process maps, from `/proc/self/statm`. The read
     /// fills a buffer on the stack, so it maps nothing itself.
+    ///
+    /// # Specification
+    /// trivial.
     #[cfg(target_os = "linux")]
-    fn mapped() -> usize
+    fn mapped() -> Bytes
     {
         use std::io::Read as _;
         let mut file =
@@ -31,14 +35,19 @@ mod heap
             .next()
             .and_then(|field| field.parse().ok())
             .expect("statm starts with a count");
-        pages
-            .checked_mul(host::page().length().0.get())
-            .expect("the bytes fit a word")
+        Bytes(
+            pages
+                .checked_mul(host::page().length().0.get())
+                .expect("the bytes fit a word"),
+        )
     }
 
     /// The bytes that the process maps, from the task's basic information.
+    ///
+    /// # Specification
+    /// trivial.
     #[cfg(target_os = "macos")]
-    fn mapped() -> usize
+    fn mapped() -> Bytes
     {
         /// `mach_task_basic_info`, packed to 4 bytes as the system's header
         /// packs it.
@@ -61,22 +70,43 @@ mod heap
             /// The count of the task's suspensions.
             suspend_count: i32,
         }
+        /// A port, a flavour, a count of words or an answer of the kernel.
+        ///
+        /// # Specification
+        /// trivial.
+        #[repr(transparent)]
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        struct Word(u32);
+        /// The kernel's reads of a task.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: the port names a live task, and the record and
+        ///   the count are the call's to write.
+        #[expect(
+            unused_doc_comments,
+            reason = "the policy lint reads this block's safety section; rustdoc renders none on an extern block"
+        )]
         unsafe extern "C" {
             /// The port of the calling task.
-            static mach_task_self_: u32;
+            static mach_task_self_: Word;
             /// The kernel's information about a task.
+            ///
+            /// # Specification
+            /// trivial.
             fn task_info(
-                task: u32,
-                flavor: u32,
+                task: Word,
+                flavor: Word,
                 information: *mut Basic,
-                count: *mut u32,
-            ) -> i32;
+                count: *mut Word,
+            ) -> Word;
         }
         /// The flavour of `mach_task_basic_info`.
-        const MACH_TASK_BASIC_INFO: u32 = 20;
+        const MACH_TASK_BASIC_INFO: Word = Word(20);
+        /// The header's count of the record: its 48 bytes in 4-byte words.
+        const MACH_TASK_BASIC_INFO_COUNT: Word = Word(12);
         let mut basic = Basic::default();
-        let mut count =
-            u32::try_from(size_of::<Basic>() / size_of::<u32>()).expect("a count of words");
+        let mut count = MACH_TASK_BASIC_INFO_COUNT;
         // SAFETY: the task port names this process, and the record and the
         // count are the call's to write.
         let answer = unsafe {
@@ -87,8 +117,8 @@ mod heap
                 &raw mut count,
             )
         };
-        assert_eq!(0, answer, "task_info answers");
-        usize::try_from(basic.virtual_size).expect("the size fits a word")
+        assert_eq!(Word(0), answer, "task_info answers");
+        Bytes(usize::try_from(basic.virtual_size).expect("the size fits a word"))
     }
 
     /// 10000 blocks of mixed sizes, from one byte to past a page, each
@@ -138,7 +168,7 @@ mod heap
         let after = mapped();
         assert!(
             during > before,
-            "the heap maps runs: {before} then {during}"
+            "the heap maps runs: {before:?} then {during:?}"
         );
         assert_eq!(before, after, "the heap gives each run back");
     }
