@@ -281,10 +281,131 @@ pub enum FocusOrigin
     Session,
 }
 
+/// Why focusing annotated a position with the unknown type.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Unknown
+{
+    /// The checker's type names a variable that its solve leaves open.
+    Open,
+    /// The focusing holds no checker's table.
+    Unchecked,
+    /// The checker's table holds no type for the position: a fault of the
+    /// record.
+    Missed,
+    /// Two of the checker's typings give the position's key two types: the
+    /// key names one node at two places, and the record is no function there.
+    Conflict,
+    /// A field of a declared constructor whose declared type names a parameter
+    /// of its family or an earlier field: the field has no one layout at each
+    /// instance.
+    Parameter,
+    /// A field of a constructor that focusing makes itself, with no core
+    /// node to key.
+    Minted,
+}
+
+/// The positions focusing annotated with the unknown type, by cause.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Unknowns
+{
+    /// The positions of [`Unknown::Open`].
+    open: NodeCount,
+    /// The positions of [`Unknown::Unchecked`].
+    unchecked: NodeCount,
+    /// The positions of [`Unknown::Missed`].
+    missed: NodeCount,
+    /// The positions of [`Unknown::Conflict`].
+    conflict: NodeCount,
+    /// The positions of [`Unknown::Parameter`].
+    parameter: NodeCount,
+    /// The positions of [`Unknown::Minted`].
+    minted: NodeCount,
+}
+
+impl Unknowns
+{
+    /// The positions of one cause.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn of(
+        &self,
+        cause: Unknown,
+    ) -> NodeCount
+    {
+        match cause {
+            Unknown::Open => self.open,
+            Unknown::Unchecked => self.unchecked,
+            Unknown::Missed => self.missed,
+            Unknown::Conflict => self.conflict,
+            Unknown::Parameter => self.parameter,
+            Unknown::Minted => self.minted,
+        }
+    }
+
+    /// Count one more position of `cause`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn note(
+        &mut self,
+        cause: Unknown,
+    )
+    {
+        let held = self.slot(cause);
+        *held = NodeCount::from(usize::from(*held).saturating_add(1));
+    }
+
+    /// Add the counts of `other` to these.
+    ///
+    /// # Specification
+    /// trivial.
+    fn absorb(
+        &mut self,
+        other: Self,
+    )
+    {
+        for cause in [
+            Unknown::Open,
+            Unknown::Unchecked,
+            Unknown::Missed,
+            Unknown::Conflict,
+            Unknown::Parameter,
+            Unknown::Minted,
+        ] {
+            let held = self.slot(cause);
+            *held =
+                NodeCount::from(usize::from(*held).saturating_add(usize::from(other.of(cause))));
+        }
+    }
+
+    /// The count of one cause, to change.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn slot(
+        &mut self,
+        cause: Unknown,
+    ) -> &mut NodeCount
+    {
+        match cause {
+            Unknown::Open => &mut self.open,
+            Unknown::Unchecked => &mut self.unchecked,
+            Unknown::Missed => &mut self.missed,
+            Unknown::Conflict => &mut self.conflict,
+            Unknown::Parameter => &mut self.parameter,
+            Unknown::Minted => &mut self.minted,
+        }
+    }
+}
+
 /// The provenance table of a focusing.
 ///
 /// It holds the [`FocusOrigin`] of every command focusing created, in creation
-/// order, and the core action each session command was focused from.
+/// order, the core action each session command was focused from, and the
+/// positions each successful focusing annotated with the unknown type.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Provenance
 {
@@ -293,6 +414,9 @@ pub struct Provenance
     /// Each session command with the core action it was focused from, in
     /// increasing command address.
     sessions: Vec<(CommandId, ComputationId)>,
+    /// The positions of the unknown type, by cause, over each focusing that
+    /// succeeded.
+    unknowns: Unknowns,
 }
 
 impl Provenance
@@ -374,6 +498,18 @@ impl Provenance
     pub fn len(&self) -> NodeCount
     {
         NodeCount::from(self.origins.len())
+    }
+
+    /// The positions each successful focusing annotated with the unknown
+    /// type, by cause.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn unknowns(&self) -> Unknowns
+    {
+        self.unknowns
     }
 
     /// Record a command's origin.
@@ -484,6 +620,208 @@ impl FromIterator<ComputationId> for Writers
         Names: IntoIterator<Item = ComputationId>,
     {
         Self(iter.into_iter().collect())
+    }
+}
+
+/// What a checker's record holds under one key.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Recorded
+{
+    /// Each insert under the key gives this type.
+    Type(gandr_core_term::ValueTypeId),
+    /// Two inserts under the key give two types.
+    Conflict,
+}
+
+impl Recorded
+{
+    /// Insert `ty` under `key` in `table`, where `same` reads whether two
+    /// types hold one content.
+    ///
+    /// # Specification
+    /// - requires: `same` answers true for two ids of one content.
+    /// - ensures: `key` keeps the type that it held when `same` reads `ty` as
+    ///   that type's content, and holds `Type(ty)` when it held nothing. A key
+    ///   that held another content, or a conflict, holds
+    ///   [`Recorded::Conflict`].
+    /// - panics: none.
+    /// - executable: none — one map insert and at most one call of `same`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a key with one type twice, with one content at two
+    ///   ids, and with two contents separate the three outcomes.
+    /// - witness: `focus::tests::a_key_that_takes_two_types_records_a_conflict_8161`
+    #[inline]
+    pub fn join<Key, Same>(
+        table: &mut BTreeMap<Key, Self>,
+        key: Key,
+        ty: gandr_core_term::ValueTypeId,
+        same: Same,
+    ) where
+        Key: Ord,
+        Same: FnOnce(gandr_core_term::ValueTypeId, gandr_core_term::ValueTypeId) -> bool,
+    {
+        let held = table.entry(key).or_insert(Self::Type(ty));
+        if let Self::Type(old) = *held
+            && (old == ty || same(old, ty))
+        {
+            return;
+        }
+        *held = Self::Conflict;
+    }
+}
+
+/// The value types a caller's checker gives the binders of binds and the
+/// producer fields of constructors, after its solve.
+///
+/// Each type lives in the core arena that focusing reads. A field of a
+/// declared constructor reads the type that its family's signature states. A
+/// field of a structural former and a binder read the checker's record by
+/// their node. Focusing imports each closed type into the annotations of the
+/// IL. It gives the unknown type to each other position and counts the
+/// position by its [`Unknown`] cause.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Typed
+{
+    /// Whether a checker gives the table.
+    checking: Checking,
+    /// The type of the binder of each bind, by the computation the bind runs.
+    binders: BTreeMap<ComputationId, Recorded>,
+    /// The type of each producer field of a structural former, by its
+    /// constructor's value and the field's position.
+    fields: BTreeMap<(ValueId, gandr_kernel_term::FieldPosition), Recorded>,
+    /// The signature of each declared family, by its position.
+    declared: BTreeMap<
+        gandr_kernel_term::ConstantIndex,
+        alloc::sync::Arc<gandr_core_term::DataSignature>,
+    >,
+}
+
+/// Where a [`Typed`] table comes from.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum Checking
+{
+    /// No checker: a position the table lacks is [`Unknown::Unchecked`].
+    #[default]
+    Absent,
+    /// A checker: a position the table lacks is [`Unknown::Missed`].
+    Present,
+    /// A program that focusing makes: each position is [`Unknown::Minted`].
+    Minted,
+}
+
+impl Typed
+{
+    /// No checker: every position holds the unknown type.
+    pub const NONE: Self = Self {
+        checking: Checking::Absent,
+        binders: BTreeMap::new(),
+        fields: BTreeMap::new(),
+        declared: BTreeMap::new(),
+    };
+
+    /// A program that focusing makes, such as an identity combinator: every
+    /// position holds the unknown type.
+    const MINTED: Self = Self {
+        checking: Checking::Minted,
+        binders: BTreeMap::new(),
+        fields: BTreeMap::new(),
+        declared: BTreeMap::new(),
+    };
+
+    /// The table a checker gives.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn checked(
+        binders: BTreeMap<ComputationId, Recorded>,
+        fields: BTreeMap<(ValueId, gandr_kernel_term::FieldPosition), Recorded>,
+        declared: BTreeMap<
+            gandr_kernel_term::ConstantIndex,
+            alloc::sync::Arc<gandr_core_term::DataSignature>,
+        >,
+    ) -> Self
+    {
+        Self {
+            checking: Checking::Present,
+            binders,
+            fields,
+            declared,
+        }
+    }
+
+    /// The type of the binder of a bind that runs `head`, or why it holds the
+    /// unknown type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn binder(
+        &self,
+        head: ComputationId,
+    ) -> quenchant_shape::shape::Maybe<gandr_core_term::ValueTypeId, Unknown>
+    {
+        self.found(self.binders.get(&head).copied())
+    }
+
+    /// The type of the field at `position` of the constructor `value`, or why
+    /// it holds the unknown type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn field(
+        &self,
+        value: ValueId,
+        position: gandr_kernel_term::FieldPosition,
+    ) -> quenchant_shape::shape::Maybe<gandr_core_term::ValueTypeId, Unknown>
+    {
+        self.found(self.fields.get(&(value, position)).copied())
+    }
+
+    /// The type that the signature of `family` states for the field at
+    /// `position` of its constructor `tag`, scoped under the family's
+    /// parameters and the constructor's earlier fields, or why it holds the
+    /// unknown type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn declared(
+        &self,
+        family: gandr_kernel_term::ConstantIndex,
+        tag: gandr_kernel_term::ConstructorTag,
+        position: gandr_kernel_term::FieldPosition,
+    ) -> quenchant_shape::shape::Maybe<gandr_core_term::ValueTypeId, Unknown>
+    {
+        let stated = self
+            .declared
+            .get(&family)
+            .and_then(|signature| signature.constructors().get(usize::from(tag)))
+            .and_then(|fields| fields.get(usize::from(position)));
+        self.found(stated.map(|&ty| Recorded::Type(ty)))
+    }
+
+    /// `entry` as found, or the cause of its absence.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn found(
+        &self,
+        entry: Option<Recorded>,
+    ) -> quenchant_shape::shape::Maybe<gandr_core_term::ValueTypeId, Unknown>
+    {
+        match (entry, self.checking) {
+            (Some(Recorded::Type(ty)), _) => quenchant_shape::shape::Maybe::Present(ty),
+            (Some(Recorded::Conflict), _) => {
+                quenchant_shape::shape::Maybe::Absent(Unknown::Conflict)
+            },
+            (None, Checking::Present) => quenchant_shape::shape::Maybe::Absent(Unknown::Missed),
+            (None, Checking::Absent) => quenchant_shape::shape::Maybe::Absent(Unknown::Unchecked),
+            (None, Checking::Minted) => quenchant_shape::shape::Maybe::Absent(Unknown::Minted),
+        }
     }
 }
 
@@ -626,12 +964,13 @@ pub fn focus_computation(
     arena: &mut CommandArena,
     provenance: &mut Provenance,
     writers: &Writers,
+    typed: &Typed,
 ) -> Result<CommandId, FocusRefusal>
 {
     transactional(arena, provenance, |arena, provenance| {
         with_combinators(
             core,
-            (arena, provenance, writers),
+            (arena, provenance, writers, typed),
             (
                 |run: &mut Focusing<'_>| {
                     let top = run.arena.mint_consumer(ConsumerNode::Top)?;
@@ -679,12 +1018,13 @@ pub fn focus_value(
     arena: &mut CommandArena,
     provenance: &mut Provenance,
     writers: &Writers,
+    typed: &Typed,
 ) -> Result<ProducerId, FocusRefusal>
 {
     transactional(arena, provenance, |arena, provenance| {
         with_combinators(
             core,
-            (arena, provenance, writers),
+            (arena, provenance, writers, typed),
             (
                 |run: &mut Focusing<'_>| {
                     run.tasks.push(Task::Value(value));
@@ -740,12 +1080,13 @@ pub fn focus_definition(
     arena: &mut CommandArena,
     provenance: &mut Provenance,
     writers: &Writers,
+    typed: &Typed,
 ) -> Result<ProducerId, FocusRefusal>
 {
     transactional(arena, provenance, |arena, provenance| {
         with_combinators(
             core,
-            (arena, provenance, writers),
+            (arena, provenance, writers, typed),
             (
                 |run: &mut Focusing<'_>| run.subject(value),
                 |run: Focusing<'_>| run.single_producer(),
@@ -789,12 +1130,13 @@ pub fn focus_top_value(
     arena: &mut CommandArena,
     provenance: &mut Provenance,
     writers: &Writers,
+    typed: &Typed,
 ) -> Result<CommandId, FocusRefusal>
 {
     transactional(arena, provenance, |arena, provenance| {
         with_combinators(
             core,
-            (arena, provenance, writers),
+            (arena, provenance, writers, typed),
             (
                 |run: &mut Focusing<'_>| {
                     let top = run.arena.mint_consumer(ConsumerNode::Top)?;
@@ -889,7 +1231,7 @@ where
 /// - witness: `tests::run::transports_run_by_the_motives_action`
 fn with_combinators<Answer, Seed, Finish>(
     core: &CoreArena,
-    (arena, provenance, writers): (&mut CommandArena, &mut Provenance, &Writers),
+    (arena, provenance, writers, typed): (&mut CommandArena, &mut Provenance, &Writers, &Typed),
     (seed, finish): (Seed, Finish),
 ) -> Result<Answer, FocusRefusal>
 where
@@ -899,11 +1241,14 @@ where
     let arena_mark = arena.watermark();
     let provenance_mark = provenance.len();
     let wanted = {
-        let mut run = Focusing::new(core, (arena, provenance), writers);
+        let mut run = Focusing::new(core, (arena, provenance), (writers, typed));
         seed(&mut run)?;
         run.drive()?;
         if run.wanted.is_empty() {
-            return finish(run);
+            let counted = run.unknowns;
+            let answer = finish(run)?;
+            provenance.unknowns.absorb(counted);
+            return Ok(answer);
         }
         core::mem::take(&mut run.wanted)
     };
@@ -913,27 +1258,51 @@ where
     let mut scratch = CoreArena::new();
     let empty = scratch.watermark();
     let none = Writers::NONE;
+    let minted = Typed::MINTED;
+    let mut counted = Unknowns::default();
     for combinator in wanted {
         let mut cases = crate::identity::RunCases::new();
         let root = crate::identity::build(core, combinator, (&mut scratch, &mut cases))?;
-        let mut closed = Focusing::new(&scratch, (arena, provenance), &none);
+        let mut closed = Focusing::new(&scratch, (arena, provenance), (&none, &minted));
         closed.run_cases = cases;
         closed.tasks.push(Task::Value(root));
         closed.drive()?;
         if !closed.wanted.is_empty() {
             return Err(FocusRefusal::TranslationInvariant);
         }
+        counted.absorb(closed.unknowns);
         let _replaced = prepared.insert(combinator, closed.single_producer()?);
         scratch.truncate_to(empty);
     }
-    let mut run = Focusing::new(core, (arena, provenance), writers);
+    let mut run = Focusing::new(core, (arena, provenance), (writers, typed));
     run.prepared = prepared;
+    run.unknowns = counted;
     seed(&mut run)?;
     run.drive()?;
     if !run.wanted.is_empty() {
         return Err(FocusRefusal::TranslationInvariant);
     }
-    finish(run)
+    let counted = run.unknowns;
+    let answer = finish(run)?;
+    provenance.unknowns.absorb(counted);
+    Ok(answer)
+}
+
+/// What keys the field types of a constructor that focusing mints.
+#[derive(Clone, Copy, Debug)]
+enum Fielded
+{
+    /// The core value of a structural former that the constructor translates.
+    Core(ValueId),
+    /// A constructor of a declared family: its fields take the types that the
+    /// family's signature states.
+    Declared(
+        gandr_kernel_term::ConstantIndex,
+        gandr_kernel_term::ConstructorTag,
+    ),
+    /// No core node: focusing makes the constructor, as a path's pair of
+    /// maps.
+    Minted,
 }
 
 /// One unit of pending translation work.
@@ -987,21 +1356,27 @@ enum Task
         continuation: ConsumerId,
     },
     /// Pop this many producers and mint their tuple.
-    Tuple(ProducerArity),
+    Tuple(ProducerArity, Fielded),
     /// Pop one producer per label and mint the record of those labels.
-    Record(alloc::sync::Arc<[gandr_core_term::FieldLabel]>),
+    Record(alloc::sync::Arc<[gandr_core_term::FieldLabel]>, ValueId),
     /// Pop one producer per payload move and mint the recorded run of these
     /// moves.
-    Recorded(alloc::sync::Arc<[gandr_core_term::session::RecordedMove<()>]>),
+    Recorded(
+        alloc::sync::Arc<[gandr_core_term::session::RecordedMove<()>]>,
+        ValueId,
+    ),
     /// Pop one producer per payload move and mint the dialogue of these
     /// moves.
-    Dialogue(alloc::sync::Arc<[gandr_core_term::session::DialogueMove<()>]>),
+    Dialogue(
+        alloc::sync::Arc<[gandr_core_term::session::DialogueMove<()>]>,
+        ValueId,
+    ),
     /// Pop head and tail producers and mint their native cell.
-    ListCons,
+    ListCons(ValueId),
     /// Pop one producer and mint its injection into this summand.
-    Injection(Summand),
+    Injection(Summand, ValueId),
     /// Pop one producer and mint its lift.
-    Lift(Level),
+    Lift(Level, ValueId),
     /// Pop a datatype constructor's fields and mint it.
     Native
     {
@@ -1059,7 +1434,7 @@ enum Task
     /// Pop the bind's body, mint `μ̃x. body`, and translate `head` under it.
     Bind
     {
-        /// The bound computation.
+        /// The bound computation, which keys the type of the binder.
         head: ComputationId,
     },
     /// Pop the bind's body, mint `μ̃(x₁ … xₙ). body`, and translate `head`
@@ -1171,6 +1546,10 @@ struct Focusing<'run>
     returning: BTreeMap<ValueId, Holding>,
     /// The writers whose binds the run focuses apart and marks independent.
     writers: &'run Writers,
+    /// The types the caller's checker gives binders and fields.
+    typed: &'run Typed,
+    /// The positions this run annotates with the unknown type, by cause.
+    unknowns: Unknowns,
 }
 
 impl<'run> Focusing<'run>
@@ -1182,7 +1561,7 @@ impl<'run> Focusing<'run>
     fn new(
         core: &'run CoreArena,
         (arena, provenance): (&'run mut CommandArena, &'run mut Provenance),
-        writers: &'run Writers,
+        (writers, typed): (&'run Writers, &'run Typed),
     ) -> Self
     {
         Self {
@@ -1197,6 +1576,8 @@ impl<'run> Focusing<'run>
             run_cases: crate::identity::RunCases::new(),
             returning: BTreeMap::new(),
             writers,
+            typed,
+            unknowns: Unknowns::default(),
         }
     }
 
@@ -1270,19 +1651,19 @@ impl<'run> Focusing<'run>
                 Computation::Primitive { .. } | Computation::Decompose(_) | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::LinearLambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::ReturnAll(_) | Computation::Bind(..) | Computation::BindAll { .. } | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => true,
             }),
             | &Task::Primitive { arguments, .. } => self.producers.len() >= arguments.len(),
-            | &Task::ListCons => self.producers.len() >= 2,
+            | &Task::ListCons(_) => self.producers.len() >= 2,
             | &Task::Combinator { combinator, .. } => self.producers.len() >= usize::from(combinator.applied()),
-            | &Task::Decompose { .. } | &Task::Injection(_) | &Task::Lift(_) | &Task::Cut { .. } | &Task::Apply { .. } => !self.producers.is_empty(),
+            | &Task::Decompose { .. } | &Task::Injection(..) | &Task::Lift(..) | &Task::Cut { .. } | &Task::Apply { .. } => !self.producers.is_empty(),
             | &Task::Deliver { count, .. } => self.producers.len() >= usize::from(count),
             | &Task::Thunk | &Task::Capture | &Task::Fixpoint(_) | &Task::Lambda { .. } | &Task::Bind { .. } | &Task::BindAll { .. } | &Task::Name { .. } => !self.commands.is_empty(),
             | &Task::ListFold { .. } | &Task::ListCase => !self.producers.is_empty() && self.commands.len() >= 2,
             | &Task::Case { branches } => !self.producers.is_empty() && self.commands.len() >= usize::from(branches),
             | &Task::RunCase(ref arms) => !self.producers.is_empty() && self.commands.len() >= arms.len(),
             | &Task::Split(_) => !self.producers.is_empty() && !self.commands.is_empty(),
-            | &Task::Tuple(arity) | &Task::Native { arity, .. } => self.producers.len() >= usize::from(arity),
-            | &Task::Record(ref labels) => self.producers.len() >= labels.len(),
-            | &Task::Recorded(ref moves) => self.producers.len() >= usize::from(ConstructorTag::Recorded(alloc::sync::Arc::clone(moves)).producer_arity()),
-            | &Task::Dialogue(ref turns) => self.producers.len() >= usize::from(ConstructorTag::Dialogue(alloc::sync::Arc::clone(turns)).producer_arity()),
+            | &Task::Tuple(arity, _) | &Task::Native { arity, .. } => self.producers.len() >= usize::from(arity),
+            | &Task::Record(ref labels, _) => self.producers.len() >= labels.len(),
+            | &Task::Recorded(ref moves, _) => self.producers.len() >= usize::from(ConstructorTag::Recorded(alloc::sync::Arc::clone(moves)).producer_arity()),
+            | &Task::Dialogue(ref turns, _) => self.producers.len() >= usize::from(ConstructorTag::Dialogue(alloc::sync::Arc::clone(turns)).producer_arity()),
             | &Task::DataCase { branches, .. } => self.producers.len() > usize::from(branches),
             | &Task::Value(_) | &Task::Suspend(_) | &Task::Computation { .. } => true,
         },
@@ -1356,7 +1737,7 @@ impl<'run> Focusing<'run>
                 computation,
                 continuation,
             } => self.computation(computation, continuation),
-            Task::Tuple(arity) => {
+            Task::Tuple(arity, fielded) => {
                 let start = self
                     .producers
                     .len()
@@ -1364,18 +1745,22 @@ impl<'run> Focusing<'run>
                     .ok_or(FocusRefusal::TranslationInvariant)?;
                 let components: alloc::vec::Vec<ProducerId> =
                     self.producers.drain(start ..).collect();
-                self.constructor(ConstructorTag::Tuple(arity), &components)
+                self.constructor(ConstructorTag::Tuple(arity), &components, fielded)
             },
-            Task::Record(labels) => {
+            Task::Record(labels, value) => {
                 let start = self
                     .producers
                     .len()
                     .checked_sub(labels.len())
                     .ok_or(FocusRefusal::TranslationInvariant)?;
                 let fields: Vec<ProducerId> = self.producers.drain(start ..).collect();
-                self.constructor(ConstructorTag::Record(labels), &fields)
+                self.constructor(
+                    ConstructorTag::Record(labels),
+                    &fields,
+                    Fielded::Core(value),
+                )
             },
-            Task::Recorded(moves) => {
+            Task::Recorded(moves, value) => {
                 let tag = ConstructorTag::Recorded(moves);
                 let start = self
                     .producers
@@ -1383,9 +1768,9 @@ impl<'run> Focusing<'run>
                     .checked_sub(usize::from(tag.producer_arity()))
                     .ok_or(FocusRefusal::TranslationInvariant)?;
                 let payloads: Vec<ProducerId> = self.producers.drain(start ..).collect();
-                self.constructor(tag, &payloads)
+                self.constructor(tag, &payloads, Fielded::Core(value))
             },
-            Task::Dialogue(turns) => {
+            Task::Dialogue(turns, value) => {
                 let tag = ConstructorTag::Dialogue(turns);
                 let start = self
                     .producers
@@ -1393,20 +1778,28 @@ impl<'run> Focusing<'run>
                     .checked_sub(usize::from(tag.producer_arity()))
                     .ok_or(FocusRefusal::TranslationInvariant)?;
                 let payloads: Vec<ProducerId> = self.producers.drain(start ..).collect();
-                self.constructor(tag, &payloads)
+                self.constructor(tag, &payloads, Fielded::Core(value))
             },
-            Task::ListCons => {
+            Task::ListCons(value) => {
                 let tail = self.pop_producer()?;
                 let head = self.pop_producer()?;
-                self.constructor(ConstructorTag::ListCons, &[head, tail])
+                self.constructor(
+                    ConstructorTag::ListCons,
+                    &[head, tail],
+                    Fielded::Core(value),
+                )
             },
-            Task::Injection(summand) => {
+            Task::Injection(summand, value) => {
                 let body = self.pop_producer()?;
-                self.constructor(ConstructorTag::Injection(summand), &[body])
+                self.constructor(
+                    ConstructorTag::Injection(summand),
+                    &[body],
+                    Fielded::Core(value),
+                )
             },
-            Task::Lift(level) => {
+            Task::Lift(level, value) => {
                 let body = self.pop_producer()?;
-                self.constructor(ConstructorTag::Lift(level), &[body])
+                self.constructor(ConstructorTag::Lift(level), &[body], Fielded::Core(value))
             },
             Task::Native { tag, arity, family } => {
                 let start = self
@@ -1415,7 +1808,11 @@ impl<'run> Focusing<'run>
                     .checked_sub(usize::from(arity))
                     .ok_or(FocusRefusal::TranslationInvariant)?;
                 let fields: Vec<ProducerId> = self.producers.drain(start ..).collect();
-                self.constructor(ConstructorTag::Data { tag, arity, family }, &fields)
+                self.constructor(
+                    ConstructorTag::Data { tag, arity, family },
+                    &fields,
+                    Fielded::Declared(family, tag),
+                )
             },
             Task::Thunk => {
                 let body = self.pop_command()?;
@@ -1519,7 +1916,11 @@ impl<'run> Focusing<'run>
             },
             Task::Bind { head } => {
                 let body = self.pop_command()?;
-                let binder = self.arena.mint_consumer(ConsumerNode::MuTilde { body })?;
+                let looked = self.typed.binder(head);
+                let ty = self.annotation(looked, Unknown::Open)?;
+                let binder = self
+                    .arena
+                    .mint_consumer(ConsumerNode::MuTilde { ty, body })?;
                 let continuation = match self.writers.independence(head) {
                     Independence::Sequential => binder,
                     Independence::Independent => {
@@ -1631,9 +2032,11 @@ impl<'run> Focusing<'run>
                 let mut then = continuation;
                 for _equation in 0 .. usize::from(equations) {
                     let identity = self.combinator(Combinator::Identity)?;
-                    self.constructor(ConstructorTag::Tuple(ProducerArity::from(2_usize)), &[
-                        identity, identity,
-                    ])?;
+                    self.constructor(
+                        ConstructorTag::Tuple(ProducerArity::from(2_usize)),
+                        &[identity, identity],
+                        Fielded::Minted,
+                    )?;
                     let reflexivity = self.pop_producer()?;
                     then = self.arena.mint_consumer(ConsumerNode::Destructor {
                         tag: DestructorTag::Apply,
@@ -2093,7 +2496,7 @@ impl<'run> Focusing<'run>
         let leaf = match *node {
             Value::Record(ref fields) => {
                 self.tasks
-                    .push(Task::Record(fields.keys().cloned().collect()));
+                    .push(Task::Record(fields.keys().cloned().collect(), id));
                 for &field in fields.values().rev() {
                     self.tasks.push(Task::Value(field));
                 }
@@ -2137,10 +2540,11 @@ impl<'run> Focusing<'run>
             Value::ListNil => ProducerNode::Constructor {
                 tag: ConstructorTag::ListNil,
                 producers: alloc::boxed::Box::from([]),
+                types: alloc::boxed::Box::from([]),
                 consumers: alloc::boxed::Box::from([]),
             },
             Value::ListCons(head, tail) => {
-                self.tasks.push(Task::ListCons);
+                self.tasks.push(Task::ListCons(id));
                 self.tasks.push(Task::Value(tail));
                 self.tasks.push(Task::Value(head));
                 return Ok(());
@@ -2151,11 +2555,14 @@ impl<'run> Focusing<'run>
             Value::Tuple(ref components) if components.is_empty() => ProducerNode::Constructor {
                 tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: alloc::boxed::Box::from([]),
+                types: alloc::boxed::Box::from([]),
                 consumers: alloc::boxed::Box::from([]),
             },
             Value::Tuple(ref components) => {
-                self.tasks
-                    .push(Task::Tuple(ProducerArity::from(components.len())));
+                self.tasks.push(Task::Tuple(
+                    ProducerArity::from(components.len()),
+                    Fielded::Core(id),
+                ));
                 for &component in components.iter().rev() {
                     self.tasks.push(Task::Value(component));
                 }
@@ -2164,6 +2571,7 @@ impl<'run> Focusing<'run>
             Value::Recorded(ref moves) => {
                 self.tasks.push(Task::Recorded(
                     moves.iter().map(|movement| movement.carrying(())).collect(),
+                    id,
                 ));
                 for movement in moves.iter().rev() {
                     if let gandr_core_term::session::RecordedMove::Sent(payload)
@@ -2183,6 +2591,7 @@ impl<'run> Focusing<'run>
                             movement: turn.movement.carrying(()),
                         })
                         .collect(),
+                    id,
                 ));
                 for turn in turns.iter().rev() {
                     if let gandr_core_term::session::RecordedMove::Sent(payload)
@@ -2196,15 +2605,16 @@ impl<'run> Focusing<'run>
             Value::Web(ref pieces) => ProducerNode::Constructor {
                 tag: ConstructorTag::Web(alloc::sync::Arc::clone(pieces)),
                 producers: alloc::boxed::Box::from([]),
+                types: alloc::boxed::Box::from([]),
                 consumers: alloc::boxed::Box::from([]),
             },
             Value::Injection(summand, body) => {
-                self.tasks.push(Task::Injection(summand));
+                self.tasks.push(Task::Injection(summand, id));
                 self.tasks.push(Task::Value(body));
                 return Ok(());
             },
             Value::Lift { ref target, body } => {
-                self.tasks.push(Task::Lift(target.clone()));
+                self.tasks.push(Task::Lift(target.clone(), id));
                 self.tasks.push(Task::Value(body));
                 return Ok(());
             },
@@ -2233,27 +2643,32 @@ impl<'run> Focusing<'run>
             // backward.
             Value::Here(_) | Value::PathRefl(_) => {
                 let identity = self.combinator(Combinator::Identity)?;
-                return self.constructor(ConstructorTag::Tuple(ProducerArity::from(2_usize)), &[
-                    identity, identity,
-                ]);
+                return self.constructor(
+                    ConstructorTag::Tuple(ProducerArity::from(2_usize)),
+                    &[identity, identity],
+                    Fielded::Minted,
+                );
             },
             Value::Equiv(forward, backward)
             | Value::PathEquiv {
                 forward, backward, ..
             } => {
-                self.tasks.push(Task::Tuple(ProducerArity::from(2_usize)));
+                self.tasks
+                    .push(Task::Tuple(ProducerArity::from(2_usize), Fielded::Minted));
                 self.tasks.push(Task::Value(backward));
                 self.tasks.push(Task::Value(forward));
                 return Ok(());
             },
             Value::Univalence(record, forward) => {
-                self.tasks.push(Task::Tuple(ProducerArity::from(2_usize)));
+                self.tasks
+                    .push(Task::Tuple(ProducerArity::from(2_usize), Fielded::Minted));
                 self.suspend(Combinator::Inverse, &[record])?;
                 self.tasks.push(Task::Value(forward));
                 return Ok(());
             },
             Value::PathProduct(first, second) => {
-                self.tasks.push(Task::Tuple(ProducerArity::from(2_usize)));
+                self.tasks
+                    .push(Task::Tuple(ProducerArity::from(2_usize), Fielded::Minted));
                 self.suspend(Combinator::Both(Direction::Backward), &[first, second])?;
                 self.suspend(Combinator::Both(Direction::Forward), &[first, second])?;
                 return Ok(());
@@ -3478,15 +3893,94 @@ impl<'run> Focusing<'run>
         &mut self,
         tag: ConstructorTag,
         fields: &[ProducerId],
+        fielded: Fielded,
     ) -> Result<(), FocusRefusal>
     {
+        let mut types = Vec::with_capacity(fields.len());
+        for position in 0 .. fields.len() {
+            let at = gandr_kernel_term::FieldPosition::from(position);
+            let (looked, open) = match fielded {
+                Fielded::Core(value) => (self.typed.field(value, at), Unknown::Open),
+                Fielded::Declared(family, stated) => {
+                    (self.typed.declared(family, stated, at), Unknown::Parameter)
+                },
+                Fielded::Minted => (
+                    quenchant_shape::shape::Maybe::Absent(Unknown::Minted),
+                    Unknown::Open,
+                ),
+            };
+            types.push(self.annotation(looked, open)?);
+        }
         let producer = self.arena.mint_producer(ProducerNode::Constructor {
             tag,
             producers: alloc::boxed::Box::from(fields),
+            types: types.into_boxed_slice(),
             consumers: alloc::boxed::Box::from([]),
         })?;
         self.producers.push(producer);
         Ok(())
+    }
+
+    /// The annotation of a position whose lookup is `looked`: the checker's
+    /// closed type, imported into the IL's annotations by its content, or the
+    /// unknown type with its cause counted. A type that names a variable
+    /// counts `open`: [`Unknown::Open`] for the checker's record, and
+    /// [`Unknown::Parameter`] for a declared field.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a closed type other than the unknown type resolves to the
+    ///   node that the IL's annotations file for its content, so two types of
+    ///   one content resolve to one node; the unknown type, or a type that
+    ///   names a variable, counts `open`; an absent type counts its cause; each
+    ///   of the last two resolves to the arena's one unknown type.
+    /// - provides: the one door of a checker's type into the IL.
+    /// - fails: a type that the core arena does not hold.
+    /// - panics: none.
+    /// - executable: none — the node that the import files and the count of a
+    ///   cause are the arena's and the provenance's own state.
+    ///
+    /// # Errors
+    /// [`MintRefusal::DanglingAnnotation`] for a type that the core arena does
+    /// not hold.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declared field of a closed type, a declared field
+    ///   that names a parameter and a field that no checker typed give their
+    ///   three annotations and causes.
+    /// - witness: `focus::tests::a_declared_field_takes_the_type_its_signature_states_8161`
+    fn annotation(
+        &mut self,
+        looked: quenchant_shape::shape::Maybe<gandr_core_term::ValueTypeId, Unknown>,
+        open: Unknown,
+    ) -> Result<gandr_core_term::ValueTypeId, FocusRefusal>
+    {
+        let cause = match looked {
+            quenchant_shape::shape::Maybe::Present(ty) => {
+                let support = self
+                    .core
+                    .value_type_support(ty)
+                    .ok_or(MintRefusal::DanglingAnnotation(ty))?;
+                let unsolved = matches!(
+                    self.core.value_type(ty),
+                    Some(&gandr_core_term::ValueType::Unknown)
+                );
+                if !unsolved && support == gandr_core_term::support::ThinningRef::empty() {
+                    return Ok(gandr_core_term::TypeImporter::interning(
+                        self.core,
+                        self.arena.annotations_mut(),
+                    )
+                    .value_type(ty)
+                    .map_err(|gandr_core_term::ImportFault| {
+                        MintRefusal::DanglingAnnotation(ty)
+                    })?);
+                }
+                open
+            },
+            quenchant_shape::shape::Maybe::Absent(cause) => cause,
+        };
+        self.unknowns.note(cause);
+        Ok(self.arena.unknown_type())
     }
 
     /// Mint a cut, record its origin, and push it.

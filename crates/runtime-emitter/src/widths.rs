@@ -433,6 +433,7 @@ mod tests
             &mut commands,
             &mut Provenance::new(),
             &Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("the program focuses");
         (commands, root)

@@ -20,9 +20,14 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_core_checker::CheckingContext;
+use gandr_core_checker::Declaration;
 use gandr_core_checker::HostGrant;
 use gandr_core_checker::ModuleReport;
+use gandr_core_checker::ModuleRun;
 use gandr_core_checker::bridge;
+use gandr_core_sequent::Typed;
+use gandr_core_sequent::Writers;
 use gandr_core_term::CoreArena;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::SettleReport;
@@ -205,8 +210,32 @@ impl Listed
     }
 }
 
+/// `declarations` judged in `context` as the composition judges them, with
+/// their typings kept: the verdicts, and the type of each binder and field
+/// that focusing reads (#8161).
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn checked(
+    context: &mut CheckingContext<'_>,
+    declarations: &[Declaration],
+) -> (ModuleReport, Typed)
+{
+    let mut run = ModuleRun::new();
+    run.keep_typings();
+    run.judge(context, declarations, |_, _, _| {});
+    let typings = run.take_typings();
+    let verdicts = run.finish(context);
+    let typed = typings.as_ref().map_or(Typed::NONE, |module| {
+        crate::annotate::typed(context.arena(), module, context.data_signatures().clone())
+    });
+    (verdicts, typed)
+}
+
 /// The program of `module`, as the composition builds it from `verdicts`
-/// over `core` (`Program::new`).
+/// and the typed table `typed` over `core`, run in sequence.
 ///
 /// # Specification
 /// trivial.
@@ -215,10 +244,16 @@ impl Listed
 pub fn program<'source>(
     core: &CoreArena,
     module: &LoweredModule<'source>,
-    verdicts: &ModuleReport,
+    (verdicts, typed): (&ModuleReport, &Typed),
 ) -> Program<'source>
 {
-    Program::new(core, module, verdicts)
+    Program::after(
+        crate::program::Focused::default(),
+        core,
+        module,
+        verdicts,
+        (&Writers::NONE, typed),
+    )
 }
 
 /// Count `composed` into `report` as one source read under `root`, standing

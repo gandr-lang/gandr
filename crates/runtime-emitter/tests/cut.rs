@@ -196,10 +196,18 @@ fn scheduled(
         &mut arena,
         &mut Provenance::new(),
         &Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("the program focuses");
-    let named = focus_computation(core, program, &mut arena, &mut Provenance::new(), writers)
-        .expect("the program focuses with its writers named");
+    let named = focus_computation(
+        core,
+        program,
+        &mut arena,
+        &mut Provenance::new(),
+        writers,
+        &gandr_core_sequent::Typed::NONE,
+    )
+    .expect("the program focuses with its writers named");
     let (spawning, definitions) =
         spawn_independent(&mut arena, (named, definitions)).expect("the program schedules");
     assert_eq!(Ok(FreeSet::default()), check_command(&arena, spawning));

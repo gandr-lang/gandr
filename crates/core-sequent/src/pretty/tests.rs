@@ -20,6 +20,7 @@ fn renders_terminal_cut()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("a leaf mints");
@@ -92,6 +93,7 @@ fn renders_structural_heads()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::TWO),
             producers: Box::from([integer, string]),
+            types: Box::from([arena.unknown_type(); 2]),
             consumers: Box::from([]),
         })
         .expect("fields resolve");
@@ -99,6 +101,7 @@ fn renders_structural_heads()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Injection(Summand::from(1_usize)),
             producers: Box::from([pair]),
+            types: Box::from([arena.unknown_type()]),
             consumers: Box::from([]),
         })
         .expect("fields resolve");
@@ -106,6 +109,7 @@ fn renders_structural_heads()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Lift(Level::zero()),
             producers: Box::from([right]),
+            types: Box::from([arena.unknown_type()]),
             consumers: Box::from([]),
         })
         .expect("fields resolve");
@@ -119,6 +123,7 @@ fn renders_structural_heads()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::from(3_usize)),
             producers: Box::from([integer, string, integer]),
+            types: Box::from([arena.unknown_type(); 3]),
             consumers: Box::from([]),
         })
         .expect("fields resolve");
@@ -126,6 +131,7 @@ fn renders_structural_heads()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Injection(Summand::from(2_usize)),
             producers: Box::from([triple]),
+            types: Box::from([arena.unknown_type()]),
             consumers: Box::from([]),
         })
         .expect("fields resolve");
@@ -145,7 +151,10 @@ fn renders_structural_heads()
         .mint_cut(Polarity::Positive, constant, top)
         .expect("children resolve");
     let binder = arena
-        .mint_consumer(ConsumerNode::MuTilde { body: returned })
+        .mint_consumer(ConsumerNode::MuTilde {
+            ty: arena.unknown_type(),
+            body: returned,
+        })
         .expect("the body resolves");
     let apply = arena
         .mint_consumer(ConsumerNode::Destructor {
@@ -237,6 +246,7 @@ fn renders_records_and_selections()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Record(alloc::sync::Arc::from([label("a"), label("b")])),
             producers: Box::from([second, first]),
+            types: Box::from([arena.unknown_type(); 2]),
             consumers: Box::from([]),
         })
         .expect("fields resolve");
@@ -249,6 +259,7 @@ fn renders_records_and_selections()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Record(alloc::sync::Arc::from([])),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("a leaf mints");
@@ -315,6 +326,7 @@ fn renders_datatype_heads_nominal_matches_and_recursive_thunks()
                 family: gandr_kernel_term::ConstantIndex::from(0_usize),
             },
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("a leaf mints");
@@ -329,6 +341,7 @@ fn renders_datatype_heads_nominal_matches_and_recursive_thunks()
                 family: gandr_kernel_term::ConstantIndex::from(0_usize),
             },
             producers: Box::from([constant, zero]),
+            types: Box::from([arena.unknown_type(); 2]),
             consumers: Box::from([]),
         })
         .expect("fields resolve");
@@ -418,6 +431,7 @@ fn depth_limits_and_dangling_nodes_are_distinct()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("leaf");
@@ -454,6 +468,7 @@ fn depth_limits_and_dangling_nodes_are_distinct()
             .mint_producer(ProducerNode::Constructor {
                 tag: ConstructorTag::Injection(Summand::from(0_usize)),
                 producers: Box::from([nested]),
+                types: Box::from([arena.unknown_type()]),
                 consumers: Box::from([]),
             })
             .expect("child resolves");
@@ -476,6 +491,7 @@ fn depth_limits_and_dangling_nodes_are_distinct()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("leaf");
@@ -483,6 +499,7 @@ fn depth_limits_and_dangling_nodes_are_distinct()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::TWO),
             producers: Box::from([leaf, leaf]),
+            types: Box::from([broken.unknown_type(); 2]),
             consumers: Box::from([]),
         })
         .expect("children resolve");
@@ -495,6 +512,7 @@ fn depth_limits_and_dangling_nodes_are_distinct()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("leaf");
@@ -516,6 +534,7 @@ fn structural_rendering_preserves_fields_arms_and_separators()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("leaf");
@@ -551,6 +570,7 @@ fn structural_rendering_preserves_fields_arms_and_separators()
             .mint_producer(ProducerNode::Constructor {
                 tag: ConstructorTag::Tuple(ProducerArity::TWO),
                 producers: Box::from(producers),
+                types: producers.iter().map(|_| arena.unknown_type()).collect(),
                 consumers: Box::from(consumers),
             })
             .expect("references resolve even when arity does not");
@@ -560,6 +580,7 @@ fn structural_rendering_preserves_fields_arms_and_separators()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([unit]),
+            types: Box::from([arena.unknown_type()]),
             consumers: Box::from([]),
         })
         .expect("child resolves");
@@ -729,6 +750,7 @@ fn renders_effect_control_and_memory_commands()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("a leaf mints");
@@ -945,6 +967,7 @@ fn renders_frames_primitives_folds_and_projections()
                 gandr_core_term::session::RecordedMove::Closed,
             ])),
             producers: Box::from([value]),
+            types: Box::from([arena.unknown_type()]),
             consumers: Box::from([]),
         },
     ]

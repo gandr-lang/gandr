@@ -165,6 +165,7 @@
 
 extern crate alloc;
 
+mod annotate;
 mod cells;
 mod component;
 mod compose;

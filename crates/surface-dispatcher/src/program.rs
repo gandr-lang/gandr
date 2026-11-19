@@ -33,6 +33,8 @@ use gandr_core_sequent::Definition;
 use gandr_core_sequent::Definitions;
 use gandr_core_sequent::FocusRefusal;
 use gandr_core_sequent::Provenance;
+use gandr_core_sequent::Typed;
+use gandr_core_sequent::Unknowns;
 use gandr_core_sequent::Writers;
 use gandr_core_sequent::focus_definition;
 use gandr_core_sequent::spawn_independent_definitions;
@@ -172,6 +174,9 @@ pub struct Program<'source>
     /// payload is written, by admission position: none for a module whose
     /// declarations state none.
     reads: BTreeMap<ConstantIndex, RunSpelling>,
+    /// The binders and fields that focusing gave the unknown type, by cause,
+    /// over the declarations that this program focuses.
+    unknowns: Unknowns,
 }
 
 /// The part of a program that the leading declarations of a module make.
@@ -337,7 +342,13 @@ impl<'source> Program<'source>
         verdicts: &ModuleReport,
     ) -> Self
     {
-        Self::after(Focused::default(), core, module, verdicts, &Writers::NONE)
+        Self::after(
+            Focused::default(),
+            core,
+            module,
+            verdicts,
+            (&Writers::NONE, &Typed::NONE),
+        )
     }
 
     /// [`Self::new`] continuing `focused`, the part of the program the
@@ -385,7 +396,7 @@ impl<'source> Program<'source>
         core: &CoreArena,
         module: &LoweredModule<'source>,
         verdicts: &ModuleReport,
-        writers: &Writers,
+        (writers, typed): (&Writers, &Typed),
     ) -> Self
     {
         let Focused {
@@ -414,7 +425,8 @@ impl<'source> Program<'source>
             let (definition, slot) = match (verdict, body) {
                 (Some(Verdict::Data), _) => (Definition::Opaque, Slot::Opaque(Opacity::Data)),
                 (Some(Verdict::Checked { .. } | Verdict::Synthesised { .. }), Some(body)) => {
-                    match focus_definition(core, body, &mut arena, &mut provenance, writers) {
+                    match focus_definition(core, body, &mut arena, &mut provenance, writers, typed)
+                    {
                         Ok(producer) => (
                             Definition::Transparent(producer),
                             Slot::Defined(references(core, body)),
@@ -436,6 +448,7 @@ impl<'source> Program<'source>
                         &mut arena,
                         &mut provenance,
                         &gandr_core_sequent::Writers::NONE,
+                        &gandr_core_sequent::Typed::NONE,
                     )
                     .map_or(
                         (Definition::Opaque, Slot::Opaque(Opacity::Refused)),
@@ -559,6 +572,7 @@ impl<'source> Program<'source>
             holes: hole_sites(core, module),
             own: ConstantIndex::from(0_usize) .. ConstantIndex::from(usize::MAX),
             reads,
+            unknowns: provenance.unknowns(),
         }
     }
 
@@ -671,6 +685,18 @@ impl<'source> Program<'source>
             Some((&last, _)) => Maybe::Present(last),
             None => Maybe::Absent(last_declared::Absent::NoDeclaration),
         }
+    }
+
+    /// The binders and fields that focusing gave the unknown type, by cause,
+    /// over the declarations that this program focuses (#8161).
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn unknowns(&self) -> Unknowns
+    {
+        self.unknowns
     }
 
     /// The name of the declaration at `constant`.

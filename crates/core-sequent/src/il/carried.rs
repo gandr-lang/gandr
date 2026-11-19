@@ -27,9 +27,11 @@ use super::command_named;
 use super::consumer_annotations;
 use super::consumer_children;
 use super::consumer_named;
+use super::producer_annotations;
 use super::producer_children;
 use super::producer_named;
 use crate::boundary::FamilyAddress as _;
+use crate::boundary::ProducerArity;
 
 /// A node's two slots: its producer support's and its covariable support's.
 pub type Slots = [Slot; 2];
@@ -131,14 +133,18 @@ impl CommandArena
         Ok(())
     }
 
-    /// The scope minting keeps for a producer: the variable it names and each
-    /// child's scope past the binders it opens.
+    /// The scope minting keeps for a producer: the variable it names, its
+    /// annotations' supports and each child's scope past the binders it
+    /// opens.
     ///
     /// # Specification
-    /// - ensures: `Ok` exactly when every child of `node` resolves, holding the
-    ///   summary's scope.
-    /// - fails: as [`Self::gather_child`], the first dangling child in edge
-    ///   order.
+    /// - ensures: `Ok` exactly when a constructor holds one type for each of
+    ///   its producer fields, and every annotation and child of `node`
+    ///   resolves, holding the summary's scope.
+    /// - fails: [`MintRefusal::FieldTypes`] for a constructor whose types and
+    ///   producer fields differ in count; then as [`Self::gather_annotations`]
+    ///   and [`Self::gather_child`], the annotations first, then the first
+    ///   dangling child in edge order.
     /// - panics: none.
     /// - executable: none — the mint that calls it states that every child of
     ///   the node it minted resolves; a predicate here would move the scoping
@@ -150,18 +156,34 @@ impl CommandArena
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::gather_child`]; each producer form is
     ///   supplied live children and one dangling child per referenced family,
-    ///   and several dangling children expose a changed failure precedence.
+    ///   and several dangling children expose a changed failure precedence. A
+    ///   constructor with one type too few, and one with a dangling type, are
+    ///   each refused by name.
     /// - witness: `il::tests::an_unused_binder_thins_to_zero`
     /// - witness: `il::tests::every_node_form_checks_its_child_families`
     /// - witness: `il::tests::the_first_dangling_child_wins`
+    /// - witness: `il::tests::a_constructor_holds_one_resolved_type_for_each_field_8161`
     #[inline]
     pub(super) fn producer_scoping(
         &self,
         node: &ProducerNode,
     ) -> Result<Scoping, MintRefusal>
     {
+        if let ProducerNode::Constructor {
+            ref producers,
+            ref types,
+            ..
+        } = *node
+            && producers.len() != types.len()
+        {
+            return Err(MintRefusal::FieldTypes {
+                fields: ProducerArity::from(producers.len()),
+                types: ProducerArity::from(types.len()),
+            });
+        }
         let mut scoping = Scoping::new();
         scoping.name(producer_named(node), core::iter::empty());
+        self.gather_annotations(&mut scoping, producer_annotations(node))?;
         producer_children(node, |child, opens| {
             self.gather_child(&mut scoping, child, opens)
         })?;

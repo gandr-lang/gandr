@@ -1024,7 +1024,7 @@ fn a_judged_module_renders_before_its_admission()
         // The order the composition ran before: readmit, then settle.
         let (mut module, mut arena) = lower(&mut lowerings);
         let declarations = adapt(&module, &arena);
-        let verdicts = check_module(
+        let (verdicts, typed) = fixture::checked(
             &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
             &declarations,
         );
@@ -1039,7 +1039,7 @@ fn a_judged_module_renders_before_its_admission()
         .expect("the kernel re-derives every acceptance");
         let kernel = readmission.export(module.structured_names());
         let keys = readmission.export_names();
-        let mut program = fixture::program(&arena, &module, &verdicts);
+        let mut program = fixture::program(&arena, &module, (&verdicts, &typed));
         let layout =
             gandr_surface_dispatcher::item_layout(&module, &arena).expect("the positions ascend");
         let node_keys = gandr_core_incremental::NodeKeys::new(&arena, &layout);

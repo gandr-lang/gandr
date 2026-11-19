@@ -440,6 +440,7 @@ fn literal(
         commands,
         &mut Provenance::new(),
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("a literal focuses")
 }
@@ -490,7 +491,10 @@ fn bound_then(
         .expect("a leaf");
     let body = cut(commands, polarity, variable, consumer);
     commands
-        .mint_consumer(ConsumerNode::MuTilde { body })
+        .mint_consumer(ConsumerNode::MuTilde {
+            ty: commands.unknown_type(),
+            body,
+        })
         .expect("a live body")
 }
 
@@ -521,6 +525,7 @@ fn an_object_answers_its_arms_and_sticks_on_the_rest()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("a leaf");
@@ -581,6 +586,7 @@ fn a_suspended_capture_runs_against_the_consumer_it_meets()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Injection(Side::Right.into()),
             producers: Box::from([one]),
+            types: Box::from([commands.unknown_type()]),
             consumers: Box::from([]),
         })
         .expect("a live field");
@@ -603,6 +609,7 @@ fn a_suspended_capture_runs_against_the_consumer_it_meets()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("a leaf");
@@ -631,7 +638,10 @@ fn a_suspended_capture_runs_against_the_consumer_it_meets()
     let matched = bound_then(&mut commands, Polarity::Positive, case);
     let ignored_body = cut(&mut commands, Polarity::Positive, zero, top);
     let ignored = commands
-        .mint_consumer(ConsumerNode::MuTilde { body: ignored_body })
+        .mint_consumer(ConsumerNode::MuTilde {
+            ty: commands.unknown_type(),
+            body: ignored_body,
+        })
         .expect("a live body");
     let programs = [
         ("met by ★", capture, met, "⟨1 |+ ★⟩"),
@@ -674,6 +684,7 @@ fn constants_unfold_once_and_a_cycle_is_stuck()
         &mut commands,
         &mut provenance,
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("a thunk");
     definitions.push(Definition::Transparent(body));
@@ -684,6 +695,7 @@ fn constants_unfold_once_and_a_cycle_is_stuck()
         &mut commands,
         &mut provenance,
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("a constant");
     definitions.push(Definition::Transparent(loops));
@@ -697,6 +709,7 @@ fn constants_unfold_once_and_a_cycle_is_stuck()
             &mut commands,
             &mut provenance,
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("closed")
     };

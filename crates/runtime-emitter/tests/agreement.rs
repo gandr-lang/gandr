@@ -287,6 +287,7 @@ fn a_computed_constant_unfolds_once_to_its_answer()
             &mut commands,
             &mut provenance,
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("a computed value focuses");
         definitions.push(Definition::Transparent(producer));
@@ -300,6 +301,7 @@ fn a_computed_constant_unfolds_once_to_its_answer()
             &mut commands,
             &mut provenance,
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("closed")
     };

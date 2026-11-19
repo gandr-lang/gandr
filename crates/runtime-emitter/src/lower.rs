@@ -4331,6 +4331,7 @@ impl Lowering<'_>
                 ref tag,
                 ref producers,
                 ref consumers,
+                ..
             } => {
                 if !consumers.is_empty() {
                     return Err(Form::ConsumerFields);
@@ -4580,7 +4581,7 @@ impl Lowering<'_>
                     },
                 }
             },
-            ConsumerNode::MuTilde { body } => {
+            ConsumerNode::MuTilde { body, .. } => {
                 let (inner, slot) = self.bind(scope, Binding::Producer);
                 self.emit(StencilId::Bind, slot.operand(), Operand::Unused);
                 self.tasks.push(Task::Command(body, inner));
@@ -5901,6 +5902,7 @@ mod tests
             &mut commands,
             &mut Provenance::new(),
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("the program focuses");
         let lowered = lower(&commands, &Definitions::new(), root).expect("the program lowers");
@@ -5971,6 +5973,7 @@ mod tests
             &mut commands,
             &mut Provenance::new(),
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("the program focuses");
         let lowered = lower(&commands, &Definitions::new(), root).expect("the program lowers");
@@ -6030,6 +6033,7 @@ mod tests
             &mut commands,
             &mut Provenance::new(),
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("the program focuses");
         let lowered = lower(&commands, &Definitions::new(), root).expect("the program lowers");
@@ -6077,6 +6081,7 @@ mod tests
             &mut commands,
             &mut Provenance::new(),
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("the program focuses");
         let named = (0_u32 ..).take(usize::from(commands.command_count())).any(|index| {
@@ -6143,6 +6148,7 @@ mod tests
             &mut commands,
             &mut Provenance::new(),
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("the program focuses");
         lower(&commands, &Definitions::new(), root)
@@ -6389,6 +6395,7 @@ mod tests
             &mut commands,
             &mut Provenance::new(),
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("the program focuses");
         let lowered = lower(&commands, &Definitions::new(), root).expect("the program lowers");
@@ -6451,6 +6458,7 @@ mod tests
             &mut commands,
             &mut Provenance::new(),
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("the program focuses");
         lower(&commands, &Definitions::new(), root)
@@ -6638,6 +6646,7 @@ mod tests
             &mut commands,
             &mut Provenance::new(),
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("the program focuses");
         (commands, root)

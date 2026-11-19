@@ -1977,6 +1977,7 @@ mod tests
             &mut arena,
             &mut Provenance::new(),
             &Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("the program focuses");
         assert_eq!(Ok(FreeSet::default()), check_command(&arena, root));

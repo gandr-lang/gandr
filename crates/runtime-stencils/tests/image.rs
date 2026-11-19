@@ -114,6 +114,7 @@ fn items(paths: Vec<PathBuf>) -> Vec<Item>
                     &mut arena,
                     &mut Provenance::new(),
                     &gandr_core_sequent::Writers::NONE,
+                    &gandr_core_sequent::Typed::NONE,
                 )
                 .expect("a runs item's return focuses");
                 found.push(Item {

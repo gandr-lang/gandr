@@ -20,6 +20,7 @@ fn stats_and_dump_report_a_terminal_cut()
         &mut arena,
         &mut provenance,
         &crate::Writers::NONE,
+        &crate::Typed::NONE,
     )
     .expect("a closed term focuses");
 
@@ -100,6 +101,7 @@ fn asymmetric_populations_and_unrecorded_roots_remain_distinct()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("leaf");
@@ -154,6 +156,7 @@ fn histograms_count_repeated_origins_without_inventing_categories()
         &mut arena,
         &mut provenance,
         &crate::Writers::NONE,
+        &crate::Typed::NONE,
     )
     .expect("closed return");
     let root = focus_computation(
@@ -162,6 +165,7 @@ fn histograms_count_repeated_origins_without_inventing_categories()
         &mut arena,
         &mut provenance,
         &crate::Writers::NONE,
+        &crate::Typed::NONE,
     )
     .expect("closed force");
     assert_eq!(
@@ -253,6 +257,7 @@ fn dumps_name_every_origin()
             &mut arena,
             &mut provenance,
             &crate::Writers::NONE,
+            &crate::Typed::NONE,
         )
         .expect("each former focuses");
         dump(&arena, &provenance, root)
@@ -264,6 +269,7 @@ fn dumps_name_every_origin()
         &mut arena,
         &mut provenance,
         &crate::Writers::NONE,
+        &crate::Typed::NONE,
     )
     .expect("a closed value focuses");
     heads.push(dump(&arena, &provenance, top));

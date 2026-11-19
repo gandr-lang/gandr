@@ -183,6 +183,7 @@ fn hand_built_control_cases_cover_every_former()
             &mut arena,
             &mut Provenance::new(),
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("control focuses");
         assert_eq!(Ok(FreeSet::default()), check_command(&arena, command));
@@ -604,7 +605,7 @@ fn walked(
                         ));
                         stack.push(Visit::Consumer(continuation, depth));
                     },
-                    ConsumerNode::MuTilde { body } => {
+                    ConsumerNode::MuTilde { body, .. } => {
                         stack.push(Visit::Command(
                             body,
                             depth.under(ProducerArity::ONE, ConsumerArity::ZERO),
@@ -697,7 +698,7 @@ proptest! {
         };
         let mut arena = CommandArena::new();
         let mut provenance = Provenance::new();
-        let focused = focus_computation(&generated.core, root, &mut arena, &mut provenance, &gandr_core_sequent::Writers::NONE);
+        let focused = focus_computation(&generated.core, root, &mut arena, &mut provenance, &gandr_core_sequent::Writers::NONE, &gandr_core_sequent::Typed::NONE);
         prop_assert!(focused.is_ok(), "focusing refused a closed term: {:?}", focused);
         let command = focused.expect("checked above");
         prop_assert_eq!(Ok(FreeSet::default()), check_command(&arena, command), "the image is well formed and closed");
@@ -715,7 +716,7 @@ proptest! {
         };
         let mut arena = CommandArena::new();
         let mut provenance = Provenance::new();
-        focus_computation(&generated.core, root, &mut arena, &mut provenance, &gandr_core_sequent::Writers::NONE).expect("focusing is total");
+        focus_computation(&generated.core, root, &mut arena, &mut provenance, &gandr_core_sequent::Writers::NONE, &gandr_core_sequent::Typed::NONE).expect("focusing is total");
         prop_assert_eq!(Agreement::Same, supports_are_walked(&arena), "a carried support differs from the walk");
     }
 
@@ -729,7 +730,7 @@ proptest! {
         };
         let mut arena = CommandArena::new();
         let mut provenance = Provenance::new();
-        let command = focus_computation(&generated.core, root, &mut arena, &mut provenance, &gandr_core_sequent::Writers::NONE).expect("focusing is total");
+        let command = focus_computation(&generated.core, root, &mut arena, &mut provenance, &gandr_core_sequent::Writers::NONE, &gandr_core_sequent::Typed::NONE).expect("focusing is total");
         let mut decoded = CoreArena::new();
         let back = unfocus_command(&arena, command, &mut decoded);
         prop_assert!(back.is_ok(), "the image did not decode: {:?}", back);
@@ -749,7 +750,7 @@ proptest! {
         };
         let mut arena = CommandArena::new();
         let mut provenance = Provenance::new();
-        let producer = focus_value(&generated.core, root, &mut arena, &mut provenance, &gandr_core_sequent::Writers::NONE).expect("focusing is total");
+        let producer = focus_value(&generated.core, root, &mut arena, &mut provenance, &gandr_core_sequent::Writers::NONE, &gandr_core_sequent::Typed::NONE).expect("focusing is total");
         let mut decoded = CoreArena::new();
         let back = unfocus_value(&arena, producer, &mut decoded);
         prop_assert!(back.is_ok(), "the image did not decode: {:?}", back);
@@ -1307,6 +1308,7 @@ fn hand_built_cases_cover_every_former()
             &mut arena,
             &mut provenance,
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .unwrap_or_else(|refusal| panic!("{}: focusing refused: {refusal}", case.label));
         assert_eq!(
@@ -1368,6 +1370,7 @@ fn top_level_value_focuses_against_top()
         &mut arena,
         &mut provenance,
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("a literal focuses");
     assert_eq!(

@@ -67,6 +67,7 @@ fn tuple(
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::from(fields.len())),
             producers: Box::from(fields),
+            types: core::iter::repeat_n(arena.unknown_type(), fields.len()).collect(),
             consumers: Box::from([]),
         })
         .expect("the fields resolve")
@@ -157,7 +158,10 @@ fn an_ignored_binder_is_dropped_on_entry()
     for (value, dropped) in [(unit, Vec::from([x0()])), (bound, Vec::new())] {
         let body = cut(&mut arena, value, top);
         let binder = arena
-            .mint_consumer(ConsumerNode::MuTilde { body })
+            .mint_consumer(ConsumerNode::MuTilde {
+                ty: arena.unknown_type(),
+                body,
+            })
             .expect("the body resolves");
         let root = cut(&mut arena, unit, binder);
 
@@ -368,6 +372,7 @@ fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
                     family: gandr_kernel_term::ConstantIndex::from(0_usize),
                 },
                 producers: Box::from([second, first]),
+                types: Box::from([arena.unknown_type(); 2]),
                 consumers: Box::from([]),
             })
             .expect("the fields resolve");
@@ -380,7 +385,10 @@ fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
             let named = variable(arena, Zone::Intuitionistic, x0());
             let passed = cut(arena, named, returned);
             let binder = arena
-                .mint_consumer(ConsumerNode::MuTilde { body: passed })
+                .mint_consumer(ConsumerNode::MuTilde {
+                    ty: arena.unknown_type(),
+                    body: passed,
+                })
                 .expect("the body resolves");
             arena
                 .mint_cut(polarity, ran, binder)
@@ -425,7 +433,10 @@ fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
                     .mint_producer(ProducerNode::Mu { body: first })
                     .expect("the body resolves");
                 let binder = arena
-                    .mint_consumer(ConsumerNode::MuTilde { body })
+                    .mint_consumer(ConsumerNode::MuTilde {
+                        ty: arena.unknown_type(),
+                        body,
+                    })
                     .expect("the body resolves");
                 body = cut(&mut arena, ran, binder);
             },
@@ -439,6 +450,7 @@ fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
                             family: gandr_kernel_term::ConstantIndex::from(0_usize),
                         },
                         producers: Box::from([point]),
+                        types: Box::from([arena.unknown_type()]),
                         consumers: Box::from([]),
                     })
                     .expect("the field resolves");
@@ -485,7 +497,10 @@ fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
             // the call's answer.
             "called" => {
                 let answered = arena
-                    .mint_consumer(ConsumerNode::MuTilde { body })
+                    .mint_consumer(ConsumerNode::MuTilde {
+                        ty: arena.unknown_type(),
+                        body,
+                    })
                     .expect("the body resolves");
                 let argument = variable(&mut arena, Zone::Intuitionistic, x0());
                 let apply = arena

@@ -386,6 +386,7 @@ fn native_arithmetic_and_partial_application()
         &mut arena,
         &mut Provenance::new(),
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("a closed term focuses");
     let (store, value) = halted(&arena, &Definitions::new(), command);
@@ -500,6 +501,7 @@ fn a_forced_prelude_name_resolves_to_its_builtin()
         &mut arena,
         &mut provenance,
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("a thunk focuses");
     let mut definitions = Definitions::new();
@@ -514,6 +516,7 @@ fn a_forced_prelude_name_resolves_to_its_builtin()
         &mut arena,
         &mut provenance,
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("a closed term focuses");
     let (store, value) = halted(&arena, &definitions, root);
@@ -553,6 +556,7 @@ fn shown(
         &mut arena,
         &mut Provenance::new(),
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("a read-back term focuses");
     render_command(&arena, command)
@@ -575,6 +579,7 @@ fn evaluated(
         &mut arena,
         &mut Provenance::new(),
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("a closed term focuses");
     let (store, value) = halted(&arena, &Definitions::new(), command);
@@ -613,6 +618,7 @@ fn assert_control(
         &mut arena,
         &mut Provenance::new(),
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("control focuses");
     assert_eq!(Ok(FreeSet::default()), check_command(&arena, root));
@@ -1400,6 +1406,7 @@ fn a_captured_stack_in_an_answer_declines_its_move()
         &mut arena,
         &mut Provenance::new(),
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("control focuses");
     assert!(matches!(
@@ -1442,6 +1449,7 @@ fn native_list_fold_preserves_order_and_outer_scope()
         &mut focused,
         &mut provenance,
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("fold focuses");
     let mut target = CoreArena::new();
@@ -1482,6 +1490,7 @@ fn native_list_fold_preserves_order_and_outer_scope()
             &mut arena,
             &mut Provenance::new(),
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("closed fold");
         let (store, value) = halted(&arena, &Definitions::new(), root);
@@ -1654,6 +1663,7 @@ fn data_case_on_non_ctor_is_stuck()
             &mut arena,
             &mut Provenance::new(),
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("a closed term focuses");
         let (_, stuck) = stuck(&arena, &Definitions::new(), command);
@@ -1747,6 +1757,7 @@ fn a_selection_reads_the_width_of_the_value_it_meets()
             &mut arena,
             &mut Provenance::new(),
             &gandr_core_sequent::Writers::NONE,
+            &gandr_core_sequent::Typed::NONE,
         )
         .expect("a closed projection focuses");
         let (_, stuck) = stuck(&arena, &Definitions::new(), command);
@@ -1765,6 +1776,7 @@ fn a_selection_reads_the_width_of_the_value_it_meets()
         &mut arena,
         &mut provenance,
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("a tuple focuses");
     let top = arena.mint_consumer(ConsumerNode::Top).expect("a leaf");
@@ -1917,6 +1929,7 @@ fn runs_out(shape: Loop)
         &mut arena,
         &mut Provenance::new(),
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("a closed term focuses");
     let run = ran(&arena, &Definitions::new(), command, spent);
@@ -1995,6 +2008,7 @@ fn constants_unfold_once_and_opaque_ones_stay_opaque()
         &mut arena,
         &mut provenance,
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("a thunk focuses");
     definitions.push(Definition::Transparent(body));
@@ -2005,6 +2019,7 @@ fn constants_unfold_once_and_opaque_ones_stay_opaque()
         &mut arena,
         &mut provenance,
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("a constant focuses");
     definitions.push(Definition::Transparent(loops));
@@ -2021,6 +2036,7 @@ fn constants_unfold_once_and_opaque_ones_stay_opaque()
         &mut arena,
         &mut provenance,
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("a closed term focuses");
     let looping_return = core.computation_return(cyclic);
@@ -2030,6 +2046,7 @@ fn constants_unfold_once_and_opaque_ones_stay_opaque()
         &mut arena,
         &mut provenance,
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("focuses");
     let undefined_return = core.computation_return(undefined);
@@ -2039,6 +2056,7 @@ fn constants_unfold_once_and_opaque_ones_stay_opaque()
         &mut arena,
         &mut provenance,
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("focuses");
 
@@ -2084,6 +2102,7 @@ fn the_step_budget_bounds_a_run()
         &mut arena,
         &mut Provenance::new(),
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("a closed term focuses");
     let definitions = Definitions::new();
@@ -2154,6 +2173,7 @@ fn a_thunk_reads_back_closed_over_its_environment()
         &mut arena,
         &mut Provenance::new(),
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("a closed term focuses");
     let (store, value) = halted(&arena, &Definitions::new(), command);
@@ -2199,6 +2219,7 @@ fn a_captured_environment_holds_exactly_its_support()
         &mut arena,
         &mut Provenance::new(),
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("a closed term focuses");
     let (store, value) = halted(&arena, &Definitions::new(), command);
@@ -2235,6 +2256,7 @@ fn a_suspended_capture_has_no_reading()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("a leaf mints");
@@ -2251,6 +2273,7 @@ fn a_suspended_capture_has_no_reading()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::TWO),
             producers: Box::from([capture, unit]),
+            types: Box::from([arena.unknown_type(); 2]),
             consumers: Box::from([]),
         })
         .expect("fields resolve");
@@ -2284,6 +2307,7 @@ fn polarity_decides_whether_a_capture_is_evaluated()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("leaf");
@@ -2308,7 +2332,10 @@ fn polarity_decides_whether_a_capture_is_evaluated()
         .mint_cut(Polarity::Positive, unit, top)
         .expect("children resolve");
     let ignoring = arena
-        .mint_consumer(ConsumerNode::MuTilde { body: ignored_body })
+        .mint_consumer(ConsumerNode::MuTilde {
+            ty: arena.unknown_type(),
+            body: ignored_body,
+        })
         .expect("body resolves");
     let variable = arena
         .mint_producer(ProducerNode::Variable {
@@ -2320,7 +2347,10 @@ fn polarity_decides_whether_a_capture_is_evaluated()
         .mint_cut(Polarity::Positive, variable, top)
         .expect("children resolve");
     let using = arena
-        .mint_consumer(ConsumerNode::MuTilde { body: used_body })
+        .mint_consumer(ConsumerNode::MuTilde {
+            ty: arena.unknown_type(),
+            body: used_body,
+        })
         .expect("body resolves");
     let positive = arena
         .mint_cut(Polarity::Positive, capture, ignoring)
@@ -2376,6 +2406,7 @@ fn transition_refusals_name_the_first_invalid_endpoint()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("leaf");
@@ -2406,6 +2437,7 @@ fn transition_refusals_name_the_first_invalid_endpoint()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([top]),
         })
         .expect("children resolve");
@@ -2413,7 +2445,10 @@ fn transition_refusals_name_the_first_invalid_endpoint()
         .mint_cut(Polarity::Positive, linear, top)
         .expect("children resolve");
     let binds_one_zone = arena
-        .mint_consumer(ConsumerNode::MuTilde { body: linear_body })
+        .mint_consumer(ConsumerNode::MuTilde {
+            ty: arena.unknown_type(),
+            body: linear_body,
+        })
         .expect("body resolves");
     let definitions = Definitions::new();
     let declined = [
@@ -2549,6 +2584,7 @@ fn pattern_fields_bind_last_innermost()
         &mut arena,
         &mut provenance,
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("literal");
     let last = focus_value(
@@ -2557,6 +2593,7 @@ fn pattern_fields_bind_last_innermost()
         &mut arena,
         &mut provenance,
         &gandr_core_sequent::Writers::NONE,
+        &gandr_core_sequent::Typed::NONE,
     )
     .expect("literal");
     let outer = arena
@@ -2575,6 +2612,7 @@ fn pattern_fields_bind_last_innermost()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::TWO),
             producers: Box::from([outer, inner]),
+            types: Box::from([arena.unknown_type(); 2]),
             consumers: Box::from([]),
         })
         .expect("fields resolve");
@@ -2594,6 +2632,7 @@ fn pattern_fields_bind_last_innermost()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::TWO),
             producers: Box::from([first, last]),
+            types: Box::from([arena.unknown_type(); 2]),
             consumers: Box::from([]),
         })
         .expect("fields resolve");
@@ -3133,7 +3172,8 @@ fn a_run_moves_its_payloads_along_a_path()
                 transport,
                 &mut CommandArena::new(),
                 &mut Provenance::new(),
-                &gandr_core_sequent::Writers::NONE
+                &gandr_core_sequent::Writers::NONE,
+                &gandr_core_sequent::Typed::NONE
             ),
             Err(FocusRefusal::ElementTransport(transport, head)),
             "the transport is refused by {head}"
@@ -3550,7 +3590,8 @@ fn a_transport_no_row_reads_is_refused_by_its_head()
                 transport,
                 &mut arena,
                 &mut Provenance::new(),
-                &gandr_core_sequent::Writers::NONE
+                &gandr_core_sequent::Writers::NONE,
+                &gandr_core_sequent::Typed::NONE
             ),
             Err(FocusRefusal::ElementTransport(transport, head)),
             "the transport is refused by {head}"
@@ -3702,7 +3743,10 @@ fn escaping_thunk(arena: &mut CommandArena) -> (CommandId, ProducerId)
         .mint_cut(Polarity::Positive, seven, top)
         .expect("a cut mints");
     let then = arena
-        .mint_consumer(ConsumerNode::MuTilde { body: answered })
+        .mint_consumer(ConsumerNode::MuTilde {
+            ty: arena.unknown_type(),
+            body: answered,
+        })
         .expect("a binder mints");
     let force = arena
         .mint_consumer(ConsumerNode::Destructor {
@@ -3721,7 +3765,10 @@ fn escaping_thunk(arena: &mut CommandArena) -> (CommandId, ProducerId)
         .mint_cut(Polarity::Positive, bound, force)
         .expect("a cut mints");
     let binder = arena
-        .mint_consumer(ConsumerNode::MuTilde { body: forced })
+        .mint_consumer(ConsumerNode::MuTilde {
+            ty: arena.unknown_type(),
+            body: forced,
+        })
         .expect("a binder mints");
     let root = arena
         .mint_cut(Polarity::Positive, captured, binder)

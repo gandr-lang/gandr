@@ -75,8 +75,15 @@ fn focused(
     writers: &Writers,
 ) -> CommandId
 {
-    focus_computation(core, program, arena, &mut Provenance::new(), writers)
-        .expect("the program focuses")
+    focus_computation(
+        core,
+        program,
+        arena,
+        &mut Provenance::new(),
+        writers,
+        &crate::Typed::NONE,
+    )
+    .expect("the program focuses")
 }
 
 /// `program` focused with `writers` named, then scheduled, rendered.

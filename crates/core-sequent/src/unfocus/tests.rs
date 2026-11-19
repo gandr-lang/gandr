@@ -15,6 +15,7 @@ fn an_escaping_covariable_is_refused_and_rolled_back()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("a leaf mints");
@@ -61,6 +62,7 @@ fn a_capture_standing_as_a_value_is_outside_the_image()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("a leaf mints");
@@ -77,6 +79,7 @@ fn a_capture_standing_as_a_value_is_outside_the_image()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::TWO),
             producers: Box::from([capture, unit]),
+            types: Box::from([arena.unknown_type(); 2]),
             consumers: Box::from([]),
         })
         .expect("fields resolve");
@@ -333,6 +336,7 @@ fn closing_fold_annotations_substitutes_captured_codes()
         &mut arena,
         &mut provenance,
         &crate::Writers::NONE,
+        &crate::Typed::NONE,
     )
     .expect("open annotation focuses");
     let mut core = CoreArena::new();
@@ -411,6 +415,7 @@ fn decoding_refuses_missing_roots_and_malformed_heads()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("leaf");
@@ -429,26 +434,31 @@ fn decoding_refuses_missing_roots_and_malformed_heads()
         ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([unit]),
+            types: Box::from([arena.unknown_type()]),
             consumers: Box::from([]),
         },
         ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::TWO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         },
         ProducerNode::Constructor {
             tag: ConstructorTag::Injection(Summand::from(0_usize)),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         },
         ProducerNode::Constructor {
             tag: ConstructorTag::Lift(Level::zero()),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         },
         ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([top]),
         },
     ] {
@@ -628,6 +638,7 @@ fn decoding_result_stacks_refuse_underflow_and_surplus()
         .mint_producer(ProducerNode::Constructor {
             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
+            types: Box::from([]),
             consumers: Box::from([]),
         })
         .expect("leaf");

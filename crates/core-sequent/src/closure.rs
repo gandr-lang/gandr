@@ -1076,10 +1076,12 @@ where
         ProducerNode::Constructor {
             ref tag,
             ref producers,
+            ref types,
             ref consumers,
         } => ProducerNode::Constructor {
             tag: tag.clone(),
             producers: fresh.producers(producers)?,
+            types: types.clone(),
             consumers: fresh.consumers(consumers)?,
         },
         ProducerNode::Thunk { .. } => ProducerNode::Thunk {
@@ -1134,7 +1136,8 @@ where
                 DeBruijnIndex::from(u32::from(index)),
             )?)))
         },
-        ConsumerNode::MuTilde { .. } => ConsumerNode::MuTilde {
+        ConsumerNode::MuTilde { ty, .. } => ConsumerNode::MuTilde {
+            ty,
             body: fresh.command()?,
         },
         ConsumerNode::MuTildeAll { arity, .. } => ConsumerNode::MuTildeAll {
@@ -1595,7 +1598,12 @@ fn entered(
             return Err(ClosureRefusal::Dangling(shifted));
         };
         let polarity = value_polarity(arena, shifted)?;
-        let binder = arena.mint_consumer(ConsumerNode::MuTilde { body: command })?;
+        // A value of the environment holds no type of a checker in this slice.
+        let unknown = arena.unknown_type();
+        let binder = arena.mint_consumer(ConsumerNode::MuTilde {
+            ty: unknown,
+            body: command,
+        })?;
         command = arena.mint_cut(polarity, shifted, binder)?;
     }
     for (position, &continuation) in continuations.iter().enumerate().rev() {
@@ -1634,6 +1642,8 @@ struct Link
     head: ProducerId,
     /// How many destructor frames stand over the `μ̃`.
     frames: usize,
+    /// The type the `μ̃` binds.
+    ty: gandr_core_term::ValueTypeId,
 }
 
 /// A distant context `D` and the closure at its hole.
@@ -1689,7 +1699,8 @@ fn distant_context(
         }
         let start = frames.len();
         let mut at = consumer;
-        command = loop {
+        let bound;
+        (command, bound) = loop {
             match *arena
                 .consumer(at)
                 .ok_or(ClosureRefusal::Dangling(NodeAddress::Consumer(at)))?
@@ -1703,7 +1714,7 @@ fn distant_context(
                         closure: head,
                     }));
                 },
-                ConsumerNode::MuTilde { body } => break body,
+                ConsumerNode::MuTilde { ty, body } => break (body, ty),
                 ConsumerNode::Destructor {
                     producers: ref arguments,
                     consumers: ref continuations,
@@ -1734,6 +1745,7 @@ fn distant_context(
             polarity,
             head,
             frames: frames.len().saturating_sub(start),
+            ty: bound,
         });
     }
 }
@@ -1811,7 +1823,10 @@ fn distant(
     for link in context.links.iter().rev() {
         let (outer, own) = frames.split_at(frames.len().saturating_sub(link.frames));
         frames = outer;
-        let mut onward = arena.mint_consumer(ConsumerNode::MuTilde { body: command })?;
+        let mut onward = arena.mint_consumer(ConsumerNode::MuTilde {
+            ty: link.ty,
+            body: command,
+        })?;
         for &level in own.iter().rev() {
             let ConsumerNode::Destructor {
                 tag, ref producers, ..
