@@ -7096,7 +7096,7 @@ fn combinators_preserve_answer_and_decline_precedence()
         let mut domain = DomainArena::new();
         let unit = domain.value_unit(crate::TermFace::Reduced);
         let pair = (crate::Glued::Value(unit), crate::Glued::Value(unit));
-        let mut goal = super::Goal {
+        let make_goal = || super::Goal {
             left: super::Slot::Ready(pair.0),
             right: super::Slot::Ready(pair.1),
             depth: crate::BinderLevel::FLOOR,
@@ -7104,6 +7104,7 @@ fn combinators_preserve_answer_and_decline_precedence()
             chain: super::Snapshot::from(super::Chain::default()),
             next: super::Next::Classify,
         };
+        let mut parent = make_goal();
         let mut scheduler = super::Scheduler::<NullMemo>::new(
             &core,
             &mut domain,
@@ -7113,12 +7114,12 @@ fn combinators_preserve_answer_and_decline_precedence()
             NullMemo,
         );
         let root = scheduler
-            .start_goal(goal.clone())
+            .start_goal(make_goal())
             .expect("the parent is admitted");
         let mut children = Vec::new();
         for &outcome in inputs {
             let work = if outcome == pending {
-                super::Work::Goal(goal.clone())
+                super::Work::Goal(make_goal())
             }
             else {
                 super::Work::Spent
@@ -7147,7 +7148,7 @@ fn combinators_preserve_answer_and_decline_precedence()
         };
         assert_eq!(
             Ok(expected_turn),
-            scheduler.combine(root, &mut goal, combine),
+            scheduler.combine(root, &mut parent, combine),
             "{kind:?}: {inputs:?}"
         );
         assert_eq!(

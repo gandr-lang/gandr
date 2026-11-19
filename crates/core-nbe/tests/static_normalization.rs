@@ -265,32 +265,39 @@ fn first_redex(
     order: Order,
 ) -> Option<(Path, ValueId, ValueId)>
 {
-    // (position, path to it, children already visited)
-    let mut pending: Vec<(Position, Path, bool)> =
-        Vec::from([(Position::Value(root), Vec::new(), false)]);
+    // (position, parent path link, children already visited)
+    let mut paths: Vec<(Option<usize>, (Position, Slot))> = Vec::new();
+    let mut pending: Vec<(Position, Option<usize>, bool)> =
+        Vec::from([(Position::Value(root), None, false)]);
     while let Some((position, path, visited)) = pending.pop() {
         let found = redex(core, position);
-        match order {
-            Order::Outermost => {
-                if let Some((body, argument)) = found {
-                    return Some((path, body, argument));
-                }
-            },
+        let found = match order {
+            Order::Outermost => found,
+            Order::Innermost if visited => found,
             Order::Innermost => {
-                if visited {
-                    if let Some((body, argument)) = found {
-                        return Some((path, body, argument));
-                    }
-                    continue;
-                }
-                pending.push((position, path.clone(), true));
+                pending.push((position, path, true));
+                None
             },
+        };
+        if let Some((body, argument)) = found {
+            let mut result = Path::new();
+            let mut link = path;
+            while let Some(index) = link {
+                let (parent, step) = paths[index];
+                result.push(step);
+                link = parent;
+            }
+            result.reverse();
+            return Some((result, body, argument));
+        }
+        if visited {
+            continue;
         }
         let below = children(core, position);
         for (slot, &child) in below.iter().enumerate().rev() {
-            let mut deeper = path.clone();
-            deeper.push((position, Slot(slot)));
-            pending.push((child, deeper, false));
+            let index = paths.len();
+            paths.push((path, (position, Slot(slot))));
+            pending.push((child, Some(index), false));
         }
     }
     None

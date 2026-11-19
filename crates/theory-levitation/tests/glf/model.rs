@@ -1044,23 +1044,31 @@ fn substitution_laws()
             substitute(&semantics, &newest, &fixture.binding.context, &single),
             expected
         );
-        for (position, sort) in fixture.binding.context.iter().enumerate() {
-            let term = BindingJudgement {
-                context: fixture.binding.context.clone(),
-                sort: sort.clone(),
-                term: BindingTerm::variable(VariableIndex::from(
-                    fixture.binding.context.len() - position - 1,
-                )),
-            };
+        let mut variables = fixture.binding.context.iter().enumerate();
+        let Some((position, sort)) = variables.next()
+        else {
+            continue;
+        };
+        let identity = identity(&fixture.binding.context);
+        let mut term = BindingJudgement {
+            context: fixture.binding.context.clone(),
+            sort: sort.clone(),
+            term: BindingTerm::variable(VariableIndex::from(
+                fixture.binding.context.len() - position - 1,
+            )),
+        };
+        loop {
             assert_eq!(
-                substitute(
-                    &semantics,
-                    &term,
-                    &fixture.binding.context,
-                    &identity(&fixture.binding.context)
-                ),
+                substitute(&semantics, &term, &term.context, &identity),
                 term
             );
+            let Some((position, sort)) = variables.next()
+            else {
+                break;
+            };
+            term.sort = sort.clone();
+            term.term =
+                BindingTerm::variable(VariableIndex::from(term.context.len() - position - 1));
         }
     }
     // A nonidentity environment with operation-valued images, weakened
@@ -1101,22 +1109,21 @@ fn substitution_laws()
     let extension = Name::from("B");
     let mut lifted_target = target.clone();
     lifted_target.push(extension.clone());
-    let mut lifted_images: Vec<_> = images
-        .iter()
-        .zip(&judgement.context)
-        .map(|(term, sort)| {
-            weaken(
-                &semantics,
-                &BindingJudgement {
-                    context: target.clone(),
-                    sort: sort.clone(),
-                    term: term.clone(),
-                },
-                extension.clone(),
-            )
-            .term
-        })
-        .collect();
+    let mut image_pairs = images.iter().zip(&judgement.context);
+    let mut lifted_images = Vec::with_capacity(images.len());
+    if let Some((term, sort)) = image_pairs.next() {
+        let mut image = BindingJudgement {
+            context: target.clone(),
+            sort: sort.clone(),
+            term: term.clone(),
+        };
+        lifted_images.push(weaken(&semantics, &image, extension.clone()).term);
+        for (term, sort) in image_pairs {
+            image.sort = sort.clone();
+            image.term = term.clone();
+            lifted_images.push(weaken(&semantics, &image, extension.clone()).term);
+        }
+    }
     lifted_images.push(v::<0>());
     let weakened = weaken(&semantics, &judgement, extension.clone());
     assert_eq!(
