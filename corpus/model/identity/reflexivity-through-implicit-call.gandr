@@ -24,9 +24,8 @@ def twoLevels(
   A : Type,
   x : A,
   y : A,
-  f : Path[.A = A](x, y)
-) -> Path[.A = Path[.A = Path[.A = A](x, y)](stepImplicit f (Path.here y), f)](
-  Path.here (stepImplicit f (Path.here y)),
-  Path.here f
-) =
+  f : Path[.A = A] x y
+) -> Path[.A = Path[.A = Path[.A = A] x y] (stepImplicit f (Path.here y)) f] (
+  Path.here (stepImplicit f (Path.here y))
+) (Path.here f) =
   Path.here (Path.here f)

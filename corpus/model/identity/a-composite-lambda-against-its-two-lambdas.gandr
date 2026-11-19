@@ -23,17 +23,16 @@ def oneLambdaAgainstCompose(
   y : A,
   z : A,
   w : A,
-  g : Path(y, z),
-  h : Path(z, w)
-) -> Path[.A = Path[.A = A](x, y) -> Path[.A = A](x, w)](
-  (fun (q : Path(x, y)) { Path.step (Path.step q g) h } : Path(x, y) -> Path(x, w)),
-  composeAfter (type(Path(x, y))) (type(Path(x, z))) (type(Path(x, w))) (fun (q : Path(x, y)) {
-    Path.step q g
-  } : Path(x, y) -> Path(x, z)) (fun (r : Path(x, z)) { Path.step r h } : Path(x, z) -> Path(x, w))
-) =
-  Path.here (fun (q : Path[.A = A](x, y)) {
+  g : Path y z,
+  h : Path z w
+) -> Path[.A = Path[.A = A] x y -> Path[.A = A] x w] (
+  fun (q : Path x y) { Path.step (Path.step q g) h } : Path x y -> Path x w
+) (composeAfter (type(Path x y)) (type(Path x z)) (type(Path x w)) (fun (q : Path x y) {
+  Path.step q g
+} : Path x y -> Path x z) (fun (r : Path x z) { Path.step r h } : Path x z -> Path x w)) =
+  Path.here (fun (q : Path[.A = A] x y) {
     Path.step (Path.step q g) h
-  } : Path(x, y) -> Path(x, w))
+  } : Path x y -> Path x w)
 
 /// The second endpoint writes the composite as its point.
 def composeAgainstOneLambda(
@@ -42,21 +41,20 @@ def composeAgainstOneLambda(
   y : A,
   z : A,
   w : A,
-  g : Path(y, z),
-  h : Path(z, w)
-) -> Path[.A = Path[.A = A](x, y) -> Path[.A = A](x, w)](
-  composeAfter (type(Path(x, y))) (type(Path(x, z))) (type(Path(x, w))) (fun (q : Path(x, y)) {
+  g : Path y z,
+  h : Path z w
+) -> Path[.A = Path[.A = A] x y -> Path[.A = A] x w] (
+  composeAfter (type(Path x y)) (type(Path x z)) (type(Path x w)) (fun (q : Path x y) {
     Path.step q g
-  } : Path(x, y) -> Path(x, z)) (fun (r : Path(x, z)) { Path.step r h } : Path(x, z) -> Path(x, w)),
-  (fun (q : Path(x, y)) { Path.step (Path.step q g) h } : Path(x, y) -> Path(x, w))
-) =
-  Path.here (composeAfter (type(Path(x, y))) (type(Path(x, z))) (type(Path(
-    x,
-    w
-  ))) (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path(x, y) -> Path(
-    x,
-    z
-  )) (fun (r : Path[.A = A](x, z)) { Path.step r h } : Path(x, z) -> Path(x, w)))
+  } : Path x y -> Path x z) (fun (r : Path x z) { Path.step r h } : Path x z -> Path x w)
+) (fun (q : Path x y) { Path.step (Path.step q g) h } : Path x y -> Path x w) =
+  Path.here
+    (composeAfter
+      (type(Path x y))
+      (type(Path x z))
+      (type(Path x w))
+      (fun (q : Path[.A = A] x y) { Path.step q g } : Path x y -> Path x z)
+      (fun (r : Path[.A = A] x z) { Path.step r h } : Path x z -> Path x w))
 
 /// The `actThrough` function applies `F` to `p`.
 def actThrough(
@@ -89,29 +87,29 @@ def composedAgainstActOfCompose(
   y : A,
   z : A,
   w : A,
-  fm : Path[.A = A](x, y),
-  fp : Path[.A = A](x, y),
-  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
-  g : Path(y, z),
-  h : Path(z, w)
-) -> Path[.A = Path[.A = Path[.A = A](x, w)](
-  Path.step (Path.step fm g) h,
-  Path.step (Path.step fp g) h
-)](
-  actThrough (type(Path(x, y))) (type(Path(x, w))) (fun (q : Path[.A = A](x, y)) {
-    Path.step (Path.step q g) h
-  } : Path(x, y) -> Path(x, w)) fm fp fa,
-  actOfCompose (type(Path(x, y))) (type(Path(x, z))) (type(Path(x, w))) (fun (q : Path[.A = A](
-    x,
-    y
-  )) { Path.step q g } : Path(x, y) -> Path(x, z)) (fun (r : Path[.A = A](x, z)) {
+  fm : Path[.A = A] x y,
+  fp : Path[.A = A] x y,
+  fa : Path[.A = Path[.A = A] x y] fm fp,
+  g : Path y z,
+  h : Path z w
+) -> Path[
+  .A = Path[.A = Path[.A = A] x w] (Path.step (Path.step fm g) h) (Path.step (Path.step fp g) h)
+] (actThrough (type(Path x y)) (type(Path x w)) (fun (q : Path[.A = A] x y) {
+  Path.step (Path.step q g) h
+} : Path x y -> Path x w) fm fp fa) (actOfCompose (type(Path x y)) (type(Path x z)) (type(
+  Path x w
+)) (fun (q : Path[.A = A] x y) { Path.step q g } : Path x y -> Path x z) (
+  fun (r : Path[.A = A] x z) {
     Path.step r h
-  } : Path(x, z) -> Path(x, w)) fm fp fa
-) =
-  Path.here (actOfCompose (type(Path(x, y))) (type(Path(x, z))) (type(Path[.A = A](
-    x,
-    w
-  ))) (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path(x, y) -> Path(
-    x,
-    z
-  )) (fun (r : Path[.A = A](x, z)) { Path.step r h } : Path(x, z) -> Path(x, w)) fm fp fa)
+  } : Path x z -> Path x w
+) fm fp fa) =
+  Path.here
+    (actOfCompose
+      (type(Path x y))
+      (type(Path x z))
+      (type(Path[.A = A] x w))
+      (fun (q : Path[.A = A] x y) { Path.step q g } : Path x y -> Path x z)
+      (fun (r : Path[.A = A] x z) { Path.step r h } : Path x z -> Path x w)
+      fm
+      fp
+      fa)
