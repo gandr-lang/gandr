@@ -200,13 +200,16 @@ use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldCount;
+use gandr_kernel_term::FixedInteger;
 use gandr_kernel_term::IntegerLiteral;
+use gandr_kernel_term::IntegerWidth;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Sign;
 use gandr_runtime_stencils::Arity;
 use gandr_runtime_stencils::Family;
 use gandr_runtime_stencils::Flavour;
 use gandr_runtime_stencils::Header;
+use gandr_runtime_stencils::IntegerForm;
 use gandr_runtime_stencils::Kind;
 use gandr_runtime_stencils::Observed;
 use gandr_runtime_stencils::StencilId;
@@ -227,6 +230,8 @@ use crate::function::Stub;
 use crate::fuse::Fused;
 use crate::fuse::fuse;
 use crate::run::Kept;
+use crate::widths;
+use crate::widths::Unblocked;
 
 /// A command the lowering does not lay out.
 ///
@@ -1554,6 +1559,92 @@ pub fn integer_word(integer: &IntegerLiteral) -> Option<Word>
     i64::try_from(value).ok().map(Word::from)
 }
 
+/// The integer form of the values of `width`.
+///
+/// # Specification
+/// trivial.
+#[must_use]
+pub const fn width_form(width: IntegerWidth) -> IntegerForm
+{
+    match width {
+        IntegerWidth::U8 => IntegerForm::U8,
+        IntegerWidth::U16 => IntegerForm::U16,
+        IntegerWidth::U32 => IntegerForm::U32,
+        IntegerWidth::U64 => IntegerForm::U64,
+        IntegerWidth::Usize => IntegerForm::Usize,
+        IntegerWidth::I8 => IntegerForm::I8,
+        IntegerWidth::I16 => IntegerForm::I16,
+        IntegerWidth::I32 => IntegerForm::I32,
+        IntegerWidth::I64 => IntegerForm::I64,
+        IntegerWidth::Isize => IntegerForm::Isize,
+    }
+}
+
+/// A literal of a width as the two words of its machine integer: the header
+/// of its form, and its bit pattern zero-extended to the word.
+///
+/// # Specification
+/// trivial.
+#[must_use]
+pub fn fixed_words(fixed: FixedInteger) -> [Word; 2]
+{
+    [
+        width_form(fixed.width()).header(),
+        Word::from(u64::from(fixed)),
+    ]
+}
+
+/// Why a machine integer holds no literal of a width.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Unfixed
+{
+    /// Its tag names the integer that one word holds.
+    Integer,
+    /// Its tag names no integer form.
+    Tag(Tag),
+    /// Its field sets a bit above its width.
+    Wider,
+}
+
+/// The literal of a width that the machine integer of `header` holds with
+/// the field `bits`.
+///
+/// # Specification
+/// - ensures: for the two words of [`fixed_words`], `Ok` of that literal.
+/// - fails: as [`Unfixed`] names.
+/// - executable: none — the two tables are the body.
+///
+/// # Errors
+/// As `fails` states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each width's extremes cross the machine and read back as
+///   the same literal; a form read as another width changes one.
+/// - witness: `widths::tests::each_width_crosses_the_machine_as_itself_8002`
+pub fn fixed_of(
+    header: Header,
+    bits: Word,
+) -> Result<FixedInteger, Unfixed>
+{
+    let width = match IntegerForm::try_from(header.tag()).map_err(Unfixed::Tag)? {
+        IntegerForm::Integer => return Err(Unfixed::Integer),
+        IntegerForm::U8 => IntegerWidth::U8,
+        IntegerForm::U16 => IntegerWidth::U16,
+        IntegerForm::U32 => IntegerWidth::U32,
+        IntegerForm::U64 => IntegerWidth::U64,
+        IntegerForm::Usize => IntegerWidth::Usize,
+        IntegerForm::I8 => IntegerWidth::I8,
+        IntegerForm::I16 => IntegerWidth::I16,
+        IntegerForm::I32 => IntegerWidth::I32,
+        IntegerForm::I64 => IntegerWidth::I64,
+        IntegerForm::Isize => IntegerWidth::Isize,
+    };
+    FixedInteger::try_from((width, u64::from(bits))).map_err(|_wider| Unfixed::Wider)
+}
+
 /// The low 32 bits of `header` and its family field: operands A and B of a
 /// constructor, a case arm or a closure.
 ///
@@ -2146,9 +2237,9 @@ impl Lowering<'_>
         }
     }
 
-    /// The constant holding `literal`: an integer 64 bits hold as itself,
-    /// any other literal as a one-word object naming its row in the literal
-    /// table.
+    /// The constant holding `literal`: an integer 64 bits hold, or a literal
+    /// of a width, as a machine integer; any other literal as a one-word
+    /// object naming its row in the literal table.
     ///
     /// # Specification
     /// trivial.
@@ -2161,6 +2252,9 @@ impl Lowering<'_>
     ) -> Result<Constant, Form>
     {
         let width = |_overflow| Form::HeaderWidth;
+        if let Literal::Fixed(fixed) = *literal {
+            return Ok(self.function.object(&fixed_words(fixed)));
+        }
         if let Literal::Integer(ref integer) = *literal
             && let Some(value) = integer_word(integer)
         {
@@ -4132,6 +4226,10 @@ impl Lowering<'_>
     /// # Errors
     /// As [`Self::step`].
     ///
+    /// # Cost
+    /// - allocation: the tasks, the blocks, the bounds and a frame's shape and
+    ///   slots, growth within the command.
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — every named program evaluates its producers to the
     ///   answers it states on both tiers.
@@ -4302,10 +4400,21 @@ impl Lowering<'_>
                 primitive,
                 ref arguments,
             } => {
-                let count =
-                    u32::try_from(arguments.len()).map_err(|_overflow| Form::HeaderWidth)?;
-                let call = self.call(&Callee::Primitive(primitive), Immediate::from(count))?;
-                self.tasks.push(call);
+                let count = arguments.len();
+                let immediate =
+                    |bits: usize| u32::try_from(bits).map_err(|_overflow| Form::HeaderWidth);
+                let entered = match widths::block(primitive) {
+                    Ok(block) => Task::Emit(
+                        StencilId::Block,
+                        Operand::Block(self.function.block(block.key)),
+                        Operand::Immediate(Immediate::from(immediate(count | block.answered)?)),
+                    ),
+                    Err(Unblocked::Undescribed | Unblocked::Refused(_)) => self.call(
+                        &Callee::Primitive(primitive),
+                        Immediate::from(immediate(count)?),
+                    )?,
+                };
+                self.tasks.push(entered);
                 for &argument in arguments.iter().rev() {
                     self.tasks.push(PUSH);
                     self.tasks.push(Task::Producer(argument, scope));

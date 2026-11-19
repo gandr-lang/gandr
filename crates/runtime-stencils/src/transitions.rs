@@ -2203,7 +2203,8 @@ type Block = extern "C" fn(words: *mut Word) -> Word;
 /// first, with [`layout::BLOCK_ANSWERS`] set when the block answers. The
 /// field of each integer becomes the block's word in place of its pushed
 /// word, and the block reads and writes the words through the address of the
-/// first. An answering block's word becomes a fresh machine integer in hand.
+/// first. An answering block's word becomes a fresh machine integer in hand,
+/// of the integer form whose tag B holds past [`layout::BLOCK_FORM_SHIFT`].
 /// Any other block leaves the value in hand as it was. The unit value is a
 /// constant object, and the stencil holds no operand for its address, so the
 /// lowering reads no value after a block that answers nothing.
@@ -2224,11 +2225,13 @@ type Block = extern "C" fn(words: *mut Word) -> Word;
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a block that adds its two words answers their sum as one
-///   fresh integer of three heap words, and a block that answers nothing moves
-///   neither the heap's top nor the value in hand; a word read from the object
-///   and not its field, a lost pop or a missed allocation changes one.
+///   fresh integer of three heap words, of the form that B names, and a block
+///   that answers nothing moves neither the heap's top nor the value in hand; a
+///   word read from the object and not its field, a lost pop, a missed
+///   allocation or a lost tag changes one.
 /// - witness: `tests::machine::a_block_answers_the_sum_of_its_words`
 /// - witness: `tests::machine::a_block_that_answers_nothing_allocates_nothing`
+/// - witness: `tests::machine::a_block_answers_in_the_form_its_entry_names_8002`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_block(
     runtime: *mut Runtime,
@@ -2298,7 +2301,7 @@ pub extern "rust-preserve-none" fn stencil_block(
     let answer = block(base);
     // SAFETY: the object's block is the run's.
     unsafe {
-        *object = layout::INTEGER_HEADER;
+        *object = layout::answer_header(Word::from(operands));
     }
     // SAFETY: as above.
     unsafe {

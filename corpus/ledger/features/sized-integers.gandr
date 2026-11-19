@@ -2,10 +2,14 @@
 /// Implemented: each width has the `wrapping_`, `saturating_` and `checked_`
 /// arithmetic of Rust's integer. Each width also has its division, its
 /// bitwise forms, `checked_shl`, `checked_shr` and its comparisons.
-/// Not implemented: no stencil runs a width form, and no method form calls
-/// one. The `checked_div` with a reason is not in yet.
 ///
-/// - owes: #8002 — the machine word, its stencils and the latency bound
+/// A `wrapping_` sum, difference or product is a block of machine code. Each
+/// bitwise form is a block too. Each answer is a machine integer of its width.
+///
+/// Not implemented: a value of a width is no raw word yet. No method form
+/// calls one. The `checked_div` with a reason is not in yet.
+///
+/// - owes: #8145 — the raw word, and an operation with no allocation
 /// - owes: #8003 — the method form
 /// - owes: #7968 — the checked division with a named reason
 // Each width has the operations of Rust's integer of the same name. A
@@ -14,6 +18,14 @@
 /// The greatest `u8` plus one wraps to zero.
 @[runs("0u8")]
 def wrapped_u8() -> u8 = u8.wrapping_add 255u8 1u8;
+
+/// The least `i8` times minus one wraps to the least `i8`.
+@[runs("-128i8")]
+def wrapped_i8() -> i8 = i8.wrapping_mul (i8.from_integer (- 128)) (i8.from_integer (- 1));
+
+/// The negation of zero is the greatest `u16`, which fills its sixteen bits.
+@[runs("65535u16")]
+def negated_u16() -> u16 = u16.not 0u16;
 
 /// The greatest `u8` plus one stays at the greatest.
 @[runs("255u8")]

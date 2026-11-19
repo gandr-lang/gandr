@@ -611,6 +611,13 @@ const FRAME_BOUND: usize = 1 << 23;
 /// and a set that one thread gives back serves a run on any thread.
 static IDLE: std::sync::Mutex<Vec<Buffers>> = std::sync::Mutex::new(Vec::new());
 
+#[cfg(test)]
+std::thread_local! {
+    /// The heap words that the last run of this thread allocated past the
+    /// captures laid on its heap: what a witness of an allocation reads.
+    pub(crate) static ALLOCATED: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
+}
+
 /// The code a run enters.
 #[derive(Clone, Copy, Debug)]
 enum Code<'program>
@@ -1632,6 +1639,15 @@ fn run_over(
         },
     };
     buffers.hold(&runtime);
+    #[cfg(test)]
+    ALLOCATED.set(
+        runtime
+            .heap_top()
+            .addr()
+            .saturating_sub(top.addr())
+            .checked_div(core::mem::size_of::<Word>())
+            .unwrap_or(0),
+    );
     let refused = calls.refused().cloned();
     // SAFETY: the run exited; its heap and the function's constants are
     // live until this closure returns, and every exit but the regions'
