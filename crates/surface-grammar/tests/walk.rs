@@ -90,13 +90,13 @@ use crate::failure::Failure;
 /// words, quotes, expansions and operators (#1057), then by a type signature
 /// with no body, `type T : K;` (#8073), then by the protocol steps `T >! S`
 /// and `T >? S` and the recursion `rec X => S`.
-const BUILT_IN_FINGERPRINT: u64 = 0x3ad2_f303_0abb_0fbf;
+const BUILT_IN_FINGERPRINT: u64 = 0x89dc_d73b_0c01_fa71;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3124);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3117);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 92;
