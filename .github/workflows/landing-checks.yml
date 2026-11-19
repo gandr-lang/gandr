@@ -2962,6 +2962,26 @@ jobs:
       - name: check the input table against its pinned sources
         run: mise run check:input-table
 
+  # The reader of a Rust crate links the libraries of rustc. So it is no
+  # member of the workspace, and no other lane builds it. This job builds the
+  # reader, lints it and runs its tests when a change reaches Rust. A merge
+  # group on `landing` skips it, as it skips each check outside the blocking
+  # set.
+  rust-record-gate:
+    name: check the reader of a Rust crate
+    needs: *rust-needs
+    if: ${{ !cancelled() && !failure() && github.event.merge_group.base_ref != 'refs/heads/landing' && needs.prepare.outputs.landed != 'true' && (needs.prepare.outputs.rust == 'true' || needs.prepare.outputs.unbuilt == 'true') }}
+    runs-on: *linux
+    permissions: *image-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - *setup-rust
+      - name: build the reader, lint it and run its tests
+        run: mise run check:rust-record
+
   promote-cargo-test-plain-only:
     name: promote plain build state (linux)
     needs: &promote-needs [prepare, ci-image]
