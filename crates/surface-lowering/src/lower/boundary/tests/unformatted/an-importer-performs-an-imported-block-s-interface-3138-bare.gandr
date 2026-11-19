@@ -1,0 +1,2 @@
+import "./rows.gandr";
+pub def bare(x : u32) -> [Boundary] u32 = Boundary.add x x;

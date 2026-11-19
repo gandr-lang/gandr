@@ -1,0 +1,4 @@
+def d(A : Type, x : A, y : A, g : Path(y, y), f : Path(x, y) -> Path(x, y)) -> Path[.A = Path(x, y) -> Path(x, y)](
+  f,
+  (fun (q) { f q } : Path(x, y) -> Path(x, y))
+) = Path.here f;

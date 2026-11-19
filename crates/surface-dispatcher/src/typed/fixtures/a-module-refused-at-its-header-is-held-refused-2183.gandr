@@ -1,0 +1,8 @@
+theory Scaled where {
+  sort Ratio : Type;
+  oper scale : Ratio;
+}
+module Misnamed : Model(Scaled) with sort Rate = Integer where {
+  type Ratio = Integer;
+  def scale = 2;
+}

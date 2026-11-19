@@ -1,0 +1,1262 @@
+//! Residual conversion equations, restricted to bare owed code constants, and
+//! the collector a value declaration's judgement leaves them in, beside the
+//! metavariables it solves for the implicits its calls omit.
+
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_nbe::MachineVerdict;
+use gandr_core_term::Binders;
+use gandr_core_term::CompType;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
+use gandr_core_term::effect::EffectRow;
+use gandr_core_term::hole::HoleId;
+use gandr_core_term::model::CandidatePlace;
+use gandr_core_term::model::ModelSlot;
+use gandr_core_term::model::Survivors;
+use gandr_core_unify::MetaId;
+use gandr_core_unify::Metas;
+use gandr_core_unify::Reason;
+use gandr_core_unify::Side;
+use gandr_kernel_term::ConstantIndex;
+use quenchant_shape::shape::Maybe;
+
+use crate::CheckRefusal;
+use crate::TypeNode;
+use crate::Unsolved;
+
+quenchant_shape::reason_enum! {
+    /// Why an equation cannot enter the residual fragment.
+    mod candidate {
+        /// The equation has no bare owed flex head opposite a rigid head.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// Ordinary conversion must decide this equation.
+            Rigid,
+        }
+    }
+}
+
+/// One conversion obligation on a bare module hole.
+///
+/// # Specification
+/// - requires: constructed only by the elaboration conversion boundary.
+/// - ensures: `hole` was owed when the equation was recorded; `flex` is its
+///   decode with no application spine, and `rigid` has a constructor head.
+/// - provides: a residual equation, not a unifier or a certificate of
+///   emptiness.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact equations and blockers separate bare flex–rigid
+///   suspension from rigid disagreement and flex–flex comparison.
+/// - witness: `gandr-core-checker::tests::elaboration::owed_conversion_suspends`
+/// - witness: `gandr-core-checker::tests::elaboration::only_bare_flex_rigid_equations_suspend`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Equation
+{
+    /// The module hole whose filling may settle the comparison.
+    hole: ConstantIndex,
+    /// The stuck decode.
+    flex: TypeNode,
+    /// The type opposite the decode.
+    rigid: TypeNode,
+}
+
+impl Equation
+{
+    /// The equation on `hole` between `flex` and `rigid`, as a seat builds
+    /// it again in another arena.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn seated(
+        hole: ConstantIndex,
+        (flex, rigid): (TypeNode, TypeNode),
+    ) -> Self
+    {
+        Self { hole, flex, rigid }
+    }
+
+    /// The owed constant at the flex head.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn hole(&self) -> ConstantIndex
+    {
+        self.hole
+    }
+
+    /// The flex side, a decode of the bare hole.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn flex(&self) -> TypeNode
+    {
+        self.flex
+    }
+
+    /// The constructor-headed side.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn rigid(&self) -> TypeNode
+    {
+        self.rigid
+    }
+}
+
+/// Whether a comparison was recorded instead of decided.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Deferred
+{
+    /// Continue the surrounding conjunction, retaining the equation.
+    Yes,
+    /// Run ordinary conversion.
+    No,
+}
+
+/// What the solver made of a comparison whose side is the decode of a
+/// metavariable.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Unified
+{
+    /// The solver bound the metavariables so the pair holds, or put the pair
+    /// in its store: the surrounding conjunction goes on.
+    Agreed,
+    /// No binding of the metavariables makes the pair hold.
+    Refuted,
+    /// No side is the decode of a metavariable: ordinary conversion decides.
+    Rigid,
+}
+
+/// Whether the running judgement may leave residuals.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Collecting
+{
+    /// A nominal declaration's formation, or no judgement: every comparison
+    /// is decided rigidly.
+    #[default]
+    Off,
+    /// A value declaration's judgement: a bare owed flex–rigid equation is
+    /// recorded, and a read of a waiting declaration is a dependency.
+    On,
+}
+
+/// Which part of a value declaration the running judgement forms.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Signing
+{
+    /// The body, or no judgement: a decode of a nominated hole forms as the
+    /// unknown type, and a model slot's resolution answers its hole.
+    #[default]
+    Body,
+    /// The declared type: a decode of a nominated hole is a metavariable, and
+    /// the type's own comparisons fix it.
+    Signature,
+}
+
+/// What one value declaration's judgement left undecided: the equations it
+/// recorded and the waiting declarations it read.
+///
+/// # Specification
+/// - requires: taken from the collector once the verdict's run ends.
+/// - ensures: the equations in the order the judgement recorded them; the
+///   dependencies are the waiting declarations whose types it read.
+/// - provides: the input a [`super::Suspension`] is built from.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a residual alone, a waiting read alone and neither
+///   separate the three answers of [`Residue::pending`].
+/// - witness: `gandr-core-checker::tests::elaboration::owed_conversion_suspends`
+/// - witness: `gandr-core-checker::tests::elaboration::dependent_resumption_closes_its_prerequisites`
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct Residue
+{
+    /// The equations recorded.
+    pub equations: Vec<Equation>,
+    /// The waiting declarations read.
+    pub dependencies: BTreeSet<ConstantIndex>,
+}
+
+impl Residue
+{
+    /// Whether the judgement waits: it recorded an equation or read a waiting
+    /// declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn pending(&self) -> Deferred
+    {
+        if self.equations.is_empty() && self.dependencies.is_empty() {
+            Deferred::No
+        }
+        else {
+            Deferred::Yes
+        }
+    }
+}
+
+/// The residual collector: the holes a comparison may wait on, the
+/// declarations that wait, and what the running judgement left.
+///
+/// An empty owed set disables suspension, so a context that never judged an
+/// owed hole decides every comparison as ordinary checking does.
+#[derive(Default)]
+pub struct Deferrals
+{
+    /// The only constants eligible as flex heads: the holes judged owed.
+    pub owed: BTreeSet<ConstantIndex>,
+    /// The declarations judged suspended; a judgement reading one waits too.
+    pub suspended: BTreeSet<ConstantIndex>,
+    /// Whether the running judgement collects.
+    pub collecting: Collecting,
+    /// What the running judgement left.
+    pub residue: Residue,
+    /// Per-occurrence transport, enabled only for a term-producing run.
+    pub emission: super::output::Emission,
+    /// The metavariables of the running judgement: each hole a call
+    /// nominated for an implicit it omits, declared where the judgement met
+    /// it.
+    pub metas: Metas,
+    /// The nodes of the nominated holes the running judgement met, in the
+    /// order it met them.
+    pub nominated: Vec<ValueId>,
+    /// Each hole of a resolved model slot the running judgement did not meet,
+    /// beside the closed component of the one elaboration that answers it.
+    pub answered: BTreeMap<HoleId, ValueId>,
+    /// The fill of each hole a splice wrote that the running judgement met:
+    /// its tactic's answer, judged again, and the binders it stands under.
+    pub spliced: BTreeMap<HoleId, (ValueId, Binders)>,
+    /// Whether the running judgement forms the declaration's signature. A
+    /// decode of a nominated hole that formation meets is a metavariable then,
+    /// so the signature's own comparisons fix it. In a body, such a decode is
+    /// a model slot's carrier, which its resolution answers.
+    pub signing: Signing,
+}
+
+impl Deferrals
+{
+    /// Start one declaration's judgement: `collecting` says whether it may
+    /// leave residuals; nothing an earlier judgement left is kept.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the residue is empty, the collector is in `collecting`, and a
+    ///   recording emission holds no transport; the owed and suspended sets are
+    ///   unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two suspended declarations judged in turn keep their
+    ///   own blockers, and a nominal declaration after an owed hole forms
+    ///   rigidly.
+    /// - witness: `gandr-core-checker::tests::elaboration::residual_conjunction_does_not_hide_refusal`
+    /// - witness: `gandr-core-checker::tests::elaboration::resumptions_commute`
+    #[spec(
+        captures: [owed = self.owed.len(), suspended = self.suspended.len()],
+        ensures: self.collecting == collecting && self.residue.equations.is_empty()
+            && self.residue.dependencies.is_empty()
+            && self.nominated.is_empty() && self.answered.is_empty() && self.spliced.is_empty()
+            && usize::from(self.metas.count()) == 0
+            && self.signing == Signing::Body
+            && self.owed.len() == owed && self.suspended.len() == suspended,
+    )]
+    pub fn open(
+        &mut self,
+        collecting: Collecting,
+    )
+    {
+        self.collecting = collecting;
+        self.signing = Signing::Body;
+        self.residue = Residue::default();
+        self.emission.restart();
+        self.metas = Metas::new();
+        self.nominated.clear();
+        self.answered.clear();
+        self.spliced.clear();
+    }
+
+    /// Keep `answer`, written under `scope` binders, as the fill of the hole
+    /// `hole` a splice wrote: its tactic's answer, judged again against the
+    /// goal the hole stands at.
+    ///
+    /// # Specification
+    /// - requires: `answer` was judged against the hole's goal.
+    /// - ensures: `hole` is filled by `answer` under `scope` binders; a hole
+    ///   met before keeps its first fill.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a splice's answer is the hole's solution the body is
+    ///   judged again with.
+    /// - witness: `tests::tactic::assumption_answers_the_innermost_binder_of_the_goal_type_2762`
+    #[spec(ensures: self.spliced.contains_key(&hole))]
+    pub fn splice(
+        &mut self,
+        hole: HoleId,
+        answer: ValueId,
+        scope: Binders,
+    )
+    {
+        let _first = self.spliced.entry(hole).or_insert((answer, scope));
+    }
+
+    /// Take what the running judgement left, leaving the residue empty.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn take(&mut self) -> Residue
+    {
+        core::mem::take(&mut self.residue)
+    }
+
+    /// Note that the running judgement read `constant`'s type: a dependency
+    /// when `constant` waits and the judgement collects.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `constant` is a dependency exactly when the collector is on
+    ///   and `constant` is suspended; nothing else changes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a reference to a waiting declaration and one to a
+    ///   checked declaration separate a dependency from a plain read.
+    /// - witness: `gandr-core-checker::tests::elaboration::dependent_resumption_closes_its_prerequisites`
+    /// - witness: `gandr-core-checker::tests::elaboration::checked_success_is_stable_without_rejudgement`
+    #[spec(
+        captures: count = self.residue.dependencies.len(),
+        ensures: if self.collecting == Collecting::On && self.suspended.contains(&constant) {
+            self.residue.dependencies.contains(&constant)
+        } else {
+            self.residue.dependencies.len() == count
+        },
+    )]
+    pub fn read(
+        &mut self,
+        constant: ConstantIndex,
+    )
+    {
+        if self.collecting == Collecting::On && self.suspended.contains(&constant) {
+            self.residue.dependencies.insert(constant);
+        }
+    }
+
+    /// Recognize either orientation of a bare flex–rigid equation.
+    ///
+    /// # Specification
+    /// - requires: the arguments are weak-head types of the same family.
+    /// - ensures: returns the first orientation with a bare owed code constant
+    ///   and a constructor-headed opposite side; otherwise
+    ///   `candidate::Absent::Rigid`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — reversed orientation, rigid and flex–flex controls in
+    ///   both the value and the computation family distinguish the eligibility
+    ///   boundary without claiming unification.
+    /// - witness: `gandr-core-checker::tests::elaboration::only_bare_flex_rigid_equations_suspend`
+    /// - witness: `gandr-core-checker::tests::elaboration::computation_code_decodes_suspend_as_value_ones_do`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(equation) => self.owed.contains(&equation.hole),
+        Maybe::Absent(_) => true,
+    })]
+    fn candidate(
+        &self,
+        arena: &CoreArena,
+        left: TypeNode,
+        right: TypeNode,
+    ) -> Maybe<Equation, candidate::Absent>
+    {
+        for (flex, rigid) in [(left, right), (right, left)] {
+            let code = match (flex, rigid) {
+                (TypeNode::Value(flex), TypeNode::Value(rigid)) => {
+                    match (arena.value_type(flex), arena.value_type(rigid)) {
+                        (Some(&ValueType::Element { code, .. }), Some(other))
+                            if !matches!(*other, ValueType::Element { .. }) =>
+                        {
+                            code
+                        },
+                        _ => continue,
+                    }
+                },
+                (TypeNode::Computation(flex), TypeNode::Computation(rigid)) => {
+                    match (arena.comp_type(flex), arena.comp_type(rigid)) {
+                        (Some(&CompType::Element { code, .. }), Some(other))
+                            if !matches!(*other, CompType::Element { .. }) =>
+                        {
+                            code
+                        },
+                        _ => continue,
+                    }
+                },
+                _ => continue,
+            };
+            if let Some(&Value::Constant(hole)) = arena.value(code)
+                && self.owed.contains(&hole)
+            {
+                return Maybe::Present(Equation { hole, flex, rigid });
+            }
+        }
+        Maybe::Absent(candidate::Absent::Rigid)
+    }
+
+    /// Accumulate a residual without changing ordinary checking contexts.
+    ///
+    /// # Specification
+    /// - requires: both nodes are weak-head types of the same family.
+    /// - ensures: `Yes` records one eligible equation; `No` changes nothing. A
+    ///   collector that is off, or has no owed flex head, always answers `No`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an owed decode suspends a value declaration; a rigid
+    ///   decode keeps the rigid mismatch, and a collector that is off defers
+    ///   nothing while holes are owed.
+    /// - witness: `gandr-core-checker::tests::elaboration::owed_conversion_suspends`
+    /// - witness: `gandr-core-checker::tests::elaboration::only_bare_flex_rigid_equations_suspend`
+    /// - witness: `elaboration::tests::an_off_collector_never_defers`
+    #[spec(
+        captures: before = self.residue.equations.len(),
+        ensures: |ret| match ret {
+            Deferred::Yes => self.residue.equations.len() == before.saturating_add(1),
+            Deferred::No => self.residue.equations.len() == before,
+        },
+    )]
+    pub fn defer(
+        &mut self,
+        arena: &CoreArena,
+        left: TypeNode,
+        right: TypeNode,
+    ) -> Deferred
+    {
+        if self.collecting == Collecting::Off || self.owed.is_empty() {
+            return Deferred::No;
+        }
+        match self.candidate(arena, left, right) {
+            Maybe::Present(equation) => {
+                self.residue.equations.push(equation);
+                Deferred::Yes
+            },
+            Maybe::Absent(_) => Deferred::No,
+        }
+    }
+
+    /// Declare the nominated hole `hole`, met at `at` under `scope`
+    /// intuitionistic binders, a metavariable of the running judgement.
+    ///
+    /// # Specification
+    /// - requires: `at` is the node of `hole`, which a call nominated.
+    /// - ensures: `hole` is a metavariable whose context holds `scope` binders,
+    ///   and `at` is met; a hole met before keeps its first context, and is not
+    ///   met twice.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call omitting an implicit declares its hole once,
+    ///   at the call's binders, and the solution stands in that context.
+    /// - witness: `elaboration::tests::an_omitted_implicit_is_solved_from_the_argument_1216`
+    #[spec(
+        captures: before = self.nominated.len(),
+        ensures: matches!(self.metas.meta(hole), Maybe::Present(_))
+            && self.nominated.len() <= before.saturating_add(1),
+    )]
+    pub fn nominate(
+        &mut self,
+        at: ValueId,
+        hole: HoleId,
+        scope: Binders,
+    )
+    {
+        if let Maybe::Present(_) = self.metas.declare(hole, scope) {
+            self.nominated.push(at);
+        }
+    }
+
+    /// Whether a comparison standing on a hole waits for its fill: a hole the
+    /// running judgement nominated is still unbound, and a solution the
+    /// solver, or a model slot's resolution, may yet bind it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Deferred::Yes`] exactly when some nominated node is a hole
+    ///   declared a metavariable that has no solution in the store.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a reflexivity and an ascription whose path endpoints
+    ///   call a definition over an omitted model wait for the model to be
+    ///   resolved, and are judged once it is filled in; reading the nominated
+    ///   hole as bound refuses both before the resolution.
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
+    #[spec(ensures: |ret| ret == Deferred::No || !self.nominated.is_empty())]
+    pub fn awaits(
+        &self,
+        arena: &CoreArena,
+    ) -> Deferred
+    {
+        let unbound = self.nominated.iter().any(|&at| match arena.value(at) {
+            Some(&Value::Hole(hole)) => match self.metas.meta(hole) {
+                Maybe::Present(meta) => matches!(self.metas.solution(meta), Maybe::Absent(_)),
+                Maybe::Absent(_) => false,
+            },
+            _ => false,
+        });
+        if unbound { Deferred::Yes } else { Deferred::No }
+    }
+
+    /// The metavariable `side` is, or is the decode of, when the running
+    /// judgement declared one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn decoded(
+        &self,
+        arena: &CoreArena,
+        side: Side,
+    ) -> Option<MetaId>
+    {
+        let hole = match side {
+            Side::Value(at) => at,
+            Side::ValueType(at) => match arena.value_type(at) {
+                Some(&ValueType::Element { code, .. } | &ValueType::RowTail(code)) => code,
+                _ => return None,
+            },
+            Side::CompType(at) => match arena.comp_type(at) {
+                Some(&CompType::Element { code, .. }) => code,
+                _ => return None,
+            },
+        };
+        match arena.value(hole) {
+            Some(&Value::Hole(hole)) => match self.metas.meta(hole) {
+                Maybe::Present(meta) => Some(meta),
+                Maybe::Absent(_) => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// The metavariable the value type `ty` is the decode of, when the running
+    /// judgement declared it and the solver has not bound it yet.
+    ///
+    /// # Specification
+    /// - requires: `ty` is read at its weak head.
+    /// - ensures: the metavariable exactly when `ty` is the decode of a hole
+    ///   the running judgement declared, with no solution in its store; nothing
+    ///   for any other type, an author's hole's decode among them.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an implicit only a computation argument determines is
+    ///   unbound when that argument is read, so the argument runs and binds it;
+    ///   were it reported bound, the argument would be suspended and the
+    ///   implicit left unforced.
+    /// - witness: `module::tests::a_nested_argument_binds_the_implicit_it_is_read_at`
+    #[spec(ensures: |ret| ret.is_none_or(|meta| ret == self.decoded(arena, Side::ValueType(ty)) && matches!(self.metas.solution(meta), Maybe::Absent(_))))]
+    pub(crate) fn unbound(
+        &self,
+        arena: &CoreArena,
+        ty: gandr_core_term::ValueTypeId,
+    ) -> Option<MetaId>
+    {
+        self.decoded(arena, Side::ValueType(ty))
+            .filter(|&meta| matches!(self.metas.solution(meta), Maybe::Absent(_)))
+    }
+
+    /// Why the solver left `meta` unbound: the reason of the first equation
+    /// in its store that waits on `meta`, names it, or has its decode at a
+    /// head; unforced when none does.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unsolved(
+        &self,
+        arena: &CoreArena,
+        meta: MetaId,
+    ) -> Unsolved
+    {
+        let named = |reason| match reason {
+            Reason::Pruning { meta: named, .. }
+            | Reason::Escape { meta: named }
+            | Reason::Occurs { meta: named }
+            | Reason::Scope { meta: named } => Some(named),
+            Reason::Unfolding
+            | Reason::Gradual
+            | Reason::Spine
+            | Reason::Outside
+            | Reason::Families
+            | Reason::Neutral
+            | Reason::Levels
+            | Reason::Linear
+            | Reason::Dangling
+            | Reason::Budget
+            | Reason::Rows => None,
+        };
+        self.metas
+            .postponed()
+            .iter()
+            .find(|waiting| {
+                let equation = waiting.equation();
+                waiting.blockers().contains(&meta)
+                    || named(waiting.reason()) == Some(meta)
+                    || [equation.left(), equation.right()]
+                        .into_iter()
+                        .any(|side| self.decoded(arena, side) == Some(meta))
+            })
+            .map_or(Unsolved::Unforced, |waiting| {
+                Unsolved::from(waiting.reason())
+            })
+    }
+
+    /// Pose `left` against `right`, under `scope` intuitionistic binders, to
+    /// the solver when a side is the decode of a metavariable.
+    ///
+    /// # Specification
+    /// - requires: both nodes are weak-head types of the same family, read in
+    ///   the context of `scope` binders.
+    /// - ensures: [`Unified::Rigid`], with nothing changed, unless a side is
+    ///   the decode of a metavariable; otherwise the solver's run over the one
+    ///   equation: [`Unified::Refuted`] when it refutes it, and
+    ///   [`Unified::Agreed`] when it solves it or puts it in the store.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the decode of an omitted implicit against the type
+    ///   its argument synthesises binds it, the same decode against a second,
+    ///   different type is refuted, and a pair with no decode of a metavariable
+    ///   is left to conversion.
+    /// - witness: `elaboration::tests::an_omitted_implicit_is_solved_from_the_argument_1216`
+    /// - witness: `elaboration::tests::two_arguments_disagreeing_on_an_implicit_are_apart_1216`
+    #[spec(
+        captures: before = usize::from(self.metas.count()),
+        ensures: |ret| usize::from(self.metas.count()) == before
+            && (ret == Unified::Rigid || before > 0),
+    )]
+    pub fn unify(
+        &mut self,
+        arena: &mut CoreArena,
+        scope: Binders,
+        left: TypeNode,
+        right: TypeNode,
+    ) -> Unified
+    {
+        let (left, right) = match (left, right) {
+            (TypeNode::Value(left), TypeNode::Value(right)) => {
+                (Side::ValueType(left), Side::ValueType(right))
+            },
+            (TypeNode::Computation(left), TypeNode::Computation(right)) => {
+                (Side::CompType(left), Side::CompType(right))
+            },
+            (TypeNode::Value(_), TypeNode::Computation(_))
+            | (TypeNode::Computation(_), TypeNode::Value(_)) => return Unified::Rigid,
+        };
+        if self.nominated.is_empty()
+            || (self.decoded(arena, left).is_none() && self.decoded(arena, right).is_none())
+        {
+            return Unified::Rigid;
+        }
+        self.pose(arena, scope, left, right)
+    }
+
+    /// Pose the value `left` against `right`, under `scope` intuitionistic
+    /// binders, to the solver when a side is a metavariable: a wildcard a
+    /// type holds against the term a judgement compares it with.
+    ///
+    /// # Specification
+    /// - requires: both values are read in the context of `scope` binders, at
+    ///   one type.
+    /// - ensures: [`Unified::Rigid`], with nothing changed, unless a side is a
+    ///   metavariable; otherwise the solver's run over the one equation:
+    ///   [`Unified::Refuted`] when it refutes it, and [`Unified::Agreed`] when
+    ///   it solves it or puts it in the store.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a path's open end against the point that reaches it
+    ///   is bound to the point, a second, different point is refuted, and two
+    ///   rigid values are left to conversion.
+    /// - witness: `elaboration::tests::an_open_end_is_solved_from_its_point_1979`
+    #[spec(
+        captures: before = usize::from(self.metas.count()),
+        ensures: |ret| usize::from(self.metas.count()) == before
+            && (ret == Unified::Rigid || before > 0),
+    )]
+    pub fn unify_values(
+        &mut self,
+        arena: &mut CoreArena,
+        scope: Binders,
+        left: ValueId,
+        right: ValueId,
+    ) -> Unified
+    {
+        let (left, right) = (Side::Value(left), Side::Value(right));
+        if self.nominated.is_empty()
+            || (self.decoded(arena, left).is_none() && self.decoded(arena, right).is_none())
+        {
+            return Unified::Rigid;
+        }
+        self.pose(arena, scope, left, right)
+    }
+
+    /// Pose the row `left` against `right`, under `scope` intuitionistic
+    /// binders, to the solver when a side is open through a metavariable: the
+    /// two rows as row values, so the solver decides them by the row equation.
+    ///
+    /// # Specification
+    /// - requires: both rows are read in the context of `scope` binders.
+    /// - ensures: [`Unified::Rigid`], with nothing changed, unless a row's tail
+    ///   stands over a metavariable; otherwise the solver's run over the one
+    ///   equation: [`Unified::Refuted`] when it refutes it, and
+    ///   [`Unified::Agreed`] when it solves it or puts it in the store.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a row open through a metavariable against a closed
+    ///   row binds the metavariable to what the closed row writes beyond it,
+    ///   one writing an instance the closed row lacks is refuted, and two rows
+    ///   over no metavariable are left to conversion.
+    /// - witness: `elaboration::tests::a_row_open_through_an_implicit_is_solved_by_the_row_equation_2270`
+    #[spec(
+        captures: before = usize::from(self.metas.count()),
+        ensures: |ret| usize::from(self.metas.count()) == before
+            && (ret == Unified::Rigid || before > 0),
+    )]
+    pub fn unify_rows(
+        &mut self,
+        arena: &mut CoreArena,
+        scope: Binders,
+        (left, right): (&EffectRow, &EffectRow),
+    ) -> Unified
+    {
+        let open = |row: &EffectRow| {
+            row.tail()
+                .is_some_and(|tail| self.decoded(arena, Side::ValueType(tail)).is_some())
+        };
+        if self.nominated.is_empty() || (!open(left) && !open(right)) {
+            return Unified::Rigid;
+        }
+        let left = arena.value_row(left.clone());
+        let right = arena.value_row(right.clone());
+        self.pose(arena, scope, Side::Value(left), Side::Value(right))
+    }
+
+    /// The solver's run over the one equation `left` against `right`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn pose(
+        &mut self,
+        arena: &mut CoreArena,
+        scope: Binders,
+        left: Side,
+        right: Side,
+    ) -> Unified
+    {
+        let equation = gandr_core_unify::Equation::new(scope, left, right);
+        match gandr_core_unify::solve(arena, &mut self.metas, &[equation]) {
+            gandr_core_unify::Verdict::Solved | gandr_core_unify::Verdict::Postponed => {
+                Unified::Agreed
+            },
+            gandr_core_unify::Verdict::Refuted(_) => Unified::Refuted,
+        }
+    }
+
+    /// Each nominated hole the running judgement met, with its solution and
+    /// the binders the solution is written under, or the node of the first
+    /// one the solver left unbound and why; each hole a slot's resolution
+    /// answered without the judgement meeting it; and each hole a splice wrote
+    /// it met, with its tactic's answer.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry per nominated hole met, its solution in its own
+    ///   context and that context's binders, when every one is bound, one per
+    ///   hole [`Self::resolve`] answered, its elaboration's closed component at
+    ///   no binder, and one per hole a splice wrote, its tactic's answer; the
+    ///   first unbound met one's node otherwise, with the reason of the first
+    ///   equation in the store that waits on it, names it or has its decode at
+    ///   a head, or [`Unsolved::Unforced`] when none does; nothing when the
+    ///   judgement met none and no resolution answered one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call whose argument forces its implicit answers the
+    ///   solution; one whose arguments force none answers the hole, unforced;
+    ///   one whose only solution names a binder of an argument's own lambda
+    ///   answers the hole and its escape; a slot's hole the judgement never met
+    ///   answers its elaboration's component.
+    /// - witness: `elaboration::tests::an_omitted_implicit_is_solved_from_the_argument_1216`
+    /// - witness: `elaboration::tests::an_implicit_no_argument_forces_is_unsolved_1216`
+    /// - witness: `elaboration::tests::an_implicit_solved_past_its_scope_escapes_1216`
+    /// - witness: `elaboration::tests::a_slot_hole_the_judgement_never_met_is_answered_by_the_elaboration_2755`
+    /// - witness: `tests::tactic::assumption_answers_the_innermost_binder_of_the_goal_type_2762`
+    #[spec(ensures: |ret| ret.as_ref().map_or(!self.nominated.is_empty(), |solutions| {
+        solutions.len()
+            == self.nominated.len().saturating_add(self.answered.len()).saturating_add(self.spliced.len())
+    }))]
+    pub fn solutions(
+        &self,
+        arena: &CoreArena,
+    ) -> Result<BTreeMap<HoleId, (ValueId, Binders)>, (ValueId, Unsolved)>
+    {
+        let mut solutions = BTreeMap::new();
+        for &at in &self.nominated {
+            let (hole, solution) = self.binding(arena, at).map_err(|unsolved| (at, unsolved))?;
+            let _first = solutions.insert(hole, solution);
+        }
+        self.extend_answered(&mut solutions);
+        Ok(solutions)
+    }
+
+    /// Each nominated hole the running judgement met that the solver bound,
+    /// with its solution and the binders it is written under; each hole a
+    /// slot's resolution answered; and each hole a splice wrote, with its
+    /// tactic's answer. A hole the solver left unbound is left out.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: what [`Self::solutions`] answers when every met hole is
+    ///   bound; otherwise the same entries less each hole left unbound.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refusal after a call whose argument binds its
+    ///   implicit names the solution, where [`Self::solutions`] answers nothing
+    ///   while a later hole is unbound.
+    /// - witness: `module::tests::a_refusal_names_the_implicit_its_call_solved_5033`
+    #[spec(ensures: |ret| ret.len() <= self.nominated.len().saturating_add(self.answered.len()).saturating_add(self.spliced.len()))]
+    pub fn bound(
+        &self,
+        arena: &CoreArena,
+    ) -> BTreeMap<HoleId, (ValueId, Binders)>
+    {
+        let mut bound: BTreeMap<HoleId, (ValueId, Binders)> = self
+            .nominated
+            .iter()
+            .filter_map(|&at| self.binding(arena, at).ok())
+            .collect();
+        self.extend_answered(&mut bound);
+        bound
+    }
+
+    /// The hole the nominated node `at` stands for, with the solver's solution
+    /// and the binders it is written under, or why the solver left it
+    /// unbound.
+    ///
+    /// # Specification
+    /// trivial.
+    fn binding(
+        &self,
+        arena: &CoreArena,
+        at: ValueId,
+    ) -> Result<(HoleId, (ValueId, Binders)), Unsolved>
+    {
+        let meta = self
+            .decoded(arena, Side::Value(at))
+            .ok_or(Unsolved::Dangling)?;
+        match (
+            arena.value(at),
+            self.metas.solution(meta),
+            self.metas.scope(meta),
+        ) {
+            (Some(&Value::Hole(hole)), Maybe::Present(solution), Maybe::Present(scope)) => {
+                Ok((hole, (solution, scope)))
+            },
+            (_, Maybe::Present(_) | Maybe::Absent(_), Maybe::Present(_) | Maybe::Absent(_)) => {
+                Err(self.unsolved(arena, meta))
+            },
+        }
+    }
+
+    /// Add to `solutions` each hole a slot's resolution answered, and each
+    /// hole a splice wrote that `solutions` does not hold.
+    ///
+    /// # Specification
+    /// trivial.
+    fn extend_answered(
+        &self,
+        solutions: &mut BTreeMap<HoleId, (ValueId, Binders)>,
+    )
+    {
+        // A candidate's components are closed, so each reads the same under
+        // any binders the hole stands beneath.
+        solutions.extend(
+            self.answered
+                .iter()
+                .map(|(&hole, &component)| (hole, (component, Binders::NONE))),
+        );
+        for (&hole, &fill) in &self.spliced {
+            let _first = solutions.entry(hole).or_insert(fill);
+        }
+    }
+
+    /// Resolve each slot of `models` the running judgement met to the one
+    /// candidate the solver's store leaves, binding the slot's holes as that
+    /// candidate's components. At [`Signing::Signature`] only a slot the
+    /// signature decides binds, so a decode in the declared type runs the
+    /// call that omits it (#6158); every other slot waits for the body.
+    ///
+    /// # Specification
+    /// - requires: at [`Signing::Body`], the judgement over the body has run,
+    ///   so every equation its arguments force has been posed; at
+    ///   [`Signing::Signature`], the declared type has formed, and the holes it
+    ///   nominated are the ones met.
+    /// - ensures: for each slot, in order, some hole of which the judgement met
+    ///   and some hole of which the solver left unbound: each candidate is
+    ///   tried in a trial of the store ([`Metas::trial`]), which puts back what
+    ///   the solver bound, its components posed against the holes the judgement
+    ///   met and its code of each sort the slot fixes against the slot's, where
+    ///   the slot's code reads no binder of the callee, and one the solver
+    ///   refutes is dropped. A hole the judgement did not meet is not posed: a
+    ///   capability scope's carrier, which its clauses read only through its
+    ///   decode, read as the unknown type, or a law no clause reads. Candidates
+    ///   left are counted up to conversion: one whose components and codes
+    ///   convert with the first one left's ([`agreement`]) is the same
+    ///   elaboration, as a model including another is at the included model's
+    ///   theory, and is not counted again. A single elaboration binds the holes
+    ///   as its candidate's trial did, its equations solved again against the
+    ///   store, and answers each hole the judgement did not meet by its
+    ///   component at the hole's place, kept in `answered` for
+    ///   [`Self::solutions`]. A slot whose met holes are all bound, one none of
+    ///   whose holes the judgement met, and a candidate of another arity, or
+    ///   carrying another number of fixed sorts, are left out. At
+    ///   [`Signing::Signature`], a slot left with no elaboration or with two,
+    ///   or with a candidate the machine leaves undecided against the first,
+    ///   binds nothing and is not refused: the resolution after the body
+    ///   decides it, with the equations the body poses. No slot is no work.
+    /// - fails: at [`Signing::Body`] only, [`CheckRefusal::ModelUnanswered`] at
+    ///   the slot's first hole when no candidate is left, naming the type the
+    ///   first met hole the solver bound to a type's code stands for;
+    ///   [`CheckRefusal::ModelAmbiguous`] there, naming the first candidate
+    ///   left and every one not converting with it, when two elaborations are
+    ///   left; [`CheckRefusal::Undecided`] there when the machine leaves a
+    ///   candidate undecided against the first one left. At either part, a
+    ///   machine fault at the slot's first hole, as the machine raises it.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// One trial per candidate of each finite slot, each a run of the solver,
+    /// which its step budget bounds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a slot whose sort the argument forces resolves to the
+    ///   candidate of that sort, its operation then solved as the candidate's;
+    ///   two candidates of the forced sort are ambiguous, naming both; a slot
+    ///   no candidate of the forced sort answers is unanswered; a slot whose
+    ///   type fixes the sort resolves to the candidate of that sort alone; two
+    ///   candidates passing the same members are one elaboration; a slot with a
+    ///   hole the judgement never met resolves on the others, and its
+    ///   elaboration answers that hole; at the signature, two candidates of the
+    ///   forced sort and none bind nothing and refuse nothing, and the same
+    ///   slot after the body is refused; a candidate whose step the machine
+    ///   declines against the first one's leaves the slot open at the signature
+    ///   and undecided at the body, not ambiguous.
+    /// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
+    /// - witness: `elaboration::tests::a_model_slot_two_candidates_answer_is_ambiguous_739`
+    /// - witness: `elaboration::tests::a_model_slot_no_candidate_answers_is_refused_739`
+    /// - witness: `elaboration::tests::a_manifest_model_slot_resolves_to_the_candidate_of_its_fixed_sort_2317`
+    /// - witness: `elaboration::tests::two_candidates_passing_one_member_are_one_elaboration_2333`
+    /// - witness: `elaboration::tests::a_slot_hole_the_judgement_never_met_is_answered_by_the_elaboration_2755`
+    /// - witness: `elaboration::tests::a_slot_the_signature_leaves_undecided_waits_for_the_body_6158`
+    /// - witness: `elaboration::tests::a_slot_whose_candidates_the_machine_declines_is_undecided_6550`
+    #[spec(ensures: |ret| match ret {
+        | Err((at, CheckRefusal::ModelAmbiguous { at: named, survivors })) => part == Signing::Body && at == named && (survivors.places().count() > 1 || u32::from(survivors.beyond()) > 0),
+        | Err((at, CheckRefusal::ModelUnanswered { at: named, .. } | CheckRefusal::Undecided { at: named })) => part == Signing::Body && named == at,
+        | Err((_, refusal)) => matches!(refusal, CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant),
+        | Ok(()) => true,
+    })]
+    #[cfg_attr(feature = "hotpath", hotpath::measure(impl_type = "Deferrals"))]
+    pub fn resolve(
+        &mut self,
+        arena: &mut CoreArena,
+        definitions: &crate::code::CodeDefinitions,
+        models: &[ModelSlot],
+        part: Signing,
+    ) -> Result<(), (ValueId, CheckRefusal)>
+    {
+        if models.is_empty() {
+            return Ok(());
+        }
+        let met: BTreeMap<HoleId, ValueId> = self
+            .nominated
+            .iter()
+            .filter_map(|&at| match arena.value(at) {
+                Some(&Value::Hole(hole)) => Some((hole, at)),
+                _ => None,
+            })
+            .collect();
+        let mut holes: Vec<(Component, ValueId, MetaId)> = Vec::new();
+        let mut equations: Vec<gandr_core_unify::Equation> = Vec::new();
+        let mut closed: Vec<Option<ValueId>> = Vec::new();
+        'slots: for slot in models {
+            holes.clear();
+            holes.extend(
+                slot.holes
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(component, hole)| {
+                        match (met.get(hole), self.metas.meta(*hole)) {
+                            (Some(&at), Maybe::Present(meta)) => {
+                                Some((Component(component), at, meta))
+                            },
+                            _ => None,
+                        }
+                    }),
+            );
+            let Some(&(_, first, _)) = holes.first()
+            else {
+                continue;
+            };
+            if holes
+                .iter()
+                .all(|&(_, _, meta)| matches!(self.metas.solution(meta), Maybe::Present(_)))
+            {
+                continue;
+            }
+            closed.clear();
+            closed.extend(slot.fixed.iter().map(|&code| {
+                crate::code::loose_reach(
+                    arena,
+                    crate::refusal::CoreNode::Term(crate::refusal::TermNode::Value(code)),
+                )
+                .is_ok_and(|reach| usize::from(reach) == 0)
+                .then_some(code)
+            }));
+            let (components, sorts) = (slot.holes.len(), slot.fixed.len());
+            let mut survivors = Survivors::default();
+            let mut count = 0_usize;
+            let mut elaborated = None;
+            for (place, candidate) in slot.candidates.iter().enumerate() {
+                if candidate.components.len() != components || candidate.fixed.len() != sorts {
+                    continue;
+                }
+                pose(&mut equations, &self.metas, &holes, &closed, candidate);
+                if let gandr_core_unify::Verdict::Refuted(_) =
+                    tried(arena, &mut self.metas, &equations)
+                {
+                    continue;
+                }
+                if let Some(earlier) = elaborated {
+                    match agreement(arena, definitions, earlier, candidate) {
+                        Ok(MachineVerdict::Convertible) => continue,
+                        Ok(_) => {},
+                        // Undecided is no second elaboration: at the
+                        // signature the slot binds nothing and waits for the
+                        // body, which refuses it as undecided.
+                        Err(CheckRefusal::Undecided { .. }) => match part {
+                            Signing::Signature => continue 'slots,
+                            Signing::Body => {
+                                return Err((first, CheckRefusal::Undecided { at: first }));
+                            },
+                        },
+                        Err(fault) => return Err((first, fault)),
+                    }
+                }
+                survivors = survivors.with(CandidatePlace::from(place));
+                count = count.saturating_add(1);
+                if elaborated.is_none() {
+                    elaborated = Some(candidate);
+                }
+            }
+            match (count, elaborated, part) {
+                (1, Some(candidate), _) => {
+                    // The solver is a function of the store and the
+                    // equations, so solving the survivor's again binds the
+                    // holes as its trial did.
+                    pose(&mut equations, &self.metas, &holes, &closed, candidate);
+                    let _solved = gandr_core_unify::solve(arena, &mut self.metas, &equations);
+                    for (hole, &component) in slot.holes.iter().zip(&candidate.components) {
+                        if !met.contains_key(hole) {
+                            let _first = self.answered.insert(*hole, component);
+                        }
+                    }
+                },
+                // The signature leaves the slot undecided: it binds nothing,
+                // and the resolution after the body decides it.
+                (_, _, Signing::Signature) => {},
+                (0, _, Signing::Body) | (_, None, Signing::Body) => {
+                    // The first component the call's arguments solved to a
+                    // type's code is the type no candidate answers at.
+                    let forced = holes
+                        .iter()
+                        .find_map(|&(_, _, meta)| match self.metas.solution(meta) {
+                            Maybe::Present(solved) => match arena.value(solved) {
+                                Some(&Value::Quote(quoted)) => Some(quoted),
+                                _ => None,
+                            },
+                            Maybe::Absent(_) => None,
+                        })
+                        .map_or(
+                            crate::refusal::Forced::Unforced,
+                            crate::refusal::Forced::Type,
+                        );
+                    return Err((first, CheckRefusal::ModelUnanswered { at: first, forced }));
+                },
+                (_, _, Signing::Body) => {
+                    return Err((first, CheckRefusal::ModelAmbiguous {
+                        at: first,
+                        survivors,
+                    }));
+                },
+            }
+        }
+        Ok(())
+    }
+}
+
+/// A hole's place among a slot's components: the candidate's component at
+/// the same place answers it.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Component(usize);
+
+/// Pose into `equations` what trying `candidate` at a slot asks: each of its
+/// components against the slot's hole at its place, under the hole's context,
+/// and its code of each sort the slot fixes against the slot's closed code.
+///
+/// # Specification
+/// - requires: `holes` are the slot's holes the judgement met, each with its
+///   place among the slot's components and its metavariable in `metas`, and
+///   `closed` the slot's fixed codes in sort order, each present when it reads
+///   no binder of the callee.
+/// - ensures: `equations` holds exactly those equations, the components' first,
+///   in place order, a hole whose place `candidate` has no component at posing
+///   none; what it held before is gone.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Deferrals::resolve`].
+/// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
+/// - witness: `elaboration::tests::a_manifest_model_slot_resolves_to_the_candidate_of_its_fixed_sort_2317`
+/// - witness: `elaboration::tests::a_slot_hole_the_judgement_never_met_is_answered_by_the_elaboration_2755`
+#[spec(ensures: equations.len() <= holes.len().saturating_add(closed.len()))]
+fn pose(
+    equations: &mut Vec<gandr_core_unify::Equation>,
+    metas: &Metas,
+    holes: &[(Component, ValueId, MetaId)],
+    closed: &[Option<ValueId>],
+    candidate: &gandr_core_term::model::Candidate,
+)
+{
+    equations.clear();
+    equations.extend(holes.iter().filter_map(|&(Component(place), at, meta)| {
+        let scope = match metas.scope(meta) {
+            Maybe::Present(scope) => scope,
+            Maybe::Absent(_) => Binders::NONE,
+        };
+        candidate.components.get(place).map(|&component| {
+            gandr_core_unify::Equation::new(scope, Side::Value(at), Side::Value(component))
+        })
+    }));
+    equations.extend(
+        closed
+            .iter()
+            .zip(&candidate.fixed)
+            .filter_map(|(&code, &own)| {
+                code.map(|code| {
+                    gandr_core_unify::Equation::new(
+                        Binders::NONE,
+                        Side::Value(code),
+                        Side::Value(own),
+                    )
+                })
+            }),
+    );
+}
+
+/// Whether the candidates `one` and `other` are one elaboration: each
+/// component of one converts with the other's at its place, and each code of a
+/// fixed sort with the other's, every definition `definitions` holds
+/// unfolding.
+///
+/// # Specification
+/// - requires: both candidates' values are closed, as a candidate's are, and
+///   live in `arena`.
+/// - ensures: [`MachineVerdict::Convertible`] exactly when every pair converts;
+///   otherwise the first pair's verdict that is not, before any pair after it
+///   is compared.
+/// - provides: uniqueness up to conversion in [`Deferrals::resolve`].
+/// - fails: [`CheckRefusal::Undecided`] at the first pair the machine leaves
+///   undecided before a pair it refutes; another machine fault as it raises it.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two candidates passing the same member and the same
+///   carrier convert; two passing different members do not; a step the machine
+///   declines against another is undecided, and not a second elaboration.
+/// - witness: `elaboration::tests::two_candidates_passing_one_member_are_one_elaboration_2333`
+/// - witness: `elaboration::tests::a_model_slot_two_candidates_answer_is_ambiguous_739`
+/// - witness: `elaboration::tests::a_slot_whose_candidates_the_machine_declines_is_undecided_6550`
+#[spec(ensures: |ret| (!one.components.is_empty() && !other.components.is_empty()) || (!one.fixed.is_empty() && !other.fixed.is_empty()) || ret == Ok(MachineVerdict::Convertible))]
+fn agreement(
+    arena: &CoreArena,
+    definitions: &crate::code::CodeDefinitions,
+    one: &gandr_core_term::model::Candidate,
+    other: &gandr_core_term::model::Candidate,
+) -> Result<MachineVerdict, CheckRefusal>
+{
+    for (&left, &right) in one
+        .components
+        .iter()
+        .zip(&other.components)
+        .chain(one.fixed.iter().zip(&other.fixed))
+    {
+        let verdict = definitions.convert_terms(arena, left, right)?;
+        if verdict != MachineVerdict::Convertible {
+            return Ok(verdict);
+        }
+    }
+    Ok(MachineVerdict::Convertible)
+}
+
+/// The solver's verdict on `equations`, a candidate's at a slot, run in a
+/// trial of `metas` ([`Metas::trial`]).
+///
+/// # Specification
+/// - requires: as [`gandr_core_unify::solve`].
+/// - ensures: the run's verdict; `metas` as it was, whatever the run bound or
+///   postponed, so a trial costs what the run touched rather than a copy of the
+///   store.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Deferrals::resolve`]: a candidate of the forced sort
+///   is kept and one of another sort refuted, each against the store as the
+///   judgement left it.
+/// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
+/// - witness: `elaboration::tests::a_model_slot_no_candidate_answers_is_refused_739`
+#[spec(captures: count = metas.count(), ensures: |_| metas.count() == count)]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
+fn tried(
+    arena: &mut CoreArena,
+    metas: &mut Metas,
+    equations: &[gandr_core_unify::Equation],
+) -> gandr_core_unify::Verdict
+{
+    metas.trial(|trial| gandr_core_unify::solve(arena, trial, equations))
+}
