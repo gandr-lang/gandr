@@ -12,7 +12,7 @@
 
 /// The negative integers, zero and the positive integers cover the integers,
 /// and the comparison with zero decides which one holds.
-def signCover() -> Cover(Integer, [negative, zero, positive]) =
+def signCover() -> Cover Integer [negative, zero, positive] =
   Cover.decide (fun (n) { compare n 0 })
 
 /// An integer read by its sign.

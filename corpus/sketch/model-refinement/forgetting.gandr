@@ -32,7 +32,7 @@ def readInts() -> Integer =
 
 /// The map the checker inserts, printed.
 def readIntsExplicit() -> Integer =
-  readOnce(forget ints at Model Counter)
+  readOnce (forget ints at Model Counter)
 
 /// An existential: a seed and a reading over a type nobody outside names.
 def opaqueSeed : Model *{ type T; read : T -> Integer; seed : T }) = *{

@@ -19,7 +19,7 @@ import "./solver.gandr";
 import std.io (print);
 
 /// One line of the report for one obligation's outcome.
-def line(name : String, o : Outcome(Goal)) -> String =
+def line(name : String, o : Outcome Goal) -> String =
   match o {
     evidence cert -> name ++ ": discharged by " ++ cert.solver,
     counterexample m => name ++ ": fails at " ++ show m,
