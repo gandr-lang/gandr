@@ -687,10 +687,8 @@ where
     )
     {
         let len = self.count();
-        if len == self.capacity()
-            && let Err(refused) = self.try_reserve(Count(1))
-        {
-            refused.raise();
+        if len == self.capacity() {
+            self.grow_one();
         }
         // SAFETY: `len` is below the capacity, so the slot lies in the live
         // half's allocation.
@@ -700,6 +698,23 @@ where
             slot.write(item);
         }
         self.set_len(Count(len.0.wrapping_add(1)));
+    }
+
+    /// Grows the vector by room for one item, the slow path of
+    /// [`SmallVec::push`]. It stays out of line, so the fast path of a push
+    /// inlines, as `Vec::push` keeps its grow apart.
+    ///
+    /// # Specification
+    /// - ensures: the capacity passes the length.
+    /// - panics: when the length passes `isize::MAX`; the allocator's refusal
+    ///   goes to its error handler.
+    #[cold]
+    #[inline(never)]
+    fn grow_one(&mut self)
+    {
+        if let Err(refused) = self.try_reserve(Count(1)) {
+            refused.raise();
+        }
     }
 
     /// Moves the item out of the slot past `at` items.
@@ -1854,11 +1869,60 @@ where
     ) where
         I: IntoIterator<Item = T>,
     {
-        let items = iter.into_iter();
+        let mut items = iter.into_iter();
         if let Err(refused) = self.try_reserve(Count(items.size_hint().0)) {
             refused.raise();
         }
+        let capacity = self.capacity().0;
+        let mut written = Written {
+            len: self.count().0,
+            vec: self,
+        };
+        let start = written.vec.as_mut_ptr();
+        while written.len < capacity {
+            let Some(item) = items.next()
+            else {
+                return;
+            };
+            // SAFETY: `written.len` is below the capacity, so the slot lies in
+            // the live half, and it holds no item, since no length counts it.
+            unsafe {
+                start.add(written.len).write(item);
+            }
+            written.len = written.len.wrapping_add(1);
+        }
+        drop(written);
         items.for_each(|item| self.push(item));
+    }
+}
+
+/// The length of a vector while an extend writes past it: the drop sets the
+/// length, so the items written before an unwind drop once with the vector.
+///
+/// # Specification
+/// - requires: the first `len` slots of the live half of `vec` hold items.
+struct Written<'vec, T, const N: usize, A>
+where
+    A: Allocator,
+{
+    /// The vector that the extend writes.
+    vec: &'vec mut SmallVec<T, N, A>,
+    /// The items that its slots hold so far.
+    len: usize,
+}
+
+impl<T, const N: usize, A> Drop for Written<'_, T, N, A>
+where
+    A: Allocator,
+{
+    /// Sets the vector's length to the items written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn drop(&mut self)
+    {
+        self.vec.set_len(Count(self.len));
     }
 }
 
