@@ -1704,7 +1704,7 @@ fn an_endpoint_loop_publishes_its_kernel_decline_6155()
     assert!(quiet.is_empty(), "{quiet:?}");
     let reported = published(after);
     let expected = format!(
-        "{}: settled `follow` at 1136..1401: states checks owing 0; produced checks owing 0; no kernel image: EndpointLoop (unimplemented, #6099)",
+        "{}: settled `follow` at 1136..1406: states checks owing 0; produced checks owing 0; no kernel image: EndpointLoop (unimplemented, #6099)",
         path.display()
     );
     assert!(
