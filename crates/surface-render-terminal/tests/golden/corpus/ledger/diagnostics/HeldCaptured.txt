@@ -1,0 +1,15 @@
+error[HeldCaptured]: the held value is used inside a thunk, which may run it other than once
+  ╭▸ corpus/ledger/diagnostics/HeldCaptured.gandr:6:9
+  │
+4 │ ┌ def stash() -> Integer =
+5 │ │   var c = 0
+  │ │   ─── checked against `-F Integer`; while checking the scope of this hold
+6 │ │   force thunk { pure c }
+  │ │   ┬─────┯━━━━━━━━━━━━━━│
+  │ └───│─────│──────────────┤
+  │     │     │              checked against `() -> Integer`; while checking the body of this thunk
+  │     │     a held value that may be held other than once
+  │     checked against `-F Integer`; while forcing this
+  │
+  ├ note: `stash` is expected to be refused with HeldCaptured and run to 0, and it is refused with HeldCaptured and runs to 0
+  ╰ help: use the held value outside a thunk, or declare its `var` inside it

@@ -1,0 +1,5520 @@
+//! Checkpoints and resume: one forward pass that adopts what still answers
+//! and judges the rest.
+//!
+//! # Record provenance and reuse validation
+//!
+//! An item's checkpoint records its content, its footprint, the support its
+//! judgement consulted — each signature answer it read, by reference — its
+//! typing, and whether the table held it as written. A later revision recalls
+//! a checkpoint by content, through the one check memo batch and incremental
+//! runs share, and adopts it only when three things hold: every recorded answer
+//! equals, pointwise and by content, the answer the edited program's table
+//! gives at that point of the pass; no reference in the item's type positions,
+//! nor in any recorded answer's type, names a definition whose value changed;
+//! and the adopted type can be seated. Adoption seats the table parts that the
+//! judgement left. These are the written signature and body, or, for an item
+//! its judgement elaborated, the parts that its checkpoint keeps: the judged
+//! body, the formed type, the stage signature and the following position. So a
+//! reader unfolds what a fresh check's reader unfolds. Otherwise the item is
+//! judged again. Persisted checkpoints go through the same pass as in-memory
+//! records. Neither decoding nor this pass proves that recorded typing and
+//! support truthfully describe a prior judgement.
+//!
+//! # The same pass, two memos
+//!
+//! Batch checking is the pass at [`NullMemo`], which recalls nothing, so every
+//! item is judged; incremental checking is the pass at [`HashedMemo`] built
+//! from the base checkpoints. The incremental law — incremental equals
+//! batch — assumes those records faithfully describe earlier checker results
+//! under their recorded allowance. The differential tests compare the two
+//! memos against the checker's own batch entry; deliberate mutations expose
+//! the premise rather than establishing authentication of arbitrary records.
+//!
+//! # A value change closes over readers, once
+//!
+//! A definition whose content changed, or which was inserted or deleted,
+//! seeds the value-changed set, and the set closes over the footprints' read
+//! relation through reverse edges with a worklist: every edge is crossed at
+//! most once, so the closure is linear in the program's reads. An opaque
+//! item, whose reads are unknown, reads everything once anything changed.
+//!
+//! # The incremental specification
+//!
+//! **Support is an output of the judgement.** Each consultation records its
+//! query kind, reference and answer. A value-signature answer is type content
+//! or absence; a data-signature answer is the kind, parameter telescope and
+//! constructor field types, or absence. A checkpoint retains both kinds. Reuse
+//! compares each recorded answer with the edited table at the same point of the
+//! pass. Neither a footprint, a name nor an edit's location licenses reuse: a
+//! footprint over-approximates what an item could read; support records what it
+//! did read.
+//!
+//! **A located judgement reads the world register too.** It reads the home of
+//! each declaration it names and whether a run of it spent a capability. A
+//! value declaration's judgement also reads the entry that the host's grant
+//! resolves for it. The support records each such answer that is not the
+//! default: the host's world, unspent, and no entry. So the support of an
+//! unlocated item keeps its bytes. An adopted item settles its own home in
+//! the register, as its judgement settled it.
+//!
+//! **The entry answers one item.** The pass interleaves judging and adopting in
+//! source order through `CheckingContext::adopt` and
+//! `CheckingContext::adopt_data`. A signed value's signature forms in the
+//! edited context; an unsigned value's cached synthesised type is seated and
+//! forms there. A data item seats and forms its complete signature. Formation
+//! establishes that a classifier or schema is usable in that context, not that
+//! an arbitrary cached result truthfully records an earlier judgement.
+//!
+//! **Incremental equals batch for faithful records.** `check_program` is the
+//! pass at a memo that recalls nothing; `resume` is the same pass at a memo
+//! that recalls base checkpoints. Batch equivalence assumes that each recorded
+//! typing and complete support truthfully describes a prior judgement of that
+//! content under the recorded allowance. Raw constructors and mutation helpers
+//! admit arbitrary records: reuse checks establish applicability, not the truth
+//! of a cached judgement. The differential suite compares faithful resumes with
+//! the checker's module entry and deliberately forges typing and support to
+//! witness this boundary. Canonical bytes and integrity digests do not
+//! authenticate judgement provenance.
+//!
+//! **One memo, two machines.** Recall goes through `gandr-kernel-check-memo`'s
+//! `HashedMemo`, the memo the checking kernel uses: an item's identity is its
+//! content, filed by the first sixteen bytes of the content's BLAKE3 digest
+//! and confirmed by content equality, so a digest collision costs a comparison
+//! and never a wrong recall.
+//!
+//! # Validated resume
+//!
+//! A recalled checkpoint is adopted when four things hold, checked in this
+//! order; the first that fails names the reason (`recall::Absent`):
+//!
+//! 1. The item is transparent.
+//! 2. Every recorded answer equals the edited table's answer for the same
+//!    reference **and query kind** at this point of the pass: the answer the
+//!    preceding item supplied, or absence otherwise. A recorded home, spending
+//!    or resolved entry equals the register's at that point.
+//! 3. No reference in a type position of the item, nor in the type of any
+//!    recorded answer, names a definition in the value-changed set. A type
+//!    former's own reference is in a type position, including an abstract type
+//!    under quotation.
+//! 4. The adopted classifier or schema seats and forms in the edited context: a
+//!    signed value's signature, an unsigned value's cached synthesised type, or
+//!    a Data declaration's complete signature.
+//!
+//! **The value-changed set.** A definition inserted, deleted, or whose content
+//! differs between the revisions seeds the set; the set closes over the read
+//! relation of the edited footprints through reverse edges and a worklist, so
+//! every edge is crossed at most once. Once the set is non-empty every opaque
+//! item joins it. The closure guards answers that depend on a definition's
+//! _value_ while the support compares types: the checker unfolds a decode
+//! `El(c)` of a code constant to the body `c` was defined with, and logs the
+//! constant's signature answer, not its body, so a declaration whose type names
+//! `c` can change meaning while every recorded answer holds. The closure blocks
+//! exactly those reuses. When the checker records the bodies it unfolds in the
+//! support, the closure can retire.
+//!
+//! **A filled hole is a body edit.** The pass judges the filled item again. It
+//! judges a reader again only when an answer that the reader consulted
+//! changes. So it adopts a reader of a declared type. It judges again a reader
+//! of the unknown type that an unsigned hole synthesises.
+//!
+//! **Linear by construction.** Each item is encoded once, recalled at most
+//! once, adopted or judged once; the closure crosses each read edge at most
+//! once; the splice is one map build and one patience walk. `ResumeCensus`
+//! counts each of these, and a test pins the counts for a head edit of chains
+//! from 250 to 2,000 items.
+//!
+//! | Decision | Alternatives | Reversal |
+//! | -------- | ------------ | -------- |
+//! | Pointwise support recorded by the judgement | compare bindings by name; compare footprints; re-judge every reader of an edited item | none: this is the soundness argument |
+//! | Mint an unsigned item's synthesised type into the edited arena before the pass | judge every unsigned item a recalled reader depends on | minting dominates a measured profile |
+//! | Close value changes over footprint reads, blocking type-position reads | no closure, trusting the signature answers alone, which reuses a declaration across an edit to a code it unfolds | the checker records the bodies it unfolds in the support |
+//! | Derive supplied answers from the formed signature or seated cached type | store a second answer beside the typing | a consumer needs an independently certified answer |
+//! | Trust faithful checker results, then validate their applicability | re-judge every cached item; proof-carrying judgement certificates | checkpoints must be accepted from an untrusted producer |
+//! | Take each changed item's verdict and support from the revision's whole-module judgement | decide each changed item a second time in the pass; judge only the changed items and no whole module | a checkpoint differs from a deciding pass's, through `Verdicts::Decided` in the session |
+//!
+//! # References
+//!
+//! - `vault:01a178aa-b725-7820-9a4c-074e3f6d79b0` — anchor: §
+//!   arc-zero-drift-differential — the incremental-equals-batch law. So the
+//!   support records each register read of a located judgement, and a changed
+//!   home or grant judges again the items that read it.
+//! - `vault:01a178aa-7772-7e72-a3d0-5855883d3db1` — anchor: § Decisions, item 2
+//!   — an arena id is not canonical. So `NodeKeys` keys a node by its canonical
+//!   content, never by its id.
+
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+use core::cmp::Ordering;
+use core::fmt;
+
+use anodized::spec;
+use gandr_core_checker::CheckBudget;
+use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::CheckingContext;
+use gandr_core_checker::Demand;
+use gandr_core_checker::Entered;
+use gandr_core_checker::Failure;
+use gandr_core_checker::FormedValueType;
+use gandr_core_checker::Keying;
+use gandr_core_checker::Membership;
+use gandr_core_checker::ModuleReport;
+use gandr_core_checker::Polled;
+use gandr_core_checker::Retirement;
+use gandr_core_checker::Schedule;
+use gandr_core_checker::Support;
+use gandr_core_checker::Supported;
+use gandr_core_checker::Unretired;
+use gandr_core_checker::Verdict;
+use gandr_core_checker::check_declaration_supported;
+use gandr_core_checker::elaboration::Suspension;
+use gandr_core_checker::form_value_type;
+use gandr_core_checker::kept;
+use gandr_core_checker::signature_table;
+#[cfg(feature = "instrument")]
+use gandr_core_checker::tally::MemoTally;
+#[cfg(feature = "instrument")]
+use gandr_core_checker::trace::StepBuffer;
+#[cfg(feature = "instrument")]
+use gandr_core_checker::trace::untraced;
+use gandr_core_checker::unfolding;
+use gandr_core_content::ArenaNode;
+use gandr_core_content::Opacity;
+use gandr_core_content::Reference;
+use gandr_core_content::Resolver as _;
+use gandr_core_content::TypeContent;
+use gandr_core_content::codec::write_node_content;
+use gandr_core_content::seating;
+#[cfg(feature = "instrument")]
+use gandr_core_term::ArenaWatermark;
+use gandr_core_term::CompTypeId;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::key::NodeKey;
+use gandr_kernel_check_memo::CheckMemo;
+use gandr_kernel_check_memo::ContentAgreement;
+use gandr_kernel_check_memo::ContentDigest;
+use gandr_kernel_check_memo::DigestWord;
+use gandr_kernel_check_memo::HashedMemo;
+use gandr_kernel_check_memo::MemoActivity;
+use gandr_kernel_check_memo::MemoKey;
+use gandr_kernel_check_memo::NullMemo;
+#[cfg(feature = "instrument")]
+use gandr_kernel_term::ArenaLength;
+use gandr_kernel_term::ConstantIndex;
+use gandr_theory_order_maintenance::OrderError;
+use quenchant_shape::shape::Maybe;
+
+use crate::boundary::ItemCount;
+use crate::boundary::ItemOrdinal;
+use crate::codec::write_item_content;
+use crate::content::Encoded;
+use crate::content::ItemContent;
+#[cfg(feature = "instrument")]
+use crate::content::Sites;
+use crate::content::encode_item;
+use crate::entry::EntryContent;
+use crate::entry::elaborated;
+use crate::failure::FailureContent;
+use crate::failure::failed;
+use crate::footprint::Footprint;
+use crate::footprint::footprint_of;
+use crate::order::ItemHandle;
+use crate::order::ItemOrder;
+use crate::order::SpliceCensus;
+use crate::order::handle;
+use crate::persistence::CheckpointObserver;
+use crate::region::Layout;
+use crate::region::Opened;
+use crate::region::Program;
+use crate::report::ReportContent;
+use crate::report::SeatedReport;
+use crate::report::TableContent;
+use crate::report::reported;
+use crate::report::tabled;
+use crate::session::Unobserved;
+use crate::typing::Projection;
+use crate::typing::Typing;
+
+quenchant_shape::reason_enum! {
+    /// Why an item has no memo identity, or no checkpoint to adopt.
+    pub mod recall {
+        /// The reason nothing is recalled.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The item holds an unresolved id, so it has no identity.
+            Opaque,
+            /// The memo holds no checkpoint of the same content.
+            Missed,
+            /// A recorded answer differs from the one the edited table gives.
+            Outdated,
+            /// A type position reads a definition whose value changed.
+            ValueRead,
+            /// The adopted type could not be seated in the edited arena.
+            Unseated,
+            /// The body is univalence at a stratum, a path product or an
+            /// equivalence, whose native path or decision the checker records
+            /// as it judges it; adoption does not replay the judgement, so the
+            /// declaration is judged again.
+            Derived,
+            /// The declaration takes a built-in role. Whether it holds the role
+            /// reads every other declaration's role, which no support records,
+            /// so the declaration is judged again.
+            Marked,
+            /// The judgement entered the declaration elaborated, and its
+            /// checkpoint keeps no table parts of it to seat, so the
+            /// declaration is judged again.
+            Elaborated,
+            /// The declaration is a member of a mutual block. It reads its
+            /// siblings before they stand, so the pass decides it in its block
+            /// and adopts no member alone.
+            Mutual,
+            /// The pass records the trace of each item it judges, and the
+            /// observer holds no trace of this item's content. An adopted item
+            /// leaves no trace, so a view that reads its derivation would find
+            /// none. The declaration is judged again.
+            Traced,
+        }
+    }
+}
+
+/// What the signature table answers for a reference.
+///
+/// # Specification
+/// - executable: none — an answer stores content, not the signature table that
+///   answered the query.
+///
+/// # Adequacy
+/// - hypothesis: L2 — differential edit cases compare recorded typings with
+///   fresh checking; the constructed invalidation guard separately tests
+///   references inside an answer without claiming checker provenance.
+/// - witness: `tests::incremental::incremental_equals_from_scratch`
+/// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Answer
+{
+    /// No type is held.
+    Untyped,
+    /// This type is held.
+    Typed(TypeContent),
+    /// The complete nominal signature, or its absence in the nominal table.
+    Data(Option<crate::content::DataContent>),
+    /// A codata signature was read. It has no content form, so the answer
+    /// never stands for a recorded one: a judgement that read a codata
+    /// signature is judged afresh.
+    Codata,
+    /// What the world register held of the declaration beside its value
+    /// answer: its home and whether a run of it spent a capability. Recorded
+    /// only when the home is a declared world or the run spent; a value
+    /// answer with no located one beside it read the host's world, unspent.
+    Located
+    {
+        /// The world the declaration is homed at.
+        home: gandr_core_content::WorldContent,
+        /// Whether a run of it spent a capability.
+        spending: gandr_core_checker::worlds::Spending,
+    },
+    /// The entry the item's own judgement resolved under the host's grant,
+    /// or none where the grant refused it, and whether its run spent a
+    /// capability. Recorded under the item's own reference, only when the
+    /// entry is not the host's world with no capability or the run spent.
+    Entered
+    {
+        /// The resolved entry, or none for a refused one.
+        entry: Option<crate::content::EntryRoots>,
+        /// Whether a run of the body spent a capability.
+        spending: gandr_core_checker::worlds::Spending,
+    },
+}
+
+/// Which signature table a consultation reads.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum Consultation
+{
+    /// The value-signature table.
+    Value,
+    /// The nominal-signature table.
+    Data,
+    /// The codata-signature table.
+    Codata,
+    /// The world register, beside the value-signature table.
+    Located,
+    /// The item's own entry, as the host's grant resolves it.
+    Entry,
+}
+
+impl Answer
+{
+    /// The signature table this answer describes.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn consultation(&self) -> Consultation
+    {
+        match *(self) {
+            Self::Untyped | Self::Typed(_) => Consultation::Value,
+            Self::Data(_) => Consultation::Data,
+            Self::Codata => Consultation::Codata,
+            Self::Located { .. } => Consultation::Located,
+            Self::Entered { .. } => Consultation::Entry,
+        }
+    }
+
+    /// The answer's table, or an empty one for an absence.
+    ///
+    /// # Specification
+    /// - ensures: a typed answer's type table, a data answer's signature table,
+    ///   empty for an absence, a codata answer, a located one and an entered
+    ///   one.
+    /// - executable: none — the result is a field borrow chosen by variant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — persisted typed and data answers are written from
+    ///   this table.
+    /// - witness: `codec::tests::every_footprint_stance_and_answer_round_trips`
+    pub(crate) fn nodes(&self) -> &[gandr_core_content::SupportedNode]
+    {
+        match *(self) {
+            Self::Untyped
+            | Self::Data(None)
+            | Self::Codata
+            | Self::Located { .. }
+            | Self::Entered { .. } => &[],
+            Self::Typed(ref ty) => ty.nodes(),
+            Self::Data(Some(ref signature)) => signature.nodes(),
+        }
+    }
+
+    /// Every reference beneath the answer's roots, or none for an absence.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a typed answer's root reads, a data answer's reads over its
+    ///   roots, the declared worlds of an entered answer's entry, nothing for
+    ///   an absence, a codata answer or a located one; ascending, each once.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — recorded answers naming a changed definition in a
+    ///   type position, an abstract type or a code invalidate their reader; an
+    ///   untyped answer does not. A changed world the host's grant homes an
+    ///   entry at invalidates the entry.
+    /// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
+    /// - witness: `tests::worlds::a_changed_grant_judges_again_each_entry_it_moves_3381`
+    ///
+    /// # Cost
+    /// - allocation: the set of references beneath the roots, growth within the
+    ///   answer
+    #[spec(ensures: |ret| match *self {
+        Self::Untyped | Self::Data(None) | Self::Codata | Self::Located { .. } => ret.is_empty(),
+        Self::Typed(ref ty) => ty.reads().all(|read| ret.contains(read)),
+        Self::Data(Some(ref signature)) => ret.eq(&signature.reads()),
+        Self::Entered { ref entry, .. } => entry.iter().flat_map(|entry| core::iter::once(&entry.home).chain(&entry.capabilities))
+            .all(|world| match world.reference() { Maybe::Present(world) => ret.contains(world), Maybe::Absent(_) => true }),
+    })]
+    pub(crate) fn reads(&self) -> alloc::collections::BTreeSet<&Reference>
+    {
+        match *(self) {
+            Self::Untyped | Self::Data(None) | Self::Codata | Self::Located { .. } => {
+                alloc::collections::BTreeSet::new()
+            },
+            Self::Typed(ref ty) => ty.reads().collect(),
+            Self::Data(Some(ref signature)) => signature.reads(),
+            // The worlds of a resolved entry type the body: it is judged at
+            // the home, and performs in its row.
+            Self::Entered { ref entry, .. } => entry
+                .iter()
+                .flat_map(|entry| core::iter::once(&entry.home).chain(&entry.capabilities))
+                .filter_map(|world| match world.reference() {
+                    Maybe::Present(reference) => Some(reference),
+                    Maybe::Absent(_) => None,
+                })
+                .collect(),
+        }
+    }
+}
+
+/// One answer a judgement consulted, by the reference it asked about.
+///
+/// # Specification
+/// - executable: none — a stored reference-answer pair cannot attest that a
+///   judgement consulted it.
+///
+/// # Adequacy
+/// - hypothesis: L2 — changed support invalidates reuse; canonicalization
+///   preserves the first answer for each repeated reference and signature
+///   table.
+/// - witness: `tests::incremental::type_change_retypes_the_dependent`
+/// - witness: `checkpoint::tests::support_canonicalization_keeps_the_first_answer`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Answered
+{
+    /// The reference asked about.
+    reference: Reference,
+    /// The answer given.
+    answer: Answer,
+}
+
+impl Answered
+{
+    /// The answer `answer` given for `reference`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        reference: Reference,
+        answer: Answer,
+    ) -> Self
+    {
+        Self { reference, answer }
+    }
+
+    /// The reference asked about.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn reference(&self) -> &Reference
+    {
+        &self.reference
+    }
+
+    /// The answer given.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn answer(&self) -> &Answer
+    {
+        &self.answer
+    }
+}
+
+/// One item's checkpoint, its parts shared by every copy of it.
+///
+/// # Specification
+/// - executable: none — raw checkpoint parts are admitted; construction does
+///   not certify prior checking.
+///
+/// # Adequacy
+/// - hypothesis: L3 — differential teeth corrupt typing, support and footprint
+///   to separate what adoption reads from what its evidence must validate.
+/// - witness: `tests::incremental::a_stale_cached_typing_is_caught`
+/// - witness: `tests::incremental::a_suppressed_invalidation_signal_is_caught`
+/// - witness: `tests::incremental::a_stored_footprint_is_not_an_adoption_input`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[repr(transparent)]
+pub struct ItemCheckpoint
+{
+    /// The checkpoint's parts.
+    parts: Arc<CheckpointParts>,
+}
+
+/// What one item's checkpoint records.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct CheckpointParts
+{
+    /// The item's content.
+    content: ItemContent,
+    /// The item's content key, read once off the content's digest when the
+    /// checkpoint is made: a function of the content, so equal content has an
+    /// equal key.
+    key: Maybe<ContentKey, recall::Absent>,
+    /// The item's footprint, carried for inspection; never an adoption input.
+    footprint: Footprint,
+    /// The answers the judgement consulted, ascending by reference.
+    support: Vec<Answered>,
+    /// The item's typing.
+    typing: Typing,
+    /// The form the table held the item in after its judgement.
+    entered: Entered,
+    /// A refused item's failure as content, which a seat builds again.
+    failure: Maybe<Arc<FailureContent>, failed::Absent>,
+    /// The table parts of an item its judgement entered elaborated.
+    entry: Maybe<Arc<EntryContent>, elaborated::Absent>,
+    /// What the judgement reported of the item: its elaboration and its
+    /// suspension.
+    report: Maybe<Arc<ReportContent>, reported::Absent>,
+    /// The entries the judgement added to the rows and the handlers, or why
+    /// the checkpoint keeps none.
+    tables: Tables,
+}
+
+impl ItemCheckpoint
+{
+    /// The checkpoint of these parts, its support put in canonical order.
+    ///
+    /// # Specification
+    /// - requires: nothing — raw parts are admitted. Construction canonicalizes
+    ///   support but does not establish a prior judgement's truth.
+    /// - ensures: the parts, with support ascending by reference and signature
+    ///   table; each pair appears once, its first answer kept.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — mixed references and conflicting duplicates test
+    ///   canonical order and first-answer retention. The attribute bounds order
+    ///   and cardinality without retaining an owned copy of the incoming
+    ///   support.
+    /// - witness: `checkpoint::tests::support_canonicalization_keeps_the_first_answer`
+    ///
+    /// # Cost
+    /// - allocation: the support in canonical order, growth within the
+    ///   checkpoint
+    #[spec(
+        captures: [count = support.len()],
+        ensures: |ret| {
+            ret.support().len() <= count
+                && ret.support().windows(2).all(|pair| {
+                    pair.first()
+                        .zip(pair.last())
+                        .is_none_or(|(left,right)| (&left.reference,left.answer.consultation()) < (&right.reference,right.answer.consultation()))
+                })
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn new(
+        content: ItemContent,
+        footprint: Footprint,
+        support: Vec<Answered>,
+        typing: Typing,
+        entered: Entered,
+    ) -> Self
+    {
+        let key = content_key_of(&content);
+        Self {
+            parts: Arc::new(CheckpointParts {
+                content,
+                key,
+                footprint,
+                support: canonical_support(support),
+                typing,
+                entered,
+                failure: Maybe::Absent(failed::Absent::Unkept),
+                entry: Maybe::Absent(elaborated::Absent::AsWritten),
+                report: Maybe::Absent(reported::Absent::Unreported),
+                tables: Maybe::Absent(tabled::Absent::Unread),
+            }),
+        }
+    }
+
+    /// The item's content.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn content(&self) -> &ItemContent
+    {
+        &self.parts.content
+    }
+
+    /// The item's content key: the digest of its canonical content, read once
+    /// when the checkpoint was made, so no reader hashes the content again.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the key [`content_key`] gives the item, or
+    ///   [`recall::Absent::Opaque`] for content that holds an unresolved node.
+    /// - provides: the key a reader files the item's outcomes under, which a
+    ///   later revision keeps exactly when it keeps the item's content.
+    /// - fails: [`recall::Absent::Opaque`], for content with no canonical
+    ///   bytes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a checkpoint's key is the key [`content_key`] reads
+    ///   off its item, and moves only with its content. The attribute checks
+    ///   the opaque rejection, not a second hash.
+    /// - witness: `checkpoint::tests::a_checkpoint_keeps_the_content_key_of_its_item_6286`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present(_) => self.parts.content.opacity() == Opacity::Transparent,
+            | Maybe::Absent(reason) => reason == recall::Absent::Opaque,
+        },
+    )]
+    #[inline]
+    pub fn key(&self) -> Maybe<ContentKey, recall::Absent>
+    {
+        self.parts.key
+    }
+
+    /// The item's footprint.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn footprint(&self) -> &Footprint
+    {
+        &self.parts.footprint
+    }
+
+    /// The consulted answers, ascending by reference and signature table.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn support(&self) -> &[Answered]
+    {
+        &self.parts.support
+    }
+
+    /// The item's typing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn typing(&self) -> &Typing
+    {
+        &self.parts.typing
+    }
+
+    /// The form the table held the item in after its judgement: an item
+    /// entered elaborated is judged again, never adopted.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn entered(&self) -> Entered
+    {
+        self.parts.entered
+    }
+
+    /// This checkpoint, keeping `failure` as its item's failure content, or
+    /// the reason it keeps none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) fn with_failure(
+        mut self,
+        failure: Maybe<FailureContent, failed::Absent>,
+    ) -> Self
+    {
+        Arc::make_mut(&mut self.parts).failure = match failure {
+            Maybe::Present(failure) => Maybe::Present(Arc::new(failure)),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+        self
+    }
+
+    /// A refused item's failure as content, or why the checkpoint keeps none.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn failure(&self) -> Maybe<&FailureContent, failed::Absent>
+    {
+        match self.parts.failure {
+            Maybe::Present(ref failure) => Maybe::Present(failure),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// This checkpoint, keeping `entry` as the table parts of its item, or
+    /// the reason it keeps none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) fn with_entry(
+        mut self,
+        entry: Maybe<EntryContent, elaborated::Absent>,
+    ) -> Self
+    {
+        Arc::make_mut(&mut self.parts).entry = match entry {
+            Maybe::Present(entry) => Maybe::Present(Arc::new(entry)),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+        self
+    }
+
+    /// The table parts of an item its judgement entered elaborated, or why
+    /// the checkpoint keeps none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn entry(&self) -> Maybe<&EntryContent, elaborated::Absent>
+    {
+        match self.parts.entry {
+            Maybe::Present(ref entry) => Maybe::Present(entry),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// This checkpoint, keeping `report` as what the judgement reported of its
+    /// item, or the reason it keeps none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) fn with_report(
+        mut self,
+        report: Maybe<ReportContent, reported::Absent>,
+    ) -> Self
+    {
+        Arc::make_mut(&mut self.parts).report = match report {
+            Maybe::Present(report) => Maybe::Present(Arc::new(report)),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+        self
+    }
+
+    /// What the judgement reported of the item, or why the checkpoint keeps
+    /// none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn report(&self) -> Maybe<&ReportContent, reported::Absent>
+    {
+        match self.parts.report {
+            Maybe::Present(ref report) => Maybe::Present(report),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// This checkpoint, keeping `tables` as the entries its item's judgement
+    /// added to the rows and the handlers, or the reason it keeps none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) fn with_tables(
+        mut self,
+        tables: Maybe<TableContent, tabled::Absent>,
+    ) -> Self
+    {
+        Arc::make_mut(&mut self.parts).tables = match tables {
+            Maybe::Present(tables) => Maybe::Present(Arc::new(tables)),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+        self
+    }
+
+    /// The entries the item's judgement added to the rows and the handlers,
+    /// or why the checkpoint keeps none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn tables(&self) -> Maybe<&TableContent, tabled::Absent>
+    {
+        match self.parts.tables {
+            Maybe::Present(ref tables) => Maybe::Present(tables),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// What the judgement reported of this item, seated in `arena`: the item
+    /// at `ordinal` of the edited `program`, walked in `arena`, places each
+    /// node of the item, and the judged body that the entry keeps, minted
+    /// there, places each node of it.
+    ///
+    /// # Specification
+    /// - requires: `arena` holds the edited program's lowered nodes at the ids
+    ///   `program`'s own arena holds them; the item at `ordinal` has the
+    ///   content this checkpoint keeps.
+    /// - ensures: on success, the elaboration and the suspension whose
+    ///   projection through the edited item is this checkpoint's report.
+    /// - fails: [`seating::Absent::Unseatable`] for a checkpoint that keeps no
+    ///   report; otherwise as the seat of the entry or of the report fails.
+    /// - panics: none.
+    /// - executable: none — a predicate would project the seated parts again,
+    ///   which [`SeatedReport::content`] does.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ReportContent`].
+    /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    #[inline]
+    pub fn reported(
+        &self,
+        arena: &mut CoreArena,
+        (program, ordinal): (&Program, ItemOrdinal),
+    ) -> Maybe<SeatedReport, seating::Absent>
+    {
+        let Maybe::Present(ref report) = self.parts.report
+        else {
+            return Maybe::Absent(seating::Absent::Unseatable);
+        };
+        let layout = program.layout();
+        let (body, places) = match self.parts.entry {
+            Maybe::Present(ref entry) => match entry.seat(arena, layout) {
+                Maybe::Present((seated, places)) => (seated.body(), places),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+            Maybe::Absent(_) => (Maybe::Absent(crate::entry::written::Absent::Written), None),
+        };
+        let walk = encode_item(arena, layout, ordinal).sites.walk();
+        match report.seat((arena, layout), (&walk, places.as_ref())) {
+            Ok((elaboration, suspension)) => {
+                Maybe::Present(SeatedReport::of((elaboration, suspension), body))
+            },
+            Err(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// The checker's refusal and failure of this refused item, seated in
+    /// `arena`: the item at `ordinal` of the edited `program`, walked in
+    /// `arena`, places each node the failure names.
+    ///
+    /// # Specification
+    /// - requires: `arena` holds the edited program's lowered nodes at the ids
+    ///   `program`'s own arena holds them; the item at `ordinal` has the
+    ///   content this checkpoint keeps.
+    /// - ensures: on success, the refusal whose projection through the edited
+    ///   item is this checkpoint's refusal, and the failure the judgement kept,
+    ///   or why it kept none.
+    /// - fails: [`seating::Absent::Unseatable`] for an item not refused, or one
+    ///   whose checkpoint keeps no failure content;
+    ///   [`seating::Absent::Unplaced`] for an ordinal past the program; and
+    ///   otherwise as the seat of the content fails.
+    /// - panics: none.
+    /// - executable: none — a predicate would project the seated refusal again,
+    ///   through the walk this call reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the corpus's refusals, a refused item's
+    ///   diagnostic rendered from its checkpoint is the diagnostic of the whole
+    ///   judgement.
+    /// - witness: `failure::tests::a_failure_seats_at_the_nodes_it_names`
+    #[inline]
+    pub fn refused(
+        &self,
+        arena: &mut CoreArena,
+        (program, ordinal): (&Program, ItemOrdinal),
+    ) -> Maybe<(CheckRefusal, Maybe<Failure, kept::Absent>), seating::Absent>
+    {
+        let (&Typing::Refused(ref refusal), &Maybe::Present(ref failure)) =
+            (&self.parts.typing, &self.parts.failure)
+        else {
+            return Maybe::Absent(seating::Absent::Unseatable);
+        };
+        let layout = program.layout();
+        let Some(own) = layout
+            .items
+            .get(usize::from(ordinal))
+            .map(|item| item.declaration().constant())
+        else {
+            return Maybe::Absent(seating::Absent::Unplaced);
+        };
+        let item = encode_item(arena, layout, ordinal);
+        match failure.seat(refusal, (arena, layout), &item.sites, own) {
+            Ok(seated) => Maybe::Present(seated),
+            Err(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// The checkpoint with its footprint replaced, for a test that shows the
+    /// stored footprint is no adoption input.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_footprint(
+        self,
+        footprint: Footprint,
+    ) -> Self
+    {
+        let mut parts = Arc::unwrap_or_clone(self.parts);
+        parts.footprint = footprint;
+        Self {
+            parts: Arc::new(parts),
+        }
+    }
+
+    /// The checkpoint with its typing replaced, for a test that shows a stale
+    /// typing is caught by the differential.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_typing(
+        self,
+        typing: Typing,
+    ) -> Self
+    {
+        let mut parts = Arc::unwrap_or_clone(self.parts);
+        parts.typing = typing;
+        Self {
+            parts: Arc::new(parts),
+        }
+    }
+
+    /// The checkpoint with its support replaced, for a test that shows a
+    /// suppressed invalidation signal is caught by the differential.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: replacement support is ascending and unique by reference and
+    ///   signature table, retaining the first answer for each pair; other
+    ///   fields are retained.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — conflicting duplicates distinguish first-answer
+    ///   retention; the differential corruption witness exercises replacement
+    ///   before reuse.
+    /// - witness: `checkpoint::tests::support_canonicalization_keeps_the_first_answer`
+    /// - witness: `tests::incremental::a_suppressed_invalidation_signal_is_caught`
+    ///
+    /// # Cost
+    /// - allocation: the checkpoint with its new support, growth within the
+    ///   checkpoint
+    #[spec(
+        captures: [count = support.len()],
+        ensures: |ret| {
+            ret.support().len() <= count
+                && ret.support().windows(2).all(|pair| {
+                    pair.first()
+                        .zip(pair.last())
+                        .is_none_or(|(left,right)| (&left.reference,left.answer.consultation()) < (&right.reference,right.answer.consultation()))
+                })
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn with_support(
+        self,
+        support: Vec<Answered>,
+    ) -> Self
+    {
+        let mut parts = Arc::unwrap_or_clone(self.parts);
+        parts.support = canonical_support(support);
+        Self {
+            parts: Arc::new(parts),
+        }
+    }
+}
+
+/// A complete checkpoint set: the allowance it was judged under and one
+/// checkpoint per item, in source order.
+///
+/// # Specification
+/// - executable: none — the record has no original program or checking context
+///   to certify its provenance.
+///
+/// # Adequacy
+/// - hypothesis: L2 — persistence preserves supported records; subsequent reuse
+///   is compared with fresh checking over the finite generated edit domain.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `tests::incremental::incremental_equals_from_scratch`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Checkpoints
+{
+    /// The allowance every judgement of the set ran under.
+    budget: CheckBudget,
+    /// One checkpoint per item, in source order.
+    items: Vec<ItemCheckpoint>,
+}
+
+impl Checkpoints
+{
+    /// The set of `items` judged under `budget`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        budget: CheckBudget,
+        items: Vec<ItemCheckpoint>,
+    ) -> Self
+    {
+        Self { budget, items }
+    }
+
+    /// The allowance every judgement of the set ran under.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn budget(&self) -> CheckBudget
+    {
+        self.budget
+    }
+
+    /// One checkpoint per item, in source order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn items(&self) -> &[ItemCheckpoint]
+    {
+        &self.items
+    }
+
+    /// The checkpoints, by value.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn into_items(self) -> Vec<ItemCheckpoint>
+    {
+        self.items
+    }
+}
+
+/// Whether an item's checkpoint was adopted or the item judged.
+///
+/// # Specification
+/// - executable: none — the tag carries no judgement or validated checkpoint to
+///   establish how it arose.
+///
+/// # Adequacy
+/// - hypothesis: L3 — unchanged items are reused, a body-only edit preserves a
+///   dependent type, and a type change forces that dependent to be judged.
+/// - witness: `tests::incremental::noop_edit_adopts_everything`
+/// - witness: `tests::incremental::body_edit_adopts_the_type_stable_dependent`
+/// - witness: `tests::incremental::type_change_retypes_the_dependent`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Adoption
+{
+    /// The base checkpoint still answered and was adopted.
+    Adopted,
+    /// The item was judged.
+    Judged,
+}
+
+/// One item that a pass adopted or judged, as the pass tells its observer.
+///
+/// # Specification
+/// trivial.
+#[cfg(feature = "instrument")]
+#[derive(Clone, Copy, Debug)]
+pub struct PassedItem<'pass>
+{
+    /// The item's admission position.
+    pub constant: ConstantIndex,
+    /// Whether the pass adopted the item or judged it.
+    pub adoption: Adoption,
+    /// The goal-memo consultations of the item's step; none for an adopted
+    /// item.
+    pub memo: MemoTally,
+    /// The arena nodes that the item's step minted.
+    pub minted: ArenaLength,
+    /// The steps of the machine's runs for the item, when the observer lent
+    /// the pass a buffer.
+    pub steps: Maybe<&'pass StepBuffer, untraced::Absent>,
+    /// The elaboration of the item's body that the pass decided the item by:
+    /// each copy it made beside the node it copies, and each bind it minted
+    /// beside its run. None for an adopted item and for a body that holds no
+    /// nested computation.
+    pub elaboration: Option<&'pass gandr_core_checker::NestedElaboration>,
+    /// The arena nodes that the item's content walk reached.
+    sites: &'pass Sites,
+}
+
+#[cfg(feature = "instrument")]
+impl PassedItem<'_>
+{
+    /// How many arena nodes that the item's content reaches were minted at or
+    /// after `mark`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn reached_since(
+        &self,
+        mark: ArenaWatermark,
+    ) -> ArenaLength
+    {
+        self.sites.minted_since(mark)
+    }
+}
+
+/// The work one resume did, counted per item and per edge.
+///
+/// The counts are the pass's declared intension: every one is linear in the
+/// program, which is what the recheck witness pins at growing sizes.
+///
+/// # Specification
+/// - executable: none — a census value alone cannot replay the work whose
+///   counts it records.
+///
+/// # Adequacy
+/// - hypothesis: L2 — exact adoption counts and a finite growing-size family
+///   bound the accounting evidence; saturation is checked independently at
+///   usize limits.
+/// - witness: `tests::incremental::noop_edit_adopts_everything`
+/// - witness: `tests::defects::items_visited_for_a_head_edit_grow_linearly`
+/// - witness: `checkpoint::tests::census_increment_saturates_at_the_boundary`
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct ResumeCensus
+{
+    /// Items of the edited program, each encoded once.
+    pub items: ItemCount,
+    /// Memo recalls made.
+    pub recalled: ItemCount,
+    /// Items whose checkpoint was adopted.
+    pub adopted: ItemCount,
+    /// Items judged.
+    pub judged: ItemCount,
+    /// Items judged whose verdict and support the revision's own judgement
+    /// gave, so the pass decided them no second time; at most `judged`.
+    pub taken: ItemCount,
+    /// Seats minted for adopted synthesised types.
+    pub minted: ItemCount,
+    /// Recalled items declined because a recorded answer fails to hold.
+    pub outdated: ItemCount,
+    /// Recalled items declined because a type position of theirs reads a
+    /// definition whose value changed: the guard against an answer that
+    /// depends on a value while only types are compared.
+    pub value_reads: ItemCount,
+    /// Definitions that seeded the value-changed set.
+    pub seeds: ItemCount,
+    /// Reverse read edges the closure crossed.
+    pub closure_edges: ItemCount,
+    /// Definitions in the closed value-changed set.
+    pub value_changed: ItemCount,
+    /// What the splice did to the item order.
+    pub splice: SpliceCensus,
+}
+
+/// Why a resume could not complete.
+///
+/// # Specification
+/// - executable: none — an error tag carries no order operation whose refusal
+///   it could establish.
+///
+/// # Adequacy
+/// - hypothesis: L2 — successful finite edit chains exercise propagation
+///   boundaries; order-capacity exhaustion is not witnessed by this crate.
+/// - witness: `tests::incremental::edit_sequences_preserve_zero_drift`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ResumeError
+{
+    /// The item order could not be built or spliced.
+    Order(OrderError),
+}
+
+impl fmt::Display for ResumeError
+{
+    /// Writes the failure's message.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Order(error) => write!(f, "the item order failed: {error}"),
+        }
+    }
+}
+
+impl core::error::Error for ResumeError
+{
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a resume started after no leading state.
+    pub mod leading {
+        /// The reason the pass started at the program's first item.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The pass ran over the whole program.
+            Whole,
+        }
+    }
+}
+
+/// What a pass over a program's leading items leaves, for a later revision
+/// that lays more items after them to start from.
+///
+/// The state holds the items' references, checkpoints and answers, and the
+/// checking context they leave, its arena released. Each item holds its own
+/// locus, so the leading items lead a program whose items begin with them.
+///
+/// # Specification
+/// - executable: none — the state holds no program to certify it against;
+///   [`lead`] builds it, and [`resume_after`] reads a revision's leading items
+///   against it before starting from it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a revision resumed after a leading state answers what a
+///   whole pass over it answers, judging only its own items.
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+#[derive(Debug)]
+pub struct Leading
+{
+    /// The allowance the leading items were judged under.
+    budget: CheckBudget,
+    /// The leading items, in order.
+    items: Vec<crate::region::Item>,
+    /// Their references, in order.
+    references: Vec<Reference>,
+    /// Their checkpoints, in order.
+    checkpoints: Vec<ItemCheckpoint>,
+    /// Their answers, in order.
+    answers: Vec<Answer>,
+    /// The checking context after the last of them.
+    context: gandr_core_checker::Checkpoint,
+}
+
+impl Leading
+{
+    /// How many leading items the state holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn count(&self) -> ItemCount
+    {
+        ItemCount::from(self.checkpoints.len())
+    }
+
+    /// Whether `program` lays the leading items first: its first items are
+    /// theirs, keys, declarations and loci.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Leads`] exactly when `program`'s items begin with the
+    ///   leading items.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Leading`].
+    /// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+    #[spec(ensures: |ret| (ret == Leads::Leads)
+        == (program.items().get(.. self.items.len()) == Some(self.items.as_slice())))]
+    fn leads(
+        &self,
+        program: &Program,
+    ) -> Leads
+    {
+        if program.items().get(.. self.items.len()) == Some(self.items.as_slice()) {
+            Leads::Leads
+        }
+        else {
+            Leads::Departs
+        }
+    }
+}
+
+/// Whether a program lays a leading state's items first.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Leads
+{
+    /// It does: a pass may start after them.
+    Leads,
+    /// It does not: the pass runs over the whole program.
+    Departs,
+}
+
+/// One revision's checkpoints, how each was reached, and the item order that
+/// carries identity to the next revision.
+///
+/// # Specification
+/// - executable: none — the record cannot reconstruct the checking history; its
+///   constructors and resume operations check observable correspondence.
+///
+/// # Adequacy
+/// - hypothesis: L3 — differential checking, explicit adoption cases and
+///   revision handle transitions bound the relation among checkpoints, marks
+///   and identity.
+/// - witness: `tests::incremental::incremental_equals_from_scratch`
+/// - witness: `tests::incremental::noop_edit_adopts_everything`
+/// - witness: `checkpoint::tests::revision_handles_track_insertions_and_deletions`
+pub struct Resume
+{
+    /// The checkpoints, one per item.
+    checkpoints: Checkpoints,
+    /// Whether each item was adopted or judged.
+    adoptions: Vec<Adoption>,
+    /// Each item's handle.
+    handles: Vec<ItemHandle>,
+    /// The order the handles live in.
+    order: ItemOrder,
+    /// The work the pass did.
+    census: ResumeCensus,
+    /// The leading state the pass started after, when it judged only the
+    /// items after its own.
+    after: Maybe<Arc<Leading>, leading::Absent>,
+}
+
+impl fmt::Debug for Resume
+{
+    /// Writes the checkpoints, adoptions and census; the order is opaque.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.debug_struct("Resume")
+            .field("checkpoints", &self.checkpoints)
+            .field("adoptions", &self.adoptions)
+            .field("census", &self.census)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Resume
+{
+    /// A resume standing for restored checkpoints, judged by nothing in this
+    /// process, each item under a fresh handle.
+    ///
+    /// # Specification
+    /// - requires: nothing — this restores structure, not judgement provenance;
+    ///   the next resume checks applicability of the recorded answers.
+    /// - ensures: on success the checkpoints, every item marked judged, one
+    ///   fresh handle per item, and an empty census.
+    /// - fails: [`ResumeError::Order`] when the order cannot be built.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`ResumeError::Order`] — the order-maintenance structure refused.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — empty and nonempty restoration provide fresh ordered
+    ///   handles; subsequent insertion and deletion check retained and stale
+    ///   identities. Order-capacity failures are outside the witnessed domain.
+    /// - witness: `checkpoint::tests::revision_handles_track_insertions_and_deletions`
+    ///
+    /// # Cost
+    /// - allocation: the resume of the restored checkpoints, growth within the
+    ///   checkpoints
+    #[spec(
+        captures: [count = checkpoints.items.len(), budget = checkpoints.budget],
+        ensures: |ret| {
+            ret.as_ref().is_ok_and(|restored| {
+                restored.checkpoints.items.len() == count
+                    && restored.checkpoints.budget == budget
+                    && restored.adoptions.len() == count
+                    && restored
+                        .adoptions
+                        .iter()
+                        .all(|mark| *mark == Adoption::Judged)
+                    && restored.handles.len() == count
+                    && restored.census == ResumeCensus::default()
+                    && restored
+                        .handles
+                        .iter()
+                        .zip(&restored.checkpoints.items)
+                        .all(|(&handle, item)| {
+                            restored.order.reference(handle)
+                                == Maybe::Present(item.content().reference())
+                        })
+            }) || ret.is_err()
+        },
+    )]
+    #[inline]
+    pub fn from_checkpoints(checkpoints: Checkpoints) -> Result<Self, ResumeError>
+    {
+        let references: Vec<Reference> = checkpoints
+            .items
+            .iter()
+            .map(|checkpoint| checkpoint.content().reference().clone())
+            .collect();
+        let (order, handles) = ItemOrder::seeded(&references).map_err(ResumeError::Order)?;
+        Ok(Self {
+            adoptions: alloc::vec![Adoption::Judged; checkpoints.items.len()],
+            checkpoints,
+            handles,
+            order,
+            census: ResumeCensus::default(),
+            after: Maybe::Absent(leading::Absent::Whole),
+        })
+    }
+
+    /// The checkpoints, one per item.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn checkpoints(&self) -> &Checkpoints
+    {
+        &self.checkpoints
+    }
+
+    /// Each item's typing, in source order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn typings(&self) -> impl Iterator<Item = &Typing>
+    {
+        self.checkpoints.items.iter().map(ItemCheckpoint::typing)
+    }
+
+    /// Whether each item was adopted or judged, in source order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn adoptions(&self) -> &[Adoption]
+    {
+        &self.adoptions
+    }
+
+    /// How many items were adopted.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn adopted_count(&self) -> ItemCount
+    {
+        self.census.adopted
+    }
+
+    /// Each item's handle, in source order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn handles(&self) -> &[ItemHandle]
+    {
+        &self.handles
+    }
+
+    /// How two handles' items stand in this revision's source order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: their order, in constant time.
+    /// - provides: `handle::Absent::Stale` when either handle names no item of
+    ///   this revision.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — insertion orders retained and fresh identities;
+    ///   deletion makes either stale operand fail independently.
+    /// - witness: `checkpoint::tests::revision_handles_track_insertions_and_deletions`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "independent oracle: the check finds both handles in this revision's source-ordered handle list, the one reading of source order that does not go through the order-maintenance structure; a client query on a finished pass, never called inside one"
+        )
+    )]
+    #[spec(
+        ensures: |ret| match (
+            self.handles.iter().position(|&handle| handle == left),
+            self.handles.iter().position(|&handle| handle == right),
+        ) {
+            | (Some(left), Some(right)) => ret == Maybe::Present(left.cmp(&right)),
+            | _ => ret == Maybe::Absent(handle::Absent::Stale),
+        },
+    )]
+    #[inline]
+    pub fn compare(
+        &self,
+        left: ItemHandle,
+        right: ItemHandle,
+    ) -> Maybe<Ordering, handle::Absent>
+    {
+        self.order.compare(left, right)
+    }
+
+    /// The reference of the item `handle` names in this revision.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the item's reference.
+    /// - provides: `handle::Absent::Stale` for a handle of a deleted or
+    ///   reordered item.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — retained handles name the same item after insertion;
+    ///   deleting an item makes its old handle stale rather than naming its
+    ///   neighbour.
+    /// - witness: `checkpoint::tests::revision_handles_track_insertions_and_deletions`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "independent oracle: the check finds the handle in this revision's source-ordered handle list, the one reading that does not go through the order-maintenance structure; a client query on a finished pass, never called inside one"
+        )
+    )]
+    #[spec(
+        ensures: |ret| {
+            self.handles
+                .iter()
+                .position(|&held| held == handle)
+                .and_then(|index| self.checkpoints.items.get(index))
+                .map_or_else(
+                    || ret == Maybe::Absent(handle::Absent::Stale),
+                    |item| ret == Maybe::Present(item.content().reference()),
+                )
+        },
+    )]
+    #[inline]
+    pub fn reference(
+        &self,
+        handle: ItemHandle,
+    ) -> Maybe<&Reference, handle::Absent>
+    {
+        self.order.reference(handle)
+    }
+
+    /// The work the pass did.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn census(&self) -> ResumeCensus
+    {
+        self.census
+    }
+}
+
+/// Judge every item of `program` under `budget`: the batch run.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on success one checkpoint per item, each judged, with the typing
+///   the checker's batch entry gives the same declarations in a fresh context,
+///   and one fresh handle per item.
+/// - provides: the batch half of the incremental law: the pass at [`NullMemo`].
+/// - fails: [`ResumeError::Order`] when the order cannot be built.
+/// - panics: none.
+///
+/// # Errors
+/// [`ResumeError::Order`] — the order-maintenance structure refused.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the property suite compares every generated program's
+///   batch checkpoints against the checker's batch entry, projected.
+/// - witness: `tests::incremental::incremental_equals_from_scratch`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body judges every item of the program once; the check compares each item's reference once"
+    )
+)]
+#[spec(
+    ensures: |ret| {
+        ret.as_ref().is_ok_and(|checked| {
+            checked.checkpoints.budget == budget
+                && checked.checkpoints.items.len() == program.items().len()
+                && checked.adoptions.len() == program.items().len()
+                && checked.handles.len() == program.items().len()
+                && usize::from(checked.census.items) == program.items().len()
+                && usize::from(checked.census.adopted)
+                    .checked_add(usize::from(checked.census.judged))
+                    == Some(program.items().len())
+                && checked
+                    .checkpoints
+                    .items
+                    .iter()
+                    .map(|item| item.content().reference())
+                    .eq(program.references().iter())
+                && checked
+                    .adoptions
+                    .iter()
+                    .all(|mark| *mark == Adoption::Judged)
+                && usize::from(checked.census.adopted) == 0
+        }) || ret.is_err()
+    },
+)]
+#[inline]
+pub fn check_program(
+    program: &mut Program,
+    budget: CheckBudget,
+) -> Result<Resume, ResumeError>
+{
+    let (order, _) = ItemOrder::seeded(&[]).map_err(ResumeError::Order)?;
+    advance::<NullMemoChoice, KeepNothing, _, _>(
+        (&[], &[]),
+        (order, &[]),
+        program,
+        Start::Fresh(budget),
+        (&Unretired, &mut Unobserved, None),
+    )
+    .map(Polled::whole)
+    .map(|advanced| advanced.resume)
+}
+
+/// Resume from `base` onto the edited program, carrying item identity.
+///
+/// # Specification
+/// - requires: nothing — `base` may be any checkpoint set, of any program.
+/// - ensures: on success one answer per edited item under base's allowance,
+///   each adopted only when the reuse checks hold; references surviving in
+///   order keep their handles. Typings equal batch when the recorded typing and
+///   complete support faithfully describe prior judgements of the recorded
+///   content under that allowance. Forged records need not equal batch.
+/// - provides: incremental reuse, not authentication of cached judgements.
+/// - fails: [`ResumeError::Order`] when the order cannot be spliced.
+/// - panics: none.
+///
+/// # Errors
+/// [`ResumeError::Order`] — the order-maintenance structure refused.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated programs and edit chains start from faithful
+///   checker results and compare the resume against batch, with adoption made
+///   non-vacuous by the precision probe. L3 mutation witnesses distinguish this
+///   equivalence premise from validation of arbitrary recorded typings.
+/// - witness: `tests::incremental::incremental_equals_from_scratch`
+/// - witness: `tests::incremental::edit_sequences_preserve_zero_drift`
+/// - witness: `tests::incremental::body_edit_adopts_the_type_stable_dependent`
+/// - witness: `tests::incremental::type_change_retypes_the_dependent`
+/// - witness: `tests::incremental::a_stale_cached_typing_is_caught`
+/// - witness: `tests::incremental::a_suppressed_invalidation_signal_is_caught`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body adopts or judges every edited item once; the check compares each item's reference once"
+    )
+)]
+#[spec(
+    captures: [budget = base.checkpoints.budget],
+    ensures: |ret| {
+        ret.as_ref().is_ok_and(|resumed| {
+            resumed.checkpoints.budget == budget
+                && resumed.checkpoints.items.len() == edited.items().len()
+                && resumed.adoptions.len() == edited.items().len()
+                && resumed.handles.len() == edited.items().len()
+                && usize::from(resumed.census.items) == edited.items().len()
+                && usize::from(resumed.census.adopted)
+                    .checked_add(usize::from(resumed.census.judged))
+                    == Some(edited.items().len())
+                && resumed
+                    .checkpoints
+                    .items
+                    .iter()
+                    .map(|item| item.content().reference())
+                    .eq(edited.references().iter())
+        }) || ret.is_err()
+    },
+)]
+#[inline]
+pub fn resume(
+    base: Resume,
+    edited: &mut Program,
+) -> Result<Resume, ResumeError>
+{
+    let Resume {
+        checkpoints,
+        handles,
+        order,
+        ..
+    } = base;
+    advance::<HashedMemoChoice, KeepNothing, _, _>(
+        (&checkpoints.items, &handles),
+        (order, &[]),
+        edited,
+        Start::Fresh(checkpoints.budget),
+        (&Unretired, &mut Unobserved, None),
+    )
+    .map(Polled::whole)
+    .map(|advanced| advanced.resume)
+}
+
+/// Resume from restored checkpoints onto the edited program, every item under
+/// a fresh handle.
+///
+/// # Specification
+/// - requires: nothing — arbitrary restored records are admitted.
+/// - ensures: as [`resume`], with fresh handles.
+/// - fails: [`ResumeError::Order`] when the order cannot be built.
+/// - panics: none.
+///
+/// # Errors
+/// [`ResumeError::Order`] — the order-maintenance structure refused.
+///
+/// # Adequacy
+/// - hypothesis: L2 — faithful supported records are restored from memory and
+///   reopened files then reused. L3 mutations show that stored footprints are
+///   not adoption inputs, while forged typing or support can defeat batch
+///   equivalence and must be caught by the differential oracle.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `tests::incremental::a_stored_footprint_is_not_an_adoption_input`
+/// - witness: `tests::incremental::a_stale_cached_typing_is_caught`
+/// - witness: `tests::incremental::a_suppressed_invalidation_signal_is_caught`
+///
+/// # Cost
+/// - allocation: the resume and the checkpoint of each item, growth within the
+///   edited program
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body copies every restored reference and adopts or judges every edited item once; the check compares each item's reference once"
+    )
+)]
+#[spec(
+    ensures: |ret| {
+        ret.as_ref().is_ok_and(|resumed| {
+            resumed.checkpoints.budget == base.budget
+                && resumed.checkpoints.items.len() == edited.items().len()
+                && resumed.adoptions.len() == edited.items().len()
+                && resumed.handles.len() == edited.items().len()
+                && usize::from(resumed.census.items) == edited.items().len()
+                && usize::from(resumed.census.adopted)
+                    .checked_add(usize::from(resumed.census.judged))
+                    == Some(edited.items().len())
+                && resumed
+                    .checkpoints
+                    .items
+                    .iter()
+                    .map(|item| item.content().reference())
+                    .eq(edited.references().iter())
+        }) || ret.is_err()
+    },
+)]
+#[inline]
+pub fn resume_from(
+    base: &Checkpoints,
+    edited: &mut Program,
+) -> Result<Resume, ResumeError>
+{
+    let references: Vec<Reference> = base
+        .items
+        .iter()
+        .map(|checkpoint| checkpoint.content().reference().clone())
+        .collect();
+    let (order, handles) = ItemOrder::seeded(&references).map_err(ResumeError::Order)?;
+    advance::<HashedMemoChoice, KeepNothing, _, _>(
+        (&base.items, &handles),
+        (order, &[]),
+        edited,
+        Start::Fresh(base.budget),
+        (&Unretired, &mut Unobserved, None),
+    )
+    .map(Polled::whole)
+    .map(|advanced| advanced.resume)
+}
+
+/// [`check_program`], keeping the state the pass leaves after its last item.
+///
+/// A later revision laying more items after them starts from that state with
+/// [`resume_after`].
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on success [`check_program`]'s resume, and the leading state of
+///   every item of `program`: their references, checkpoints and answers, and
+///   the checking context after the last of them.
+/// - fails: as [`check_program`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`check_program`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Leading`].
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+///
+/// # Cost
+/// - allocation: the resume and the state that the pass leaves, growth within
+///   the program
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|&(ref checked, ref leading)|
+    usize::from(leading.count()) == program.items().len()
+        && checked.checkpoints.items == leading.checkpoints
+        && leading.answers.len() == program.items().len()) || ret.is_err())]
+#[inline]
+pub fn lead(
+    program: &mut Program,
+    budget: CheckBudget,
+) -> Result<(Resume, Leading), ResumeError>
+{
+    let (order, _) = ItemOrder::seeded(&[]).map_err(ResumeError::Order)?;
+    let advanced = advance::<NullMemoChoice, KeepContext, _, _>(
+        (&[], &[]),
+        (order, &[]),
+        program,
+        Start::Fresh(budget),
+        (&Unretired, &mut Unobserved, None),
+    )?
+    .whole();
+    let leading = Leading {
+        budget,
+        items: program.items().to_vec(),
+        references: program.references().to_vec(),
+        checkpoints: advanced.resume.checkpoints.items.clone(),
+        answers: advanced.answers,
+        context: advanced.kept,
+    };
+    Ok((advanced.resume, leading))
+}
+
+/// Resume onto `edited` after `leading`, the state [`lead`] left over a
+/// program `edited` lays first.
+///
+/// Only the items after the leading ones are encoded, recalled from `base`
+/// and adopted or judged, in the context the leading items left; theirs are
+/// the state's.
+///
+/// # Specification
+/// - requires: `leading` was left by [`lead`] over a program whose arena
+///   `edited`'s extends, every node of it where it was.
+/// - ensures: when `edited` does not lay the leading items first, [`resume`]
+///   from `base`, or [`check_program`] under the state's allowance when no
+///   `base` is given. Otherwise one checkpoint per item: the leading items' the
+///   state's, each marked adopted, and every other as the pass gives it after
+///   them, recalled from `base`'s items after the leading ones when `base`
+///   started after the same state, or started at the first item with the
+///   state's checkpoints first, as a restored set does. The leading items keep
+///   `base`'s handles then, and take fresh ones otherwise.
+/// - fails: [`ResumeError::Order`] when the order cannot be built or spliced.
+/// - panics: none.
+///
+/// # Errors
+/// [`ResumeError::Order`] — the order-maintenance structure refused.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a revision after its leading items, resumed from their
+///   state, answers what a whole pass over it answers, judging only its own
+///   items; a revision that departs from them is resumed whole.
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body encodes and adopts or judges every item after the leading ones; the check compares those items' references once"
+    )
+)]
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|resumed|
+    resumed.checkpoints.items.len() == edited.items().len()
+        && resumed.adoptions.len() == edited.items().len()
+        && resumed.handles.len() == edited.items().len()
+        && resumed.checkpoints.items.get(leading.checkpoints.len() ..).unwrap_or_default().iter()
+            .map(|item| item.content().reference())
+            .eq(edited.references().get(leading.checkpoints.len() ..).unwrap_or_default().iter())) || ret.is_err())]
+#[inline]
+pub fn resume_after(
+    base: Maybe<Resume, crate::session::submitted::Absent>,
+    leading: &Arc<Leading>,
+    edited: &mut Program,
+) -> Result<Resume, ResumeError>
+{
+    resume_after_retiring(base, leading, edited, (&Unretired, &mut Unobserved, None))
+        .map(Polled::whole)
+}
+
+/// What a resume that polls retirement answers: the resume, or the retirement
+/// beside the resume it was given.
+pub type Resuming<Retired> =
+    Polled<Resume, Retired, Maybe<Resume, crate::session::submitted::Absent>>;
+
+/// [`resume_after`], polling `retirement` before each item the pass adopts or
+/// judges: retired, it answers the base it was given, unchanged, for the next
+/// revision to resume from.
+///
+/// # Specification
+/// - requires: as [`resume_after`].
+/// - ensures: while every poll answers [`Demand::Wanted`], [`Polled::Whole`]
+///   with [`resume_after`]'s resume. Retired, before the item it polled at,
+///   [`Polled::Retired`] with the retirement and `base` as it was given.
+/// - fails: as [`resume_after`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`resume_after`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a submission retired part way leaves the session the
+///   resume it held, and the next submission resumes from it as it would have;
+///   unretired, a revision after its leading items judges only its own, a
+///   second revision after the same leading recalls the first's own items, a
+///   revision that departs is resumed whole, and a resume held after another
+///   leading of the same closure is not recalled.
+/// - witness: `session::tests::a_retired_submission_keeps_the_resume_it_held_1547`
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+/// - witness: `tests::incremental::a_resume_held_after_other_leading_items_is_not_reused_1647`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|polled| match *polled {
+    Polled::Whole(ref resumed) => resumed.checkpoints.items.len() == edited.items().len(),
+    Polled::Retired(..) => true,
+}) || ret.is_err())]
+pub fn resume_after_retiring<Poll, Observer>(
+    base: Maybe<Resume, crate::session::submitted::Absent>,
+    leading: &Arc<Leading>,
+    edited: &mut Program,
+    (retirement, observer, judgement): (&Poll, &mut Observer, Option<Judgement<'_>>),
+) -> Result<Resuming<Poll::Retired>, ResumeError>
+where
+    Poll: Retirement,
+    Observer: CheckpointObserver,
+{
+    if leading.leads(edited) == Leads::Departs {
+        return resume_or_check(
+            base,
+            edited,
+            leading.budget,
+            (retirement, observer, judgement),
+        );
+    }
+    let count = leading.checkpoints.len();
+    let polled = match base {
+        Maybe::Present(Resume {
+            checkpoints,
+            adoptions,
+            handles,
+            order,
+            census,
+            after,
+        }) if started_after(&after, &checkpoints, leading) == Leads::Leads => {
+            let advanced = match (
+                handles.split_at_checked(count),
+                checkpoints.items.get(count ..),
+            ) {
+                (Some((before, behind)), Some(items)) => {
+                    advance::<HashedMemoChoice, KeepNothing, _, _>(
+                        (items, behind),
+                        (order, before),
+                        edited,
+                        Start::After(leading),
+                        (retirement, observer, judgement),
+                    )?
+                },
+                _ => match fresh_after(leading, edited, (retirement, observer, judgement))? {
+                    Polled::Whole(advanced) => Polled::Whole(advanced),
+                    Polled::Retired(retired, _) => Polled::Retired(retired, order),
+                },
+            };
+            match advanced {
+                Polled::Whole(advanced) => Polled::Whole(advanced),
+                Polled::Retired(retired, order) => Polled::Retired(
+                    retired,
+                    Maybe::Present(Resume {
+                        checkpoints,
+                        adoptions,
+                        handles,
+                        order,
+                        census,
+                        after,
+                    }),
+                ),
+            }
+        },
+        other @ (Maybe::Present(_) | Maybe::Absent(_)) => {
+            match fresh_after(leading, edited, (retirement, observer, judgement))? {
+                Polled::Whole(advanced) => Polled::Whole(advanced),
+                Polled::Retired(retired, _) => Polled::Retired(retired, other),
+            }
+        },
+    };
+    Ok(match polled {
+        Polled::Whole(advanced) => Polled::Whole(Resume {
+            after: Maybe::Present(Arc::clone(leading)),
+            ..advanced.resume
+        }),
+        Polled::Retired(retired, held) => Polled::Retired(retired, held),
+    })
+}
+
+/// Whether a resume whose pass started `after` and recorded `checkpoints`
+/// leads with `leading`: it does when it was resumed after that very state,
+/// or when it started at the first item and its first checkpoints are the
+/// state's, as a set a save persisted of a revision laid after the same
+/// closure, restored, starts.
+///
+/// # Specification
+/// - ensures: [`Leads::Leads`] exactly when `after` is `leading` itself, or
+///   `after` is absent and the first checkpoints equal the state's;
+///   [`Leads::Departs`] otherwise.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a resume held after another leading of the same closure
+///   is not recalled, and a set restored of a revision after the same closure
+///   recalls its own items.
+/// - witness: `tests::incremental::a_resume_held_after_other_leading_items_is_not_reused_1647`
+/// - witness: `tests::incremental::a_restored_set_resumes_after_the_leading_items_it_holds_1816`
+#[spec(ensures: |ret| (ret == Leads::Leads) == match *after {
+    Maybe::Present(ref state) => Arc::ptr_eq(state, leading),
+    Maybe::Absent(_) => checkpoints.items.get(.. leading.checkpoints.len()) == Some(leading.checkpoints.as_slice()),
+})]
+fn started_after(
+    after: &Maybe<Arc<Leading>, leading::Absent>,
+    checkpoints: &Checkpoints,
+    leading: &Arc<Leading>,
+) -> Leads
+{
+    let leads = match *after {
+        Maybe::Present(ref state) => Arc::ptr_eq(state, leading),
+        Maybe::Absent(_) => {
+            checkpoints.items.get(.. leading.checkpoints.len())
+                == Some(leading.checkpoints.as_slice())
+        },
+    };
+    if leads { Leads::Leads } else { Leads::Departs }
+}
+
+/// Resume from `previous` onto `edited`, or judge `edited` whole under
+/// `budget` when no resume is held, polling `retirement` before each item.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: while every poll answers [`Demand::Wanted`], [`Polled::Whole`]
+///   with [`resume`]'s resume from `previous` when it is present, and
+///   [`check_program`]'s under `budget` otherwise. Retired, before the item it
+///   polled at, [`Polled::Retired`] with the retirement and `previous` as it
+///   was given.
+/// - fails: [`ResumeError::Order`] when the order cannot be built or spliced.
+/// - panics: none.
+///
+/// # Errors
+/// [`ResumeError::Order`] — the order-maintenance structure refused.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`resume_after_retiring`].
+/// - witness: `session::tests::a_retired_submission_keeps_the_resume_it_held_1547`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|polled| match *polled {
+    Polled::Whole(ref resumed) => resumed.checkpoints.items.len() == edited.items().len(),
+    Polled::Retired(..) => true,
+}) || ret.is_err())]
+pub fn resume_or_check<Poll, Observer>(
+    previous: Maybe<Resume, crate::session::submitted::Absent>,
+    edited: &mut Program,
+    budget: CheckBudget,
+    (retirement, observer, judgement): (&Poll, &mut Observer, Option<Judgement<'_>>),
+) -> Result<Resuming<Poll::Retired>, ResumeError>
+where
+    Poll: Retirement,
+    Observer: CheckpointObserver,
+{
+    match previous {
+        Maybe::Present(Resume {
+            checkpoints,
+            adoptions,
+            handles,
+            order,
+            census,
+            after,
+        }) => Ok(
+            match advance::<HashedMemoChoice, KeepNothing, _, _>(
+                (&checkpoints.items, &handles),
+                (order, &[]),
+                edited,
+                Start::Fresh(checkpoints.budget),
+                (retirement, observer, judgement),
+            )? {
+                Polled::Whole(advanced) => Polled::Whole(advanced.resume),
+                Polled::Retired(retired, order) => Polled::Retired(
+                    retired,
+                    Maybe::Present(Resume {
+                        checkpoints,
+                        adoptions,
+                        handles,
+                        order,
+                        census,
+                        after,
+                    }),
+                ),
+            },
+        ),
+        Maybe::Absent(reason) => {
+            let (order, _) = ItemOrder::seeded(&[]).map_err(ResumeError::Order)?;
+            Ok(
+                match advance::<NullMemoChoice, KeepNothing, _, _>(
+                    (&[], &[]),
+                    (order, &[]),
+                    edited,
+                    Start::Fresh(budget),
+                    (retirement, observer, judgement),
+                )? {
+                    Polled::Whole(advanced) => Polled::Whole(advanced.resume),
+                    Polled::Retired(retired, _) => Polled::Retired(retired, Maybe::Absent(reason)),
+                },
+            )
+        },
+    }
+}
+
+/// [`resume_after`] with no base after the same state: the leading items
+/// under fresh handles, and every item after them judged.
+///
+/// # Specification
+/// - requires: as [`resume_after`], `edited` laying the leading items first.
+/// - ensures: the pass after `leading` from no base, polling `retirement`
+///   before each item as [`advance`] does.
+/// - fails: [`ResumeError::Order`] when the order cannot be built or spliced.
+/// - panics: none.
+/// - executable: none — as [`resume_after`], whose witness runs it.
+///
+/// # Errors
+/// [`ResumeError::Order`] — the order-maintenance structure refused.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`resume_after`].
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+fn fresh_after<Poll, Observer>(
+    leading: &Leading,
+    edited: &mut Program,
+    (retirement, observer, judgement): (&Poll, &mut Observer, Option<Judgement<'_>>),
+) -> Result<Advancing<(), Poll::Retired>, ResumeError>
+where
+    Poll: Retirement,
+    Observer: CheckpointObserver,
+{
+    let (order, handles) = ItemOrder::seeded(&leading.references).map_err(ResumeError::Order)?;
+    advance::<HashedMemoChoice, KeepNothing, _, _>(
+        (&[], &[]),
+        (order, &handles),
+        edited,
+        Start::After(leading),
+        (retirement, observer, judgement),
+    )
+}
+
+/// The memo identity of an item: its content, and the content's digest.
+///
+/// # Specification
+/// - executable: none — the borrowed pair cannot rehash itself without
+///   replaying serialization; `identity_of` establishes its producer boundary.
+///
+/// # Adequacy
+/// - hypothesis: L2 — noisy arenas give identical canonical bytes; no-op reuse
+///   uses content identity. These cases are not a collision-resistance proof.
+/// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
+/// - witness: `tests::incremental::noop_edit_adopts_everything`
+pub struct ItemIdentity<'content>
+{
+    /// The content compared.
+    content: &'content ItemContent,
+    /// The digest the memo buckets by.
+    digest: ContentDigest,
+}
+
+/// The one plane item identities are accounted to.
+///
+/// # Specification
+/// - executable: none — the plane tag has no memo whose accounting it could
+///   observe.
+///
+/// # Adequacy
+/// - hypothesis: L2 — no-op reuse exercises the sole item plane; build
+///   predicates check that its census equals the total. No multi-plane claim is
+///   made here.
+/// - witness: `tests::incremental::noop_edit_adopts_everything`
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ItemPlane
+{
+    /// Item checkpoints.
+    Items,
+}
+
+impl MemoKey for ItemIdentity<'_>
+{
+    type Plane = ItemPlane;
+
+    /// The item plane.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn plane(&self) -> ItemPlane
+    {
+        ItemPlane::Items
+    }
+
+    /// The first sixteen bytes of the content's BLAKE3 digest.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn digest(&self) -> ContentDigest
+    {
+        self.digest
+    }
+
+    /// Content equality, never digest equality.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Agree` exactly when the two contents are equal.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — identical programs reuse their checkpoints; changed
+    ///   content and type changes separate identity from support validity.
+    /// - witness: `tests::incremental::noop_edit_adopts_everything`
+    /// - witness: `tests::incremental::body_edit_adopts_the_type_stable_dependent`
+    /// - witness: `tests::incremental::type_change_retypes_the_dependent`
+    #[spec(
+        ensures: |ret| (ret == ContentAgreement::Agree) == (self.content == other.content),
+    )]
+    #[inline]
+    fn agreement(
+        &self,
+        other: &Self,
+    ) -> ContentAgreement
+    {
+        if self.content == other.content {
+            ContentAgreement::Agree
+        }
+        else {
+            ContentAgreement::Differ
+        }
+    }
+}
+
+/// The identity of `content`, unless it is opaque.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the content beside the first sixteen bytes of the BLAKE3 digest
+///   of its canonical bytes, computed without buffering them.
+/// - provides: `recall::Absent::Opaque` for content holding an unresolved node,
+///   which has no canonical bytes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — noisy independent programs have identical bytes and
+///   addresses; opaque content is refused reuse. The attribute checks input
+///   correspondence and the opaque rejection, not a second serialization or
+///   hash computation.
+/// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
+/// - witness: `tests::incremental::an_opaque_footprint_is_never_adopted`
+#[spec(
+    ensures: |ret| match ret {
+        | Maybe::Present(ref identity) => {
+            core::ptr::eq(&raw const *identity.content, &raw const *content)
+                && content.opacity() == Opacity::Transparent
+        },
+        | Maybe::Absent(reason) => reason == recall::Absent::Opaque,
+    },
+)]
+fn identity_of(content: &ItemContent) -> Maybe<ItemIdentity<'_>, recall::Absent>
+{
+    let mut hasher = blake3::Hasher::new();
+    if write_item_content(&mut hasher, content).is_err() {
+        return Maybe::Absent(recall::Absent::Opaque);
+    }
+    Maybe::Present(ItemIdentity {
+        content,
+        digest: digest_of(&hasher),
+    })
+}
+
+/// The first sixteen bytes of the BLAKE3 digest that `hasher` holds: its high
+/// word, then its low word, each little-endian.
+///
+/// # Specification
+/// trivial.
+fn digest_of(hasher: &blake3::Hasher) -> ContentDigest
+{
+    let [
+        h0,
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6,
+        h7,
+        l0,
+        l1,
+        l2,
+        l3,
+        l4,
+        l5,
+        l6,
+        l7,
+        ..,
+    ] = *hasher.finalize().as_bytes();
+    ContentDigest::new(
+        DigestWord::from(u64::from_le_bytes([h0, h1, h2, h3, h4, h5, h6, h7])),
+        DigestWord::from(u64::from_le_bytes([l0, l1, l2, l3, l4, l5, l6, l7])),
+    )
+}
+
+/// An item's content key: the digest of its canonical content.
+///
+/// The content names no arena id, position or name, so an edit to whitespace
+/// or a comment, or a renumbering of the arena, leaves the key alone. Two keys
+/// that differ name different content; two that agree name the same content
+/// but for a collision of the digest's sixteen bytes.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ContentKey(ContentDigest);
+
+impl ContentKey
+{
+    /// Feed the key to `hasher` as its sixteen bytes: its digest's high word,
+    /// then its low word, each little-endian, as the key was read off the
+    /// content's hash.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn digest_into(
+        self,
+        hasher: &mut blake3::Hasher,
+    )
+    {
+        let _digested = hasher
+            .update(&u64::from(self.0.high()).to_le_bytes())
+            .update(&u64::from(self.0.low()).to_le_bytes());
+    }
+}
+
+impl From<ContentKey> for ContentDigest
+{
+    /// The digest that `key` is: the key of a declaration that a readmission
+    /// keeps by its content.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(key: ContentKey) -> Self
+    {
+        key.0
+    }
+}
+
+impl fmt::Display for ContentKey
+{
+    /// Write the key as 32 lowercase hexadecimal digits: the digest's high
+    /// word, then its low word, so two keys that differ write two texts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(
+            f,
+            "{:016x}{:016x}",
+            u64::from(self.0.high()),
+            u64::from(self.0.low())
+        )
+    }
+}
+
+/// The content key of `content`: its digest, unless it is opaque.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the digest [`identity_of`] reads off `content`, as a key, or its
+///   absence.
+/// - provides: the one place a key is read off content, which a checkpoint does
+///   once when it is made.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`ItemCheckpoint::key`]. The attribute checks the
+///   opaque rejection, not a second hash.
+/// - witness: `checkpoint::tests::a_checkpoint_keeps_the_content_key_of_its_item_6286`
+#[spec(
+    ensures: |ret| match ret {
+        | Maybe::Present(_) => content.opacity() == Opacity::Transparent,
+        | Maybe::Absent(reason) => reason == recall::Absent::Opaque,
+    },
+)]
+#[inline]
+fn content_key_of(content: &ItemContent) -> Maybe<ContentKey, recall::Absent>
+{
+    identity_of(content).map(|identity| ContentKey(identity.digest))
+}
+
+/// The memo identity of `content` under `key`, the key read off it.
+///
+/// # Specification
+/// - requires: `key` is [`content_key_of`] of `content`.
+/// - ensures: the identity [`identity_of`] gives `content`, read off its key
+///   with no second hash.
+/// - panics: none.
+/// - executable: none — a check of `key` against `content` hashes the content
+///   again, and the function exists to avoid that hash.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`ItemCheckpoint::key`].
+/// - witness: `tests::incremental::noop_edit_adopts_everything`
+#[inline]
+const fn keyed(
+    content: &ItemContent,
+    key: ContentKey,
+) -> ItemIdentity<'_>
+{
+    ItemIdentity {
+        content,
+        digest: key.0,
+    }
+}
+
+/// The content key of `program`'s item at `ordinal`: what a pool keys the work
+/// on the item by, so that work whose item's key a newer revision keeps need
+/// not be retired.
+///
+/// # Specification
+/// - requires: `ordinal` is below the program's item count.
+/// - ensures: the digest the memo buckets the item's content by; absent as
+///   [`recall::Absent::Opaque`] for an item whose content holds an unresolved
+///   node, which no key names.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the keys of two revisions agree at the items whose
+///   content agrees, over arenas numbered apart, and differ at an edited one.
+/// - witness: `checkpoint::tests::an_item_s_content_key_moves_only_with_its_content_1547`
+#[spec(requires: usize::from(ordinal) < program.items().len())]
+#[inline]
+pub fn content_key(
+    program: &Program,
+    ordinal: ItemOrdinal,
+) -> Maybe<ContentKey, recall::Absent>
+{
+    content_key_of(&encode_item(program.arena(), program.layout(), ordinal).content)
+}
+
+/// The content key of the node `node` of `arena`: the digest of its canonical
+/// content, each constant named by the item that `layout` gives it, and each
+/// staged type read as its base.
+///
+/// A page spells a staged type as its base, and a stage names nothing past
+/// the judgement that mints it. So the key of a staged type is the key of its
+/// base, and a recursive binder's type keys apart from the binder's own type.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the digest of the bytes of [`TypeContent::unstaged`] `node`, as a
+///   key; absent as [`recall::Absent::Opaque`] for a node whose content holds
+///   an unresolved node, which no key names.
+/// - panics: none.
+/// - executable: none — a clause would encode the node's content a second time,
+///   which is the body itself.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two nodes of one content minted apart share a key, in one
+///   arena and in two arenas numbered apart; nodes of different content do not;
+///   a staged type keys as its base.
+/// - witness: `checkpoint::tests::a_node_s_key_moves_only_with_its_content_7403`
+/// - witness: `checkpoint::tests::a_staged_type_keys_as_its_base_7403`
+///
+/// # Cost
+/// - allocation: the table of the node for its digest, growth within the table
+#[inline]
+pub fn node_key(
+    (arena, layout): (&CoreArena, &Layout),
+    node: ArenaNode,
+) -> Maybe<NodeKey, recall::Absent>
+{
+    let mut hasher = crate::codec::ContentKeyHasher::default();
+    if write_node_content(&mut hasher, &TypeContent::unstaged(arena, layout, node)).is_err() {
+        return Maybe::Absent(recall::Absent::Opaque);
+    }
+    Maybe::Present(NodeKey::from(digest_of(hasher.hasher())))
+}
+
+/// The key of a node whose content holds an unresolved node: the digest of a
+/// tag of its sort alone, which every such node of the sort shares.
+///
+/// A node of this kind has no content to name it, so no other key is faithful.
+/// Its admission position or its place is not a key: an edit moves both.
+///
+/// # Specification
+/// trivial.
+fn opaque_key(node: ArenaNode) -> NodeKey
+{
+    let tag: &[u8] = match node {
+        ArenaNode::Value(_) => b"gandr: an opaque value node",
+        ArenaNode::Computation(_) => b"gandr: an opaque computation node",
+        ArenaNode::ValueType(_) => b"gandr: an opaque value-type node",
+        ArenaNode::CompType(_) => b"gandr: an opaque computation-type node",
+    };
+    NodeKey::from(digest_of(blake3::Hasher::new().update(tag)))
+}
+
+/// The content key of each node of one arena, each constant named by the item
+/// that a layout gives it.
+///
+/// It takes a verdict to its keyed form. A session that takes an edit and a
+/// fresh one judge one text into two arenas, and the keyed forms agree. It
+/// keeps the key of each node that it keys, so a node that two parts of a
+/// report name is encoded once.
+#[derive(Debug)]
+pub struct NodeKeys<'program>
+{
+    /// The arena whose nodes it keys.
+    arena: &'program CoreArena,
+    /// The items that name the constants.
+    layout: &'program Layout,
+    /// The key of each node keyed so far.
+    memo: core::cell::RefCell<BTreeMap<ArenaNode, NodeKey>>,
+}
+
+impl<'program> NodeKeys<'program>
+{
+    /// The keys of the nodes of `arena`, each constant named by the item that
+    /// `layout` gives it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        arena: &'program CoreArena,
+        layout: &'program Layout,
+    ) -> Self
+    {
+        Self {
+            arena,
+            layout,
+            memo: core::cell::RefCell::new(BTreeMap::new()),
+        }
+    }
+
+    /// The keys of the nodes of `program`'s arena, under its layout.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn of_program(program: &'program Program) -> Self
+    {
+        Self::new(program.arena(), program.layout())
+    }
+
+    /// The key of `node`, encoded on its first request.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`node_key`] of `node`; for a node whose content holds an
+    ///   unresolved node, the key of its sort alone.
+    /// - panics: none; the memo is never borrowed across an encoding.
+    ///
+    /// # Cost
+    /// - allocation: the memo's entry for a node keyed first, growth within the
+    ///   nodes that a report names
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`node_key`].
+    /// - witness: `checkpoint::tests::a_node_s_key_moves_only_with_its_content_7403`
+    #[spec(ensures: |ret| match node_key((self.arena, self.layout), node) {
+        | Maybe::Present(key) => ret == key,
+        | Maybe::Absent(_) => ret == opaque_key(node),
+    })]
+    #[inline]
+    #[must_use]
+    pub fn of(
+        &self,
+        node: ArenaNode,
+    ) -> NodeKey
+    {
+        if let Some(&key) = self.memo.borrow().get(&node) {
+            return key;
+        }
+        let key = match node_key((self.arena, self.layout), node) {
+            Maybe::Present(key) => key,
+            Maybe::Absent(_) => opaque_key(node),
+        };
+        let _replaced = self.memo.borrow_mut().insert(node, key);
+        key
+    }
+}
+
+impl Keying for NodeKeys<'_>
+{
+    /// The key of the value node `value`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn value(
+        &self,
+        value: ValueId,
+    ) -> NodeKey
+    {
+        self.of(ArenaNode::Value(value))
+    }
+
+    /// The key of the computation node `computation`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn computation(
+        &self,
+        computation: ComputationId,
+    ) -> NodeKey
+    {
+        self.of(ArenaNode::Computation(computation))
+    }
+
+    /// The key of the value-type node `value_type`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn value_type(
+        &self,
+        value_type: ValueTypeId,
+    ) -> NodeKey
+    {
+        self.of(ArenaNode::ValueType(value_type))
+    }
+
+    /// The key of the computation-type node `comp_type`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn comp_type(
+        &self,
+        comp_type: CompTypeId,
+    ) -> NodeKey
+    {
+        self.of(ArenaNode::CompType(comp_type))
+    }
+}
+
+/// A choice of memo for the pass: the type parameter that separates batch
+/// from incremental.
+///
+/// # Specification
+/// - executable: none — associated memo implementations determine observation
+///   and storage; this trait has no transition body.
+///
+/// # Adequacy
+/// - hypothesis: L2 — batch and ordered choices are compared against fresh
+///   checking over the generated finite edit domain.
+/// - witness: `tests::incremental::incremental_equals_from_scratch`
+trait MemoChoice
+{
+    /// The memo over identities of one lifetime.
+    type Memo<'id>: CheckMemo<ItemIdentity<'id>, ItemOrdinal>;
+
+    /// The memo holding `base`'s checkpoints, by identity.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a memo the pass may recall `base`'s items from.
+    /// - panics: none.
+    /// - executable: none — this required trait declaration has no body; each
+    ///   concrete builder specifies its observable result.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the differential suite exercises both concrete memo
+    ///   choices, not an arbitrary implementation of this private strategy
+    ///   trait.
+    /// - witness: `tests::incremental::incremental_equals_from_scratch`
+    fn build(base: &[ItemCheckpoint]) -> Self::Memo<'_>;
+}
+
+/// The batch choice: a memo that recalls nothing.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+struct NullMemoChoice(!);
+
+impl MemoChoice for NullMemoChoice
+{
+    type Memo<'id> = NullMemo;
+
+    /// The null memo.
+    ///
+    /// # Specification
+    /// trivial.
+    fn build(_base: &[ItemCheckpoint]) -> NullMemo
+    {
+        NullMemo
+    }
+}
+
+/// The incremental choice: a hashed memo over the base's identities.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+struct HashedMemoChoice(!);
+
+impl MemoChoice for HashedMemoChoice
+{
+    type Memo<'id> = HashedMemo<ItemIdentity<'id>, ItemOrdinal>;
+
+    /// Every transparent base item, under its identity, read off the key its
+    /// checkpoint keeps.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the memo answers each transparent base item's content with
+    ///   its ordinal; of two items of equal content, the later one. No base
+    ///   item's content is hashed again.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — no-op and body-edit cases demonstrate actual reuse.
+    ///   The attribute checks bounded single-plane accounting; capacity
+    ///   exhaustion and adversarial duplicate restored identities are not
+    ///   claimed as witnessed here.
+    /// - witness: `tests::incremental::noop_edit_adopts_everything`
+    /// - witness: `tests::incremental::body_edit_adopts_the_type_stable_dependent`
+    #[spec(
+        ensures: |ret| {
+            usize::from(ret.entry_count()) <= base.len()
+                && ret.plane_entry_count(ItemPlane::Items) == ret.entry_count()
+        },
+    )]
+    fn build(base: &[ItemCheckpoint]) -> HashedMemo<ItemIdentity<'_>, ItemOrdinal>
+    {
+        let mut memo = HashedMemo::new();
+        for (index, checkpoint) in base.iter().enumerate() {
+            if let Maybe::Present(key) = checkpoint.key()
+                && memo
+                    .remember(keyed(checkpoint.content(), key), ItemOrdinal::from(index))
+                    .is_err()
+            {
+                // economy: a memo whose accounting is at its ceiling records
+                // nothing more; later items are judged, which costs reuse only.
+                break;
+            }
+        }
+        memo
+    }
+}
+
+/// One item's outcome of the pass.
+///
+/// # Specification
+/// - executable: none — an outcome alone lacks the preceding context that would
+///   justify its adoption or judgement.
+///
+/// # Adequacy
+/// - hypothesis: L3 — no-op reuse and type-change invalidation separate the two
+///   outcome paths by exact marks and independent fresh typings.
+/// - witness: `tests::incremental::noop_edit_adopts_everything`
+/// - witness: `tests::incremental::type_change_retypes_the_dependent`
+struct Outcome
+{
+    /// The item's footprint.
+    footprint: Footprint,
+    /// The answers its judgement consulted, or its adopted checkpoint's.
+    support: Vec<Answered>,
+    /// Its typing.
+    typing: Typing,
+    /// The form the table holds it in: as written for an adopted item.
+    entered: Entered,
+    /// A refused item's failure as content.
+    failure: Maybe<Arc<FailureContent>, failed::Absent>,
+    /// The table parts of an item entered elaborated.
+    entry: Maybe<Arc<EntryContent>, elaborated::Absent>,
+    /// What the judgement reported of the item.
+    report: Report,
+    /// The entries its judgement added to the rows and the handlers.
+    tables: Tables,
+    /// Whether it was adopted.
+    adoption: Adoption,
+}
+
+/// A base checkpoint recalled for an edited item, with its minted seat.
+///
+/// # Specification
+/// - executable: none — the candidate does not carry the edited arena needed to
+///   certify its optional seat.
+///
+/// # Adequacy
+/// - hypothesis: L2 — unchanged items reuse their types; opaque content is not
+///   adopted. Type-content minting supplies its own bounded seat evidence.
+/// - witness: `tests::incremental::noop_edit_adopts_everything`
+/// - witness: `tests::incremental::an_opaque_footprint_is_never_adopted`
+struct Candidate<'base>
+{
+    /// The recalled checkpoint.
+    checkpoint: &'base ItemCheckpoint,
+    /// The seat minted for an unsigned item's synthesised type.
+    seat: Maybe<ValueTypeId, seating::Absent>,
+}
+
+/// Increment a census count.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the prior count plus one, saturating at `usize::MAX`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, the last representable increment and the saturated
+///   boundary distinguish increment from wraparound or premature saturation.
+/// - witness: `checkpoint::tests::census_increment_saturates_at_the_boundary`
+#[spec(
+    captures: [before = usize::from(*count)],
+    ensures: usize::from(*count) == before.saturating_add(1),
+)]
+fn bump(count: &mut ItemCount)
+{
+    *count = ItemCount::from(usize::from(*count).saturating_add(1));
+}
+
+/// Whether a recalled checkpoint still answers.
+///
+/// # Specification
+/// - executable: none — a decision tag has no input support or changed-value
+///   set to certify the decision.
+///
+/// # Adequacy
+/// - hypothesis: L2 — type-change and nested recorded-answer cases separate
+///   standing support from invalidated support through their guard consumers.
+/// - witness: `tests::incremental::type_change_retypes_the_dependent`
+/// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Standing
+{
+    /// It does.
+    Stands,
+    /// It does not; the item is judged.
+    Falls,
+}
+
+/// Where a pass starts: at a program's first item in a fresh context, or after
+/// the leading items a [`Leading`] state holds, in the context they left.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy)]
+enum Start<'leading>
+{
+    /// At the first item, in a fresh context under the allowance.
+    Fresh(CheckBudget),
+    /// After the leading items.
+    After(&'leading Leading),
+}
+
+impl<'leading> Start<'leading>
+{
+    /// How many items precede the pass's first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn leading(self) -> ItemCount
+    {
+        match self {
+            Self::Fresh(_) => ItemCount::default(),
+            Self::After(leading) => leading.count(),
+        }
+    }
+
+    /// The allowance the pass judges under.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn budget(self) -> CheckBudget
+    {
+        match self {
+            Self::Fresh(budget) => budget,
+            Self::After(leading) => leading.budget,
+        }
+    }
+
+    /// The answers of the items before the pass's first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn answers(self) -> &'leading [Answer]
+    {
+        match self {
+            Self::Fresh(_) => &[],
+            Self::After(leading) => &leading.answers,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why the pass decides an item itself and takes no verdict from the
+    /// revision's judgement.
+    pub mod taken {
+        /// The reason the item is decided again.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No judgement was handed to the pass.
+            Unjudged,
+            /// The judgement kept no verdict of the item: the item stood in a
+            /// mutual block, or the judgement kept no supports.
+            Unkept,
+            /// The item holds an unresolved id.
+            Opaque,
+            /// The declaration takes a built-in role, which its own decision
+            /// claims in the context.
+            Marked,
+            /// The declaration is quantified over stages, so the table holds its
+            /// plain type and not the verdict's.
+            Staged,
+            /// The judgement entered the declaration elaborated, and the seat
+            /// takes the written form, as `adopt` declines it.
+            Elaborated,
+            /// The judgement filled the declared type, so the table holds
+            /// another type than the written signature.
+            Filled,
+            /// The declaration resolves an entry other than the host's world
+            /// with no capability. The judgement keeps no record of whether
+            /// its run spent a capability, which the register holds.
+            Located,
+            /// The verdict does not seat in the edited context.
+            Unseated,
+        }
+    }
+}
+
+/// The revision's own whole-module judgement: the pass takes each changed
+/// item's verdict and support from it, and decides the item no second time.
+///
+/// # Specification
+/// - executable: none — borrowed inputs cannot attest that the judgement read
+///   the program the pass reads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the checkpoints of a pass that takes the judgement's
+///   verdicts equal those of a pass that decides each item, over generated edit
+///   chains; the corpus edit-script sweep of `gandr-surface-session` compares
+///   the same checkpoints for each edit class of the corpus.
+/// - witness: `tests::incremental::a_pass_that_takes_the_judgement_checkpoints_as_one_that_decides_6573`
+#[derive(Clone, Copy, Debug)]
+pub struct Judgement<'judged>
+{
+    /// The arena the judgement minted into: its ids before the edited
+    /// program's own mints name the same nodes as the program's arena.
+    arena: &'judged CoreArena,
+    /// The verdict and the support of each declaration the judgement decided
+    /// alone, by position.
+    supported: &'judged BTreeMap<ConstantIndex, Supported>,
+    /// The failure each refused declaration's run kept, by position.
+    failures: &'judged BTreeMap<ConstantIndex, Failure>,
+    /// What elaborating each body with a nested computation did, by position.
+    elaborations: &'judged BTreeMap<ConstantIndex, gandr_core_checker::NestedElaboration>,
+    /// What each suspended declaration waits on, by position.
+    suspensions: &'judged BTreeMap<ConstantIndex, Suspension>,
+}
+
+/// What taking one item's verdict reads.
+///
+/// # Specification
+/// - executable: none — borrowed inputs cannot attest that they describe one
+///   item.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Judgement`].
+/// - witness: `tests::incremental::a_pass_that_takes_the_judgement_checkpoints_as_one_that_decides_6573`
+struct Taking<'input>
+{
+    /// The item's encoding.
+    item: &'input Encoded,
+    /// The item's declaration.
+    declaration: &'input gandr_core_checker::Declaration,
+    /// The edited program.
+    layout: &'input Layout,
+    /// The types encoded from the judgement's arena.
+    types: &'input gandr_core_content::TypeMemo,
+    /// The answers of the items passed so far.
+    supplied: &'input Supplied<'input>,
+    /// The item's ordinal.
+    ordinal: ItemOrdinal,
+}
+
+impl<'input> Taking<'input>
+{
+    /// What a stand test reads of the item and its pass.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn reader(&self) -> Reader<'input>
+    {
+        Reader {
+            item: self.item,
+            declaration: self.declaration,
+            layout: self.layout,
+            supplied: self.supplied,
+            ordinal: self.ordinal,
+        }
+    }
+}
+
+impl<'judged> Judgement<'judged>
+{
+    /// The judgement `report` gives over `arena`, the arena the edited
+    /// program was lowered into, as the judgement left it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        arena: &'judged CoreArena,
+        report: &'judged ModuleReport,
+    ) -> Self
+    {
+        Self {
+            arena,
+            supported: report.supported(),
+            failures: report.failures(),
+            elaborations: report.nested_elaborations(),
+            suspensions: report.suspensions(),
+        }
+    }
+
+    /// The goal memo's consults of the decision that gave the declaration at
+    /// `constant` its kept verdict; none where the judgement kept none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    fn consulted(
+        &self,
+        constant: ConstantIndex,
+    ) -> MemoTally
+    {
+        self.supported
+            .get(&constant)
+            .map_or_else(MemoTally::default, Supported::memo)
+    }
+
+    /// Whether `context` holds each answer that the judgement read of the
+    /// items before this one: the support of the item's kept verdict, projected
+    /// through the edited program with the item's own entry as a decision
+    /// projects it, stands against the answers of the pass, as
+    /// [`support_holds`] reads it with an uncompared answer agreeing. A
+    /// declaration that the judgement kept no verdict of reads nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Clause cost
+    /// - bound: one projection of the item's kept support and one comparison
+    ///   for each of its answers, the walk that the body of [`Judgement::take`]
+    ///   makes once when it seats the item; no read grows with the program.
+    fn read_as_judged(
+        &self,
+        context: &CheckingContext<'_>,
+        taking: &Taking<'_>,
+    ) -> Standing
+    {
+        self.supported
+            .get(&taking.declaration.constant())
+            .map_or(Standing::Stands, |supported| {
+                let own = own_entry(context, taking.declaration, (taking.item, taking.layout));
+                let support = answered(
+                    (supported.support(), own),
+                    self.arena,
+                    taking.layout,
+                    taking.types,
+                );
+                support_holds(context, taking.reader(), &support, Uncompared::Agrees)
+            })
+    }
+
+    /// The item's verdict as this judgement gave it, seated in `context` as
+    /// the item's own decision would leave it, with the typing, the support and
+    /// the answer its checkpoint keeps.
+    ///
+    /// # Specification
+    /// - requires: `taking` supplies the answers of the items before this one,
+    ///   `context` has admitted those items with them, and each answer the
+    ///   judgement read of them is one of them ([`Judgement::read_as_judged`]).
+    /// - ensures: the typing and the support of the verdict the judgement
+    ///   decided, projected through the edited program, and the answer [`seat`]
+    ///   gives; the context then holds the item as [`seat`] holds it. Otherwise
+    ///   the context is unchanged.
+    /// - provides: the reason the item is decided again, checked in the order
+    ///   of [`taken::Absent`].
+    /// - panics: in the enforcing build, where the requires clause fails.
+    ///
+    /// # Cost
+    /// - allocation: the taken item's support, typing and report, durable by
+    ///   the session's checkpoint
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Judgement`]; a pass that holds another answer
+    ///   than the judgement read is refused before the take.
+    /// - witness: `tests::incremental::a_pass_that_takes_the_judgement_checkpoints_as_one_that_decides_6573`
+    /// - witness: `checkpoint::tests::a_take_past_another_answer_than_the_judgement_read_panics_6727`
+    #[spec(requires: taking.supplied.next() == taking.ordinal
+        && self.read_as_judged(context, taking) == Standing::Stands)]
+    fn take(
+        &self,
+        context: &mut CheckingContext<'_>,
+        taking: &Taking<'_>,
+    ) -> Maybe<(Vec<Answered>, Typing, Answer, Reported), taken::Absent>
+    {
+        let declaration = taking.declaration;
+        if taking.item.content.opacity() == Opacity::Opaque {
+            return Maybe::Absent(taken::Absent::Opaque);
+        }
+        if let Maybe::Present(_) = declaration.builtin() {
+            return Maybe::Absent(taken::Absent::Marked);
+        }
+        if !declaration.stages().is_empty() {
+            return Maybe::Absent(taken::Absent::Staged);
+        }
+        let Some(supported) = self.supported.get(&declaration.constant())
+        else {
+            return Maybe::Absent(taken::Absent::Unkept);
+        };
+        if supported.entered() == Entered::Elaborated {
+            return Maybe::Absent(taken::Absent::Elaborated);
+        }
+        let verdict = supported.verdict();
+        let written = match *declaration.content() {
+            gandr_core_checker::DeclarationContent::Value { signature, .. } => signature,
+            gandr_core_checker::DeclarationContent::Data(_)
+            | gandr_core_checker::DeclarationContent::Codata(_)
+            | gandr_core_checker::DeclarationContent::Abstract(_)
+            | gandr_core_checker::DeclarationContent::World(_) => {
+                Maybe::Absent(gandr_core_checker::signature::Absent::Unsigned)
+            },
+        };
+        // The table takes the verdict's declared type; the seat takes the
+        // written signature, so the two must be one node.
+        let declared = match verdict {
+            Verdict::Checked { declared, .. } | Verdict::Suspended(declared) => {
+                Maybe::Present(declared.id())
+            },
+            Verdict::Owed(entry) => Maybe::Present(entry.absence().declared().id()),
+            Verdict::Data | Verdict::Synthesised { .. } | Verdict::Refused(_) => {
+                Maybe::Absent(gandr_core_checker::signature::Absent::Unsigned)
+            },
+        };
+        if let (Maybe::Present(declared), Maybe::Present(written)) = (declared, written)
+            && declared != written
+        {
+            return Maybe::Absent(taken::Absent::Filled);
+        }
+        if own_entry(context, declaration, (taking.item, taking.layout)).is_some() {
+            return Maybe::Absent(taken::Absent::Located);
+        }
+        let projection = Projection {
+            arena: self.arena,
+            layout: taking.layout,
+            sites: &taking.item.sites,
+            types: taking.types,
+            read: core::cell::RefCell::new(None),
+        };
+        let typing = projection.typing(&verdict);
+        let support = answered(
+            (supported.support(), None),
+            self.arena,
+            taking.layout,
+            taking.types,
+        );
+        let failure = failure_of(
+            &projection,
+            (
+                verdict,
+                self.failures
+                    .get(&declaration.constant())
+                    .map_or(Maybe::Absent(kept::Absent::Unrun), Maybe::Present),
+            ),
+            (&taking.item.content, &support),
+        );
+        let constant = declaration.constant();
+        let report = ReportContent::of(
+            (self.arena, taking.layout),
+            (&taking.item.sites, None),
+            (
+                self.elaborations.get(&constant),
+                self.suspensions.get(&constant),
+            ),
+        )
+        .map(Arc::new);
+        let tables = TableContent::of(
+            (self.arena, taking.layout),
+            (&taking.item.sites, None),
+            supported.tabled(),
+        )
+        .map(Arc::new);
+        // An unsigned item's synthesised type is minted into the edited arena
+        // from its content, as an adopted one's is.
+        let minted = match (&typing, written) {
+            (&Typing::Synthesised { ref produced, .. }, Maybe::Absent(_)) => {
+                produced.mint_value_type(context.arena_mut(), taking.layout)
+            },
+            (
+                &(Typing::Data
+                | Typing::Checked { .. }
+                | Typing::Synthesised { .. }
+                | Typing::Owed
+                | Typing::Suspended
+                | Typing::Refused(_)),
+                Maybe::Present(_) | Maybe::Absent(_),
+            ) => Maybe::Absent(seating::Absent::Unseatable),
+        };
+        let Maybe::Present(answer) = seat(context, &Seating {
+            typing: &typing,
+            item: taking.item,
+            declaration,
+            layout: taking.layout,
+            minted,
+            entry: Maybe::Absent(elaborated::Absent::AsWritten),
+        })
+        else {
+            return Maybe::Absent(taken::Absent::Unseated);
+        };
+        Maybe::Present((support, typing, answer, (failure, report, tables)))
+    }
+}
+
+/// The answers of the items a pass has passed, by ordinal: those of the
+/// leading items it started after, then its own.
+///
+/// # Specification
+/// - executable: none — borrowed answers cannot attest the judgements that
+///   produced them.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a revision resumed after its leading items adopts a
+///   dependent of one of them only against that item's answer.
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+struct Supplied<'leading>
+{
+    /// The leading items' answers.
+    leading: &'leading [Answer],
+    /// The answers of the items the pass has passed itself.
+    own: Vec<Answer>,
+}
+
+impl Supplied<'_>
+{
+    /// The answer of the item at `ordinal`, when it has been passed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn get(
+        &self,
+        ordinal: ItemOrdinal,
+    ) -> Option<&Answer>
+    {
+        let at = usize::from(ordinal);
+        at.checked_sub(self.leading.len())
+            .map_or_else(|| self.leading.get(at), |own| self.own.get(own))
+    }
+
+    /// The ordinal of the next item to pass.
+    ///
+    /// # Specification
+    /// trivial.
+    fn next(&self) -> ItemOrdinal
+    {
+        ItemOrdinal::from(self.leading.len().saturating_add(self.own.len()))
+    }
+
+    /// Every answer passed, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn iter(&self) -> impl Iterator<Item = &Answer>
+    {
+        self.leading.iter().chain(&self.own)
+    }
+}
+
+/// What a pass keeps of the checking context it leaves after its last item.
+///
+/// # Specification
+/// - executable: none — a choice of what to keep; each implementation's
+///   [`Keep::keep`] states its own.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Leading`].
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+trait Keep
+{
+    /// What is kept.
+    type Kept;
+
+    /// What to keep of `context`, the pass's after its last item.
+    ///
+    /// # Specification
+    /// - executable: none — this required trait declaration has no body; each
+    ///   implementation states what it keeps.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Leading`].
+    /// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+    fn keep(context: &CheckingContext<'_>) -> Self::Kept;
+}
+
+/// Keep nothing: a revision's own pass.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+struct KeepNothing(!);
+
+impl Keep for KeepNothing
+{
+    type Kept = ();
+
+    /// Nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keep(_context: &CheckingContext<'_>)
+    {
+    }
+}
+
+/// Keep the context: a leading program's pass, for [`Leading`].
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+struct KeepContext(!);
+
+impl Keep for KeepContext
+{
+    type Kept = gandr_core_checker::Checkpoint;
+
+    /// The context's checkpoint.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keep(context: &CheckingContext<'_>) -> gandr_core_checker::Checkpoint
+    {
+        context.checkpoint()
+    }
+}
+
+/// A pass's resume, with the answers of the items it passed and what it kept
+/// of its context.
+///
+/// # Specification
+/// - executable: none — as [`Resume`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Leading`].
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+struct Advanced<Kept>
+{
+    /// The resume.
+    resume: Resume,
+    /// The answers of the items the pass passed itself, in order.
+    answers: Vec<Answer>,
+    /// What the pass kept of its context.
+    kept: Kept,
+}
+
+/// What an advance that polls retirement answers: the advance, or the
+/// retirement beside the order it was given, unspliced.
+type Advancing<Kept, Retired> = Polled<Advanced<Kept>, Retired, ItemOrder>;
+
+/// Run the pass from `base` over `edited`'s items after `start`'s, splice the
+/// order after the last leading handle, and assemble the resume.
+///
+/// # Specification
+/// - requires: `base` pairs `order`'s handles with the base items laid after
+///   the leading ones, in order; `leading` holds `order`'s handles of the
+///   leading items, one per item `start` holds, before every base handle.
+/// - ensures: while every poll answers [`Demand::Wanted`], [`Polled::Whole`] as
+///   [`resume`] at the memo `Choice` builds, the leading items' checkpoints
+///   `start`'s, each adopted, under the leading handles. Retired, before the
+///   item it polled at, [`Polled::Retired`] with the retirement and `order`
+///   unspliced.
+/// - fails: [`ResumeError::Order`] when the splice fails.
+/// - panics: none.
+/// - intension: encodes each edited item after the leading ones once, recalls
+///   each at most once, closes the value-changed set over each read edge at
+///   most once, and judges or adopts each once.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated edits and a revision-handle chain compare the
+///   assembled result with fresh checking and check identity retention. The
+///   predicate checks input identity correspondence and output census shape.
+/// - witness: `tests::incremental::incremental_equals_from_scratch`
+/// - witness: `checkpoint::tests::revision_handles_track_insertions_and_deletions`
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+///
+/// # Cost
+/// - allocation: the checkpoint of each item that the pass runs, growth within
+///   the edited program
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body encodes every edited item and copies every base reference once; the check reads each handle, base item and edited reference once"
+    )
+)]
+#[spec(
+    requires: base.1.len() == base.0.len()
+        && usize::from(start.leading()) == ordered.1.len()
+        && base.1.iter().zip(base.0).all(|(&handle, item)| {
+            ordered.0.reference(handle) == Maybe::Present(item.content().reference())
+        }),
+    ensures: |ret| {
+        ret.as_ref().is_ok_and(|polled| match *polled {
+            Polled::Whole(ref advanced) => {
+                let resumed = &advanced.resume;
+                resumed.checkpoints.budget == start.budget()
+                    && resumed.checkpoints.items.len() == edited.items().len()
+                    && resumed.adoptions.len() == edited.items().len()
+                    && resumed.handles.len() == edited.items().len()
+                    && usize::from(resumed.census.items) == edited.items().len()
+                    && usize::from(resumed.census.adopted)
+                        .checked_add(usize::from(resumed.census.judged))
+                        == Some(edited.items().len())
+                    && resumed
+                        .checkpoints
+                        .items
+                        .iter()
+                        .map(|item| item.content().reference())
+                        .eq(edited.references().iter())
+            },
+            Polled::Retired(..) => true,
+        }) || ret.is_err()
+    },
+)]
+fn advance<Choice, Kept, Poll, Observer>(
+    base: (&[ItemCheckpoint], &[ItemHandle]),
+    ordered: (ItemOrder, &[ItemHandle]),
+    edited: &mut Program,
+    start: Start<'_>,
+    (retirement, observer, judgement): (&Poll, &mut Observer, Option<Judgement<'_>>),
+) -> Result<Advancing<Kept::Kept, Poll::Retired>, ResumeError>
+where
+    Choice: MemoChoice,
+    Kept: Keep,
+    Poll: Retirement,
+    Observer: CheckpointObserver,
+{
+    let (base, base_handles) = base;
+    let (mut order, leading_handles) = ordered;
+    let budget = start.budget();
+    let skip = usize::from(start.leading());
+    let count = edited.layout().items.len();
+    let mut census = ResumeCensus::default();
+    let encoded: Vec<Encoded> = (skip .. count)
+        .map(|index| encode_item(edited.arena(), edited.layout(), ItemOrdinal::from(index)))
+        .collect();
+    // economy: each edited item's content is hashed once here; the pass
+    // recalls by the key and the checkpoint keeps it. Each item after the
+    // leading ones is hashed at each pass, and #4369 bounds the pass by the
+    // edit.
+    let keys: Vec<Maybe<ContentKey, recall::Absent>> = encoded
+        .iter()
+        .map(|item| content_key_of(&item.content))
+        .collect();
+    census.items = ItemCount::from(count);
+    let passed = {
+        let memo = Choice::build(base);
+        pass::<Choice::Memo<'_>, Kept, Poll, Observer>(
+            (base, &memo),
+            (&encoded, &keys),
+            edited,
+            start,
+            &mut census,
+            (retirement, judgement),
+            observer,
+        )
+    };
+    let (outcomes, answers, kept) = match passed {
+        Polled::Whole(passed) => passed,
+        Polled::Retired(retired, ()) => return Ok(Polled::Retired(retired, order)),
+    };
+    let mut items = Vec::with_capacity(count);
+    let mut adoptions = Vec::with_capacity(count);
+    if let Start::After(leading) = start {
+        items.extend(leading.checkpoints.iter().cloned());
+        adoptions.resize(skip, Adoption::Adopted);
+        census.adopted = ItemCount::from(usize::from(census.adopted).saturating_add(skip));
+    }
+    for ((encoded, key), outcome) in encoded.into_iter().zip(keys).zip(outcomes) {
+        adoptions.push(outcome.adoption);
+        items.push(ItemCheckpoint {
+            parts: Arc::new(CheckpointParts {
+                content: encoded.content,
+                key,
+                footprint: outcome.footprint,
+                support: outcome.support,
+                typing: outcome.typing,
+                entered: outcome.entered,
+                failure: outcome.failure,
+                entry: outcome.entry,
+                report: outcome.report,
+                tables: outcome.tables,
+            }),
+        });
+    }
+    let base_references: Vec<&Reference> = base
+        .iter()
+        .map(|checkpoint| checkpoint.content().reference())
+        .collect();
+    let anchor = leading_handles.last().map_or(
+        Maybe::Absent(crate::order::handle::Absent::Stale),
+        |&handle| Maybe::Present(handle),
+    );
+    let (after, splice) = order
+        .splice(
+            anchor,
+            base_handles,
+            &base_references,
+            edited.references().get(skip ..).unwrap_or_default(),
+        )
+        .map_err(ResumeError::Order)?;
+    census.splice = splice;
+    let mut handles = Vec::with_capacity(count);
+    handles.extend_from_slice(leading_handles);
+    handles.extend(after);
+    Ok(Polled::Whole(Advanced {
+        resume: Resume {
+            checkpoints: Checkpoints::new(budget, items),
+            adoptions,
+            handles,
+            order,
+            census,
+            after: Maybe::Absent(leading::Absent::Whole),
+        },
+        answers,
+        kept,
+    }))
+}
+
+/// What a pass that polls retirement answers: each item's outcome, the answers
+/// its judgements consulted and what it kept, or the retirement.
+type Passed<Kept, Retired> = Polled<(Vec<Outcome>, Vec<Answer>, Kept), Retired, ()>;
+
+/// The forward pass: recall, seat, close, then adopt or judge each item after
+/// `start`'s in order, polling `retirement` before each.
+///
+/// # Specification
+/// - requires: `encoded` holds the encodings of `edited`'s items after the ones
+///   `start` holds, in order.
+/// - ensures: while every poll answers [`Demand::Wanted`], one outcome and one
+///   answer per encoded item, in order, and what `Kept` keeps of the context
+///   after the last; retired, nothing. The pass steps the module run's
+///   [`Schedule`] before each item, so it opens each mutual block where the
+///   judgement does. It adopts no member of an open block and takes none from
+///   `judgement`: it decides each member in its block, refuses the block whole
+///   as the module run does, and closes the block before it keeps the context.
+///   Any other item is adopted only when its recalled checkpoint's support
+///   holds pointwise against the answers of the items before it, the leading
+///   ones' `start`'s, no type position of it or of a recorded answer names a
+///   value-changed definition, and its type can be seated; every other item is
+///   judged in a context that has admitted exactly the items before it, as
+///   batch does. A judged item that `judgement` decided alone takes that
+///   verdict and support and is seated as adoption seats it
+///   ([`Judgement::take`]); the pass decides it only when it cannot take it.
+///   Support is ordered and unique by reference and signature table, retaining
+///   value and Data consultations separately.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the context, outcomes and supplies, growth within the items
+///
+/// # Adequacy
+/// - hypothesis: L2 — the differential suite compares the pass against the
+///   checker's batch entry over generated programs and edit chains; L3 for the
+///   teeth, where a corrupted typing, a corrupted support and a corrupted
+///   footprint each show what the pass does and does not read.
+/// - witness: `tests::incremental::incremental_equals_from_scratch`
+/// - witness: `tests::incremental::a_suppressed_invalidation_signal_is_caught`
+/// - witness: `tests::incremental::a_stored_footprint_is_not_an_adoption_input`
+/// - witness: `tests::incremental::an_opaque_footprint_is_never_adopted`
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body adopts or judges every encoded item once; the check reads each encoding and outcome once"
+    )
+)]
+#[spec(
+    requires: encoded.len().checked_add(usize::from(start.leading())) == Some(edited.items().len())
+        && keys.len() == encoded.len()
+        && encoded
+            .iter()
+            .map(|item| item.content.reference())
+            .eq(edited.references().iter().skip(usize::from(start.leading()))),
+    captures: [
+        adopted = usize::from(census.adopted),
+        judged = usize::from(census.judged),
+        recalled = usize::from(census.recalled),
+    ],
+    ensures: |ret| match ret {
+        Polled::Whole((ref outcomes, ref answers, _)) => {
+            outcomes.len() == encoded.len()
+                && answers.len() == encoded.len()
+                && usize::from(census.adopted)
+                    == adopted.saturating_add(
+                        outcomes.iter()
+                            .filter(|outcome| outcome.adoption == Adoption::Adopted)
+                            .count(),
+                    )
+                && usize::from(census.judged)
+                    == judged.saturating_add(
+                        outcomes.iter()
+                            .filter(|outcome| outcome.adoption == Adoption::Judged)
+                            .count(),
+                    )
+                && usize::from(census.recalled)
+                    == recalled.saturating_add(if Memo::ACTIVITY == MemoActivity::Active {
+                        encoded.len()
+                    }
+                    else {
+                        0
+                    })
+                && outcomes.iter().zip(encoded).all(|(outcome, item)| {
+                    outcome.footprint.opacity() == item.content.opacity()
+                        && outcome.support.windows(2).all(|pair| {
+                            pair.first()
+                                .zip(pair.last())
+                                .is_none_or(|(left, right)|
+                                    (&left.reference, left.answer.consultation())
+                                    < (&right.reference, right.answer.consultation()))
+                        })
+                })
+        },
+        Polled::Retired(..) => true,
+    },
+)]
+#[cfg_attr(
+    not(feature = "instrument"),
+    expect(
+        clippy::needless_pass_by_ref_mut,
+        reason = "the observer hears each item only under the `instrument` feature"
+    )
+)]
+fn pass<'id, Memo, Kept, Poll, Observer>(
+    (base, memo): (&'id [ItemCheckpoint], &Memo),
+    (encoded, keys): (&'id [Encoded], &[Maybe<ContentKey, recall::Absent>]),
+    edited: &mut Program,
+    start: Start<'_>,
+    census: &mut ResumeCensus,
+    (retirement, judgement): (&Poll, Option<Judgement<'_>>),
+    #[cfg_attr(
+        not(feature = "instrument"),
+        expect(
+            unused_variables,
+            reason = "the observer hears each item only under the `instrument` feature"
+        )
+    )]
+    observer: &mut Observer,
+) -> Passed<Kept::Kept, Poll::Retired>
+where
+    Memo: CheckMemo<ItemIdentity<'id>, ItemOrdinal>,
+    Kept: Keep,
+    Poll: Retirement,
+    Observer: CheckpointObserver,
+{
+    let active = Memo::ACTIVITY == MemoActivity::Active;
+    let footprints: Vec<Footprint> = encoded
+        .iter()
+        .map(|item| footprint_of(&item.content))
+        .collect();
+    let mut candidates: Vec<Maybe<Candidate<'id>, recall::Absent>> =
+        Vec::with_capacity(encoded.len());
+    let mut value_changed = BTreeSet::new();
+    if active {
+        for (item, &key) in encoded.iter().zip(keys) {
+            bump(&mut census.recalled);
+            let candidate = match key.map(|key| keyed(&item.content, key)) {
+                Maybe::Present(identity) => {
+                    memo.recall(&identity)
+                        .map_or(Maybe::Absent(recall::Absent::Missed), |hit| {
+                            base.get(usize::from(*hit.outcome())).map_or(
+                                Maybe::Absent(recall::Absent::Missed),
+                                |checkpoint| {
+                                    Maybe::Present(Candidate {
+                                        checkpoint,
+                                        seat: {
+                                            let (arena, layout) = edited.parts_mut();
+                                            seat_of(checkpoint, item, arena, layout, census)
+                                        },
+                                    })
+                                },
+                            )
+                        })
+                },
+                Maybe::Absent(reason) => Maybe::Absent(reason),
+            };
+            candidates.push(candidate);
+        }
+        value_changed = close_value_changes(base, encoded, &footprints, census);
+    }
+    let mut outcomes = Vec::with_capacity(encoded.len());
+    let mut supplied = Supplied {
+        leading: start.answers(),
+        own: Vec::with_capacity(encoded.len()),
+    };
+    let (mut context, layout) = match start {
+        Start::Fresh(budget) => edited.open(Opened::Fresh(budget)),
+        Start::After(leading) => edited.open(Opened::Resumed(&leading.context)),
+    };
+    let skip = usize::from(start.leading());
+    // The module run's own schedule: the pass opens, closes and refuses whole
+    // each mutual block where the judgement does.
+    let mut schedule = Schedule::new();
+    // Each member of a block the pass decided: its index among the pass's
+    // items, its position and its verdict, until its block is refused whole.
+    let mut members: Vec<(usize, ConstantIndex, Verdict)> = Vec::new();
+    // The failure each refused member's run kept, by position: a block refused
+    // whole gives each member its culprit's failure, as the judgement does.
+    let mut culprits: BTreeMap<ConstantIndex, Failure> = BTreeMap::new();
+    // What each suspended item the pass passed waits on, by position, seated
+    // in the pass's arena: a later suspension joins the equations of each one
+    // that it reads, as the judgement's does.
+    let mut waiting: BTreeMap<ConstantIndex, Suspension> = BTreeMap::new();
+    // The arena only grows within the pass, so each type it answers or
+    // projects is encoded once; the judgement's arena has a memo of its own.
+    let types = gandr_core_content::TypeMemo::default();
+    let judged_types = gandr_core_content::TypeMemo::default();
+    #[cfg(feature = "instrument")]
+    if let Maybe::Present(buffer) = observer.lend() {
+        context.trace_into(buffer);
+    }
+    #[cfg(feature = "instrument")]
+    observer.opened();
+    for (index, (item, footprint)) in encoded.iter().zip(footprints).enumerate() {
+        if let Demand::Retired(retired) = retirement.demand() {
+            #[cfg(feature = "instrument")]
+            if let Maybe::Present(buffer) = context.take_trace() {
+                observer.restore(buffer);
+            }
+            return Polled::Retired(retired, ());
+        }
+        let ordinal = ItemOrdinal::from(skip.saturating_add(index));
+        let Some(declaration) = layout
+            .items
+            .get(usize::from(ordinal))
+            .map(super::region::Item::declaration)
+        else {
+            break;
+        };
+        #[cfg(feature = "instrument")]
+        let before = (context.tally(), context.arena().watermark());
+        // The memo consults of the decision the pass takes the verdict of.
+        #[cfg(feature = "instrument")]
+        let mut consulted = MemoTally::default();
+        #[cfg(feature = "instrument")]
+        context.retrace();
+        let membership = schedule.step(
+            &mut context,
+            layout
+                .items
+                .get(usize::from(ordinal) ..)
+                .unwrap_or_default()
+                .iter()
+                .map(super::region::Item::declaration),
+        );
+        let adopted = match (membership, candidates.get(index)) {
+            (Membership::Member, _) => Maybe::Absent(recall::Absent::Mutual),
+            #[cfg(feature = "instrument")]
+            (Membership::Alone, Some(&Maybe::Present(ref candidate)))
+                if matches!(context.trace(), Maybe::Present(_))
+                    && !matches!(
+                        candidate.checkpoint.key(),
+                        Maybe::Present(key) if matches!(observer.held(key), Maybe::Present(()))
+                    ) =>
+            {
+                Maybe::Absent(recall::Absent::Traced)
+            },
+            (Membership::Alone, Some(&Maybe::Present(ref candidate))) => {
+                adopt(&mut context, &AdoptionInput {
+                    candidate,
+                    item,
+                    footprint: &footprint,
+                    declaration,
+                    layout,
+                    supplied: &supplied,
+                    ordinal,
+                    value_changed: &value_changed,
+                })
+            },
+            (Membership::Alone, Some(&Maybe::Absent(_)) | None) => {
+                Maybe::Absent(recall::Absent::Missed)
+            },
+        };
+        // The verdict the pass decided the item by, which the observer reads
+        // the item's elaboration from.
+        #[cfg(feature = "instrument")]
+        let mut decided_by: Option<Supported> = None;
+        let (outcome, answer) = match adopted {
+            Maybe::Present((support, typing, answer)) => {
+                bump(&mut census.adopted);
+                let (entered, failure, entry, report, tables) = match candidates.get(index) {
+                    Some(&Maybe::Present(ref candidate)) => (
+                        candidate.checkpoint.entered(),
+                        candidate.checkpoint.parts.failure.clone(),
+                        candidate.checkpoint.parts.entry.clone(),
+                        candidate.checkpoint.parts.report.clone(),
+                        candidate.checkpoint.parts.tables.clone(),
+                    ),
+                    Some(&Maybe::Absent(_)) | None => (
+                        Entered::AsWritten,
+                        Maybe::Absent(failed::Absent::Unkept),
+                        Maybe::Absent(elaborated::Absent::AsWritten),
+                        Maybe::Absent(reported::Absent::Unreported),
+                        Maybe::Absent(tabled::Absent::Unread),
+                    ),
+                };
+                wait_on(
+                    &mut waiting,
+                    (&mut context, layout),
+                    (item, declaration.constant()),
+                    &report,
+                );
+                (
+                    Outcome {
+                        footprint,
+                        support,
+                        typing,
+                        entered,
+                        failure,
+                        entry,
+                        report,
+                        tables,
+                        adoption: Adoption::Adopted,
+                    },
+                    answer,
+                )
+            },
+            Maybe::Absent(reason) => {
+                match reason {
+                    recall::Absent::Outdated => bump(&mut census.outdated),
+                    recall::Absent::ValueRead => bump(&mut census.value_reads),
+                    recall::Absent::Opaque
+                    | recall::Absent::Missed
+                    | recall::Absent::Unseated
+                    | recall::Absent::Elaborated
+                    | recall::Absent::Derived
+                    | recall::Absent::Marked
+                    | recall::Absent::Mutual
+                    | recall::Absent::Traced => {},
+                }
+                bump(&mut census.judged);
+                let taken = match (membership, judgement) {
+                    (Membership::Alone, Some(judgement)) => judgement.take(&mut context, &Taking {
+                        item,
+                        declaration,
+                        layout,
+                        types: &judged_types,
+                        supplied: &supplied,
+                        ordinal,
+                    }),
+                    (Membership::Alone, None) => Maybe::Absent(taken::Absent::Unjudged),
+                    (Membership::Member, _) => Maybe::Absent(taken::Absent::Unkept),
+                };
+                let (support, typing, answer, (entered, entry), (failure, report, tables)) =
+                    match taken {
+                        Maybe::Present((support, typing, answer, (failure, report, tables))) => {
+                            bump(&mut census.taken);
+                            #[cfg(feature = "instrument")]
+                            if let Some(judgement) = judgement {
+                                consulted = judgement.consulted(declaration.constant());
+                            }
+                            wait_on(
+                                &mut waiting,
+                                (&mut context, layout),
+                                (item, declaration.constant()),
+                                &report,
+                            );
+                            (
+                                support,
+                                typing,
+                                answer,
+                                (
+                                    Entered::AsWritten,
+                                    Maybe::Absent(elaborated::Absent::AsWritten),
+                                ),
+                                (failure, report, tables),
+                            )
+                        },
+                        Maybe::Absent(_) => {
+                            let (decision, supported) = decided(
+                                &mut context,
+                                item,
+                                declaration,
+                                (layout, &types),
+                                &mut waiting,
+                            );
+                            if membership == Membership::Member {
+                                if let Maybe::Present(failure) = supported.failure() {
+                                    let _earlier =
+                                        culprits.insert(declaration.constant(), failure.clone());
+                                }
+                                members.push((index, declaration.constant(), supported.verdict()));
+                            }
+                            #[cfg(feature = "instrument")]
+                            {
+                                decided_by = Some(supported);
+                            }
+                            decision
+                        },
+                    };
+                (
+                    Outcome {
+                        footprint,
+                        support,
+                        typing,
+                        entered,
+                        failure,
+                        entry,
+                        report,
+                        tables,
+                        adoption: Adoption::Judged,
+                    },
+                    answer,
+                )
+            },
+        };
+        #[cfg(feature = "instrument")]
+        observer.passed(&PassedItem {
+            constant: declaration.constant(),
+            adoption: outcome.adoption,
+            memo: context.tally().since(before.0).plus(consulted),
+            minted: context.arena().minted_since(before.1),
+            steps: context.trace(),
+            elaboration: decided_by
+                .as_ref()
+                .and_then(|supported| match supported.elaboration() {
+                    Maybe::Present(elaboration) => Some(elaboration),
+                    Maybe::Absent(_) => None,
+                }),
+            sites: &item.sites,
+        });
+        outcomes.push(outcome);
+        supplied.own.push(answer);
+    }
+    // The pass keeps nothing of an open block: it closes the block, and gives
+    // each member the verdict the judgement gives it, its block's refusal,
+    // and the failure of the block's culprit.
+    schedule.close(&mut context);
+    schedule.refuse_whole(
+        &mut members,
+        |&(_, constant, verdict)| (constant, verdict),
+        |&mut (index, _, ref mut verdict), refusal, culprit| {
+            *verdict = Verdict::Refused(refusal);
+            if let (Some(outcome), Some(item)) = (outcomes.get_mut(index), encoded.get(index)) {
+                let projection = Projection {
+                    arena: context.arena(),
+                    layout,
+                    sites: &item.sites,
+                    types: &types,
+                    read: core::cell::RefCell::new(None),
+                };
+                outcome.typing = projection.typing(&Verdict::Refused(refusal));
+                // A culprit whose run kept no failure was refused before its
+                // body ran.
+                let failure = culprits
+                    .get(&culprit)
+                    .map_or(Maybe::Absent(kept::Absent::Unrun), Maybe::Present);
+                outcome.failure = failure_of(
+                    &projection,
+                    (Verdict::Refused(refusal), failure),
+                    (&item.content, &outcome.support),
+                );
+            }
+        },
+    );
+    let kept = Kept::keep(&context);
+    #[cfg(feature = "instrument")]
+    if let Maybe::Present(buffer) = context.take_trace() {
+        observer.restore(buffer);
+    }
+    Polled::Whole((outcomes, supplied.own, kept))
+}
+
+/// Decide the item in `context`, and read its typing, its support and its
+/// answer through the edited program, beside the run they project.
+///
+/// # Specification
+/// - requires: `waiting` holds the suspension of each earlier suspended item of
+///   the pass, seated in `context`'s arena.
+/// - ensures: the verdict [`check_declaration_supported`] gives, projected,
+///   with its support and the item's own entered answer, the answer the table
+///   then gives of the item, the form the table holds it in beside the parts it
+///   holds in another form than the item writes them, the failure of a refused
+///   item and what the judgement reported of it; beside them, the run itself,
+///   whose verdict and failure a block's refusal replaces. A suspended item's
+///   suspension joins `waiting`.
+/// - panics: none.
+/// - executable: none — a predicate would decide the item again, and the
+///   function exists to decide it once.
+///
+/// # Cost
+/// - allocation: the judgement's run and the projected typing, support and
+///   answer, durable by the session's checkpoint
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`pass`].
+/// - witness: `tests::incremental::incremental_equals_from_scratch`
+fn decided(
+    context: &mut CheckingContext<'_>,
+    item: &Encoded,
+    declaration: &gandr_core_checker::Declaration,
+    (layout, types): (&Layout, &gandr_core_content::TypeMemo),
+    waiting: &mut BTreeMap<ConstantIndex, Suspension>,
+) -> (Decided, Supported)
+{
+    let supported = check_declaration_supported(context, declaration);
+    let arena = context.arena();
+    let projection = Projection {
+        arena,
+        layout,
+        sites: &item.sites,
+        types,
+        read: core::cell::RefCell::new(None),
+    };
+    let typing = projection.typing(&supported.verdict());
+    let own = own_entry(context, declaration, (item, layout));
+    let support = answered((supported.support(), own), arena, layout, types);
+    let failure = failure_of(
+        &projection,
+        (supported.verdict(), supported.failure()),
+        (&item.content, &support),
+    );
+    let answer = answer_in(context, declaration, layout, types);
+    let (entry, body) = match EntryContent::of(
+        context,
+        (layout, types),
+        declaration,
+        (
+            supported.verdict(),
+            supported.entered(),
+            item.content.opacity(),
+        ),
+    ) {
+        Maybe::Present((entry, body)) => (Maybe::Present(Arc::new(entry)), body),
+        Maybe::Absent(reason) => (Maybe::Absent(reason), None),
+    };
+    let suspension = supported.suspension(context, waiting);
+    let report = match item.content.opacity() {
+        Opacity::Opaque => Maybe::Absent(reported::Absent::Opaque),
+        Opacity::Transparent => ReportContent::of(
+            (arena, layout),
+            (&item.sites, body.as_ref()),
+            (
+                match supported.elaboration() {
+                    Maybe::Present(elaboration) => Some(elaboration),
+                    Maybe::Absent(_) => None,
+                },
+                match suspension {
+                    Maybe::Present(ref suspension) => Some(suspension),
+                    Maybe::Absent(_) => None,
+                },
+            ),
+        )
+        .map(Arc::new),
+    };
+    let tables = TableContent::of(
+        (arena, layout),
+        (&item.sites, body.as_ref()),
+        supported.tabled(),
+    )
+    .map(Arc::new);
+    if let Maybe::Present(suspension) = suspension {
+        let _earlier = waiting.insert(declaration.constant(), suspension);
+    }
+    let entered = supported.entered();
+    (
+        (
+            support,
+            typing,
+            answer,
+            (entered, entry),
+            (failure, report, tables),
+        ),
+        supported,
+    )
+}
+
+/// The answer that `context` holds for `declaration`: what a later item reads
+/// of it.
+///
+/// # Specification
+/// trivial.
+fn answer_in(
+    context: &CheckingContext<'_>,
+    declaration: &gandr_core_checker::Declaration,
+    layout: &Layout,
+    types: &gandr_core_content::TypeMemo,
+) -> Answer
+{
+    let arena = context.arena();
+    match *(declaration.content()) {
+        gandr_core_checker::DeclarationContent::Value { .. } => answer_of(
+            context.signature(declaration.constant()),
+            arena,
+            layout,
+            types,
+        ),
+        gandr_core_checker::DeclarationContent::Data(_) => Answer::Data(
+            context
+                .data_signatures()
+                .get(&declaration.constant())
+                .map(|signature| crate::content::DataContent::of(arena, layout, signature)),
+        ),
+        gandr_core_checker::DeclarationContent::Codata(_) => Answer::Codata,
+        gandr_core_checker::DeclarationContent::Abstract(_)
+        | gandr_core_checker::DeclarationContent::World(_) => Answer::Untyped,
+    }
+}
+
+/// A refused item's failure as content, or why a checkpoint keeps none.
+type Failed = Maybe<Arc<FailureContent>, failed::Absent>;
+
+/// The table parts of an item entered elaborated, or why a checkpoint keeps
+/// none.
+type Entry = Maybe<Arc<EntryContent>, elaborated::Absent>;
+
+/// What the judgement reported of an item, or why a checkpoint keeps none.
+type Report = Maybe<Arc<ReportContent>, reported::Absent>;
+
+/// The entries a judgement added to the rows and the handlers, or why a
+/// checkpoint keeps none.
+type Tables = Maybe<Arc<TableContent>, tabled::Absent>;
+
+/// What a checkpoint keeps of a judgement beside its verdict: the failure of
+/// a refused item, the report and the entries of the tables.
+type Reported = (Failed, Report, Tables);
+
+/// What a pass that decides an item gives its checkpoint: the answers that
+/// the item consulted, its typing, its answer, its entry and its report.
+type Decided = (Vec<Answered>, Typing, Answer, (Entered, Entry), Reported);
+
+/// Keep in `waiting` the suspension that `report` keeps of `item`, the
+/// declaration at `constant`, seated in `context`'s arena through `layout`.
+///
+/// # Specification
+/// - requires: `item` is the item's encoding in `context`'s arena.
+/// - ensures: the suspension seated and kept at `constant` when the report
+///   keeps one and its seat succeeds; `waiting` unchanged otherwise. Nothing is
+///   minted for a report that keeps no suspension.
+/// - panics: none.
+/// - executable: none — the clause restates the body.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a suspension that the resume adopts joins the equations
+///   of a reader that the resume judges, as a check from scratch does.
+/// - witness: `report::tests::an_adopted_suspension_is_seated_for_the_reader_that_the_resume_judges`
+///
+/// # Cost
+/// - allocation: an entry of the waiting suspensions, growth within the waiting
+///   map
+fn wait_on(
+    waiting: &mut BTreeMap<ConstantIndex, Suspension>,
+    (context, layout): (&mut CheckingContext<'_>, &Layout),
+    (item, constant): (&Encoded, ConstantIndex),
+    report: &Report,
+)
+{
+    let Maybe::Present(ref report) = *report
+    else {
+        return;
+    };
+    if let Maybe::Absent(_) = report.suspension() {
+        return;
+    }
+    let walk = item.sites.walk();
+    if let Ok(Maybe::Present(suspension)) =
+        report.seat_suspension((context.arena_mut(), layout), &walk)
+    {
+        let _earlier = waiting.insert(constant, suspension);
+    }
+}
+
+/// The failure content of `verdict` read through `projection`, beside the
+/// `failure` its run kept, a node outside the item placed under a root of
+/// `item` or of an item `support` consulted; none for a verdict that is not a
+/// refusal, and none for an opaque item, whose checkpoint no pass takes.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the candidate references and the failure's content, error path
+fn failure_of(
+    projection: &Projection<'_, '_, '_, '_>,
+    (verdict, failure): (Verdict, Maybe<&Failure, kept::Absent>),
+    (item, support): (&ItemContent, &[Answered]),
+) -> Failed
+{
+    match verdict {
+        Verdict::Refused(_) if item.opacity() == Opacity::Opaque => {
+            Maybe::Absent(failed::Absent::Opaque)
+        },
+        Verdict::Refused(refusal) => {
+            let candidates: Vec<&Reference> = core::iter::once(item.reference())
+                .chain(support.iter().map(Answered::reference))
+                .collect();
+            Maybe::Present(Arc::new(projection.failed(refusal, failure, &candidates)))
+        },
+        Verdict::Data
+        | Verdict::Checked { .. }
+        | Verdict::Synthesised { .. }
+        | Verdict::Owed(_)
+        | Verdict::Suspended(_) => Maybe::Absent(failed::Absent::Unkept),
+    }
+}
+
+/// Mint the seat an unsigned item's adopted synthesised type is read from.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for an unsigned item whose recalled typing synthesised a type,
+///   that type minted into `arena`; nothing for any other item.
+/// - provides: `seating::Absent` naming why no seat was minted.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — no-op reuse exercises synthesised seats; an ascribed edit
+///   exercises the non-minting branch. The counter counts attempts, including
+///   named failures, rather than only successfully allocated seats.
+/// - witness: `tests::incremental::noop_edit_adopts_everything`
+/// - witness: `tests::incremental::satisfied_ascription_types_and_keeps_dependents_adoptable`
+///
+/// # Cost
+/// - allocation: the minted seat, growth within `arena`
+#[spec(
+    captures: [before = usize::from(census.minted)],
+    ensures: |ret| {
+        if matches!(
+            (item.content.declaration(), checkpoint.typing()),
+            (crate::content::DeclarationRoots::Value { signature:Maybe::Absent(_),.. }, &Typing::Synthesised { .. })
+        ) {
+            usize::from(census.minted) == before.saturating_add(1)
+                && match ret {
+                    | Maybe::Present(id) => arena.value_type(id).is_some(),
+                    | Maybe::Absent(_) => true,
+                }
+        }
+        else {
+            usize::from(census.minted) == before
+                && ret == Maybe::Absent(seating::Absent::Unseatable)
+        }
+    },
+)]
+fn seat_of(
+    checkpoint: &ItemCheckpoint,
+    item: &Encoded,
+    arena: &mut CoreArena,
+    layout: &Layout,
+    census: &mut ResumeCensus,
+) -> Maybe<ValueTypeId, seating::Absent>
+{
+    match (item.content.declaration(), checkpoint.typing()) {
+        (
+            &crate::content::DeclarationRoots::Value {
+                signature: Maybe::Absent(_),
+                ..
+            },
+            &Typing::Synthesised { ref produced, .. },
+        ) => {
+            bump(&mut census.minted);
+            produced.mint_value_type(arena, layout)
+        },
+        _ => Maybe::Absent(seating::Absent::Unseatable),
+    }
+}
+
+/// What one adoption decision reads.
+///
+/// # Specification
+/// - executable: none — borrowed inputs cannot attest that supplied answers
+///   were produced by preceding judgements.
+///
+/// # Adequacy
+/// - hypothesis: L3 — independent differential checks validate reuse; the
+///   constructed recorded-answer case isolates value invalidation without
+///   asserting provenance.
+/// - witness: `tests::incremental::incremental_equals_from_scratch`
+/// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
+struct AdoptionInput<'input, 'base>
+{
+    /// The recalled checkpoint and its seat.
+    candidate: &'input Candidate<'base>,
+    /// The edited item's encoding.
+    item: &'input Encoded,
+    /// The edited item's footprint.
+    footprint: &'input Footprint,
+    /// The edited item's declaration.
+    declaration: &'input gandr_core_checker::Declaration,
+    /// The edited program.
+    layout: &'input Layout,
+    /// The answers of the items passed so far.
+    supplied: &'input Supplied<'input>,
+    /// The item's ordinal.
+    ordinal: ItemOrdinal,
+    /// The closed value-changed set.
+    value_changed: &'input BTreeSet<Reference>,
+}
+
+impl<'input> AdoptionInput<'input, '_>
+{
+    /// What a stand test reads of the item and its pass.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn reader(&self) -> Reader<'input>
+    {
+        Reader {
+            item: self.item,
+            declaration: self.declaration,
+            layout: self.layout,
+            supplied: self.supplied,
+            ordinal: self.ordinal,
+        }
+    }
+}
+
+/// How an adopted item's type takes its seat.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Seat
+{
+    /// A type the recalled verdict's judgement formed, seated without forming
+    /// it again.
+    Judged(ValueTypeId),
+    /// A type formed here, or the reason the item supplies none.
+    Formed(Maybe<FormedValueType, signature_table::Absent>),
+}
+
+/// Adopt the recalled checkpoint when it still answers.
+///
+/// # Specification
+/// - requires: `input.supplied` holds the answer of every item before
+///   `input.ordinal`.
+/// - ensures: when the item is transparent, the support holds pointwise, no
+///   type position meets the value-changed set, the declaration takes no
+///   built-in role, its judgement entered it as written or its checkpoint keeps
+///   the parts it entered at, the body is no accepted univalence statement,
+///   path product or equivalence and the type seats, the item is admitted with
+///   its seated type and the checkpoint's support, typing and answer are
+///   returned; otherwise the context is unchanged. A type the recalled verdict
+///   checked or synthesised under is seated as its judgement formed it; any
+///   other signature is formed again.
+/// - provides: the reason the checkpoint does not answer: `Opaque`, `Outdated`,
+///   `ValueRead`, `Marked`, `Elaborated`, `Derived` or `Unseated`, checked in
+///   that order.
+/// - panics: none.
+/// - economy: a checked or synthesised verdict's type takes no formation walk.
+///
+/// # Adequacy
+/// - hypothesis: L3 — changed support, an ascription reading a changed value
+///   and opaque content separate three guards. Generated edits exercise
+///   successful seating; this is not exhaustive evidence of refusal precedence
+///   or context preservation on every formation error. An accepted univalence
+///   statement, path product or equivalence is judged again, so a later
+///   transport along it, a path identifying it or a product reading it unfolds
+///   to the native path or decision the judgement records, as a fresh check's
+///   does. A declaration its judgement entered elaborated is seated at the
+///   judged body that its checkpoint keeps, so a reader unfolds the filled
+///   body, as a fresh check's reader does.
+/// - witness: `tests::incremental::type_change_retypes_the_dependent`
+/// - witness: `tests::incremental::an_ascription_endpoint_is_a_read`
+/// - witness: `tests::incremental::a_changed_value_reaches_through_an_untouched_definition`
+/// - witness: `tests::incremental::an_opaque_footprint_is_never_adopted`
+/// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
+/// - witness: `tests::native_formers::a_path_product_resumes_to_its_native_path`
+/// - witness: `tests::native_formers::an_adopted_equivalence_keeps_its_decision_for_a_later_product_1752`
+/// - witness: `tests::incremental::a_filled_implicit_is_adopted_at_its_judged_body_so_its_reader_unfolds_it_6572`
+///
+/// # Cost
+/// - allocation: the answers and the typing of the adopted checkpoint, growth
+///   within the checkpoint
+#[spec(
+    requires: input.supplied.next() == input.ordinal,
+    ensures: |ret| {
+        let transparent = input.item.content.opacity() == Opacity::Transparent;
+        let derived = matches!(*input.candidate.checkpoint.typing(), Typing::Checked { .. } | Typing::Synthesised { .. })
+            && matches!(*input.declaration.content(), gandr_core_checker::DeclarationContent::Value { body: Maybe::Present(held), .. }
+                if matches!(context.arena().value(held), Some(gandr_core_term::Value::Ua { .. } | gandr_core_term::Value::PathProduct(..) | gandr_core_term::Value::Equiv(..))));
+        let supported = answers_hold(input.reader(), input.candidate.checkpoint.support(), Uncompared::Falls) == Standing::Stands;
+        let untouched = touches(input, input.candidate.checkpoint.support()) == Standing::Stands;
+        let marked = matches!(input.declaration.builtin(), Maybe::Present(_));
+        let unkept = input.candidate.checkpoint.entered() == Entered::Elaborated
+            && matches!(input.candidate.checkpoint.entry(), Maybe::Absent(_));
+        match ret {
+            | Maybe::Present((ref support, ref typing, _)) => {
+                transparent
+                    && supported
+                    && untouched
+                    && !marked
+                    && !unkept
+                    && !derived
+                    && support.as_slice() == input.candidate.checkpoint.support()
+                    && typing == input.candidate.checkpoint.typing()
+            },
+            | Maybe::Absent(reason) => {
+                let rest = if !untouched {
+                    recall::Absent::ValueRead
+                }
+                else if marked {
+                    recall::Absent::Marked
+                }
+                else if unkept {
+                    recall::Absent::Elaborated
+                }
+                else if derived {
+                    recall::Absent::Derived
+                }
+                else {
+                    recall::Absent::Unseated
+                };
+                if !transparent {
+                    reason == recall::Absent::Opaque
+                }
+                else if !supported {
+                    reason == recall::Absent::Outdated
+                }
+                else {
+                    // A located answer that falls refuses as an outdated one.
+                    // The register answers it, so this clause admits that reason.
+                    reason == recall::Absent::Outdated || reason == rest
+                }
+            },
+        }
+    },
+)]
+fn adopt(
+    context: &mut CheckingContext<'_>,
+    input: &AdoptionInput<'_, '_>,
+) -> Maybe<(Vec<Answered>, Typing, Answer), recall::Absent>
+{
+    let checkpoint = input.candidate.checkpoint;
+    if input.item.content.opacity() == Opacity::Opaque {
+        return Maybe::Absent(recall::Absent::Opaque);
+    }
+    if support_holds(
+        context,
+        input.reader(),
+        checkpoint.support(),
+        Uncompared::Falls,
+    ) == Standing::Falls
+    {
+        return Maybe::Absent(recall::Absent::Outdated);
+    }
+    if touches(input, checkpoint.support()) == Standing::Falls {
+        return Maybe::Absent(recall::Absent::ValueRead);
+    }
+    if let Maybe::Present(_) = input.declaration.builtin() {
+        return Maybe::Absent(recall::Absent::Marked);
+    }
+    let entry = match (checkpoint.entered(), checkpoint.entry()) {
+        (Entered::AsWritten, Maybe::Present(_) | Maybe::Absent(_)) => {
+            Maybe::Absent(elaborated::Absent::AsWritten)
+        },
+        (Entered::Elaborated, Maybe::Present(entry)) => Maybe::Present(entry),
+        (Entered::Elaborated, Maybe::Absent(_)) => {
+            return Maybe::Absent(recall::Absent::Elaborated);
+        },
+    };
+    let answer = seat(context, &Seating {
+        typing: checkpoint.typing(),
+        item: input.item,
+        declaration: input.declaration,
+        layout: input.layout,
+        minted: input.candidate.seat,
+        entry,
+    });
+    if let Maybe::Present(_) = answer {
+        settle_home(context, input, checkpoint.support());
+    }
+    answer.map(|answer| {
+        (
+            checkpoint.support().to_vec(),
+            checkpoint.typing().clone(),
+            answer,
+        )
+    })
+}
+
+/// Settle the adopted item in the world register as its judgement settled
+/// it: at the home of the entry it resolves, spent as its entered answer in
+/// `support` records.
+///
+/// # Specification
+/// - requires: the item is seated in `context`, and its support holds.
+/// - ensures: the register holds the item at its resolved entry's home and the
+///   recorded spending, or unspent when no entered answer is recorded; an entry
+///   the grant refuses settles nothing, as its judgement does.
+/// - panics: none.
+/// - executable: none — a clause over the context after the settlement. Such a
+///   clause resolves the entry again.
+///
+/// # Cost
+/// - allocation: the resolved entry and the register's entry for the item,
+///   growth within the module's declarations
+///
+/// # Adequacy
+/// - hypothesis: L3 — a reader of an adopted located declaration is adopted
+///   against the home the earlier judgement settled.
+/// - witness: `tests::worlds::a_located_program_persists_and_judges_alike_3381`
+fn settle_home(
+    context: &mut CheckingContext<'_>,
+    input: &AdoptionInput<'_, '_>,
+    support: &[Answered],
+)
+{
+    let Ok(entry) = context.resolve_entry(input.declaration)
+    else {
+        return;
+    };
+    let reference = input.item.content.reference();
+    let spending = support
+        .binary_search_by(|answered| {
+            (&answered.reference, answered.answer.consultation())
+                .cmp(&(reference, Consultation::Entry))
+        })
+        .ok()
+        .and_then(|at| support.get(at))
+        .map_or(
+            gandr_core_checker::worlds::Spending::Unspent,
+            |answered| match answered.answer {
+                Answer::Entered { spending, .. } => spending,
+                Answer::Untyped
+                | Answer::Typed(_)
+                | Answer::Data(_)
+                | Answer::Codata
+                | Answer::Located { .. } => gandr_core_checker::worlds::Spending::Unspent,
+            },
+        );
+    context.settle_adopted(
+        input.declaration.constant(),
+        gandr_core_checker::worlds::Located::new(entry.home(), spending),
+    );
+}
+
+/// What seating one item's typing reads: the typing, the item and the program.
+///
+/// # Specification
+/// - executable: none — borrowed inputs cannot attest that the typing is the
+///   item's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`adopt`].
+/// - witness: `tests::incremental::incremental_equals_from_scratch`
+struct Seating<'input>
+{
+    /// The typing to seat.
+    typing: &'input Typing,
+    /// The item's encoding.
+    item: &'input Encoded,
+    /// The item's declaration.
+    declaration: &'input gandr_core_checker::Declaration,
+    /// The edited program.
+    layout: &'input Layout,
+    /// The seat of an unsigned item's synthesised type, minted in the edited
+    /// arena, or why none is.
+    minted: Maybe<ValueTypeId, seating::Absent>,
+    /// The table parts that the item's judgement elaborated and that its
+    /// checkpoint keeps, or why the table holds the written form.
+    entry: Maybe<&'input EntryContent, elaborated::Absent>,
+}
+
+/// Admit the item with the type its typing seats, as its judgement admitted
+/// it, and answer what it supplies to the items after it.
+///
+/// # Specification
+/// - requires: the item is transparent, takes no built-in role, and its typing
+///   is the verdict of a judgement whose support holds at this point of the
+///   pass.
+/// - ensures: when the body is no accepted univalence statement, path product
+///   or equivalence and the type seats, the item is admitted with its seated
+///   type and its answer is returned; otherwise the context is unchanged. A
+///   type the verdict checked or synthesised under is seated as its judgement
+///   formed it; any other signature is formed again. An item whose `entry` is
+///   present is admitted at the judged body and the formed type that it keeps,
+///   with its stage signature and its following position.
+/// - provides: the reason the typing does not seat: `Opaque`, `Derived` or
+///   `Unseated`.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the seated type and the item's admission, growth within the
+///   module's declarations
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`adopt`].
+/// - witness: `tests::incremental::type_change_retypes_the_dependent`
+/// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present(_) => true,
+    | Maybe::Absent(reason) => matches!(reason, recall::Absent::Opaque | recall::Absent::Derived | recall::Absent::Unseated),
+})]
+fn seat(
+    context: &mut CheckingContext<'_>,
+    seating: &Seating<'_>,
+) -> Maybe<Answer, recall::Absent>
+{
+    let (signature, body) = match *(seating.declaration.content()) {
+        gandr_core_checker::DeclarationContent::Value {
+            ref signature,
+            ref body,
+        } => (*signature, *body),
+        gandr_core_checker::DeclarationContent::Data(ref signature) => {
+            let answer = match *seating.typing {
+                Typing::Data => {
+                    if context
+                        .adopt_data(
+                            seating.declaration.constant(),
+                            alloc::sync::Arc::clone(signature),
+                        )
+                        .is_err()
+                    {
+                        return Maybe::Absent(recall::Absent::Unseated);
+                    }
+                    Answer::Data(Some(crate::content::DataContent::of(
+                        context.arena(),
+                        seating.layout,
+                        signature,
+                    )))
+                },
+                Typing::Refused(_) => {
+                    if context
+                        .adopt(
+                            seating.declaration.constant(),
+                            Maybe::Absent(signature_table::Absent::Untyped),
+                            Maybe::Absent(unfolding::Absent::Rigid),
+                        )
+                        .is_err()
+                    {
+                        return Maybe::Absent(recall::Absent::Unseated);
+                    }
+                    Answer::Data(None)
+                },
+                Typing::Checked { .. }
+                | Typing::Synthesised { .. }
+                | Typing::Owed
+                | Typing::Suspended => {
+                    return Maybe::Absent(recall::Absent::Unseated);
+                },
+            };
+            return Maybe::Present(answer);
+        },
+        gandr_core_checker::DeclarationContent::Abstract(sealed) => {
+            match *seating.typing {
+                Typing::Data => {
+                    if context
+                        .adopt_abstract(seating.declaration.constant(), sealed)
+                        .is_err()
+                    {
+                        return Maybe::Absent(recall::Absent::Unseated);
+                    }
+                },
+                Typing::Refused(_) => {
+                    if context
+                        .adopt(
+                            seating.declaration.constant(),
+                            Maybe::Absent(signature_table::Absent::Untyped),
+                            Maybe::Absent(unfolding::Absent::Rigid),
+                        )
+                        .is_err()
+                    {
+                        return Maybe::Absent(recall::Absent::Unseated);
+                    }
+                },
+                Typing::Checked { .. }
+                | Typing::Synthesised { .. }
+                | Typing::Owed
+                | Typing::Suspended => {
+                    return Maybe::Absent(recall::Absent::Unseated);
+                },
+            }
+            return Maybe::Present(Answer::Untyped);
+        },
+        gandr_core_checker::DeclarationContent::World(ref requirement) => {
+            if !matches!(*seating.typing, Typing::Data)
+                || context
+                    .adopt_world(seating.declaration.constant(), requirement)
+                    .is_err()
+            {
+                return Maybe::Absent(recall::Absent::Unseated);
+            }
+            return Maybe::Present(Answer::Untyped);
+        },
+        // A codata declaration has no content form: its item is opaque and
+        // returned before this.
+        gandr_core_checker::DeclarationContent::Codata(_) => {
+            return Maybe::Absent(recall::Absent::Opaque);
+        },
+    };
+    if let Maybe::Present(held) = body
+        && matches!(
+            *seating.typing,
+            Typing::Checked { .. } | Typing::Synthesised { .. }
+        )
+        && matches!(
+            context.arena().value(held),
+            Some(
+                gandr_core_term::Value::Ua { .. }
+                    | gandr_core_term::Value::PathProduct(..)
+                    | gandr_core_term::Value::Equiv(..)
+            )
+        )
+    {
+        return Maybe::Absent(recall::Absent::Derived);
+    }
+    if matches!(*seating.typing, Typing::Data) {
+        return Maybe::Absent(recall::Absent::Unseated);
+    }
+    // An item its judgement elaborated stands in the table at the judged body
+    // and the formed type that its checkpoint keeps, as a fresh judgement
+    // leaves it.
+    let (signature, body, filled) = match seating.entry {
+        Maybe::Present(entry) => {
+            let Maybe::Present((seated, _places)) = entry.seat(context.arena_mut(), seating.layout)
+            else {
+                return Maybe::Absent(recall::Absent::Unseated);
+            };
+            (
+                match seated.declared() {
+                    Maybe::Present(declared) => Maybe::Present(declared),
+                    Maybe::Absent(_) => signature,
+                },
+                match seated.body() {
+                    Maybe::Present(judged) => Maybe::Present(judged),
+                    Maybe::Absent(_) => body,
+                },
+                match entry.declared() {
+                    Maybe::Present(declared) => Some(declared),
+                    Maybe::Absent(_) => None,
+                },
+            )
+        },
+        Maybe::Absent(_) => (signature, body, None),
+    };
+    let signed = || {
+        filled.map_or_else(
+            || {
+                seating
+                    .item
+                    .content
+                    .signature_type()
+                    .map_or(Answer::Untyped, Answer::Typed)
+            },
+            |declared| Answer::Typed(declared.clone()),
+        )
+    };
+    let seat: Seat;
+    let answer: Answer;
+    match (signature, seating.typing) {
+        // A verdict that checked or synthesised its body formed its signature
+        // first, under the support that still holds.
+        (Maybe::Present(signature), &(Typing::Checked { .. } | Typing::Synthesised { .. })) => {
+            seat = Seat::Judged(signature);
+            answer = signed();
+        },
+        (Maybe::Present(signature), _) => {
+            if let Ok(formed) = form_value_type(context, signature) {
+                seat = Seat::Formed(Maybe::Present(formed));
+                answer = signed();
+            }
+            else {
+                seat = Seat::Formed(Maybe::Absent(signature_table::Absent::Untyped));
+                answer = Answer::Untyped;
+            }
+        },
+        (Maybe::Absent(_), &Typing::Synthesised { ref produced, .. }) => {
+            let Maybe::Present(minted) = seating.minted
+            else {
+                return Maybe::Absent(recall::Absent::Unseated);
+            };
+            seat = Seat::Judged(minted);
+            answer = Answer::Typed(produced.clone());
+        },
+        // An unsigned declaration that waits supplied a type no checkpoint
+        // keeps; it is judged again.
+        (Maybe::Absent(_), &Typing::Suspended) => return Maybe::Absent(recall::Absent::Unseated),
+        (
+            Maybe::Absent(_),
+            &(Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Refused(_)),
+        ) => {
+            seat = Seat::Formed(Maybe::Absent(signature_table::Absent::Untyped));
+            answer = Answer::Untyped;
+        },
+    }
+    let unfolds = match (seating.typing, body) {
+        (&(Typing::Checked { .. } | Typing::Synthesised { .. }), Maybe::Present(body)) => {
+            Maybe::Present(body)
+        },
+        // A hole and a declaration waiting on one are held so, for a later
+        // judgement to suspend on as the judgement that gave them did.
+        (&Typing::Owed, _) => Maybe::Absent(unfolding::Absent::Owed),
+        (&Typing::Suspended, _) => Maybe::Absent(unfolding::Absent::Waiting),
+        (&(Typing::Checked { .. } | Typing::Synthesised { .. }), Maybe::Absent(_))
+        | (&(Typing::Data | Typing::Refused(_)), _) => Maybe::Absent(unfolding::Absent::Rigid),
+    };
+    let constant = seating.declaration.constant();
+    let seated = match seat {
+        Seat::Judged(declared) => context.adopt_formed(constant, declared, unfolds),
+        Seat::Formed(supplied) => context.adopt(constant, supplied, unfolds),
+    };
+    if seated.is_err() {
+        return Maybe::Absent(recall::Absent::Unseated);
+    }
+    if let Maybe::Present(entry) = seating.entry {
+        context.adopt_stages(
+            constant,
+            (
+                match entry.stage() {
+                    Maybe::Present(stage) => Some(stage.clone()),
+                    Maybe::Absent(_) => None,
+                },
+                match entry.following() {
+                    Maybe::Present(position) => Some(position),
+                    Maybe::Absent(_) => None,
+                },
+            ),
+        );
+    }
+    Maybe::Present(answer)
+}
+
+/// How a stand test counts a recorded answer that content cannot compare: a
+/// codata answer, and a typed answer whose root has no content form.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Uncompared
+{
+    /// The answer falls, as an adoption reads it, and the pass decides the
+    /// item again.
+    Falls,
+    /// A codata answer stands where the pass supplied an equal one, and an
+    /// opaque type stands where the pass supplied a type. The requires clause
+    /// of [`Judgement::take`] reads an answer so, since it refutes only an
+    /// answer that differs.
+    Agrees,
+}
+
+/// What a stand test reads of an item and its pass.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy)]
+struct Reader<'input>
+{
+    /// The item's encoding.
+    item: &'input Encoded,
+    /// The item's declaration.
+    declaration: &'input gandr_core_checker::Declaration,
+    /// The edited program.
+    layout: &'input Layout,
+    /// The answers of the items passed so far.
+    supplied: &'input Supplied<'input>,
+    /// The item's ordinal.
+    ordinal: ItemOrdinal,
+}
+
+/// Whether `answered` stands against `current`, the answer that the pass
+/// supplied of the item that it names, if one precedes this item, counting an
+/// answer that content cannot compare as `uncompared` says.
+///
+/// # Specification
+/// trivial.
+fn answer_stands(
+    answered: &Answered,
+    current: Option<&Answer>,
+    uncompared: Uncompared,
+) -> Standing
+{
+    let stands = match answered.answer {
+        Answer::Untyped => !matches!(current, Some(Answer::Typed(_))),
+        Answer::Data(None) => !matches!(current, Some(Answer::Data(Some(_)))),
+        // A type with a node of no content form is equal to every type with
+        // another such node in its place.
+        Answer::Typed(ref ty) => {
+            let opaque = ty
+                .nodes()
+                .first()
+                .is_some_and(|root| root.opacity() == Opacity::Opaque);
+            match (opaque, uncompared) {
+                (false, Uncompared::Falls | Uncompared::Agrees) => {
+                    current == Some(&answered.answer)
+                },
+                (true, Uncompared::Falls) => false,
+                (true, Uncompared::Agrees) => matches!(current, Some(Answer::Typed(_))),
+            }
+        },
+        Answer::Data(Some(_)) => current == Some(&answered.answer),
+        Answer::Codata => match uncompared {
+            Uncompared::Falls => false,
+            Uncompared::Agrees => current == Some(&answered.answer),
+        },
+        // The register and the grant answer these; `located_stands` reads
+        // them.
+        Answer::Located { .. } | Answer::Entered { .. } => true,
+    };
+    if stands {
+        Standing::Stands
+    }
+    else {
+        Standing::Falls
+    }
+}
+
+/// Whether every recorded answer of the signature tables equals the answer the
+/// edited table gives.
+///
+/// # Specification
+/// - requires: `reader` supplies the answers of the items before its ordinal.
+/// - ensures: `Stands` exactly when, for each recorded answer, the item its
+///   reference names in the edited program precedes this one and supplied an
+///   equal answer, or no such item precedes it and the recorded answer is
+///   `Untyped`; a recorded codata answer, and a typed one whose root is opaque,
+///   stands as `uncompared` says; a located and an entered answer stand here,
+///   and [`located_stands`] reads them.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — type changes invalidate recorded answers while unchanged
+///   types preserve body-edit reuse. The predicate reads preceding source
+///   references and answers directly rather than the layout lookup map.
+/// - witness: `tests::incremental::type_change_retypes_the_dependent`
+/// - witness: `tests::incremental::body_edit_adopts_the_type_stable_dependent`
+/// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
+#[spec(
+    requires: reader.supplied.next() == reader.ordinal,
+    ensures: |ret| {
+        (ret == Standing::Stands)
+            == support.iter().all(|answered| {
+                let current = reader
+                    .layout
+                    .references
+                    .iter()
+                    .take(usize::from(reader.ordinal))
+                    .zip(reader.supplied.iter())
+                    .find(|&(reference, _)| *reference == answered.reference)
+                    .map(|(_, current)| current);
+                answer_stands(answered, current, uncompared) == Standing::Stands
+            })
+    },
+)]
+fn answers_hold(
+    reader: Reader<'_>,
+    support: &[Answered],
+    uncompared: Uncompared,
+) -> Standing
+{
+    let holds = support.iter().all(|answered| {
+        let current = match reader.layout.ordinal_of(&answered.reference) {
+            Maybe::Present(ordinal) if ordinal < reader.ordinal => reader.supplied.get(ordinal),
+            Maybe::Present(_) | Maybe::Absent(_) => None,
+        };
+        answer_stands(answered, current, uncompared) == Standing::Stands
+    });
+    if holds {
+        Standing::Stands
+    }
+    else {
+        Standing::Falls
+    }
+}
+
+/// Whether `support` still answers: the signature tables as
+/// [`answers_hold`] reads them, and the register and the grant as
+/// [`located_stands`] reads them.
+///
+/// # Specification
+/// - requires: `reader` supplies the answers of the items before its ordinal.
+/// - ensures: `Stands` exactly when both stand.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`answers_hold`] and [`located_stands`].
+/// - witness: `tests::incremental::type_change_retypes_the_dependent`
+/// - witness: `tests::worlds::a_changed_home_judges_its_readers_again_3381`
+#[spec(
+    requires: reader.supplied.next() == reader.ordinal,
+    ensures: |ret| (ret == Standing::Stands)
+        == (answers_hold(reader, support, uncompared) == Standing::Stands
+            && located_stands(context, reader, support) == Standing::Stands),
+)]
+fn support_holds(
+    context: &CheckingContext<'_>,
+    reader: Reader<'_>,
+    support: &[Answered],
+    uncompared: Uncompared,
+) -> Standing
+{
+    if answers_hold(reader, support, uncompared) == Standing::Stands {
+        located_stands(context, reader, support)
+    }
+    else {
+        Standing::Falls
+    }
+}
+
+/// Whether the world register and the host's grant answer as `support`
+/// records: each declaration a value answer names is homed and spent as the
+/// located answer beside it states, and the item's own entry resolves as its
+/// entered answer states.
+///
+/// # Specification
+/// - requires: `support` is canonical, as [`canonical_support`] leaves it.
+/// - ensures: true exactly when, for each recorded value answer, the item its
+///   reference names precedes this one and `context` holds it at the home and
+///   the spending the located answer beside it records, or at the host's world
+///   unspent when none is beside it, or no such item precedes it and none is
+///   beside it; and `context` resolves the item's entry to the one its entered
+///   answer records, or to the host's world with no capability when it records
+///   none.
+/// - panics: none.
+/// - executable: none — the walk itself, over the register and the grant of
+///   `context`.
+///
+/// # Cost
+/// - allocation: the resolved entry and its roots, which the walk compares,
+///   setup
+///
+/// # Adequacy
+/// - hypothesis: L3 — a reader of a declaration whose home changes is judged
+///   again; under a changed grant, each declaration whose resolved entry moves
+///   is judged again and every other is adopted.
+/// - witness: `tests::worlds::a_changed_home_judges_its_readers_again_3381`
+/// - witness: `tests::worlds::a_changed_grant_judges_again_each_entry_it_moves_3381`
+fn located_stands(
+    context: &CheckingContext<'_>,
+    reader: Reader<'_>,
+    support: &[Answered],
+) -> Standing
+{
+    let recorded = |reference: &Reference, consultation: Consultation| {
+        support
+            .binary_search_by(|answered| {
+                (&answered.reference, answered.answer.consultation())
+                    .cmp(&(reference, consultation))
+            })
+            .ok()
+            .and_then(|at| support.get(at))
+            .map(|answered| &answered.answer)
+    };
+    let homed = support
+        .iter()
+        .filter(|answered| answered.answer.consultation() == Consultation::Value)
+        .all(|answered| {
+            let current = match reader.layout.ordinal_of(&answered.reference) {
+                Maybe::Present(ordinal) if ordinal < reader.ordinal => reader
+                    .layout
+                    .items
+                    .get(usize::from(ordinal))
+                    .map(|item| context.located(item.declaration().constant())),
+                Maybe::Present(_) | Maybe::Absent(_) => None,
+            };
+            match recorded(&answered.reference, Consultation::Located) {
+                Some(&Answer::Located { ref home, spending }) => current.is_some_and(|located| {
+                    gandr_core_content::WorldContent::of(reader.layout, located.home()) == *home
+                        && located.spending() == spending
+                }),
+                Some(_) | None => current.is_none_or(|located| {
+                    located == gandr_core_checker::worlds::Located::default()
+                }),
+            }
+        });
+    let resolved = context.resolve_entry(reader.declaration).ok();
+    let entered = match recorded(reader.item.content.reference(), Consultation::Entry) {
+        Some(&Answer::Entered { ref entry, .. }) => {
+            resolved
+                .map(|resolved| crate::content::EntryRoots::of(reader.layout, &resolved))
+                .as_ref()
+                == entry.as_ref()
+        },
+        Some(_) | None => resolved
+            .is_some_and(|resolved| resolved == gandr_core_checker::worlds::Entry::default()),
+    };
+    if homed && entered {
+        Standing::Stands
+    }
+    else {
+        Standing::Falls
+    }
+}
+
+/// Whether a type position of the item, or of a recorded answer's type,
+/// names a value-changed definition.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Falls` exactly when a footprint type read or a reference inside
+///   a typed recorded answer belongs to the changed-value set.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an ascription supplies a footprint type read; constructed
+///   recorded answers separately contain abstract and code references. An
+///   unrelated changed value and an untyped answer do not invalidate the guard.
+/// - witness: `tests::incremental::a_type_stable_body_edit_reaches_a_type_position`
+/// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
+#[spec(
+    ensures: |ret| {
+        (ret == Standing::Falls)
+            == (input
+                .footprint
+                .type_reads()
+                .any(|reference| input.value_changed.contains(reference))
+                || support.iter().any(|answered| answered.answer.reads().into_iter().any(|reference| input.value_changed.contains(reference))))
+    },
+)]
+fn touches(
+    input: &AdoptionInput<'_, '_>,
+    support: &[Answered],
+) -> Standing
+{
+    let changed = |reference: &Reference| input.value_changed.contains(reference);
+    let touched = input.footprint.type_reads().any(changed)
+        || support
+            .iter()
+            .any(|answered| answered.answer.reads().into_iter().any(changed));
+    if touched {
+        Standing::Falls
+    }
+    else {
+        Standing::Stands
+    }
+}
+
+/// The consulted answers, with what the world register held of each
+/// declaration consulted and `own`, the item's own entered answer when it
+/// records one, canonical by reference and signature table.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each consulted position's reference beside its answer's content,
+///   and beside a located answer when the register homed it at a declared world
+///   or its run spent; then `own`; ascending by reference and signature table.
+///   Unoccupied positions collapse into one absent answer per signature table.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — independent fresh judgements validate adopted support in
+///   the differential suite; a dangling reader supplies an untyped answer. The
+///   predicate bounds cardinality and canonical order, not a repeated
+///   judgement. L3 — a reader of a declaration whose home changes is judged
+///   again.
+/// - witness: `tests::incremental::incremental_equals_from_scratch`
+/// - witness: `tests::incremental::uncoordinated_rename_leaves_a_dangling_reader`
+/// - witness: `tests::worlds::a_changed_home_judges_its_readers_again_3381`
+///
+/// # Cost
+/// - allocation: the list of consulted answers, growth within the support
+#[spec(
+    ensures: |ret| {
+        ret.len() <= support.consulted().len().saturating_mul(2).saturating_add(support.data_consulted().len()).saturating_add(support.codata_consulted().len()).saturating_add(1)
+            && ret.windows(2).all(|pair| {
+                pair.first()
+                    .zip(pair.last())
+                    .is_none_or(|(left, right)| (&left.reference,left.answer.consultation()) < (&right.reference,right.answer.consultation()))
+            })
+    },
+)]
+fn answered(
+    (support, own): (&Support, Option<Answered>),
+    arena: &CoreArena,
+    layout: &Layout,
+    types: &gandr_core_content::TypeMemo,
+) -> Vec<Answered>
+{
+    let mut answers: Vec<Answered> = Vec::with_capacity(
+        support
+            .consulted()
+            .len()
+            .saturating_add(support.data_consulted().len())
+            .saturating_add(support.codata_consulted().len())
+            .saturating_add(1),
+    );
+    for consulted in support.consulted() {
+        let reference = layout.resolve(consulted.constant());
+        let located = consulted.located();
+        if located != gandr_core_checker::worlds::Located::default() {
+            answers.push(Answered {
+                reference: reference.clone(),
+                answer: Answer::Located {
+                    home: gandr_core_content::WorldContent::of(layout, located.home()),
+                    spending: located.spending(),
+                },
+            });
+        }
+        answers.push(Answered {
+            reference,
+            answer: answer_of(consulted.answer(), arena, layout, types),
+        });
+    }
+    answers.extend(support.data_consulted().iter().map(|consulted| {
+        Answered {
+            reference: layout.resolve(consulted.constant()),
+            answer: Answer::Data(
+                consulted
+                    .signature()
+                    .map(|signature| crate::content::DataContent::of(arena, layout, signature)),
+            ),
+        }
+    }));
+    answers.extend(support.codata_consulted().iter().map(|consulted| Answered {
+        reference: layout.resolve(consulted.constant()),
+        answer: Answer::Codata,
+    }));
+    answers.extend(own);
+    canonical_support(answers)
+}
+
+/// The entered answer of `item`'s declaration, as `context` resolves its
+/// entry and holds its spending, or none for the host's world with no
+/// capability, unspent.
+///
+/// # Specification
+/// - requires: the declaration was judged or adopted in `context`, so the
+///   register holds its spending.
+/// - ensures: none exactly when the entry resolves to the host's world with no
+///   capability and the register holds the declaration unspent; otherwise the
+///   item's own reference beside the resolved entry, or none for a refused one,
+///   and the spending.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the roots of the resolved entry in the answer, durable by the
+///   session's checkpoint
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declaration stating no entry records none under no
+///   grant, and records the grant's entry under one.
+/// - witness: `tests::worlds::a_changed_grant_judges_again_each_entry_it_moves_3381`
+#[spec(ensures: |ref ret| ret.as_ref().is_none_or(|answered| {
+    answered.reference == *item.content.reference()
+        && matches!(answered.answer, Answer::Entered { .. })
+}))]
+fn own_entry(
+    context: &CheckingContext<'_>,
+    declaration: &gandr_core_checker::Declaration,
+    (item, layout): (&Encoded, &Layout),
+) -> Option<Answered>
+{
+    let spending = context.located(declaration.constant()).spending();
+    let entry = context.resolve_entry(declaration).ok();
+    if spending == gandr_core_checker::worlds::Spending::Unspent
+        && entry
+            .as_ref()
+            .is_some_and(|entry| *entry == gandr_core_checker::worlds::Entry::default())
+    {
+        return None;
+    }
+    Some(Answered {
+        reference: item.content.reference().clone(),
+        answer: Answer::Entered {
+            entry: entry.map(|entry| crate::content::EntryRoots::of(layout, &entry)),
+            spending,
+        },
+    })
+}
+
+/// `support` ascending by reference and signature table, each pair once.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: entries are sorted stably by reference and signature table; the
+///   first answer for each pair is retained.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty support and unsorted conflicting duplicates
+///   distinguish canonical order and first-answer retention. Reversing the
+///   input changes the retained answers rather than preserving the previous
+///   checkpoint support.
+/// - witness: `checkpoint::tests::support_canonicalization_keeps_the_first_answer`
+///
+/// # Cost
+/// - allocation: the sorted support, growth within the support
+#[spec(
+    captures: [count = support.len()],
+    ensures: |ret| {
+        ret.len() <= count
+            && ret.windows(2).all(|pair| {
+                pair.first()
+                    .zip(pair.last())
+                    .is_none_or(|(left, right)| (&left.reference,left.answer.consultation()) < (&right.reference,right.answer.consultation()))
+            })
+    },
+)]
+fn canonical_support(mut support: Vec<Answered>) -> Vec<Answered>
+{
+    support.sort_by(|left, right| {
+        (&left.reference, left.answer.consultation())
+            .cmp(&(&right.reference, right.answer.consultation()))
+    });
+    support.dedup_by(|later, earlier| {
+        later.reference == earlier.reference
+            && later.answer.consultation() == earlier.answer.consultation()
+    });
+    support
+}
+
+/// The content of a table answer.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a present formed seat is represented as type content; an absent
+///   seat is `Untyped`. Unresolved identifiers retain their value-type sort.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated finite programs and a dangling reader exercise
+///   typed and untyped answers against independently checked results.
+/// - witness: `tests::incremental::incremental_equals_from_scratch`
+/// - witness: `tests::incremental::uncoordinated_rename_leaves_a_dangling_reader`
+///
+/// # Cost
+/// - allocation: the table of the answer, growth within the answer
+#[spec(
+    captures: [present = matches!(answer, Maybe::Present(_))],
+    ensures: |ret| match ret {
+        | Answer::Typed(ref ty) => {
+            present
+                && ty
+                    .nodes()
+                    .first()
+                    .is_some_and(|node| node.sort() == gandr_core_content::Sort::ValueType)
+        },
+        | Answer::Untyped => !present,
+        Answer::Data(_) | Answer::Codata | Answer::Located { .. } | Answer::Entered { .. } => false,
+    },
+)]
+fn answer_of(
+    answer: Maybe<FormedValueType, signature_table::Absent>,
+    arena: &CoreArena,
+    layout: &Layout,
+    types: &gandr_core_content::TypeMemo,
+) -> Answer
+{
+    match answer {
+        Maybe::Present(formed) => {
+            Answer::Typed(types.content(arena, layout, ArenaNode::ValueType(formed.id())))
+        },
+        Maybe::Absent(_) => Answer::Untyped,
+    }
+}
+
+/// The value-changed set: the definitions inserted, deleted or changed, closed
+/// over their readers.
+///
+/// # Specification
+/// - requires: `footprints` are `encoded`'s, in order.
+/// - ensures: the least set holding every reference whose item is in only one
+///   of the two programs or whose content differs between them, and every
+///   edited item reading a member; once the set is non-empty, every opaque
+///   edited item and its readers.
+/// - panics: none.
+/// - intension: builds the reverse read map once and crosses each of its edges
+///   at most once, so the closure is linear in the reads up to the maps'
+///   logarithm.
+///
+/// # Adequacy
+/// - hypothesis: L3 — transitive readers and a bystander separate closure
+///   membership; a cycle terminates with exact edge counts. Opaque content
+///   seeds no change by itself, but joins with its reader once another item
+///   changes. A finite growing-size family checks linear accounting.
+/// - witness: `tests::incremental::a_changed_value_reaches_through_an_untouched_definition`
+/// - witness: `tests::defects::items_visited_for_a_head_edit_grow_linearly`
+/// - witness: `checkpoint::tests::value_change_closure_handles_cycles_and_opaque_readers`
+///
+/// # Cost
+/// - allocation: the value-changed set, growth within the program
+#[spec(
+    requires: footprints.len() == encoded.len(),
+    ensures: |ret| {
+        usize::from(census.value_changed) == ret.len()
+            && usize::from(census.seeds) <= ret.len()
+            && encoded.iter().zip(footprints).all(|(item, footprint)| {
+                ret.contains(item.content.reference())
+                    || ((ret.is_empty() || footprint.opacity() == Opacity::Transparent)
+                        && !footprint.reads().any(|reference| ret.contains(reference)))
+            })
+    },
+)]
+fn close_value_changes(
+    base: &[ItemCheckpoint],
+    encoded: &[Encoded],
+    footprints: &[Footprint],
+    census: &mut ResumeCensus,
+) -> BTreeSet<Reference>
+{
+    let before: BTreeMap<&Reference, &ItemContent> = base
+        .iter()
+        .map(|checkpoint| (checkpoint.content().reference(), checkpoint.content()))
+        .collect();
+    let mut changed: BTreeSet<Reference> = BTreeSet::new();
+    let mut worklist: Vec<Reference> = Vec::new();
+    let seed = |reference: &Reference,
+                changed: &mut BTreeSet<Reference>,
+                worklist: &mut Vec<Reference>| {
+        if changed.insert(reference.clone()) {
+            worklist.push(reference.clone());
+        }
+    };
+    let mut after: BTreeSet<&Reference> = BTreeSet::new();
+    for item in encoded {
+        let reference = item.content.reference();
+        let _fresh = after.insert(reference);
+        let same = before
+            .get(reference)
+            .is_some_and(|content| **content == item.content);
+        if !same {
+            seed(reference, &mut changed, &mut worklist);
+        }
+    }
+    for reference in before.keys() {
+        if !after.contains(*reference) {
+            seed(reference, &mut changed, &mut worklist);
+        }
+    }
+    census.seeds = ItemCount::from(changed.len());
+    let mut readers: BTreeMap<&Reference, Vec<&Reference>> = BTreeMap::new();
+    let mut opaque: Vec<&Reference> = Vec::new();
+    for (item, footprint) in encoded.iter().zip(footprints) {
+        if footprint.opacity() == Opacity::Opaque {
+            opaque.push(item.content.reference());
+        }
+        for read in footprint.reads() {
+            readers
+                .entry(read)
+                .or_default()
+                .push(item.content.reference());
+        }
+    }
+    if !changed.is_empty() {
+        for reference in opaque {
+            seed(reference, &mut changed, &mut worklist);
+        }
+    }
+    while let Some(reference) = worklist.pop() {
+        if let Some(edges) = readers.get(&reference) {
+            for &reader in edges {
+                bump(&mut census.closure_edges);
+                seed(reader, &mut changed, &mut worklist);
+            }
+        }
+    }
+    census.value_changed = ItemCount::from(changed.len());
+    changed
+}
+
+pub mod reuse;
+
+#[cfg(test)]
+mod tests;
