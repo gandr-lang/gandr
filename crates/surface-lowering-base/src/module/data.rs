@@ -2307,8 +2307,11 @@ fn cell<'source>(
     };
     match arrow {
         (label, _) if label == TileName::INVERTIBLE => {},
-        (label, at) if label == TileName::GENERATOR => {
+        (label, at) if label == TileName::GENERATOR && at.span.start() < at.span.end() => {
             return Err(LoweringRefusal::DirectedCell { span: at.span });
+        },
+        (label, _) if label == TileName::GENERATOR => {
+            return Err(misplaced_in(FormName::CELL_MEMBER, source.span));
         },
         (label, at) if label == TileName::REWRITE || label == TileName::REVERSIBLE => {
             return Err(declined(at, FormName::CELL_MEMBER, Unbuilt::CellMember));
