@@ -867,7 +867,7 @@ fn graph(session: &gandr_core_term::session::SessionType) -> gandr_kernel_term::
     let mut tasks = alloc::vec![(
         session.state(),
         0_usize,
-        alloc::vec::Vec::<(ProtocolState, usize)>::new()
+        alloc::sync::Arc::<[(ProtocolState, usize)]>::from(alloc::vec![]),
     )];
     let slot = |nodes: &mut gandr_kernel_data::SmallVec<Node, 0, alloc::alloc::Global>| {
         nodes.push(Node::End);
@@ -894,7 +894,7 @@ fn graph(session: &gandr_core_term::session::SessionType) -> gandr_kernel_term::
                     .iter()
                     .map(|(name, &next)| {
                         let next_slot = slot(&mut nodes);
-                        tasks.push((next, next_slot, binders.clone()));
+                        tasks.push((next, next_slot, alloc::sync::Arc::clone(&binders)));
                         (label(name), State(next_slot))
                     })
                     .collect();
@@ -908,9 +908,10 @@ fn graph(session: &gandr_core_term::session::SessionType) -> gandr_kernel_term::
             ProtocolNode::End => Node::End,
             ProtocolNode::Mu(body) => {
                 let body_slot = slot(&mut nodes);
-                let mut inner = binders;
+                let mut inner = alloc::vec::Vec::with_capacity(binders.len().saturating_add(1));
+                inner.extend(binders.iter().copied());
                 inner.push((at, into));
-                tasks.push((body, body_slot, inner));
+                tasks.push((body, body_slot, alloc::sync::Arc::from(inner)));
                 Node::Mu(State(body_slot))
             },
             ProtocolNode::Recur(binder) => {

@@ -998,7 +998,7 @@ pub enum Outcome
     },
     /// The judgement refused the declaration: the refusal is its mark, and the
     /// kernel was offered nothing.
-    Marked(CheckRefusal),
+    Marked(Arc<CheckRefusal>),
     /// The judgement suspended the declaration on owed holes: nothing is
     /// offered until a fill resumes it, and a reader of it is withheld.
     Suspended,
@@ -1009,10 +1009,41 @@ pub enum Outcome
     /// certificate replayed, there.
     Static,
     /// The bridge refused to offer the declaration.
-    Refused(Refusal),
+    Refused(Arc<Refusal>),
     /// The kernel rejected the erased declaration: the judgement accepted what
     /// the kernel does not, the disagreement the oracle exists to report.
-    Rejected(KernelError),
+    Rejected(Arc<KernelError>),
+}
+
+impl Outcome
+{
+    /// Copy the recorded result for each member of a failed mutual block.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn duplicated(&self) -> Self
+    {
+        match self {
+            Self::Data { admitted, audit } => Self::Data {
+                admitted: admitted.clone(),
+                audit: audit.clone(),
+            },
+            Self::Defined { admitted, audit } => Self::Defined {
+                admitted: admitted.clone(),
+                audit: audit.clone(),
+            },
+            Self::Assumed { admitted, audit } => Self::Assumed {
+                admitted: admitted.clone(),
+                audit: audit.clone(),
+            },
+            Self::Marked(refusal) => Self::Marked(Arc::clone(refusal)),
+            Self::Suspended => Self::Suspended,
+            Self::Static => Self::Static,
+            Self::Refused(refusal) => Self::Refused(Arc::clone(refusal)),
+            Self::Rejected(error) => Self::Rejected(Arc::clone(error)),
+        }
+    }
 }
 
 /// One certificate the kernel replayed for a declaration: what its step
@@ -4101,7 +4132,10 @@ where
                         return crossed(Outcome::Static, Tail::Bare);
                     },
                     (None, None, None) => {
-                        return crossed(Outcome::Refused(Refusal::MachineInvariant), Tail::Bare);
+                        return crossed(
+                            Outcome::Refused(Arc::new(Refusal::MachineInvariant)),
+                            Tail::Bare,
+                        );
                     },
                 };
                 self.offer(item, judged, offer)
@@ -4141,11 +4175,14 @@ where
             (None, Verdict::Owed(entry)) => self.offer(item, judged, Offer::Axiom {
                 declared: entry.absence().declared().id(),
             }),
-            (None, Verdict::Refused(refusal)) => crossed(Outcome::Marked(refusal), Tail::Lone),
-            (None, Verdict::Suspended(_)) => crossed(Outcome::Suspended, Tail::Lone),
-            (None, Verdict::Checked { .. } | Verdict::Synthesised { .. }) => {
-                crossed(Outcome::Refused(Refusal::MachineInvariant), Tail::Lone)
+            (None, Verdict::Refused(refusal)) => {
+                crossed(Outcome::Marked(Arc::new(refusal)), Tail::Lone)
             },
+            (None, Verdict::Suspended(_)) => crossed(Outcome::Suspended, Tail::Lone),
+            (None, Verdict::Checked { .. } | Verdict::Synthesised { .. }) => crossed(
+                Outcome::Refused(Arc::new(Refusal::MachineInvariant)),
+                Tail::Lone,
+            ),
         }
     }
 
@@ -4287,7 +4324,7 @@ where
                             self.hold(hold, on)
                         },
                         Err(error) => crossed(
-                            Outcome::Rejected(error),
+                            Outcome::Rejected(Arc::new(error)),
                             staged.replayed,
                             self.stopwatch.stop(started),
                         ),
@@ -4410,7 +4447,7 @@ where
                 entry: Readmitted {
                     constant: judged.constant(),
                     origin: judged.origin(),
-                    outcome: Outcome::Refused(Refusal::MachineInvariant),
+                    outcome: Outcome::Refused(Arc::new(Refusal::MachineInvariant)),
                     certificates: Vec::new(),
                     took: UNOFFERED,
                 },
@@ -4528,7 +4565,7 @@ where
                 (constant, offer, image),
                 (staged_as, admitted),
             ),
-            Err(error) => Outcome::Rejected(error),
+            Err(error) => Outcome::Rejected(Arc::new(error)),
         };
         Crossing {
             entry: Readmitted {
@@ -5195,7 +5232,7 @@ fn close_seals(
             },
             Err(error) => {
                 if let Some(entry) = readmitted.get_mut(seal.readmitted) {
-                    entry.outcome = Outcome::Rejected(error);
+                    entry.outcome = Outcome::Rejected(Arc::new(error));
                 }
             },
         }
@@ -5535,7 +5572,7 @@ where
                     answers = Some(fresh);
                     continue;
                 }
-                return (Outcome::Rejected(error), staged.replayed, took);
+                return (Outcome::Rejected(Arc::new(error)), staged.replayed, took);
             },
         };
         let outcome = settle(
@@ -5849,7 +5886,10 @@ where
         },
         (Err((refusal, replayed)), None) => {
             staging.discard();
-            return Err(Unstaged::Refused(Outcome::Refused(refusal), replayed));
+            return Err(Unstaged::Refused(
+                Outcome::Refused(Arc::new(refusal)),
+                replayed,
+            ));
         },
     };
     let image = match erased {
@@ -5872,10 +5912,10 @@ where
             Err(constant) => {
                 staging.discard();
                 return Err(Unstaged::Refused(
-                    Outcome::Refused(Refusal::Withheld {
+                    Outcome::Refused(Arc::new(Refusal::Withheld {
                         at: offered,
                         constant,
-                    }),
+                    })),
                     replayed,
                 ));
             },
@@ -6245,15 +6285,17 @@ where
                                 (outcome, replayed)
                             },
                         };
+                        let mut replayed = Some(replayed);
                         return members
                             .iter()
                             .map(|&(member, _)| {
-                                if member == constant {
-                                    (outcome.clone(), replayed.clone())
+                                let certificates = if member == constant {
+                                    replayed.take().unwrap_or_default()
                                 }
                                 else {
-                                    (outcome.clone(), Vec::new())
-                                }
+                                    Vec::new()
+                                };
+                                (outcome.duplicated(), certificates)
                             })
                             .collect();
                     },
@@ -6322,9 +6364,10 @@ where
                     answers = Some(fresh);
                     continue;
                 }
+                let error = Arc::new(error);
                 return images
                     .into_iter()
-                    .map(|(_, replayed)| (Outcome::Rejected(error.clone()), replayed))
+                    .map(|(_, replayed)| (Outcome::Rejected(Arc::clone(&error)), replayed))
                     .collect();
             },
         }
@@ -6618,7 +6661,7 @@ where
         .map(|signature| signature.operations().len())
         .sum();
     if operations == 0 {
-        return Err(Outcome::Refused(Refusal::MachineInvariant));
+        return Err(Outcome::Refused(Arc::new(Refusal::MachineInvariant)));
     }
     let declaration = positions.reserved();
     let universe = arena.value_type_universe(
@@ -6667,14 +6710,17 @@ where
     ) {
         Ok(staged) => staged,
         Err(Unstaged::Refused(outcome, _)) => return Err(outcome),
-        Err(Unstaged::Unseeded(_)) => return Err(Outcome::Refused(Refusal::MachineInvariant)),
+        Err(Unstaged::Unseeded(_)) => {
+            return Err(Outcome::Refused(Arc::new(Refusal::MachineInvariant)));
+        },
     };
     let exported = staged
         .declaration
         .declaration()
         .clone()
         .named(model_name(row, level));
-    let admitted = admit(environment, staged.declaration).map_err(Outcome::Rejected)?;
+    let admitted = admit(environment, staged.declaration)
+        .map_err(|error| Outcome::Rejected(Arc::new(error)))?;
     positions.models.push(Model {
         row: row.to_vec(),
         level: level.clone(),
@@ -6807,7 +6853,7 @@ fn formed<Vouch>(
 where
     Vouch: Fn(Certificate) -> Certificate,
 {
-    let invariant = || Outcome::Refused(Refusal::MachineInvariant);
+    let invariant = || Outcome::Refused(Arc::new(Refusal::MachineInvariant));
     let Some(&gandr_core_term::ValueType::Patched {
         base,
         ref fixed,
@@ -7007,7 +7053,7 @@ fn record_of<'label>(
     for (label, value) in entries {
         let field = *fields
             .get(label)
-            .ok_or(Outcome::Refused(Refusal::MachineInvariant))?;
+            .ok_or(Outcome::Refused(Arc::new(Refusal::MachineInvariant)))?;
         types.insert(label.clone(), field);
         values.insert(label.clone(), value);
     }
@@ -7053,7 +7099,7 @@ fn formation_key<Vouch>(
 where
     Vouch: Fn(Certificate) -> Certificate,
 {
-    let invariant = || Outcome::Refused(Refusal::MachineInvariant);
+    let invariant = || Outcome::Refused(Arc::new(Refusal::MachineInvariant));
     let mut key = Vec::with_capacity(records.len());
     let mut reads = NameReads::Content;
     for record in records {
@@ -7139,7 +7185,7 @@ fn formation_segment(
     key: &[gandr_kernel_core::ContentId],
 ) -> Result<gandr_kernel_term::NameSegment, Outcome>
 {
-    let invariant = || Outcome::Refused(Refusal::MachineInvariant);
+    let invariant = || Outcome::Refused(Arc::new(Refusal::MachineInvariant));
     let mut hasher = blake3::Hasher::new();
     for &id in key {
         let Maybe::Present(name) = table.table.name(id)
@@ -7435,10 +7481,13 @@ where
     ) {
         Ok(staged) => staged,
         Err(Unstaged::Refused(outcome, _)) => return Err(outcome),
-        Err(Unstaged::Unseeded(_)) => return Err(Outcome::Refused(Refusal::MachineInvariant)),
+        Err(Unstaged::Unseeded(_)) => {
+            return Err(Outcome::Refused(Arc::new(Refusal::MachineInvariant)));
+        },
     };
     let exported = staged.declaration.declaration().clone().named(name);
-    let admitted = admit(environment, staged.declaration).map_err(Outcome::Rejected)?;
+    let admitted = admit(environment, staged.declaration)
+        .map_err(|error| Outcome::Rejected(Arc::new(error)))?;
     positions.exports.push(exported);
     Ok(admitted.position())
 }
