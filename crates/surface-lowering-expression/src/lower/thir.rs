@@ -215,10 +215,10 @@ fn staged(
         .map_or(&[][..], UnitSource::marks);
     let mark = answered(arena, payload, marks)?;
     let body = match marks.get(usize::from(mark)).map(|staged| &staged.staging) {
-        Some(Ok(Staging::Staged(body))) => body,
-        Some(Ok(Staging::Outside(_))) => return Err(StagedFault::Outside(mark)),
-        Some(Err(Unstaged::NoReader)) => return Err(StagedFault::NoReader),
-        Some(Err(Unstaged::Unread(_) | Unstaged::Refused(_))) | None => {
+        Some(&Ok(Staging::Staged(ref body))) => body,
+        Some(&Ok(Staging::Outside(_))) => return Err(StagedFault::Outside(mark)),
+        Some(&Err(Unstaged::NoReader)) => return Err(StagedFault::NoReader),
+        Some(&Err(Unstaged::Unread(_) | Unstaged::Refused(_))) | None => {
             return Err(StagedFault::Unread(mark));
         },
     };
@@ -428,7 +428,7 @@ fn callees(
             items
                 .get(callee.as_ref())
                 .copied()
-                .ok_or(StagedFault::Unmapped {
+                .ok_or_else(|| StagedFault::Unmapped {
                     mark,
                     node: NodeIndex::from(place),
                 })

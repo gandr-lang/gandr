@@ -116,7 +116,7 @@ const STD_ONLY: Reason = Reason(
 /// with and without a reader beside the driver.
 const READER: Reason = Reason(
     "the fault needs the reader's answer, and the ledger settles the same with and without a \
-     reader; `check:rust-record` settles the exemplar under `corpus/rust/thir`",
+     reader; `check:rust-record` settles the exemplar under the reader's tests",
 );
 
 /// A tracker issue, by number.

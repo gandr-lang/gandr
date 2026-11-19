@@ -2128,7 +2128,7 @@ impl Graph
             // beside the opened source.
             let staged = crate::thir::staged(
                 SourceText::from(read.text.as_str()),
-                read.opened.parent().unwrap_or(Path::new("")),
+                read.opened.parent().unwrap_or_else(|| Path::new("")),
             );
             text.push('\n');
             let start = ByteOffset::from(text.len());

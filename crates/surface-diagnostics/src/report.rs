@@ -127,6 +127,7 @@ use gandr_surface_lowering::Omitted;
 use gandr_surface_lowering::RunOperand;
 use gandr_surface_lowering::RunSpelling;
 use gandr_surface_lowering::Staged;
+use gandr_surface_lowering::StagedFault;
 use gandr_surface_lowering::StagedName;
 use gandr_surface_lowering::Unstaged;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
@@ -1752,12 +1753,18 @@ impl fmt::Display for MessageText<'_>
                     name.as_ref()
                 ),
                 Maybe::Present(StagedName::Callee(path)) => match fault {
-                    gandr_surface_lowering::StagedFault::Unmapped { .. } => write!(
+                    StagedFault::Unmapped { .. } => write!(
                         f,
                         "a staged call names `{path}`, and the item mark states no constructor \
                          for it"
                     ),
-                    _ => write!(
+                    StagedFault::Bodied
+                    | StagedFault::NoReader
+                    | StagedFault::Unanswered
+                    | StagedFault::Unread(_)
+                    | StagedFault::Outside(_)
+                    | StagedFault::NotExpr
+                    | StagedFault::ItemMark => write!(
                         f,
                         "the staged body calls `{path}`, which the request does not hold"
                     ),
@@ -1767,11 +1774,11 @@ impl fmt::Display for MessageText<'_>
                     "the staged body holds more than {} nodes",
                     gandr_runtime_rust_record::Body::CEILING
                 ),
-                Maybe::Present(StagedName::Cause(Unstaged::NoReader)) => {
+                Maybe::Present(StagedName::Cause(&Unstaged::NoReader)) => {
                     f.write_str("no reader of a Rust crate is installed")
                 },
                 Maybe::Present(StagedName::Cause(
-                    Unstaged::Unread(cause) | Unstaged::Refused(cause),
+                    &(Unstaged::Unread(ref cause) | Unstaged::Refused(ref cause)),
                 )) => write!(f, "the reader gives no body for the function: {cause}"),
                 Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
             },

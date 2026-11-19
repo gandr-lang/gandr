@@ -91,6 +91,13 @@ pub fn install_stager(stager: Stager) -> Result<(), AlreadyInstalled>
     INSTALLED.set(stager).map_err(|_refused| AlreadyInstalled)
 }
 
+/// One file of a source's marks and what its request read: the functions,
+/// or why the reader read none.
+///
+/// # Specification
+/// trivial.
+type FileRead = (Arc<str>, Result<Vec<Function>, Unstaged>);
+
 /// The answer for each `thir` mark that `text` writes, its file read beside
 /// `directory`, in the order that `text` writes the marks.
 ///
@@ -110,19 +117,19 @@ pub fn install_stager(stager: Stager) -> Result<(), AlreadyInstalled>
 // economy: a scan of the marks for each file, quadratic in the marks of one
 // source, which hold two in the corpus; a map waits for a source of many
 // marks (#327).
-pub(crate) fn staged(
+pub fn staged(
     text: SourceText<'_>,
     directory: &Path,
 ) -> Vec<Staged>
 {
     let written = marks(text);
-    let mut files: Vec<(Arc<str>, Result<Vec<Function>, Unstaged>)> = Vec::new();
-    for (file, _) in &written {
-        if files.iter().any(|(held, _)| held == file) {
+    let mut files: Vec<FileRead> = Vec::new();
+    for &(ref file, _) in &written {
+        if files.iter().any(|&(ref held, _)| held == file) {
             continue;
         }
         let mut functions: Vec<FunctionPath> = Vec::new();
-        for (other, function) in &written {
+        for &(ref other, ref function) in &written {
             if other == file && !functions.contains(function) {
                 functions.push(function.clone());
             }
@@ -132,15 +139,15 @@ pub(crate) fn staged(
     written
         .into_iter()
         .map(|(file, function)| {
-            let staging = match files.iter().find(|(held, _)| *held == file) {
-                Some((_, Ok(read))) => read
+            let staging = match files.iter().find(|&&(ref held, _)| *held == file) {
+                Some(&(_, Ok(ref read))) => read
                     .iter()
                     .find(|one| one.path == function)
                     .map(|one| one.body.clone())
                     .ok_or_else(|| {
                         Unstaged::Unread(Arc::from("the record holds no such function"))
                     }),
-                Some((_, Err(unstaged))) => Err(unstaged.clone()),
+                Some(&(_, Err(ref unstaged))) => Err(unstaged.clone()),
                 None => Err(Unstaged::NoReader),
             };
             Staged {

@@ -375,7 +375,7 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — each fault that names a mark gives its name, and an index
 ///   past the marks gives its absence.
 /// - witness: `unit::tests::each_staged_fault_reads_its_name_from_its_mark`
-#[must_use]
+#[inline]
 pub fn staged_name(
     marks: &[Staged],
     fault: StagedFault,
@@ -399,20 +399,20 @@ pub fn staged_name(
         return Maybe::Absent(staged_name::Absent::NoMark);
     };
     match (fault, &staged.staging) {
-        (StagedFault::Unread(_), Err(unstaged)) => Maybe::Present(StagedName::Cause(unstaged)),
-        (StagedFault::Outside(_), Ok(Staging::Outside(Outside::Node(name)))) => {
+        (StagedFault::Unread(_), &Err(ref unstaged)) => Maybe::Present(StagedName::Cause(unstaged)),
+        (StagedFault::Outside(_), &Ok(Staging::Outside(Outside::Node(ref name)))) => {
             Maybe::Present(StagedName::Node(name))
         },
-        (StagedFault::Outside(_), Ok(Staging::Outside(Outside::Callee(path)))) => {
+        (StagedFault::Outside(_), &Ok(Staging::Outside(Outside::Callee(ref path)))) => {
             Maybe::Present(StagedName::Callee(path.as_ref()))
         },
-        (StagedFault::Outside(_), Ok(Staging::Outside(Outside::Large))) => {
+        (StagedFault::Outside(_), &Ok(Staging::Outside(Outside::Large))) => {
             Maybe::Present(StagedName::Large)
         },
-        (StagedFault::Unmapped { node, .. }, Ok(Staging::Staged(body))) => {
+        (StagedFault::Unmapped { node, .. }, &Ok(Staging::Staged(ref body))) => {
             let place = usize::try_from(u32::from(node)).ok();
             match place.and_then(|place| body.nodes.get(place)) {
-                Some(Node::Call { callee, .. }) => {
+                Some(&Node::Call { ref callee, .. }) => {
                     Maybe::Present(StagedName::Callee(callee.as_ref()))
                 },
                 Some(_) | None => Maybe::Absent(staged_name::Absent::NoNode),
