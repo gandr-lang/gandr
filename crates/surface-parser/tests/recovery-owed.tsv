@@ -202,7 +202,6 @@ fixture/model/desc/stlc.gandr	308	1	2440
 fixture/model/desc/stlc.gandr	540	1	2440
 fixture/model/desc/stlc.gandr	562	1	2440
 fixture/model/desc/stlc.gandr	1421	1	2440
-fixture/model/desc/theory-constructor-names.gandr	64	3	2440
 fixture/model/desc/theory-constructor-names.gandr	65	1	2440
 fixture/model/desc/theory-constructor-names.gandr	76	3	2440
 fixture/model/desc/theory-constructor-names.gandr	77	1	2440
@@ -849,7 +848,6 @@ fixture/pathological/sessions/linearity.gandr	204	1	2440
 fixture/pathological/sessions/linearity.gandr	290	1	2440
 fixture/pathological/sessions/linearity.gandr	322	1	2440
 fixture/pathological/sessions/linearity.gandr	382	1	2440
-fixture/pathological/sessions/reserved.gandr	48	1	2440
 fixture/pathological/sessions/reserved.gandr	86	1	2440
 fixture/pathological/sessions/reserved.gandr	114	1	2440
 fixture/pathological/sessions/scope-captured.gandr	22	1	2440
