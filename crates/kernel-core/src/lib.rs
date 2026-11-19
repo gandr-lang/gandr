@@ -1,0 +1,839 @@
+//! The kernel's **checking machine, conversion, and admission choke point**,
+//! with the check memo wired as the default path on both machines.
+//!
+//! The crate holds judgements. The representation, the sharing format and the
+//! decode budgets belong to the term crate below it; the level algebra to the
+//! strata crate; the memo's storage to the check-memo seam crate; the decision
+//! vocabulary to the conversion-trace crate. What lives here is what re-derives
+//! an obligation.
+//!
+//! A patched type follows Doré's boundary problems. Each face fixes fields of
+//! a record type, and each two faces agree on their meet. The kernel replays
+//! the formation of a patched type and the agreement on each meet. That
+//! agreement is the gluing condition of a cellular sheaf, after Curry, Ghrist
+//! and Nanda.
+//!
+//! # Four decisions that interlock
+//!
+//! **The checker is a defunctionalized machine** over a goal register, a
+//! produced register, a heap frame stack and an explicit typing-context stack,
+//! never mutually recursive methods bounded by a depth budget — so it is total
+//! on adversarial depth, which decode can build from bytes. Its correspondence
+//! table, arm by arm, is in [`check`], and it is the trusted-base audit
+//! artifact a reviewer walks to confirm the machine *is* the judgement.
+//!
+//! **Conversion is structural comparison with an id-equality fast path**, and
+//! the fast path is **positive only**: equal ids discharge a pair, unequal ids
+//! decide nothing. That asymmetry is what keeps it sound while taking no table
+//! into the trusted base.
+//!
+//! **Admission truncates on both verdicts.** The choke point keeps this
+//! declaration's content and drops the checker's intermediates on success, and
+//! drops both on rejection — clamped at the admission floor so a rollback can
+//! never delete content a prior admission committed.
+//!
+//! **The memo is the default path on both machines.** Admitting one declaration
+//! runs two iterative machines over the shared graph, and both consult it. A
+//! memo covering only the term half would ship a small constant against an
+//! exponential capability.
+//!
+//! # The memo's six binding conditions, and where each lives
+//!
+//! The seam crate names no term type, so everything that makes a memo *sound*
+//! is a consumer obligation, and this crate is the consumer.
+//!
+//! | condition                                              | where it is discharged                                                                             |
+//! | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+//! | static dispatch on a null-object seam that compiles away | [`check::check_declaration_with_memo`] is generic; every memo interaction is behind a compile-time activity constant |
+//! | the public admission entry cannot reach the opt-in entry | [`Environment::add_decl`] takes no memo and builds its own; the memo-taking entry admits nothing and returns no receipt |
+//! | a lifetime of one check call                            | [`check::check_declaration`] builds a memo and drops it. The environment's session keeps only content outcomes, each under its judgement's parameters |
+//! | the content-only key                                    | [`encoding`] and [`support`]: the id of the goal's record in the session's content table — direction, obligation, expected type, and the read binders as pairs of position and type — arena-free |
+//! | storage and policy outside the kernel crate             | the seam crate owns the table and its ordering; this crate holds a type parameter                  |
+//! | no authority and no persistence in a hit                | a hit claims only that this process already computed this answer for this support                   |
+//!
+//! The key carries no arena id. So dangling ids are not why a declaration's
+//! memo lives for one call. Its key names nothing of the judgement. A call
+//! holds the judgement fixed. The outcomes that the environment keeps carry no
+//! arena id. Their key names the judgement's parameters. Neither memo outlives
+//! the process. A hit claims only this process's own history. Another process
+//! has no ground to take that history on trust. Some outcomes carry arena ids,
+//! though the key does not. An entry that outlives its arena would hand back a
+//! type that does not resolve. The environment keeps no such outcome.
+//!
+//! The verdict differential excludes operational refusal: with sound per-call
+//! histories, the typing answers agree when neither run reaches
+//! `CodeObligationCeiling`. That ceiling counts processed code obligations,
+//! not distinct supports. A memo can suppress duplicates, so it can accept a
+//! well-typed declaration that a memoless check refuses operationally. The
+//! boundary witness checks the exact allowed count, one excess occurrence
+//! under the null memo, and acceptance of the same shared above-limit
+//! declaration under a fresh live memo. The alternative is a support-based
+//! budget independent of memo policy; the occurrence budget is retained
+//! because it directly bounds the drain loop. Reconsider it if callers need
+//! policy-independent resource refusals.
+//!
+//! # The memo's collapse law
+//!
+//! [`ExpansionCensus`] counts goal expansions and memo recalls per plane, and
+//! every measurement here is asserted through it. The self-similar composite
+//! is `t_0 = ()`, `t_{k+1} = (t_k, t_k)` against `T_0 = Unit`,
+//! `T_{k+1} = T_k × T_k`. Memoless is `4 · 2^d - 2` in total: `2^(d+1) - 1`
+//! body checks against `2^(d+1) - 1` type formations. Memoized is `2d + 2`:
+//! `d + 1` term supports against `d + 1` type supports. The unit leaf is the
+//! empty tuple, which checks against the empty product in one goal.
+//!
+//! | depth | memoless total | memoless term | memoless type | memoized total | memoized term | memoized type |
+//! | ----- | -------------- | ------------- | ------------- | -------------- | ------------- | ------------- |
+//! | 8 | 1,022 | 511 | 511 | 18 | 9 | 9 |
+//! | 12 | 16,382 | 8,191 | 8,191 | 26 | 13 | 13 |
+//! | 16 | 262,142 | 131,071 | 131,071 | 34 | 17 | 17 |
+//! | 28 | 1,073,741,822 | — | — | 58 | 29 | 29 |
+//!
+//! The depth-28 row runs at the public choke point: a definition whose tree
+//! expansion is 1,073,741,822 goals admits checked through
+//! [`Environment::add_decl`], with no bypass. Its memoized columns are
+//! asserted through the opt-in entry on the same shape; its memoless columns
+//! are the closed form's value and are never run.
+//!
+//! **Anti-vacuity.** The memoless term-plane law pins the occurrence count, so
+//! the workload cannot stop being shared unnoticed. The memo's entry count is
+//! compared against the census from the other direction, per plane and in
+//! total. A separate case pins that the shared composite and its fully
+//! unshared spelling cost the memoless checker identically: sharing buys
+//! checking nothing without the memo.
+//!
+//! **Edit locality: `d + 1` node checks per depth-`d` edit,** within one
+//! check call. Both spellings are checked in one pass, because warming a memo
+//! on the original and reusing it across calls would measure exactly what the
+//! lifetime rule forbids. Extra term-plane expansions are 9 at depth 8, 13 at
+//! depth 12 and 17 at depth 16; the type plane adds nothing, because the edit
+//! changes no type. The count is `d + 1` rather than `d + 2` because of the
+//! content key: the edited leaf's freshly minted payload collapses with the
+//! original's.
+//!
+//! **Adversarial depth.** A 20,000-link `thunk`-over-`return` chain checks
+//! totally inside a 256 KiB stack at both memo instantiations, costing 40,001
+//! term-plane expansions. The count is asserted, so the case cannot
+//! degenerate into a shallow term and keep passing.
+//!
+//! **Poisoned entries.** Each case is a permanent suite member, in both
+//! directions and on both planes, and asserts its exercised-path count
+//! through the census:
+//!
+//! - a poisoned term entry turns a refusal into an acceptance (served once);
+//! - an entry differing only in its binder component is not served (served zero
+//!   times), with a positive control under the matching telescope that does
+//!   change the verdict, so the case measures the binder component rather than
+//!   an inert poison;
+//! - a poisoned type-formation entry turns an admission into a
+//!   universe-violation refusal (served once, on the type plane);
+//! - a term-shaped answer in a type-formation support is declined and
+//!   recomputed at exactly the cost of having had no entry, and the mirror case
+//!   holds on the term plane.
+//!
+//! # Sharing and persistence
+//!
+//! No interning table of decoded values, no content-keyed memo the
+//! *conversion* path consults, and no persistence. What a decode hands over is
+//! the sharing the checker sees, and id equality is conversion's only
+//! sharing-aware step. The one place the kernel creates sharing is the rewrite
+//! memo, among nodes it minted past the admission watermark, and nothing
+//! decides on that sharing. The kernel's own type conversion performs no
+//! search, so it records no conversion trace; [`replay()`] is where the kernel
+//! reads one, rechecking an untrusted engine's term-conversion verdict decision
+//! by decision.
+//!
+//! # Sealing
+//!
+//! An abstract type carries the representation it was sealed over, and the
+//! kernel reads that representation only inside the admission that minted
+//! the atom: a sealed module's members are checked at the representation and
+//! exported at the atom, and every later declaration sees the atom alone. The
+//! kernel draws the admission's boundary from its own count and carries it in
+//! the atom's record, so an artifact replays to the same boundary through
+//! [`Environment::replay`]. The rule, its alternatives and its reversal are in
+//! [`seal`].
+//!
+//! # Universe identity boundaries
+//!
+//! The certified-equivalence type `Path_U` is native term syntax; conversion
+//! compares its raw classifier and map syntax, never replay-equivalence or
+//! certificate evidence. Transport is computation whose claims the kernel
+//! replays. Identity on elements and the bridge mode share a code fold;
+//! element identity, the bridge, its guarded higher field and higher
+//! evaluation are persisted syntax, as is the directed family: `Flow[.A = A](x,
+//! y)`, `stay`, sequential `then` and `ride` under a covariant motive, with
+//! forward, function and session certificates at `Flow_U`. List has a finite
+//! native code and guarded, borrowed inhabitants observed only to a supplied
+//! budget. Session codes and their identity evidence are native; their
+//! directional flows relate recorded runs, not kernel endpoint values, so a
+//! ride along one refuses.
+//!
+//! **An identity between two codes of `Type` is admitted by one of two
+//! routes.** On the first-order stratum — closed quoted codes of bases,
+//! products, sums and sessions — it is decided: `equiv(f, g)` crosses as a
+//! certificate whose round trips the kernel replays over generated constructor
+//! coverage. Everywhere else — a variable, a path type, a recursive datatype,
+//! any code the value universe holds — it is admitted on evidence: `ua(e)`
+//! checks the record `e` as the bi-invertible map between the two codes'
+//! types, whose section and retraction are fields that do not check when they
+//! do not hold, and transport along it applies the record's forward map. The
+//! alternative, extending the decided enumeration to every code, was declined:
+//! finite coverage exists only on the first-order stratum. The reversal is
+//! univalence proved as a theorem of the kernel (#520), after which `ua` is a
+//! definition and its rule a derived one. Both rules are in [`path_universe`].
+//!
+//! The decisions and exhaustion semantics are in [`path_universe`],
+//! [`flow_universe`], [`identity_recursion`], [`element_identity`],
+//! [`higher_field`] and [`session`]; every assigned and reserved wire byte is
+//! in `gandr-kernel-term`'s tag table. Frontend checking, cached content,
+//! presentation and the command IL each retain their own boundary: none turns
+//! stored candidate evidence into authority or introduces source syntax by
+//! representing it.
+//!
+//! # Element identity
+//!
+//! Element identity is persisted kernel syntax over the one identity fold.
+//! [`element_identity`] forms `Path[.A = A](a, b)` at any `A`, the identity at
+//! an open type a neutral fibre; an introduction checks at the fold's native
+//! fibre, `here` by the kernel's own conversion, a returned endpoint at the
+//! returner its computation synthesizes, transport at its motive instantiated
+//! by substitution, a higher field through its stated depth, a higher
+//! evaluation by replaying every component over kernel-generated coverage, and
+//! a quantified evaluation by replaying every step of a body that applies its
+//! function argument, branching over the applied function's result. The
+//! checking machine owes every nested check as a goal on its own stack, and
+//! the replay computes transport and related application by the fold's
+//! clauses. Each decision, with its alternatives and reversal, is stated in
+//! that module. The fold's bridge reading is `Bridge[.A = A](a, b)`, formed
+//! like `Path` and checked at the bridge fold's fibre, with no reflexivity,
+//! transport or J; its clauses' decision is [`identity_recursion`]'s.
+//!
+//! **A motive that depends on the path is a telescope, carried by its own
+//! node.** The motive is the computation type `Π (y : A). Π (z : B). F C`,
+//! `B` a family over the endpoint and `C` over both entries, and the
+//! telescope transport `tr₂(M, p, z₀, q, v)` carries, besides the path and the
+//! value, the family element `z₀` at the source and the identity `q` over
+//! the path. The checker reads both entries off the motive, checks `z₀` at
+//! `B[a]`, requires `q` to synthesize `Path[.A = B[b]](⟨tr(y. B, p, z₀)⟩, z₁)`,
+//! refusing it by name (`IdentityError::NotOver`) otherwise, checks `v` at
+//! `C[a, z₀]` and returns `C[b, z₁]`, each instance by iterated single
+//! substitution, outer binder first; a motive of any other shape is a
+//! computation-shape mismatch naming the telescope. The replay computes it by
+//! two clauses: `here` along both identities returns the value, and `here(c)`
+//! along the path transports the value along `q` in the fibre `z. C[c, z]`;
+//! everything else sticks. `J` is not a node: it is this transport in the
+//! singleton, `tr₂(Π y. Π q : Path[.A = A](a, y). F C, p, here(a), here(p),
+//! d)`, whose identity over the path checks because the singleton clause
+//! carries `here(a)` to `p`. The alternatives were widening the one-binder
+//! transport's motive to a telescope, which would change what a persisted
+//! node means, and a primitive `J`, which the identity fold does not need.
+//! Reversal: once Σ is kernel syntax, the telescope transport is the
+//! one-binder transport over the Σ of its two entries, and the node retires.
+//!
+//! # The trusted equality reflexivity reads
+//!
+//! Type conversion stays the structural comparison above, but for the pairs
+//! it sets aside for the replay: a unit against a neutral is one, because η
+//! relates them (#6110). Term equality the kernel decides with no engine's
+//! trace, `here(c)` against `Path[.A = A](a, b)` first of all, is
+//! `conv::convert_values`: α-equality, then [`replay::convert`], the replay's
+//! own loop run with no trace. That loop fires only the rules the shapes force
+//! — weak head reduction, transport along a stuck composite read along each of
+//! its paths, forcing, the η laws, the two commuting conversions of `F`, a
+//! returned endpoint taken as its computation, and decomposition — unfolds no
+//! constant and certifies no refutation, so `EndpointsDiffer` is reported only
+//! after it fails to relate the endpoints and the endpoint's dialogue does not
+//! replay. A judgement that needs another term equality enters at the same
+//! function. The η laws are a lambda's, a product's by its projections
+//! (#715), and the unit's: an empty tuple or record meets a neutral of its
+//! type with no premise (#6110). Two neutrals of the unit type stay apart
+//! unless they are one term, because no former stands between them (#6161).
+//!
+//! **Choice.** One conversion, the replay's, so the kernel admits every
+//! reflexivity the engine's normalizer admits by those laws: the core admits
+//! ⇒ the kernel admits. **Alternatives.** Structural equality alone, which
+//! refuses `here(f)` at `Path[.A = _](f to x. return x, f)` though the core
+//! admits it; a normalizing equality of the kernel's own, a second trusted
+//! conversion beside the replay's. **Reversal.** Endpoints related only through
+//! a constant's body take an engine trace through [`replay()`] rather than a δ
+//! rule in the forced loop, as reflexivity's do. The witness is
+//! `element_identity::tests::reflexivity_converts_its_endpoints_by_the_laws_of_bind`.
+//!
+//! A reflexivity carries the engine's dialogue relating its point to each
+//! endpoint, and an endpoint the forced conversion leaves apart is related by
+//! replaying that dialogue with the admitted definitions unfoldable: the
+//! kernel unfolds only the constant the dialogue names, at the side it names,
+//! under a thunk as anywhere else. The forced loop stays δ-free and there is
+//! no second equality ([`mod@element_identity`] § Reflexivity replays the
+//! engine's conversion). The witness is
+//! `element_identity::tests::an_endpoint_unfolding_under_a_thunk_replays_its_dialogue`.
+//!
+//! A returned endpoint at a mode switch is read, not compared. Where the
+//! conversion leaves one apart, the kernel normalizes it by its own evaluator —
+//! weak head reduction, and the δ-step a stuck head naming a definition admits
+//! — and the normal forms enter `conv::convert_values` like any endpoint. One
+//! computation's reduction to its value chooses nothing, so the δ-step is
+//! evaluation, not a conversion rule. Two endpoints that both stay stuck, as
+//! a checker's reduct holding a call in an arm and the type its run reached,
+//! are converted by the kernel's conversion with the same definitions
+//! unfolding, the left side's δ-step first, as a step's own reading converts
+//! them. The witnesses are
+//! `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch` and
+//! `check::tests::a_mode_switch_reads_a_call_a_stuck_arm_holds_by_its_unfolding_3090`.
+//!
+//! A definition whose declared type and body's type relate compound path
+//! endpoints only through a constant's body carries the engine's dialogue for
+//! each such pair, and a mode switch the forced reading leaves apart replays
+//! the dialogue of the pair α-equal to the one it meets
+//! ([`mod@element_identity`] § A definition's conversions replay the dialogues
+//! it carries). Matching is content equality, never a search, and the forced
+//! loop stays δ-free. The witness is
+//! `element_identity::tests::a_definition_relating_compound_endpoints_admits_274`.
+//!
+//! # Presented types
+//!
+//! A data declaration may present its type by rules over its own
+//! constructors, `Loop(Unloop(x)) ~> x` (kernel-term's `Presentation`, the
+//! additive declaration kind `0x08`): two terms of the type are equal when
+//! the rules rewrite them to one normal form. Admission validates the rules
+//! against the constructor table ([`presented`]): each left side is headed by
+//! a constructor, linear, and matches constructors only where a field has the
+//! declaration's own type; each right side is built from the variables its
+//! left side binds, each at most once and at the field type it was bound at,
+//! and holds fewer constructors, so every rewrite shrinks the term and
+//! normalization ends. A rule that fails is refused `RuleNotPresentable`,
+//! naming the rule and its fault.
+//!
+//! The replay reads a presented value by its normal form as part of weak head
+//! reduction, a forced step no decision records, and the mode switch sets a
+//! pair of presented constructors aside for that reading. Normalization is
+//! δ-free: it flattens the constructors of the presented type alone, and every
+//! other field is a leaf it moves but never reads. A refutation of two
+//! presented terms is not authoritative, because two normal forms headed
+//! apart may still meet through a leaf.
+//!
+//! **Choice.** Rules live on the data declaration, read by one rewriting
+//! strategy both checkers run (innermost, last in pre-order, first rule in
+//! written order), so they reach one normal form even for rules that are not
+//! confluent; conversion is then an equivalence the rules generate, and sound.
+//! **Alternatives.** Quotient syntax with a node of its own, which would put
+//! the rules' obligations in every term that names the type; a confluence
+//! check at admission, which the producer's critical-pair joins already
+//! certify for conversion (the apartness rule below runs its own, where a
+//! refutation is the verdict). **Reversal.** A presentation whose rules
+//! terminate only by a path order takes that order's check here in place of
+//! the size bound; one whose redexes sit behind a definition unfolds its
+//! leaves by recorded decisions.
+//! The witnesses are
+//! `presented::tests::the_forced_loop_converts_circle_words_by_their_normal_forms`
+//! and `presented::tests::a_mode_switch_reads_circle_words_by_their_normal_forms`.
+//!
+//! A case reads its scrutinee's constructor as written, so over a presented
+//! type its arms could tell apart two terms the rules identify — `Base` from
+//! `Loop(Unloop(Base))` — and `cong` would carry the path between them to a
+//! path between distinct results. Each rule `l ==> r` is therefore an
+//! obligation on every case over the type, decided once its branches check:
+//! `F(l)` converts with `F(r)`, `l` and `r` built over one fresh variable per
+//! pattern variable, by the same forced replay. `F` is the structural fixpoint
+//! itself when the case is its root, `fix f. λy. case y { … }` or, past
+//! parameters after the one it recurses on, `fix f. λy. λs. case y { … }`, so
+//! a recursive call unfolds at a constructor field and meets its twin stuck at
+//! a variable; any other case is `F` with each side in its scrutinee's place.
+//! A case that fails is refused `RuleNotRespected`, naming the first such
+//! rule; the checker decides the same obligation δ-free and refuses by the
+//! same name, with both sides. The obligation is re-derived on readmission, so
+//! no trace records it and the artifact format is unchanged.
+//!
+//! **Choice.** The fold form, the obligation a quotient puts on any map out
+//! of it, decided by conversion. **Alternatives.** Refusing every case over a
+//! presented type, which left it without an eliminator; a recorded dialogue
+//! per rule, which the checker's decision makes redundant. **Reversal.** A
+//! respect that holds only up to a path is the next paragraph's. The
+//! witnesses are
+//! `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+//! and, on readmission,
+//! `kernel_export::kernel_presented_readmission::a_fold_whose_arm_breaks_a_rule_is_refused_by_name`
+//! in the surface corpus.
+//!
+//! **A fold whose sides meet only up to a path rests on laws.** The winding
+//! number sends `Loop(Unloop(x))` to `turn(unturn(f(x)))`, which no
+//! conversion reduces to `f(x)` on a variable. A definition may name one law
+//! per rule (kernel-term's `Declaration::laws`, the additive declaration kind
+//! `0x09`): a declaration whose type is `Path[.A = C](a, b)` behind one
+//! parameter per pattern variable. Where the δ-free test fails for rule `i`,
+//! law `i` is instantiated at the rule's variables as the fold reads them —
+//! `F(x)` returned where a variable stands at the folded type, the variable
+//! elsewhere — and its endpoints must convert with `F(l)` and `F(r)`, each
+//! read with its runs in place or bound ahead as elaboration binds them
+//! ([`mod@check`]'s respect module). Nothing is searched and no trace is
+//! recorded: the rule, the fold and the law's declared type re-derive the
+//! claim, and the fold's audit names each law it rests on as it names an
+//! operation it calls, so a law that is owed keeps the fold's verdict owed.
+//!
+//! **Choice.** Laws named by the definition, in rule order, each its own
+//! declaration — owed, proved or assumed — so the obligation is a constant
+//! the ledger already counts. **Alternatives.** A goal minted per rule beside
+//! the fold, which would hide the model's laws behind anonymous holes and
+//! repeat them for every fold out of the same model; laws found by searching
+//! the environment, which makes admission depend on what else is declared.
+//! **Reversal.** Arms generated from a model's signature, which would carry
+//! the laws with the model rather than with each fold. The witnesses are
+//! `tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
+//! and, on readmission,
+//! `kernel_export::kernel_presented_readmission::a_fold_resting_on_a_forged_law_is_refused_by_name`
+//! in the surface corpus.
+//!
+//! **Two terms of a data type are apart when their normal forms differ at a
+//! constructor.** A case of no branch over a scrutinee of `Path[.A = A](a, b)`,
+//! `A` a data type, answers any motive when `a` and `b` are apart
+//! ([`presented`] § Apartness): the kernel joins every critical pair of `A`'s
+//! rules itself, reads each endpoint where `A` stands — a constructor of `A`
+//! a node, a reference to a definition its body, anything else a leaf —
+//! normalizes both, and requires the first difference to be two distinct
+//! constructors, no leaf standing where `A` does. A free type is the case with
+//! no rule: constructor disjointness. The case is the whole certificate: no
+//! new node, no recorded verdict, the artifact format unchanged; a case whose
+//! endpoints are not apart is refused `NotApart`, naming why — they agree,
+//! differ only under a leaf of another type, are open, or the rules diverge —
+//! and the checker decides the same rule over its own arena and refuses by the
+//! same name. A data type with no constructor is eliminated by the same case
+//! of no branch, with no decision to make. The witnesses are
+//! `presented::tests::endpoints_are_apart_by_their_normal_forms`,
+//! `tests::native_formers::an_absurd_case_rests_on_apart_endpoints_in_both_checkers`
+//! and, on readmission,
+//! `kernel_export::kernel_presented_readmission::an_absurd_case_readmits_by_apartness_and_forged_twins_are_refused_by_name`
+//! in the surface corpus.
+//!
+//! A definition an operation lowered to carries the rules the operation was
+//! written as (kernel-term's `OperationRules`, the additive declaration kind
+//! `0x0E`), and admission decides them itself (`ruled`): each left side is the
+//! definition's own call over linear patterns of constructors, variables and
+//! calls; every constructor names an admitted data declaration and every call
+//! the definition itself or a ruled definition admitted before it; the
+//! lexicographic path order, its precedence the admission order, puts each
+//! left side above its right; and every critical pair — two rules overlapping
+//! at the root, a presented type's rule overlapping a pattern below it, or an
+//! operation's rule overlapping a call below it — normalizes to one term under
+//! the rules of every operation reached and every presented type built. A rule
+//! whose left side holds a call is a law: no leaf of the body is its arm. A
+//! system that fails is refused `OperationRulesRefused`, naming the rule and
+//! its fault. The witnesses are
+//! `ruled::tests::rules_over_the_environment_admit_and_a_forged_pair_is_refused`
+//! and, on readmission,
+//! `kernel_export::kernel_presented_readmission::forged_operation_rules_are_refused_by_the_kernel_322`
+//! in the surface corpus.
+//!
+//! A ruled definition's body must then be its rules' decision tree: a thunked
+//! fixpoint over one lambda per input around cases on the inputs and the
+//! fields earlier cases bound, each leaf converting with the right side of a
+//! rule whose left side matches what the cases above it learned, minted as
+//! the lowering mints a leaf. A body that is not is refused
+//! `OperationBodyUnlinked`. With the convergence, the body computes what the
+//! rules compute. The witnesses are
+//! `ruled::tests::a_body_is_admitted_only_as_its_rules_decision_tree` and, on
+//! readmission,
+//! `kernel_export::kernel_presented_readmission::rules_the_body_does_not_compute_are_refused_by_the_kernel_322`
+//! in the surface corpus.
+//!
+//! Conversion unfolds a ruled definition's fixpoint at its gate, as it
+//! unfolds a structural fixpoint. The fixpoint is partial, but its rules
+//! terminate, and each unfolding takes one step of a rule. So a path whose
+//! endpoint calls a recursive operation converts as the checker computes it.
+//! The witness is
+//! `kernel_export::kernel_presented_readmission::a_path_through_a_recursive_operation_readmits_by_its_rules_4291`
+//! in the surface corpus.
+//!
+//! # Accessibility
+//!
+//! A data declaration's fields may place its family anywhere the stage order
+//! can follow it: under no function's domain at the constructor's stage, and
+//! under a domain strictly below it. `Chain`'s `link : (prev : Chain, test :
+//! U (Chain → F 1))` declares; a case on a chain opens a stage below it and
+//! binds `prev` and the domain of `test` at that stage, so `test(prev)` is
+//! admitted and Curry's consumer `test(c)`, on the chain the case opened, is
+//! refused `StageNotBelow`. A family nests through another's parameter when
+//! that parameter's own walk found it strictly positive — `Rose`'s `node :
+//! (kids : List ⌜Rose⌝)` — the [`Variance`](check::Variance) the walk records
+//! per parameter. What no stage reaches is refused by name: a family at other
+//! arguments, lifted or inside a term, or through a parameter that is not
+//! strictly positive. A stratified value at no stage is read by a case at a
+//! fresh root its own scrutinee does not fit. The checker runs the same walk
+//! and stores the same [`Accessibility`](check::Accessibility); the kernel
+//! recomputes it on admission, never reads the checker's. Witnesses:
+//! `tests::recursive_data::accessibility_is_decided_on_every_former`,
+//! `tests::recursive_data::a_negative_occurrence_below_the_stage_declares`,
+//! `tests::recursive_data::currys_consumer_is_refused_at_its_call` and
+//! `tests::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`.
+//!
+//! **Choice.** Accessibility under the stage order: the accessible argument
+//! positions of computability with accessibility — positive at or below the
+//! constructor's sort, negative strictly below — read over stages, as ground
+//! stratification admits negative occurrences at smaller arguments (the
+//! occurrence module cites both). Curry's paradox is refused where it is
+//! built, at the consumer, so a well-founded consumer of the same family
+//! stands. **Alternatives.** Strict positivity by position, every negative
+//! occurrence refused at the declaration and every nested one refused as
+//! `NestedOccurrence`, which turns away function fields a consumer only
+//! applies below the stage; Mendler-style abstraction of the recursive type
+//! in each field, which admits the same families but makes every consumer
+//! take its own recursion as an argument. **Reversal.** A consumer whose
+//! termination the stage order cannot state, or a family the stratified
+//! reading admits that a model of the stage order rejects, would return the
+//! walk to positivity by position.
+//!
+//! A recursion through a function polymorphic in its element re-derives the
+//! stage it passes on: an application handing a type parameter a plain code
+//! reads the code at the stage of the first later variable argument whose type
+//! holds the parameter ([`check`]'s recursion core, `instantiation`). A size
+//! through `map(⌜Rose⌝, ⌜Nat⌝, size, kids)`, with `kids` bound by a case below
+//! the node, takes `size` at `Rose^{s'} → F Nat`; a list of the node itself
+//! stands at no stage and the call is refused `StageNotBelow`. Witnesses:
+//! `tests::recursive_data::a_type_parameter_instantiates_at_a_staged_code`
+//! and `tests::recursive_data::a_claim_at_the_scrutinee_through_map_is_refused`.
+//!
+//! **Choice.** A staged type is a classifier the judgement instantiates a type
+//! parameter at, erased to its plain code on the wire and re-derived here from
+//! the argument that holds it, so a stage never enters a node's identity or a
+//! content key. **Alternatives.** The staged code written on the wire, which
+//! the kernel would compare instead of re-derive at the price of a stage in
+//! every such node; a stage as a decoration instantiation passes over, which
+//! keeps `map` at the plain `Rose` and refuses the size. **Reversal.** An
+//! instantiation no argument determines — a stage a solver chooses — crosses
+//! as a stage binder of the signature.
+//!
+//! # Mutual blocks
+//!
+//! A universe and the decoder that reads it name each other: `U`'s `PiC`
+//! takes `b : U (el(a) → F U)`, and `el` cases on `U`. No admission order
+//! admits either alone, so [`Environment::add_block`] admits them as one
+//! block, on the schedule the checker keeps:
+//!
+//! 1. each definition's declared type forms with the block's families in scope
+//!    at their signatures, and no definition;
+//! 2. each family passes the occurrence walk over the block — a family is a
+//!    self occurrence, a definition is a term — and its fields form with every
+//!    definition of the block at its declared type;
+//! 3. each definition is checked as a lone one is, every family admitted before
+//!    it.
+//!
+//! Inside the structural fixpoint a definition's body thunks, its own
+//! constant in a case's field types reads as the fixpoint's self binder
+//! ([`check`]'s recursion core, `stage_branch`): `b : U (el(a) → F U)` is
+//! bound as `b : U (self(a) → F U)`, and a branch so read is formed, so a
+//! decoder named at a place that does not descend — `el(Bad(a))` — is
+//! refused `StageNotBelow` by the stage order like any other call. Nothing
+//! is a new node or judgement: each step is one a lone declaration takes, in
+//! an order a block fixes. A block is measured, never declared: the run of
+//! data declarations at its head reaches its end through the positions its
+//! fields name, and [`Environment::replay`] groups an artifact by the same
+//! measurement, so the artifact format is unchanged.
+//!
+//! A block of several families — a rose tree's node and its forest — shares
+//! one stage: a case on any of its families, and a constructor of any, moves
+//! every occurrence of the block's families its fields place to the stage
+//! below ([`check`]'s `recursion::stage_field`), so a recursion walking a
+//! node into its forest descends. Such a recursion is one fixpoint over the
+//! sum of the block's families, `U (Rose + Forest → C)`, and a fixpoint over
+//! a sum of one block's families opens that one stage over every summand;
+//! the surface's mutually recursive functions lower to it, each at its
+//! summand.
+//! A field a definition reads inside its own fixpoint is formed with the
+//! whole block in scope, as its family's fields were, so a field naming a
+//! later definition of the block meets the stage order, not an unbound
+//! constant. Witness:
+//! `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`.
+//!
+//! **Choice.** Induction-recursion read as a mutual block of nominal
+//! declarations over the stage order: a universe with Π over decoded
+//! positions, which the levitated codes cannot express — their function
+//! former ranges over symbolic value types, never a decoded position, and
+//! they take no σ over one.
+//! **Alternatives.** Induction-recursion as a kernel notion of its own,
+//! with an eliminator over the pair, which the recorded design declines;
+//! the levitated codes alone, which leave the three gaps above.
+//! **Reversal.** A staged decode that is not induction-recursion — the
+//! decoder a function the codes compute — would retire the identification.
+//! The witnesses are
+//! `tests::recursive_data::a_mutual_block_is_admitted`
+//! and `tests::recursive_data::a_mutual_block_is_refused_whole`.
+//!
+//! # Contract boundaries
+//!
+//! The source `# Specification` is authoritative; `#[spec(...)]` checks
+//! executable clauses. `# Adequacy` bounds finite witnesses, not unbounded
+//! proofs. Built with `--cfg anodized_panic` across the whole dependency
+//! graph, the `#[spec]` attributes check their clauses at runtime and panic
+//! on a violation; the enforcing test lane sets it.
+//!
+//! | Area | Contract source |
+//! | ---- | --------------- |
+//! | Admission, staging and audit | [Environment](crate::env): committed prefixes, rollback, registration ownership, provenance ordering, ordered dependency reasons and reachability boundaries. |
+//! | Guarded local admission | [Admission](crate::admission): schema inheritance, rule-discrimination transparency, guarded substitution and exact instance-side agreement by same-arena identity. |
+//! | Checking and conversion | [Checker](crate::check), [conversion](crate::conv) and `witness`: level precedence, refusal subjects, readable identities, mode transitions and witness projections. |
+//! | Element identity | [Element identity](crate::element_identity): the neutral fibre at an open type, fibre redirection, reflexivity by conversion, the returned endpoint read by its reduction, a definition's related endpoints replayed by matching, guarded higher fields, coverage-replayed higher and quantified evaluation, transport by substitution, and bridges at function, universe and list codes with the sealed atom refused by name. |
+//! | Encoding and support | [Encoding](crate::encoding) and [support]: byte-exact frames and hashes, ordered children, content-id reuse, cache observations and binder reach. |
+//! | Replay and rewrite | [Replay](mod@crate::replay) and [rewrite]: arena restoration, trace consumption, ordered premises, freezing, rule priority and unchanged-subject reuse. |
+//! | Fixture observations | `acceptance`, `adversarial_depth`, `flow_universe::tests` and `path_universe::tests`: differential verdicts, closed-form counts, small-stack teardown and fixed syntax seams. |
+//! | Integration tests | `tests/acceptance.rs`: the memo measurements and the poisoned-entry cases. `tests/adversarial_depth.rs`: the depth totality. `tests/sealed_export.rs`: a sealed module's export replayed, and its rewritten copies refused. |
+//!
+//! Scalar captures, byte views and fixed child arrays avoid repeated
+//! conversion, normalization, hashing or graph walks. Captures allocate nothing
+//! and add no ordinary-lane work. Const APIs stay const and compare fields or
+//! variants; private runtime rewrite projections compare opaque ids.
+//!
+//! Saturated reach stays widest beneath binders and selects the whole
+//! telescope: it is an unknown bound. Replay refuses exhausted budgets before
+//! incrementing, including at the counter ceiling. Structural refusal may
+//! consume an optional `Decompose` marker.
+//!
+//! Explicit `- executable: none` exemptions:
+//!
+//! | Boundary | Items | Unavailable observation |
+//! | -------- | ----: | ----------------------- |
+//! | Data declarations | 12 | Evidence validity, event history or comparison of executions; producers and consumers carry the callable obligations. |
+//! | Evaluated tag assertion | 1 | No callable boundary; constant evaluation checks the sparse tag bound. |
+//! | `KernelError::fmt` | 1 | No readable formatter output buffer. |
+//! | `Unfoldings::new` | 1 | No arena provenance or closure observer; lookup and replay witness it. |
+//!
+//! The evaluated tag assertion is an anonymous `const` that checks every
+//! assigned node tag against the private dangling sentinel `0xFF`; it checks
+//! tag values rather than the length of the sparse table, and a named unused
+//! constant would not establish that build-time guard.
+//!
+//! ## Where witnesses live
+//!
+//! A module's tests live in a child file, `src/<module>/tests.rs`, declared
+//! `#[cfg(test)] mod tests;`. The library build never reads that file, so a
+//! test-only edit rebuilds this crate's test target and nothing else. An
+//! edit to the module's own file, a doc line included, rebuilds this crate
+//! and every workspace crate above it. On a warm enforcing build, with every
+//! core available, touching `stage/tests.rs` recompiled 1 unit in 16 s and
+//! touching `stage.rs` recompiled 18 units in 43 s. On a four-core hosted
+//! runner, a landing that dirtied this crate spent 348 s building.
+//!
+//! A mutation survivor's witness therefore lands in the child file alone.
+//! The `- witness:` lines that register survivor witnesses under the items'
+//! `# Adequacy` are added once per crate, in its last survivor change, so
+//! each campaign rebuilds the cone once rather than once per batch. A defect
+//! fix registers its own witness in the same change, because the fix edits
+//! the library anyway. The alternative, an inline `mod tests { … }`, keeps a
+//! module's tests beside it at the price of a cone rebuild for every added
+//! test. Revisit this if the build tracks test-only items finely enough that
+//! an inline test module leaves the library clean.
+//!
+//! # Arithmetic and absence
+//!
+//! Arithmetic uses
+//! [quenchant-arith](https://github.com/gandr-lang/quenchant/tree/8b8d0702d69409549e855606a85492c777e05fc9/crates/quenchant-arith):
+//! strict operations for counts bounded by allocated data or a preceding
+//! guard, wrapping multiplication only for FNV-1a modulo 2^128, and
+//! saturation only for the stated census ceilings, binder-index ceilings and
+//! conservative context reach. Defaults and unsafe `fast` mode remain off;
+//! the build cfg selects specification instrumentation. The alternative was
+//! primitive arithmetic with profile-dependent overflow behavior or a local
+//! copy of these families; one maintained implementation gives each operation
+//! an explicit, profile-independent meaning. Reconsider when the arithmetic
+//! domain changes or a published release replaces the Git pin.
+//!
+//! Non-failure absence uses
+//! [quenchant-shape](https://github.com/gandr-lang/quenchant/tree/8b8d0702d69409549e855606a85492c777e05fc9/crates/quenchant-shape),
+//! with a sealed reason enum at each decision site rather than an
+//! undifferentiated `Option`. A failure remains a typed error, never a
+//! fabricated value. The six sites distinguish a formation answer from a term
+//! answer, an out-of-scope slot, an unbound variable, an unadmitted constant,
+//! a substitution needing no carrying shift, and a goal without an expected
+//! type. Reconsider a reason only when its caller gains a distinct response to
+//! it; container lookups and external traits retain their own boundary types.
+//!
+//! Content numbering is zero-based and infallible. Every fresh record first
+//! appends a nonempty framed image, so the count is bounded by the allocated
+//! byte stream. Supported targets bound that allocation by `isize::MAX`,
+//! below `u64::MAX`. The latter ceiling is not an observable state; a test
+//! that installs an impossible private count would test another state space.
+//! The enforcing specification checks the count/stream bound, and the
+//! content-collapse and sharing witnesses exercise both fresh and reused
+//! records. A fallible mint was rejected: it adds an unreachable error, and
+//! neither silent diagnostic failure nor a change to one-based numbering has a
+//! semantic justification. Revisit the boundary if content numbering stops
+//! being backed by this in-memory stream or target widths exceed 64 bits.
+//!
+//! # References
+//!
+//! - Maximilian Doré. _Computing Spaces in Type Theory_. Doctoral thesis,
+//!   University of Oxford (2023), §§ 4.1–4.3 — a boundary problem as
+//!   constraints on the faces of a cube, which agree where the faces meet.
+//! - Justin Curry, Robert Ghrist and Vidit Nanda. "Discrete Morse Theory for
+//!   Computing Cellular Sheaf Cohomology." _Foundations of Computational
+//!   Mathematics_ 16 (2016), 875–897. `arXiv:1312.6454` — a section of a
+//!   cellular sheaf, which agrees on each meet of two cells.
+//!
+//! [`Environment::add_decl`]: crate::Environment::add_decl
+
+// Module documentation that predates the shape lint: 94 headings outside the
+// vocabulary, 41 decision records, 17 issue references and 41 budgets exceeded.
+// Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        doc_issue_reference,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
+#![no_std]
+
+extern crate alloc;
+
+pub mod admission;
+pub use gandr_kernel_core_base::admitted;
+mod builtin;
+pub use gandr_kernel_core_base::census;
+pub mod check;
+pub mod conv;
+mod dependents;
+pub mod descent;
+pub mod element_identity;
+pub use gandr_kernel_core_base::encoding;
+pub use gandr_kernel_core_base::env;
+mod environment;
+pub use gandr_kernel_core_base::error;
+pub mod flow_universe;
+pub use gandr_kernel_core_base::fork;
+#[cfg(test)]
+use gandr_kernel_core_base::generated;
+pub mod higher_field;
+pub mod identity_recursion;
+pub use gandr_kernel_core_base::levels;
+use gandr_kernel_core_base::occurrence;
+pub mod path_universe;
+pub use gandr_kernel_core_base::presented;
+mod releases;
+pub mod replay;
+pub use gandr_kernel_core_base::rewrite;
+mod ruled;
+pub use gandr_kernel_core_base::seal;
+pub mod speculation;
+pub mod stage;
+pub mod stage_order;
+pub use gandr_kernel_core_base::support;
+use gandr_kernel_core_base::theory_rules;
+pub use gandr_kernel_core_base::verdict;
+use gandr_kernel_core_base::witness;
+mod words;
+
+/// The kernel's build identity, which `build.rs` writes: one digest of every
+/// file of every kernel crate and of the workspace lock. Each derivation of a
+/// verdict key takes it.
+///
+/// # Specification
+/// trivial.
+#[inline]
+pub(crate) fn build_identity() -> crate::verdict::BuildIdentity
+{
+    crate::verdict::BuildIdentity::from(*include_bytes!(concat!(env!("OUT_DIR"), "/kernel-build")))
+}
+
+pub use crate::admitted::AdmissionPolicy;
+pub use crate::admitted::AdmittedCount;
+pub use crate::census::ExpansionCensus;
+pub use crate::census::ExpansionCount;
+pub use crate::census::ExpansionKind;
+pub use crate::check::DefaultMemo;
+pub use crate::check::Judgement;
+pub use crate::check::check_declaration_with_memo;
+pub use crate::conv::Convertibility;
+pub use crate::conv::convert_comp_type;
+pub use crate::conv::convert_value_type;
+pub use crate::conv::convertible_comp_types;
+pub use crate::conv::convertible_value_types;
+pub use crate::element_identity::EndpointSide;
+pub use crate::element_identity::IdentityError;
+pub use crate::encoding::ContentEncoding;
+pub use crate::encoding::ContentId;
+pub use crate::encoding::ContentTable;
+pub use crate::encoding::EncodingLength;
+pub use crate::encoding::Exact;
+pub use crate::encoding::Identification;
+pub use crate::encoding::MintNames;
+pub use crate::encoding::ObligationGoal;
+pub use crate::encoding::RecordName;
+pub use crate::encoding::RewriteGoal;
+pub use crate::encoding::SupportGoal;
+pub use crate::encoding::content_digest;
+pub use crate::encoding::encode_rewrite;
+pub use crate::encoding::support_key;
+pub use crate::env::Admission;
+pub use crate::env::AdmittedDeclaration;
+pub use crate::env::CheckedId;
+pub use crate::env::Entries;
+pub use crate::env::OutstandingContent;
+pub use crate::env::OutstandingCount;
+pub use crate::env::StagedDeclaration;
+pub use crate::env::Staging;
+pub use crate::env::UnsettledCount;
+pub use crate::env::tallied;
+pub use crate::environment::ArtifactRefusal;
+pub use crate::environment::AxiomReport;
+pub use crate::environment::Check;
+pub use crate::environment::DemandedKeys;
+pub use crate::environment::Environment;
+pub use crate::environment::Hold;
+pub use crate::environment::Pending;
+pub use crate::environment::Ran;
+pub use crate::environment::Released;
+pub use crate::environment::Twin;
+pub use crate::environment::held_on;
+pub use crate::environment::next_rank;
+pub use crate::environment::places;
+pub use crate::error::CompTypeHead;
+pub use crate::error::CompTypeMismatch;
+pub use crate::error::CompTypeWitness;
+pub use crate::error::ExpectedComputationShape;
+pub use crate::error::ExpectedValueShape;
+pub use crate::error::FieldCause;
+pub use crate::error::GuardBreak;
+pub use crate::error::GuardNode;
+pub use crate::error::KeepRefusal;
+pub use crate::error::KeptOutcomes;
+pub use crate::error::KernelError;
+pub use crate::error::LevelOrderRefutation;
+pub use crate::error::NonInferableForm;
+pub use crate::error::RegisterFault;
+pub use crate::error::UniverseViolation;
+pub use crate::error::ValueTypeHead;
+pub use crate::error::ValueTypeMismatch;
+pub use crate::error::ValueTypeWitness;
+pub use crate::levels::LevelContext;
+pub use crate::presented::Presentations;
+pub use crate::replay::EngineClaim;
+pub use crate::replay::KernelVerdict;
+pub use crate::replay::ParameterCount;
+pub use crate::replay::ReplayBudget;
+pub mod session;
+pub use crate::replay::RefusalClass;
+pub use crate::replay::ReplayDecline;
+pub use crate::replay::ReplayNode;
+pub use crate::replay::ReplayRefusal;
+pub use crate::replay::ReplaySides;
+pub use crate::replay::TracePosition;
+pub use crate::replay::Unfoldable;
+pub use crate::replay::Unfoldings;
+pub use crate::replay::read_step;
+pub use crate::replay::replay;
+pub use crate::rewrite::BinderDepth;
+pub use crate::rewrite::RewriteMemo;
+pub use crate::rewrite::RewriteOutcome;
+pub use crate::rewrite::RewritePlane;
+pub use crate::rewrite::RewriteSupport;
+pub use crate::rewrite::shift_value_type;
+pub use crate::rewrite::substitute_comp_type;
+pub use crate::rewrite::substitute_comp_type_at_call;
+pub use crate::ruled::OperationBodyFault;
+pub use crate::support::NodeOutcome;
+pub use crate::support::NodeSupport;
+pub use crate::support::Owed;
+pub use crate::support::SupportContext;
+pub use crate::support::SupportPlane;
