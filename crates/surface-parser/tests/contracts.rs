@@ -311,40 +311,25 @@ fn a_transparent_ascription_admits_the_same_signature() -> Result<(), Failure>
     Ok(())
 }
 
-/// A qualified type path stands as a session payload only between
-/// parentheses.
+/// A qualified type path stands as a session payload whole, before the step.
 ///
-/// The path's `.` is postfix, and the send's own `.` continues the `!` still
-/// open before it. In `!(Seat.Report). end` the parentheses close over the
-/// path, so its `.` is the postfix one and the next is the send's; in the bare
-/// `!Seat.Report. end` the send claims the first `.` and reads `Seat` alone as
-/// the payload, and the second `.` meets `end` where a component name must
-/// follow. One text has one reading, and the bare one is a repair rather than
-/// a second parse.
+/// The path's `.` is postfix, and the step is the infix `>!`, which takes no
+/// `.`. So `Seat.Report >! end` reads the path whole, with no parentheses,
+/// and its one `.` is the path's.
 #[test]
-fn a_path_payload_parses_only_parenthesized() -> Result<(), Failure>
+fn a_path_payload_reads_whole_before_the_step() -> Result<(), Failure>
 {
     let pbg = built();
-    let parenthesized = parse(pbg, SourceText::from("def s : !(Seat.Report). end ;"))?;
+    let bare = parse(pbg, SourceText::from("def s : Seat.Report >! end ;"))?;
     assert!(
-        bool::from(parenthesized.is_clean()),
-        "the parenthesized path payload molds clean; obligations: {:?}",
-        parenthesized.obligations()
+        bool::from(bare.is_clean()),
+        "the bare path payload molds clean; obligations: {:?}",
+        bare.obligations()
     );
     assert_eq!(
-        [RuleName("type_path"), RuleName("send_session_type")],
-        dot_rules(pbg, parenthesized.tree())?.as_slice(),
-        "the first `.` is the path's and the second the send's"
-    );
-    let bare = parse(pbg, SourceText::from("def s : !Seat.Report. end ;"))?;
-    assert!(
-        !bool::from(bare.is_clean()),
-        "the bare path payload is a repair, not a second reading"
-    );
-    assert_eq!(
-        Some(&RuleName("send_session_type")),
-        dot_rules(pbg, bare.tree())?.first(),
-        "the send claims the first `.`, so `Seat` alone is the payload and the path never forms"
+        [RuleName("type_path")],
+        dot_rules(pbg, bare.tree())?.as_slice(),
+        "the one `.` is the path's"
     );
     Ok(())
 }

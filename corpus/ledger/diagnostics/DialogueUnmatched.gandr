@@ -6,7 +6,7 @@ import std.session (Dialogue);
 
 /// A protocol that sends one string and ends.
 module Ask where
-  type Asking = !String. end;
+  type Asking = String >! end;
 
 @[refuses("DialogueUnmatched")]
 def misheard : Dialogue Ask.Asking = dialogue

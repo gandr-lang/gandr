@@ -15,7 +15,7 @@
 /// A task: the protocol its end carries back to the parent, and the path it
 /// reads.
 pub module Cancel :> *{
-  type Join = !String. end,
+  type Join = String >! end,
   notes : String
 } where
   /// The path a task reads.

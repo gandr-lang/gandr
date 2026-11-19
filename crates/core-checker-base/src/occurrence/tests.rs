@@ -297,7 +297,7 @@ fn a_family_named_by_a_session_payload_is_refused_at_its_field()
     let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
     let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
     let unit = arena.value_type_unit();
-    // `?P. end`
+    // `P >? end`
     let protocol = Protocol::new(
         alloc::vec![
             ProtocolSyntax::Receive {

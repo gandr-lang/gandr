@@ -55,27 +55,27 @@ pub def codes : Path[.A = Type] Bit Answer = ua (*{
 
 /// A protocol that hears a bit, and one that hears an answer.
 module Ask where
-  type Coded = ?Bit. end;
-  type Decoded = ?Answer. end;
+  type Coded = Bit >? end;
+  type Decoded = Answer >? end;
 
 /// `heard` records `One` as a bit receipt.
 def heard : Run Ask.Coded = recorded (received One) closed;
 
 /// `heardDecoded` proves that the transported run receives `Yes`.
 def heardDecoded : Path[.A = Run Ask.Decoded] (Path.walk
-  (fun (X) { Run (type(?X. end)) })
+  (fun (X) { Run (type(X >? end)) })
   codes
   heard) (recorded (received Yes) closed) = Path.here (recorded (received Yes) closed);
 
 /// `heardKept` refuses a transported run that receives `No`.
 @[refuses("EndpointMismatch")]
-def heardKept : Path (Path.walk (fun (X) { Run (type(?X. end)) }) codes heard) (recorded
+def heardKept : Path (Path.walk (fun (X) { Run (type(X >? end)) }) codes heard) (recorded
   (received No)
   closed) = Path.here (recorded (received No) closed);
 
 /// `heardRun` returns the transported run.
 def heardRun() -> Run Ask.Decoded =
-  Path.walk (fun (X) { Run (type(?X. end)) }) codes heard
+  Path.walk (fun (X) { Run (type(X >? end)) }) codes heard
 
 /// On the machine the carried run hears the yes, as it does by conversion.
 @[runs("recorded (received Yes) (closed)")]

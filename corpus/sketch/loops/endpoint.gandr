@@ -12,7 +12,7 @@
 
 /// A seat's reports until it retires: a report or a retirement, then the
 /// recursion point again.
-type Reports = mu open. &{report : ?Integer. open, retire : ?Integer. end};
+type Reports = rec open => &{report : Integer >? open, retire : Integer >? end};
 
 /// A desk follows a seat's reports until it retires. Each report is one pass,
 /// and the retirement closes the endpoint and leaves the loop.

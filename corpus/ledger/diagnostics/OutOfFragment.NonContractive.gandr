@@ -3,5 +3,5 @@
 /// before any action.
 @[refuses("OutOfFragment.NonContractive")]
 def recursion_before_any_action() -> Unit =
-  let desk = fork (seat : mu turn. turn) { close seat };
+  let desk = fork (seat : rec turn => turn) { close seat };
   close desk

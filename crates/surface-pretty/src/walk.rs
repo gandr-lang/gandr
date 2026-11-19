@@ -169,8 +169,8 @@
 //!
 //! # Session types
 //!
-//! A session type is spelled as the grammar writes it: `!A. S`, `?A. S`,
-//! `+{l : S, …}`, `&{l : S, …}`, `mu t. S` and `end`, each payload type a
+//! A session type is spelled as the grammar writes it: `A >! S`, `A >? S`,
+//! `+{l : S, …}`, `&{l : S, …}`, `rec t => S` and `end`, each payload type a
 //! child the walk spells and parenthesizes past an atom. The protocol is
 //! spelled from the state the type stands at; a recursion variable whose
 //! binder lies outside that state unfolds once to its binder, so the spelling
@@ -2244,9 +2244,9 @@ fn quoted_piece(
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Binding
 {
-    /// A qualified name `M.T`: an atom everywhere but a session type's
-    /// payload, where the send's or receive's own `.` would end the payload at
-    /// the path's first `.`, so it is parenthesized there, `!(M.T). S`.
+    /// A qualified name `M.T`. It binds as an atom, and a slot that
+    /// parenthesizes atoms takes it bare: the target of a positional
+    /// projection, `M.p.0`.
     Qualified,
     /// A name, a literal, a universe, a bracketed or braced form, a
     /// projection.
@@ -2387,13 +2387,13 @@ impl Nesting
 ///
 /// # Specification
 /// - requires: nothing; a state past the protocol spells `?`.
-/// - ensures: `!` and `?` prefix their payload slot and `. ` their
-///   continuation; a selection is `+{l : S, …}` and an offer `&{l : S, …}` in
-///   label order; `end` is `end`; a `mu` is `mu t. S`, its binder named by its
-///   nesting; a variable is its binder's name, and a variable whose binder
-///   encloses the state rather than the spelling unfolds to that binder, so the
-///   spelling is closed. A selection, an offer and `end` bind as atoms, every
-///   other head as an arrow does.
+/// - ensures: a send is its payload slot, ` >! ` and its continuation, and a
+///   receive the same with ` >? `; a selection is `+{l : S, …}` and an offer
+///   `&{l : S, …}` in label order; `end` is `end`; a `mu` is `rec t => S`, its
+///   binder named by its nesting; a variable is its binder's name, and a
+///   variable whose binder encloses the state rather than the spelling unfolds
+///   to that binder, so the spelling is closed. A selection, an offer and `end`
+///   bind as atoms, every other head as an arrow does.
 /// - provides: the one session-type spelling both sources share, since both
 ///   read the same protocol.
 /// - fails: never.
@@ -2410,6 +2410,10 @@ impl Nesting
 /// - hypothesis: L3 — a recursive protocol with every former spells as the
 ///   grammar writes it at its root and at a state inside its recursion.
 /// - witness: `tests::goldens::session_types_spell_their_protocol_and_payloads`
+///
+/// # Cost
+/// - allocation: the segments, the text and the pending steps of the spelling,
+///   growth within the protocol's nodes
 #[spec(ensures: |ret| ret.0.iter().all(|segment| match *segment {
     | Segment::Text(ref text) => !text.is_empty(),
     | Segment::Payload(slot) => protocol.nodes().iter().any(|node| {
@@ -2458,25 +2462,19 @@ fn protocol_template(
                 text.push('?');
             },
             Ok(&ProtocolNode::Send { payload, next }) => {
-                text.push('!');
-                segments.push(Segment::Text(core::mem::take(&mut text)));
+                if !text.is_empty() {
+                    segments.push(Segment::Text(core::mem::take(&mut text)));
+                }
                 segments.push(Segment::Payload(payload));
-                text.push_str(" >> ");
+                text.push_str(" >! ");
                 pending.push(Spelling::State(next));
             },
-            #[cfg_attr(
-                dylint_lib = "quenchant_dylints",
-                expect(
-                    answer_totality,
-                    reason = "the receive session type's own `?A >> S`, which \
-                              `receive_session_type` reads: an answer, not a placeholder"
-                )
-            )]
             Ok(&ProtocolNode::Receive { payload, next }) => {
-                text.push('?');
-                segments.push(Segment::Text(core::mem::take(&mut text)));
+                if !text.is_empty() {
+                    segments.push(Segment::Text(core::mem::take(&mut text)));
+                }
                 segments.push(Segment::Payload(payload));
-                text.push_str(" >> ");
+                text.push_str(" >? ");
                 pending.push(Spelling::State(next));
             },
             Ok(&(ProtocolNode::Select(ref branches) | ProtocolNode::Offer(ref branches))) => {
@@ -8889,7 +8887,7 @@ impl Walk<'_, '_>
     }
 
     /// Whether `node` is written with a head no expression reads as the type:
-    /// a session type standing at a receive `?A. S`, a selection `+{…}` or an
+    /// a session type standing at a receive `A >? S`, a selection `+{…}` or an
     /// offer `&{…}`; a sum or a lazy product, written between braces or, in
     /// the sugared form, as a chain an expression reads as arithmetic; a
     /// labelled record type `*{a : A}` or a telescope type `*{a : A, b : B}`,
@@ -13825,14 +13823,12 @@ impl Walk<'_, '_>
                 for _ in 0_usize .. count {
                     popped.push(self.pop()?);
                 }
+                // A payload stands left of `>!` or `>?`, in the band of the
+                // arrow, as an arrow's domain does: a piece no looser than a
+                // lazy product stands bare.
                 let mut payloads = Vec::with_capacity(count);
                 for piece in popped.into_iter().rev() {
-                    payloads.push(if piece.binding == Binding::Qualified {
-                        self.parenthesized(piece.doc)?
-                    }
-                    else {
-                        self.bare_up_to(piece, Binding::Atom)?
-                    });
+                    payloads.push(self.bare_up_to(piece, Binding::Lazy)?);
                 }
                 let template = self.protocols.pop().ok_or(PresentationError::Unbalanced)?;
                 let mut items = Vec::with_capacity(template.len());

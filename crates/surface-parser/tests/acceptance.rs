@@ -1985,9 +1985,9 @@ fn a_torn_form_ends_before_a_juxtaposed_type_as_before_its_call_6027() -> Result
 /// A token left out before the group of a juxtaposed type in a binder owes
 /// what the call form owes, and the intact result type owes nothing.
 ///
-/// A `?` left out of `Run (?(Seat.Dispatch). end)` leaves the `.` of a type
-/// path open in the binder. The slot below `Run` in the result type then
-/// reads as the slot of an expression, and the group of `Run` read as an
+/// A name left out of `Run ((Seat.Dispatch) >? end)` leaves the `.` of a
+/// type path open in the binder. The slot below `Run` in the result type then
+/// read as the slot of an expression, and the group of `Run` read as an
 /// expression. Three of its tiles each owed a repair (#6102). The call form
 /// `Run(` opens a form whose slot holds a type, so it owed none. The argument
 /// of a juxtaposition takes the sort of its head. Each row leaves out one
@@ -2014,12 +2014,12 @@ fn a_token_left_out_before_a_juxtaposed_type_s_group_owes_what_its_call_owes_610
     };
     for (juxtaposed, call) in [
         (
-            declaration("Run ((Seat.Dispatch). end)", "Run (?(Seat.Dispatch). end)"),
-            declaration("Run((Seat.Dispatch). end)", "Run(?(Seat.Dispatch). end)"),
+            declaration("Run ((Seat.) >? end)", "Run ((Seat.Dispatch) >? end)"),
+            declaration("Run((Seat.) >? end)", "Run((Seat.Dispatch) >? end)"),
         ),
         (
-            declaration("Run (?(Seat.). end)", "Run (?(Seat.Dispatch). end)"),
-            declaration("Run(?(Seat.). end)", "Run(?(Seat.Dispatch). end)"),
+            declaration("Run ((Seat.Dispatch) >? )", "Run ((Seat.Dispatch) >? end)"),
+            declaration("Run((Seat.Dispatch) >? )", "Run((Seat.Dispatch) >? end)"),
         ),
     ] {
         let called = owed(&call)?;
@@ -2547,8 +2547,8 @@ fn hole_positions_mold_zero_obligation() -> Result<(), Failure>
 }
 
 /// The `unknown_type` rule: `?` molds as a Type-sort atom with zero
-/// obligations at every type position, while the Expression-sort hole and the
-/// receive-session prefix keep their own readings of the same tile.
+/// obligations at every type position, while the Expression-sort hole keeps
+/// its own reading of the same tile.
 #[test]
 fn unknown_type_molds_zero_obligation() -> Result<(), Failure>
 {
@@ -2575,9 +2575,6 @@ fn unknown_type_molds_zero_obligation() -> Result<(), Failure>
         // The legacy keyword keeps its value-primitive reading beside the
         // atom.
         "def f : -F Unknown;",
-        // The receive-session prefix keeps its own `?`-led reading: a type,
-        // `.`, and a session tail following the `?` selects `?T.S`.
-        "def s : ? Integer . end;",
         // The term hole (Expression sort) is untouched by the new atom.
         "def x = ?;",
         "def x = ?goal;",
@@ -2610,21 +2607,6 @@ fn unknown_type_molds_zero_obligation() -> Result<(), Failure>
         mold_sort_of(pbg, holed.tree(), holed.tree().root(), TileText::from("?")),
         "an expression-slot `?` keeps the hole mold"
     );
-
-    // The receive-session reading wins when its continuation follows: the
-    // meld carrying the `?` also carries the received type and the `.`
-    // sequencer (the session tail sits outside that meld's own span).
-    let session = parse(pbg, SourceText::from("def s : ? Integer . end;"))?;
-    let session_meld =
-        find_meld_with_tile(session.tree(), session.tree().root(), TileText::from("?"))
-            .expect("a `?`-led meld");
-    let inside = descendant_tiles(session.tree(), session_meld);
-    for tile in ["Integer", "."] {
-        assert!(
-            inside.iter().any(|t| t == tile),
-            "the receive-session meld keeps {tile:?}; tiles {inside:?}"
-        );
-    }
     Ok(())
 }
 

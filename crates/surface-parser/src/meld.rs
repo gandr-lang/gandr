@@ -53,7 +53,7 @@
 //!
 //! # A required tail runs as far as its group yields
 //!
-//! A form whose last symbol is a required sort hole — `mu a . S`, the session
+//! A form whose last symbol is a required sort hole — the session
 //! types, the recursive protocol `rec a => S`, `+U[r] C`, `package [ T ] C` —
 //! has no tile to end it, so the melder decides where its tail stops.
 //! It stops where a prefix operator at the form's own group would stop: the
@@ -4508,8 +4508,8 @@ impl<'pbg> MeldState<'pbg>
     /// Clean-close each required-tail form whose tail is whole and which the
     /// incoming tile does not continue.
     ///
-    /// A form ending in a required sort hole — `mu a . S`, `rec a => S`, `+U[r]
-    /// C` — has no tile to end it. It closes once its tail is whole, every
+    /// A form ending in a required sort hole — `rec a => S`, `+U[r] C` — has
+    /// no tile to end it. It closes once its tail is whole, every
     /// operator above the frontier holding the operands it wants, and the
     /// incoming tile does not continue that tail: an infix or postfix
     /// operator, or a left-absorbing form start, of the hole's sort continues

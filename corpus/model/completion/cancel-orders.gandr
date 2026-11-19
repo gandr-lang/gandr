@@ -80,7 +80,7 @@ def cancelWrittenOut() -> Unit =
     send target Ring.done;
     close target
   };
-  let cancel = fork (canceller : ?(?(Ring.Cqe). end). end) {
+  let cancel = fork (canceller : ((Ring.Cqe) >? end) >? end) {
     let owed = recv canceller;
     let reaped = recv owed;
     close owed;

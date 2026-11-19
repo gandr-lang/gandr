@@ -27,9 +27,9 @@
 
 /// `follow` receives reports until retirement.
 /// Retirement closes the endpoint and ends the loop.
-def follow(operator : mu open. &{
-  report : ?Integer. open,
-  retire : ?Integer. end
+def follow(operator : rec open => &{
+  report : Integer >? open,
+  retire : Integer >? end
 }) -> Unit =
   loop {
     offer operator {
@@ -40,9 +40,9 @@ def follow(operator : mu open. &{
 
 /// `tally` counts reports in a held slot until retirement.
 /// The loop threads the count beside the endpoint.
-def tally(operator : mu open. &{
-  report : ?Integer. open,
-  retire : ?Integer. end
+def tally(operator : rec open => &{
+  report : Integer >? open,
+  retire : Integer >? end
 }) -> Integer =
   var seen = 0
   loop {
@@ -55,7 +55,7 @@ def tally(operator : mu open. &{
 
 /// `asking` selects a report and hears its answer on each pass.
 /// The loop issues every command and never exits.
-def asking(seat : mu open. +{more : ?Integer. open, done : end}) -> Unit =
+def asking(seat : rec open => +{more : Integer >? open, done : end}) -> Unit =
   loop {
     select seat more;
     let heard = recv seat;
@@ -63,7 +63,7 @@ def asking(seat : mu open. +{more : ?Integer. open, done : end}) -> Unit =
   }
 
 /// `serving` hears reports over a protocol with no exit.
-def serving(desk : mu open. &{report : ?Integer. open}) -> Unit =
+def serving(desk : rec open => &{report : Integer >? open}) -> Unit =
   loop {
     offer desk {
       | report => { let next = recv desk; continue }
@@ -72,7 +72,7 @@ def serving(desk : mu open. &{report : ?Integer. open}) -> Unit =
 
 /// `beacon` sends a report on each pass and never hears one.
 /// The bridge declines it as it declines a loop that receives.
-def beacon(seat : mu open. !Integer. open) -> Unit =
+def beacon(seat : rec open => Integer >! open) -> Unit =
   loop {
     send seat 1;
     continue
@@ -81,9 +81,9 @@ def beacon(seat : mu open. !Integer. open) -> Unit =
 /// `followed` sends two reports and a retirement to a forked desk.
 @[runs("*{}")]
 def followed() -> Unit =
-  let seat = fork (operator : mu open. &{
-    report : ?Integer. open,
-    retire : ?Integer. end
+  let seat = fork (operator : rec open => &{
+    report : Integer >? open,
+    retire : Integer >? end
   }) { follow operator };
   select seat report
   send seat 1

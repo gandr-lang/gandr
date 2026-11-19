@@ -5,11 +5,10 @@
 //!
 //! A session type is one core value type: a protocol, one node per state,
 //! over the payload types its sends and receives carry. The lowering reads
-//! it from its outermost session form — `!A >> S`, `?A >> S`, `end`, `rec t
-//! => S`,
-//! or braces whose entries are all session forms — down through every
-//! continuation, and plans the protocol there. A continuation is a state of
-//! that protocol, never a type of its own, so the sweep does not read it; a
+//! it from its outermost session form — `A >! S`, `A >? S`, `end`,
+//! `rec t => S`, or braces whose entries are all session forms — down through
+//! every continuation, and plans the protocol there. A continuation is a state
+//! of that protocol, never a type of its own, so the sweep does not read it; a
 //! payload `A` is an ordinary value type, read where it stands, so a payload
 //! names a module's type component as any type does.
 //!
@@ -23,8 +22,7 @@
 //! name; any other type standing where a continuation is read is refused by
 //! sort, the session continuation. A protocol whose recursion reaches its own
 //! variable before any action, `rec t => t`, is refused as not contractive
-//! where the `rec` is written. The dotted `!A. S`, `?A. S` and `mu t. S` are
-//! read alike until the corpus moves.
+//! where the `rec` is written.
 //!
 //! - Alternatives: a core type per continuation, which mints one protocol per
 //!   state and makes the protocol's identity depend on sharing; second grammar
@@ -712,10 +710,8 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         Ok(())
     }
 
-    /// Read one of a session type's own forms, `!A >> S`, `?A >> S`, `end` or
-    /// `rec t => S`, at `here`, its continuations queued on the walk; the
-    /// dotted `!A. S`, `?A. S` and `mu t. S` are read alike until the corpus
-    /// moves.
+    /// Read one of a session type's own forms, `A >! S`, `A >? S`, `end` or
+    /// `rec t => S`, at `here`, its continuations queued on the walk.
     ///
     /// # Specification
     /// - requires: `cursor` reads the form's pieces from the start, and `state`
@@ -725,7 +721,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///   queues its continuation as a fresh state; `rec t => S` binds `t` for
     ///   the walk under it, queues a leave after `S`, is the fixed point of the
     ///   state `S` fills, and keeps `t` as a site naming `state`.
-    /// - fails: a misplaced tile or a hole's own fault.
+    /// - fails: a misplaced tile, or a hole's own fault.
     /// - panics: none.
     ///
     /// # Errors
@@ -734,6 +730,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// # Adequacy
     /// - hypothesis: L3 — the seat's protocol reads every one of the four.
     /// - witness: `gandr-surface-lowering::lower::session::tests::a_session_type_lowers_to_its_protocol`
+    ///
+    /// # Cost
+    /// - allocation: the binder, the state site, the payload operand and the
+    ///   queued continuation of each form, growth within the protocol's forms
+    /// - allocation: the refusal of a malformed form, error path
     #[spec(
         captures: before = (draft.syntax.len(), self.cx().operands.entries().len()),
         ensures: |ret| ret.as_ref().map_or(true, |node| match *node {
@@ -756,19 +757,12 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             exhausted(here, &cursor)?;
             return Ok(ProtocolSyntax::End);
         }
-        let recursive = match cursor.tile(TileName::REC) {
-            Maybe::Present(_) => Some(TileName::FAT_ARROW),
-            Maybe::Absent(_) => match cursor.tile(TileName::MU) {
-                Maybe::Present(_) => Some(TileName::DOT),
-                Maybe::Absent(_) => None,
-            },
-        };
-        if let Some(arrow) = recursive {
+        if let Maybe::Present(_) = cursor.tile(TileName::REC) {
             let Maybe::Present(variable) = cursor.tile(TileName::TYPE_VARIABLE)
             else {
                 return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
             };
-            closed(here, &mut cursor, arrow)?;
+            closed(here, &mut cursor, TileName::FAT_ARROW)?;
             let body = here.one(cursor.operands())?;
             exhausted(here, &cursor)?;
             binders.push(self.cx().name_at(variable));
@@ -781,17 +775,14 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             let inner = draft.queue(body);
             return Ok(ProtocolSyntax::Mu(inner));
         }
-        let sends = match cursor.tile(TileName::BANG) {
+        let carried = here.one(cursor.operands())?;
+        let sends = match cursor.tile(TileName::SEND_STEP) {
             Maybe::Present(_) => true,
             Maybe::Absent(_) => {
-                closed(here, &mut cursor, TileName::QUESTION)?;
+                closed(here, &mut cursor, TileName::RECEIVE_STEP)?;
                 false
             },
         };
-        let carried = here.one(cursor.operands())?;
-        if let Maybe::Absent(_) = cursor.tile(TileName::SEQUENCE) {
-            closed(here, &mut cursor, TileName::DOT)?;
-        }
         let continued = here.one(cursor.operands())?;
         exhausted(here, &cursor)?;
         let Reading::ValueType(frame) = here.reading

@@ -104,7 +104,7 @@
 //! The sum and the lazy record over labels whose entries are session forms
 //! are the session select and offer, one former read in the zone its type is
 //! written in: braces at a type's root whose every entry is a session form —
-//! `!A >> S`, `?A >> S`, `end`, `rec t => S`, or braces of session forms — are
+//! `A >! S`, `A >? S`, `end`, `rec t => S`, or braces of session forms — are
 //! read whole as a session type (the `lower::session` module), and braces
 //! mixing session forms with other types are refused as a misplaced entry.
 //! Inside a protocol the braces are the select and the offer whatever their
@@ -925,8 +925,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
         }
     }
 
-    /// The zone the type at `at` is read in: the session zone for `!A >> S`,
-    /// `?A >> S`, `end` or `rec t => S`, a parenthesised session form, or
+    /// The zone the type at `at` is read in: the session zone for `A >! S`,
+    /// `A >? S`, `end` or `rec t => S`, a parenthesised session form, or
     /// braces holding at least one entry, each a session form.
     ///
     /// # Specification

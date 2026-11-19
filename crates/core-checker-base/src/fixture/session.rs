@@ -73,8 +73,8 @@ pub fn session(
     arena.value_type_session(session)
 }
 
-/// The seat's end: `?Dispatch. mu turn. +{ report : !Report. &{ next :
-/// turn, retire : end }, handoff : !Handoff. end }`, every payload a
+/// The seat's end: `Dispatch >? rec turn => +{ report : Report >! &{ next :
+/// turn, retire : end }, handoff : Handoff >! end }`, every payload a
 /// string.
 ///
 /// # Specification

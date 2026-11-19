@@ -6,7 +6,7 @@ def rooted() -> [std.rand.Eff] Integer =
   std.rand.draw 0
 @[distributes("1 0")]
 def forked() -> [std.rand.Eff] Integer =
-  let desk = fork (seat : !Integer. end) {
+  let desk = fork (seat : Integer >! end) {
     let drawn = std.rand.draw 99;
     send seat drawn;
     close seat

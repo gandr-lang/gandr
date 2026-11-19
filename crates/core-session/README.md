@@ -69,7 +69,7 @@ cargo nextest run -p gandr-core-session
 RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-core-session
 ```
 
-The generator protocol is `mu t. &{next: !Y.t, stop: end}`. Its consumer selects `next`, receives a yield, and eventually selects `stop` and closes. `SeatEnd` is `?Dispatch. mu t. +{report: !Report.&{next: t, retire: end}, handoff: !Handoff.end}`. Independently stated peers witness duality and accepted runs for both protocols.
+The generator protocol is `rec t => &{next: Y >! t, stop: end}`. Its consumer selects `next`, receives a yield, and eventually selects `stop` and closes. `SeatEnd` is `Dispatch >? rec t => +{report: Report >! &{next: t, retire: end}, handoff: Handoff >! end}`. Peers that the tests state apart from the engine show the duality of both protocols and the runs that each protocol takes.
 
 ## Leaf boundary
 
@@ -85,7 +85,7 @@ The engine searches; the kernel replays. `relate` exports candidate observable p
 
 `certified::transport` re-forms a direct session Flow, checks both complete monitor/code bindings, replays the source run, maps moves through supplied pairs, and replays the target run. Labels, action directions and payload digests stay unchanged; payload identities follow the target assignment. Bodies stay opaque. The arena watermark is restored on success and refusal. A payload path certifies code identity, not a transformation of a stored body.
 
-The widened `SeatEnd'` adds `pause : !Report.turn`. Its two-report-retire and handoff runs transport forward unchanged; a widened pause run refuses backward. Offer width reverses inclusion, so a source-only offered label also refuses transport: a simulation does not license every local trace from a peer outside the target promise. There is no inverse operation.
+The widened `SeatEnd'` adds `pause : Report >! turn`. Its two-report-retire and handoff runs transport forward unchanged; a widened pause run refuses backward. Offer width reverses inclusion, so a source-only offered label also refuses transport: a simulation does not license every local trace from a peer outside the target promise. There is no inverse operation.
 
 **Choice.** Reuse native formation and replay rather than duplicate a trusted checker in the producer. Neither relation data nor a stored Flow is an admission receipt. **Reversal.** A different protocol universe requires an explicit code binding and replay relation at this adapter.
 
@@ -103,7 +103,7 @@ The widened `SeatEnd'` adds `pause : !Report.turn`. Its two-report-retire and ha
 
 Each unfolded state pair is visited at most once. Revisiting a pair closes a coinductive hypothesis without skipping fresh branch obligations. The finite pair space is bounded by the product of arena sizes. Contractivity bounds administrative unfolding to `Var -> Mu -> action`, so every decision terminates on admitted finite input.
 
-**Alternatives.** Finite unfolding followed by syntax comparison incorrectly separates `mu t. !A.t` and `!A.mu t. !A.t`. Independent engines duplicate recursion and branch rules. Full-product elimination materializes unrelated pairs; it serves as an independent test oracle rather than the production algorithm.
+**Alternatives.** Finite unfolding followed by syntax comparison incorrectly separates `rec t => A >! t` and `A >! rec t => A >! t`. Independent engines duplicate recursion and branch rules. Full-product elimination materializes unrelated pairs; it serves as an independent test oracle rather than the production algorithm.
 
 **Reversal.** A codata-equivalence consumer would move the shared engine vocabulary to a layer both consumers depend on.
 

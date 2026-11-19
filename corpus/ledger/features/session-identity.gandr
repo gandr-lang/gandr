@@ -29,20 +29,20 @@ module Evolution where {
   type Report = Seat.Report;
   type Handoff = Seat.Handoff;
   type SeatEnd = Seat.SeatEnd;
-  type SeatEnd′ = ?Dispatch. mu turn. +{
-    report : !Report. &{next : turn, retire : end},
-    handoff : !Handoff. end,
-    pause : !Report. turn
+  type SeatEnd′ = Dispatch >? rec turn => +{
+    report : Report >! &{next : turn, retire : end},
+    handoff : Handoff >! end,
+    pause : Report >! turn
   };
-  type SeatEnd2 = ?Dispatch. +{
-    report : !Report. &{
-      next : mu again. +{
-        report : !Report. &{next : again, retire : end},
-        handoff : !Handoff. end
+  type SeatEnd2 = Dispatch >? +{
+    report : Report >! &{
+      next : rec again => +{
+        report : Report >! &{next : again, retire : end},
+        handoff : Handoff >! end
       },
       retire : end
     },
-    handoff : !Handoff. end
+    handoff : Handoff >! end
   };
   /// The old protocol flows to the one with the pause, by simulation.
   @[checks]

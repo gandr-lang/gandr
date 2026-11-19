@@ -22,7 +22,7 @@ import std.process;
 @[runs("7")]
 def cancelled() -> Integer =
   handle c : std.process.Exit.Eff {
-    let found = fork (peer : !Integer. !Integer. end) {
+    let found = fork (peer : Integer >! Integer >! end) {
       send peer 1;
       send peer 2;
       close peer

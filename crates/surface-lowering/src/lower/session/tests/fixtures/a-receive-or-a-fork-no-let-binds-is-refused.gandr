@@ -1,5 +1,5 @@
 def received() -> -F Unit = {
-  let d = fork (c : !Integer >> end) { send c 1; close c };
+  let d = fork (c : Integer >! end) { send c 1; close c };
   recv d;
   close d
 };

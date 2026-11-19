@@ -197,7 +197,7 @@ fn an_endpoint_used_twice_in_one_action_is_refused()
 {
     let mut arena = CoreArena::new();
     let string = arena.value_type_base(BaseType::String);
-    // !String. end
+    // String >! end
     let protocol = session(
         &mut arena,
         alloc::vec![
@@ -1083,7 +1083,7 @@ fn a_case_s_arms_each_spend_an_endpoint_from_where_the_case_found_it()
     let mut arena = CoreArena::new();
     let protocol = end(&mut arena);
     let string = arena.value_type_base(BaseType::String);
-    // !String. end
+    // String >! end
     let sending = session(
         &mut arena,
         alloc::vec![

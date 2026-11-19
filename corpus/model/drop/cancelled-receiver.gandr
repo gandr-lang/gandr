@@ -24,7 +24,7 @@ import std.process;
 @[runs("7")]
 def parked() -> Integer =
   handle c : std.process.Exit.Eff {
-    let found = fork (peer : !Integer. ?Integer. end) {
+    let found = fork (peer : Integer >! Integer >? end) {
       send peer 1;
       let x = recv peer;
       close peer
@@ -43,7 +43,7 @@ def parked() -> Integer =
 @[runs("7")]
 def late() -> Integer =
   handle c : std.process.Exit.Eff {
-    let found = fork (peer : ?Integer. end) {
+    let found = fork (peer : Integer >? end) {
       let x = recv peer;
       close peer
     };
@@ -61,15 +61,15 @@ def late() -> Integer =
 @[runs("7")]
 def forwarded() -> Integer =
   handle c : std.process.Exit.Eff {
-    let r = fork (relay : !(!Integer. end). end) {
-      let w = fork (worker : ?Integer. end) {
+    let r = fork (relay : (Integer >! end) >! end) {
+      let w = fork (worker : Integer >? end) {
         let n = recv worker;
         close worker
       };
       send relay w;
       close relay
     };
-    let t = fork (tick : !Integer. end) {
+    let t = fork (tick : Integer >! end) {
       send tick 1;
       close tick
     };

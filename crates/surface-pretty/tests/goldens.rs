@@ -953,7 +953,8 @@ fn session_types_spell_their_protocol_and_payloads()
     let suspended = core.value_type_thunk(returner);
     let state = ProtocolState::from;
     let label = |text: &str| FieldLabel::from(String::from(text));
-    // ?A. mu t. +{handoff : !C. end, report : !B. &{next : t, retire : end}}
+    // A >? rec t => +{handoff : C >! end, report : B >! &{next : t, retire :
+    // end}}
     let protocol = Arc::new(
         Protocol::new(
             alloc::vec![
@@ -1015,20 +1016,20 @@ fn session_types_spell_their_protocol_and_payloads()
     for (root, spelling) in [
         (
             CoreNode::ValueType(seat),
-            "?Integer >> rec t => +{handoff : !(+U (-F Unit)) >> end, report : !String >> &{next : t, retire : end}}",
+            "Integer >? rec t => +{handoff : +U (-F Unit) >! end, report : String >! &{next : t, retire : end}}",
         ),
         (
             CoreNode::ValueType(peer),
-            "!Integer >> rec t => &{handoff : ?(+U (-F Unit)) >> end, report : ?String >> +{next : t, retire : end}}",
+            "Integer >! rec t => &{handoff : +U (-F Unit) >? end, report : String >? +{next : t, retire : end}}",
         ),
         (
             CoreNode::ValueType(inside),
-            "&{next : rec t => +{handoff : !(+U (-F Unit)) >> end, report : !String >> &{next : t, retire : end}}, retire : end}",
+            "&{next : rec t => +{handoff : +U (-F Unit) >! end, report : String >! &{next : t, retire : end}}, retire : end}",
         ),
         (CoreNode::ValueType(ended), "end"),
         (
             CoreNode::CompType(returns_seat),
-            "-F (?Integer >> rec t => +{handoff : !(+U (-F Unit)) >> end, report : !String >> &{next : t, retire : end}})",
+            "-F (Integer >? rec t => +{handoff : +U (-F Unit) >! end, report : String >! &{next : t, retire : end}})",
         ),
         (CoreNode::CompType(returns_end), "-F end"),
     ] {

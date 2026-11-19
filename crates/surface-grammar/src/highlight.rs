@@ -146,8 +146,8 @@ const KEYWORDS: &[&str] = &[
     "close", "codata", "continue", "data", "def", "drop", "dup", "else", "end", "ext", "extern",
     "face", "feed", "flow", "for", "force", "fork", "from", "fun", "glob", "handle", "hold", "if",
     "import", "in", "include", "infix", "infixl", "infixr", "into", "is", "law", "let", "loop",
-    "match", "migrate", "mobile", "module", "mu", "node", "obs", "offer", "offers", "on", "op",
-    "oper", "pack", "path", "pi+", "postfix", "prefix", "pub", "pure", "rec", "recv", "release",
+    "match", "migrate", "mobile", "module", "node", "obs", "offer", "offers", "on", "op", "oper",
+    "pack", "path", "pi+", "postfix", "prefix", "pub", "pure", "rec", "recv", "release",
     "renaming", "requires", "resume", "return", "rule", "run", "select", "send", "shape", "sort",
     "tail", "theory", "thunk", "type", "type(", "under", "unwind", "var", "via", "where", "while",
     "with", "world",
@@ -156,8 +156,8 @@ const KEYWORDS: &[&str] = &[
 /// The operators of terms, types, sessions and circuits.
 const OPERATORS: &[&str] = &[
     "!=", "#", "&", "&&", "*", "+", "++", "-", "-->", "->", "..", ":>", "<", "<-", "<->", "<=",
-    "<=>", "==", "==>", "=>", ">", ">=", ">>", "\\", "|", "|>", "||", "~>", "↦", "⇝", "∷", "≃",
-    "≅",
+    "<=>", "==", "==>", "=>", ">", ">!", ">=", ">>", ">?", "\\", "|", "|>", "||", "~>", "↦", "⇝",
+    "∷", "≃", "≅",
 ];
 
 /// The primitive type spellings, and the universes.
@@ -1121,9 +1121,9 @@ mod tests
             ("?", "hole", HlRole::Hole),
             ("hole_name", "hole", HlRole::Label),
             ("?", "unknown_type", HlRole::TypeBuiltin),
-            ("?", "receive_session_type", HlRole::Operator),
+            (">?", "receive_session_type", HlRole::Operator),
             ("!", "fork_expression", HlRole::Keyword),
-            ("!", "send_session_type", HlRole::Operator),
+            (">!", "send_session_type", HlRole::Operator),
             ("+U", "u_type", HlRole::Keyword),
             ("-F", "f_type", HlRole::Keyword),
             ("Type", "universe_type", HlRole::TypeBuiltin),
