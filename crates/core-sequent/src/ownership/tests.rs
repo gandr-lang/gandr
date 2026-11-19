@@ -1,0 +1,595 @@
+use alloc::boxed::Box;
+use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
+
+use gandr_theory_cell_complexes::Polarity;
+
+use super::*;
+use crate::boundary::ProducerArity;
+use crate::il::ConstructorTag;
+use crate::il::ConsumerId;
+use crate::il::CopatternArm;
+use crate::il::CovariableIndex;
+use crate::il::PatternArm;
+
+/// The variable `index` of `zone`.
+///
+/// # Specification
+/// trivial.
+fn variable(
+    arena: &mut CommandArena,
+    zone: Zone,
+    index: DeBruijnIndex,
+) -> ProducerId
+{
+    arena
+        .mint_producer(ProducerNode::Variable { zone, index })
+        .expect("a leaf")
+}
+
+/// The innermost binder, `x0`.
+///
+/// # Specification
+/// trivial.
+fn x0() -> DeBruijnIndex
+{
+    DeBruijnIndex::from(0_u32)
+}
+
+/// The binder one out, `x1`.
+///
+/// # Specification
+/// trivial.
+fn x1() -> DeBruijnIndex
+{
+    DeBruijnIndex::from(1_u32)
+}
+
+/// The binder two out, `x2`.
+///
+/// # Specification
+/// trivial.
+fn x2() -> DeBruijnIndex
+{
+    DeBruijnIndex::from(2_u32)
+}
+
+/// The tuple of `fields`.
+///
+/// # Specification
+/// trivial.
+fn tuple(
+    arena: &mut CommandArena,
+    fields: &[ProducerId],
+) -> ProducerId
+{
+    arena
+        .mint_producer(ProducerNode::Constructor {
+            tag: ConstructorTag::Tuple(ProducerArity::from(fields.len())),
+            producers: Box::from(fields),
+            consumers: Box::from([]),
+        })
+        .expect("the fields resolve")
+}
+
+/// The innermost covariable, `α0`.
+///
+/// # Specification
+/// trivial.
+fn alpha0(arena: &mut CommandArena) -> ConsumerId
+{
+    arena
+        .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
+        .expect("a leaf")
+}
+
+/// `⟨value |+ consumer⟩`.
+///
+/// # Specification
+/// trivial.
+fn cut(
+    arena: &mut CommandArena,
+    value: ProducerId,
+    consumer: ConsumerId,
+) -> CommandId
+{
+    arena
+        .mint_cut(Polarity::Positive, value, consumer)
+        .expect("the children resolve")
+}
+
+/// The reading of `node`.
+///
+/// # Specification
+/// trivial.
+fn entry(
+    ownership: &Ownership,
+    node: NodeAddress,
+) -> Entry<'_>
+{
+    ownership.entry(node).expect("the node was reached")
+}
+
+/// The ownership of `roots`, read over their walk.
+///
+/// # Specification
+/// trivial.
+fn read(
+    arena: &CommandArena,
+    roots: &[NodeAddress],
+) -> Ownership
+{
+    let mut reached = Vec::new();
+    reach(arena, roots, &mut BTreeSet::new(), &mut reached).expect("held");
+    Ownership::of(arena, roots, &reached).expect("held")
+}
+
+/// A tuple naming `x0` twice and `x1` once duplicates `x0` once and `x1`
+/// never; the cut that sends it consumes each once.
+#[test]
+fn a_name_two_children_use_is_duplicated_once()
+{
+    let mut arena = CommandArena::new();
+    let twice = variable(&mut arena, Zone::Intuitionistic, x0());
+    let once = variable(&mut arena, Zone::Intuitionistic, x1());
+    let pair = tuple(&mut arena, &[twice, twice, once]);
+    let top = arena.mint_consumer(ConsumerNode::Top).expect("a leaf");
+    let root = cut(&mut arena, pair, top);
+
+    let ownership = read(&arena, &[NodeAddress::Command(root)]);
+
+    assert_eq!(
+        entry(&ownership, NodeAddress::Producer(pair)).dups,
+        [x0()].as_slice()
+    );
+    assert_eq!(entry(&ownership, NodeAddress::Command(root)).dups, []);
+}
+
+/// A `μ̃` whose body ignores its bound name drops it on entry; one whose
+/// body names it drops nothing.
+#[test]
+fn an_ignored_binder_is_dropped_on_entry()
+{
+    let mut arena = CommandArena::new();
+    let top = arena.mint_consumer(ConsumerNode::Top).expect("a leaf");
+    let unit = tuple(&mut arena, &[]);
+    let bound = variable(&mut arena, Zone::Intuitionistic, x0());
+    for (value, dropped) in [(unit, Vec::from([x0()])), (bound, Vec::new())] {
+        let body = cut(&mut arena, value, top);
+        let binder = arena
+            .mint_consumer(ConsumerNode::MuTilde { body })
+            .expect("the body resolves");
+        let root = cut(&mut arena, unit, binder);
+
+        let ownership = read(&arena, &[NodeAddress::Command(root)]);
+
+        assert_eq!(
+            entry(&ownership, NodeAddress::Command(body)).drops,
+            dropped.as_slice()
+        );
+    }
+}
+
+/// Of two arms over `x0`, the one naming it drops nothing it received, and
+/// the one ignoring it drops it beside the fields it binds and ignores; the
+/// match consumes `x0` once.
+#[test]
+fn an_arm_drops_what_its_sibling_uses()
+{
+    let mut arena = CommandArena::new();
+    let top = arena.mint_consumer(ConsumerNode::Top).expect("a leaf");
+    let unit = tuple(&mut arena, &[]);
+    let outer = variable(&mut arena, Zone::Intuitionistic, x0());
+    let names = cut(&mut arena, outer, top);
+    let ignores = cut(&mut arena, unit, top);
+    let matched = arena
+        .mint_consumer(ConsumerNode::Case {
+            arms: Box::from([
+                PatternArm {
+                    constructor: ConstructorTag::ListNil,
+                    body: names,
+                },
+                PatternArm {
+                    constructor: ConstructorTag::ListCons,
+                    body: ignores,
+                },
+            ]),
+        })
+        .expect("the arms resolve");
+    let scrutinee = variable(&mut arena, Zone::Intuitionistic, x1());
+    let root = cut(&mut arena, scrutinee, matched);
+
+    let ownership = read(&arena, &[NodeAddress::Command(root)]);
+
+    let reading = entry(&ownership, NodeAddress::Consumer(matched));
+    assert_eq!(reading.dups, []);
+    let drops = [names, ignores].map(|arm| entry(&ownership, NodeAddress::Command(arm)).drops);
+    let none: &[DeBruijnIndex] = &[];
+    assert_eq!(drops, [none, [x0(), x1(), x2()].as_slice()]);
+}
+
+/// A thunk that is a root may be forced many times: its body duplicates the
+/// capture it names on entry. The same thunk cut against a force runs once,
+/// and its body owns the capture.
+#[test]
+fn a_kept_body_duplicates_its_captures_on_entry()
+{
+    for forced in [false, true] {
+        let mut arena = CommandArena::new();
+        let capture = variable(&mut arena, Zone::Intuitionistic, x0());
+        let returned = alpha0(&mut arena);
+        let body = cut(&mut arena, capture, returned);
+        let thunk = arena
+            .mint_producer(ProducerNode::Thunk { body })
+            .expect("the body resolves");
+        let root = if forced {
+            let top = arena.mint_consumer(ConsumerNode::Top).expect("a leaf");
+            let force = arena
+                .mint_consumer(ConsumerNode::Destructor {
+                    tag: DestructorTag::Force,
+                    producers: Box::from([]),
+                    consumers: Box::from([top]),
+                })
+                .expect("the frame resolves");
+            NodeAddress::Command(
+                arena
+                    .mint_cut(Polarity::Negative, thunk, force)
+                    .expect("the children resolve"),
+            )
+        }
+        else {
+            NodeAddress::Producer(thunk)
+        };
+
+        let ownership = read(&arena, &[root]);
+
+        let (runs, entered) = if forced {
+            (Runs::Once, Vec::new())
+        }
+        else {
+            (Runs::Many, Vec::from([x0()]))
+        };
+        assert_eq!(ownership.runs(thunk), runs);
+        assert_eq!(
+            entry(&ownership, NodeAddress::Command(body)).entered,
+            entered.as_slice()
+        );
+    }
+}
+
+/// A reified stack's bind frame owns its capture as any child does: the stack
+/// is the keeper, and each resumption copies the frame's window out of it
+/// with a reference of its own, so the body duplicates nothing on entry. An
+/// applied argument and a projection mark nothing either.
+#[test]
+fn a_reified_bind_body_owns_its_captures()
+{
+    let mut arena = CommandArena::new();
+    let argument = tuple(&mut arena, &[]);
+    let capture = variable(&mut arena, Zone::Intuitionistic, x1());
+    let returned = alpha0(&mut arena);
+    let body = cut(&mut arena, capture, returned);
+    let stack = arena
+        .mint_producer(ProducerNode::Reify(alloc::sync::Arc::from([
+            gandr_core_term::control::StackFrame::Apply(argument),
+            gandr_core_term::control::StackFrame::Project(gandr_kernel_term::Component::from(
+                1_usize,
+            )),
+            gandr_core_term::control::StackFrame::Bind(body),
+        ])))
+        .expect("the frames resolve");
+
+    let ownership = read(&arena, &[NodeAddress::Producer(stack)]);
+
+    assert_eq!(
+        entry(&ownership, NodeAddress::Command(body)).entered,
+        [].as_slice(),
+        "the resumption's copy holds the reference the body consumes"
+    );
+}
+
+/// A match on the unit that builds the unit pairs nothing: a nullary head
+/// has no cell to write into.
+#[test]
+fn a_nullary_match_reuses_nothing()
+{
+    let mut arena = CommandArena::new();
+    let top = arena.mint_consumer(ConsumerNode::Top).expect("a leaf");
+    let unit = tuple(&mut arena, &[]);
+    let body = cut(&mut arena, unit, top);
+    let matched = arena
+        .mint_consumer(ConsumerNode::Case {
+            arms: Box::from([PatternArm {
+                constructor: ConstructorTag::Tuple(ProducerArity::ZERO),
+                body,
+            }]),
+        })
+        .expect("the arm resolves");
+    let scrutinee = variable(&mut arena, Zone::Intuitionistic, x0());
+    let root = cut(&mut arena, scrutinee, matched);
+
+    let ownership = read(&arena, &[NodeAddress::Command(root)]);
+
+    assert_eq!(ownership.reuses(), []);
+}
+
+/// A linear name two children read is never duplicated: only `Γ` is counted.
+#[test]
+fn a_linear_name_is_never_counted()
+{
+    let mut arena = CommandArena::new();
+    let held = variable(&mut arena, Zone::Linear, x0());
+    let pair = tuple(&mut arena, &[held, held]);
+    let top = arena.mint_consumer(ConsumerNode::Top).expect("a leaf");
+    let root = cut(&mut arena, pair, top);
+
+    let ownership = read(&arena, &[NodeAddress::Command(root)]);
+
+    assert_eq!(entry(&ownership, NodeAddress::Producer(pair)).dups, []);
+}
+
+/// The point step, as lowered: `⟨x0 |+ datacase({force(α) ⇒ ⟨cocase
+/// {apply(x; α) ⇒ ⟨cocase {apply(x; α) ⇒ ⟨P(x0, x1) |+ α0⟩} |− α0⟩} |−
+/// α0⟩}; ★)⟩`. The branch and its curried objects run once, and the branch
+/// rebuilds a constructor of the scrutinee's two fields where the scrutinee
+/// is dead, so the two pair, and still pair through a `μ` its cut runs where
+/// it stands. A branch that names its scrutinee, a constructor inside a body
+/// that may run many times, one inside a thunk forced once, whose body runs
+/// in a window of its own, and one built after a call — a map's element
+/// function, which may capture the window and replay it — pair nothing.
+///
+/// The walk to the constructor: a `μ` a positive cut against a binder runs
+/// where it stands, and so does the binder's body after it; a negative one
+/// suspends the `μ` and pairs nothing. A constructor of another field count
+/// on the way is passed over for the one inside it. A single-arm match is
+/// passed through; one of two arms is a choice, and pairs nothing.
+#[test]
+fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
+{
+    for case in [
+        "dead", "named", "kept", "forced", "ran", "called", "let", "by-name", "after", "wrapped",
+        "split", "chosen",
+    ] {
+        let mut arena = CommandArena::new();
+        let top = arena.mint_consumer(ConsumerNode::Top).expect("a leaf");
+        let returned = alpha0(&mut arena);
+        let second = variable(&mut arena, Zone::Intuitionistic, x0());
+        let first = match case {
+            // reason: under the branch's two field binders the scrutinee is
+            // `x2`.
+            "named" => variable(&mut arena, Zone::Intuitionistic, x2()),
+            _ => variable(&mut arena, Zone::Intuitionistic, x1()),
+        };
+        let point = arena
+            .mint_producer(ProducerNode::Constructor {
+                tag: ConstructorTag::Data {
+                    tag: gandr_kernel_term::ConstructorTag::from(0_usize),
+                    arity: ProducerArity::TWO,
+                    family: gandr_kernel_term::ConstantIndex::from(0_usize),
+                },
+                producers: Box::from([second, first]),
+                consumers: Box::from([]),
+            })
+            .expect("the fields resolve");
+        let mut body = cut(&mut arena, point, returned);
+        // reason: `⟨μα.c |± μ̃z.⟨z |+ α0⟩⟩`, the constructor in `c`.
+        let bound = |arena: &mut CommandArena, body: CommandId, polarity: Polarity| {
+            let ran = arena
+                .mint_producer(ProducerNode::Mu { body })
+                .expect("the body resolves");
+            let named = variable(arena, Zone::Intuitionistic, x0());
+            let passed = cut(arena, named, returned);
+            let binder = arena
+                .mint_consumer(ConsumerNode::MuTilde { body: passed })
+                .expect("the body resolves");
+            arena
+                .mint_cut(polarity, ran, binder)
+                .expect("the children resolve")
+        };
+        match case {
+            "kept" => {
+                let kept = arena
+                    .mint_producer(ProducerNode::Thunk { body })
+                    .expect("the body resolves");
+                body = cut(&mut arena, kept, returned);
+            },
+            "forced" => {
+                let forced = arena
+                    .mint_producer(ProducerNode::Thunk { body })
+                    .expect("the body resolves");
+                let force = arena
+                    .mint_consumer(ConsumerNode::Destructor {
+                        tag: DestructorTag::Force,
+                        producers: Box::from([]),
+                        consumers: Box::from([returned]),
+                    })
+                    .expect("the frame resolves");
+                body = arena
+                    .mint_cut(Polarity::Negative, forced, force)
+                    .expect("the children resolve");
+            },
+            "ran" => {
+                let ran = arena
+                    .mint_producer(ProducerNode::Mu { body })
+                    .expect("the body resolves");
+                body = cut(&mut arena, ran, returned);
+            },
+            "let" => body = bound(&mut arena, body, Polarity::Positive),
+            "by-name" => body = bound(&mut arena, body, Polarity::Negative),
+            // reason: `⟨μα.⟨x0 |+ α0⟩ |+ μ̃z. body⟩`: the constructor after the
+            // `μ` it binds.
+            "after" => {
+                let named = variable(&mut arena, Zone::Intuitionistic, x0());
+                let first = cut(&mut arena, named, returned);
+                let ran = arena
+                    .mint_producer(ProducerNode::Mu { body: first })
+                    .expect("the body resolves");
+                let binder = arena
+                    .mint_consumer(ConsumerNode::MuTilde { body })
+                    .expect("the body resolves");
+                body = cut(&mut arena, ran, binder);
+            },
+            // reason: `⟨Q(P(x0, x1)) |+ α0⟩`.
+            "wrapped" => {
+                let outer = arena
+                    .mint_producer(ProducerNode::Constructor {
+                        tag: ConstructorTag::Data {
+                            tag: gandr_kernel_term::ConstructorTag::from(1_usize),
+                            arity: ProducerArity::from(1_usize),
+                            family: gandr_kernel_term::ConstantIndex::from(0_usize),
+                        },
+                        producers: Box::from([point]),
+                        consumers: Box::from([]),
+                    })
+                    .expect("the field resolves");
+                body = cut(&mut arena, outer, returned);
+            },
+            // reason: `⟨x0 |+ case {() ⇒ body}⟩` and `⟨x0 |+ case {A ⇒ body; B ⇒
+            // ⟨x0 |+ α0⟩}⟩`.
+            "split" | "chosen" => {
+                let mut arms = Vec::from([PatternArm {
+                    constructor: ConstructorTag::Tuple(ProducerArity::ZERO),
+                    body,
+                }]);
+                if case == "chosen" {
+                    let named = variable(&mut arena, Zone::Intuitionistic, x0());
+                    let other = cut(&mut arena, named, returned);
+                    arms = Vec::from([
+                        PatternArm {
+                            constructor: ConstructorTag::Data {
+                                tag: gandr_kernel_term::ConstructorTag::from(0_usize),
+                                arity: ProducerArity::ZERO,
+                                family: gandr_kernel_term::ConstantIndex::from(0_usize),
+                            },
+                            body,
+                        },
+                        PatternArm {
+                            constructor: ConstructorTag::Data {
+                                tag: gandr_kernel_term::ConstructorTag::from(1_usize),
+                                arity: ProducerArity::ZERO,
+                                family: gandr_kernel_term::ConstantIndex::from(0_usize),
+                            },
+                            body: other,
+                        },
+                    ]);
+                }
+                let matched = arena
+                    .mint_consumer(ConsumerNode::Case {
+                        arms: Box::from(arms),
+                    })
+                    .expect("the arms resolve");
+                let named = variable(&mut arena, Zone::Intuitionistic, x0());
+                body = cut(&mut arena, named, matched);
+            },
+            // reason: `⟨x1 |− apply(x0; μ̃z. body)⟩`: the constructor waits on
+            // the call's answer.
+            "called" => {
+                let answered = arena
+                    .mint_consumer(ConsumerNode::MuTilde { body })
+                    .expect("the body resolves");
+                let argument = variable(&mut arena, Zone::Intuitionistic, x0());
+                let apply = arena
+                    .mint_consumer(ConsumerNode::Destructor {
+                        tag: DestructorTag::Apply,
+                        producers: Box::from([argument]),
+                        consumers: Box::from([answered]),
+                    })
+                    .expect("the frame resolves");
+                let function = variable(&mut arena, Zone::Intuitionistic, x1());
+                body = arena
+                    .mint_cut(Polarity::Negative, function, apply)
+                    .expect("the children resolve");
+            },
+            _ => {},
+        }
+        for _field in 0_u8 .. 2_u8 {
+            let object = arena
+                .mint_producer(ProducerNode::Cocase {
+                    arms: Box::from([CopatternArm {
+                        destructor: DestructorTag::Apply,
+                        body,
+                    }]),
+                })
+                .expect("the arm resolves");
+            body = arena
+                .mint_cut(Polarity::Negative, object, returned)
+                .expect("the children resolve");
+        }
+        let branch = arena
+            .mint_producer(ProducerNode::Thunk { body })
+            .expect("the body resolves");
+        let matched = arena
+            .mint_consumer(ConsumerNode::DataCase {
+                branches: Box::from([branch]),
+                arities: Box::from([gandr_kernel_term::FieldCount::from(2_usize)]),
+                then: top,
+            })
+            .expect("the branch resolves");
+        let scrutinee = variable(&mut arena, Zone::Intuitionistic, x0());
+        let root = cut(&mut arena, scrutinee, matched);
+
+        let ownership = read(&arena, &[NodeAddress::Command(root)]);
+
+        assert_eq!(ownership.runs(branch), Runs::Once, "{case}");
+        let expected = match case {
+            "dead" | "ran" | "let" | "after" | "wrapped" | "split" => Vec::from([Reuse {
+                matched: root,
+                branch: NodeCount::from(0_usize),
+                built: point,
+            }]),
+            _ => Vec::new(),
+        };
+        assert_eq!(ownership.reuses(), expected.as_slice(), "{case}");
+    }
+}
+
+/// A branch over a one-field constructor that answers a function:
+/// `{force(α) ⇒ ⟨cocase {apply(x; α) ⇒ ⟨cocase {apply(y; α) ⇒ ⟨x0 |+ α0⟩} |−
+/// α0⟩} |− α0⟩}`. The object that takes the field runs once; the one past
+/// the constructor's field count is the branch's answer, which its caller may
+/// apply any number of times, unless the match states a second field.
+#[test]
+fn an_object_past_the_constructor_s_fields_may_run_many_times()
+{
+    for fields in [1_usize, 2] {
+        let mut arena = CommandArena::new();
+        let top = arena.mint_consumer(ConsumerNode::Top).expect("a leaf");
+        let returned = alpha0(&mut arena);
+        let named = variable(&mut arena, Zone::Intuitionistic, x0());
+        let mut body = cut(&mut arena, named, returned);
+        let mut objects = Vec::new();
+        for _level in 0_u8 .. 2_u8 {
+            let object = arena
+                .mint_producer(ProducerNode::Cocase {
+                    arms: Box::from([CopatternArm {
+                        destructor: DestructorTag::Apply,
+                        body,
+                    }]),
+                })
+                .expect("the arm resolves");
+            objects.push(object);
+            body = arena
+                .mint_cut(Polarity::Negative, object, returned)
+                .expect("the children resolve");
+        }
+        let branch = arena
+            .mint_producer(ProducerNode::Thunk { body })
+            .expect("the body resolves");
+        let matched = arena
+            .mint_consumer(ConsumerNode::DataCase {
+                branches: Box::from([branch]),
+                arities: Box::from([FieldCount::from(fields)]),
+                then: top,
+            })
+            .expect("the branch resolves");
+        let scrutinee = variable(&mut arena, Zone::Intuitionistic, x0());
+        let root = cut(&mut arena, scrutinee, matched);
+
+        let ownership = read(&arena, &[NodeAddress::Command(root)]);
+
+        let (answer, taker) = (objects[0], objects[1]);
+        assert_eq!(ownership.runs(taker), Runs::Once, "{fields}");
+        let expected = if fields == 1 { Runs::Many } else { Runs::Once };
+        assert_eq!(ownership.runs(answer), expected, "{fields}");
+    }
+}

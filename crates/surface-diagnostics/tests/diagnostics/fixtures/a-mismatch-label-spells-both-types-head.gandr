@@ -1,0 +1,2 @@
+def f(xs : Vec(Integer)) -> -F Integer =
+  pure 1
