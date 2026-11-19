@@ -282,6 +282,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - allocation: the members of each theory's kept names, durable by the
     ///   collection
     /// - allocation: the refusal of an unbound name, error path
+    /// - allocation: the theories reached through includes and the names held
+    ///   so far, growth within the included theories
     #[inline]
     pub fn resolve_ports(&mut self)
     {
@@ -369,10 +371,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                         .map(|held| held.introduced_by.node)
                 })
                 .collect();
+            let mut held: BTreeSet<_> = members.iter().map(|&(ref name, _)| name.clone()).collect();
             for node in reached {
                 for &(ref name, member) in cx.collected.port_sorts.get(&node).into_iter().flatten()
                 {
-                    if !members.iter().any(|&(ref held, _)| held == name) {
+                    if held.insert(name.clone()) {
                         members.push((name.clone(), member));
                     }
                 }
