@@ -708,3 +708,64 @@ fn the_size_is_one_word_beside_the_larger_half()
         "the length word beside the larger half"
     );
 }
+
+/// At `N` of zero, an empty vector holds a dangling block of capacity zero,
+/// as an empty `Vec` does. So no access tests a tag. The first push draws one
+/// block, and a shrink to no items returns it. An empty array, an empty box
+/// and an empty `Vec` keep the dangling block too.
+#[test]
+fn an_empty_vector_at_n_zero_holds_a_dangling_block_8124()
+{
+    let dangling = NonNull::<u64>::dangling().as_ptr().cast_const();
+    let drawn = Cell::new(0_usize);
+    let counting = Counting {
+        drawn: &drawn,
+        limit: usize::MAX,
+    };
+    let mut vec = SmallVec::<u64, 0, _>::new_in(counting);
+    assert_eq!(
+        (
+            vec.as_slice().as_ptr(),
+            usize::from(vec.capacity()),
+            drawn.get()
+        ),
+        (dangling, 0_usize, 0_usize),
+        "an empty vector holds the dangling block and draws none"
+    );
+    vec.push(7_u64);
+    assert_eq!(
+        (vec.as_slice(), drawn.get()),
+        (&[7_u64][..], 1_usize),
+        "the first push draws one block"
+    );
+    vec.clear();
+    vec.shrink_to_fit();
+    assert_eq!(
+        (
+            vec.as_slice().as_ptr(),
+            usize::from(vec.capacity()),
+            drawn.get()
+        ),
+        (dangling, 0_usize, 1_usize),
+        "a shrink to no items returns the block"
+    );
+    vec.push(8_u64);
+    assert_eq!(
+        (vec.as_slice(), drawn.get()),
+        (&[8_u64][..], 2_usize),
+        "a push after the shrink draws a new block"
+    );
+    let from_array = SmallVec::<u64, 0, Global>::from([]);
+    let boxed = SmallVec::<u64, 0, Global>::new().into_boxed_slice();
+    let unboxed = alloc::vec::Vec::from(SmallVec::<u64, 0, Global>::new());
+    assert_eq!(
+        (
+            from_array.as_slice().as_ptr(),
+            (&raw const *boxed).cast::<u64>(),
+            unboxed.as_ptr(),
+            unboxed.capacity()
+        ),
+        (dangling, dangling, dangling, 0_usize),
+        "an empty array, box and vector keep the dangling block"
+    );
+}
