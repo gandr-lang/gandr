@@ -1,0 +1,30 @@
+[package]
+name = "gandr-theory-graded-posets"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Finite graded posets for gandr: cells as data with a boundary and a rank, the lattice of subcomplexes, and its spectrum read back as the poset"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["cell-complex", "gandr", "graded-poset", "no-std"]
+categories = ["mathematics", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled. Finite Stone duality holds the order as bit
+# rows, enumerates the down-sets that are the subcomplexes, and reads their
+# spectrum.
+[dependencies]
+anodized.workspace = true
+gandr-theory-stone-duality.workspace = true
+
+[lints]
+workspace = true
