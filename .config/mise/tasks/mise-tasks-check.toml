@@ -2339,11 +2339,13 @@ echo "positions check OK: $structs structs, each with its row; rows: $kept kept,
 # The sharing ledger holds a row in `shared` for every shared field. A shared
 # field is a field whose type holds an `Arc`, or a `Shared` or a `ThinShared`
 # of `gandr-kernel-data`, or an alias of one. The type can hold it alone or in
-# an `Option`, a `Maybe`, a `Vec` or a `SmallVec`. An alias is a `type`
-# declaration of the read sources whose right side holds such a pointer in the
-# same way. The field is in a struct or an enum of a kernel crate, or of the
-# fork crate outside its tests. Every row names such a field.
+# an `Option`, a `Maybe`, a `Vec` or a `SmallVec`. The field is in a struct or
+# an enum of a kernel crate, or of the fork crate outside its tests. Every row
+# names such a field.
 # - see: #7339, `ledger/shared.sql`
+#
+# An alias is a `type` declaration of the read sources. Its right side holds
+# such a pointer alone or in one of those containers.
 #
 # A freeze, a fork or a hand-on clones such a field by a count. So the row
 # classes what a write after it does: `chunked`, `layered`, `copied whole`,
@@ -2381,7 +2383,8 @@ pointer='((alloc::sync::|std::sync::|core::sync::)?Arc|(gandr_kernel_data::)?(Sh
 sources=(':(glob)crates/kernel-*/src/**' ':(glob)crates/core-fork/src/**'
   ':(exclude,glob)crates/*/src/**/tests.rs' ':(exclude,glob)crates/*/src/**/*_tests.rs' ':(exclude,glob)crates/*/src/**/tests/**')
 alias="^\s*${visibility}type\s+[A-Z]\w*(<[^>]*>)?\s*=\s*${containers}${pointer}"
-# Each alias of a shared pointer, so that a field of the alias is read too.
+# The gate reads each alias of a shared pointer first, so the field pattern
+# finds a field of the alias.
 aliases=$(git grep -h -I -o -P "^\s*${visibility}type\s+\K[A-Z]\w*(?=(<[^>]*>)?\s*=\s*${containers}${pointer})" -- "${sources[@]}" \
   | sort -u | paste -sd '|' || true)
 holds="${containers}(${pointer}${aliases:+|(\w+::)*(${aliases})\b(?!::)})"

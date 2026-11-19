@@ -10,21 +10,24 @@
 # A freeze, a fork or an `open_scope` clones such a field by a count. So a
 # write after it copies what the field shares, or it adds beside it.
 #
-# The input is the lines `git grep -n` prints for seven patterns over those
-# sources, test files left out: a named field, a tuple variant or a tuple
-# struct whose first field is such a type, an alias of a shared pointer, a
-# struct, an enum or a union that opens, a function that opens, a
-# `#[cfg(test)]` attribute and a `mod` that opens a block. Each line is
-# `<file>:<line>:<text>`. The output is one line per field, `<file>` and
-# `<Type>.<field>` joined by a tab, each once, sorted. A tuple variant's field
-# is `<Type>.<Variant>`, and a tuple struct's is `<Type>.0`.
+# The input holds the lines that `git grep -n` prints over those sources, with
+# no test file. Seven patterns choose the lines. The first finds a named field,
+# a tuple variant or a tuple struct whose first field is such a type. The
+# others find an alias of a shared pointer, a struct, an enum or a union that
+# opens, a function that opens, a `#[cfg(test)]` attribute and a `mod` that
+# opens a block. Each line is `<file>:<line>:<text>`.
+#
+# The output is one line per field, `<file>` and `<Type>.<field>` joined by a
+# tab, each once, sorted. A tuple variant's field is `<Type>.<Variant>`, and a
+# tuple struct's is `<Type>.0`.
 #
 # The program reads the aliases of every file before it reads a field, so a
 # field reads an alias that another file declares. A field belongs to the type
 # that opened last before it in its file. A function or an alias that opened
 # later instead closes that type, and no row names a parameter. A field inside
-# an inline test module is a test's own: the program reads the start of a
-# file's tests as `.config/positions/hits.jq` reads it.
+# an inline test module belongs to the test. The program finds the start of the
+# tests of a file as the hits program of the positions ledger does.
+# - see: `.config/positions/hits.jq`
 
 def parsed:
   capture("^(?<file>[^:]+):(?<line>[0-9]+):(?<text>.*)$") | .line |= tonumber;
