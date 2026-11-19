@@ -31,7 +31,7 @@ pub const HANDOFF: ValueTypeId = ValueTypeId([4; 32]);
 #[spec(requires: !nodes.is_empty())]
 pub fn session(nodes: alloc::vec::Vec<Node>) -> Session
 {
-    Session::new(nodes, NodeId(0)).expect("fixture is closed and contractive")
+    Session::new(nodes.into_iter().collect(), NodeId(0)).expect("fixture is closed and contractive")
 }
 
 /// Attach an opaque body digest to its abstract type.

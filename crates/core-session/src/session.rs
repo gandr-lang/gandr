@@ -1,11 +1,12 @@
 //! Closed, contractive syntax in a flat arena.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
-use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 
 /// A position in one session's syntax arena.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -20,6 +21,13 @@ pub struct ValueTypeId(pub [u8; 32]);
 /// A protocol branch name, compared by exact spelling.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        std_container,
+        reason = "`Label::from` is infallible and `core-checker-base` calls it, while a `SmallString` built from text can refuse"
+    )
+)]
 pub struct Label(pub String);
 
 impl From<&str> for Label
@@ -29,6 +37,13 @@ impl From<&str> for Label
     /// # Specification
     /// trivial.
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            std_container,
+            reason = "`Label::from` is infallible and `core-checker-base` calls it, while a `SmallString` built from text can refuse"
+        )
+    )]
     fn from(value: &str) -> Self
     {
         Self(String::from(value))
@@ -146,7 +161,7 @@ impl core::error::Error for TypeError
 pub struct Session
 {
     /// The exclusively owned syntax tree, including variable leaves.
-    nodes: Vec<Node>,
+    nodes: SmallVec<Node, 0, Global>,
     /// The root of the syntax tree.
     root: NodeId,
 }
@@ -214,14 +229,15 @@ impl Session
     )]
     #[inline]
     pub fn new(
-        nodes: Vec<Node>,
+        nodes: SmallVec<Node, 0, Global>,
         root: NodeId,
     ) -> Result<Self, TypeError>
     {
         let session = Self { nodes, root };
         let mut seen = BTreeSet::new();
         let mut binders = BTreeSet::new();
-        let mut pending = alloc::vec![Visit::Enter(root)];
+        let mut pending = SmallVec::<Visit, 0, Global>::new();
+        pending.push(Visit::Enter(root));
         while let Some(visit) = pending.pop() {
             let id = match visit {
                 Visit::Leave(id) => {

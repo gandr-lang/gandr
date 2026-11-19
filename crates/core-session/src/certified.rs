@@ -6,7 +6,6 @@
 
 use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
-use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_core::Convertibility;
@@ -160,6 +159,13 @@ impl core::error::Error for TransportError
     Err(_) => false,
 })]
 #[inline]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        std_container,
+        reason = "a code's label is `kernel-term`'s `session::Label`, a `String` that `core-checker-bridge` builds"
+    )
+)]
 pub fn encode(
     arena: &mut TermArena,
     session: &Session,
@@ -203,7 +209,13 @@ pub fn encode(
             Node::Var(binder) => CodeNode::Var(State(binder.0)),
         });
     }
-    let telescope = arena.value_type_product(&payloads.0.values().copied().collect::<Vec<_>>());
+    let telescope = arena.value_type_product(
+        &payloads
+            .0
+            .values()
+            .copied()
+            .collect::<SmallVec<_, 0, Global>>(),
+    );
     let graph = Shared::new(Graph {
         nodes,
         root: State(session.root().0),
@@ -338,7 +350,7 @@ pub fn transport(
     protocols: (Protocol<'_>, Protocol<'_>),
     moves: &[Move],
     budget: ReplayBudget,
-) -> Result<Vec<Move>, TransportError>
+) -> Result<SmallVec<Move, 0, Global>, TransportError>
 {
     let watermark = arena.watermark();
     let result = checked_transport(arena, certificate, protocols, moves, budget);
@@ -376,7 +388,7 @@ fn checked_transport(
     protocols: (Protocol<'_>, Protocol<'_>),
     moves: &[Move],
     budget: ReplayBudget,
-) -> Result<Vec<Move>, TransportError>
+) -> Result<SmallVec<Move, 0, Global>, TransportError>
 {
     let classifier =
         form_certificate(arena, certificate, Family::Flow, budget).map_err(TransportError::Flow)?;
@@ -435,7 +447,7 @@ pub fn advance(
     protocols: (&Session, &Session),
     evidence: &gandr_kernel_term::session::Evidence,
     moves: &[Move],
-) -> Result<Vec<Move>, TransportError>
+) -> Result<SmallVec<Move, 0, Global>, TransportError>
 {
     let (source, target) = protocols;
     replay(source, moves).map_err(TransportError::Replay)?;
@@ -474,7 +486,7 @@ pub fn advance_prefix(
     protocols: (&Session, &Session),
     evidence: &gandr_kernel_term::session::Evidence,
     moves: &[Move],
-) -> Result<Vec<Move>, TransportError>
+) -> Result<SmallVec<Move, 0, Global>, TransportError>
 {
     let (source, target) = protocols;
     opened(replay(source, moves))?;
@@ -521,12 +533,12 @@ fn along(
     protocols: (&Session, &Session),
     evidence: &gandr_kernel_term::session::Evidence,
     moves: &[Move],
-) -> Result<Vec<Move>, TransportError>
+) -> Result<SmallVec<Move, 0, Global>, TransportError>
 {
     let (source, target) = protocols;
     let mut source_state = source.root();
     let mut target_state = target.root();
-    let mut output = Vec::with_capacity(moves.len());
+    let mut output = SmallVec::with_capacity_in(Count::from(moves.len()), Global);
     for (index, movement) in moves.iter().enumerate() {
         let (left, a) = source.head(source_state).map_err(TransportError::Type)?;
         let (right, b) = target.head(target_state).map_err(TransportError::Type)?;
