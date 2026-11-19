@@ -1807,7 +1807,7 @@ fn a_computation_written_as_a_projected_record_runs_1106()
     let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
     let unit = arena.value_type_unit();
     let integer = arena.value_type_base(BaseType::Integer);
-    // `outer : *{inner : *{x : Integer}} = *{inner = *{x = 0}}`.
+    // `outer : *{inner : *{x : Integer}} = *{.inner = *{.x = 0}}`.
     let inner_type =
         arena.value_type_record(alloc::collections::BTreeMap::from([(label("x"), integer)]));
     let outer_type = arena.value_type_record(alloc::collections::BTreeMap::from([(

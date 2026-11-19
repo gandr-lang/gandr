@@ -1826,7 +1826,7 @@ sketch/environments/tactics.gandr:module_declaration:a93c288035ae3d0e uncommente
 sketch/foreign/mlir.gandr:module_declaration:2d8db61181a80077 uncommented
 sketch/model-refinement/forgetting.gandr:T:f7d85ed8d2c13eaf uncommented
 sketch/model-refinement/operations.gandr:size:0a036c2d7559492b uncommented
-sketch/model-refinement/operations.gandr:size:bc6eb9fd41f7a7b7 uncommented
+sketch/model-refinement/operations.gandr:size:50869f15b3c8224c uncommented
 sketch/model-refinement/operations.gandr:size:ff1eb19b0d239f31 uncommented
 sketch/providers/provider.gandr:module_declaration:449831ed16ff1c8f uncommented
 sketch/user-notation/derive.gandr:Point.Point:ca18de0a9ac4a649 uncommented
@@ -1847,7 +1847,7 @@ surface/arity/lazy-record.gandr:observe:08a2f6d7478f210e uncommented
 surface/arity/lazy-record.gandr:offered:b83ff33cac2bdfdc uncommented
 surface/arity/lazy-record.gandr:unthunked:5148d9d554e5dd1a uncommented
 surface/arity/product.gandr:<file> uncommented
-surface/arity/product.gandr:bumped:b318ccdae3438fe0 uncommented
+surface/arity/product.gandr:bumped:d2c0363d9667e109 uncommented
 surface/arity/product.gandr:last:933d6f7cda6759b0 uncommented
 surface/arity/product.gandr:none:6f8df3719f634b8d uncommented
 surface/arity/product.gandr:none:9ba287253acdd559 uncommented
@@ -1862,13 +1862,13 @@ surface/arity/product.gandr:sigma:6f98f5a741541d51 uncommented
 surface/arity/product.gandr:three:4af65bfe527e1109 uncommented
 surface/arity/product.gandr:three:a2a247fc72c54f14 uncommented
 surface/arity/records.gandr:named:ff67d3e8d367b410 uncommented
-surface/arity/records.gandr:numbered:f7026997966e3243 uncommented
+surface/arity/records.gandr:numbered:bf21abb126ee23d2 uncommented
 surface/arity/records.gandr:point:06d6fb1f61a2ca40 uncommented
 surface/arity/records.gandr:point:1ae0a01ae124c0a5 uncommented
 surface/arity/records.gandr:punned:52a4efaec4e17c32 uncommented
 surface/arity/records.gandr:renamed:fa35aaf36c934147 uncommented
+surface/arity/records.gandr:shorthand:1794af4c0959b5a1 uncommented
 surface/arity/records.gandr:shorthand:ea514e2f12ad4b20 uncommented
-surface/arity/records.gandr:shorthand:ef8b8688431b5a1c uncommented
 surface/arity/records.gandr:whole:c364a5091f110108 uncommented
 surface/arity/records.gandr:whole:d1b6d92754785b55 uncommented
 surface/arity/records.gandr:widened:1a4d18fd62ca85ea uncommented

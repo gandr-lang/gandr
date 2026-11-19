@@ -10,8 +10,8 @@ def sugared = *{1, "a", *{}};
 def single = *{1,};
 def point : *{n : Integer, s : String};
 def point = *{.s = "x", .n = 3};
-def shorthand = *{n = 3, s = "x"};
-def bumped = *{point | n = 4};
+def shorthand = *{.n = 3, .s = "x"};
+def bumped = *{point | .n = 4};
 def sigma : *{k : Integer, v : k};
 def last(t : *{Integer, Integer, Integer}) -> -F Integer =
   match t { | *{x, y, z} => return z }

@@ -111,7 +111,7 @@ enum Placement
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Holder
 {
-    /// `*{a = c}`.
+    /// `*{.a = c}`.
     Record,
     /// `c ⊗ c`.
     PathProduct,

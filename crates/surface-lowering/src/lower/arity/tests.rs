@@ -860,7 +860,7 @@ fn a_field_of_a_record_no_type_states_projects_its_label_1106()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def outer = *{ tag = \"t\", inner = *{ x = 1, y = 2 } } ; def one() -> -F *{x : \
+        "def outer = *{ .tag = \"t\", .inner = *{ .x = 1, .y = 2 } } ; def one() -> -F *{x : \
          Integer, y : Integer} { outer.inner } def two() -> -F Integer { outer.inner.x }",
         &mut arena,
     );
@@ -895,7 +895,7 @@ fn a_sub_record_binds_each_field_and_returns_their_record()
     let mut arena = CoreArena::new();
     let module = lowered(
         "def pick(r : *{a : Integer, b : Integer, c : Integer}) -> -F *{c : Integer, a : \
-         Integer} { r.*{.c, .a} } def outer = *{ x = 1, y = 2 } ; def free() -> -F *{y : \
+         Integer} { r.*{.c, .a} } def outer = *{ .x = 1, .y = 2 } ; def free() -> -F *{y : \
          Integer} { outer.*{.y} }",
         &mut arena,
     );
@@ -1038,8 +1038,7 @@ fn a_telescope_value_lowers_by_its_arity()
     let mut arena = CoreArena::new();
     let module = lowered(
         "def none = *{} ; def one = *{1} ; def two = *{1, \"b\"} ; def trailing = *{1, \"b\",} ; \
-         def reordered = *{.1 = \"b\", .0 = 1} ; def dotted = *{.s = \"x\", .n = 3} ; def \
-         shorthand = *{n = 3, s = \"x\"} ;",
+         def reordered = *{.1 = \"b\", .0 = 1} ; def dotted = *{.s = \"x\", .n = 3} ;",
         &mut arena,
     );
 
@@ -1072,10 +1071,14 @@ fn a_telescope_value_lowers_by_its_arity()
         Some("record{n,s}"),
         "dotted labels make the record keyed by them"
     );
+    let bare = "def bare = *{n = 3} ;";
     assert_eq!(
-        body(&arena, &module, "shorthand"),
-        body(&arena, &module, "dotted"),
-        "and the shorthand `l = e` is the same record, in either order"
+        refused(bare),
+        LoweringRefusal::RetiredName {
+            span: at(bare, "n", 0_usize),
+            form: gandr_surface_grammar::RetiredForm::BareRecordField,
+        },
+        "a field with no dot is the retired spelling, refused at its key"
     );
     // Two entries side by side are one entry, an application. So the case
     // writes a tile that neither separates nor closes the entry before it.
@@ -1095,8 +1098,8 @@ fn a_record_update_lowers_to_its_base_and_its_fields()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def r = *{n = 1} ; def one = *{r | n = 2} ; def written = *{n = 2} ; def two = *{r | n = \
-         2, m = \"a\",} ; def both = *{m = \"a\", n = 2} ;",
+        "def r = *{.n = 1} ; def one = *{r | .n = 2} ; def written = *{.n = 2} ; def two = *{r | \
+         .n = 2, .m = \"a\",} ; def both = *{.m = \"a\", .n = 2} ;",
         &mut arena,
     );
     let over = |record: &str| {
@@ -1116,7 +1119,7 @@ fn a_record_update_lowers_to_its_base_and_its_fields()
         over("both"),
         "the fields it writes make one record keyed by them, a trailing comma closing them"
     );
-    let source = "def r = *{n = 1} ; def twice = *{r | n = 2, n = 3} ;";
+    let source = "def r = *{.n = 1} ; def twice = *{r | .n = 2, .n = 3} ;";
     assert_eq!(
         refused(source),
         LoweringRefusal::DuplicateDefinition {
@@ -1125,6 +1128,15 @@ fn a_record_update_lowers_to_its_base_and_its_fields()
             first: at(source, "n", 1_usize),
         },
         "an update writes a field once"
+    );
+    let bare = "def r = *{.n = 1} ; def bare = *{r | n = 2} ;";
+    assert_eq!(
+        refused(bare),
+        LoweringRefusal::RetiredName {
+            span: at(bare, "n", 1_usize),
+            form: gandr_surface_grammar::RetiredForm::BareUpdateField,
+        },
+        "an update's field with no dot is the retired spelling, refused at its key"
     );
 }
 

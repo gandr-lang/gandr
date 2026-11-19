@@ -16,8 +16,9 @@ autotests = false
 # crate holds the lowering's context, the records that the families share and
 # the `Families` trait, through which this family reads the context and calls
 # the other families. The kernel and core crates name the terms the family
-# mints and the levels of a universe, the syntax crate the tree it reads, and
-# the levitation crate the theories a model signature derives from. `hotpath`
+# mints and the levels of a universe, the grammar crate the retired spellings
+# the family refuses by name, the syntax crate the tree it reads, and the
+# levitation crate the theories a model signature derives from. `hotpath`
 # profiles a model slot's candidates and a reduct's maps for the benchmark
 # report.
 [dependencies]
@@ -25,6 +26,7 @@ anodized.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
+gandr-surface-grammar.workspace = true
 gandr-surface-lowering-base.workspace = true
 gandr-surface-syntax.workspace = true
 gandr-theory-levitation.workspace = true

@@ -25,7 +25,7 @@
 //! |static application|synthesise|the head synthesises one static Pi per argument; each argument checks against its Pi's domain; the application has the last codomain|
 //! |dependent split|synthesise|the scrutinee synthesises `Σ (x : A). B`; the motive `C` forms under a binder of the Σ; the body checks against `C` at the pair of its two binders, `x : A` outermost; the split has `C` at the scrutinee|
 //! |tuple projection|synthesise|the tuple synthesises a product or a Σ; at a Σ the first projection has `A` and the second `B` at the first projection|
-//! |record update `*{b \| l = a, …}`|synthesise|the base synthesises a record, a computation written there running first and read at what it returns; the overlay's fields synthesise; the update has the base's record with each written label at its written type — a label the base lacks extends it, one at another type retypes it — and the base's other labels kept|
+//! |record update `*{b \| .l = a, …}`|synthesise|the base synthesises a record, a computation written there running first and read at what it returns; the overlay's fields synthesise; the update has the base's record with each written label at its written type — a label the base lacks extends it, one at another type retypes it — and the base's other labels kept|
 //! |return|check against `F A`, or synthesise|checked, the value checks against `A`; synthesised, the value synthesises `A` and the return the pure returner of `A`|
 //!
 //! A bind and a pair are the formers of either mode, and so is a return. A

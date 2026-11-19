@@ -705,7 +705,7 @@ fn circuit_contextual_keywords_still_bind_as_names() -> Result<(), Failure>
         "def feed = 1;",
         "def use() -> -F Integer { let node = 1; pure node }",
         "def project(sort : Integer) -> -F Integer { return sort }",
-        "def record = *{ node = 1, feed = 2 };",
+        "def record = *{ .node = 1, .feed = 2 };",
     ];
     for &src in binding {
         let result = parse(pbg, SourceText::from(src))?;

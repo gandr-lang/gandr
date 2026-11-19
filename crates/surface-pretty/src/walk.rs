@@ -1356,7 +1356,7 @@ where
                 arity,
                 Admits::Value,
                 Binds::NONE,
-                Some(Label::Overwrite),
+                Some(Label::Assignment),
             ));
             slots
         },
@@ -3093,10 +3093,8 @@ enum Label
 {
     /// A record type's field label: `l : A`.
     Field,
-    /// A record's field label: `.l = a`.
+    /// A field label of a record or of a record update: `.l = a`.
     Assignment,
-    /// A record update's field label: `l = a`.
-    Overwrite,
     /// The summand an injection enters: `.i = v`.
     Summand,
 }
@@ -3405,7 +3403,7 @@ enum Join
         entries: Entries,
     },
     /// A record update over its base and this many labelled fields,
-    /// `*{b | l = a, …}`.
+    /// `*{b | .l = a, …}`.
     Update(Arity),
     /// A patched type over its base and this many labelled values,
     /// `B.#{.l = v, …}`.
@@ -7461,7 +7459,7 @@ impl Walk<'_, '_>
     {
         let spelled = match label {
             Label::Summand => format!(".{} = ", usize::from(index)),
-            Label::Field | Label::Assignment | Label::Overwrite => {
+            Label::Field | Label::Assignment => {
                 let held = source.label(of, index);
                 let mut text: &str = held.as_ref().map_or("", AsRef::as_ref);
                 if let Some(reason) = unwritable(Name::from(text), self.spelling) {
@@ -7476,7 +7474,6 @@ impl Walk<'_, '_>
                 }
                 match label {
                     Label::Field => format!("{text} : "),
-                    Label::Overwrite => format!("{text} = "),
                     Label::Assignment | Label::Summand => format!(".{text} = "),
                 }
             },

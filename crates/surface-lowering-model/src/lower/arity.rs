@@ -163,6 +163,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Summand;
+use gandr_surface_grammar::RetiredForm;
 pub(super) use gandr_surface_lowering_base::lower::arity::Arranged;
 pub(super) use gandr_surface_lowering_base::lower::arity::Dependent;
 pub(super) use gandr_surface_lowering_base::lower::arity::Entry;
@@ -248,7 +249,7 @@ pub(super) enum Telescoped<'source>
 {
     /// The telescope's own entries.
     Entries(Vec<Entry<'source>>),
-    /// The update `*{ e | l = a, … }`: its base, and the fields it writes.
+    /// The update `*{ e | .l = a, … }`: its base, and the fields it writes.
     Update(Placed, Vec<Entry<'source>>),
 }
 
@@ -544,32 +545,33 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     }
 
     /// Read the hole-led entries of a telescope value up to `}`: each a
-    /// positional `e`, or the shorthand `l = e` whose key is a bare name; or
-    /// the update `*{ e | l = a, … }`.
+    /// positional `e`; or the update `*{ e | .l = a, … }`. The undotted field
+    /// `l = e` is refused by name.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the telescope's `*{`.
-    /// - ensures: every entry in written order, the cursor exhausted; for an
-    ///   update, its base and the fields it writes.
-    /// - fails: a key that is not a bare name, a misplaced tile — a `|` after
-    ///   any entry but one positional first one — and a hole's own fault.
+    /// - ensures: every entry in written order, each positional, the cursor
+    ///   exhausted; for an update, its base and the fields it writes.
+    /// - fails: the retired spelling at an undotted field `l = e`; a key that
+    ///   is not a bare name, a misplaced tile — a `|` after any entry but one
+    ///   positional first one — and a hole's own fault.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::MalformedForm`] and
-    /// [`LoweringRefusal::UnknownMold`].
+    /// [`LoweringRefusal::RetiredName`], [`LoweringRefusal::MalformedForm`]
+    /// and [`LoweringRefusal::UnknownMold`].
     ///
     /// # Termination
     /// Every round consumes at least one piece of the finite cursor or
     /// refuses.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the unit, positional entries, the shorthand, and an
-    ///   update.
+    /// - hypothesis: L3 — the unit, positional entries, the undotted field, and
+    ///   an update.
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_telescope_value_lowers_by_its_arity`
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_record_update_lowers_to_its_base_and_its_fields`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| match *read {
-        | Telescoped::Entries(ref entries) => entries.iter().all(|entry| !matches!(entry.key, Key::Index(..))),
+        | Telescoped::Entries(ref entries) => entries.iter().all(|entry| entry.key == Key::Positional),
         | Telescoped::Update(_, ref written) => !written.is_empty(),
     }))]
     fn hole_entries(
@@ -581,25 +583,23 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
         let mut entries = Vec::new();
         while let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
             let first = site.one(cursor.operands())?;
-            let entry = if let Maybe::Present(_) = cursor.tile(TileName::EQUALS) {
+            if let Maybe::Present(_) = cursor.at(TileName::EQUALS) {
                 if !matches!(self.cx().form_at(first)?, Some((name, _)) if name == FormName::IDENTIFIER)
                 {
                     return Err(site.fault(first.span, FormFault::MisplacedTile));
                 }
-                Entry {
-                    key: Key::Label(self.cx().name_at(first), first),
-                    held: Held::Operand(site.one(cursor.operands())?),
-                }
+                return Err(LoweringRefusal::RetiredName {
+                    span: first.span,
+                    form: RetiredForm::BareRecordField,
+                });
             }
-            else {
-                Entry {
-                    key: Key::Positional,
-                    held: Held::Operand(first),
-                }
+            let entry = Entry {
+                key: Key::Positional,
+                held: Held::Operand(first),
             };
             // An update's base is the telescope's one positional entry.
             if let Maybe::Present(bar) = cursor.tile(TileName::BAR) {
-                if !entries.is_empty() || entry.key != Key::Positional {
+                if !entries.is_empty() {
                     return Err(site.fault(bar.span, FormFault::MisplacedTile));
                 }
                 return Ok(Telescoped::Update(
@@ -615,17 +615,19 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
         Ok(Telescoped::Entries(entries))
     }
 
-    /// Read the fields an update writes, `l = e, …`, up to `}`.
+    /// Read the fields an update writes, `.l = e, …`, up to `}`.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the update's `|`, at `bar`.
     /// - ensures: one labelled entry per field in written order, the cursor
     ///   exhausted.
-    /// - fails: a misplaced tile where a field's name or its `=` should stand,
-    ///   and at `bar` when no field is written; a hole's own fault.
+    /// - fails: the retired spelling at a field written with no dot; a
+    ///   misplaced tile where a field's name or its `=` should stand, and at
+    ///   `bar` when no field is written; a hole's own fault.
     /// - panics: none.
     ///
     /// # Errors
+    /// [`LoweringRefusal::RetiredName`] and
     /// [`LoweringRefusal::MalformedForm`].
     ///
     /// # Termination
@@ -633,7 +635,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// refuses.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an update of one field and of two.
+    /// - hypothesis: L3 — an update of one field and of two, and a field with
+    ///   no dot.
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_record_update_lowers_to_its_base_and_its_fields`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |written| !written.is_empty() && written.iter().all(|entry| matches!(entry.key, Key::Label(..)))))]
     fn update_fields(
@@ -645,10 +648,17 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     {
         let mut written = Vec::new();
         while let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
+            let dotted = cursor.tile(TileName::DOT);
             let Maybe::Present(word) = cursor.tile(TileName::IDENTIFIER)
             else {
                 return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
             };
+            if let Maybe::Absent(_) = dotted {
+                return Err(LoweringRefusal::RetiredName {
+                    span: word.span,
+                    form: RetiredForm::BareUpdateField,
+                });
+            }
             closed(site, cursor, TileName::EQUALS)?;
             written.push(Entry {
                 key: Key::Label(self.cx().name_at(word), word),
@@ -1530,8 +1540,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
         Ok(())
     }
 
-    /// Classify a telescope value, `*{a, …}`, `*{.l = a, …}`, `*{.l, …}` or
-    /// `*{l = a, …}`, or the update `*{e | l = a, …}`.
+    /// Classify a telescope value, `*{a, …}`, `*{.l = a, …}` or `*{.l, …}`,
+    /// or the update `*{e | .l = a, …}`.
     ///
     /// # Specification
     /// - requires: `site` is a telescope value in term position.
@@ -1549,9 +1559,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     /// The telescope's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the unit, one, three, reordered indices, a record by
-    ///   dotted labels and by the shorthand, each asserted as the exact core
-    ///   value.
+    /// - hypothesis: L3 — the unit, one, three, reordered indices and a record
+    ///   by dotted labels, each asserted as the exact core value; a field with
+    ///   no dot, in a literal and in an update, is refused by name.
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_telescope_value_lowers_by_its_arity`
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_record_update_lowers_to_its_base_and_its_fields`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Tuple(_) | Plan::Record(_) | Plan::RecordUpdate(..)))))]

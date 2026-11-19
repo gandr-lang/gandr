@@ -149,7 +149,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression handle", Standing::Owed(0)),
     ("Expression hold", Standing::Owed(0)),
     // The first label of each level of the iterated pair's `let` spine,
-    // `*{l = s19, r = s19}`: a record whose fields hold one value gives its
+    // `*{.l = s19, .r = s19}`: a record whose fields hold one value gives its
     // first label no entry (#5827).
     ("Expression identifier", Standing::Owed(20)),
     ("Expression if", Standing::Owed(0)),

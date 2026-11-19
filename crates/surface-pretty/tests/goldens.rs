@@ -1439,7 +1439,7 @@ fn records_spell_their_fields_in_label_order()
 }
 
 /// A record update spells its base, then each field it writes after its
-/// undotted label, in label order whatever order they were given in, as the
+/// dotted label, in label order whatever order they were given in, as the
 /// grammar writes the update.
 #[test]
 fn a_record_update_spells_its_base_and_the_fields_it_writes()
@@ -1457,7 +1457,7 @@ fn a_record_update_spells_its_base_and_the_fields_it_writes()
     let source = CoreSource::new(&core, &[]);
     assert_eq!(
         spelled(&source, Root::Value(CoreNode::Value(update))),
-        faithful(Written("*{*{.a = 1} | a = 2, b = \"two\"}")),
+        faithful(Written("*{*{.a = 1} | .a = 2, .b = \"two\"}")),
         "the update spells its base and the fields it writes"
     );
 }
