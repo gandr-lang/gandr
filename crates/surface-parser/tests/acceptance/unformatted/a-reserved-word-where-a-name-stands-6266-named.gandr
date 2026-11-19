@@ -1,0 +1,2 @@
+def mux : Integer ;
+def mux = 1 ;

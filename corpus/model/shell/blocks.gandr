@@ -1,0 +1,15 @@
+//! `blocks` gives a shell block with one host command.
+//!
+//! The lowering refuses a shell block.
+//!
+//! A host escape passes one gandr string to a host command.
+//! Spaces stay in its argument.
+//!
+//! - see: #1057 — `greeted`
+
+/// `greeted` gives `printf` one host-escape argument with spaces.
+@[refuses("OutOfFragment.shell_block")]
+def greeted() -> Unit =
+  #!{
+    printf 'hello from the host\n<%s>\n' $("one argv with spaces");
+  }

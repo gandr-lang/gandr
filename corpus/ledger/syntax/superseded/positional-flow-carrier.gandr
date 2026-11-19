@@ -1,0 +1,5 @@
+/// `positional_flow_carrier`: a flow type that writes its carrier first, by
+/// position. The head takes its carrier by name, `Flow[.A = A] a b`, and
+/// the reader refuses the carrier written first.
+@[refuses("RetiredSpelling.positional_flow_carrier")]
+def p : Flow Integer 4 4;

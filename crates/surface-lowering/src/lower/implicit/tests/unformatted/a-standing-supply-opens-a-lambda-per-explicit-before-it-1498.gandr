@@ -1,0 +1,2 @@
+{swap}def standing : +U ((s : Type) -> (t : Type) -> (v : {result}) -> -F {result}) ;
+def standing = swapAt[.g = fun (y) {{ y }}] ;
