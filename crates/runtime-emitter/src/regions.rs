@@ -2165,10 +2165,38 @@ mod tests
     }
 
     /// The space is a power of two that the host maps again as one probe,
-    /// and the host refuses twice it, unless it is 2⁴⁷ bytes.
+    /// and the host refuses twice it, unless it is 2⁴⁷ bytes. The probe runs
+    /// in a process of its own: a reservation of another test of the suite
+    /// makes the space smaller while it lives, and twice that space maps
+    /// once it goes.
     #[cfg(unix)]
     #[test]
     fn the_space_is_the_largest_probe_that_the_host_grants_6877()
+    {
+        let ran =
+            std::process::Command::new(std::env::current_exe().expect("the test binary is named"))
+                .args([
+                    "--exact",
+                    "regions::tests::the_space_probe_alone_child_8078",
+                    "--ignored",
+                    "--test-threads=1",
+                ])
+                .output()
+                .expect("the child runs");
+        let transcript = String::from_utf8_lossy(&ran.stdout);
+        assert!(
+            ran.status.success() && transcript.contains("1 passed"),
+            "{transcript}\n{}",
+            String::from_utf8_lossy(&ran.stderr)
+        );
+    }
+
+    /// The probe of the space with no other test in its process. The parent
+    /// test reads its exit.
+    #[cfg(unix)]
+    #[test]
+    #[ignore = "run by `the_space_is_the_largest_probe_that_the_host_grants_6877` as a child process"]
+    fn the_space_probe_alone_child_8078()
     {
         let Space::Bounded(space) = Space::host()
         else {
