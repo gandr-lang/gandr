@@ -350,7 +350,6 @@ fixture/model/modules/model-constant.gandr	115	4	2440
 fixture/model/modules/model-constant.gandr	119	4	2440
 fixture/model/modules/model-constant.gandr	136	1	2440
 fixture/model/modules/model-functor.gandr	204	6	2440
-fixture/model/modules/model-functor.gandr	208	6	2440
 fixture/model/modules/model-functor.gandr	215	1	2440
 fixture/model/modules/model-functor.gandr	216	1	2440
 fixture/model/modules/model-functor.gandr	225	1	2440
@@ -778,7 +777,6 @@ fixture/pathological/modules/translated-uncovered.gandr	14	1	2440
 fixture/pathological/modules/translated-uncovered.gandr	17	1	2440
 fixture/pathological/modules/translated-uncovered.gandr	19	1	2440
 fixture/pathological/modules/translated.gandr	14	1	2440
-fixture/pathological/modules/translated.gandr	32	1	2440
 fixture/pathological/modules/translated.gandr	35	1	2440
 fixture/pathological/modules/translated.gandr	37	1	2440
 fixture/pathological/moves/closed-after-move.gandr	38	1	2440

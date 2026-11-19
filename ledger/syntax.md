@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0xc5a9fa6a56c212c5`
-- Rules: 176 — 175 committed, 1 internal
-- Molds: 3163
+- Grammar fingerprint: `0x87629fde08d2d09c`
+- Rules: 161 — 160 committed, 1 internal
+- Molds: 3122
 - Attributes: 20
 
 ## Reading a form
@@ -65,7 +65,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`as_pattern`](../corpus/ledger/syntax/as-pattern.gandr) | `PATTERN ⦅ @ ‖ .@ ⦆ PATTERN` | `pattern.as` | `as_pattern` | admitted | Other |
 | [`identifier.pattern`](../corpus/ledger/syntax/identifier.pattern.gandr) | `‹identifier›` | `pattern.atom` | `identifier` | admitted | Variable |
 
-## `expression` — 88 rules
+## `expression` — 73 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
@@ -124,7 +124,6 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`migrate_expression`](../corpus/ledger/syntax/migrate-expression.gandr) | `migrate [ ‹identifier› ] BLOCK` | `expression.atom` | `migrate_expression` | admitted | Keyword, Other, Label |
 | [`fork_expression`](../corpus/ledger/syntax/fork-expression.gandr) | `fork ⦅ ! ⦆? ( ‹identifier› : TYPE ) EXPRESSION` | `expression.atom` | `fork_expression` * | admitted | Keyword, Other, VariableParam |
 | [`access_expression`](../corpus/ledger/syntax/access-expression.gandr) | `access ⦅ shared ‖ exclusive ⦆? ‹identifier› ⦅ .#[ EXPRESSION ] ⦆? as ‹identifier› BLOCK ⦅ unwind BLOCK ⦆?` | `expression.atom` | `access_expression` * | admitted | Keyword, Other, Variable, VariableDef |
-| [`shell_block`](../corpus/ledger/syntax/shell-block.gandr) | `#!{ ⦅ EXPRESSION ⦆? }` | `expression.atom` | `shell_block` | unadmitted | Other |
 | [`send_expression`](../corpus/ledger/syntax/send-expression.gandr) | `send EXPRESSION` | `expression.unary` | `send_expression` | admitted | Keyword |
 | [`close_expression`](../corpus/ledger/syntax/close-expression.gandr) | `close EXPRESSION` | `expression.unary` | `close_expression` | admitted | Keyword |
 | [`select_expression`](../corpus/ledger/syntax/select-expression.gandr) | `select EXPRESSION` | `expression.unary` | `select_expression` | admitted | Keyword |
@@ -142,20 +141,6 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`typed_number.expression`](../corpus/ledger/syntax/typed-number.expression.gandr) | `‹typed_number›` | `expression.atom` | `typed_number` | admitted | Number |
 | [`character`](../corpus/ledger/syntax/character.gandr) | `‹character›` | `expression.atom` | `character` | admitted | Character |
 | [`string.expression`](../corpus/ledger/syntax/string.expression.gandr) | `" ⦅ ‹escape_sequence› ‖ ‹string_fragment› ‖ ${ EXPRESSION } ⦆* "` | `expression.atom` | `string` | admitted | StringLit, Escape, Other |
-| [`list_operator`](../corpus/ledger/syntax/list-operator.gandr) | `; ‖ & ‖ newline` | `expression.atom` | `list_operator` | admitted | Operator |
-| [`pipeline.pipe`](../corpus/ledger/syntax/pipeline.pipe.gandr) | `EXPRESSION \| EXPRESSION` | `expression.postfix` | `pipeline` | admitted | Operator |
-| [`pipeline.pipe_both`](../corpus/ledger/syntax/pipeline.pipe-both.gandr) | `EXPRESSION \|& EXPRESSION` | `expression.postfix` | `pipeline` | admitted | Operator |
-| [`environment_assignment`](../corpus/ledger/syntax/environment-assignment.gandr) | `‹environment_assignment›` | `expression.atom` | `environment_assignment` | admitted | VariableParam |
-| [`shell_word`](../corpus/ledger/syntax/shell-word.gandr) | `‹shell_word›` | `expression.atom` | `shell_word` | admitted | Path |
-| [`single_quoted_string`](../corpus/ledger/syntax/single-quoted-string.gandr) | `' ‹single_quoted_content› '` | `expression.atom` | `single_quoted_string` | admitted | StringLit |
-| [`double_quoted_string`](../corpus/ledger/syntax/double-quoted-string.gandr) | `" ⦅ ‹double_string_fragment› ‖ ‹escape_sequence› ‖ ⟨variable_expansion⟩ ⦆* "` | `expression.atom` | `double_quoted_string` | admitted | StringLit, Escape, Other, Variable |
-| [`variable_expansion`](../corpus/ledger/syntax/variable-expansion.gandr) | `$ ‹variable_name› ‖ ${ ‹variable_name› }` | `expression.atom` | `variable_expansion` | admitted | Other, Variable |
-| [`variable_name`](../corpus/ledger/syntax/variable-name.gandr) | `‹variable_name›` | `expression.atom` | `variable_name` | admitted | Variable |
-| [`command_substitution`](../corpus/ledger/syntax/command-substitution.gandr) | `$!{ }` | `expression.atom` | `command_substitution` | admitted | Other |
-| [`host_escape`](../corpus/ledger/syntax/host-escape.gandr) | `$ ( EXPRESSION )` | `expression.atom` | `host_escape` | admitted | Other |
-| [`subshell`](../corpus/ledger/syntax/subshell.gandr) | `[ ⦅ EXPRESSION ⦆? ]` | `expression.atom` | `subshell` | admitted | Other |
-| [`file_descriptor`](../corpus/ledger/syntax/file-descriptor.gandr) | `‹file_descriptor›` | `expression.atom` | `file_descriptor` | admitted | Number |
-| [`redirection_operator`](../corpus/ledger/syntax/redirection-operator.gandr) | `<> ‖ <& ‖ >& ‖ >> ‖ < ‖ >` | `expression.atom` | `redirection_operator` | admitted | Operator |
 | [`forget_model_expression`](../corpus/ledger/syntax/forget-model-expression.gandr) | `forget [ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ] ( EXPRESSION ) at TYPE` | `expression.pure` | `forget_model_expression` * | admitted | Other, Keyword |
 
 ## `type` — 45 rules
@@ -298,7 +283,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`builtin`](../corpus/ledger/attributes/builtin.gandr) | a text payload |
 | [`inert`](../corpus/ledger/attributes/inert.gandr) | no payload |
 
-## Decisions — 118 of 176 rules decided at every token
+## Decisions — 107 of 161 rules decided at every token
 
 Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
 
@@ -397,7 +382,6 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `migrate_expression` | expression | 4 | `migrate` | — | 0 |
 | `fork_expression` | expression | 6 | `fork` | — | 0 |
 | `access_expression` | expression | 9 | `access` | — | 0 |
-| `shell_block` | expression | 2 | `#!{` | — | 0 |
 | `send_expression` | expression | 1 | `send` | — | 0 |
 | `close_expression` | expression | 1 | `close` | — | 0 |
 | `select_expression` | expression | 1 | `select` | — | 0 |
@@ -415,7 +399,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `number.expression` | expression | 1 | `number` | — | 0 |
 | `typed_number.expression` | expression | 1 | `typed_number` | — | 0 |
 | `character` | expression | 1 | `character` | — | 0 |
-| `string.expression` | expression | 6 | `"` | `double_quoted_string` | 0 |
+| `string.expression` | expression | 6 | `"` | — | 0 |
 | `statement_block` | block | 31 | `{` | — | 0 |
 | `function_type` | type | 1 | `->` | — | 0 |
 | `linear_function_type` | type | 1 | `⊸` | — | 0 |
@@ -460,20 +444,6 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `number.type` | type | 1 | `number` | — | 0 |
 | `boolean.type` | type | 2 | `false` `true` | — | 0 |
 | `string.type` | type | 4 | `"` | — | 0 |
-| `list_operator` | expression | 3 | `&` `;` `newline` | — | 0 |
-| `pipeline.pipe` | expression | 1 | `\|` | — | 0 |
-| `pipeline.pipe_both` | expression | 1 | `\|&` | — | 0 |
-| `environment_assignment` | expression | 1 | `environment_assignment` | — | 0 |
-| `shell_word` | expression | 1 | `shell_word` | — | 0 |
-| `single_quoted_string` | expression | 3 | `'` | — | 0 |
-| `double_quoted_string` | expression | 9 | `"` | `string.expression` | 0 |
-| `variable_expansion` | expression | 5 | `$` `${` | `host_escape` | 0 |
-| `variable_name` | expression | 1 | `variable_name` | — | 0 |
-| `command_substitution` | expression | 2 | `command_substitution_start` | — | 0 |
-| `host_escape` | expression | 3 | `$` | `variable_expansion` | 0 |
-| `subshell` | expression | 2 | `subshell_open` | — | 0 |
-| `file_descriptor` | expression | 1 | `file_descriptor` | — | 0 |
-| `redirection_operator` | expression | 6 | `<` `<&` `<>` `>` `>&` `>>` | — | 0 |
 | `theory_declaration` | item | 458 | `theory` | — | 126 |
 | `circuit_declaration` | item | 123 | `oper` `rule` | `derived_rule_declaration` | 38 |
 | `derived_rule_declaration` | item | 10 | `rule` | `circuit_declaration` | 0 |
@@ -481,7 +451,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `f_type.row.labelled` | type | 24 | `-F` | `f_type`, `f_type.row` | 12 |
 | `f_type.result.labelled` | type | 23 | `[` | `f_type.result` | 12 |
 
-## Menus — 215 labels
+## Menus — 198 labels
 
 Every label a tile carries, with the molds the molder ranks when it reads the label, the rules they belong to and how many of them can open a form. The largest menu comes first.
 
@@ -492,12 +462,12 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `:` | 251 | 33 | 0 |
 | `type_identifier` | 221 | 34 | 2 |
 | `=` | 152 | 38 | 0 |
-| `;` | 136 | 26 | 1 |
-| `)` | 132 | 33 | 0 |
-| `(` | 128 | 32 | 5 |
+| `;` | 135 | 25 | 0 |
+| `)` | 131 | 32 | 0 |
+| `(` | 127 | 31 | 5 |
 | `.` | 99 | 47 | 3 |
 | `type_variable` | 93 | 15 | 3 |
-| `}` | 84 | 44 | 0 |
+| `}` | 80 | 40 | 0 |
 | `]` | 79 | 40 | 0 |
 | `{` | 61 | 29 | 2 |
 | `[` | 60 | 33 | 4 |
@@ -513,8 +483,8 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `type` | 23 | 5 | 1 |
 | `consumed` | 22 | 7 | 0 |
 | `arm_bar` | 21 | 9 | 0 |
-| `<` | 18 | 9 | 3 |
 | `module` | 18 | 13 | 2 |
+| `<` | 17 | 8 | 2 |
 | `import` | 17 | 12 | 1 |
 | `ω` | 17 | 5 | 0 |
 | `*=` | 16 | 11 | 0 |
@@ -525,37 +495,33 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `rule` | 16 | 5 | 2 |
 | `var` | 16 | 11 | 0 |
 | `with` | 15 | 8 | 1 |
-| `"` | 14 | 6 | 4 |
 | `sort` | 14 | 8 | 1 |
 | `->` | 13 | 8 | 1 |
+| `"` | 12 | 5 | 3 |
 | `data` | 12 | 3 | 1 |
 | `as` | 10 | 5 | 1 |
 | `mobile` | 10 | 2 | 0 |
 | `*{` | 9 | 5 | 4 |
 | `bind` | 9 | 3 | 1 |
-| `\|` | 9 | 9 | 3 |
 | `pi+` | 8 | 2 | 0 |
-| `escape_sequence` | 7 | 6 | 0 |
+| `\|` | 8 | 8 | 2 |
 | `oper` | 7 | 5 | 1 |
 | `+` | 6 | 6 | 2 |
 | `-` | 6 | 6 | 2 |
 | `constructor` | 6 | 5 | 2 |
+| `escape_sequence` | 6 | 5 | 0 |
 | `string_fragment` | 6 | 5 | 0 |
 | `rec` | 5 | 5 | 2 |
-| `variable_name` | 5 | 3 | 1 |
-| `>` | 4 | 4 | 3 |
 | `?` | 4 | 4 | 4 |
 | `@[` | 4 | 3 | 2 |
 | `Type` | 4 | 4 | 1 |
 | `def` | 4 | 4 | 2 |
 | `↦` | 4 | 2 | 0 |
 | `⊸` | 4 | 4 | 1 |
-| `$` | 3 | 3 | 2 |
-| `${` | 3 | 3 | 1 |
 | `+{` | 3 | 3 | 3 |
 | `-F` | 3 | 3 | 3 |
 | `..` | 3 | 2 | 1 |
-| `>>` | 3 | 3 | 1 |
+| `>` | 3 | 3 | 2 |
 | `@![` | 3 | 3 | 2 |
 | `at` | 3 | 3 | 1 |
 | `else` | 3 | 1 | 0 |
@@ -572,12 +538,11 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | ` ` | 2 | 2 | 2 |
 | `!` | 2 | 2 | 1 |
 | `#[` | 2 | 2 | 2 |
-| `&` | 2 | 2 | 2 |
 | `&{` | 2 | 2 | 2 |
-| `'` | 2 | 1 | 1 |
 | `*` | 2 | 2 | 2 |
 | `.#[` | 2 | 2 | 1 |
 | `:>` | 2 | 2 | 0 |
+| `>>` | 2 | 2 | 0 |
 | `break` | 2 | 2 | 2 |
 | `from` | 2 | 2 | 0 |
 | `hole_name` | 2 | 2 | 0 |
@@ -588,19 +553,17 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `≃` | 2 | 2 | 1 |
 | `!=` | 1 | 1 | 1 |
 | `#` | 1 | 1 | 0 |
-| `#!{` | 1 | 1 | 1 |
+| `${` | 1 | 1 | 0 |
+| `&` | 1 | 1 | 1 |
 | `&&` | 1 | 1 | 1 |
 | `++` | 1 | 1 | 1 |
 | `+U` | 1 | 1 | 1 |
 | `.#{` | 1 | 1 | 1 |
 | `.*{` | 1 | 1 | 1 |
 | `.@` | 1 | 1 | 1 |
-| `<&` | 1 | 1 | 1 |
 | `<=` | 1 | 1 | 1 |
-| `<>` | 1 | 1 | 1 |
 | `==` | 1 | 1 | 1 |
 | `>!` | 1 | 1 | 1 |
-| `>&` | 1 | 1 | 1 |
 | `>=` | 1 | 1 | 1 |
 | `>?` | 1 | 1 | 1 |
 | `@` | 1 | 1 | 1 |
@@ -628,19 +591,15 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `character` | 1 | 1 | 1 |
 | `close` | 1 | 1 | 1 |
 | `codata` | 1 | 1 | 1 |
-| `command_substitution_start` | 1 | 1 | 1 |
 | `continue` | 1 | 1 | 1 |
-| `double_string_fragment` | 1 | 1 | 0 |
 | `drop` | 1 | 1 | 1 |
 | `dup` | 1 | 1 | 1 |
 | `end` | 1 | 1 | 1 |
-| `environment_assignment` | 1 | 1 | 1 |
 | `exclusive` | 1 | 1 | 0 |
 | `ext` | 1 | 1 | 0 |
 | `extern` | 1 | 1 | 1 |
 | `f32` | 1 | 1 | 1 |
 | `f64` | 1 | 1 | 1 |
-| `file_descriptor` | 1 | 1 | 1 |
 | `flow` | 1 | 1 | 1 |
 | `for` | 1 | 1 | 1 |
 | `force` | 1 | 1 | 1 |
@@ -662,7 +621,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `match` | 1 | 1 | 1 |
 | `migrate` | 1 | 1 | 1 |
 | `mu` | 1 | 1 | 1 |
-| `newline` | 1 | 1 | 1 |
 | `obs` | 1 | 1 | 0 |
 | `offer` | 1 | 1 | 1 |
 | `offers` | 1 | 1 | 1 |
@@ -680,10 +638,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `select` | 1 | 1 | 1 |
 | `send` | 1 | 1 | 1 |
 | `shape` | 1 | 1 | 0 |
-| `shell_word` | 1 | 1 | 1 |
-| `single_quoted_content` | 1 | 1 | 0 |
-| `subshell_close` | 1 | 1 | 0 |
-| `subshell_open` | 1 | 1 | 1 |
 | `tail` | 1 | 1 | 1 |
 | `theory` | 1 | 1 | 1 |
 | `thunk` | 1 | 1 | 1 |
@@ -697,7 +651,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `usize` | 1 | 1 | 1 |
 | `while` | 1 | 1 | 1 |
 | `world` | 1 | 1 | 1 |
-| `\|&` | 1 | 1 | 1 |
 | `\|>` | 1 | 1 | 1 |
 | `\|\|` | 1 | 1 | 1 |
 | `~` | 1 | 1 | 1 |
