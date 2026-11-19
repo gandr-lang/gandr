@@ -8601,8 +8601,11 @@ mod tests
         else {
             panic!("a named table names its records");
         };
-        let forged = names.column[0];
-        names.column[1] = forged;
+        let [forged, ref mut second_name, ..] = names.column[..]
+        else {
+            panic!("a named table names its two records");
+        };
+        *second_name = forged;
         let records = table.records;
         let unit_again = arena.value_type_unit();
         let pair_again = arena.value_type_product(&[unit_again, unit_again]);
