@@ -501,6 +501,9 @@ impl Writer
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the literal's sixteen bytes, growth within the entry
     fn node(
         &mut self,
         node: &Node,
@@ -546,6 +549,9 @@ impl Writer
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the index's four bytes, growth within the entry
     fn index(
         &mut self,
         index: NodeIndex,
