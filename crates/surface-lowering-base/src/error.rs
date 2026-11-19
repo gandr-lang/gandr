@@ -548,7 +548,7 @@ pub enum BuiltinFault
 ///
 /// A fault that names a node or a path holds the index of its mark, and the
 /// diagnostic reads the name from the mark's answer
-/// ([`crate::unit::staged_name`]).
+/// ([`crate::unit::staged_name()`]).
 ///
 /// # Specification
 /// trivial.
