@@ -1,0 +1,58 @@
+// Handlers of an `extern` block's interface written in gandr, each refused
+// where it leaves the block's members.
+//
+// A clause answers a member that the block declares. It binds the member's
+// arguments as one payload, or none for a member of no argument, and then the
+// resumption. Each argument keeps its fixed-width type in the clause.
+//
+// The first handler answers `sub`, which the block does not declare. The
+// second binds only the resumption of `add`, which takes two arguments. The
+// third sums the two `u32` arguments as `Integer`.
+//
+// - see: `model/interop/boundary/round-trip.gandr` — a handler that answers
+//   the block in gandr
+
+// The boundary check reads `admitBlock` here, whatever the listing names.
+import std.boundary (Arg, NoCode, Plain, Row);
+
+// `U32`, the scalar a `u32` is coded as.
+import std.layout (U32);
+
+/// `add`'s row: two `u32` to a `u32`.
+def addRow : Row = Row (Arg (Plain U32) (Arg (Plain U32) NoCode)) (Plain U32);
+
+/// The Rust caller's adder.
+@[boundary(addRow)]
+extern "rust" from "boundary" as Boundary {
+  def add(x : u32, n : u32) -> u32;
+}
+
+/// Four times its argument, by the block's `add`.
+def quadrupled(x : u32) -> [Boundary] u32 =
+  let y = Boundary.add x x
+  Boundary.add y y
+
+/// `Boundary` declares no `sub`, so no clause answers it.
+@[refuses("UnresolvedName")]
+def lacked() -> u32 =
+  handle b : Boundary { quadrupled 21u32 } with {
+    | pure(r) => r
+    | oper add(p, k) => k (u32.wrapping_add p.0 p.1)
+    | oper sub(p, k) => k p.0
+  }
+
+/// `add` takes two arguments, so its clause binds their payload.
+@[refuses("OutOfFragment.Arity")]
+def miscounted() -> u32 =
+  handle b : Boundary { quadrupled 21u32 } with {
+    | pure(r) => r
+    | oper add(k) => k 0u32
+  }
+
+/// Each argument is a `u32`, and `+` adds two `Integer`.
+@[refuses("TypeMismatch")]
+def widened() -> u32 =
+  handle b : Boundary { quadrupled 21u32 } with {
+    | pure(r) => r
+    | oper add(p, k) => k (p.0 + p.1)
+  }
