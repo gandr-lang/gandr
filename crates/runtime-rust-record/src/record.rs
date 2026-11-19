@@ -189,7 +189,7 @@ impl Body
     ///
     /// economy: 4096 nodes is past each body of the fragment that the
     /// corpus holds, whose largest is 10 nodes. A larger ceiling waits for a
-    /// measured body that reaches this one.
+    /// measured body of the general fragment that #327 owes.
     pub const CEILING: usize = 4096;
 }
 
