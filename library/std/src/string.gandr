@@ -13,7 +13,7 @@
 pub def empty : String = "";
 
 /// The string `a` followed by the string `b`, as the native table joins them.
-@[native("string.append")]
+@[builtin("string.append")]
 pub def append : (String, String) -> String;
 
 /// The string `a` followed by the string `b`.

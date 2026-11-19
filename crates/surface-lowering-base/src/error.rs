@@ -521,23 +521,27 @@ pub enum FormFault
     SuppliedTwice,
 }
 
-/// Why a `native` mark declares no row of the native table.
+/// Why a `builtin` mark binds its declaration to no row of the builtin table.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum NativeFault
+pub enum BuiltinFault
 {
-    /// The mark's text names no row of the native table.
+    /// The mark's key names no row of the builtin table.
     NoRow,
-    /// The marked declaration has a body. The row gives the value.
+    /// The declaration of a given row has a body. The row gives the value.
     Bodied,
-    /// The marked declaration is in a source that is not a module of `std`.
-    OutsideStd,
-    /// The declared type is not the row's type.
+    /// The declaration of a found row has no body. The library gives the
+    /// meaning of the row by the body.
+    Unbodied,
+    /// The marked declaration is in a source that is no module of a package
+    /// of the toolchain.
+    OutsideToolchain,
+    /// The declared type is not the type of the given row.
     TypeDiffers,
-    /// An earlier declaration declares the same row.
-    SecondDeclaration,
+    /// An earlier declaration holds the row of the same key.
+    Repeated,
 }
 
 impl FormFault
@@ -967,13 +971,14 @@ pub enum LoweringRefusal<'source>
         form: gandr_surface_grammar::RetiredForm,
     },
 
-    /// A `native` mark that declares no row of the native table.
-    NativeMark
+    /// A `builtin` mark that binds its declaration to no row of the builtin
+    /// table.
+    BuiltinMark
     {
         /// The bytes the mark covers.
         span: ByteSpan,
-        /// Why the mark declares no row.
-        fault: NativeFault,
+        /// Why the mark binds no row.
+        fault: BuiltinFault,
     },
 
     /// A documentation link to a name the module does not declare.
@@ -2680,12 +2685,21 @@ impl fmt::Display for LoweringRefusal<'_>
                 "this name is a retired spelling, and `{}` replaces it",
                 form.replaced_by().0
             ),
-            Self::NativeMark { fault, .. } => f.write_str(match fault {
-                NativeFault::NoRow => "the mark names no row of the native table",
-                NativeFault::Bodied => "a native declaration has no body, and the row gives its value",
-                NativeFault::OutsideStd => "only a module of `std` declares a row of the native table",
-                NativeFault::TypeDiffers => "the declared type is not the type of the row",
-                NativeFault::SecondDeclaration => "a row has one declaration, and an earlier one declares it",
+            Self::BuiltinMark { fault, .. } => f.write_str(match fault {
+                BuiltinFault::NoRow => "the mark's key names no row of the builtin table",
+                BuiltinFault::Bodied => {
+                    "the declaration of a given row has no body, and the row gives its value"
+                },
+                BuiltinFault::Unbodied => {
+                    "the declaration of a found row has the body that gives the row's meaning"
+                },
+                BuiltinFault::OutsideToolchain => {
+                    "only a package of the toolchain binds a row of the builtin table"
+                },
+                BuiltinFault::TypeDiffers => "the declared type is not the type of the row",
+                BuiltinFault::Repeated => {
+                    "a row has one holder, and an earlier declaration holds it"
+                },
             }),
         }
     }
@@ -2825,7 +2839,7 @@ impl LoweringRefusal<'_>
         match *self {
             Self::UnresolvedName { span, .. }
             | Self::RetiredName { span, .. }
-            | Self::NativeMark { span, .. }
+            | Self::BuiltinMark { span, .. }
             | Self::UnresolvedDocLink { span, .. }
             | Self::UnresolvedTypeHead { span, .. }
             | Self::DuplicateSignature { span, .. }

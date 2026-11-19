@@ -8530,16 +8530,13 @@ mod tests
     }
 
     /// #3575: a `builtin` mark gives the declaration it decorates the role
-    /// its word names, and an unmarked declaration takes none. A word that
-    /// names no role is refused at the payload.
+    /// its key names, and an unmarked declaration takes none. A key that
+    /// names no role gives none.
     #[test]
     fn a_builtin_mark_gives_its_declaration_the_role_3575()
     {
         use gandr_kernel_term::Builtin;
         use gandr_kernel_term::builtin_role;
-
-        use crate::attribute::PayloadForm;
-        use crate::attribute::RegisteredAttribute;
 
         let mut arena = CoreArena::new();
         let module = lowered(
@@ -8561,24 +8558,56 @@ mod tests
         assert_eq!(
             role("a"),
             Maybe::Present(Builtin::IrArgs),
-            "the mark gives the role its word names"
+            "the mark gives the role its key names"
         );
         assert_eq!(
             role("b"),
             Maybe::Absent(builtin_role::Absent::Unmarked),
             "an unmarked declaration takes no role"
         );
-        assert!(
-            matches!(
-                refusal(SourceText::from("@[ builtin(irElim) ] def a = 3 ;")),
-                LoweringRefusal::IllTypedPayload {
-                    name: RegisteredAttribute::BUILTIN,
-                    written: PayloadForm::OtherWord,
-                    ..
-                }
-            ),
-            "a word that names no role is refused at the payload"
+        assert_eq!(
+            role("c"),
+            Maybe::Absent(builtin_role::Absent::Unnamed),
+            "a key that names no role gives none"
         );
+    }
+
+    /// #8071: the attribute `native`, and a `builtin` mark whose payload is a
+    /// bare word, are each refused by the name of their retired spelling at
+    /// the attribute.
+    #[test]
+    fn a_retired_builtin_spelling_is_refused_by_name_8071()
+    {
+        use gandr_surface_grammar::RetiredForm;
+        use gandr_surface_syntax::ByteOffset;
+        use gandr_surface_syntax::ByteSpan;
+
+        use crate::error::FormFault;
+        use crate::form::FormName;
+
+        for (text, end, form) in [
+            (
+                "@[ native(\"string.append\") ] def a = 3 ;",
+                26_usize,
+                RetiredForm::NativeAttribute,
+            ),
+            (
+                "@[ builtin(irPair) ] def a = 3 ;",
+                18_usize,
+                RetiredForm::BuiltinWord,
+            ),
+        ] {
+            assert_eq!(
+                refusal(SourceText::from(text)),
+                LoweringRefusal::MalformedForm {
+                    span: ByteSpan::new(ByteOffset::from(3_usize), ByteOffset::from(end))
+                        .expect("the attribute's span"),
+                    form: FormName::ATTRIBUTE,
+                    fault: FormFault::Retired(form),
+                },
+                "{text}"
+            );
+        }
     }
 
     /// #2077: `decomposes` takes one form unquoted, read as its spelling: the

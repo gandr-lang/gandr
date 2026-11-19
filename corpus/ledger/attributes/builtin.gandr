@@ -1,6 +1,7 @@
-/// `builtin`: its word names the role that the core formers read
-/// from the declaration.
-@[builtin(irSignature)]
+/// `builtin`: its text is the key of the row of the builtin table that the
+/// declaration holds. The library gives a role's row: the declaration has its
+/// body, and the core formers read it.
+@[builtin("irSignature")]
 data Codes(d : Type) : Type[+, 1] where
   | Stop : (e : d) --> Codes d
   | Ask : (a : Type, f : a -> Codes d) --> Codes d

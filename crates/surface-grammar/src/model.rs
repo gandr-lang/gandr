@@ -876,12 +876,18 @@ pub enum RetiredForm
     /// A theory operation of no input applied to `()` in a term, `c ()`,
     /// which the constant's bare name `c` replaces.
     EmptyOperationCall,
+    /// The attribute `native`, which `builtin` replaces: `@[builtin("key")]`
+    /// names a row of the builtin table, a native value among them.
+    NativeAttribute,
+    /// A `builtin` mark whose payload is a bare word, `@[builtin(irPair)]`,
+    /// which the key in quotes replaces: `@[builtin("irPair")]`.
+    BuiltinWord,
 }
 
 impl RetiredForm
 {
     /// Every retired spelling, in the order of the enum.
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 15] = [
         Self::ShapeMember,
         Self::UnitValue,
         Self::PositionalPathCarrier,
@@ -895,6 +901,8 @@ impl RetiredForm
         Self::ParenthesizedProductPattern,
         Self::EmptyOperationInputs,
         Self::EmptyOperationCall,
+        Self::NativeAttribute,
+        Self::BuiltinWord,
     ];
 
     /// The surface name of the spelling: the row's surface and the tag of its
@@ -920,6 +928,8 @@ impl RetiredForm
             Self::ParenthesizedProductPattern => "parenthesized_product_pattern",
             Self::EmptyOperationInputs => "empty_operation_inputs",
             Self::EmptyOperationCall => "empty_operation_call",
+            Self::NativeAttribute => "native_attribute",
+            Self::BuiltinWord => "builtin_word",
         })
     }
 
@@ -946,6 +956,8 @@ impl RetiredForm
             Self::ParenthesizedProductPattern => "*{p, q}",
             Self::EmptyOperationInputs => "oper c : T",
             Self::EmptyOperationCall => "c",
+            Self::NativeAttribute => "builtin",
+            Self::BuiltinWord => "builtin(\"key\")",
         })
     }
 
@@ -971,6 +983,8 @@ impl RetiredForm
             Self::ParenthesizedProduct => "(A, B)",
             Self::ParenthesizedProductPattern => "(p, q)",
             Self::EmptyOperationInputs | Self::EmptyOperationCall => "()",
+            Self::NativeAttribute => "native",
+            Self::BuiltinWord => "builtin(key)",
         })
     }
 }

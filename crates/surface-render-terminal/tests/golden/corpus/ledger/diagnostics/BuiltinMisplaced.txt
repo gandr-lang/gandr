@@ -1,9 +1,0 @@
-error[BuiltinMisplaced]: the built-in role `irDecode` marks a definition, and this declaration is no definition
-  ╭▸ corpus/ledger/diagnostics/BuiltinMisplaced.gandr:4:1
-  │
-4 │ ┏ data Wrong : Type where
-5 │ ┃   | Only : Wrong
-  │ ┗━━━━━━━━━━━━━━━━┛ a built-in role on the wrong declaration
-  │
-  ├ note: `Wrong` is refused with BuiltinMisplaced, as its expectation states
-  ╰ help: mark a datatype with `irSignature` or `irPair`, and a definition with `irArgs` or `irDecode`
