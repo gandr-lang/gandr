@@ -1,0 +1,131 @@
+# gandr-core-incremental
+
+Incremental checking over the core judgement: reuse applicable earlier answers and match batch checking when recorded results are faithful.
+
+<!-- toc -->
+- [Synopsis](#synopsis)
+- [Provided features](#provided-features)
+- [Expected features](#expected-features)
+- [Examples](#examples)
+- [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
+- [License](#license)
+<!-- tocstop -->
+
+## Synopsis
+
+**What.** A front end hands over one `Program` per revision: `Item`s, each a front-end `ItemKey` beside the checker's own `Declaration`, over one `CoreArena`. `check_program` judges every item; `resume` takes the previous revision's `Resume` and answers the edited program, adopting each item's checkpoint only when it still answers and judging the rest. Checkpoints persist under their program's content address in a memory or an atomic file store, and a `SynthesisStream` publishes each item's handle, typing and adoption, then the match liveness its producer computed.
+
+**Why.** A checker that answers an editor on every keystroke cannot judge the whole program each time, and a checker that reuses answers it cannot justify answers wrongly. This crate reuses only what the judgement itself says it depended on, compared value by value, so reuse is a saving and never a change of answer: incremental equals batch, and the tests hold it to that over generated programs and edit chains.
+
+**How.** Batch and incremental are one forward pass at two memos. Each item is encoded once into id-free content; the memo recalls a base checkpoint of equal content; the checkpoint is adopted when every signature answer its judgement consulted equals the edited table's answer at that point of the pass, no type position of it reads a definition whose value changed, and its type can be seated in the edited arena. A value change closes over readers once, through reverse read edges. Item identity across revisions rides on an order-maintenance structure from `gandr-theory-order-maintenance`.
+
+## Provided features
+
+- **The item seam.** `Program`, `Item`, `ItemKey`, `Reference`, `ItemSource`: items keyed by the front end, admission positions checked once (`ProgramError`), and every position read as the `Reference` — key and occurrence — it resolves to.
+- **Content.** `ItemContent`, `TypeContent`, `ContentNode`, `SupportedNode`, `Opacity`: an item's or a node's content as one co-de Bruijn table, free of arena ids, in which equal subterms are one entry. `TypeContent::of_node` reads a node of any sort, and `TypeContent::mint_in` mints one back. [`content`](src/content.rs) states the table, its de Bruijn projection and what makes a table opaque. Witnesses: `content::tests::unused_binder_interleavings_share_one_node`, `content::tests::alpha_equal_terms_mint_to_one_name`, `codec::tests::holes_marks_and_the_unknown_types_round_trip`.
+- **Effect-row content.** Returners retain canonical interface and operation names and every payload and reply type as graph edges; [`content`](src/content.rs) states their tags and what decoding refuses.
+- **The conservative footprint.** `footprint_of` and `Footprint`: every reference an item mentions, those in type positions apart, its opacity and whether its body is a hole — the union of the references its roots carry, read off without a walk of the table. The references are syntactic and over-approximate; they never decide a strengthening. `footprints` reads one per item. Witness: `tests::supports::carried_footprint_matches_reference_walk`.
+- **Validated resume.** `check_program`, `resume`, `resume_from`, `Resume`, `Checkpoints`, `ItemCheckpoint`, `Answered`, `Answer`, `Adoption`, `ResumeCensus`, `Judgement`, and `project`, which turns a verdict of the checker's own batch entry into the `Typing` this crate records, so a caller can compare the two. [`checkpoint`](src/checkpoint.rs) states what a filled hole judges again. Witness: `tests::incremental::filling_a_hole_rejudges_only_what_its_support_mentions`.
+- **Item identity.** `ItemHandle` and `Resume::compare`: a handle per item that survives edits elsewhere and compares in constant time.
+- **Resuming after leading items.** `lead`, `Leading`, `resume_after`: `lead` judges a program and keeps the state its last item leaves; a revision that lays that program's items first resumes after them, encoding, recalling and judging only its own items in the context they left. A revision that departs from them is resumed whole. Witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`.
+- **Checkpoints and stores.** `encode_checkpoints`, `decode_checkpoints`, `CheckpointBytes`, `UnsupportedPersistence`, `address_of`, `persist`, `restore`, `CheckpointStore`, `MemoryCheckpointStore`, `FileCheckpointStore`, `DiscardingCheckpointStore`, `Keeping`, `CheckpointObserver`, `BackendArtifact`, `CheckpointAddress`, `CheckpointStoreError`, `Restorer`, `RestoreFrom`. A session over a store that keeps nothing (`CheckpointStore::KEEPING`) never addresses or encodes a set for it. `FileCheckpointStore::prune` removes every record another backend judged. Witness: `persistence::tests::pruning_keeps_only_the_kept_backend_s_records_1816`.
+- **The session.** `IncrementalSession` and `SessionError`: one call per revision that resumes, persists and keeps the latest resume for streaming; `IncrementalSession::submit_after` submits a revision laid after a leading state. `submit_retiring` and `submit_after_retiring` poll a `gandr_core_checker::Retirement` before each item; a retired submission persists nothing and the session keeps the resume it held. Witness: `session::tests::a_retired_submission_keeps_the_resume_it_held_1547`. `IncrementalSession::persist_to` persists the held set to a store other than the session's, and `IncrementalSession::restore_from` has the next submission, when no resume is held, start from the set a `Restorer` holds for its program: what an editor's save keeps and its next open reads back. Witness: `session::tests::a_held_set_persists_to_another_store_and_restores_a_first_submission_1816`. `Handed` hands a set that an earlier revision judged to a later revision's first submission, whatever its program. Witness: `session::tests::a_set_handed_on_resumes_a_later_revision_s_first_submission_2102`.
+- **Content keys.** `content_key` and `ContentKey`: an item's key, the digest of its id-free content, which a pool keys the work on an item by. Witness: `checkpoint::tests::an_item_s_content_key_moves_only_with_its_content_1547`.
+- **Restriction by key.** `Bundle`, `SourceKeys`, `SourceKey`, `SourceRun`, `SourcesError`: a checked set restricts by source keys to the set of each closure inside it, and judges no item. Witness: `bundle::tests::a_set_restricts_to_the_fresh_set_of_a_closure_inside_it_6512`.
+- **The synthesis stream.** `SynthesisStream`, `SynthesisEvent`, `Liveness`, `MatchOrigin`; branch verdicts are `gandr_core_term::pattern::BranchStatus`, the vocabulary live matching and coverage answer in.
+
+## Expected features
+
+- **A hosted target.** The file store reads and writes the file system through `std`; every other module uses `core` and `alloc` alone.
+- **The checker's support entry.** `gandr_core_checker::check_declaration_supported` judges one declaration and reports the signature answers it consulted; `CheckingContext::adopt` admits an answer as if judged. The crate is built on those two and on nothing private to the checker.
+- **`--cfg anodized_panic` for enforcement.** The enforcing test lane builds the dependency graph with it, so every checked specification clause panics on a violation.
+
+## Examples
+
+Judge a program, edit one definition's value, and resume:
+
+```rust
+use gandr_core_checker::CheckBudget;
+use gandr_core_checker::Declaration;
+use gandr_core_checker::OriginToken;
+use gandr_core_checker::signature;
+use gandr_core_content::ItemKey;
+use gandr_core_incremental::Adoption;
+use gandr_core_incremental::Item;
+use gandr_core_incremental::Program;
+use gandr_core_incremental::check_program;
+use gandr_core_incremental::resume;
+use gandr_core_term::CoreArena;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::IntegerLiteral;
+use gandr_kernel_term::Literal;
+use gandr_kernel_term::Magnitude;
+use gandr_kernel_term::Sign;
+use quenchant_shape::shape::Maybe;
+
+// def a = <digits> ; def b = a
+let program = |digits: &str| {
+    let mut arena = CoreArena::new();
+    let literal = arena.value_literal(Literal::Integer(IntegerLiteral::new(
+        Sign::NonNegative,
+        Magnitude::from_decimal_text(digits.into()).expect("decimal digits"),
+    )));
+    let a = arena.value_constant(ConstantIndex::from(0_usize));
+    let item = |key: &str, position: usize, body| {
+        Item::new(
+            ItemKey::from(key),
+            Declaration::new(
+                ConstantIndex::from(position),
+                Maybe::Absent(signature::Absent::Unsigned),
+                Maybe::Present(body),
+                OriginToken::from(position),
+            ),
+        )
+    };
+    Program::new(arena, vec![item("a", 0, literal), item("b", 1, a)]).expect("ascending")
+};
+
+let base = check_program(&mut program("0"), CheckBudget::DEFAULT).expect("order");
+let edited = resume(base, &mut program("1")).expect("order");
+// a's value changed and its type did not: b's recorded answer for a still holds.
+assert_eq!(edited.adoptions(), [Adoption::Judged, Adoption::Adopted]);
+```
+
+Run the tests, then the enforcing twin:
+
+```sh
+cargo nextest run -p gandr-core-incremental
+RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-core-incremental
+```
+
+## Where the detail lives
+
+Mechanism, decisions with their alternatives and reversals, and witnesses live in the rustdoc beside the code:
+
+| Topic | Module |
+| ----- | ------ |
+| The incremental specification and validated resume | [`checkpoint`](src/checkpoint.rs) |
+| Restriction of a checked set by source keys | [`bundle`](src/bundle.rs) |
+| The admission layout, its resolver and handles | [`region`](src/region.rs), [`order`](src/order.rs) |
+| The roots of a declaration and the encoding of an item over the node form of `gandr-core-content` | [`content`](src/content.rs) |
+| The canonical encoding | [`codec`](src/codec.rs) |
+| Stores, their frame, addresses and atomicity | [`persistence`](src/persistence.rs), [`record`](src/record.rs) |
+| The synthesis stream | [`stream`](src/stream.rs) |
+| Sessions | [`session`](src/session.rs) |
+| Specification evidence, the consumer and references | [`src/lib.rs`](src/lib.rs) |
+
+## References
+
+- `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: a stored `FootprintsOverlap` keeps both halves' footprints and what they share.
+- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — a record's digest proves only that a key names its bytes.
+- `vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de` — background: § build-owner-store — the one store sits above this layer, so the checkpoint store keeps its own frame.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — the strata a pass hands on.
+- `vault:01a178aa-4bbc-7842-9a60-d11551c41e06` — background: the rollback audit (§ The real leak was in the filesystem) — the checkpoint store publishes through `core-publish`, whose guard owns each temporary.
+- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — newest: § presented-spaces-quasi-coherence — a stored result is a section of a weakly quasi-coherent bundle over its support, so a checkpoint set restricts to a sub-support by its source keys, and no walk.
+- `vault:01a178aa-b725-7820-9a4c-074e3f6d79b0` — anchor: § arc-zero-drift-differential — the zero-drift contract of the pass. A located program keeps it, because its support keeps each register read.
+- `vault:01a178aa-7772-7e72-a3d0-5855883d3db1` — anchor: the `core-term` page (§ Decisions, item 2) — term ids are not canonical, so `NodeKeys` keys a node by its content.
+
+## License
+
+Apache-2.0 WITH LLVM-exception, the workspace licence; the text is at the repository root.

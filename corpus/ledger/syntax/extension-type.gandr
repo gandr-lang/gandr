@@ -1,0 +1,6 @@
+/// `extension_type`: a record type whose reader `.#{` fixes fields by label,
+/// by face or by a system of faces.
+type Pair = *{left : Integer, right : Integer} where
+  face lefty = {left};
+def kept(p : Pair.#{.left = 1}, q : Pair.#{lefty ↦ *{.left = 1}}) -> Integer = p.left;
+def faced : Pair.#{lefty |-> *{.left = 1}} = *{.right = 2};
