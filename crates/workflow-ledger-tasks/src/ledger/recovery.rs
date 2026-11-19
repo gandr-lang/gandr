@@ -1621,4 +1621,42 @@ mod tests
             "staged-type.gandr:239: `:` deleted is reported at its mutation: {report}"
         );
     }
+
+    /// #8051: Deleting `<->` leaves adjacent terms in a cell member. Its first
+    /// refusal names the gap between those terms.
+    #[test]
+    fn a_deleted_invertible_cell_arrow_marks_its_gap_8051()
+    {
+        let scratch = std::env::temp_dir().join(format!(
+            "gandr-recovery-test-{}-cell-arrow",
+            std::process::id()
+        ));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        for (name, text) in [
+            (
+                "binary-expression.cons.gandr",
+                include_str!("../../../../corpus/ledger/syntax/binary-expression.cons.gandr"),
+            ),
+            (
+                "cons-pattern.gandr",
+                include_str!("../../../../corpus/ledger/syntax/cons-pattern.gandr"),
+            ),
+        ] {
+            std::fs::write(folder.join(name), text).expect("the exemplar is written");
+        }
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        for exemplar in ["binary-expression.cons.gandr", "cons-pattern.gandr"] {
+            assert!(
+                !report.findings.iter().any(|finding| {
+                    finding.exemplar.file_name() == Some(exemplar.as_ref())
+                        && finding.tile == "<->"
+                        && finding.mutation == Mutation::Deleted
+                }),
+                "{exemplar}: `<->` deleted is reported at its mutation: {report}"
+            );
+        }
+    }
 }
