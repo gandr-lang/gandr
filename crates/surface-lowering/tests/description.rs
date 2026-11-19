@@ -8,6 +8,7 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use gandr_surface_lowering::AttributePlace;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::LoweredDeclaration;
@@ -189,7 +190,7 @@ fn member_refusals_keep_their_spans_and_other_declarations()
 /// #1462: a member held apart reads the attribute block written before it,
 /// a member held apart without one reads none — the family's own attributes
 /// state the family alone — and a block before a member that is not held
-/// apart refuses the family at the block.
+/// apart stands on its constructor, where `checks` is refused by its place.
 #[test]
 fn a_held_member_states_its_own_expectation_1462()
 {
@@ -264,14 +265,18 @@ fn a_held_member_states_its_own_expectation_1462()
         Recognition::default(),
     )
     .unwrap();
-    let start = stray.find("@[").unwrap_or_default();
+    let start = stray.find("checks").unwrap_or_default();
     assert!(
         module.declarations().iter().any(|declaration| matches!(
             declaration.outcome(),
-            DeclarationOutcome::Refused(LoweringRefusal::MalformedForm { span, .. })
-                if usize::from(span.start()) == start
+            DeclarationOutcome::Refused(LoweringRefusal::MisplacedAttribute {
+                span,
+                place: AttributePlace::Constructor,
+                takes: AttributePlace::Declaration,
+                ..
+            }) if usize::from(span.start()) == start
         )),
-        "a block before a member that is not held apart refuses the family at the block: {:?}",
+        "a block before a member that is not held apart stands on its constructor: {:?}",
         module.declarations()
     );
 }

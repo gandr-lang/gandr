@@ -1269,10 +1269,7 @@ pathological/desc/item-level-data-member-retired.gandr:Stale.Zero:d841c9db5daaaa
 pathological/desc/item-level-data-member-retired.gandr:Stale.add:05c0e3cef5dc0d7e uncommented
 pathological/desc/item-level-data-member-retired.gandr:Stale:7a43d01bf3720c0f uncommented
 pathological/desc/member-attribute-stray.gandr:Stray.High:de1435dbd75cab68 uncommented
-pathological/desc/member-attribute-stray.gandr:Stray.Low:3514db087f4aff03 uncommented
-pathological/desc/member-attribute-stray.gandr:Stray.member:e022a5425dc4798f uncommented
 pathological/desc/member-attribute.gandr:NatSub.Succ:8bcb0c578848260e uncommented
-pathological/desc/member-attribute.gandr:NatSub.Zero:2fe7819ee8a85cec uncommented
 pathological/desc/member-attribute.gandr:NatSub.Zero:bfc08fb0be107253 uncommented
 pathological/desc/member-attribute.gandr:NatSub.minus:098c36a9b03065d4 uncommented
 pathological/desc/occurrence-count.gandr:Hedge.Leaf:7e949cb0690aef28 uncommented

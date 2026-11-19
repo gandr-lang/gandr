@@ -5,6 +5,7 @@
 /// A bit whose first constructor carries an attribute of a declaration.
 @[refuses("MisplacedAttribute")]
 data Stray : Type where
+  /// The low bit, whose block holds an attribute of a declaration.
   @[checks]
   | Low : Stray
   | High : Stray
