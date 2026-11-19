@@ -2383,7 +2383,7 @@ mod kernel_discard_readmission
 mod kernel_presented_readmission
 {
     use alloc::string::String;
-    use alloc::string::ToString;
+    use alloc::string::ToString as _;
     use alloc::vec::Vec;
     use std::path::Path;
     use std::path::PathBuf;
