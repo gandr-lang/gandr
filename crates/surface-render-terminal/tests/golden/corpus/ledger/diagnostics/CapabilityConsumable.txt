@@ -1,0 +1,10 @@
+error[CapabilityConsumable]: a consumable capability is not supported
+  ╭▸ corpus/ledger/diagnostics/CapabilityConsumable.gandr:3:17
+  │
+3 │ def discard(c : Cap[1] { write }) -> Unit =
+  │             ┬   ━━━━━━━━━━━━━━━━ a consumable capability: found `Cap[1] {write}`
+  │             │
+  │             formed; while forming the parts of this type
+  │
+  ├ note: `discard` is refused with CapabilityConsumable, as its expectation states
+  ╰ help: remove the capability's `[1]` grade

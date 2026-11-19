@@ -1,0 +1,17 @@
+// This source tests value semantics of record updates.
+//
+// Updates create a new record. Other references keep the old record.
+//
+// The run expectation checks that `r` keeps its original field value.
+//
+// - see: `pathological/records/shared-then-updated.gandr` — `updated`
+
+/// `r` holds fields `x` and `y`.
+def r = *{x = 1, y = 2};
+
+/// `r2` changes `r.x` in a new record.
+def r2 = *{r | x = 9};
+
+/// `original` returns `r` with `x` unchanged.
+@[runs("*{.x = 1, .y = 2}")]
+def original = r;
