@@ -6,6 +6,10 @@
 //! `time`. A run uploads one report per test lane; a lane is the uploading
 //! job, named by the artifact the report arrived in.
 
+use alloc::alloc::Global;
+
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 extern crate alloc;
 
 use alloc::collections::BTreeMap;
@@ -20,20 +24,30 @@ use quenchant_shape::shape::Maybe;
 use crate::error::TestCaseDefect;
 use crate::error::TimingError;
 
+/// A text two holders share. No local type shares a text by a count.
+///
+/// # Specification
+/// trivial.
+#[cfg_attr(
+    all(dylint_lib = "quenchant_dylints", not(test)),
+    expect(std_container, reason = "no local type shares a text by a count")
+)]
+type SharedText = Arc<str>;
+
 /// A test's path inside its binary: what nextest's `test()` filter matches.
 #[repr(transparent)]
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct TestName(Arc<str>);
+#[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TestName(SharedText);
 
 /// The test binary a case ran in, as nextest names it in `classname`.
 #[repr(transparent)]
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct BinaryId(Arc<str>);
+#[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BinaryId(SharedText);
 
 /// The job a report came from, named by the artifact that carried it.
 #[repr(transparent)]
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Lane(Arc<str>);
+#[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Lane(SharedText);
 
 /// The text of one JUnit report.
 #[repr(transparent)]
@@ -44,6 +58,23 @@ pub struct ReportText<'text>(&'text str);
 /// copy of a name shares its text.
 macro_rules! name {
     ($name:ident) => {
+        impl Clone for $name
+        {
+            /// Shares the text. The count is the share's own.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            #[cfg_attr(
+                all(dylint_lib = "quenchant_dylints", not(test)),
+                expect(std_container, reason = "no local type shares a text by a count")
+            )]
+            fn clone(&self) -> Self
+            {
+                Self(Arc::clone(&self.0))
+            }
+        }
+
         impl AsRef<str> for $name
         {
             /// The name as text.
@@ -69,10 +100,19 @@ macro_rules! name {
             #[inline]
             fn from(name: &str) -> Self
             {
-                Self(name.into())
+                #[cfg_attr(
+                    all(dylint_lib = "quenchant_dylints", not(test)),
+                    expect(std_container, reason = "no local type shares a text by a count")
+                )]
+                let shared = Arc::<str>::from(name);
+                Self(shared)
             }
         }
 
+        #[cfg_attr(
+            all(dylint_lib = "quenchant_dylints", not(test)),
+            expect(std_container, reason = "no local type shares a text by a count")
+        )]
         impl From<String> for $name
         {
             /// Adopts `name` as given.
@@ -83,6 +123,10 @@ macro_rules! name {
             /// # Cost
             /// - allocation: the shared text, setup
             #[inline]
+            #[cfg_attr(
+                all(dylint_lib = "quenchant_dylints", not(test)),
+                expect(std_container, reason = "no local type shares a text by a count")
+            )]
             fn from(name: String) -> Self
             {
                 Self(name.into())
@@ -225,22 +269,25 @@ pub struct Sample
 ///   asserted value or variant.
 /// - witness: `report::tests::a_report_reads_every_case_in_order`
 /// - witness: `report::tests::an_unreadable_case_is_refused_by_name`
+///
+/// # Cost
+/// - allocation: the sample list and a refusal path, growth within the report
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |samples| samples.len() == text.0.matches("<testcase").count()))]
 #[inline]
 pub fn samples(
     text: ReportText<'_>,
     path: &Path,
-) -> Result<Vec<Sample>, TimingError>
+) -> Result<SmallVec<Sample, 0, Global>, TimingError>
 {
     let document = roxmltree::Document::parse(text.0).map_err(|error| TimingError::Xml {
         path: path.to_owned(),
-        message: error.to_string(),
+        message: crate::error::held_built!(error.to_string()),
     })?;
     let refuse = |defect| TimingError::TestCase {
         path: path.to_owned(),
         defect,
     };
-    let mut samples = Vec::new();
+    let mut samples = SmallVec::<_, 0, Global>::new();
     for case in document
         .descendants()
         .filter(|node| node.has_tag_name("testcase"))
@@ -258,7 +305,7 @@ pub fn samples(
             .parse::<f64>()
             .ok()
             .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok())
-            .ok_or_else(|| refuse(TestCaseDefect::Time(time.to_owned())))?;
+            .ok_or_else(|| refuse(TestCaseDefect::Time(crate::error::held!(time))))?;
         samples.push(Sample {
             binary: BinaryId::from(binary),
             test: TestName::from(test),
@@ -362,6 +409,9 @@ impl Timing
     ///   set; an upper median, an averaged median or a swapped extreme changes
     ///   the asserted durations.
     /// - witness: `report::tests::the_median_is_a_sample_some_run_took`
+    ///
+    /// # Cost
+    /// - allocation: the sorted samples, growth within the sample count
     #[inline]
     #[spec(ensures: |ref ret| match *ret {
         Maybe::Present(ref timing) => timing.fastest <= timing.median && timing.median <= timing.slowest
@@ -374,7 +424,7 @@ impl Timing
         samples: &[Duration],
     ) -> Maybe<Self, summary::Absent>
     {
-        let mut sorted = samples.to_vec();
+        let mut sorted = SmallVec::<_, 0, Global>::from_iter(samples.iter().copied());
         sorted.sort_unstable();
         let middle = sorted
             .len()
@@ -439,6 +489,9 @@ pub enum Stability
     Unsteady,
 }
 
+/// The durations of one test in one binary and one lane.
+type Durations = SmallVec<Duration, 0, Global>;
+
 /// Durations recorded per test, per binary and per lane.
 ///
 /// # Specification
@@ -446,7 +499,7 @@ pub enum Stability
 ///   is one lookup.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct History(BTreeMap<TestName, BTreeMap<(BinaryId, Lane), Vec<Duration>>>);
+pub struct History(BTreeMap<TestName, BTreeMap<(BinaryId, Lane), Durations>>);
 
 impl History
 {
@@ -466,11 +519,14 @@ impl History
     ///   binaries, keep four separate sample lists; merging lanes or binaries
     ///   changes the asserted summaries.
     /// - witness: `report::tests::each_test_is_summarised_by_its_slowest_lane`
+    ///
+    /// # Cost
+    /// - allocation: the sample lists, growth within the recorded samples
     #[inline]
     pub fn record(
         &mut self,
         lane: &Lane,
-        samples: Vec<Sample>,
+        samples: SmallVec<Sample, 0, Global>,
     )
     {
         for sample in samples {
@@ -500,12 +556,15 @@ impl History
     ///   slower binary's; choosing the first lane, the mean, or the fastest
     ///   changes the asserted summary.
     /// - witness: `report::tests::each_test_is_summarised_by_its_slowest_lane`
+    ///
+    /// # Cost
+    /// - allocation: the summary rows, growth within the recorded tests
     #[inline]
     #[must_use]
     #[spec(ensures: |ref ret| ret.len() == self.0.len() && ret.is_sorted_by(|left, right| left.0 < right.0))]
-    pub fn timings(&self) -> Vec<(TestName, Timing)>
+    pub fn timings(&self) -> SmallVec<(TestName, Timing), 0, Global>
     {
-        let mut timings = Vec::with_capacity(self.0.len());
+        let mut timings = SmallVec::<_, 0, Global>::with_capacity(Count::from(self.0.len()));
         for (test, lanes) in &self.0 {
             let slowest = lanes
                 .iter()
@@ -528,9 +587,11 @@ impl History
 #[cfg(test)]
 mod tests
 {
+    use alloc::alloc::Global;
     use core::time::Duration;
     use std::path::Path;
 
+    use gandr_kernel_data::SmallVec;
     use quenchant_shape::shape::Maybe;
 
     use super::BinaryId;
@@ -557,7 +618,7 @@ mod tests
         let read = samples(ReportText::from(text), Path::new("r.xml"));
         assert_eq!(
             read,
-            Ok(vec![
+            Ok(SmallVec::<_, 0, Global>::from_iter([
                 Sample {
                     binary: BinaryId::from("gandr-a::tests"),
                     test: TestName::from("z::slow"),
@@ -568,7 +629,7 @@ mod tests
                     test: TestName::from("a::fast"),
                     elapsed: Duration::from_millis(39),
                 },
-            ]),
+            ])),
             "both cases, in document order, timed to the millisecond"
         );
     }
@@ -604,12 +665,12 @@ mod tests
         );
         assert_eq!(
             refused("<testcase classname=\"b\" name=\"t\" time=\"-1\"/>"),
-            defect(TestCaseDefect::Time("-1".into())),
+            defect(TestCaseDefect::Time(crate::error::held!("-1"))),
             "a negative time"
         );
         assert_eq!(
             refused("<testcase classname=\"b\" name=\"t\" time=\"soon\"/>"),
-            defect(TestCaseDefect::Time("soon".into())),
+            defect(TestCaseDefect::Time(crate::error::held!("soon"))),
             "a time that is not a number"
         );
         assert!(
@@ -697,20 +758,26 @@ mod tests
         };
         let mut history = History::default();
         for run in [1, 3] {
-            history.record(&plain, vec![
-                sample("a", "t", run),
-                sample("b", "t", 2),
-                sample("a", "u", 1),
-            ]);
-            history.record(&enforcing, vec![
-                sample("a", "t", run.saturating_mul(40)),
-                sample("b", "t", 90),
-            ]);
+            history.record(
+                &plain,
+                SmallVec::<_, 0, Global>::from_iter([
+                    sample("a", "t", run),
+                    sample("b", "t", 2),
+                    sample("a", "u", 1),
+                ]),
+            );
+            history.record(
+                &enforcing,
+                SmallVec::<_, 0, Global>::from_iter([
+                    sample("a", "t", run.saturating_mul(40)),
+                    sample("b", "t", 90),
+                ]),
+            );
         }
         let timings = history.timings();
         assert_eq!(
             timings,
-            vec![
+            SmallVec::<_, 0, Global>::from_iter([
                 (TestName::from("t"), Timing {
                     lane: enforcing,
                     binary: BinaryId::from("b"),
@@ -727,7 +794,7 @@ mod tests
                     slowest: secs(1),
                     runs: RunCount(2),
                 },),
-            ],
+            ]),
             "`t` takes its slower binary in its slower lane; `u` has one lane"
         );
     }

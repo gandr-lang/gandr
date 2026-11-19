@@ -2910,6 +2910,7 @@ name = "gandr-workflow-test-timing"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "gandr-kernel-data",
  "gandr-workflow-github",
  "quenchant-anodized",
  "quenchant-shape",

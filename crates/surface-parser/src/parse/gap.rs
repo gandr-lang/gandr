@@ -1533,7 +1533,7 @@ pub(super) fn gapped<'source>(
 ///   after a declaration owes itself alone; a string whose `import` is left out
 ///   keeps the keyword minted at its start.
 /// - witness: `parse::gap::tests::a_separator_after_a_root_stray_owes_itself_alone_1057`
-/// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+/// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
 pub(super) fn strayed<'source>(
     pbg: &Pbg,
     parsed: &ParseResult<'source>,

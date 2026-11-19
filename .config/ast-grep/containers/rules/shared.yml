@@ -49,12 +49,11 @@ rule:
     - not:
         has:
           field: type_arguments
-          regex: ^<\[
+          regex: ^<str>$
     - not:
-        inside:
-          kind: mod_item
-          regex: ^mod tests
-          stopBy: end
+        has:
+          field: type_arguments
+          regex: ^<dyn
 transform:
   ITEMS:
     replace:

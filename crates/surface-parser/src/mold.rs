@@ -1210,7 +1210,7 @@ primitive_copy_wrapper!(
 ///   set too, 65 dropped-token rows of the corpus read worse.
 /// - witness: `tests::acceptance::a_declaration_recovers_as_at_the_end_whatever_follows_5747`
 /// - witness: `tests::acceptance::a_body_s_last_member_owes_its_equals_alone_7986`
-/// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+/// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
 #[spec(ensures: |ret| !bool::from(ret) || tokens.get(usize::from(index)).is_some_and(|token| matches!(token.lexeme, Lexeme::LayoutSemi | Lexeme::Punct)))]
 #[inline]
 fn ends_declaration(
@@ -2850,7 +2850,7 @@ impl<'pbg> Molder<'pbg>
     ///   Without the close, the window at the type prefers the reading that
     ///   leaves it open.
     /// - witness: `tests::acceptance::a_pub_at_the_margin_closes_the_open_declaration_6101`
-    /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+    /// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
     fn settle_before_prefixed_head<'src>(
         &mut self,
         state: &mut MeldState<'_>,
@@ -3007,7 +3007,7 @@ impl<'pbg> Molder<'pbg>
     ///   and closing the second would owe its `as`, name and `;` again where
     ///   the keyword read as it stands owes less.
     /// - witness: `tests::acceptance::a_statement_keyword_starts_the_next_statement_1090`
-    /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+    /// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -3109,7 +3109,7 @@ impl<'pbg> Molder<'pbg>
     /// - hypothesis: L3 — an arm that lost its `=>` before the two closes of
     ///   its `match` and its `def` owes its `=>` once, and the `def` closes.
     /// - witness: `tests::acceptance::a_layout_close_closes_its_own_block_7902`
-    /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+    /// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -3294,7 +3294,7 @@ impl<'pbg> Molder<'pbg>
     ///   reads the source with each token dropped.
     /// - witness: `tests::grammar::a_called_former_keeps_its_own_opener_6121`
     /// - witness: `tests::grammar::a_path_type_reads_its_endpoints_juxtaposed_5750`
-    /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+    /// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
     #[spec(captures: before = self.candidates.len(), ensures: |_| self.candidates.len() <= before)]
     fn keep_called_former(
         &mut self,

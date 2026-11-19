@@ -2180,7 +2180,7 @@ fn settled<'source>(
 ///   type. A block's `}` of no bytes at the form's end, or a separator with no
 ///   later form, written after the copies, moves recovery rows.
 /// - witness: `parse::place::tests::a_tile_a_form_the_layout_ends_lacks_is_minted_where_one_copy_parses_5938`
-/// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+/// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
 fn lost_separator(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,

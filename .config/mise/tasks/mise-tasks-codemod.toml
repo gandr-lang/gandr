@@ -97,3 +97,25 @@ mise run --quiet body:check --title "$title" "$scratch/observation.md" >&2
 issue_keep "$title" "$(issue_found "$title")" 1 "$scratch/observation.md" \
   mise run --quiet issue:file "$title" "$scratch/observation.md" kind:defect area:workflow status:unsectioned
 '''
+
+# The codemod of the containers. One run takes the names of crates and moves
+# each site the rules cover. A second run changes no file. The task prints
+# each site that stays, with its file and its line.
+# - see: #8182, .config/mise/codemod-containers.bash, .config/ast-grep/containers
+["codemod:containers"]
+description = "Move a crate from the containers of alloc to the containers of gandr-kernel-data"
+tools."github:ast-grep/ast-grep" = "0.51.1"
+usage = '''
+flag "--census" help="print a text count of the forms the rules read, and change no file"
+flag "--dry-run" help="print the matches and change no file"
+arg "<crate>..." help="the package name or the directory name of each crate" var=#true
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+flags=()
+if [[ ${usage_census:-false} == true ]]; then flags+=(--census); fi
+if [[ ${usage_dry_run:-false} == true ]]; then flags+=(--dry-run); fi
+read -ra names <<< "${usage_crate:-}"
+exec .config/mise/codemod-containers.bash "${flags[@]}" "${names[@]}"
+'''

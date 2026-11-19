@@ -255,7 +255,7 @@ run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-sp
 # the sources it names, one on each line.
 ["ci:recovery"]
 description = "Every corpus source cut short and with each token dropped, against its recovery record"
-run = ".config/mise/scope cargo nextest run --locked --package gandr-surface-parser --test tests --profile sweeps -E 'test(=sweeps::dropped_tokens_recover_no_worse_than_the_record)'"
+run = ".config/mise/scope cargo nextest run --locked --package gandr-surface-parser --test tests --profile sweeps -E 'test(=sweeps::each_variant_parses_marks_and_keeps_the_clean_tree)'"
 
 # The recovery sweep over a pull request's own records (#5864): `landing`'s
 # stale records are not the pull request's, and the whole sweep failed every
@@ -277,7 +277,7 @@ run = ".config/recovery/change.bash"
 description = "Rewrite every corpus source's recovery record, role golden and rendered refusals"
 env.UPDATE_EXPECT = "1"
 run = [
-  ".config/mise/scope cargo nextest run --locked --package gandr-surface-parser --test tests --profile sweeps -E 'test(=sweeps::dropped_tokens_recover_no_worse_than_the_record)'",
+  ".config/mise/scope cargo nextest run --locked --package gandr-surface-parser --test tests --profile sweeps -E 'test(=sweeps::each_variant_parses_marks_and_keeps_the_clean_tree)'",
   ".config/mise/scope cargo nextest run --locked --package gandr-surface-grammar --test tests -E 'test(=highlight::corpus_roles_match_the_golden)'",
   ".config/mise/scope cargo nextest run --locked --package gandr-surface-render-terminal --test tests -E 'test(=corpus::every_refusing_source_renders_as_its_golden)'",
 ]
@@ -4964,6 +4964,13 @@ mise run --quiet check:refactoring "$body" \
 # changes has its row in `## Preserved and changed`.
 mise run --quiet check:deletes --title "${usage_title:?}" "$body" "$from" \
   || { echo "account for what the change takes out in \`## Deletes\`, then run \`pr:open\` again" >&2; exit 2; }
+# A change can touch the parser, its grammar or its syntax tree. Its body then
+# states the five counts of `ledger:recovery` at its base and at its head. A
+# fall of more than one point in the share marked where made is refused.
+#
+# - see: #8152, `check:recovery-counts`
+"$(git rev-parse --show-toplevel)/.config/recovery/counts.bash" "$from" "$body" \
+  || { echo "state the counts of recovery as the lines above ask, then run \`pr:open\` again" >&2; exit 2; }
 # Landed worktrees go before anything else, and under the disk floor the
 # task refuses (`wt:sweep --guard`).
 mise run wt:sweep --guard

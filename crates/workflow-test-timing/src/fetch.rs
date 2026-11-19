@@ -5,6 +5,7 @@
 //! complete, so an interrupted fetch leaves no partial run behind, and a run
 //! already stored is never fetched again.
 
+use alloc::alloc::Global;
 use core::fmt;
 use core::num::NonZeroUsize;
 use std::path::Path;
@@ -12,6 +13,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use anodized::spec;
+use gandr_kernel_data::SmallString;
+use gandr_kernel_data::SmallVec;
 use gandr_workflow_github::GitHubError;
 use gandr_workflow_github::READ_PAUSE;
 
@@ -69,16 +72,16 @@ impl fmt::Display for RunId
 /// The repository whose runs are read, as `OWNER/NAME`.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Repository(String);
+pub struct Repository(SmallString<Global>);
 
-impl From<String> for Repository
+impl From<SmallString<Global>> for Repository
 {
     /// Adopts `name` as given.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn from(name: String) -> Self
+    fn from(name: SmallString<Global>) -> Self
     {
         Self(name)
     }
@@ -151,13 +154,24 @@ impl From<RunLimit> for usize
 ///   turn; a fake that prints a non-number is refused.
 /// - witness: `tests::cli::fetched_runs_are_stored_and_read_back`
 /// - witness: `tests::cli::a_failing_gh_is_reported_with_its_message`
+///
+/// # Cost
+/// - allocation: the command text and the run list, growth within the limit
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |runs| runs.len() <= usize::from(limit)))]
 #[inline]
 pub fn recent_runs(
     repository: &Repository,
     limit: RunLimit,
-) -> Result<Vec<RunId>, TimingError>
+) -> Result<SmallVec<RunId, 0, Global>, TimingError>
 {
+    #[cfg_attr(
+        all(dylint_lib = "quenchant_dylints", not(test)),
+        expect(
+            std_container,
+            reason = "the call builds a String of alloc, and no local format stands"
+        )
+    )]
+    let limit_text = limit.0.to_string();
     let mut command = Command::new("gh");
     command
         .args(["run", "list", "--repo", &repository.0])
@@ -169,16 +183,21 @@ pub fn recent_runs(
             "--status",
             "success",
         ])
-        .args(["--limit", &limit.0.to_string()])
+        .args(["--limit", &limit_text])
         .args(["--json", "databaseId", "--jq", ".[].databaseId"]);
     let listing = gandr_workflow_github::read(&mut command, READ_PAUSE)?;
-    let mut runs = Vec::new();
+    let mut runs = SmallVec::<_, 0, Global>::new();
     for line in listing.lines().take(limit.into()) {
         let id = line.trim().parse::<u64>().map_err(|error| {
-            GitHubError::unread(
-                &command,
-                format!("`{line}` is not a run identifier: {error}"),
-            )
+            #[cfg_attr(
+                all(dylint_lib = "quenchant_dylints", not(test)),
+                expect(
+                    std_container,
+                    reason = "the call builds a String of alloc, and no local format stands"
+                )
+            )]
+            let detail = format!("`{line}` is not a run identifier: {error}");
+            GitHubError::unread(&command, detail)
         })?;
         runs.push(RunId(id));
     }
@@ -198,18 +217,66 @@ pub enum Stored
     Already,
 }
 
+/// The directory `store` holds `run` in.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the run directory name, growth within the run identifier
+#[inline]
+fn destination_of(
+    store: &Path,
+    run: RunId,
+) -> PathBuf
+{
+    #[cfg_attr(
+        all(dylint_lib = "quenchant_dylints", not(test)),
+        expect(
+            std_container,
+            reason = "the call builds a String of alloc, and no local format stands"
+        )
+    )]
+    let name = run.to_string();
+    store.join(name)
+}
+
+/// The scratch directory a download of `run` writes before the rename.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the scratch directory name, growth within the run identifier
+#[inline]
+fn scratch_of(
+    store: &Path,
+    run: RunId,
+) -> PathBuf
+{
+    #[cfg_attr(
+        all(dylint_lib = "quenchant_dylints", not(test)),
+        expect(
+            std_container,
+            reason = "the call builds a String of alloc, and no local format stands"
+        )
+    )]
+    let name = format!(".partial-{run}");
+    store.join(name)
+}
+
 /// Stores `run`'s JUnit reports under `store/<run>`, unless already stored.
 ///
 /// # Specification
 /// - requires: `gh` on the path, authenticated for `repository`, when the run
 ///   is not stored yet.
 /// - ensures: `store/<run>` holds the run's `junit-*` artifacts, each in a
-///   directory named for the artifact; a partial download is never left under
+///   directory named for the artifact. A partial download is never left under
 ///   that name.
 /// - provides: [`Stored::Already`] without invoking `gh` when the directory
 ///   exists.
 /// - fails: [`TimingError::Io`] when the store cannot be prepared or the
-///   download renamed into place; [`TimingError::Gh`] when the download fails.
+///   download renamed into place. [`TimingError::Gh`] when the download fails.
 /// - panics: none.
 ///
 /// # Errors
@@ -217,11 +284,15 @@ pub enum Stored
 /// - [`TimingError::Gh`] — `gh run download` failed.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a fake `gh` that writes reports, run twice: the second
-///   report fetches nothing; a download left under a scratch name or repeated
+/// - hypothesis: L3 — a fake `gh` that writes reports, run twice. The second
+///   report fetches nothing. A download left under a scratch name or repeated
 ///   for a stored run changes what the fake records.
 /// - witness: `tests::cli::fetched_runs_are_stored_and_read_back`
-#[spec(ensures: |ref ret| ret.is_err() || store.join(run.to_string()).is_dir())]
+///
+/// # Cost
+/// - allocation: the destination path and the download command, growth within
+///   the store
+#[spec(ensures: |ref ret| ret.is_err() || destination_of(store, run).is_dir())]
 #[inline]
 pub fn download(
     repository: &Repository,
@@ -229,7 +300,7 @@ pub fn download(
     store: &Path,
 ) -> Result<Stored, TimingError>
 {
-    let destination = store.join(run.to_string());
+    let destination = destination_of(store, run);
     if destination.is_dir() {
         return Ok(Stored::Already);
     }
@@ -237,17 +308,26 @@ pub fn download(
         let path = path.to_owned();
         move |error: std::io::Error| TimingError::Io {
             path,
-            message: error.to_string(),
+            message: crate::error::held_built!(error.to_string()),
         }
     };
-    let scratch = store.join(format!(".partial-{run}"));
+    let scratch = scratch_of(store, run);
     if scratch.exists() {
         std::fs::remove_dir_all(&scratch).map_err(io(&scratch))?;
     }
     std::fs::create_dir_all(store).map_err(io(store))?;
     let mut command = Command::new("gh");
     command
-        .args(["run", "download", &run.to_string(), "--repo", &repository.0])
+        .args([
+            "run",
+            "download",
+            destination_of(store, run)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or(""),
+            "--repo",
+            &repository.0,
+        ])
         .args(["--pattern", "junit-*", "--dir"])
         .arg(&scratch);
     gandr_workflow_github::read(&mut command, READ_PAUSE)?;
@@ -274,18 +354,21 @@ pub fn download(
 ///   ascending order changes the report.
 /// - witness: `tests::cli::a_report_reads_the_newest_stored_runs`
 /// - witness: `tests::cli::an_empty_store_is_refused`
+///
+/// # Cost
+/// - allocation: the listed run identifiers, growth within the store
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |runs| runs.is_sorted_by(|newer, older| newer > older)))]
 #[inline]
-pub fn stored_runs(store: &Path) -> Result<Vec<RunId>, TimingError>
+pub fn stored_runs(store: &Path) -> Result<SmallVec<RunId, 0, Global>, TimingError>
 {
     if !store.exists() {
-        return Ok(Vec::new());
+        return Ok(SmallVec::<_, 0, Global>::new());
     }
     let refuse = |error: std::io::Error| TimingError::Io {
         path: store.to_owned(),
-        message: error.to_string(),
+        message: crate::error::held_built!(error.to_string()),
     };
-    let mut runs = Vec::new();
+    let mut runs = SmallVec::<_, 0, Global>::new();
     for entry in std::fs::read_dir(store).map_err(refuse)? {
         let entry = entry.map_err(refuse)?;
         let is_dir = entry.file_type().map_err(refuse)?.is_dir();
@@ -326,6 +409,9 @@ pub fn stored_runs(store: &Path) -> Result<Vec<RunId>, TimingError>
 ///   from the wrong directory level or a report skipped changes the printed
 ///   table.
 /// - witness: `tests::cli::a_report_reads_the_newest_stored_runs`
+///
+/// # Cost
+/// - allocation: the artifact paths, growth within the stored reports
 #[inline]
 pub fn read_run(
     store: &Path,
@@ -337,16 +423,16 @@ pub fn read_run(
         let path = path.to_owned();
         move |error: std::io::Error| TimingError::Io {
             path,
-            message: error.to_string(),
+            message: crate::error::held_built!(error.to_string()),
         }
     };
-    let root = store.join(run.to_string());
-    let mut artifacts: Vec<PathBuf> = Vec::new();
+    let root = destination_of(store, run);
+    let mut artifacts: SmallVec<PathBuf, 0, Global> = SmallVec::<_, 0, Global>::new();
     for entry in std::fs::read_dir(&root).map_err(io(&root))? {
         artifacts.push(entry.map_err(io(&root))?.path());
     }
     artifacts.sort_unstable();
-    let mut pending: Vec<PathBuf> = Vec::new();
+    let mut pending: SmallVec<PathBuf, 0, Global> = SmallVec::<_, 0, Global>::new();
     for artifact in artifacts {
         let Some(lane) = artifact
             .file_name()
