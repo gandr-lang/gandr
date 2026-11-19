@@ -824,6 +824,10 @@ impl From<String> for SmallString<Global>
     /// - hypothesis: L3 — an exact block crosses with the same pointer and no
     ///   new block, and a short text takes the inline form.
     /// - witness: `tests::small_string::a_text_in_a_block_crosses_with_no_copy`
+    ///
+    /// # Cost
+    /// - allocation: the exact block of a text with spare capacity, growth
+    ///   within the text
     #[spec(captures: before = text.len(), ensures: |ret| ret.len().0 == before)]
     #[inline]
     fn from(text: String) -> Self
@@ -864,6 +868,10 @@ impl From<SmallString<Global>> for String
     /// - hypothesis: L3 — a block crosses with the same pointer and no new
     ///   block, and an inline text takes one block.
     /// - witness: `tests::small_string::a_text_in_a_block_crosses_with_no_copy`
+    ///
+    /// # Cost
+    /// - allocation: the block of an inline or a static text, growth within the
+    ///   text
     #[spec(captures: before = text.len().0, ensures: |ret| ret.len() == before)]
     #[inline]
     fn from(text: SmallString<Global>) -> Self
