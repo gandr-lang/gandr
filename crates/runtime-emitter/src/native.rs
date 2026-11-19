@@ -189,7 +189,7 @@ impl Native
     ///   compares the answer with the executor's and the answer it states, and
     ///   a block entry answers what the executor's entry of it answers.
     /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
-    /// - witness: `run::tests::a_block_answers_alike_on_each_tier`
+    /// - witness: `machine::tests::a_block_answers_alike_on_each_tier`
     #[inline]
     pub fn emit(
         &mut self,

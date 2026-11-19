@@ -19,5 +19,20 @@ mod generate;
 mod image;
 #[cfg(test)]
 mod layout;
+#[cfg(all(
+    test,
+    any(
+        all(
+            target_os = "linux",
+            any(
+                target_arch = "x86_64",
+                target_arch = "aarch64",
+                target_arch = "riscv64"
+            )
+        ),
+        all(target_os = "macos", target_arch = "aarch64")
+    )
+))]
+mod machine;
 #[cfg(test)]
 mod support;

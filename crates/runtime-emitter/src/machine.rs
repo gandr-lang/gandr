@@ -42,16 +42,16 @@ const REGION_BYTES: usize = 1 << 16;
 
 /// The target of the blocks that run on this host.
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-const HOST: Target = Target::LinuxX86_64;
+pub(crate) const HOST: Target = Target::LinuxX86_64;
 /// The target of the blocks that run on this host.
 #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-const HOST: Target = Target::LinuxAarch64;
+pub(crate) const HOST: Target = Target::LinuxAarch64;
 /// The target of the blocks that run on this host.
 #[cfg(all(target_os = "linux", target_arch = "riscv64"))]
-const HOST: Target = Target::LinuxRiscv64;
+pub(crate) const HOST: Target = Target::LinuxRiscv64;
 /// The target of the blocks that run on this host.
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-const HOST: Target = Target::DarwinAarch64;
+pub(crate) const HOST: Target = Target::DarwinAarch64;
 
 /// Why a key gives no address.
 ///
@@ -173,8 +173,8 @@ pub(crate) fn record(
 /// - hypothesis: L2 — a block that adds its two words answers their sum on each
 ///   tier of each host, and a block of another target declines the run by name;
 ///   a wrong address faults or answers another sum.
-/// - witness: `run::tests::a_block_answers_alike_on_each_tier`
-/// - witness: `run::tests::a_block_no_host_runs_declines_the_run`
+/// - witness: `machine::tests::a_block_answers_alike_on_each_tier`
+/// - witness: `machine::tests::a_block_no_host_runs_declines_the_run`
 #[inline]
 pub fn address(key: Key) -> Result<Word, Unentered>
 {
@@ -264,4 +264,289 @@ fn place(
     };
     region.write(reservation, |bytes| bytes.0.copy_from_slice(&code.0));
     Ok(region.address(reservation))
+}
+
+#[cfg(all(test, gandr_executable))]
+mod tests
+{
+    use alloc::boxed::Box;
+    use alloc::vec::Vec;
+
+    use gandr_core_sequent::CommandArena;
+    use gandr_core_sequent::Definitions;
+    use gandr_core_sequent::HeapValue;
+    use gandr_core_sequent::Outcome;
+    use gandr_core_sequent::Store;
+    use gandr_kernel_term::Literal;
+    use gandr_runtime_stencils::BLOCK_ANSWERS;
+    use gandr_runtime_stencils::INTEGER_HEADER;
+    use gandr_runtime_stencils::StencilId;
+    use gandr_runtime_stencils::Word;
+
+    use super::HOST;
+    use super::Unentered;
+    use crate::PATCHER;
+    use crate::block::Answer;
+    use crate::block::Assembler;
+    use crate::block::Blocks;
+    use crate::block::Cache;
+    use crate::block::Class;
+    use crate::block::Description;
+    use crate::block::Direction;
+    use crate::block::Key;
+    use crate::block::Operand as BlockOperand;
+    use crate::block::Options;
+    use crate::block::Place;
+    use crate::block::Target;
+    use crate::budget::Budget;
+    use crate::function::Alt;
+    use crate::function::Function;
+    use crate::function::Immediate;
+    use crate::function::Instruction;
+    use crate::function::Operand;
+    use crate::host::integer_literal;
+    use crate::lower::Lowered;
+    use crate::run::Declined;
+    use crate::run::Kept;
+    use crate::run::Ran;
+    use crate::run::RunInputs;
+    use crate::run::Tier;
+    use crate::run::on_tier;
+
+    /// The tiers this host runs: native where a patcher exists, the executor
+    /// everywhere.
+    ///
+    /// # Specification
+    /// trivial.
+    fn tiers() -> &'static [Tier]
+    {
+        if PATCHER {
+            &[Tier::Native, Tier::Executor]
+        }
+        else {
+            &[Tier::Executor]
+        }
+    }
+
+    /// A block on `target` that adds its two words and answers the sum, or
+    /// an empty block that answers nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    fn adding(target: Target) -> Description
+    {
+        let general = Place::Class(Class::General);
+        let word = |direction| BlockOperand {
+            direction,
+            place: general.clone(),
+        };
+        // x86-64 adds in place: its first word takes the sum, which the
+        // answer copies last, so the answer may share the second's register.
+        let (template, first) = match target {
+            Target::LinuxX86_64 => ("add {0}, {1}\nmov {answer}, {0}", Direction::InOut),
+            Target::LinuxAarch64 | Target::LinuxRiscv64 | Target::DarwinAarch64 => {
+                ("add {answer}, {0}, {1}", Direction::In)
+            },
+        };
+        Description {
+            target,
+            template: template.into(),
+            operands: Box::new([word(first), word(Direction::In)]),
+            answer: Answer::Place(general.clone()),
+            clobbers: Box::new([]),
+            options: Options::DEFAULT,
+        }
+    }
+
+    /// The empty block on `target`, which answers nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    fn empty(target: Target) -> Description
+    {
+        Description {
+            target,
+            template: "".into(),
+            operands: Box::new([]),
+            answer: Answer::Zero,
+            clobbers: Box::new([]),
+            options: Options::DEFAULT,
+        }
+    }
+
+    /// The key of `description`'s block, compiled by the pinned `llc`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn compiled(description: &Description) -> Key
+    {
+        Blocks::new(Assembler::pinned(), Cache::Process)
+            .compile(description)
+            .expect("the block compiles")
+            .key
+    }
+
+    /// The function that pushes `words` as machine integers, enters the block
+    /// of `key`, and halts with the value in hand.
+    ///
+    /// # Specification
+    /// trivial.
+    fn entering(
+        key: Key,
+        words: &[i64],
+        answers: bool,
+    ) -> Function
+    {
+        let mut function = Function::default();
+        let step = |function: &mut Function, stencil, a, b| {
+            let _at = function.push(Instruction {
+                stencil,
+                a,
+                b,
+                alt: Alt::None,
+            });
+        };
+        for &word in words {
+            let integer = function.object(&[INTEGER_HEADER, Word::from(word)]);
+            step(
+                &mut function,
+                StencilId::Const,
+                Operand::Data(integer),
+                Operand::Unused,
+            );
+            step(
+                &mut function,
+                StencilId::Push,
+                Operand::Unused,
+                Operand::Unused,
+            );
+        }
+        let row = function.block(key);
+        let count = words.len() | if answers { BLOCK_ANSWERS } else { 0 };
+        let count = u32::try_from(count).expect("a count below 2³²");
+        step(
+            &mut function,
+            StencilId::Block,
+            Operand::Block(row),
+            Operand::Immediate(Immediate::from(count)),
+        );
+        step(
+            &mut function,
+            StencilId::Pop,
+            Operand::Unused,
+            Operand::Unused,
+        );
+        function
+    }
+
+    /// Run `function` on `tier`, and read the value it halts with.
+    ///
+    /// # Specification
+    /// trivial.
+    fn run(
+        tier: Tier,
+        function: Function,
+    ) -> Result<HeapValue, Declined>
+    {
+        let lowered = Lowered {
+            function,
+            fused: Vec::new(),
+            sites: Vec::new(),
+            captures: Vec::new(),
+            accumulate: None,
+            spawned: Vec::new(),
+            cells: Vec::new(),
+            bounds: Vec::new(),
+            heads: Vec::new(),
+            literals: Vec::new(),
+            codes: Vec::new(),
+            callees: Vec::new(),
+            handlers: Vec::new(),
+            windows: Vec::new(),
+            owners: Vec::new(),
+            linears: Vec::new(),
+            unwinds: Vec::new(),
+            unmatched: Vec::new(),
+            globals: Vec::new(),
+            joined: None,
+            marker: None,
+            kept: Kept::default(),
+        };
+        let mut store = Store::new();
+        let ran = on_tier(
+            tier,
+            &lowered,
+            (&CommandArena::new(), &Definitions::new()),
+            Budget::from(1_usize << 20),
+            RunInputs::new(&mut store),
+        )?;
+        let Ran::Ended(Outcome::Halted(value)) = ran
+        else {
+            panic!("the function halts on {tier:?}");
+        };
+        Ok(store
+            .value(value)
+            .expect("the store holds the answer")
+            .clone())
+    }
+
+    /// The machine integer `bits` as the store holds it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn integer(bits: i64) -> HeapValue
+    {
+        HeapValue::Literal(Literal::Integer(integer_literal(Word::from(bits))))
+    }
+
+    /// A block that adds its two words answers their sum as a machine
+    /// integer on each tier, at zero, at a carry into the sign and with a
+    /// negative word; and a block that answers nothing leaves the last word
+    /// pushed in hand. A word read from the object and not its field, a lost
+    /// answer or swapped words change one.
+    #[test]
+    fn a_block_answers_alike_on_each_tier()
+    {
+        let adds = compiled(&adding(HOST));
+        let nothing = compiled(&empty(HOST));
+        for &tier in tiers() {
+            for (first, second) in [(0, 0), (2, 40), (i64::MAX, 1), (-7, 3)] {
+                assert_eq!(
+                    Ok(integer(first.wrapping_add(second))),
+                    run(tier, entering(adds, &[first, second], true)),
+                    "{first} + {second} on {tier:?}"
+                );
+            }
+            assert_eq!(
+                Ok(integer(9)),
+                run(tier, entering(nothing, &[5, 9], false)),
+                "an empty block on {tier:?}"
+            );
+        }
+    }
+
+    /// A block of another target than this host's, and a key that no compile
+    /// gave, decline the run by name on each tier before it starts.
+    #[test]
+    fn a_block_no_host_runs_declines_the_run()
+    {
+        let foreign = Target::ALL
+            .into_iter()
+            .find(|&target| target != HOST)
+            .expect("a target other than this host's");
+        let elsewhere = compiled(&adding(foreign));
+        let unknown = Key(blake3::hash(b"no compile gave this key"));
+        for &tier in tiers() {
+            assert_eq!(
+                Err(Declined::Block(Unentered::Target(foreign))),
+                run(tier, entering(elsewhere, &[1, 2], true)),
+                "a block of {foreign} on {tier:?}"
+            );
+            assert_eq!(
+                Err(Declined::Block(Unentered::Unknown(unknown))),
+                run(tier, entering(unknown, &[1, 2], true)),
+                "an unknown key on {tier:?}"
+            );
+        }
+    }
 }

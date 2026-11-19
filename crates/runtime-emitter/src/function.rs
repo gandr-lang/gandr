@@ -601,7 +601,10 @@ mod tests
 {
     use alloc::vec::Vec;
 
+    use super::BlockRow;
+    use super::Function;
     use super::Stub;
+    use crate::block::Key;
 
     /// Every stub runs a stencil of its own: two stubs sharing one would
     /// resume each other's frames.
@@ -613,5 +616,22 @@ mod tests
         stencils.sort();
         stencils.dedup();
         assert_eq!(stencils.len(), count, "{stencils:?}");
+    }
+
+    /// Two keys take two rows in the order entered, and the first key entered
+    /// again takes its first row: the table holds each key once.
+    #[test]
+    fn a_key_entered_twice_takes_one_row()
+    {
+        let first = Key(blake3::hash(b"the first block"));
+        let second = Key(blake3::hash(b"the second block"));
+        let mut function = Function::default();
+        let rows = [
+            function.block(first),
+            function.block(second),
+            function.block(first),
+        ];
+        assert_eq!([BlockRow(0), BlockRow(1), BlockRow(0)], rows);
+        assert_eq!(&[first, second][..], function.blocks());
     }
 }

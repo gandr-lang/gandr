@@ -517,7 +517,7 @@ impl core::error::Error for Refusal
 /// trivial.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Key(blake3::Hash);
+pub struct Key(pub(crate) blake3::Hash);
 
 impl fmt::Display for Key
 {

@@ -384,7 +384,7 @@ unsafe extern "C" {
     /// # Adequacy
     /// - hypothesis: L2 — a block's bytes run from the range just after they
     ///   are written; a stale instruction cache would run other bytes.
-    /// - witness: `run::tests::a_block_answers_alike_on_each_tier`
+    /// - witness: `machine::tests::a_block_answers_alike_on_each_tier`
     fn __riscv_flush_icache(
         start: *mut core::ffi::c_void,
         end: *mut core::ffi::c_void,

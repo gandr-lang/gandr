@@ -82,7 +82,7 @@ impl Program
     ///   beside the emitted code of the same function and the answer it states,
     ///   and a block entry answers the sum that its block computes.
     /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
-    /// - witness: `run::tests::a_block_answers_alike_on_each_tier`
+    /// - witness: `machine::tests::a_block_answers_alike_on_each_tier`
     #[inline]
     pub fn build(
         function: &Function,
