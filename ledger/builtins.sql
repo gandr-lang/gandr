@@ -81,7 +81,10 @@ INSERT INTO builtin VALUES('Void','crates/surface-lowering-base/src/resolve.rs',
 INSERT INTO builtin VALUES('Web','crates/surface-lowering-base/src/resolve.rs','atom','given','stated');
 INSERT INTO builtin VALUES('add','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('and','crates/core-term/src/builtin.rs','value','given','stated');
+INSERT INTO builtin VALUES('bool','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('bool.not','crates/core-term/src/builtin.rs','value','given','stated');
+INSERT INTO builtin VALUES('buf','crates/core-term/src/builtin.rs','atom','given','stated');
+INSERT INTO builtin VALUES('char','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('cons','crates/surface-lowering-identity/src/lower/identity.rs','member','given','stated');
 INSERT INTO builtin VALUES('decompose','crates/surface-lowering-identity/src/lower/identity.rs','member','given','stated');
 INSERT INTO builtin VALUES('dialogue','crates/surface-lowering-identity/src/lower/identity.rs','member','given','stated');
@@ -89,6 +92,7 @@ INSERT INTO builtin VALUES('eq','crates/core-term/src/builtin.rs','value','given
 INSERT INTO builtin VALUES('equiv','crates/surface-lowering-identity/src/lower/identity.rs','member','given','stated');
 INSERT INTO builtin VALUES('f32','crates/surface-grammar/src/highlight.rs','atom','given','stated');
 INSERT INTO builtin VALUES('f32','crates/surface-grammar/src/surface/type_shell.rs','atom','given','stated');
+INSERT INTO builtin VALUES('f64','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('f64','crates/surface-grammar/src/highlight.rs','atom','given','stated');
 INSERT INTO builtin VALUES('f64','crates/surface-grammar/src/surface/type_shell.rs','atom','given','stated');
 INSERT INTO builtin VALUES('f64','crates/surface-lowering-base/src/resolve.rs','atom','given','stated');
@@ -108,6 +112,7 @@ INSERT INTO builtin VALUES('float64.round','crates/core-term/src/builtin.rs','va
 INSERT INTO builtin VALUES('float64.sub','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('ge','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('gt','crates/core-term/src/builtin.rs','value','given','stated');
+INSERT INTO builtin VALUES('i16','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('i16','crates/surface-grammar/src/highlight.rs','atom','given','stated');
 INSERT INTO builtin VALUES('i16','crates/surface-grammar/src/surface/type_shell.rs','atom','given','stated');
 INSERT INTO builtin VALUES('i16','crates/surface-lowering-base/src/resolve.rs','atom','given','stated');
@@ -136,6 +141,7 @@ INSERT INTO builtin VALUES('i16.wrapping_mul','crates/core-term/src/builtin.rs',
 INSERT INTO builtin VALUES('i16.wrapping_rem','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('i16.wrapping_sub','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('i16.xor','crates/core-term/src/builtin.rs','value','given','stated');
+INSERT INTO builtin VALUES('i32','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('i32','crates/surface-grammar/src/highlight.rs','atom','given','stated');
 INSERT INTO builtin VALUES('i32','crates/surface-grammar/src/surface/type_shell.rs','atom','given','stated');
 INSERT INTO builtin VALUES('i32','crates/surface-lowering-base/src/resolve.rs','atom','given','stated');
@@ -164,6 +170,7 @@ INSERT INTO builtin VALUES('i32.wrapping_mul','crates/core-term/src/builtin.rs',
 INSERT INTO builtin VALUES('i32.wrapping_rem','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('i32.wrapping_sub','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('i32.xor','crates/core-term/src/builtin.rs','value','given','stated');
+INSERT INTO builtin VALUES('i64','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('i64','crates/surface-grammar/src/highlight.rs','atom','given','stated');
 INSERT INTO builtin VALUES('i64','crates/surface-grammar/src/surface/type_shell.rs','atom','given','stated');
 INSERT INTO builtin VALUES('i64','crates/surface-lowering-base/src/resolve.rs','atom','given','stated');
@@ -192,6 +199,7 @@ INSERT INTO builtin VALUES('i64.wrapping_mul','crates/core-term/src/builtin.rs',
 INSERT INTO builtin VALUES('i64.wrapping_rem','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('i64.wrapping_sub','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('i64.xor','crates/core-term/src/builtin.rs','value','given','stated');
+INSERT INTO builtin VALUES('i8','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('i8','crates/surface-grammar/src/highlight.rs','atom','given','stated');
 INSERT INTO builtin VALUES('i8','crates/surface-grammar/src/surface/type_shell.rs','atom','given','stated');
 INSERT INTO builtin VALUES('i8','crates/surface-lowering-base/src/resolve.rs','atom','given','stated');
@@ -227,10 +235,12 @@ INSERT INTO builtin VALUES('int.gt','crates/core-term/src/builtin.rs','value','g
 INSERT INTO builtin VALUES('int.le','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('int.lt','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('int.mod','crates/core-term/src/builtin.rs','value','given','stated');
+INSERT INTO builtin VALUES('integer','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('irArgs','crates/core-term/src/builtin.rs','role','found','stated');
 INSERT INTO builtin VALUES('irDecode','crates/core-term/src/builtin.rs','role','found','stated');
 INSERT INTO builtin VALUES('irPair','crates/core-term/src/builtin.rs','role','found','stated');
 INSERT INTO builtin VALUES('irSignature','crates/core-term/src/builtin.rs','role','found','stated');
+INSERT INTO builtin VALUES('isize','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('isize','crates/surface-grammar/src/highlight.rs','atom','given','stated');
 INSERT INTO builtin VALUES('isize','crates/surface-grammar/src/surface/type_shell.rs','atom','given','stated');
 INSERT INTO builtin VALUES('isize','crates/surface-lowering-base/src/resolve.rs','atom','given','stated');
@@ -267,11 +277,15 @@ INSERT INTO builtin VALUES('neg','crates/core-term/src/builtin.rs','value','give
 INSERT INTO builtin VALUES('or','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('prim.const','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('prim.id','crates/core-term/src/builtin.rs','value','given','stated');
+INSERT INTO builtin VALUES('qubit','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('recorded','crates/surface-lowering-identity/src/lower/identity.rs','member','given','stated');
+INSERT INTO builtin VALUES('row','crates/core-term/src/builtin.rs','atom','given','stated');
+INSERT INTO builtin VALUES('string','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('string.append','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('string.eq','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('string.lt','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('sub','crates/core-term/src/builtin.rs','value','given','stated');
+INSERT INTO builtin VALUES('u16','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('u16','crates/surface-grammar/src/highlight.rs','atom','given','stated');
 INSERT INTO builtin VALUES('u16','crates/surface-grammar/src/surface/type_shell.rs','atom','given','stated');
 INSERT INTO builtin VALUES('u16','crates/surface-lowering-base/src/resolve.rs','atom','given','stated');
@@ -300,6 +314,7 @@ INSERT INTO builtin VALUES('u16.wrapping_mul','crates/core-term/src/builtin.rs',
 INSERT INTO builtin VALUES('u16.wrapping_rem','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('u16.wrapping_sub','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('u16.xor','crates/core-term/src/builtin.rs','value','given','stated');
+INSERT INTO builtin VALUES('u32','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('u32','crates/surface-grammar/src/highlight.rs','atom','given','stated');
 INSERT INTO builtin VALUES('u32','crates/surface-grammar/src/surface/type_shell.rs','atom','given','stated');
 INSERT INTO builtin VALUES('u32','crates/surface-lowering-base/src/resolve.rs','atom','given','stated');
@@ -328,6 +343,7 @@ INSERT INTO builtin VALUES('u32.wrapping_mul','crates/core-term/src/builtin.rs',
 INSERT INTO builtin VALUES('u32.wrapping_rem','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('u32.wrapping_sub','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('u32.xor','crates/core-term/src/builtin.rs','value','given','stated');
+INSERT INTO builtin VALUES('u64','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('u64','crates/surface-grammar/src/highlight.rs','atom','given','stated');
 INSERT INTO builtin VALUES('u64','crates/surface-grammar/src/surface/type_shell.rs','atom','given','stated');
 INSERT INTO builtin VALUES('u64','crates/surface-lowering-base/src/resolve.rs','atom','given','stated');
@@ -356,6 +372,7 @@ INSERT INTO builtin VALUES('u64.wrapping_mul','crates/core-term/src/builtin.rs',
 INSERT INTO builtin VALUES('u64.wrapping_rem','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('u64.wrapping_sub','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('u64.xor','crates/core-term/src/builtin.rs','value','given','stated');
+INSERT INTO builtin VALUES('u8','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('u8','crates/surface-grammar/src/highlight.rs','atom','given','stated');
 INSERT INTO builtin VALUES('u8','crates/surface-grammar/src/surface/type_shell.rs','atom','given','stated');
 INSERT INTO builtin VALUES('u8','crates/surface-lowering-base/src/resolve.rs','atom','given','stated');
@@ -385,6 +402,8 @@ INSERT INTO builtin VALUES('u8.wrapping_rem','crates/core-term/src/builtin.rs','
 INSERT INTO builtin VALUES('u8.wrapping_sub','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('u8.xor','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('ua','crates/surface-lowering-identity/src/lower/identity.rs','member','given','stated');
+INSERT INTO builtin VALUES('unit','crates/core-term/src/builtin.rs','atom','given','stated');
+INSERT INTO builtin VALUES('usize','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('usize','crates/surface-grammar/src/highlight.rs','atom','given','stated');
 INSERT INTO builtin VALUES('usize','crates/surface-grammar/src/surface/type_shell.rs','atom','given','stated');
 INSERT INTO builtin VALUES('usize','crates/surface-lowering-base/src/resolve.rs','atom','given','stated');
@@ -413,4 +432,6 @@ INSERT INTO builtin VALUES('usize.wrapping_mul','crates/core-term/src/builtin.rs
 INSERT INTO builtin VALUES('usize.wrapping_rem','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('usize.wrapping_sub','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('usize.xor','crates/core-term/src/builtin.rs','value','given','stated');
+INSERT INTO builtin VALUES('void','crates/core-term/src/builtin.rs','atom','given','stated');
+INSERT INTO builtin VALUES('web','crates/core-term/src/builtin.rs','atom','given','stated');
 COMMIT;

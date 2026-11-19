@@ -24,6 +24,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::builtin::TypeAtom;
 use gandr_core_term::effect::EffectSig;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::session::Protocol;
@@ -78,7 +79,6 @@ use crate::resolve::Frame;
 use crate::resolve::OperandCount;
 use crate::resolve::ScopeId;
 use crate::resolve::Telescope;
-use crate::resolve::TypeAtom;
 use crate::resolve::TypeFormer;
 use crate::resolve::atom_type;
 use crate::resolve::binder_type;
@@ -2777,6 +2777,11 @@ impl Sink<'_>
     ///   and every minted type carries a source origin.
     /// - witness: `gandr-surface-lowering::lower::tests::a_completed_declaration_lowers_both_halves`
     /// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
+    ///
+    /// # Cost
+    /// - allocation: the type the arena mints and its origin, durable by the
+    ///   arena
+    /// - allocation: the message of a broken clause, diagnostic
     #[spec(
         ensures: |ret| match ret {
             | Lowered::ValueType(id) => self.origins.value_type(id) == Maybe::Present(origin) && match atom {

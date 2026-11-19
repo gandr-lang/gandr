@@ -420,6 +420,7 @@ mod lower;
 // The base crate holds the lowering's tables, refusals and descriptions. The
 // public modules keep their paths here, and the private ones keep their
 // `crate::` paths.
+pub use gandr_core_term::builtin::TypeAtom;
 use gandr_surface_lowering_base::attribute;
 use gandr_surface_lowering_base::budget;
 pub use gandr_surface_lowering_base::circuit;
@@ -603,7 +604,6 @@ pub use crate::resolve::Scope;
 pub use crate::resolve::ScopeId;
 pub use crate::resolve::Shadow;
 pub use crate::resolve::SurfaceName;
-pub use crate::resolve::TypeAtom;
 pub use crate::resolve::TypeFormer;
 pub use crate::resolve::binder_site;
 pub use crate::resolve::head_home;

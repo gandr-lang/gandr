@@ -889,6 +889,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
 /// # Adequacy
 /// - hypothesis: L3 — a flag written `Bool` decodes to the boolean.
 /// - witness: `gandr-surface-lowering::lower::generic::tests::a_generic_equality_lowers_to_the_derived_declaration_2302`
+///
+/// # Cost
+/// - allocation: the type nodes still to read, growth within the type
+/// - allocation: each name it binds and each type the arena mints, durable by
+///   the names of the declaration
 #[spec(captures: [before = names.len()], ensures: names.len() >= before)]
 fn enter_builtins(
     arena: &mut CoreArena,

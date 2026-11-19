@@ -1400,6 +1400,9 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `gandr-surface-lowering::tests::modules::functors::an_argument_is_matched_against_the_parameter`
     /// - witness: `gandr-surface-lowering::tests::modules::functors::a_type_component_binds_the_argument_type_of_its_own_name`
     /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    ///
+    /// # Cost
+    /// - allocation: the component it hands back, durable by the collection
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Argued::Value(slot)) => matches!(component.form, ParameterForm::Value(_) | ParameterForm::Derived(_)) && slot.0 < self.collected.slots.len(),
         | Maybe::Present(Argued::Type(found)) => !matches!(component.form, ParameterForm::Value(_) | ParameterForm::Derived(_)) && found.name == component.name,
@@ -1481,6 +1484,10 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `gandr-surface-lowering::tests::modules::functors::a_functor_body_never_reaches_the_kernel`
     /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
     /// - witness: `gandr-surface-lowering::tests::modules::functors::a_flow_applies_to_a_module_3461`
+    ///
+    /// # Cost
+    /// - allocation: the instance, its image of each body slot and module, and
+    ///   the modules it enters, durable by the collection
     #[spec(
         captures: before = (self.collected.instances.len(), self.collected.structures.len()),
         ensures: |ret| match ret {
@@ -1658,11 +1665,13 @@ impl<'source> Collector<'_, 'source>
                 },
                 held: slot_image(stated.held),
             }),
-            TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } => Some(TypeComponent {
-                name: stated.name,
-                meaning: stated.meaning,
-                held: slot_image(stated.held),
-            }),
+            TypeMeaning::Sealed | TypeMeaning::Builtin(_) | TypeMeaning::Instantiated { .. } => {
+                Some(TypeComponent {
+                    name: stated.name,
+                    meaning: stated.meaning,
+                    held: slot_image(stated.held),
+                })
+            },
         };
         for (&template_module, &image) in &instance.images {
             let Some(entry) = self.collected.structures.get(template_module.0).cloned()

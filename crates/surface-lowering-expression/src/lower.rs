@@ -54,6 +54,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::builtin::TypeAtom;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
@@ -277,7 +278,6 @@ use crate::resolve::ScopeId;
 use crate::resolve::Shadow;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
-use crate::resolve::TypeAtom;
 use crate::resolve::TypeFormer;
 use crate::resolve::binder_site;
 use crate::resolve::binder_type;
@@ -1282,6 +1282,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   mints, beside three bases written by that name; a record written in
     ///   place keeps no name.
     /// - witness: `gandr-surface-lowering::lower::patched::tests::a_base_named_by_a_type_member_keeps_the_name`
+    ///
+    /// # Cost
+    /// - allocation: the members a source defines, durable by the lowering
     #[spec(ensures: self.cx().defining.len() <= self.cx().collected.top_types.len())]
     fn define_members(
         &mut self,
@@ -1307,10 +1310,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                         .get(usize::from(member.held))
                         .map(|slot| (defined.node, slot.named.node))
                 },
-                TypeMeaning::Manifest(_) => None,
-                TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } | TypeMeaning::Family(_) => {
-                    None
-                },
+                TypeMeaning::Manifest(_)
+                | TypeMeaning::Sealed
+                | TypeMeaning::Builtin(_)
+                | TypeMeaning::Instantiated { .. }
+                | TypeMeaning::Family(_) => None,
             })
             .collect();
     }
@@ -1523,6 +1527,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
     /// - witness: `gandr-surface-lowering::tests::namespace::an_import_list_binds_only_the_names_it_lists_2687`
     /// - witness: `gandr-surface-lowering::tests::namespace::a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378`
+    ///
+    /// # Cost
+    /// - allocation: the tables it rebinds, durable by the lowering
+    /// - allocation: the message of a broken clause, diagnostic
     #[spec(
         captures: before = self.cx().collected.slots.len(),
         ensures: self.cx().collected.slots.len() == before,
@@ -5432,6 +5440,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::identity::tests::session_statements_lower_to_their_formers`
     /// - witness: `gandr-surface-lowering::lower::tests::an_unknown_capital_where_a_value_is_read_is_unresolved_2653`
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_module_named_where_a_value_is_read_is_its_model_4485`
+    ///
+    /// # Cost
+    /// - allocation: the plan of the head it records, durable by the lowering
+    /// - allocation: a refusal, error path
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -5913,6 +5925,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::tests::a_decimal_reads_as_its_exact_value_4807`
     /// - witness: `gandr-surface-lowering::lower::natural::tests::a_numeral_at_nat_is_its_binary_constructor_term_3287`
     /// - witness: `gandr-surface-lowering::lower::natural::tests::a_numeral_at_a_source_s_own_nat_stays_an_integer_3287`
+    ///
+    /// # Cost
+    /// - allocation: the plan of the head it records, durable by the lowering
+    /// - allocation: a refusal, error path
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -10536,6 +10552,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::tests::modules::a_manifest_type_component_expands_in_later_components`
     /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
     /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_is_named_only_after_it_is_written`
+    ///
+    /// # Cost
+    /// - allocation: the manifest and the plan it records, durable by the
+    ///   lowering
+    /// - allocation: a refusal, error path
     #[spec(
         captures: before = self.cx().manifests.len(),
         ensures: |ret| {
@@ -10644,6 +10665,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
     /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_type_3080`
     /// - witness: `gandr-surface-lowering::tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
+    ///
+    /// # Cost
+    /// - allocation: the manifest and the plan it records, durable by the
+    ///   lowering
+    /// - allocation: a refusal, error path
     #[spec(
         captures: before = self.cx().manifests.len(),
         ensures: |ret| {
@@ -10654,6 +10680,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                         | TypeMeaning::Manifest(defined) => matches!(self.cx().plans.get(site.at.node), Some(&Plan::Transparent(node)) if node == defined.node),
                         | TypeMeaning::Sealed => matches!(self.cx().plans.get(site.at.node), Some(&Plan::Sealed(atom)) if usize::from(atom) == usize::from(stated.held)),
                         | TypeMeaning::Instantiated { defined, instance } => matches!(self.cx().plans.get(site.at.node), Some(&Plan::Instantiated(read, node)) if read == instance && node == defined.node),
+                        | TypeMeaning::Builtin(_) => matches!(self.cx().plans.get(site.at.node), Some(&Plan::Atom(_))),
                         | TypeMeaning::Family(_) => false,
                     })
         },
@@ -10672,12 +10699,19 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             },
             TypeMeaning::Manifest(_)
             | TypeMeaning::Sealed
+            | TypeMeaning::Builtin(_)
             | TypeMeaning::Instantiated { .. }
             | TypeMeaning::Family(_) => Produced::ValueType,
         };
         let _frame = self.require(site, produced)?;
         let plan = match stated.meaning {
             TypeMeaning::Manifest(defined) => Plan::Transparent(defined.node),
+            TypeMeaning::Builtin(_) => match self.cx().builtin_atom(stated.held) {
+                Maybe::Present(atom) => Plan::Atom(atom),
+                Maybe::Absent(_) => {
+                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::StatedType)));
+                },
+            },
             TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } => {
                 let Some(atom) = self.cx().collected.slots.get(usize::from(stated.held))
                 else {
@@ -10696,9 +10730,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     TypeMeaning::Instantiated { defined, instance } => {
                         Plan::Instantiated(instance, defined.node)
                     },
-                    TypeMeaning::Sealed | TypeMeaning::Manifest(_) | TypeMeaning::Family(_) => {
-                        Plan::Sealed(atom.constant)
-                    },
+                    TypeMeaning::Sealed
+                    | TypeMeaning::Builtin(_)
+                    | TypeMeaning::Manifest(_)
+                    | TypeMeaning::Family(_) => Plan::Sealed(atom.constant),
                 }
             },
             TypeMeaning::Family(_) => {
@@ -11302,6 +11337,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   applied through its name expands as it does applied bare.
     /// - witness: `gandr-surface-lowering::lower::tests::a_qualified_type_argument_is_the_code_its_alias_is_1126`
     /// - witness: `gandr-surface-lowering::tests::modules::a_module_s_family_is_applied_through_its_name_3051`
+    ///
+    /// # Cost
+    /// - allocation: the expansion it records and the plan of the stated type,
+    ///   durable by the lowering
+    /// - allocation: a refusal, error path
     fn module_type(
         &mut self,
         site: Site,
@@ -11335,7 +11375,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             },
             (
                 Some(_),
-                TypeMeaning::Manifest(_) | TypeMeaning::Sealed | TypeMeaning::Instantiated { .. },
+                TypeMeaning::Manifest(_)
+                | TypeMeaning::Sealed
+                | TypeMeaning::Builtin(_)
+                | TypeMeaning::Instantiated { .. },
             ) => unapplied(site, applied),
         }
     }
@@ -11944,6 +11987,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::tests::a_thunk_binder_called_in_a_type_unquotes_its_call`
     /// - witness: `gandr-surface-lowering::lower::tests::a_forward_member_applied_as_a_type_is_refused_at_its_head`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_carried_path_head_takes_its_endpoints_by_juxtaposition_6121`
+    ///
+    /// # Cost
+    /// - allocation: the plan and the reading it records, durable by the
+    ///   lowering
+    /// - allocation: a refusal, error path
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -12250,6 +12298,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     ///   `std.buffer` lowers to the native buffer, and one in a source that
     ///   does not is an unresolved head.
     /// - witness: `gandr-surface-lowering::lower::tests::a_buffer_type_resolves_only_through_its_listing_4522`
+    ///
+    /// # Cost
+    /// - allocation: the plan of the head and its resolution, durable by the
+    ///   lowering
+    /// - allocation: a refusal, error path
     #[spec(
         ensures: |ret| match type_atom(name) {
             | Maybe::Present(ambient) => ret == Maybe::Present(ambient),
@@ -12481,6 +12534,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - hypothesis: L3 — a member abbreviating a stack, read from a
     ///   declaration classified before the member is, states the stack.
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_stated_stack_is_resumed_as_a_clause_resumes_1387`
+    ///
+    /// # Cost
+    /// - allocation: the stated stack it reads, durable by the lowering
+    /// - allocation: the message of a broken clause, diagnostic
     #[spec(
         captures: before = (self.cx().plans.count(), self.cx().resolutions.len(), self.cx().operands.entries().len()),
         ensures: |_| self.cx().plans.count() == before.0
@@ -14811,6 +14868,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::tests::modules::nested_member_signature_constrains_the_parent_binding`
     /// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_data_field_is_the_case_returning_it_1106`
+    ///
+    /// # Cost
+    /// - allocation: each node the arena mints and each plan it carries out,
+    ///   durable by the lowering
+    /// - allocation: a refusal, error path
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -14847,9 +14909,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             .chain(self.cx().collected.type_members_in(Container::TopLevel(from.source)))
             .filter_map(|component| match component.meaning {
                 TypeMeaning::Manifest(defined) => Some(defined),
-                TypeMeaning::Sealed | TypeMeaning::Family(_) | TypeMeaning::Instantiated { .. } => {
-                    None
-                },
+                TypeMeaning::Sealed
+                | TypeMeaning::Builtin(_)
+                | TypeMeaning::Family(_)
+                | TypeMeaning::Instantiated { .. } => None,
             })
             // The record type an enclosing signature states a nested module at
             // is a type that signature writes.
@@ -21409,6 +21472,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
     /// - witness: `gandr-surface-lowering::tests::modules::a_signed_member_of_a_sealed_module_exports_its_witness`
     /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_type_3080`
+    ///
+    /// # Cost
+    /// - allocation: the lowered structures and their components, durable by
+    ///   the lowered module
+    /// - allocation: the message of a broken clause, diagnostic
     #[spec(
         ensures: |ret| {
             ret.len() == self.cx().collected.structures.len()
@@ -21462,7 +21530,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                                 lowered.name == component.name
                                     && usize::from(lowered.atom) == usize::from(component.held)
                             }),
-                            | TypeMeaning::Family(_) => true,
+                            | TypeMeaning::Builtin(_) | TypeMeaning::Family(_) => true,
                         });
                         stated
                             && lowered.stratum() == structure.stratum
@@ -21526,7 +21594,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                             });
                         }
                     },
-                    TypeMeaning::Family(_) => {},
+                    TypeMeaning::Builtin(_) | TypeMeaning::Family(_) => {},
                 }
             }
             lowered.push(LoweredStructure::new(
@@ -21597,7 +21665,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                     None => unlowered,
                 }
             },
-            TypeMeaning::Sealed | TypeMeaning::Family(_) => unlowered,
+            TypeMeaning::Sealed | TypeMeaning::Builtin(_) | TypeMeaning::Family(_) => unlowered,
         }
     }
 

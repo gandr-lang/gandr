@@ -101,6 +101,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::builtin::TypeAtom;
 use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteSpan;
 use gandr_theory_circuit_algebras::SpiderCanon;
@@ -127,7 +128,6 @@ use crate::description::DescriptionGrade;
 use crate::description::written::WrittenCircuit;
 use crate::form::Placed;
 use crate::resolve::SurfaceName;
-use crate::resolve::TypeAtom;
 use crate::resolve::type_atom;
 
 mod infer;

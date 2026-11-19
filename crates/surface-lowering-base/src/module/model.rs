@@ -1234,6 +1234,11 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_computation_sort_is_a_family_into_computation_types_3050`
+    ///
+    /// # Cost
+    /// - allocation: the filed component and a held slot, durable by the
+    ///   collection
+    /// - allocation: a refusal filed on a slot, error path
     #[spec(
         captures: before = types.len(),
         ensures: |_| types.len() <= before.saturating_add(1),
@@ -1298,9 +1303,10 @@ impl<'source> Collector<'_, 'source>
         };
         let family = match member.meaning {
             TypeMeaning::Family(family) => Some(family),
-            TypeMeaning::Manifest(_) | TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } => {
-                None
-            },
+            TypeMeaning::Manifest(_)
+            | TypeMeaning::Sealed
+            | TypeMeaning::Builtin(_)
+            | TypeMeaning::Instantiated { .. } => None,
         };
         let written = OperandCount::from(family.map_or(0_usize, |family| {
             self.collected

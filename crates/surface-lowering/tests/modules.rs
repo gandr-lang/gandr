@@ -4263,6 +4263,35 @@ fn an_unread_module_body_is_refused_not_emptied()
     );
 }
 
+/// #8073: a type signature with no body binds a row of the toolchain, so the
+/// lowering admits it under `@[builtin]` alone, at the top level of a source,
+/// with no parameters. Inside a module, the member is refused at its `:`, and
+/// the declaration after the module still reads.
+#[test]
+fn a_type_signature_with_no_body_is_refused_outside_its_place_8073()
+{
+    let source = include_str!(
+        "modules/unformatted/a-type-signature-with-no-body-is-refused-outside-its-place-8073.gandr"
+    );
+    let found = rows(&lower(source));
+    assert!(
+        matches!(
+            found.as_slice(),
+            [
+                (module, Role::Held, Amounts::Refused(LoweringRefusal::MalformedForm {
+                    span,
+                    form: FormName::MODULE,
+                    fault: FormFault::MisplacedTile,
+                })),
+                (after, Role::Declared, Amounts::Bodied),
+            ] if module == "M"
+                && *span == span_of(source, ":", 0_usize)
+                && after == "after"
+        ),
+        "the member is refused at its colon, got {found:?}"
+    );
+}
+
 #[test]
 fn a_readable_module_keeps_its_members_and_its_successor()
 {
