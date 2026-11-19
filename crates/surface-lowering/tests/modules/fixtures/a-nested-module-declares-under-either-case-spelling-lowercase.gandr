@@ -1,0 +1,3 @@
+module Config where {
+  module limits where { def hard = 1; }
+}

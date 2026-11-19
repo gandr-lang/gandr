@@ -1,0 +1,42 @@
+[package]
+name = "gandr-surface-grammar"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The checked precedence-bounded grammar of the gandr surface: rules over a precedence DAG, three build-time gates, the mold table, the walk index, the built-in surface, and the mold highlighter"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "grammar", "no-std", "parsing", "precedence"]
+categories = ["no-std", "parser-implementations"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The highlighter classifies into the renderer seam's role vocabulary and
+# emits its spans; the seam is a leaf, so the edge pulls in no pipeline crate.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
+[dependencies]
+anodized.workspace = true
+foldhash.workspace = true
+gandr-surface-render-remote.workspace = true
+gandr-surface-syntax.workspace = true
+gandr-theory-graphs.workspace = true
+hashbrown.workspace = true
+
+# The role golden runs the parser over the corpus sources and pins each
+# source's spans in a file the suite rewrites under `UPDATE_EXPECT=1`. The
+# parser depends on this crate; the cycle closes only for the integration
+# target, which links the one library build both see.
+[dev-dependencies]
+expect-test.workspace = true
+gandr-surface-parser.workspace = true
+
+[lints]
+workspace = true
