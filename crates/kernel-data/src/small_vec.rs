@@ -2100,7 +2100,7 @@ where
         let mut vec = ManuallyDrop::new(vec);
         let len = vec.len();
         // SAFETY: `vec` never drops, so its allocator moves out once.
-        let alloc = unsafe { ptr::read(vec.allocator()) };
+        let alloc = unsafe { ptr::read(core::ptr::from_ref(vec.allocator())) };
         if size_of::<T>() == 0 {
             return Self {
                 tagged: len,
