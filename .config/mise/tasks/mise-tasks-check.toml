@@ -724,6 +724,8 @@ rustup component add rustc-dev llvm-tools
 toolchain=$(rustup show active-toolchain | awk '{print $1}')
 revision=$(mise run --quiet workflow:revision)
 library=$(.config/policy/library.bash "$revision")
+printf 'check:dylint: policy library %s\n' "$library"
+find "$library" -mindepth 1 -maxdepth 2 -printf 'check:dylint: policy library entry %y %P\n' | LC_ALL=C sort
 dylint=$(cargo dylint --version)
 if [ "$(cat target/dylint/quenchant-revision 2> /dev/null)" != "$revision" ] \
   || { [ -e target/dylint/dylint-version ] && [ "$(cat target/dylint/dylint-version)" != "$dylint" ]; }; then
