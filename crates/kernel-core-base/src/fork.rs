@@ -188,8 +188,9 @@ impl fmt::Debug for Forking<'_>
 ///
 /// # Specification
 /// trivial.
+// The lint reads no test target, so a test build expects nothing here.
 #[cfg_attr(
-    dylint_lib = "quenchant_dylints",
+    all(dylint_lib = "quenchant_dylints", not(test)),
     expect(
         std_container,
         reason = "the embedding program gives the fork as a handle, and the kernel allocates no such object, so no region of the kernel holds it"

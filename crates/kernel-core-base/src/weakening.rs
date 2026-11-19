@@ -110,6 +110,10 @@ impl Support
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the stamps past the last length, growth within the
+    ///   environment's entries
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Support`].
     /// - witness: `gandr-kernel-core::environment::tests::an_admission_reads_as_many_entries_after_many_unrelated_ones_2797`

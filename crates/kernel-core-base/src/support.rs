@@ -300,6 +300,10 @@ fn accrue(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the keys that the innermost goal owes, growth within the
+///   goal's obligations
+///
 /// # Adequacy
 /// - hypothesis: L3 — a key owed under a barrier and a key owed two times
 ///   distinguish a barrier that drops a key and a close that repeats one.
@@ -367,6 +371,10 @@ impl Clone for DrainLedger
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the copies of the keys passed and seen, growth within the
+    ///   formation's keys
     #[inline]
     fn clone(&self) -> Self
     {
@@ -449,6 +457,10 @@ impl DrainLedger
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the place of the key passed, growth within the formation's
+    ///   keys
     #[inline]
     pub fn pass(
         &mut self,
@@ -479,6 +491,10 @@ impl DrainLedger
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the key seen and its place, growth within the formation's
+    ///   keys
     #[inline]
     fn fold(
         &mut self,
@@ -582,6 +598,10 @@ impl SupportContext
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the copies of the support table and of the kept memo,
+    ///   growth within the session's checks
     #[inline]
     #[must_use]
     pub fn carried(&self) -> Self
@@ -607,6 +627,10 @@ impl SupportContext
     /// - panics: none.
     /// - executable: none — the names and recalls are those of the table and
     ///   the kept memo, whose own specifications check them.
+    ///
+    /// # Cost
+    /// - allocation: the overlays of the support table and of the kept memo,
+    ///   growth within the session's checks
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::join`].
@@ -685,6 +709,11 @@ impl SupportContext
     /// content digest and both outcomes. The session then holds the job's
     /// records and none of its outcomes.
     ///
+    /// # Cost
+    /// - allocation: the records that the job's table and memo fold in, growth
+    ///   within the session's checks
+    /// - allocation: the box of a disagreement, error path
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — two jobs forked at one point, each keeping an outcome
     ///   over a record the other names, folded in either order; the session
@@ -729,6 +758,10 @@ impl SupportContext
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — as [`Self::fork`].
+    ///
+    /// # Cost
+    /// - allocation: the mirrored accruals of the goal, growth within the open
+    ///   goals
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::join_goal`].
@@ -777,6 +810,10 @@ impl SupportContext
     ///
     /// # Errors
     /// As [`Self::join`].
+    ///
+    /// # Cost
+    /// - allocation: the obligations that the job owes, growth within the
+    ///   goal's obligations
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a child's reads and owed keys under a goal, under a
@@ -1130,6 +1167,10 @@ impl SupportContext
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the place of the goal's accrual, growth within the open
+    ///   goals
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`accrue`].
     /// - witness: `support::tests::a_subgoal_s_reads_join_its_goal_lowered_past_its_binders`
@@ -1162,6 +1203,9 @@ impl SupportContext
     /// - provides: the swap to a closed payload's or a component's context.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the place of the barrier, growth within the open goals
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`accrue`].
@@ -1236,6 +1280,10 @@ impl SupportContext
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the key that the check owes, growth within the goal's
+    ///   obligations
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a formation recalled twice in one declaration whose
     ///   drain refuses the obligation, and the same formation in a later
@@ -1287,6 +1335,10 @@ impl SupportContext
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the reads of each closed goal, growth within the open
+    ///   goals
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a goal closing over a subgoal left open, a barrier
     ///   and an accrual already gone distinguish a close that drops an
@@ -1325,6 +1377,10 @@ impl SupportContext
     /// - provides: a formation's support and the keys its entry carries.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the reads and the owed keys of each closed goal, growth
+    ///   within the open goals
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`owe_into`].
@@ -2064,6 +2120,11 @@ quenchant_shape::reason_enum! {
 ///   binders than any before it.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the binders that the reads name, growth within the context
+/// - allocation: the indices and the gathered binders that the specification
+///   check compares, diagnostic
 ///
 /// # Adequacy
 /// - hypothesis: L3 on reads inside, at and past the context's length and the

@@ -653,6 +653,9 @@ impl StagedMarks
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the place of the mark, growth within the outstanding marks
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — four registrations, including a repeated middle mark,
     ///   retain insertion order and are resolved one occurrence at a time. A
@@ -2516,6 +2519,10 @@ impl Entries
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the entry log that another view shares, and the
+    ///   chunk that the freeze makes, growth within the environment's entries
     #[inline]
     #[must_use]
     pub fn view(&mut self) -> Self
@@ -2540,6 +2547,10 @@ impl Entries
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the place of a spare support, growth within the open
+    ///   checks
     #[inline]
     pub fn restore(
         &mut self,
@@ -2562,6 +2573,11 @@ impl Entries
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the entry log at its first write, setup
+    /// - allocation: a copy of the entry log that a clone shares, growth within
+    ///   the environment's entries
     #[inline]
     fn log_mut(&mut self) -> &mut EntryLog
     {
@@ -3056,6 +3072,10 @@ impl Entries
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the entry log that a clone shares, and the chunk
+    ///   that the freeze makes, growth within the environment's entries
     #[inline]
     pub fn freeze(&mut self)
     {
@@ -3068,6 +3088,10 @@ impl Entries
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the entry log, or of a chunk of its entries,
+    ///   that a clone shares, growth within the environment's entries
     #[inline]
     pub fn get_mut<Offset>(
         &mut self,
@@ -3100,6 +3124,11 @@ impl Entries
     /// - panics: none.
     /// - executable: none — the clauses state what later reads answer, which
     ///   opening does not run.
+    ///
+    /// # Cost
+    /// - allocation: a fresh support when a view shares the last one, setup
+    /// - allocation: the stamps of the support, growth within the environment's
+    ///   entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::get`].
@@ -4196,20 +4225,14 @@ mod tests
             view.open(core::iter::empty(), (super::SourceRank::ABOVE, end));
             let _outside = view.close();
         }
-        let mut given = [&first, &second].map(|view| {
-            view.support
-                .as_ref()
-                .map(|support| core::ptr::from_ref(&**support))
-        });
+        let mut given =
+            [&first, &second].map(|view| view.support.as_ref().map(|support| &raw const **support));
         entries.restore(first);
         entries.restore(second);
         let third = entries.view();
         let fourth = entries.view();
-        let mut taken = [&third, &fourth].map(|view| {
-            view.support
-                .as_ref()
-                .map(|support| core::ptr::from_ref(&**support))
-        });
+        let mut taken =
+            [&third, &fourth].map(|view| view.support.as_ref().map(|support| &raw const **support));
         assert!(
             taken.iter().all(Option::is_some),
             "each view beside an open one takes a support back"

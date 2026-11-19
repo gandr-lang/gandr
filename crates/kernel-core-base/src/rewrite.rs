@@ -1609,6 +1609,10 @@ where
 ///   node the outer walk can grow.
 /// - input recursion: none.
 ///
+/// # Cost
+/// - allocation: the stacks of tasks, results and reads of the walk, growth
+///   within the term's nodes
+///
 /// # Adequacy
 /// - hypothesis: L2 at twelve shared pair levels: content digests and child
 ///   sharing distinguish memo-induced result changes, not errors common to both

@@ -313,6 +313,10 @@ impl Presentations
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the table that a view shares, and the tail that
+    ///   the split takes off, growth within the presented types
     #[inline]
     pub fn forget_from(
         &mut self,
@@ -342,6 +346,10 @@ impl Presentations
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the table that a view shares, growth within the
+    ///   presented types
     #[inline]
     pub fn retire(
         &mut self,
@@ -381,6 +389,10 @@ impl Presentations
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the table that a view shares, growth within the
+    ///   presented types
     pub(crate) fn rerank(
         &mut self,
         ranks: &BTreeMap<ConstantIndex, SourceRank>,

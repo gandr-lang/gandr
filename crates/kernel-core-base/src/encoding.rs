@@ -2722,26 +2722,23 @@ impl<A: Allocator + Clone> ContentTable<A>
         else {
             return Maybe::Absent(record_name::Absent::Off);
         };
-        id.0.checked_sub(self.base).map_or_else(
-            || {
-                layer_holding(&self.placed.layers, id)
-                    .and_then(|layer| layer.name(id))
-                    .map_or(
-                        Maybe::Absent(record_name::Absent::Unrecorded),
-                        Maybe::Present,
-                    )
-            },
+        // A let-else, and no constructor passed as a function: the policy
+        // reads a constructor's call as one whose body it cannot read
+        // (gandr-lang/quenchant#152).
+        let held = id.0.checked_sub(self.base).map_or_else(
+            || layer_holding(&self.placed.layers, id).and_then(|layer| layer.name(id)),
             |own| {
                 usize::try_from(own)
                     .ok()
                     .and_then(|position| names.column.get(position))
                     .copied()
-                    .map_or(
-                        Maybe::Absent(record_name::Absent::Unrecorded),
-                        Maybe::Present,
-                    )
             },
-        )
+        );
+        let Some(name) = held
+        else {
+            return Maybe::Absent(record_name::Absent::Unrecorded);
+        };
+        Maybe::Present(name)
     }
 
     /// The name of the record at `id`, as a key reads it.
@@ -4635,6 +4632,10 @@ impl<A: Allocator + Clone> ContentTable<A>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared block of the frozen layer and its entry in the
+    ///   list of layers, growth within the table's layers
     fn freeze(
         &mut self,
         arena: &TermArena,
@@ -4685,6 +4686,10 @@ impl<A: Allocator + Clone> ContentTable<A>
     /// - provides: the table a forked job names its records in.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the layer that freezes this table's own records, growth
+    ///   within the table's layers
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::join`].
@@ -4996,6 +5001,10 @@ impl<A: Allocator + Clone> ContentTable<A>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the older layer that another table shares,
+    ///   growth within the table's layers
     #[inline]
     fn merge_above(
         &mut self,
@@ -5953,6 +5962,12 @@ const fn sign_tag(sign: Sign) -> WireTag
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the words of the literal's image, growth within the record's
+///   words
+/// - allocation: the packed words of each text that the specification check
+///   compares, diagnostic
+///
 /// # Adequacy
 /// - hypothesis: L1/L3 — canonical literals enter. Kind, sign and final text
 ///   payload are executable; zero/one sign pairs and the numeric split pair
@@ -5980,7 +5995,7 @@ const fn sign_tag(sign: Sign) -> WireTag
             && record.words.0.get(entry_len.saturating_add(1)) == Some(&u32::from(u8::from(sign_tag(numeric.sign()))))
             && record.words.0.ends_with(&packed(numeric.fraction().as_ref())),
         Literal::Character(ref character) => record.words.0.get(entry_len) == Some(&u32::from(u8::from(gandr_kernel_term::LITERAL_CHARACTER)))
-            && record.words.0.ends_with(&packed(character.to_text().as_str())),
+            && record.words.0.ends_with(&packed(char::from(*character).encode_utf8(&mut [0_u8; 4]))),
         Literal::Float64(_) => record.words.0.get(entry_len) == Some(&u32::from(u8::from(gandr_kernel_term::LITERAL_FLOAT64))),
         Literal::Fixed(fixed) => record.words.0.get(entry_len) == Some(&u32::from(u8::from(fixed_kind(fixed.width())))),
         }
@@ -6010,7 +6025,9 @@ fn put_literal<A, const NAMED: bool>(
         },
         Literal::Character(ref character) => {
             record.put_tag(gandr_kernel_term::LITERAL_CHARACTER);
-            record.put_text(EncodedText(character.to_text().as_str()));
+            record.put_text(EncodedText(
+                char::from(*character).encode_utf8(&mut [0_u8; 4]),
+            ));
         },
         Literal::Float64(float) => {
             record.put_tag(gandr_kernel_term::LITERAL_FLOAT64);
@@ -6037,6 +6054,10 @@ fn put_literal<A, const NAMED: bool>(
 /// - provides: the level payload of every record that carries one.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the words of the level's image, growth within the record's
+///   words
 ///
 /// # Adequacy
 /// - hypothesis: L1/L3 — canonical levels enter. The predicate fixes the
@@ -6434,6 +6455,10 @@ impl<'context> Telescope<'context>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the list of binder types, growth within the telescope's
+    ///   binders
     fn types(self) -> SmallVec<ValueTypeId, 0, Global>
     {
         self.entries().collect()

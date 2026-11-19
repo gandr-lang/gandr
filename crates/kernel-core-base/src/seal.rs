@@ -236,6 +236,10 @@ fn representation(
 /// # Errors
 /// [`KernelError::ArenaFault`].
 ///
+/// # Cost
+/// - allocation: the steps of the walk and the rebuilt types, growth within the
+///   type's nodes
+///
 /// # Adequacy
 /// - hypothesis: L3 — an empty manifest returns the root; an atom nested in a
 ///   thunk, an arrow, a product and a record unseals in each; an atom whose
@@ -286,6 +290,10 @@ pub fn unseal(
 ///
 /// # Errors
 /// [`KernelError::ArenaFault`].
+///
+/// # Cost
+/// - allocation: the steps that the node schedules, growth within the type's
+///   nodes
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`unseal`].
@@ -567,6 +575,9 @@ fn exit_value_type(
 /// # Errors
 /// [`KernelError::ArenaFault`].
 ///
+/// # Cost
+/// - allocation: the rebuilt parts, growth within the former's parts
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`unseal`].
 /// - witness: `gandr-kernel-core::environment::seal_tests::a_nested_atom_unseals_through_every_former`
@@ -592,6 +603,10 @@ fn rebuilt_parts(
 ///
 /// # Errors
 /// [`KernelError::ArenaFault`].
+///
+/// # Cost
+/// - allocation: the rebuilt results and the new former, growth within the
+///   type's nodes
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`unseal`].

@@ -37,6 +37,9 @@ pub struct Program
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the steps and the heads of each program, setup
 #[inline]
 pub fn program() -> impl proptest::strategy::Strategy<Value = Program>
 {
@@ -157,6 +160,13 @@ pub enum Redex
 ///
 /// # Specification
 /// trivial.
+#[cfg_attr(
+    all(dylint_lib = "quenchant_dylints", not(test)),
+    expect(
+        std_container,
+        reason = "proptest's union of strategies takes its arms as a vector of alloc, which its macro builds"
+    )
+)]
 fn redex() -> impl proptest::strategy::Strategy<Value = Redex>
 {
     use alloc::vec;
@@ -194,6 +204,13 @@ fn head() -> impl proptest::strategy::Strategy<Value = Head>
 ///
 /// # Specification
 /// trivial.
+#[cfg_attr(
+    all(dylint_lib = "quenchant_dylints", not(test)),
+    expect(
+        std_container,
+        reason = "proptest's union of strategies takes its arms as a vector of alloc, which its macro builds"
+    )
+)]
 fn step() -> impl proptest::strategy::Strategy<Value = Step>
 {
     use alloc::vec;
@@ -232,6 +249,9 @@ fn step() -> impl proptest::strategy::Strategy<Value = Step>
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the variable that stands for a missing operand, setup
 fn popped_value(
     arena: &mut TermArena,
     values: &mut SmallVec<ValueId, 0, Global>,
@@ -247,6 +267,10 @@ fn popped_value(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the variable and the return that stand for a missing operand,
+///   setup
 fn popped_computation(
     arena: &mut TermArena,
     computations: &mut SmallVec<ComputationId, 0, Global>,
@@ -448,6 +472,9 @@ struct Cells(u8);
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the nodes of the list, setup
 fn listed(
     arena: &mut TermArena,
     values: &mut SmallVec<ValueId, 0, Global>,

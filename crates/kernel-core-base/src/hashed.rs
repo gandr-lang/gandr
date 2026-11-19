@@ -160,6 +160,10 @@ where
     ///   post-state cannot be compared against them without a `Clone` bound the
     ///   map does not take.
     ///
+    /// # Cost
+    /// - allocation: the entry and its slot in the index, growth within the
+    ///   map's entries
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as the type.
     /// - witness: `hashed::tests::a_map_reads_back_what_it_was_told_last`

@@ -399,6 +399,10 @@ impl EncodedVerdict
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the tag of the stratification, growth within the verdict's
+    ///   bytes
     #[inline]
     pub(crate) fn put_stratification(
         &mut self,
@@ -415,6 +419,10 @@ impl EncodedVerdict
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the count and the tags of the variances, growth within the
+    ///   verdict's bytes
     #[inline]
     pub(crate) fn put_variances(
         &mut self,
@@ -438,6 +446,10 @@ impl EncodedVerdict
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the tag and the stage of the recursion, growth within the
+    ///   verdict's bytes
     #[inline]
     pub(crate) fn put_following(
         &mut self,
@@ -560,6 +572,10 @@ impl VerdictImage<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the variances that the image reads, growth within the
+    ///   image's count
     #[inline]
     pub(crate) fn variances(
         &mut self
@@ -661,6 +677,10 @@ impl VerdictRecord
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the bytes of the verdict, growth within the reading's
+    ///   parts
     #[inline]
     #[must_use]
     pub fn encoded(&self) -> EncodedVerdict
@@ -1194,6 +1214,10 @@ impl StoredReceipt
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the buffer of the sort of the records, growth within the
+    ///   receipt's records
     #[inline]
     #[must_use]
     pub fn new(
@@ -1308,8 +1332,9 @@ impl VerdictSource for NoVerdicts
 ///
 /// # Specification
 /// trivial.
+// The lint reads no test target, so a test build expects nothing here.
 #[cfg_attr(
-    dylint_lib = "quenchant_dylints",
+    all(dylint_lib = "quenchant_dylints", not(test)),
     expect(
         std_container,
         reason = "the embedding program gives the source of verdicts as a handle, and the kernel allocates no such object, so no region of the kernel holds it"
@@ -1471,6 +1496,10 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the copies of the trusted signers, the verified receipts
+    ///   and the recalled readings, growth within the run's receipts
     #[inline]
     #[must_use]
     pub fn handed_on(&self) -> Self
@@ -1506,6 +1535,10 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the verified receipts and the readings that they attest,
+    ///   growth within the receipts of the source
     #[inline]
     pub fn recall(
         &mut self,
@@ -1561,6 +1594,10 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the record of the admission, growth within the run's
+    ///   admissions
     #[inline]
     pub fn checked(
         &mut self,
@@ -1579,6 +1616,10 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the copy of the records and the buffer of their sort,
+    ///   growth within the run's admissions
     #[inline]
     pub fn receipt(
         &self,
