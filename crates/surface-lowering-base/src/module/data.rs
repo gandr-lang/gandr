@@ -904,6 +904,10 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
     /// - witness: `gandr-surface-lowering::tests::modules::a_module_member_family_is_named_through_the_module_4298`
+    ///
+    /// # Cost
+    /// - allocation: collected data and constructor entries, durable by the
+    ///   module.
     #[spec(
         captures: before = (self.collected.data.len(), self.collected.constructors.len()),
         ensures: |ret| match ret {
@@ -1404,6 +1408,9 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a loop, a cell between distinct terms and a cell at
     ///   an open side separate the loop from the refusals.
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
+    ///
+    /// # Cost
+    /// - allocation: returned cell forms, durable by the returned cell list.
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |cells| cells.len() == written.len()))]
     fn loops(
         &self,
@@ -1534,6 +1541,10 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_non_uniform_generator_is_refused`
     /// - witness: `gandr-surface-lowering::lower::native::tests::an_indexed_family_lowers_its_indices`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    ///
+    /// # Cost
+    /// - allocation: returned generator forms, durable by the returned
+    ///   generator list.
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |generators| !generators.is_empty() && generators.iter().all(|generator| generator.named == named && generator.indices.len() == kinds.len())))]
     fn generator(
         &self,
@@ -2164,6 +2175,9 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::route_operations`].
     /// - witness: `gandr-surface-lowering::tests::operation::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
+    ///
+    /// # Cost
+    /// - allocation: route entries, durable by the returned table.
     #[spec(ensures: |ret| ret.families.len() <= self.collected.data.len() && ret.callees.len() == self.collected.operation_names.len())]
     fn route_table(&self) -> RouteTable
     {

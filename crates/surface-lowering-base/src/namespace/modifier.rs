@@ -727,6 +727,9 @@ impl<Label> Modifier<Label>
     /// - witness: `tests::namespace::a_hook_can_replace_the_namespace`
     /// - witness: `tests::namespace::a_nested_modifier_survives_a_round_trip`
     /// - witness: `tests::namespace::every_namespace_walk_is_iterative`
+    ///
+    /// # Cost
+    /// - allocation: modifier instructions, setup.
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -842,6 +845,10 @@ impl<Label> Modifier<Label>
     /// - witness: `tests::namespace::a_rejecting_handler_refuses_a_missing_selection`
     /// - witness: `tests::namespace::a_rejecting_handler_refuses_a_hook`
     /// - witness: `tests::namespace::every_namespace_walk_is_iterative`
+    ///
+    /// # Cost
+    /// - allocation: nested modifier instructions, growth within the stack
+    ///   capacity.
     #[spec(
         requires: constructor.0 < self.constructors.len(),
         captures: before = (stack.len(), usize::from(current.binding_count())),

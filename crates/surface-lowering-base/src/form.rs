@@ -3755,6 +3755,9 @@ pub fn applied_word(
 ///   `return`; a word that is no near miss of a keyword leaves the refusal at
 ///   the operand.
 /// - witness: `gandr-surface-lowering::lower::tests::a_keyword_misspelt_is_refused_at_the_word_2259`
+///
+/// # Cost
+/// - allocation: candidate keyword edits, diagnostic.
 #[inline]
 pub fn misspelt_keyword(
     pbg: &Pbg,

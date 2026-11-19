@@ -1171,6 +1171,10 @@ impl DomainArena
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared computation closure, growth within the closure
+    ///   arena capacity.
     #[inline]
     #[spec(
         captures: entry_length = self.comp_closures.len(),

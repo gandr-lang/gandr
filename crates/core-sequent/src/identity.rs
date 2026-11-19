@@ -1592,6 +1592,10 @@ fn action(
 /// - witness: `tests::run::rides_run_by_the_motives_action`
 /// - witness: `tests::run::transports_run_by_the_motives_action`
 /// - witness: `tests::run::a_run_moves_its_payloads_along_a_path`
+///
+/// # Cost
+/// - allocation: core nodes in `scratch`, growth within the scratch arena
+///   capacity.
 #[spec(ensures: |ret| match ret {
     | Ok(id) => scratch.computation(id).is_some(),
     | Err(_) => true,
@@ -1847,6 +1851,10 @@ type Partial = (SessionType, Vec<RecordedMove<()>>, Arc<[ValueTypeId]>);
 /// - hypothesis: L3 — a choice's two runs each match their own arm, which a
 ///   missing or merged arm would not.
 /// - witness: `tests::run::a_run_moves_its_payloads_along_a_path`
+///
+/// # Cost
+/// - allocation: pending run state, setup.
+/// - allocation: completed run shapes, durable by the returned run list.
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |all| all.iter().all(|&(ref moves, _)| matches!(moves.last(), Some(&RecordedMove::Closed)))))]
 fn shapes(session: &SessionType) -> Result<Vec<Shape>, FocusRefusal>
 {
@@ -1911,6 +1919,9 @@ fn shapes(session: &SessionType) -> Result<Vec<Shape>, FocusRefusal>
 /// # Adequacy
 /// - hypothesis: L3 — a choice's two runs each match their own arm.
 /// - witness: `tests::run::a_run_moves_its_payloads_along_a_path`
+///
+/// # Cost
+/// - allocation: each branch move list, durable by the pending run.
 #[spec(captures: before = pending.len(), ensures: |ret| ret.is_err() || before.checked_add(branches.labels().len()) == Some(pending.len()))]
 fn branch(
     branches: &gandr_core_term::session::Branches<'_>,
