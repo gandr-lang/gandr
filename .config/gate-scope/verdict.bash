@@ -10,9 +10,9 @@
 # ref is `refs/verdicts/inputs/<check>/<hash>`.
 # - see: #7684, `inputs.bash`
 #
-# A lane's gate writes the record, `pr:open` pushes it, and the jobs of the
-# pull request and of the merge group read it. A job that reads a record for
-# each of its checks runs none of them.
+# A lane's gate writes the record. The pre-push hook sends it. The jobs of
+# the pull request and of the merge group read it. A job that reads a record
+# for each of its checks runs none of them.
 #
 # A write retries one failed signing call. The tree, check and key stay fixed,
 # so the retry writes the same record. A second failure leaves no record and

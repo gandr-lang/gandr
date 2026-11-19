@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# The gate on another host (#6996, `remote.bash` and `far.bash`), run by
-# `check:gate-scope`. A stand-in `ssh` runs the far side on this host, with a
-# home directory of its own for each host, and a stand-in `mise` there passes
-# or fails the far gate and writes its record. A scratch bare repository is
-# `origin`. This checkout's `.config` is linked into each scratch tree, so the
-# far side runs the tree's own scripts. The cases read the record that comes
-# here, the refusals and the probe's free slots. `choose.jq`'s cases in
+# The gate on another host (#6996, `remote.bash` and `far.bash`) runs in
+# `check:gate-scope`. A stand-in `ssh` runs the far side on this host. It gives
+# each host a home directory. A stand-in `mise` passes or fails the far gate.
+# It writes the pass record and verdict reference. A scratch bare repository
+# is `origin`. This checkout's `.config` is linked into each scratch tree, so
+# the far side runs the tree's own scripts. The cases read the record that
+# comes here, the refusals and the probe's free slots. `choose.jq`'s cases in
 # `cases.json` hold the choice of the host.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
@@ -68,11 +68,11 @@ cat > "$scratch/far-bin/gh" << 'EOF'
 echo read-token
 EOF
 # The stand-in `mise` of the far host: `trust` passes. `run tools:check`
-# reads the host's tools: it names a lack and exits 2 when the host's home
-# holds `lacks`. `run check` touches `gated` in the host's home and writes the
-# record of the tree as `passed.bash record` does. It fails when the host's
-# home holds `red`, or when the gate holds no reader's token. It writes the
-# token it reads with to `token` in the host's home.
+# reads the host's tools. It names a lack and exits 2 when the host's home
+# holds `lacks`. `run check` touches `gated`, writes the pass record, and
+# writes the verdict reference of the tree. It fails when the host's home
+# holds `red`, or when the gate holds no reader's token. It writes the token
+# it reads with to `token` in the host's home.
 cat > "$scratch/far-bin/mise" << 'EOF'
 #!/usr/bin/env bash
 case "${1:-} ${2:-}" in
@@ -97,6 +97,7 @@ case "${1:-} ${2:-}" in
     mkdir -p "$dir"
     printf '{"tree": "%s", "commit": "%s", "gate": "check", "checks": ["check:gate-scope"], "tasks": ["check:gate-scope"], "at": "%s"}\n' \
       "$tree" "$(git rev-parse HEAD)" "$(date -u +%FT%TZ)" > "$dir/a.json"
+    git update-ref "refs/verdicts/$tree/check-gate-scope/case" "$(git rev-parse HEAD)"
     echo 'check: every check passes'
     ;;
   *) exit 2 ;;
@@ -141,6 +142,9 @@ got=$(jq -sc '[.[] | {commit, host}]' "$records/$tree"/*.json 2> /dev/null || ec
   || fail "#6996: a far gate that passes with its host's reader's token records its pass here under the head's tree, with its host" "exit $status, $got: $(< "$scratch/out")"
 [[ $(git rev-parse origin/flex-a-6996-case) == "$(git rev-parse HEAD)" ]] \
   || fail "#6996: the task pushes the head to origin before the far gate" "$(git rev-parse origin/flex-a-6996-case 2>&1)"
+remote_ref=$(git --git-dir="$scratch/origin.git" for-each-ref --count=1 "refs/verdicts/$tree/")
+[[ -n $remote_ref ]] \
+  || fail "#8166: a far gate publishes the verdict record of a pushed head without pr:open" "$remote_ref"
 
 # This host's reader's token goes to the far gate on the remote shell's
 # standard input. No argument vector of ssh and no line of the task holds it.
@@ -291,4 +295,4 @@ held=$(probe other)
   || fail "#6996: the probe counts the free gate slots and reads whether the host gives the reader's token" "free $free, then $held with the slot held and another reader"
 
 (( failed == 0 )) || exit 1
-echo "remote gate OK: a far pass with a reader's token lands here with its host after the push, this host's token goes to the far gate in no argument and no line, a far red records nothing, a far host that lacks a tool stops before its gate, a second far gate waits before it moves a shared clone, a far gate gives back its locks when its local end stops, work beyond HEAD is refused, and the probe counts the free slots and reads the reader's token"
+echo "remote gate OK: a far pass with a reader's token lands here and publishes its verdict record after the push, this host's token goes to the far gate in no argument and no line, a far red records nothing, a far host that lacks a tool stops before its gate, a second far gate waits before it moves a shared clone, a far gate gives back its locks when its local end stops, work beyond HEAD is refused, and the probe counts the free slots and reads the reader's token"

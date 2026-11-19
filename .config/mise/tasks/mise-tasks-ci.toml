@@ -5086,11 +5086,6 @@ if [[ "$foreign" != '[]' ]]; then
   exit 2
 fi
 git push --quiet --force-with-lease -u origin HEAD
-# The records of the gate on the head's tree go with it. The jobs of the pull
-# request and of the merge group take them and do not run the checks again. A
-# head that the stack moved holds a new tree and no record.
-# - see: #7684
-"$(git rev-parse --show-toplevel)/.config/gate-scope/verdict.bash" publish HEAD || echo "pr:open: the records of the gate were not pushed, so the jobs run the checks again (#7684)" >&2
 hold=${usage_hold:-}
 url=$(gh pr create -R "$repo" --base "$base" --head "$own" --title "${usage_title:?}" --body-file "$body" ${hold:+--draft})
 echo "$url"
@@ -5120,7 +5115,6 @@ if [[ $(git rev-parse HEAD) != "$pushed" ]]; then
   "$passed" stamp "$pushed" HEAD "$stamp_base" || mise run check
   "$passed" require pr:open HEAD || exit 2
   git push --quiet --force-with-lease origin HEAD
-  "$(git rev-parse --show-toplevel)/.config/gate-scope/verdict.bash" publish HEAD || echo "pr:open: the records of the gate were not pushed, so the jobs run the checks again (#7684)" >&2
   gated=$(git rev-parse HEAD)
 fi
 # Held from its opening (#3253): a held pull request is no member of a stack,

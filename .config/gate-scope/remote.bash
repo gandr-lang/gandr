@@ -23,14 +23,13 @@
 # load, its cores and its free gate slots, and this host reads its own. When
 # this host gives no token of the reader, each probe also reads whether its
 # host's gh gives one. `choose.jq` takes the host with the least load for
-# each core among those with a free slot and a token. A host whose probe
-# fails is passed over and named. When this host is chosen, the gate runs
-# here as `mise run check`. Otherwise the task pushes the head to `origin`,
-# as `pr:open` does, and runs `far.bash gate` on the host, whose lines
-# stream back as they arrive. A far gate that passes gives its records, and
-# `passed.bash admit` writes the record of the head here with the host's
-# name. A far gate that fails or stops records nothing, and the task exits
-# with its status.
+# each core among those with a free slot and a token. A host whose probe fails
+# is passed over and named. When this host is chosen, the gate runs here as
+# `mise run check`. Otherwise the task pushes the head to `origin`, as
+# `pr:open` does, and runs `far.bash` on the host. A far gate that passes
+# publishes its verdict records to `origin`, then gives its pass records.
+# `passed.bash admit` writes the pass record here with the host's name. A far
+# gate that fails or stops records nothing, and the task exits with its status.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 root=$(git rev-parse --show-toplevel)

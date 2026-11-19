@@ -17,10 +17,11 @@
 #     clone, `gandr/gate-remote/<lane>` under the state directory. The
 #     host's tools come first (`mise run tools:check`, #7127): a tool that
 #     the host lacks, or holds for another machine, stops the gate before its
-#     build with the check's status 2. The gate's lines go to standard error,
-#     as they arrive. When the gate passes, the records of the commit's tree
-#     go to standard output, and `remote.bash` admits the pass. A gate that
-#     fails or stops prints no record and exits with its status.
+# build with the check's status 2. The gate's lines go to standard error as
+# they arrive. When the gate passes, its pass records go to standard output.
+# The far gate publishes its verdict records to the remote. Then `remote.bash`
+# admits the pass. A gate that fails or stops prints no record and exits with
+# its status.
 #
 # A seat's gate runs with `GH_TOKEN` set, and an ssh session has none.
 # `remote.bash` writes the reader's token from its own host's gh before this
@@ -134,6 +135,8 @@ case ${1:-} in
     echo "gate:remote: the gate of $commit runs on $(hostname -s) in the clone of the lane $lane" >&2
     mise run tools:check >&2
     mise run check >&2
+    .config/gate-scope/verdict.bash publish HEAD \
+      || echo "gate:remote: the verdict records were not sent, so hosted jobs run their checks again (#8166)" >&2
     records=$(git rev-parse --path-format=absolute --git-common-dir)/gandr-gate/$(git rev-parse 'HEAD^{tree}')
     for file in "$records"/*.json; do
       if [[ -e $file ]]; then cat "$file"; fi
