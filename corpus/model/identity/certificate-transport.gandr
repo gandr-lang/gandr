@@ -29,8 +29,7 @@ def identified(x : Int) -> Path[.A = Path[.A = Int] (S (P (S x))) (S x)] (atRoot
   Path.here (atRoot x)
 
 /// The `ua` path identifies the peak and join certificate types.
-def certificates(x : Int) -> Path[.A = Type](
-  Path[.A = Int] (S (P (S x))) (S x),
+def certificates(x : Int) -> Path[.A = Type] (Path[.A = Int] (S (P (S x))) (S x)) (
   Path[.A = Int] (S x) (S x)
 ) =
   ua (*{

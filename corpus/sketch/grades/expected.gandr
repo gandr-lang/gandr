@@ -50,7 +50,7 @@ module Retrying where {
   pub def thrice(fetch : +U[3] (Request -> Response), r : Request) : Response = {
     let first = fetch r;
     match first.status where
-      | ServerError => onceMore(fetch, r)
+      | ServerError => onceMore fetch r
       | Served => first
   }
 }

@@ -63,7 +63,7 @@ def init[a : Type](xs : List a) -> List a =
 def rec reverse[a : Type](xs : List a) -> List a =
   match xs with Snoc where
     | lin => Nil
-    | snoc(front, y -> Cons(y, reverse[<](front))
+    | snoc(front, y -> Cons y (reverse[<] front)
 
 /// The last `n` elements of a list, from its end.
 def rec lastN[a : Type](n : Nat, xs : List a) -> List a =

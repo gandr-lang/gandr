@@ -17,7 +17,7 @@ import "./funext.gandr";
 import std.list (List);
 
 /// The `negation` path represents Boolean negation and its inverse.
-pub def negation : Path[.A = Type](Bool, Bool) = equiv not not;
+pub def negation : Path[.A = Type] Bool Bool = equiv not not;
 
 /// The `moved_list` function maps a Boolean list through negation.
 def moved_list(xs : List Bool) -> List Bool =
@@ -56,14 +56,14 @@ def flipped_inline() -> List Bool = moved_inline both;
 
 /// Negation and the identity are no equivalence: their round trips differ.
 @[refuses("RoundTripDistinct")]
-def collapse_bool : Path[.A = Type](Bool, Bool) = equiv not same;
+def collapse_bool : Path[.A = Type] Bool Bool = equiv not same;
 
 /// The identity on lists of booleans.
 pub def keep(xs : List Bool) -> List Bool =
   xs
 
 /// The `lists` path represents the identity on Boolean lists.
-def lists : Path[.A = Type](List Bool, List Bool) = equiv keep keep;
+def lists : Path[.A = Type] (List Bool) (List Bool) = equiv keep keep;
 
 /// The `kept_beta` path keeps a list value through the identity.
 def kept_beta : Path (Path.walk (fun (X) { X }) lists both) both = Path.here both;
@@ -74,7 +74,7 @@ def flip_flag(entry : Bool * List Bool) -> Bool * List Bool =
     | *{b, xs} => *{not b, xs}
 
 /// The `flagged` path is its own inverse at each Boolean.
-def flagged : Path[.A = Type](Bool * List Bool, Bool * List Bool) = equiv flip_flag flip_flag;
+def flagged : Path[.A = Type] (Bool * List Bool) (Bool * List Bool) = equiv flip_flag flip_flag;
 
 /// A run maps truth beside `both` through the flag path.
 @[runs("*{+{.1 = *{}}, cons +{.0 = *{}} (cons +{.1 = *{}} nil)}")]

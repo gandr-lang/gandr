@@ -46,7 +46,7 @@ pub module Evolution where {
   def sub : Flow[.A = Type](SeatEnd, SeatEnd′) = Flow.sim SeatEnd SeatEnd′;
   /// The protocol and its one-step unrolling are one type, by bisimulation.
   @[checks]
-  def eq : Path[.A = Type](SeatEnd, SeatEnd2) = Path.bisim SeatEnd SeatEnd2;
+  def eq : Path[.A = Type] SeatEnd SeatEnd2 = Path.bisim SeatEnd SeatEnd2;
   /// The stationary flow at the old protocol.
   @[checks]
   def kept : Flow[.A = Type](SeatEnd, SeatEnd) = Flow.stay SeatEnd;

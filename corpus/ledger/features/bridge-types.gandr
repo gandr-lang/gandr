@@ -9,9 +9,9 @@
 import std.list (List);
 
 /// The total relation between the unit type and the string type.
-def unitString : Bridge[.A = Type](Unit, String) = thunk {
+def unitString : Bridge[.A = Type] Unit String = thunk {
   fun (x : Unit) { fun (y : String) { return Unit } }
 };
 
 /// Two equal lists of integers, related cell by cell.
-def sameDigits : Bridge[.A = List Integer](#[1, 2], #[1, 2]) = *{*{}, *{*{}, *{}}};
+def sameDigits : Bridge[.A = List Integer] #[1, 2] #[1, 2] = *{*{}, *{*{}, *{}}};

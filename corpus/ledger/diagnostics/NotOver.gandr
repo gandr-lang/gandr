@@ -18,9 +18,9 @@ data Nat : Type where
   | Succ : (n : Nat) --> Nat
 
 @[refuses("NotOver")]
-def astray(a : Nat, b : Nat, q : Path(a, b), v : Nat) -> Nat =
+def astray(a : Nat, b : Nat, q : Path a b, v : Nat) -> Nat =
   Path.walk
-    ((y : Nat, Path[.A = Nat](a, y)) -> Nat)
+    ((y : Nat, Path[.A = Nat] a y) -> Nat)
     q
     (Path.here a)
     (Path.here (Path.here a))

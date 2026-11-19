@@ -43,4 +43,4 @@ pub def firstInvalid(rows : List Row) -> [Raise(Invalid)] Unit #spec{
   requires { n > 0 }
   ensures _ { n == length rows }
 } =
-  forEach(rows, fun (row) { if !valid(row) { raise (Invalid row) } })
+  forEach rows (fun (row) { if !valid(row) { raise (Invalid row) } })

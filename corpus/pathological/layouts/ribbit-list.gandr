@@ -37,4 +37,4 @@ def restored(l : Ints) -> Path (listOf (tagsOf l)) l =
 /// `equiv` decides round trips over types that do not hold themselves, so the
 /// packed layout's is refused.
 @[refuses("EquivUnsupported")]
-def decided : Path[.A = Type](Ints, Packed) = equiv packInts unpack;
+def decided : Path[.A = Type] Ints Packed = equiv packInts unpack;

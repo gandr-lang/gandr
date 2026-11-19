@@ -1,5 +1,5 @@
 /// `PathCode`: a native path at a type that is no closed first-order code.
 @[refuses("PathCode")]
-def thunked : Path[.A = Type]((() -> Integer) * Unit, (() -> Integer) * Unit) = Path.product
+def thunked : Path[.A = Type] ((() -> Integer) * Unit) ((() -> Integer) * Unit) = Path.product
   (Path.here (+U (-F Integer)))
   (Path.here Unit);

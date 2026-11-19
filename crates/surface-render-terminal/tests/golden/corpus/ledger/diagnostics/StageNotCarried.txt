@@ -1,7 +1,7 @@
 error[StageNotCarried]: the transport moves a value of the recursion along a path whose type is not a set, so the value loses its stage
    ╭▸ corpus/ledger/diagnostics/StageNotCarried.gandr:15:38
    │
-12 │    def rec alongLoop(n : Nat, q : Path(Base, Base)) -> Nat =
+12 │    def rec alongLoop(n : Nat, q : Path Base Base) -> Nat =
    │    │                 ┬        ─ checked against `Path[.A = Circle] Base Base -> -F Nat`; while checking the body of this function; binds q : Path[.A = Circle] Base Base
    │    │                 │
    │ ┌──┘                 checked against `Nat -> Path[.A = Circle] Base Base -> -F Nat`; while checking the body of this function; binds n : Nat

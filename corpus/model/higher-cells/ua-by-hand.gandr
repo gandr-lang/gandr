@@ -32,13 +32,13 @@ module ByHand where {
 
   /// `opposite_by_hand` writes the same path by hand.
   @[checks]
-  def opposite_by_hand : Path[.A = Type](Tel, Tel) = Path.product
+  def opposite_by_hand : Path[.A = Type] Tel Tel = Path.product
     (Path.here (Unit))
     (Path.product (equiv keep keep) (equiv exchange exchange));
 
   /// `same` proves that the derived and hand paths convert.
   @[checks]
-  def same : Path[.A = Path[.A = Type](Tel, Tel)] opposite opposite_by_hand = Path.here opposite;
+  def same : Path[.A = Path[.A = Type] Tel Tel] opposite opposite_by_hand = Path.here opposite;
 
   /// `moves` transports the binary corolla boolean along the hand path.
   @[checks]

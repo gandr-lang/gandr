@@ -20,7 +20,7 @@ def namedPath : Path[.A = Integer] 4 4 = Path.here 4;
 def punnedPath(A : Type, x : A) -> Path[.A](x, x) = Path.here x;
 
 /// The unit type identified with itself, the universe supplied by name.
-def universalPath : Path[.A = Type](Unit, Unit) = Path.here Unit;
+def universalPath : Path[.A = Type] Unit Unit = Path.here Unit;
 
 /// Two equal integers related by their identity, the carrier supplied by name.
 def namedBridge : Bridge[.A = Integer] 4 4 = *{};
@@ -30,7 +30,7 @@ def punnedBridge(A : Type, x : A, b : Bridge[.A](x, x)) -> Bridge x x = b;
 
 /// The total relation between the unit type and the string type, the
 /// universe supplied by name.
-def universalBridge : Bridge[.A = Type](Unit, String) = thunk {
+def universalBridge : Bridge[.A = Type] Unit String = thunk {
   fun (x : Unit) { fun (y : String) { return Unit } }
 };
 

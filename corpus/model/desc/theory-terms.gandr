@@ -29,7 +29,7 @@ theory Mag where
   rule unitR : mul x one <=> x;
 
 /// The unit as a term.
-def neutral : Terms(Mag) = Mag.one;
+def neutral : Terms Mag = Mag.one;
 
 /// Units cancel in conversion: the terms' identity is the theory's rules.
 def cancelled : Path (Mag.mul

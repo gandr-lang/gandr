@@ -21,7 +21,7 @@ def thenBeta(
   a : Type,
   b : Type,
   c : Type,
-  p : Path[.A = Type](a, b),
+  p : Path[.A = Type] a b,
   e : b ≃ c,
   x : a
 ) -> Path[.A = c] (fwdAlong a c (Path.step p (ua e)) x) (fwdAlong b c (ua e) (fwdAlong a b p x)) =
@@ -29,7 +29,7 @@ def thenBeta(
 
 /// The `loopsRound` function is a round trip between loop paths and integers.
 def loopsRound(
-  p : Path[.A = Type](Path[.A = Circle] Base Base, Int),
+  p : Path[.A = Type] (Path[.A = Circle] Base Base) Int,
   x : Path[.A = Circle] Base Base
 ) -> Path[.A = Circle] Base Base =
   Path.walk (fun (X) { X }) (Path.step p (Path.back p)) x
@@ -39,10 +39,9 @@ def loopsRound(
 def roundRun : () -> Path[.A = Circle] Base Base = loopsRound loopsAreIntegers loop;
 
 /// The `loopsAndBack` path names the loop round trip.
-def loopsAndBack : Path[.A = Type](
-  Path[.A = Circle] Base Base,
-  Path[.A = Circle] Base Base
-) = Path.step loopsAreIntegers (Path.back loopsAreIntegers);
+def loopsAndBack : Path[.A = Type] (Path[.A = Circle] Base Base) (Path[.A = Circle] Base Base) = Path.step
+  loopsAreIntegers
+  (Path.back loopsAreIntegers);
 
 /// A run returns the loop through the named round trip.
 @[runs("loop ∷ Path.here Base")]

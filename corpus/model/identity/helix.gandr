@@ -26,7 +26,7 @@ def upEquiv : Int ≃ Int = *{up, *{*{down, downUp}, *{down, upDown}}};
 
 /// The `upPath` path is cctt's `sucPathℤ`, the successor as a path in the
 /// universe.
-def upPath : Path[.A = Type](Int, Int) = ua upEquiv;
+def upPath : Path[.A = Type] Int Int = ua upEquiv;
 
 /// The helix is the integers at the point and the successor path along the
 /// loop.

@@ -1,8 +1,8 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/identity/univalence-owed.gandr:24:3
    │
-21 │   def uaEtaRefl(a : Type) -> Path[.A = Path[.A = Type](a, a)] (ua (idtoequiv a a (Path.here a))) (
-   │   │             ┬                                              ──────────────────────────────── an endpoint the point does not convert to
+21 │   def uaEtaRefl(a : Type) -> Path[.A = Path[.A = Type] a a] (ua (idtoequiv a a (Path.here a))) (
+   │   │             ┬                                            ──────────────────────────────── an endpoint the point does not convert to
    │   │             │
    │ ┌─┘             checked against `(a : Type) -> -F (Path[.A = Path[.A = Type] a a] (ua (idtoequiv a a (Path.here a))) (Path.here a))`; while checking the body of this function; binds a : Type
    │ │
@@ -21,7 +21,7 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/identity/univalence-owed.gandr:32:3
    │
-29 │ ┌ def uaEtaStratum() -> Path[.A = Path[.A = Type](AtStratum.Tel, AtStratum.Tel)] (
+29 │ ┌ def uaEtaStratum() -> Path[.A = Path[.A = Type] AtStratum.Tel AtStratum.Tel] (
 30 │ │   ua (idtoequiv AtStratum.Tel AtStratum.Tel AtStratum.opposite)
    │ │   ───────────────────────────────────────────────────────────── an endpoint the point does not convert to
 31 │ │ ) AtStratum.opposite =

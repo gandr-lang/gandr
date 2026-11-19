@@ -49,7 +49,7 @@ def entries (url : String) -> [Fetch, Async] Option (List Entry) =
 
 /// One list item for each entry, appended to the list element.
 def render (list : Dom.Element, xs : List Entry) -> [Html, Dom] () =
-  let document = Html.Window.document (Html.window())
+  let document = Html.Window.document (Html.window ())
   for entry in xs
     let item = Dom.Document.createElement document "li"
     Dom.Node.setTextContent item entry.name

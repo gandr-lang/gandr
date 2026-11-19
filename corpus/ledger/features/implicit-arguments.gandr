@@ -159,17 +159,16 @@ def twiceRun() -> Integer = twice[Integer, .combine = Adding.plus] 3;
 def sameExplicit(a : Type, y : a) -> a = y;
 
 /// A function maps a path. Its carriers and its endpoints are implicit.
-def along[s : Type, t : Type, a : s, b : s](f : s -> t, p : Path[.A = s](a, b)) -> Path[.A = t](
-  f a,
-  f b
-) = Path.walk (fun (y) { type(Path[.A = t](f a, f y)) }) p (Path.here (f a));
+def along[s : Type, t : Type, a : s, b : s](f : s -> t, p : Path[.A = s] a b) -> Path[.A = t] (f
+  a) (f b) = Path.walk (fun (y) { type(Path[.A = t] (f a) (f y)) }) p (Path.here (f a));
 
 /// The double of an integer.
 def doubled(x : Integer) -> Integer = x + x;
 
 /// `along` with its implicits omitted: `p` binds `a` and `b`, and the checker
 /// reads the endpoints of the result type through them.
-def alongInferred(a : Integer, b : Integer, p : Path[.A = Integer](a, b)) -> Path[.A = Integer](
-  doubled a,
-  doubled b
-) = along doubled p;
+def alongInferred(
+  a : Integer,
+  b : Integer,
+  p : Path[.A = Integer] a b
+) -> Path[.A = Integer] (doubled a) (doubled b) = along doubled p;

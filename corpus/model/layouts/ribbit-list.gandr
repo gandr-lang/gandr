@@ -118,16 +118,16 @@ pub def taggedLayout : Ints ≃ Tagged = *{tag, *{*{untag, untagged}, *{untag, t
 pub def packedLayout : Ints ≃ Packed = *{packInts, *{*{unpack, unpacked}, *{unpack, packed}}};
 
 /// The list is its tagged layout, as types.
-pub def taggedPath : Path[.A = Type](Ints, Tagged) = ua taggedLayout;
+pub def taggedPath : Path[.A = Type] Ints Tagged = ua taggedLayout;
 
 /// The list is its packed layout, as types.
-pub def packedPath : Path[.A = Type](Ints, Packed) = ua packedLayout;
+pub def packedPath : Path[.A = Type] Ints Packed = ua packedLayout;
 
 /// A tagged list moved to the packed layout along one admission's reverse
 /// and the other.
 pub def relayout(
-  p : Path[.A = Type](Ints, Tagged),
-  q : Path[.A = Type](Ints, Packed),
+  p : Path[.A = Type] Ints Tagged,
+  q : Path[.A = Type] Ints Packed,
   l : Tagged
 ) -> Packed =
   Path.walk (fun (X) { X }) (Path.step (Path.back p) q) l
@@ -141,7 +141,7 @@ pub def oneTwoThree : Tagged = TagCons 1i32 (TagCons 2i32 (TagCons 3i32 TagNil))
 def moved() -> Packed = relayout taggedPath packedPath oneTwoThree;
 
 /// The tagged layout is the packed one, as types, through the list.
-pub def taggedIsPacked : Path[.A = Type](Tagged, Packed) = Path.step (Path.back taggedPath) packedPath;
+pub def taggedIsPacked : Path[.A = Type] Tagged Packed = Path.step (Path.back taggedPath) packedPath;
 
 /// One, two and three move along the named composite as along
 /// the two admissions.

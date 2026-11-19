@@ -43,7 +43,7 @@ pub def whileLoop : Notation = #notation{
 pub def sigma : Notation = #notation{
   | ($x : $A) * $B -> Sigma $A fun ($x) { $B }
   | exists ($x : $A) . $p -> Sigma $A fun ($x) { $p }
-  | exists ($x : $A), $( $rest ),+ . $p -> Sigma($A, fun ($x) { exists $( $rest ),+ . $p })
+  | exists ($x : $A), $( $rest ),+ . $p -> Sigma $A fun ($x) { exists $( $rest ),+ . $p }
 }
 
 /// The group of the quantifiers, the loosest of all.
