@@ -3062,6 +3062,13 @@ impl<'pbg> Molder<'pbg>
     ///   `state`.
     /// - panics: none.
     /// - executable: none — the clause restates the body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a layout separator after a member that a layout block
+    ///   ends, in a module that lost its `where`, has only stray molds, and a
+    ///   separator between two items of a block continues a frontier. A stray
+    ///   reading that the check misses owes a tile at the separator.
+    /// - witness: `tests::acceptance::a_layout_separator_that_no_form_takes_owes_nothing_7881`
     fn strays_only(
         &self,
         state: &MeldState<'_>,
