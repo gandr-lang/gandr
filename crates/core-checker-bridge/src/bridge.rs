@@ -7038,6 +7038,10 @@ fn record_of<'label>(
 /// # Errors
 /// [`Outcome::Refused`] with the erasure's refusal.
 ///
+/// # Cost
+/// - allocation: the content id of each record and the staging of each, growth
+///   within the records
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`formed`].
 /// - witness: `gandr-core-checker-base::tests::module::equal_patched_types_share_one_formation_5748`
