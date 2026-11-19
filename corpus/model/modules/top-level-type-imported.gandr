@@ -10,7 +10,7 @@
 import "./top-level-type.gandr";
 
 /// `innerBand` uses imported type `Band`.
-def innerBand : Band = *{low = 400000, high = 600000};
+def innerBand : Band = *{.low = 400000, .high = 600000};
 
 /// `innerWidth` reads the imported width.
 @[runs("200000")]

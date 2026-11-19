@@ -10,7 +10,7 @@
 pub type Band = *{low : Integer, high : Integer};
 
 /// `setBand` gives the rubric range.
-def setBand : Band = *{low = 200000, high = 800000};
+def setBand : Band = *{.low = 200000, .high = 800000};
 
 /// `width` subtracts the band bounds.
 pub def width(band : Band) -> Integer =

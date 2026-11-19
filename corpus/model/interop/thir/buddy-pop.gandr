@@ -439,7 +439,7 @@ pub def emptyEnds(blocks : Vals, heads : Vals) -> *{
     Whole
     (buddy blocks heads))
 } =
-  *{none = Path.here NoneV, kept = Path.here (Own Zero Whole (buddy blocks heads))}
+  *{.none = Path.here NoneV, .kept = Path.here (Own Zero Whole (buddy blocks heads))}
 
 /// The rest of the list, rooted at the heads set to its head.
 pub def restFree(
@@ -457,7 +457,7 @@ pub def restFree(
 } =
   let set = nthSet heads order (headOf rest) y
   let p = set h
-  *{head = p, wf = link}
+  *{.head = p, .wf = link}
 
 /// `pop` at an empty list: the read finds `None`, and `pop` writes nothing.
 pub def popNone(

@@ -27,4 +27,4 @@ def visible = Metrics.base + Metrics.double + Metrics.scale;
 
 /// `wrapped` tests a record that names refused `visible`.
 @[refuses("UnknownConstant")]
-def wrapped = *{visible = visible};
+def wrapped = *{.visible = visible};

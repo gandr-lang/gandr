@@ -41,4 +41,4 @@ def after = Facts.total + 1;
 
 /// `gathered` tests a record that names refused `after`.
 @[refuses("UnknownConstant")]
-def gathered = *{after = after, total = Facts.total};
+def gathered = *{.after = after, .total = Facts.total};

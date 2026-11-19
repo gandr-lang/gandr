@@ -10,4 +10,4 @@ def exchange(b : Bool) -> Bool =
   }
 def keep(e : +{Unit}) -> +{Unit} =
   e
-def unnamed = ua[1, 4] Monoid Magma (*{mul = exchange, one = keep}) (*{mul = exchange, one = keep});
+def unnamed = ua[1, 4] Monoid Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});

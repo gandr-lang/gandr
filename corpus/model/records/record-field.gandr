@@ -8,7 +8,7 @@
 // - see: `pathological/records/record-field-absent.gandr` — `lacking`, `unfielded`
 
 /// `nest` holds a tag and an inner record.
-def nest = *{tag = "t", inner = *{x = 1, y = 2}};
+def nest = *{.tag = "t", .inner = *{.x = 1, .y = 2}};
 
 /// `innerOf` returns `nest`'s inner record.
 @[runs("*{.x = 1, .y = 2}")]

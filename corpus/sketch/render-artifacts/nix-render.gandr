@@ -40,15 +40,15 @@ pub theory Built where
 /// The derivation of a static site, which copies its pages into the output.
 pub def siteDerivation(pages : String, bash : String, coreutils : String) -> Derivation =
   *{
-    name = "docs-site-1.0",
-    system = "x86_64-linux",
-    builder = bash ++ "/bin/bash",
-    args = #["-c", "mkdir -p $out && cp -r $pages/. $out"],
-    env = #[*{"pages", pages}, *{"PATH", coreutils ++ "/bin"}, *{"out", ""}],
-    inputDrvs = #[],
-    inputSrcs = #[pages],
-    outputs = #[*{"out", ""}],
-    version = 4
+    .name = "docs-site-1.0",
+    .system = "x86_64-linux",
+    .builder = bash ++ "/bin/bash",
+    .args = #["-c", "mkdir -p $out && cp -r $pages/. $out"],
+    .env = #[*{"pages", pages}, *{"PATH", coreutils ++ "/bin"}, *{"out", ""}],
+    .inputDrvs = #[],
+    .inputSrcs = #[pages],
+    .outputs = #[*{"out", ""}],
+    .version = 4
   }
 
 /// The render: the module's derivation as Nix's JSON.

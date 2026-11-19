@@ -12,10 +12,10 @@ pub theory Monoid where
   /// The carrier.
   sort M : Type;
   /// The unit.
-  @[format(*{latex = "\\varepsilon", typst = "epsilon", md = "ε"})]
+  @[format(*{.latex = "\\varepsilon", .typst = "epsilon", .md = "ε"})]
   oper unit : M;
   /// The operation.
-  @[format(*{latex = "\\oplus", typst = "plus.circle", md = "⊕"})]
+  @[format(*{.latex = "\\oplus", .typst = "plus.circle", .md = "⊕"})]
   oper op : (a : M, b : M) --> M;
 ```
 
