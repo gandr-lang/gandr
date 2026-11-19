@@ -13,6 +13,7 @@
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 verdict=$here/verdict.bash
+push=$here/push.bash
 source "$here/../cases/scratch.bash"
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
@@ -93,6 +94,17 @@ signer() {
 
 got=$(setup "$scratch/same" && gate && reads)
 [[ $got == held ]] || fail "#7684: a run on the gated tree with the gate's key reads the record" "$got"
+
+# The push hook sends a passed head's record before the head moves the remote.
+got=$(
+  setup "$scratch/pushed"
+  commit file two pushed > /dev/null
+  "$verdict" write "$(git rev-parse 'HEAD^{tree}')" check:clippy-arch 2> /dev/null
+  PRE_COMMIT_TO_REF=$(git rev-parse HEAD) PRE_COMMIT_REMOTE_BRANCH=refs/heads/main "$push" > /dev/null 2>&1
+  git push --quiet --no-verify origin main
+  reads
+)
+[[ $got == held ]] || fail "#8166: a gated head pushes its record without pr:open" "$got"
 
 got=$(
   setup "$scratch/retry-once"

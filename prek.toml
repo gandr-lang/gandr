@@ -105,3 +105,13 @@ entry = "mise exec -- bash .config/commits/push.bash"
 stages = ["pre-push"]
 always_run = true
 pass_filenames = false
+
+# A passed head carries its records to the remote before its ref moves there.
+[[repos.hooks]]
+id = "verdict-push"
+name = "passed records reach the remote with the pushed head"
+language = "system"
+entry = "mise exec -- bash .config/gate-scope/push.bash"
+stages = ["pre-push"]
+always_run = true
+pass_filenames = false
