@@ -854,6 +854,42 @@ enum Probe
     Refused,
 }
 
+/// A mapper over the host's pages, and the whole pages that hold `bytes`;
+/// or nothing when the host reports no page size, or `bytes` is zero or past
+/// a word. The page size is the one that the C library reads.
+///
+/// # Specification
+/// trivial.
+#[cfg(unix)]
+fn pages(bytes: Bytes) -> Option<(gandr_boot_alloc::Mapper, gandr_boot_alloc::Pages)>
+{
+    // SAFETY: `sysconf` reads a configuration value and writes nothing.
+    let size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+    let page =
+        gandr_boot_alloc::PageSize::new(gandr_boot_alloc::Bytes(usize::try_from(size).ok()?))
+            .ok()?;
+    let bytes = usize::try_from(bytes.0).ok()?;
+    let count = NonZeroUsize::new(bytes.div_ceil(page.length().0.get()))?;
+    Some((
+        gandr_boot_alloc::Mapper::new(page),
+        gandr_boot_alloc::Pages(count),
+    ))
+}
+
+/// The request of a region's address space with the protection
+/// `protection`: pages that the host counts only as a run touches them.
+///
+/// # Specification
+/// trivial.
+#[cfg(unix)]
+const fn unreserved(protection: gandr_boot_alloc::Protection) -> gandr_boot_alloc::Request
+{
+    gandr_boot_alloc::Request {
+        protection,
+        backing: gandr_boot_alloc::Backing::Unreserved,
+    }
+}
+
 /// Map `bytes` of inaccessible address space with no commit charge, and
 /// unmap it at once.
 ///
@@ -862,23 +898,20 @@ enum Probe
 #[cfg(unix)]
 fn probe(bytes: Bytes) -> Probe
 {
-    let Ok(length) = usize::try_from(bytes.0)
+    let Some((mapper, pages)) = pages(bytes)
     else {
         return Probe::Refused;
     };
-    #[cfg(target_os = "linux")]
-    let flags = libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | libc::MAP_NORESERVE;
-    #[cfg(not(target_os = "linux"))]
-    let flags = libc::MAP_PRIVATE | libc::MAP_ANON;
-    // SAFETY: an anonymous inaccessible mapping at an address the kernel
-    // picks touches no memory the process holds.
-    let base = unsafe { libc::mmap(core::ptr::null_mut(), length, libc::PROT_NONE, flags, -1, 0) };
-    if base == libc::MAP_FAILED {
-        return Probe::Refused;
+    match mapper.map(
+        pages,
+        unreserved(gandr_boot_alloc::Protection::Inaccessible),
+    ) {
+        Ok(block) => {
+            let _unmapped = block.unmap();
+            Probe::Granted
+        },
+        Err(_refused) => Probe::Refused,
     }
-    // SAFETY: the mapping is the probe's own, and nothing reads it.
-    let _unmapped = unsafe { libc::munmap(base, length) };
-    Probe::Granted
 }
 
 /// The address space that the regions of one process reserve together.
@@ -1083,6 +1116,10 @@ pub(crate) struct Reservation
     /// Whether the region lies in a caller's region above its committed end:
     /// the caller owns the mapping and its account.
     stacked: bool,
+    /// The mapping that holds the region, which the drop unmaps: none for a
+    /// stacked region and for the empty one.
+    #[cfg(unix)]
+    mapping: Option<gandr_boot_alloc::Block>,
     /// The allocation that holds the region, on a host with no mapping.
     #[cfg(not(unix))]
     #[expect(
@@ -1134,6 +1171,8 @@ impl Reservation
             words: Words(0),
             committed: core::ptr::null_mut(),
             stacked: false,
+            #[cfg(unix)]
+            mapping: None,
             #[cfg(not(unix))]
             backing: alloc::vec::Vec::new(),
         }
@@ -1147,31 +1186,18 @@ impl Reservation
     #[cfg(unix)]
     fn mapped(words: Words) -> Option<Self>
     {
-        let bytes = words.0.checked_mul(core::mem::size_of::<Word>())?;
-        #[cfg(target_os = "linux")]
-        let flags = libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | libc::MAP_NORESERVE;
-        #[cfg(not(target_os = "linux"))]
-        let flags = libc::MAP_PRIVATE | libc::MAP_ANON;
-        // SAFETY: an anonymous private mapping at an address the kernel
-        // picks touches no memory the process holds.
-        let base = unsafe {
-            libc::mmap(
-                core::ptr::null_mut(),
-                bytes,
-                libc::PROT_READ | libc::PROT_WRITE,
-                flags,
-                -1,
-                0,
-            )
-        };
-        (base != libc::MAP_FAILED).then(|| {
-            let base = base.cast::<Word>();
-            Self {
-                base,
-                words,
-                committed: base,
-                stacked: false,
-            }
+        let (mapper, pages) = pages(Bytes::of_words(words))?;
+        let block = mapper
+            .map(pages, unreserved(gandr_boot_alloc::Protection::ReadWrite))
+            .ok()?;
+        // The base of a mapping is aligned to a page, past a word's alignment.
+        let base = block.base().0.cast::<Word>().as_ptr();
+        Some(Self {
+            base,
+            words,
+            committed: base,
+            stacked: false,
+            mapping: Some(block),
         })
     }
 
@@ -1222,6 +1248,8 @@ impl Reservation
             words,
             committed: limit,
             stacked: true,
+            #[cfg(unix)]
+            mapping: None,
             #[cfg(not(unix))]
             backing: alloc::vec::Vec::new(),
         }
@@ -1339,15 +1367,9 @@ impl Drop for Reservation
             return;
         }
         #[cfg(unix)]
-        if !self.base.is_null() {
-            // SAFETY: the mapping is this reservation's, and no run holds it
-            // once its set drops.
-            let _unmapped = unsafe {
-                libc::munmap(
-                    self.base.cast(),
-                    self.words.0.saturating_mul(core::mem::size_of::<Word>()),
-                )
-            };
+        if let Some(block) = self.mapping.take() {
+            // No run holds the mapping once its set drops.
+            let _unmapped = block.unmap();
         }
         account().refund(self.words);
     }

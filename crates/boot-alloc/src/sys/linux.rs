@@ -4,11 +4,13 @@
 use core::num::NonZeroU16;
 use core::ptr::NonNull;
 
+use crate::Backing;
 use crate::Base;
 use crate::ENOMEM;
 use crate::ErrorNumber;
 use crate::Length;
 use crate::Protection;
+use crate::Request;
 
 #[cfg(target_arch = "aarch64")]
 mod aarch64;
@@ -46,6 +48,10 @@ const MAP_ANONYMOUS: usize = 0x20;
 /// The flag of a mapping that no other process sees.
 const MAP_PRIVATE: usize = 0x02;
 
+/// The flag of a mapping whose pages the kernel counts only as they are
+/// touched.
+const MAP_NORESERVE: usize = 0x4000;
+
 /// The largest error number: the kernel answers an error `e` as `-e`, from
 /// `-4095` to `-1`.
 const LAST_ERROR: u16 = 4095;
@@ -73,8 +79,9 @@ fn answer(raw: Raw) -> Result<Raw, ErrorNumber>
     }
 }
 
-/// Maps `length` bytes of private anonymous memory with the protection
-/// `protection`, at an address that the kernel picks.
+/// Maps `length` bytes of private anonymous memory as `request` asks, at an
+/// address that the kernel picks. An unreserved block takes
+/// `MAP_NORESERVE`.
 ///
 /// # Specification
 /// - ensures: the base of the new mapping, or the kernel's error number.
@@ -82,21 +89,26 @@ fn answer(raw: Raw) -> Result<Raw, ErrorNumber>
 /// - executable: none — the kernel decides what it maps.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — each page of the mapping takes a byte.
+/// - hypothesis: L3 — each page of a reserved and of an unreserved mapping
+///   takes a byte.
 /// - witness: `tests::map::a_block_takes_a_byte_on_each_page`
 pub fn map(
     length: Length,
-    protection: Protection,
+    request: Request,
 ) -> Result<Base, ErrorNumber>
 {
+    let flags = match request.backing {
+        Backing::Reserved => MAP_PRIVATE | MAP_ANONYMOUS,
+        Backing::Unreserved => MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE,
+    };
     // SAFETY: a private anonymous mapping at an address that the kernel picks
     // touches no memory that the process holds.
     let raw = unsafe {
         arch::syscall6(arch::MMAP, [
             Raw(0),
             Raw(length.0.get()),
-            Raw(usize::from(super::bits(protection).0)),
-            Raw(MAP_PRIVATE | MAP_ANONYMOUS),
+            Raw(usize::from(super::bits(request.protection).0)),
+            Raw(flags),
             Raw(usize::MAX),
             Raw(0),
         ])

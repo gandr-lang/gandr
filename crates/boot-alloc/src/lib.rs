@@ -9,13 +9,15 @@
 //! assembly. On macOS it is a declared function of the system library, which
 //! is the kernel's interface on that host.
 //!
-//! [`map`] gives a [`Block`] of whole pages with a stated [`Protection`],
-//! [`protect`] changes its protection, and [`unmap`] gives it back. The
-//! caller states the size of a page as a [`PageSize`], and the crate asks no
-//! library for it. A [`Heap`] cuts blocks in size classes from runs of pages,
-//! and it implements Rust's [`Allocator`](core::alloc::Allocator) through a
-//! shared reference. Each refusal is one [`Refused`]: the name of the
-//! operation and an error number.
+//! A [`Mapper`] holds the size of a page that the caller states as a
+//! [`PageSize`], and the crate asks no library for it. [`Mapper::map`] gives
+//! a [`Block`] of whole pages of anonymous memory as a [`Request`] asks: a
+//! [`Protection`] and a [`Backing`]. [`Block::protect`] changes its
+//! protection, and [`Block::unmap`] gives it back. No protection runs code,
+//! so no memory of the crate is executable. A [`Heap`] cuts blocks in size
+//! classes from runs of pages, and it implements Rust's
+//! [`Allocator`](core::alloc::Allocator) through a shared reference. Each
+//! refusal is one [`Refused`]: the name of the operation and an error number.
 //!
 //! A crate of the layer `boot` is a stage of the bootstrap. A twin in gandr
 //! replaces it, so each public function has no generic parameter and states
@@ -150,7 +152,7 @@ impl PageSize
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Pages(pub NonZeroUsize);
 
-/// What a block's bytes allow.
+/// What a block's bytes allow. No case runs code.
 ///
 /// # Specification
 /// trivial.
@@ -163,15 +165,109 @@ pub enum Protection
     Read,
     /// Reads and writes.
     ReadWrite,
-    /// Reads, and runs as machine code.
-    ReadExecute,
 }
 
-/// A block of whole pages that [`map`] gives.
+/// Whether the host reserves memory for the pages of a block when it maps
+/// them.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Backing
+{
+    /// The host counts each page against its memory when it maps the block.
+    Reserved,
+    /// The host counts a page only when a write touches it: a reservation of
+    /// address space. Linux maps such pages with `MAP_NORESERVE`, and macOS
+    /// counts no page before its first touch.
+    Unreserved,
+}
+
+/// What a mapping asks of the host: the protection of its pages, and whether
+/// the host reserves memory for them.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Request
+{
+    /// What the bytes allow.
+    pub protection: Protection,
+    /// Whether the host reserves memory for the pages.
+    pub backing: Backing,
+}
+
+/// The host's mapping call over pages of one size, which the caller states.
+/// The crate keeps no global state, so each mapper holds its own size.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Mapper(PageSize);
+
+impl Mapper
+{
+    /// A mapper over pages of `page` bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn new(page: PageSize) -> Self
+    {
+        Self(page)
+    }
+
+    /// The size of a page.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn page(self) -> PageSize
+    {
+        self.0
+    }
+
+    /// Maps `pages` pages of anonymous memory, as `request` asks.
+    ///
+    /// # Specification
+    /// - ensures: a block of `pages` pages whose base is aligned to a page,
+    ///   whose bytes allow what the request's protection allows, with the
+    ///   request's backing; or the host's error number under the name `map`,
+    ///   with each block that stands unchanged.
+    /// - panics: none.
+    /// - executable: none — the host decides what it maps.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the host is the oracle: each page of a reserved block
+    ///   and of an unreserved block that is readable and writable takes a byte
+    ///   and reads it back.
+    /// - witness: `tests::map::a_block_takes_a_byte_on_each_page`
+    ///
+    /// # Errors
+    /// A refusal under the name `map`: `ENOMEM` for a count whose bytes
+    /// overflow a word, or the host's error number.
+    #[inline]
+    pub fn map(
+        self,
+        pages: Pages,
+        request: Request,
+    ) -> Result<Block, Refused>
+    {
+        let length = length(self.0, pages)?;
+        let base =
+            sys::map(length, request).map_err(|number| Refused::new(Operation::Map, number))?;
+        Ok(Block { base, length })
+    }
+}
+
+/// A block of whole pages that [`Mapper::map`] gives.
 ///
 /// A reference that the caller makes from the base lives no longer than the
-/// block, and no longer than its protection allows. [`unmap`] takes the
-/// block, so a block is given back once.
+/// block, and no longer than its protection allows. [`Block::unmap`] takes
+/// the block, so a block is given back once.
 ///
 /// # Specification
 /// trivial.
@@ -182,6 +278,28 @@ pub struct Block
     base: Base,
     /// The bytes of the block: a whole number of pages.
     length: Length,
+}
+
+/// A block moves between threads.
+///
+/// # Safety
+///
+/// - unsafe invariants: a block owns its pages, which the process maps for each
+///   of its threads, and no other value unmaps them.
+// SAFETY: as above.
+unsafe impl Send for Block
+{
+}
+
+/// A block is shared between threads.
+///
+/// # Safety
+///
+/// - unsafe invariants: a shared block gives its base and its length alone, and
+///   a change of protection is one call of the host.
+// SAFETY: as above.
+unsafe impl Sync for Block
+{
 }
 
 impl Block
@@ -206,6 +324,58 @@ impl Block
     pub const fn length(&self) -> Length
     {
         self.length
+    }
+
+    /// Sets the protection of the block to `protection`.
+    ///
+    /// # Specification
+    /// - ensures: the block's bytes allow what `protection` allows; or the
+    ///   host's error number under the name `protect`, with the protection
+    ///   unchanged.
+    /// - panics: none.
+    /// - executable: none — the host sets the protection.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block made read-only reads its byte, and the same
+    ///   block made writable again takes a new one.
+    /// - witness: `tests::map::a_block_made_read_only_reads_its_byte`
+    ///
+    /// # Errors
+    /// The host's error number under the name `protect`.
+    #[inline]
+    pub fn protect(
+        &self,
+        protection: Protection,
+    ) -> Result<(), Refused>
+    {
+        // SAFETY: a reference into the block that the new protection forbids
+        // is the caller's to end, as the block's documentation states.
+        unsafe { sys::protect(self.base, self.length, protection) }
+            .map_err(|number| Refused::new(Operation::Protect, number))
+    }
+
+    /// Gives the block back to the host.
+    ///
+    /// # Specification
+    /// - ensures: the block's pages are unmapped; or the host's error number
+    ///   under the name `unmap`.
+    /// - panics: none.
+    /// - executable: none — the host unmaps the pages.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the mapped pages of the process are as many after a
+    ///   heap ends as before it started.
+    /// - witness: `pages::heap::mixed_blocks_leave_the_mapped_pages_as_they_were`
+    ///
+    /// # Errors
+    /// The host's error number under the name `unmap`.
+    #[inline]
+    pub fn unmap(self) -> Result<(), Refused>
+    {
+        let Self { base, length } = self;
+        // SAFETY: the call takes the block, and a reference into it is the
+        // caller's to end, as the block's documentation states.
+        unsafe { sys::unmap(base, length) }.map_err(|number| Refused::new(Operation::Unmap, number))
     }
 }
 
@@ -351,89 +521,4 @@ const fn length(
         Some(length) => Ok(Length(length)),
         None => Err(Refused::new(Operation::Map, ENOMEM)),
     }
-}
-
-/// Maps `pages` pages of `page` bytes each with the protection `protection`.
-///
-/// # Specification
-/// - ensures: a block of `pages` pages whose base is aligned to a page and
-///   whose bytes allow what `protection` allows; or the host's error number
-///   under the name `map`, with each block that stands unchanged.
-/// - panics: none.
-/// - executable: none — the host decides what it maps.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the host is the oracle: each page of a block that is
-///   readable and writable takes a byte and reads it back.
-/// - witness: `tests::map::a_block_takes_a_byte_on_each_page`
-///
-/// # Errors
-/// A refusal under the name `map`: `ENOMEM` for a count whose bytes overflow
-/// a word, or the host's error number.
-#[inline]
-pub fn map(
-    page: PageSize,
-    pages: Pages,
-    protection: Protection,
-) -> Result<Block, Refused>
-{
-    let length = length(page, pages)?;
-    let base =
-        sys::map(length, protection).map_err(|number| Refused::new(Operation::Map, number))?;
-    Ok(Block { base, length })
-}
-
-/// Sets the protection of `block` to `protection`.
-///
-/// # Specification
-/// - ensures: the block's bytes allow what `protection` allows; or the host's
-///   error number under the name `protect`, with the protection unchanged.
-/// - panics: none.
-/// - executable: none — the host sets the protection.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a block made read-only reads its byte, and the same block
-///   made writable again takes a new one.
-/// - witness: `tests::map::a_block_made_read_only_reads_its_byte`
-///
-/// # Errors
-/// The host's error number under the name `protect`.
-#[inline]
-pub fn protect(
-    block: &Block,
-    protection: Protection,
-) -> Result<(), Refused>
-{
-    // SAFETY: a reference into the block that the new protection forbids is
-    // the caller's to end, as the block's documentation states.
-    unsafe { sys::protect(block.base, block.length, protection) }
-        .map_err(|number| Refused::new(Operation::Protect, number))
-}
-
-/// Gives `block` back to the host.
-///
-/// # Specification
-/// - ensures: the block's pages are unmapped; or the host's error number under
-///   the name `unmap`.
-/// - panics: none.
-/// - executable: none — the host unmaps the pages.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the mapped pages of the process are as many after a heap
-///   ends as before it started.
-/// - witness: `pages::heap::mixed_blocks_leave_the_mapped_pages_as_they_were`
-///
-/// # Errors
-/// The host's error number under the name `unmap`.
-#[inline]
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "the call takes the block, so no caller unmaps it twice or protects it after"
-)]
-pub fn unmap(block: Block) -> Result<(), Refused>
-{
-    let Block { base, length } = block;
-    // SAFETY: the call takes the block, and a reference into it is the
-    // caller's to end, as the block's documentation states.
-    unsafe { sys::unmap(base, length) }.map_err(|number| Refused::new(Operation::Unmap, number))
 }

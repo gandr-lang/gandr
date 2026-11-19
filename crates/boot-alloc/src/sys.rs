@@ -30,11 +30,10 @@ use crate::Protection;
 struct Bits(u8);
 
 /// The bits of the protection `protection`, which Linux and macOS spell
-/// alike: read 1, write 2, execute 4.
+/// alike: read 1, write 2.
 ///
 /// # Specification
-/// - ensures: no access is 0; read is 1; read and write is 3; read and execute
-///   is 5.
+/// - ensures: no access is 0; read is 1; read and write is 3.
 /// - panics: none.
 /// - executable: none — the kernel reads the bits.
 ///
@@ -48,6 +47,5 @@ const fn bits(protection: Protection) -> Bits
         Protection::Inaccessible => 0,
         Protection::Read => 1,
         Protection::ReadWrite => 1 | 2,
-        Protection::ReadExecute => 1 | 4,
     })
 }

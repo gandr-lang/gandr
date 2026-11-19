@@ -12,6 +12,7 @@ use crate::ENOMEM;
 use crate::ErrorNumber;
 use crate::Length;
 use crate::Protection;
+use crate::Request;
 
 /// A C `int` of the system library: a protection, the flags, a descriptor or
 /// an answer.
@@ -130,8 +131,9 @@ fn protection(protection: Protection) -> Int
     Int(c_int::from(super::bits(protection).0))
 }
 
-/// Maps `length` bytes of private anonymous memory with the protection
-/// `protection`, at an address that the kernel picks.
+/// Maps `length` bytes of private anonymous memory as `request` asks, at an
+/// address that the kernel picks. macOS counts no page before its first
+/// touch, so a reserved and an unreserved block take the same flags.
 ///
 /// # Specification
 /// - ensures: the base of the new mapping, or the error number of the system
@@ -140,11 +142,12 @@ fn protection(protection: Protection) -> Int
 /// - executable: none — the kernel decides what it maps.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — each page of the mapping takes a byte.
+/// - hypothesis: L3 — each page of a reserved and of an unreserved mapping
+///   takes a byte.
 /// - witness: `tests::map::a_block_takes_a_byte_on_each_page`
 pub fn map(
     length: Length,
-    protection: Protection,
+    request: Request,
 ) -> Result<Base, ErrorNumber>
 {
     // SAFETY: a private anonymous mapping at an address that the kernel picks
@@ -153,7 +156,7 @@ pub fn map(
         mmap(
             core::ptr::null_mut(),
             Size(length.0.get()),
-            self::protection(protection),
+            self::protection(request.protection),
             Int(MAP_PRIVATE | MAP_ANON),
             Int(-1),
             FileOffset(0),

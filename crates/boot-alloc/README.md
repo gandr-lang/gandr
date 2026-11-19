@@ -14,7 +14,7 @@ Memory for the bootstrap from the kernel's mapping calls, with no libc: whole pa
 
 ## Synopsis
 
-**What.** `map` gives a block of whole pages with a stated protection, `protect` changes the protection, and `unmap` gives the block back. A `Heap` cuts blocks in size classes from 16 bytes to 4 KiB out of runs of 64 KiB, or of one page when a page is larger. A block past the largest class takes whole pages of its own. The heap is an allocator of Rust's `alloc` through a shared reference, so a vector or a box can live in it.
+**What.** A `Mapper` holds the size of a page that the caller states. Its `map` gives a block of whole pages of anonymous memory as a `Request` asks: a protection and a backing. The protection is no access, reads, or reads and writes, so no memory of the crate runs code. The backing states whether the host reserves memory for the pages. A block changes its protection with `protect` and goes back to the host with `unmap`. A `Heap` cuts blocks in size classes from 16 bytes to 4 KiB out of runs of 64 KiB, or of one page when a page is larger. A block past the largest class takes whole pages of its own. The heap is an allocator of Rust's `alloc` through a shared reference, so a vector or a box can live in it.
 
 **Why.** The parts of the bootstrap need memory before gandr has an allocator of its own. Rust's allocator takes its memory from libc, and the bootstrap links no libc on Linux. A crate of the layer `boot` is a stage of the bootstrap, and a twin in gandr replaces it.
 
@@ -27,7 +27,8 @@ Memory for the bootstrap from the kernel's mapping calls, with no libc: whole pa
 
 ## Provided features
 
-- `map`, `protect` and `unmap`: whole pages from the host, each a `Block` with a `Protection`.
+- `Mapper`, with `map`: whole pages of anonymous memory from the host, each a `Block`, as a `Request` of a `Protection` and a `Backing` asks.
+- `Block`, with `protect` and `unmap`: a change of protection, and the way back to the host.
 - `PageSize` and `Pages`: the size of a page that the caller states, and a count of pages.
 - `Heap`: blocks in size classes over runs of pages, for one thread, with `allocate`, `grow` and `free`, and Rust's `Allocator` through `&Heap`.
 - `Refused`: each refusal, as an `Operation` and an `ErrorNumber`.
@@ -40,7 +41,7 @@ Memory for the bootstrap from the kernel's mapping calls, with no libc: whole pa
 
 ## Examples
 
-The witnesses map, write and unmap pages on the host, refuse a count past the address space, keep the bytes of each live block of a heap, and count the bytes that the process maps before a heap starts and after it ends.
+The witnesses map, write and unmap reserved and unreserved pages on the host. On Linux they read the kernel's flag of an unreserved mapping. They refuse a count past the address space, and keep the bytes of each live block of a heap. One witness counts the bytes that the process maps before a heap starts and after it ends.
 
 ```sh
 cargo test -p gandr-boot-alloc

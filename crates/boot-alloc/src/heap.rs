@@ -18,6 +18,7 @@ use core::cell::Cell;
 use core::num::NonZeroUsize;
 use core::ptr::NonNull;
 
+use crate::Backing;
 use crate::Base;
 use crate::Bytes;
 use crate::EINVAL;
@@ -28,7 +29,15 @@ use crate::Operation;
 use crate::PageSize;
 use crate::Protection;
 use crate::Refused;
+use crate::Request;
 use crate::sys;
+
+/// The request of each mapping of the heap: pages that read and write, for
+/// which the host reserves memory.
+const PAGES: Request = Request {
+    protection: Protection::ReadWrite,
+    backing: Backing::Reserved,
+};
 
 /// The exponent of the smallest class: 16 bytes, room for one address with
 /// the alignment of two.
@@ -229,8 +238,8 @@ impl Heap
         bytes: Bytes,
     ) -> Result<(), Refused>
     {
-        let run = sys::map(self.run, Protection::ReadWrite)
-            .map_err(|number| Refused::new(Operation::Map, number))?;
+        let run =
+            sys::map(self.run, PAGES).map_err(|number| Refused::new(Operation::Map, number))?;
         // SAFETY: the run is the heap's own, readable and writable, aligned
         // to a page, and its first block holds one address.
         unsafe {
@@ -273,7 +282,7 @@ impl Heap
     {
         let (index, bytes) = match self.size(layout)? {
             Size::Pages(length) => {
-                let base = sys::map(length, Protection::ReadWrite)
+                let base = sys::map(length, PAGES)
                     .map_err(|number| Refused::new(Operation::Map, number))?;
                 return Ok(Self::granted(base, Bytes(length.0.get())));
             },
