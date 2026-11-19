@@ -2096,10 +2096,13 @@ const LEFT_UNIT: [ConversionDecision<()>; 4] = [
 fn readmit(artifact: &DecodedArtifact) -> Result<Environment, KernelError>
 {
     let mut environment = Environment::new();
-    for (position, marked) in artifact.declarations().iter().enumerate() {
+    // The first staging takes the artifact's arena, and each later one stages
+    // over it.
+    let mut seed = Some(artifact.arena().clone());
+    for marked in artifact.declarations() {
         let mut staging = environment.stage();
-        if position == 0 {
-            *staging.arena() = artifact.arena().clone();
+        if let Some(arena) = seed.take() {
+            *staging.arena() = arena;
         }
         let levels = marked.declaration().levels().clone();
         let staged = match *marked.declaration().content() {
