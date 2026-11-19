@@ -1,0 +1,9 @@
+module Seed :> *{ type T, zero : T } where {
+  type T = Integer;
+  def zero = 0;
+}
+module Keep(S : *{ type T, zero : T }) :> *{ type T, zero : T } where {
+  type T = S.T;
+  def zero = S.zero;
+}
+module A = Keep(S$0eed) ;

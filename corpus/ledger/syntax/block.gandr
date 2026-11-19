@@ -1,0 +1,59 @@
+/// `block`: a block: statements, then the computation it ends in.
+
+// The native finite lists.
+import std.list (List);
+
+/// A block's value bound, then read with a local beside it.
+def answer() -> Integer =
+  let n = { pure 40 };
+  let one = 1
+  let m : Integer = n + one
+  m + one
+
+/// A name a `let` binds reads as the value itself.
+def three() -> Path(3, 3) =
+  let x = 3
+  Path.here x
+
+/// The checker checks the value a `let` binds at the `let`, read or not.
+@[refuses("TypeMismatch")]
+def unread() -> Integer =
+  let y = (1 : Bool)
+  2
+
+/// The block holds the value a `let` binds once, and each use reads it.
+@[runs("42")]
+def doubled() -> Integer =
+  let x = 20 + 1
+  x + x
+
+/// A `var` holds a value over the rest of its block; an access writes it.
+def counted() -> Integer =
+  var c = 1
+  access c as v { resume v (v + 1) };
+  pure c
+
+/// An assignment writes a held place. `=` writes the right side's value, and
+/// `+=`, `-=` and `*=` write the operator over the place's value and it. The
+/// right side runs before the assignment lends the place.
+def assigned() -> Integer =
+  var n = 1
+  n = n + 1
+  n *= 3
+  n -= 1
+  n
+
+/// A `var` may state its value's type, and a list needs one.
+def listed() -> Integer =
+  var xs : List Integer = #[1, 2]
+  xs.#[0] += 1
+  0
+
+/// A loop, an `if` or an access closing on its block, followed by another
+/// statement, needs no `;`.
+def looped() -> [Partial] Integer =
+  var n = 0
+  while n < 3 { n += 1; }
+  if n == 3 { n += 10; } else { n -= 1; }
+  access n as v { resume v (v * 2) }
+  n
