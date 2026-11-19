@@ -13,8 +13,11 @@ use gandr_core_content::NodeIndex;
 use gandr_core_content::Reference;
 use gandr_core_content::WorldContent;
 use gandr_core_term::compose::Composite;
+use gandr_core_term::effect::EffectSig;
+use gandr_core_term::effect::OperationName;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
+use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
 use crate::Constructors;
@@ -74,10 +77,17 @@ impl<'nodes> ContentSource<'nodes>
     }
 
     /// The node `body` is written as: the fold a returned binary composite
-    /// realises, since `Path.step(p, q)` writes it, and `body` otherwise.
+    /// realises, since `Path.step(p, q)` writes it; the operation alone at the
+    /// site of an operation that replies the empty sum, since the lowering
+    /// adds the case of no branches over its reply; and `body` otherwise.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Clause cost
+    /// - bound: at the bind of an operation's site, one read of the operations
+    ///   of that operation's signature, as [`Self::site`] states; no other node
+    ///   is read.
     fn written(
         &self,
         body: NodeIndex,
@@ -93,7 +103,78 @@ impl<'nodes> ContentSource<'nodes>
         {
             return realised;
         }
-        body
+        self.site(body).unwrap_or(body)
+    }
+
+    /// The operation alone, when `body` binds the perform or the exercise of
+    /// an operation that replies the empty sum and takes its reply apart by a
+    /// case of no branches: the site of an operation with no continuation, as
+    /// the lowering mints it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Clause cost
+    /// - bound: one read of the operations of the bound operation's signature,
+    ///   as [`Self::empty_reply`] states, and three nodes of the table.
+    fn site(
+        &self,
+        body: NodeIndex,
+    ) -> Option<NodeIndex>
+    {
+        let &ContentNode::Bind(bound, rest) = self.nodes.get(usize::from(body))?
+        else {
+            return None;
+        };
+        let &(ContentNode::Perform {
+            ref signature,
+            ref operation,
+            ..
+        }
+        | ContentNode::Exercise {
+            ref signature,
+            ref operation,
+            ..
+        }) = self.nodes.get(usize::from(bound))?
+        else {
+            return None;
+        };
+        let _reply = self.empty_reply(signature, operation)?;
+        let &ContentNode::Case {
+            scrutinee,
+            ref branches,
+        } = self.nodes.get(usize::from(rest))?
+        else {
+            return None;
+        };
+        (branches.is_empty()
+            && matches!(self.nodes.get(usize::from(scrutinee)), Some(&ContentNode::Variable { index, .. }) if index == DeBruijnIndex::from(0_u32)))
+        .then_some(bound)
+    }
+
+    /// The reply of `operation` of `signature`, when it is the empty sum: the
+    /// reply of an operation with no continuation.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Clause cost
+    /// - bound: one walk over the operations of `signature`, which stops at the
+    ///   operation that `operation` names.
+    fn empty_reply(
+        &self,
+        signature: &EffectSig<NodeIndex>,
+        operation: &OperationName,
+    ) -> Option<NodeIndex>
+    {
+        let performed = signature
+            .operations()
+            .find(|declared| declared.name == *operation)?;
+        matches!(
+            self.nodes.get(usize::from(performed.reply)),
+            Some(&ContentNode::Sum(ref summands)) if summands.is_empty()
+        )
+        .then_some(performed.reply)
     }
 }
 
@@ -1196,6 +1277,60 @@ impl Source for ContentSource<'_>
             | ContentNode::Unresolved(_) => None,
         }?;
         Some(Name::from(label))
+    }
+
+    /// The body that the clause `index` of the handler `node` writes, when
+    /// the clause answers an operation with no continuation.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the rest of the clause's opening bind, for a handle or a
+    ///   scope of the table whose clause at `index` answers an operation that
+    ///   replies the empty sum and opens by binding the abandonment of its
+    ///   stack; none otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Source::abandoned`].
+    /// - witness: `tests::goldens::an_operation_with_no_continuation_prints_as_written_7968`
+    #[spec(ensures: |ret| ret.is_none_or(|rest| match self.nodes.get(usize::from(node)) {
+        | Some(&(ContentNode::Handle { ref clauses, .. } | ContentNode::Scope { ref clauses, .. })) =>
+            clauses.get(usize::from(index)).is_some_and(|clause| matches!(self.nodes.get(usize::from(clause.body)), Some(&ContentNode::Bind(_, kept)) if rest == kept)),
+        | Some(_) | None => false,
+    }))]
+    #[inline]
+    fn abandoned(
+        &self,
+        node: NodeIndex,
+        index: Component,
+    ) -> Option<NodeIndex>
+    {
+        let &(ContentNode::Handle {
+            ref signature,
+            ref clauses,
+            ..
+        }
+        | ContentNode::Scope {
+            ref signature,
+            ref clauses,
+            ..
+        }) = self.nodes.get(usize::from(node))?
+        else {
+            return None;
+        };
+        let clause = clauses.get(usize::from(index))?;
+        let &ContentNode::Bind(bound, rest) = self.nodes.get(usize::from(clause.body))?
+        else {
+            return None;
+        };
+        let _reply = self.empty_reply(signature, &clause.operation)?;
+        let &ContentNode::Abandon(stack) = self.nodes.get(usize::from(bound))?
+        else {
+            return None;
+        };
+        matches!(self.nodes.get(usize::from(stack)), Some(&ContentNode::Variable { index: bound_at, .. }) if bound_at == DeBruijnIndex::from(0_u32))
+        .then_some(rest)
     }
 }
 

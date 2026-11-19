@@ -1629,6 +1629,42 @@ pub trait Source
         index: Component,
     ) -> Option<Name<'_>>;
 
+    /// The body that the operation clause `index` of the handler `node`
+    /// writes, when the clause answers an operation with no continuation: the
+    /// lowering opens such a body by abandoning the stack, which the source
+    /// does not write, so the written body is the rest of that bind.
+    ///
+    /// # Specification
+    /// - requires: nothing; any handle and any position are admissible.
+    /// - ensures: the rest of the bind that opens the clause exactly when
+    ///   [`read`] answers a [`Former::Handle`] or a [`Former::Scope`], the
+    ///   operation of clause `index` replies the empty sum, and the clause
+    ///   opens by binding the abandonment of its stack; none otherwise. The
+    ///   default answers none.
+    /// - provides: the body and the binders that a clause of an operation with
+    ///   no continuation is written with: its payload alone.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope over an operation with no continuation spells
+    ///   its clause with its payload alone and its body past the abandonment; a
+    ///   clause that resumes keeps both of its binders.
+    /// - witness: `tests::goldens::an_operation_with_no_continuation_prints_as_written_7968`
+    #[inline]
+    fn abandoned(
+        &self,
+        node: Self::Node,
+        index: Component,
+    ) -> Option<Self::Node>
+    {
+        let _ = (node, index);
+        None
+    }
+
     /// The constructor branch `index` of the data case `node` names matches,
     /// how many fields it binds, and where its name stands to them.
     ///

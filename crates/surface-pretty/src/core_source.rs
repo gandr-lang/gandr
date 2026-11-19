@@ -20,6 +20,8 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::compose::Composite;
+use gandr_core_term::effect::EffectSig;
+use gandr_core_term::effect::OperationName;
 use gandr_core_term::hole::HoleOrigin;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::memory::AccessMode;
@@ -30,6 +32,7 @@ use gandr_core_term::world::World;
 use gandr_core_term::world::WorldForm;
 use gandr_core_term::world::WorldType;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
 use crate::former::Answered;
@@ -1491,29 +1494,106 @@ impl<'arena> CoreSource<'arena>
     }
 
     /// The computation `id` is written as: the fold a returned binary
-    /// composite realises, since `Path.step(p, q)` writes it, and `id`
+    /// composite realises, since `Path.step(p, q)` writes it; the operation
+    /// alone at the site of an operation that replies the empty sum, since the
+    /// lowering adds the case of no branches over its reply; and `id`
     /// otherwise.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Clause cost
+    /// - bound: at the bind of an operation's site, one read of the operations
+    ///   of that operation's signature, as [`Self::site`] states; no other
+    ///   state is read.
     fn written(
         &self,
         id: ComputationId,
     ) -> ComputationId
     {
-        if let Some(&Computation::Return(returned)) = self.arena.computation(id)
-            && let Some(&Value::Compose {
-                composite,
-                realised,
-                ..
-            }) = self.arena.value(returned)
-            && composite == Composite::binary()
-        {
-            realised
+        match self.arena.computation(id) {
+            Some(&Computation::Return(returned)) => match self.arena.value(returned) {
+                Some(&Value::Compose {
+                    composite,
+                    realised,
+                    ..
+                }) if composite == Composite::binary() => realised,
+                _ => id,
+            },
+            Some(&Computation::Bind(..)) => self.site(id).unwrap_or(id),
+            _ => id,
         }
+    }
+
+    /// The operation alone, when `id` binds the perform or the exercise of
+    /// an operation that replies the empty sum and takes its reply apart by a
+    /// case of no branches: the site of an operation with no continuation, as
+    /// the lowering mints it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Clause cost
+    /// - bound: one read of the operations of the bound operation's signature,
+    ///   as [`Self::empty_reply`] states, and three nodes of the arena.
+    fn site(
+        &self,
+        id: ComputationId,
+    ) -> Option<ComputationId>
+    {
+        let &Computation::Bind(bound, rest) = self.arena.computation(id)?
         else {
-            id
+            return None;
+        };
+        let &(Computation::Perform {
+            ref signature,
+            ref operation,
+            ..
         }
+        | Computation::Exercise {
+            ref signature,
+            ref operation,
+            ..
+        }) = self.arena.computation(bound)?
+        else {
+            return None;
+        };
+        let _reply = self.empty_reply(signature, operation)?;
+        let &Computation::Case {
+            scrutinee,
+            ref branches,
+        } = self.arena.computation(rest)?
+        else {
+            return None;
+        };
+        (branches.is_empty()
+            && matches!(self.arena.value(scrutinee), Some(&Value::Variable { index, .. }) if index == DeBruijnIndex::from(0_u32)))
+        .then_some(bound)
+    }
+
+    /// The reply type of `operation` of `signature`, when it is the empty
+    /// sum: the reply of an operation with no continuation.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Clause cost
+    /// - bound: one walk over the operations of `signature`, which stops at the
+    ///   operation that `operation` names.
+    fn empty_reply(
+        &self,
+        signature: &EffectSig,
+        operation: &OperationName,
+    ) -> Option<ValueTypeId>
+    {
+        let performed = signature
+            .operations()
+            .find(|declared| declared.name == *operation)?;
+        matches!(
+            self.arena.value_type(performed.reply),
+            Some(&ValueType::Sum(ref summands)) if summands.is_empty()
+        )
+        .then_some(performed.reply)
     }
 
     /// The relation the type `id` was written as, when the source records
@@ -3419,6 +3499,67 @@ impl Source for CoreSource<'_>
             },
         }?;
         Some(Name::from(label))
+    }
+
+    /// The body that the clause `index` of the handler `node` writes, when
+    /// the clause answers an operation with no continuation.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the rest of the clause's opening bind, for a held handle or
+    ///   scope whose clause at `index` answers an operation that replies the
+    ///   empty sum and opens by binding the abandonment of its stack; none
+    ///   otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Source::abandoned`].
+    /// - witness: `tests::goldens::an_operation_with_no_continuation_prints_as_written_7968`
+    #[spec(ensures: |ret| ret.is_none_or(|rest| match self.restoration.restored(node) {
+        | CoreNode::Computation(id) => match self.arena.computation(id) {
+            | Some(&(Computation::Handle { ref clauses, .. } | Computation::Scope { ref clauses, .. })) =>
+                clauses.get(usize::from(index)).is_some_and(|clause| matches!(self.arena.computation(clause.body), Some(&Computation::Bind(_, kept)) if rest == CoreNode::Computation(kept))),
+            | Some(_) | None => false,
+        },
+        | CoreNode::ValueType(_) | CoreNode::Value(_) | CoreNode::CompType(_) => false,
+    }))]
+    #[inline]
+    fn abandoned(
+        &self,
+        node: CoreNode,
+        index: Component,
+    ) -> Option<CoreNode>
+    {
+        let CoreNode::Computation(id) = self.restoration.restored(node)
+        else {
+            return None;
+        };
+        let &(Computation::Handle {
+            ref signature,
+            ref clauses,
+            ..
+        }
+        | Computation::Scope {
+            ref signature,
+            ref clauses,
+            ..
+        }) = self.arena.computation(id)?
+        else {
+            return None;
+        };
+        let clause = clauses.get(usize::from(index))?;
+        let &Computation::Bind(bound, rest) = self.arena.computation(clause.body)?
+        else {
+            return None;
+        };
+        let _reply = self.empty_reply(signature, &clause.operation)?;
+        let &Computation::Abandon(stack) = self.arena.computation(bound)?
+        else {
+            return None;
+        };
+        matches!(self.arena.value(stack), Some(&Value::Variable { index: bound_at, .. }) if bound_at == DeBruijnIndex::from(0_u32))
+        .then_some(CoreNode::Computation(rest))
     }
 
     /// The constructor of the family the data case `node` eliminates at tag

@@ -8566,6 +8566,94 @@ fn a_continuation_is_resumed_by_its_call_941()
     );
 }
 
+/// An operation with no continuation replies the empty sum. The lowering
+/// takes that reply apart at the site by a case of no branches, and it opens
+/// the operation's clause by abandoning the stack. The site writes the
+/// operation alone, and the clause writes its payload alone and its body past
+/// the abandonment. A clause that abandons the stack of an operation that
+/// resumes keeps both of its binders and its abandonment (#7968).
+#[test]
+fn an_operation_with_no_continuation_prints_as_written_7968()
+{
+    use gandr_core_term::control::EffectClause;
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+
+    let mut core = CoreArena::new();
+    let code = core.value_type_base(BaseType::Integer);
+    let never = core.value_type_sum(&[]);
+    let unit = core.value_type_product(&[]);
+    let halting = EffectSig::new(EffectName::from("Halt.Eff"), [EffectOp {
+        name: "halt".into(),
+        payload: code,
+        reply: never,
+    }])
+    .expect("one operation is a signature");
+    let exiting = EffectSig::new(EffectName::from("std.process.Exit.Eff"), [EffectOp {
+        name: "exit".into(),
+        payload: code,
+        reply: unit,
+    }])
+    .expect("one operation is a signature");
+    // The site: the perform, then a case of no branches over its reply.
+    let one = integer(&mut core, Sign::NonNegative, Written("1"));
+    let performed = core.computation_perform(halting.clone(), "halt".into(), one);
+    let reply = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let eliminated = core.computation_case(reply, &[]);
+    let site = core.computation_bind(performed, eliminated);
+    // A scope over `signature` whose one clause abandons the stack, then
+    // returns 7.
+    let scoped = |core: &mut CoreArena, signature: &EffectSig, operation: &str| {
+        let nothing = core.value_unit();
+        let subject = core.computation_return(nothing);
+        let answer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let on_return = core.computation_return(answer);
+        let stack = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let abandoned = core.computation_abandon(stack);
+        let seven = integer(core, Sign::NonNegative, Written("7"));
+        let rest = core.computation_return(seven);
+        let body = core.computation_bind(abandoned, rest);
+        core.computation_scope(
+            signature.clone(),
+            subject,
+            on_return,
+            Arc::from([EffectClause {
+                operation: operation.into(),
+                body,
+            }]),
+        )
+    };
+    let halted = scoped(&mut core, &halting, "halt");
+    let exited = scoped(&mut core, &exiting, "exit");
+    let source = CoreSource::new(&core, &[]);
+    for root in [site, halted, exited] {
+        agrees(&core, &[], CoreNode::Computation(root));
+    }
+    let written = |id| spelled(&source, Root::Computation(CoreNode::Computation(id)));
+    assert_eq!(
+        written(site),
+        faithful(Written("Halt.halt 1")),
+        "the site of an operation with no continuation is the operation alone"
+    );
+    assert_eq!(
+        written(halted),
+        faithful(Written(
+            "handle a : Halt.Eff { *{} } with { | pure(a) => a | oper halt(a) => 7 }"
+        )),
+        "the clause of an operation with no continuation binds its payload alone"
+    );
+    // The clause runs past the page, so the printer breaks it after
+    // `abandon` and indents the rest under its clause.
+    assert_eq!(
+        written(exited),
+        faithful(Written(
+            "handle a : std.process.Exit.Eff { *{} } with { | pure(a) => a | oper exit(a, b) => { let c = abandon\n                                                                                       b ; 7 } }"
+        )),
+        "a clause of an operation that resumes keeps its stack and its abandonment"
+    );
+}
+
 /// A `return` a handled subject writes lowers to a shift that never resumes
 /// the stack it captures, inside the reset that delimits the body; it prints
 /// as written, `return v`, the reset unwritten, in a loop's pass as at a
