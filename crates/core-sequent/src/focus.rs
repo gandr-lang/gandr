@@ -3402,7 +3402,7 @@ impl<'run> Focusing<'run>
     ///   exposing shifted binders. The shared address helper witnesses the
     ///   ceiling; no full-sized consumer arena is allocated.
     /// - witness: `focus::tests::focusing_mints_no_name`
-    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
+    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling_8054`
     #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|id|
         self.arena.consumer(id) == Some(&ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
     ))]
