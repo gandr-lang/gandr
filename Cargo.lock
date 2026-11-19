@@ -1671,6 +1671,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-runtime-rust-record"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "gandr-core-publish",
+ "quenchant-anodized",
+]
+
+[[package]]
 name = "gandr-runtime-scope"
 version = "0.0.0"
 dependencies = [
