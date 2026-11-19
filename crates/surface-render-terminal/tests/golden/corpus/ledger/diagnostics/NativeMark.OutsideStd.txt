@@ -1,0 +1,8 @@
+error[NativeMark.OutsideStd]: only a module of `std` writes a `native` mark
+  ╭▸ corpus/ledger/diagnostics/NativeMark.OutsideStd.gandr:4:3
+  │
+4 │ @[native("string.append")]
+  │   ━━━━━━━━━━━━━━━━━━━━━━━ a native mark outside std
+  │
+  ├ note: `append` is refused with NativeMark.OutsideStd, as its expectation states
+  ╰ help: delete the mark. Call the declaration of `std`

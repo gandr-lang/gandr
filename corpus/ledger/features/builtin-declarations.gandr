@@ -1,0 +1,19 @@
+/// `builtin-declarations`: a module of `std` declares a row of the native
+/// table. The signature has no body, and the mark `native` names the row.
+/// Implemented: `std.string` declares `string.append` as `append`, and a call
+/// of the declaration is a call of the row.
+/// Not implemented: each other row keeps its reserved name, and no module of
+/// `std` declares it.
+///
+/// - owes: #7833 — the declaration of every other row
+
+import std.string (append);
+
+/// `declared` joins two strings through the declaration of the row.
+@[runs("\"ada lovelace\"")]
+def declared() -> String = append "ada " "lovelace";
+
+/// `reserved` joins the same strings through the row's reserved name, to the
+/// same string.
+@[runs("\"ada lovelace\"")]
+def reserved() -> String = string.append "ada " "lovelace";
