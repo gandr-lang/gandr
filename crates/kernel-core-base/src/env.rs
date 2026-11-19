@@ -13,6 +13,7 @@ use anodized::spec;
 use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_data::Count;
 use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::Identity;
 use gandr_kernel_data::Shared;
 use gandr_kernel_data::ThinShared;
 use gandr_kernel_term::AnyNode;
@@ -708,7 +709,7 @@ impl StagedMarks
     )
     {
         if let Some(position) = self.marks.iter().position(|held| *held == mark) {
-            let _removed = self.marks.remove(position);
+            let _removed = self.marks.remove(Count::from(position));
         }
     }
 
@@ -1793,7 +1794,7 @@ pub struct Entries
     /// the next views take. A view beside an open one then reuses a support
     /// under a fresh stamp, and allocates and clears no stamp for each
     /// position. They number at most the checks open at once.
-    spares: SmallVec<alloc::sync::Arc<crate::weakening::Support>, 0, Global>,
+    spares: SmallVec<Shared<crate::weakening::Support, Global>, 0, Global>,
     /// The rank the check that runs reads below: none until a check opens
     /// one, and never shared with a clone.
     horizon: Option<Horizon>,
@@ -1986,7 +1987,7 @@ impl PartialEq for Entries
     ) -> bool
     {
         match (self.log.as_ref(), other.log.as_ref()) {
-            (Some(mine), Some(theirs)) => Shared::ptr_eq(mine, theirs),
+            (Some(mine), Some(theirs)) => Shared::ptr_eq(mine, theirs) == Identity::Same,
             (None, None) => true,
             (Some(_), None) | (None, Some(_)) => false,
         }
@@ -2564,7 +2565,7 @@ impl Entries
     #[inline]
     fn log_mut(&mut self) -> &mut EntryLog
     {
-        Shared::make_mut(self.log.get_or_insert_with(alloc::sync::Arc::default))
+        Shared::make_mut(self.log.get_or_insert_with(Shared::default))
     }
 
     /// Admit `entry` after every entry, its content in `arena`.
@@ -3122,12 +3123,12 @@ impl Entries
                 .below(rank),
         });
         let length = self.len();
-        let fresh = alloc::sync::Arc::default;
+        let fresh = Shared::default;
         let support = self.support.get_or_insert_with(fresh);
-        if Shared::get_mut(support).is_none() {
+        if let Maybe::Absent(_) = Shared::get_mut(support) {
             *support = fresh();
         }
-        let Some(support) = Shared::get_mut(support)
+        let Maybe::Present(support) = Shared::get_mut(support)
         else {
             return;
         };
@@ -3148,7 +3149,10 @@ impl Entries
     pub fn close(&mut self) -> Option<ConstantIndex>
     {
         self.horizon = None;
-        Shared::get_mut(self.support.as_mut()?)?.close()
+        match Shared::get_mut(self.support.as_mut()?) {
+            Maybe::Present(support) => support.close(),
+            Maybe::Absent(_) => None,
+        }
     }
 
     /// How many entries the last check read.
@@ -4193,13 +4197,13 @@ mod tests
             let _outside = view.close();
         }
         let mut given =
-            [&first, &second].map(|view| view.support.as_ref().map(alloc::sync::Arc::as_ptr));
+            [&first, &second].map(|view| view.support.as_ref().map(|support| core::ptr::from_ref(&**support)));
         entries.restore(first);
         entries.restore(second);
         let third = entries.view();
         let fourth = entries.view();
         let mut taken =
-            [&third, &fourth].map(|view| view.support.as_ref().map(alloc::sync::Arc::as_ptr));
+            [&third, &fourth].map(|view| view.support.as_ref().map(|support| core::ptr::from_ref(&**support)));
         assert!(
             taken.iter().all(Option::is_some),
             "each view beside an open one takes a support back"
