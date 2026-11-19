@@ -13828,10 +13828,11 @@ impl Walk<'_, '_>
                     popped.push(self.pop()?);
                 }
                 // A payload stands left of `>!` or `>?`, in the band of the
-                // arrow, so a piece tighter than the arrow stands bare.
+                // arrow, as an arrow's domain does: a piece no looser than a
+                // lazy product stands bare.
                 let mut payloads = Vec::with_capacity(count);
                 for piece in popped.into_iter().rev() {
-                    payloads.push(self.bare_up_to(piece, Binding::Relation)?);
+                    payloads.push(self.bare_up_to(piece, Binding::Lazy)?);
                 }
                 let template = self.protocols.pop().ok_or(PresentationError::Unbalanced)?;
                 let mut items = Vec::with_capacity(template.len());
