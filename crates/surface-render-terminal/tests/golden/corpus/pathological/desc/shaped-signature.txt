@@ -7,15 +7,6 @@ error[MalformedForm]: a keyword or symbol of this def value is out of place
    ├ note: `TwoBoundaries` is refused with MalformedForm, as its expectation states
    ╰ help: move the keyword or symbol to its place in the def value
 
-error[RetiredSpelling.shape_member]: this spelling is retired, and `boundary B {…}; face f = {…}` replaces it
-   ╭▸ corpus/pathological/desc/shaped-signature.gandr:41:3
-   │
-41 │   shape Square : 4 {left = {0, 2};};
-   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a retired spelling
-   │
-   ├ note: `Retired` is refused with RetiredSpelling.shape_member, as its expectation states
-   ╰ help: write `boundary B {…}; face f = {…}` in place of the retired spelling
-
 error[IllFormedDescription]: the face `far` holds a name the boundary `Square` does not list
    ╭▸ corpus/pathological/desc/shaped-signature.gandr:11:3
    │
