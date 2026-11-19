@@ -26,4 +26,4 @@ def swapCarriers[A : Type, B : Type](p : Model Pairing with {
   | sort A
   | sort B
 }) -> *{first : B, second : A} =
-  *{first = p.right, second = p.left}
+  *{.first = p.right, .second = p.left}

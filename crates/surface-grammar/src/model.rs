@@ -876,6 +876,12 @@ pub enum RetiredForm
     /// A theory operation of no input applied to `()` in a term, `c ()`,
     /// which the constant's bare name `c` replaces.
     EmptyOperationCall,
+    /// A field of a record literal written with no dot, `*{ l = e }`, which
+    /// `*{ .l = e }` replaces.
+    BareRecordField,
+    /// A field of a record update written with no dot, `*{ r | l = e }`,
+    /// which `*{ r | .l = e }` replaces.
+    BareUpdateField,
     /// The attribute `native`, which `builtin` replaces: `@[builtin("key")]`
     /// names a row of the builtin table, a native value among them.
     NativeAttribute,
@@ -887,7 +893,7 @@ pub enum RetiredForm
 impl RetiredForm
 {
     /// Every retired spelling, in the order of the enum.
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 17] = [
         Self::ShapeMember,
         Self::UnitValue,
         Self::PositionalPathCarrier,
@@ -901,6 +907,8 @@ impl RetiredForm
         Self::ParenthesizedProductPattern,
         Self::EmptyOperationInputs,
         Self::EmptyOperationCall,
+        Self::BareRecordField,
+        Self::BareUpdateField,
         Self::NativeAttribute,
         Self::BuiltinWord,
     ];
@@ -928,6 +936,8 @@ impl RetiredForm
             Self::ParenthesizedProductPattern => "parenthesized_product_pattern",
             Self::EmptyOperationInputs => "empty_operation_inputs",
             Self::EmptyOperationCall => "empty_operation_call",
+            Self::BareRecordField => "bare_record_field",
+            Self::BareUpdateField => "bare_update_field",
             Self::NativeAttribute => "native_attribute",
             Self::BuiltinWord => "builtin_word",
         })
@@ -956,6 +966,8 @@ impl RetiredForm
             Self::ParenthesizedProductPattern => "*{p, q}",
             Self::EmptyOperationInputs => "oper c : T",
             Self::EmptyOperationCall => "c",
+            Self::BareRecordField => "*{ .l = e }",
+            Self::BareUpdateField => "*{ r | .l = e }",
             Self::NativeAttribute => "builtin",
             Self::BuiltinWord => "builtin(\"key\")",
         })
@@ -983,6 +995,8 @@ impl RetiredForm
             Self::ParenthesizedProduct => "(A, B)",
             Self::ParenthesizedProductPattern => "(p, q)",
             Self::EmptyOperationInputs | Self::EmptyOperationCall => "()",
+            Self::BareRecordField => "*{ l = e }",
+            Self::BareUpdateField => "*{ r | l = e }",
             Self::NativeAttribute => "native",
             Self::BuiltinWord => "builtin(key)",
         })

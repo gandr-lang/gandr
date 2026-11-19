@@ -7,7 +7,7 @@
 // - see: #1106 — `extended`, `kind`
 
 /// `base` holds a name and a star count.
-def base = *{name = "gandr", stars = 1};
+def base = *{.name = "gandr", .stars = 1};
 
 /// `extended` inserts `kind` into `base`.
 @[refuses("OutOfFragment.projection_expression")]

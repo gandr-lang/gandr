@@ -759,8 +759,8 @@ fn a_capture_that_does_not_cross_declines_at_its_migration()
 }
 
 /// A record built only at the world comes back to a caller whose own code
-/// builds none: `migrate [host] { return *{x = 1, y = 2} }` reads back
-/// `*{x = 1, y = 2}` on each tier, the record's head joining the caller's
+/// builds none: `migrate [host] { return *{.x = 1, .y = 2} }` reads back
+/// `*{.x = 1, .y = 2}` on each tier, the record's head joining the caller's
 /// table as the answer is laid out on its heap.
 #[test]
 fn a_record_built_only_at_the_world_comes_back()
@@ -820,7 +820,7 @@ fn a_thunk_a_migration_returns_runs_at_the_caller_3265()
 }
 
 /// A field of a record a migration answers reads as the same field of the
-/// record built in place: `bind (migrate [host] { return *{x = 1, y = 2} })
+/// record built in place: `bind (migrate [host] { return *{.x = 1, .y = 2} })
 /// (bind r.y (bind r.x (return (y, x))))` reads back `(2, 1)` on each tier,
 /// as the same program without the migration does, though only the world's
 /// body builds the record (#3275).

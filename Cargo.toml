@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+  "crates/boot-alloc",
   "crates/core-checker",
   "crates/core-checker-base",
   "crates/core-checker-bridge",
@@ -454,6 +455,13 @@ default-features = false
 [workspace.dependencies.foldhash]
 version = "0.2.0"
 default-features = false
+
+# The kernel's mapping calls with no C library, and a heap of size classes
+# over them.
+# consumers:
+# - runtime-emitter
+[workspace.dependencies.gandr-boot-alloc]
+path = "crates/boot-alloc"
 
 # The checking judgement: the name-free declaration input, the verdicts, the
 # obligation ledger and the refusal vocabulary.

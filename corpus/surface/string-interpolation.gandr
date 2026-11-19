@@ -23,4 +23,4 @@ def price(count : String) -> String =
 /// A record is not a string, and an interpolation formats nothing into one.
 @[refuses("ShapeMismatch")]
 def describe(user : String, count : Integer) -> String =
-  "user=${ user }\trow=${ *{ n = count } }\n"
+  "user=${ user }\trow=${ *{ .n = count } }\n"

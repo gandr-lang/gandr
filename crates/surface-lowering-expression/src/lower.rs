@@ -14372,7 +14372,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   constructor; empty parentheses are refused by name; a result's group
     ///   of outputs lowers to the many-value returner.
     /// - witness: `gandr-surface-lowering::lower::tests::an_arrow_lowers_under_a_thunk_type`
-    /// - witness: `gandr-surface-lowering::lower::tests::a_parenthesized_product_is_refused_by_name_5192`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_parenthesized_product_is_refused_by_name_at_its_opener_8050`
     /// - witness: `gandr-surface-lowering::lower::tests::the_alias_is_the_thunked_arrow`
     /// - witness: `gandr-surface-lowering::lower::tests::the_empty_parentheses_are_never_the_unit`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_type_valued_calls_argument_takes_an_annotation_3633`
@@ -14393,7 +14393,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let _open = cursor.tile(TileName::PAREN_OPEN);
+        let open = cursor.tile(TileName::PAREN_OPEN);
         // A group written as a function's result is its outputs, as the group
         // before an arrow is its inputs: `-> (q : Nat, r : Nat)`, `-> ()`.
         if let Reading::Result(frame) = site.reading
@@ -14417,9 +14417,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         let inner = site.one(run)?;
         // A list in parentheses outside a domain and a result is the old
         // spelling of a product: `*{A, B}` replaces `(A, B)`.
-        if let Maybe::Present(comma) = cursor.at(TileName::COMMA) {
+        if let Maybe::Present(open) = open
+            && let Maybe::Present(_) = cursor.at(TileName::COMMA)
+        {
             return Err(site.fault(
-                comma.span,
+                open.span,
                 FormFault::Retired(RetiredForm::ParenthesizedProduct),
             ));
         }

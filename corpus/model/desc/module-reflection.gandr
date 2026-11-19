@@ -127,17 +127,17 @@ def packageOf(e : modelType(packagePresentation)) -> Model Gandr.Package =
                     | Entry(documentation, e9) => match e9 where
                       | Entry(endpoint, e10) => match e10 where
                         | Entry(sources, e11) => *{
-                          version = version,
-                          gandr = gandr,
-                          features = features,
-                          systems = systems,
-                          spelling = spelling,
-                          name = name,
-                          authors = authors,
-                          licence = licence,
-                          documentation = documentation,
-                          endpoint = endpoint,
-                          sources = sources
+                          .version = version,
+                          .gandr = gandr,
+                          .features = features,
+                          .systems = systems,
+                          .spelling = spelling,
+                          .name = name,
+                          .authors = authors,
+                          .licence = licence,
+                          .documentation = documentation,
+                          .endpoint = endpoint,
+                          .sources = sources
                         }
 
 /// A package model comes back from its entries.
@@ -210,7 +210,7 @@ def flaggedEntries(m : Model Flagged) -> modelType(Flagged) = Entry m.label (Ent
 def flaggedOf(e : modelType(Flagged)) -> Model Flagged =
   match e where
     | Entry(label, r) => match r where
-      | Entry(shown, t) => *{label = label, shown = shown}
+      | Entry(shown, t) => *{.label = label, .shown = shown}
 
 /// A model comes back from its entries.
 def flaggedBack(m : Model Flagged) -> Path[.A = Model Flagged] (flaggedOf

@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x70295d0d7c35ff4d`
+- Grammar fingerprint: `0x4b367932c2f2c6e8`
 - Rules: 176 — 175 committed, 1 internal
-- Molds: 3159
+- Molds: 3161
 - Attributes: 20
 
 ## Reading a form
@@ -117,7 +117,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`break_value_expression`](../corpus/ledger/syntax/break-value-expression.gandr) | `break ( EXPRESSION )` | `expression.atom` | `break_value_expression` * | admitted | Keyword, Other |
 | [`continue_expression`](../corpus/ledger/syntax/continue-expression.gandr) | `continue` | `expression.atom` | `continue_expression` * | admitted | Keyword |
 | [`glob_expression`](../corpus/ledger/syntax/glob-expression.gandr) | `glob { ⦅ ‹identifier› = EXPRESSION ; ⦆* }` | `expression.atom` | `glob_expression` * | admitted | Keyword, Other, Member |
-| [`telescope_expression`](../corpus/ledger/syntax/telescope-expression.gandr) | `*{ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = EXPRESSION ⦆? ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = EXPRESSION ⦆? ⦆* ⦅ , ⦆? } ‖ *{ ⦅ } ‖ EXPRESSION ⦅ = EXPRESSION ⦆? ⦅ \| ‹identifier› = EXPRESSION ⦅ , ‹identifier› = EXPRESSION ⦆* ⦅ , ⦆? } ‖ ⦅ , EXPRESSION ⦅ = EXPRESSION ⦆? ⦆* ⦅ , ⦆? } ⦆ ⦆` | `expression.atom` | `telescope_expression` * | admitted | Other, Member, Number, Operator |
+| [`telescope_expression`](../corpus/ledger/syntax/telescope-expression.gandr) | `*{ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = EXPRESSION ⦆? ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = EXPRESSION ⦆? ⦆* ⦅ , ⦆? } ‖ *{ ⦅ } ‖ EXPRESSION ⦅ = EXPRESSION ⦆? ⦅ \| ⦅ . ⦆? ‹identifier› = EXPRESSION ⦅ , ⦅ . ⦆? ‹identifier› = EXPRESSION ⦆* ⦅ , ⦆? } ‖ ⦅ , EXPRESSION ⦅ = EXPRESSION ⦆? ⦆* ⦅ , ⦆? } ⦆ ⦆` | `expression.atom` | `telescope_expression` * | admitted | Other, Member, Number, Operator |
 | [`labelled_sum_expression`](../corpus/ledger/syntax/labelled-sum-expression.gandr) | `+{ . ⦅ ‹identifier› ‖ ‹number› ⦆ = EXPRESSION }` | `expression.atom` | `labelled_sum_expression` * | admitted | Other, Member, Number |
 | [`lazy_record_expression`](../corpus/ledger/syntax/lazy-record-expression.gandr) | `&{ ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ => EXPRESSION ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ => EXPRESSION ⦆* ⦅ , ⦆? ⦆? }` | `expression.atom` | `lazy_record_expression` * | admitted | Other, Member, Number, Operator |
 | [`offer_expression`](../corpus/ledger/syntax/offer-expression.gandr) | `offer EXPRESSION { \| PATTERN => EXPRESSION ⦅ \| PATTERN => EXPRESSION ⦆* }` | `expression.atom` | `offer_expression` | admitted | Keyword, Other, Operator |
@@ -243,7 +243,7 @@ A rule no source can mold, with the reason and what the reason is read from: the
 | ---- | ---- | ---- | ------ | --------- |
 | `instantiation.type` | instantiation | `TYPE` | the form holds no tile, so no tree names the rule | grammar |
 
-## Superseded — 16 spellings
+## Superseded — 18 spellings
 
 An old spelling and the spelling that replaces it. A spelling the grammar still parses, so that a stale source reaches the decline of the elaborator, names the open issue that removes it, and `check:ledger` refuses a row whose issue does not stand open. A spelling that a source meets as a refusal names the refusal, and `check:ledger` refuses a row whose exemplar under `corpus/ledger/syntax/superseded/` does not state it.
 
@@ -253,6 +253,8 @@ An old spelling and the spelling that replaces it. A spelling the grammar still 
 | `attribute_block` | `builtin_word` | `builtin("key")` | refused as [`RetiredSpelling.builtin_word`](../corpus/ledger/syntax/superseded/builtin-word.gandr) | a `builtin` mark names its row by a key in quotes, as each row of the builtin table: the reader refuses a bare word by name |
 | `tuple_pattern` | `parenthesized_product_pattern` | `*{p, q}` | refused as [`RetiredSpelling.parenthesized_product_pattern`](../corpus/ledger/syntax/superseded/parenthesized-product-pattern.gandr) | a group in parentheses over a stored product, in a `let` or a match arm, is refused by name: `*{p, q}` is the pattern; a group over a call's outputs keeps its reading |
 | `telescope_expression` | `unit_value` | `*{}` | refused as [`RetiredSpelling.unit_value`](../corpus/ledger/syntax/superseded/unit-value.gandr) | the unit value is the empty telescope `*{}`: the name `unit`, where no declaration binds it, is refused by name |
+| `telescope_expression` | `bare_record_field` | `*{ .l = e }` | refused as [`RetiredSpelling.bare_record_field`](../corpus/ledger/syntax/superseded/bare-record-field.gandr) | a field of a record literal supplies a name, so it writes the dot, `*{ .l = e }`: the undotted `*{ l = e }` is refused by name |
+| `telescope_expression` | `bare_update_field` | `*{ r \| .l = e }` | refused as [`RetiredSpelling.bare_update_field`](../corpus/ledger/syntax/superseded/bare-update-field.gandr) | a field of a record update supplies a name, so it writes the dot, `*{ r \| .l = e }`: the undotted `*{ r \| l = e }` is refused by name |
 | `function_type` | `fat_arrow_box` | `A -> B` | refused as [`RetiredSpelling.fat_arrow_box`](../corpus/ledger/syntax/superseded/fat-arrow-box.gandr) | the box `A => B` in a signature, a nested box, a group in parentheses or a record field is refused by name; a parameter, a result and a constructor field keep their faults, and a box in an expression hole is not named |
 | `path_type` | `positional_path_carrier` | `Path[.A = A](a, b)` | refused as [`RetiredSpelling.positional_path_carrier`](../corpus/ledger/syntax/superseded/positional-path-carrier.gandr) | a carrier written first, by position, is refused by name: the head takes its carrier by name |
 | `bridge_type` | `positional_bridge_carrier` | `Bridge[.A = A](a, b)` | refused as [`RetiredSpelling.positional_bridge_carrier`](../corpus/ledger/syntax/superseded/positional-bridge-carrier.gandr) | a carrier written first, by position, is refused by name: the head takes its carrier by name |
@@ -385,7 +387,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `break_value_expression` | expression | 3 | `break` | `break_expression` | 0 |
 | `continue_expression` | expression | 1 | `continue` | — | 0 |
 | `glob_expression` | expression | 6 | `glob` | — | 0 |
-| `telescope_expression` | expression | 27 | `*{` | — | 12 |
+| `telescope_expression` | expression | 29 | `*{` | — | 12 |
 | `labelled_sum_expression` | expression | 6 | `+{` | — | 0 |
 | `lazy_record_expression` | expression | 12 | `&{` | — | 2 |
 | `offer_expression` | expression | 7 | `offer` | — | 0 |
@@ -490,7 +492,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `;` | 136 | 26 | 1 |
 | `)` | 132 | 33 | 0 |
 | `(` | 128 | 32 | 5 |
-| `.` | 97 | 47 | 3 |
+| `.` | 99 | 47 | 3 |
 | `type_variable` | 93 | 15 | 3 |
 | `}` | 84 | 44 | 0 |
 | `]` | 79 | 40 | 0 |

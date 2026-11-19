@@ -3977,7 +3977,7 @@ mod tests
             "def f() -> -F Integer { return (x * x) }",
             "// comment\n/* nested /* block */ */\n#!/usr/bin/env gandr\nx",
             "1u32 + 2.5f64 - .5e-3 * 42",
-            "@[doc(\"d\")] def x = *{ a = 1 };",
+            "@[doc(\"d\")] def x = *{ .a = 1 };",
             "match v { Inl(x) => x, Inr(y) => y }",
             "\u{feff}def a = 1;",
         ] {
@@ -4015,7 +4015,7 @@ mod tests
         // A record inside an interpolation keeps its own `*{ … }` braces, and a
         // nested string with its own interpolation re-enters string mode — the
         // brace-depth stack resolves both to the correct closing `}`.
-        let record = "\"v=${ *{ a = 1 } }\"";
+        let record = "\"v=${ *{ .a = 1 } }\"";
         assert_eq!(
             tiles(
                 SourceFragment::from(record),
@@ -4026,6 +4026,7 @@ mod tests
                 (Lexeme::StringFragment, "v=".to_owned()),
                 (Lexeme::Punct, "${".to_owned()),
                 (Lexeme::Punct, "*{".to_owned()),
+                (Lexeme::Punct, ".".to_owned()),
                 (Lexeme::LowerWord, "a".to_owned()),
                 (Lexeme::Punct, "=".to_owned()),
                 (Lexeme::Number, "1".to_owned()),

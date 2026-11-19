@@ -15,7 +15,7 @@ def point = *{.s = "x", .n = 3};
 
 @[checks]
 def shorthand : *{n : Integer, s : String};
-def shorthand = *{n = 3, s = "x"};
+def shorthand = *{.n = 3, .s = "x"};
 
 @[checks]
 def punned(r : *{n : Integer, s : String}) -> -F String =
@@ -35,7 +35,7 @@ def whole = *{.s = "x", .n = 3};
 def named() -> -F String = punned (*{.s = "x", .n = 3});
 
 @[runs("3")]
-def numbered() -> -F Integer = renamed (*{n = 3, s = "x"});
+def numbered() -> -F Integer = renamed (*{.n = 3, .s = "x"});
 
 @[runs("4")]
 def widened() -> -F Integer = renamed (*{.a = *{}, .n = 4, .s = "y"});

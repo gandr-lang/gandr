@@ -45,6 +45,23 @@ CREATE TABLE purpose(
   CONSTRAINT "unplaced judges a crate row" CHECK(doc <> 'unplaced' OR kind = 'crate'),
   CONSTRAINT "a finding is written exactly when naming is not fits or doc is not sound" CHECK((finding IS NULL) = (naming = 'fits' AND doc = 'sound'))
 ) WITHOUT ROWID;
+INSERT INTO purpose VALUES('boot-alloc','','crate','Gives the bootstrap memory from the kernel''s mapping calls with no libc: the `boot` layer, outside the integrity and the validity walls.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-alloc','Backing','enum','Whether the host reserves memory for the pages of a block when it maps them.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-alloc','Base','struct','The address of the first byte of a block.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-alloc','Block','struct','A block of whole pages that the host maps for the caller, which it protects and gives back.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-alloc','Bytes','struct','A count of bytes that the caller states.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-alloc','ErrorNumber','struct','An error number of the host, which a refusal carries.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-alloc','Granted','struct','The address and the count of the bytes that a heap grants for one allocation.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-alloc','Length','struct','The bytes of a mapping or of a page, never zero.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-alloc','Mapper','struct','The host''s mapping call over pages of a size that the caller states.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-alloc','Operation','enum','The operation that a refusal names.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-alloc','PageSize','struct','The size of the host''s page, which the caller states.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-alloc','Pages','struct','A count of whole pages that a mapping asks for.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-alloc','Protection','enum','What the bytes of a block allow: no access, reads, or reads and writes. No case runs code.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-alloc','Refused','struct','An operation that the host or the crate refuses, with its name and an error number.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-alloc','Request','struct','What a mapping asks of the host: a protection and a backing.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-alloc','heap','module','Cuts blocks in size classes from runs of pages for one thread.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-alloc','heap::Heap','struct','An allocator of blocks in size classes over runs of whole pages, held by one thread.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','elaborating::ResumeError','enum','An invalid request to fill or resume a module declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','elaborating::Session','struct','A module elaboration, admitting only checked hole fillings as mutations.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','staging::Allowance','struct','The work each job of a check may spend, granted afresh to every job so no job''s allowance depends on how the jobs were scheduled.',NULL,'fits','sound',NULL);

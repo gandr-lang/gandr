@@ -203,7 +203,7 @@ fn a_record_update_builds_its_base_s_kept_fields_beside_its_overlay()
             DeBruijnIndex::from(0_u32),
         )
     });
-    // `r = *{a = 0, b = 0}` and `s = *{r | b = "", c = 0}`.
+    // `r = *{.a = 0, .b = 0}` and `s = *{r | .b = "", .c = 0}`.
     let pair_type = arena.value_type_record(alloc::collections::BTreeMap::from([
         (label("a"), integer),
         (label("b"), integer),
@@ -230,8 +230,8 @@ fn a_record_update_builds_its_base_s_kept_fields_beside_its_overlay()
         (label("b"), word),
         (label("c"), zero),
     ]));
-    // `point = fun (n) { return *{a = n, b = n} }` and
-    // `moved = fun (n) { return *{point(n) | a = 0} }`.
+    // `point = fun (n) { return *{.a = n, .b = n} }` and
+    // `moved = fun (n) { return *{point(n) | .a = 0} }`.
     let returns_pair = arena.comp_type_returner(pair_type);
     let to_pair = arena.comp_type_arrow(integer, returns_pair);
     let to_pair = arena.value_type_thunk(to_pair);
@@ -857,7 +857,7 @@ fn a_record_update_in_a_signature_reads_its_record_2159()
     let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
     let integer = arena.value_type_base(BaseType::Integer);
     let zero = arena.value_literal(integer_literal());
-    // `point = *{x = 0, y = 0}`.
+    // `point = *{.x = 0, .y = 0}`.
     let pair_type = arena.value_type_record(alloc::collections::BTreeMap::from([
         (label("x"), integer),
         (label("y"), integer),
@@ -871,8 +871,8 @@ fn a_record_update_in_a_signature_reads_its_record_2159()
         let overlay = arena.value_record(alloc::collections::BTreeMap::from([(label(name), zero)]));
         arena.value_record_update(base, overlay)
     };
-    // `commute : Path[.A = R](*{*{point | x = 0} | y = 0}, *{*{point | y = 0} |
-    // x = 0})`.
+    // `commute : Path[.A = R](*{*{point | .x = 0} | .y = 0}, *{*{point | .y =
+    // 0} | .x = 0})`.
     let commuted = {
         let first = written(&mut arena, point, "x");
         let left = written(&mut arena, first, "y");
@@ -881,7 +881,7 @@ fn a_record_update_in_a_signature_reads_its_record_2159()
         arena.value_type_path(pair_type, left, right)
     };
     let commute = arena.value_here(pair);
-    // `unchanged : Path[.A = R](*{point | x = 0}, point)`.
+    // `unchanged : Path[.A = R](*{point | .x = 0}, point)`.
     let unchanged_type = {
         let left = written(&mut arena, point, "x");
         arena.value_type_path(pair_type, left, point)

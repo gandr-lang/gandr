@@ -5670,11 +5670,11 @@ mod tests
         assert_eq!(
             refusal(SourceText::from("def z : (Integer, String) ;")),
             LoweringRefusal::MalformedForm {
-                span: at(16_usize, 17_usize),
+                span: at(8_usize, 9_usize),
                 form: FormName::from(NamedKind("parenthesized_type")),
                 fault: FormFault::Retired(gandr_surface_grammar::RetiredForm::ParenthesizedProduct),
             },
-            "a type list anywhere but before an arrow is the retired product, refused at its first comma"
+            "a type list anywhere but before an arrow is the retired product, refused at its opening tile"
         );
         assert_eq!(
             refusal(SourceText::from("def z : Integer -> Integer -> String ;")),
@@ -7452,11 +7452,11 @@ mod tests
 
     /// #5192: a list in parentheses outside the domain of an arrow and a
     /// function's outputs is the old spelling of a product. The lowering
-    /// refuses it by its name at the first comma, in a signature and in a
+    /// refuses it by its name at its opening tile, in a signature and in a
     /// record field. The domain `(A, B) -> C` and the outputs `-> (A, B)`
     /// keep their readings.
     #[test]
-    fn a_parenthesized_product_is_refused_by_name_5192()
+    fn a_parenthesized_product_is_refused_by_name_at_its_opener_8050()
     {
         let pbg = grammar();
         let lowered = |source: &'static str| {
@@ -7475,15 +7475,15 @@ mod tests
             outcomes(&module)
         };
         let product = FormFault::Retired(gandr_surface_grammar::RetiredForm::ParenthesizedProduct);
-        for (source, comma) in [
-            ("def p : (Integer, String);\n", 16),
-            ("def r : *{ x : (Integer, Integer) };\n", 23),
+        for (source, open) in [
+            ("def p : (Integer, String);\n", 8),
+            ("def r : *{ x : (Integer, Integer) };\n", 15),
         ] {
             assert_eq!(
                 lowered(source),
                 [DeclarationOutcome::Refused(
                     LoweringRefusal::MalformedForm {
-                        span: span(ByteOffset::from(comma), ByteOffset::from(comma + 1)),
+                        span: span(ByteOffset::from(open), ByteOffset::from(open + 1)),
                         form: FormName::from(NamedKind("parenthesized_type")),
                         fault: product,
                     }

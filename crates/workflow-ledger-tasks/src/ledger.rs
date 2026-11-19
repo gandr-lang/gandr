@@ -1023,10 +1023,10 @@ impl SyntaxLedger
                 };
                 writeln!(
                     out,
-                    "| `{}` | `{}` | `{}` | {removal} | {} |",
+                    "| `{}` | `{}` | {} | {removal} | {} |",
                     row.rule,
                     row.surface,
-                    row.replaced_by.0,
+                    Code(row.replaced_by.0),
                     row.reason.replace('|', "\\|")
                 )?;
             }

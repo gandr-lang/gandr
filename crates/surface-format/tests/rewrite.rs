@@ -1217,7 +1217,7 @@ fn a_respaced_root_expression_keeps_the_rewrite_beside_it()
     );
     assert_eq!(
         spelled(&grammar, source, Form::Explicit, Selection::Every),
-        "def pair : *{Integer, String};\ndef s = *{b = 1};\n*{s | b = 2}\n"
+        "def pair : *{Integer, String};\ndef s = *{.b = 1};\n*{s | .b = 2}\n"
     );
 }
 

@@ -6,6 +6,10 @@
 // and ledger/concerns.sql; never edited by hand.
 digraph crates {
   rankdir = "BT";
+  subgraph "cluster_boot" {
+    label = "boot";
+    "boot-alloc";
+  }
   subgraph "cluster_theory" {
     label = "theory";
     "theory-cell-complexes";
@@ -234,6 +238,7 @@ digraph crates {
   "kernel-term" -> "kernel-data";
   "kernel-term" -> "kernel-strata";
   "kernel-term" -> "theory-path-orders";
+  "runtime-emitter" -> "boot-alloc";
   "runtime-emitter" -> "core-content";
   "runtime-emitter" -> "core-fork";
   "runtime-emitter" -> "core-sequent";
@@ -437,6 +442,7 @@ digraph crates {
   "surface-lowering-model" -> "core-term";
   "surface-lowering-model" -> "kernel-strata";
   "surface-lowering-model" -> "kernel-term";
+  "surface-lowering-model" -> "surface-grammar";
   "surface-lowering-model" -> "surface-lowering-base";
   "surface-lowering-model" -> "surface-syntax";
   "surface-lowering-model" -> "theory-levitation";

@@ -10,6 +10,7 @@ Categories are a layering order: a crate depends only on crates of its own categ
 
 ```text
 # Categories in dependency order: each depends only on its own and those above it.
+boot      Rust with no std that the bootstrap stands on until a twin in gandr replaces it: memory from the kernel with no libc
 theory    reusable metatheory machinery
 kernel    the certified trusted base and its substrate: levels, the term arena and sharing format, the checking machine
 core      the core language: call-by-push-value syntax, the unified context, normalization by evaluation
@@ -26,6 +27,7 @@ An arrow is one category's dependencies on another, labelled with the count of `
 <!-- crate-map:begin -->
 ```mermaid
 flowchart BT
+  boot
   theory
   kernel
   core
@@ -38,6 +40,7 @@ flowchart BT
   core -->|43| kernel
   storage -->|6| theory
   storage -->|1| kernel
+  runtime -->|1| boot
   runtime -->|1| theory
   runtime -->|2| kernel
   runtime -->|7| core
@@ -60,6 +63,7 @@ One row per directory: the directory and what it is.
 ```text
 # Rows sort lexicographically by directory; the dependency order is § Layering.
 crates/
+├── boot-alloc/                    whole pages from the kernel's mapping calls with no libc, and a heap in size classes over them
 ├── core-checker-base/             the faces, module run and refusals
 ├── core-checker-bridge/           kernel readmission, staging families
 ├── core-checker/                  the checking judgement under one name

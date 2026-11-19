@@ -25,7 +25,7 @@ def days($since; $until):
 # area, or `workflow` for a file outside `crates/`.
 def area_of:
   split("-")[0] as $word
-  | if ["core", "kernel", "runtime", "storage", "surface", "theory", "workflow"] | index($word) then $word
+  | if ["boot", "core", "kernel", "runtime", "storage", "surface", "theory", "workflow"] | index($word) then $word
     else "workflow" end;
 
 # The table of the rows `$rows` under the heading `$heading` and its lead,

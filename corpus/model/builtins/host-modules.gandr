@@ -23,8 +23,8 @@ def tour() -> *{content : String, name : String, ext : String, kind : String} =
   let tracked = fs.ls_files "."
   let path_entries = env.path
   pure *{
-    content = content,
-    name = path.basename file,
-    ext = path.extension file,
-    kind = stat.kind
+    .content = content,
+    .name = path.basename file,
+    .ext = path.extension file,
+    .kind = stat.kind
   }

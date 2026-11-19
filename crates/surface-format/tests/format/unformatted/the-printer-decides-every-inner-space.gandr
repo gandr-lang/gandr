@@ -1,6 +1,6 @@
 @[checks]
 def  f ( x  :  Integer , y : Integer ) -> -F Integer = { return x  +  y ;};
-def p = *{ a = 1 , b = -   2 } ;
+def p = *{ .a = 1 , .b = -   2 } ;
 def q : +{ A : Integer , B : Unit } ;
 def g[ r : Row ]( k : Integer ) -> [ Partial | r ] Unit = pure *{};
 def l = fun( x ){ x } ;

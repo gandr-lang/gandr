@@ -38,10 +38,10 @@ pub data Change : Type where
 
 /// Two web instances in two zones, reading one bucket.
 pub def offers : Fleet = *{
-  buckets = #[*{name = "offers-assets", versioning = true}],
-  instances = #[
-    *{kind = Aws.InstanceType.t4gSmall, zone = Aws.Zone.euCentral1a, reads = #["offers-assets"]},
-    *{kind = Aws.InstanceType.t4gSmall, zone = Aws.Zone.euCentral1b, reads = #["offers-assets"]}
+  .buckets = #[*{.name = "offers-assets", .versioning = true}],
+  .instances = #[
+    *{.kind = Aws.InstanceType.t4gSmall, .zone = Aws.Zone.euCentral1a, .reads = #["offers-assets"]},
+    *{.kind = Aws.InstanceType.t4gSmall, .zone = Aws.Zone.euCentral1b, .reads = #["offers-assets"]}
   ]
 };
 

@@ -25,4 +25,4 @@ def suffix = path.extension demo_path;
 
 /// `gathered` groups the rejected declarations. Its type is unknown.
 @[refuses("UnknownConstant")]
-def gathered = *{capture = caps, leaf = leaf, path_ext = suffix};
+def gathered = *{.capture = caps, .leaf = leaf, .path_ext = suffix};

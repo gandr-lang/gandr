@@ -12,7 +12,7 @@
 
 // Squaring, documented by its attribute and marked deprecated.
 @[doc("Squares its argument.")]
-@[deprecated(*{since = "0.2", note = "use square_checked"})]
+@[deprecated(*{.since = "0.2", .note = "use square_checked"})]
 def square(x : Integer) -> Integer =
   x * x
 
@@ -32,7 +32,7 @@ def current = legacy;
 module Shapes where {
   // The side, marked with a note alone.
   @[checks]
-  @[deprecated(*{note = "use area"})]
+  @[deprecated(*{.note = "use area"})]
   def side = 2;
 }
 

@@ -4515,8 +4515,8 @@ enum Exported
 }
 
 /// The first token `at` writes — a tile, or grout over bytes no label molds —
-/// as the name of a stray: `*{` for `*{ s | b = 2 }` and `*{s | b = 2}` alike,
-/// so the spacing inside the child never renames it.
+/// as the name of a stray: `*{` for `*{ s | .b = 2 }` and `*{s | .b = 2}`
+/// alike, so the spacing inside the child never renames it.
 ///
 /// # Specification
 /// trivial.

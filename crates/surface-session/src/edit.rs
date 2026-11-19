@@ -6295,7 +6295,7 @@ mod tests
             let below = level.saturating_sub(1_usize);
             writeln!(
                 text,
-                "  let s{level} = pure *{{l = s{below}, r = s{below}}};"
+                "  let s{level} = pure *{{.l = s{below}, .r = s{below}}};"
             )
             .expect("a string takes every write");
         }

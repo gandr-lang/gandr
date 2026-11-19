@@ -77,7 +77,7 @@ fn a_statement_lowers_to_univalence_at_its_stratum()
 {
     let mut arena = CoreArena::new();
     let source = format!(
-        "{MAGMA}def opposite = ua[1, 4] Magma Magma (*{{mul = exchange, one = keep}}) (*{{mul = exchange, one = keep}});\n"
+        "{MAGMA}def opposite = ua[1, 4] Magma Magma (*{{.mul = exchange, .one = keep}}) (*{{.mul = exchange, .one = keep}});\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let outcome = outcome_of(&module, "opposite".into());
@@ -162,7 +162,7 @@ fn a_statement_the_syntax_cannot_read_is_refused()
             | DeclarationOutcome::World) => panic!("`{written}` is refused: {other:?}"),
         }
     };
-    let records = "(*{mul = exchange, one = keep})";
+    let records = "(*{.mul = exchange, .one = keep})";
     let start = MAGMA.len().saturating_add("def opposite = ".len());
     let spans = |refusal: &LoweringRefusal<'_>| {
         refusal.span().map(|span| {
@@ -270,7 +270,7 @@ fn a_description_outside_the_stratum_is_refused_at_its_name()
     ] {
         let mut arena = CoreArena::new();
         let source = format!(
-            "{MAGMA}{theory}def opposite = ua[1, 4] Magma {name} (*{{mul = exchange}}) (*{{f = exchange}});\n"
+            "{MAGMA}{theory}def opposite = ua[1, 4] Magma {name} (*{{.mul = exchange}}) (*{{.f = exchange}});\n"
         );
         let module = lowered(SourceText::from(source.as_str()), &mut arena);
         let refused = outcome_of(&module, "opposite".into());

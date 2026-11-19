@@ -34,7 +34,7 @@ def zipSame[n : Integer](
   a : Model Buffer with { def size = n },
   b : Model Buffer with { def size = n }
 ) -> *{left : a.E, right : b.E} =
-  *{left = a.empty, right = b.empty}
+  *{.left = a.empty, .right = b.empty}
 
 /// The capacity of a fixed buffer reads off its type.
 def capacityOfTriple() -> Integer =

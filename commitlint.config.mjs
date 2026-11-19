@@ -54,6 +54,7 @@ const bodyBeforeTrailers = (parsed) => {
 // directory, so a scope survives a crate split. Infra scopes name the surfaces
 // that carry no crate.
 const SCOPES = [
+  "boot",
   "theory",
   "kernel",
   "core",
