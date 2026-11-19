@@ -477,6 +477,23 @@ fn a_continuation_line_indents_under_its_statement()
     );
 }
 
+/// #8119: an attribute block on its own line after a constructor arm starts
+/// the next member at the bars' indent. The parser holds the block in the arm
+/// before it, and the layout still reads no continuation of that arm.
+#[test]
+fn an_attribute_block_before_an_arm_keeps_the_arms_indent_8119()
+{
+    let grammar = grammar();
+    let source = include_str!(
+        "format/unformatted/an-attribute-block-before-an-arm-keeps-the-arms-indent-8119.gandr"
+    );
+    assert_eq!(
+        text(&grammar, source, WIDE),
+        source,
+        "each attribute block stands at the indent of the bar after it"
+    );
+}
+
 #[test]
 fn a_block_final_semicolon_stays_in_both_spellings_7733()
 {
