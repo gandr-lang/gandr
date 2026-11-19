@@ -4028,10 +4028,14 @@ fn law_admission_tail() -> Regex
 /// The faces block ends the member at its `}`, as a `data` or a `module`
 /// block does, so every brace in the member closes in it.
 ///
+/// A type signature with no body, `type T(..) : K;`, takes the same head.
+/// The grammar admits it under any attribute, and the lowering refuses it
+/// unless `@[builtin]` binds it to a row of the toolchain.
+///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `type`, a type name, an optional parameter list, `=`, a type
-///   hole, then `;` or a faces block.
+/// - ensures: `type`, a type name, an optional parameter list, then `=`, a type
+///   hole and `;` or a faces block, or `:`, a type hole and `;`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -4041,16 +4045,21 @@ fn law_admission_tail() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 6 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref ends) if ends.len() == 2))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref tails) if tails.len() == 2))))]
 fn type_member_tail() -> Regex
 {
     seq([
         t(TileLabel("type")),
         t(TileLabel("type_identifier")),
         opt(head_params()),
-        t(TileLabel("=")),
-        h(Sort::Type),
-        alt([t(TileLabel(";")), record_faces()]),
+        alt([
+            seq([
+                t(TileLabel("=")),
+                h(Sort::Type),
+                alt([t(TileLabel(";")), record_faces()]),
+            ]),
+            seq([t(TileLabel(":")), h(Sort::Type), t(TileLabel(";"))]),
+        ]),
     ])
 }
 
