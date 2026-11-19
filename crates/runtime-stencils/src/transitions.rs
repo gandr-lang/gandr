@@ -2265,10 +2265,24 @@ pub extern "rust-preserve-none" fn stencil_block(
     // convention, which the emitter mapped executable for the process.
     let block = unsafe { core::mem::transmute::<*const (), Block>(entry) };
     if operands & layout::BLOCK_ANSWERS == 0 {
+        #[cfg_attr(
+            dylint_lib = "quenchant_dylints",
+            expect(
+                allocation_free_region,
+                reason = "a block calls nothing: the block compiler refuses an object with a relocation or an undefined symbol"
+            )
+        )]
         let _unanswered = block(base);
         become hole_next(runtime, heap, base, environment, value)
     }
     let (object, next) = allocate!(runtime, heap, base, environment, value, 2_usize);
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            allocation_free_region,
+            reason = "a block calls nothing: the block compiler refuses an object with a relocation or an undefined symbol"
+        )
+    )]
     let answer = block(base);
     // SAFETY: the object's block is the run's.
     unsafe { *object = layout::INTEGER_HEADER };

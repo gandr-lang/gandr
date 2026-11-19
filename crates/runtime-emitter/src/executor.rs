@@ -73,6 +73,9 @@ impl Program
     /// - executable: none — continuing as the emitted copy does is observed
     ///   only by running both.
     ///
+    /// # Cost
+    /// - allocation: the steps and the constants, growth within the function
+    ///
     /// # Errors
     /// [`Unbound`] for a label an instruction names and the lowering never
     /// bound, or a block row past `blocks`.

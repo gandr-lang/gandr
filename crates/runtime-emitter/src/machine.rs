@@ -163,8 +163,7 @@ pub(crate) fn record(
 ///   entering it.
 ///
 /// # Cost
-/// - allocation: none once the key is mapped; a first request of a key maps a
-///   region when no region holds room for its bytes
+/// - allocation: the region of a first mapping, durable by the key
 ///
 /// # Errors
 /// [`Unentered`] naming why the key gives no address.
@@ -202,7 +201,7 @@ pub fn address(key: Key) -> Result<Word, Unentered>
 /// trivial.
 ///
 /// # Cost
-/// - allocation: one word for each key, none for no key
+/// - allocation: the address of each key, growth within the keys
 ///
 /// # Errors
 /// The first key's [`Unentered`], as [`address`] gives it.
@@ -235,8 +234,7 @@ fn runs_here(target: Target) -> Result<(), Unentered>
 /// trivial.
 ///
 /// # Cost
-/// - allocation: a region's slot when a region is mapped, durable for the
-///   process
+/// - allocation: the slot of a new region, durable by the key
 ///
 /// # Errors
 /// The host's [`MapFailure`] when a region is needed and refused.
@@ -386,6 +384,19 @@ mod tests
             .key
     }
 
+    /// Whether an entry asks for the block's answer.
+    ///
+    /// # Specification
+    /// trivial.
+    #[derive(Clone, Copy)]
+    enum Answering
+    {
+        /// The block's word becomes a fresh machine integer in hand.
+        Answers,
+        /// The value in hand stays as it was.
+        Nothing,
+    }
+
     /// The function that pushes `words` as machine integers, enters the block
     /// of `key`, and halts with the value in hand.
     ///
@@ -393,8 +404,8 @@ mod tests
     /// trivial.
     fn entering(
         key: Key,
-        words: &[i64],
-        answers: bool,
+        words: &[Word],
+        answering: Answering,
     ) -> Function
     {
         let mut function = Function::default();
@@ -407,7 +418,7 @@ mod tests
             });
         };
         for &word in words {
-            let integer = function.object(&[INTEGER_HEADER, Word::from(word)]);
+            let integer = function.object(&[INTEGER_HEADER, word]);
             step(
                 &mut function,
                 StencilId::Const,
@@ -422,7 +433,11 @@ mod tests
             );
         }
         let row = function.block(key);
-        let count = words.len() | if answers { BLOCK_ANSWERS } else { 0 };
+        let asks = match answering {
+            Answering::Answers => BLOCK_ANSWERS,
+            Answering::Nothing => 0,
+        };
+        let count = words.len() | asks;
         let count = u32::try_from(count).expect("a count below 2³²");
         step(
             &mut function,
@@ -494,9 +509,9 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn integer(bits: i64) -> HeapValue
+    fn integer(bits: Word) -> HeapValue
     {
-        HeapValue::Literal(Literal::Integer(integer_literal(Word::from(bits))))
+        HeapValue::Literal(Literal::Integer(integer_literal(bits)))
     }
 
     /// A block that adds its two words answers their sum as a machine
@@ -512,14 +527,28 @@ mod tests
         for &tier in tiers() {
             for (first, second) in [(0, 0), (2, 40), (i64::MAX, 1), (-7, 3)] {
                 assert_eq!(
-                    Ok(integer(first.wrapping_add(second))),
-                    run(tier, entering(adds, &[first, second], true)),
+                    Ok(integer(Word::from(first.wrapping_add(second)))),
+                    run(
+                        tier,
+                        entering(
+                            adds,
+                            &[Word::from(first), Word::from(second)],
+                            Answering::Answers
+                        )
+                    ),
                     "{first} + {second} on {tier:?}"
                 );
             }
             assert_eq!(
-                Ok(integer(9)),
-                run(tier, entering(nothing, &[5, 9], false)),
+                Ok(integer(Word::from(9_i64))),
+                run(
+                    tier,
+                    entering(
+                        nothing,
+                        &[Word::from(5_i64), Word::from(9_i64)],
+                        Answering::Nothing
+                    )
+                ),
                 "an empty block on {tier:?}"
             );
         }
@@ -539,12 +568,18 @@ mod tests
         for &tier in tiers() {
             assert_eq!(
                 Err(Declined::Block(Unentered::Target(foreign))),
-                run(tier, entering(elsewhere, &[1, 2], true)),
+                run(
+                    tier,
+                    entering(elsewhere, &[Word::ZERO, Word::ZERO], Answering::Answers)
+                ),
                 "a block of {foreign} on {tier:?}"
             );
             assert_eq!(
                 Err(Declined::Block(Unentered::Unknown(unknown))),
-                run(tier, entering(unknown, &[1, 2], true)),
+                run(
+                    tier,
+                    entering(unknown, &[Word::ZERO, Word::ZERO], Answering::Answers)
+                ),
                 "an unknown key on {tier:?}"
             );
         }

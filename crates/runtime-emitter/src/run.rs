@@ -1307,6 +1307,10 @@ fn run_executor(
 /// # Specification
 /// trivial.
 ///
+/// # Cost
+/// - allocation: the emitted code, its key in the cache and the addresses of
+///   its blocks on a miss, durable by the function
+///
 /// # Errors
 /// As [`on_tier`].
 ///

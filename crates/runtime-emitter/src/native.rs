@@ -181,6 +181,9 @@ impl Native
     /// - executable: none — running the function is observed only by running
     ///   it.
     ///
+    /// # Cost
+    /// - allocation: the offsets of the copies, growth within the function
+    ///
     /// # Errors
     /// [`EmitRefusal`] naming why.
     ///
@@ -232,6 +235,9 @@ impl Native
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the addresses of the labels, durable by the function
     ///
     /// # Errors
     /// As [`Self::emit`].
@@ -334,6 +340,9 @@ impl Native
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the slot of the region, durable by the region
     ///
     /// # Errors
     /// [`EmitRefusal::Map`] when the mapping fails, or a patch refusal for a

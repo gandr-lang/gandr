@@ -380,6 +380,9 @@ impl Function
     /// - ensures: one row per key; a key entered again answers its first row.
     /// - executable: none — the clause would scan the table the body scans.
     ///
+    /// # Cost
+    /// - allocation: the row of a new key, growth within the function
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — two keys take two rows, and one key entered twice
     ///   takes its first row again; a row per entry or a lost key changes one.
@@ -524,6 +527,10 @@ impl Function
     /// - panics: none.
     /// - executable: none — the clause would compare the rebuilt function with
     ///   the one it was built from, which the fusion's replay already does.
+    ///
+    /// # Cost
+    /// - allocation: the instructions, the labels, the constants, the blocks
+    ///   and the moved positions, growth within the function
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a label bound past a fused pair still names the

@@ -28,6 +28,7 @@ use gandr_runtime_stencils::Runtime;
 use gandr_runtime_stencils::Status;
 use gandr_runtime_stencils::StencilId;
 use gandr_runtime_stencils::Word;
+use gandr_runtime_stencils::Words;
 use gandr_runtime_stencils::execute;
 
 /// The target of this host's blocks.
@@ -108,28 +109,29 @@ struct Exit
 /// trivial.
 fn run(
     block: Word,
-    operands: usize,
+    operands: Word,
     (first, second): (&[Word; 3], &[Word; 3]),
-    heap: usize,
+    heap: Words,
 ) -> Exit
 {
-    let header = |integer: &[Word; 3]| Word::from_pointer(core::ptr::from_ref(&integer[1]));
+    let header = |integer: &[Word; 3]| Word::from_pointer(&raw const integer[1]);
     let step = |stencil, a, b| Instruction::new(stencil, a, b, core::ptr::null());
     let program = [
         step(StencilId::Const, header(first), Word::ZERO),
         step(StencilId::Push, Word::ZERO, Word::ZERO),
         step(StencilId::Const, header(second), Word::ZERO),
         step(StencilId::Push, Word::ZERO, Word::ZERO),
-        step(StencilId::Block, block, Word::from(operands)),
+        step(StencilId::Block, block, operands),
         step(StencilId::Halt, Word::ZERO, Word::ZERO),
     ];
-    let mut memory: Vec<Word> = vec![Word::ZERO; heap];
+    let mut memory: Vec<Word> = vec![Word::ZERO; heap.0];
     let mut frames = [Word::ZERO; 4];
     let mut window = [Word::ZERO; 1];
-    frames[0] = Word::from_pointer(core::ptr::from_ref(&program[5]));
+    frames[0] = Word::from_pointer(&raw const program[5]);
     let start = memory.as_mut_ptr();
-    let base = frames.as_mut_ptr().wrapping_add(2);
-    let limit = frames.as_mut_ptr().wrapping_add(frames.len());
+    let bottom = (&raw mut frames).cast::<Word>();
+    let base = bottom.wrapping_add(2);
+    let limit = bottom.wrapping_add(frames.len());
     let mut runtime = Runtime::new(
         start,
         start.wrapping_add(memory.len()),
@@ -139,17 +141,17 @@ fn run(
         refusing,
         Word::ZERO,
     );
-    runtime.set_memory(gandr_runtime_stencils::Words(heap));
+    runtime.set_memory(heap);
     // SAFETY: each instruction falls through to the next, the block is
     // mapped for the process, and the regions live to the end of the call
     // with the sentinel frame below the base mark.
     let answer = unsafe {
         execute(
-            program.as_ptr(),
+            (&raw const program).cast::<Instruction>(),
             &raw mut runtime,
             start,
             base,
-            window.as_mut_ptr(),
+            (&raw mut window).cast::<Word>(),
         )
     };
     let allocated = runtime
@@ -191,9 +193,9 @@ extern "C" fn refusing(
 ///
 /// # Specification
 /// trivial.
-fn integer(bits: i64) -> [Word; 3]
+fn integer(bits: Word) -> [Word; 3]
 {
-    [COUNT_IMMORTAL, INTEGER_HEADER, Word::from(bits)]
+    [COUNT_IMMORTAL, INTEGER_HEADER, bits]
 }
 
 /// A block that adds its two words answers their sum as one fresh machine
@@ -205,14 +207,14 @@ fn integer(bits: i64) -> [Word; 3]
 fn a_block_answers_the_sum_of_its_words()
 {
     let block = mapped(&adding());
-    let (forty, two) = (integer(40), integer(2));
-    let operands = 2 | BLOCK_ANSWERS;
-    let exit = run(block, operands, (&forty, &two), 3);
+    let (forty, two) = (integer(Word::from(40_i64)), integer(Word::from(2_i64)));
+    let operands = Word::from(2 | BLOCK_ANSWERS);
+    let exit = run(block, operands, (&forty, &two), Words(3));
     assert_eq!(Status::Halted, exit.status);
     assert_eq!(3, exit.allocated, "the count, the header and the field");
     assert_eq!(Some([INTEGER_HEADER, Word::from(42_i64)]), exit.object);
     assert_eq!([Word::from(42_i64), Word::from(2_i64)], exit.words);
-    let full = run(block, operands, (&forty, &two), 2);
+    let full = run(block, operands, (&forty, &two), Words(2));
     assert_eq!(Status::HeapExhausted, full.status);
     assert_eq!(0, full.allocated);
     assert_eq!([Word::from(40_i64), Word::from(2_i64)], full.words);
@@ -224,13 +226,13 @@ fn a_block_answers_the_sum_of_its_words()
 fn a_block_that_answers_nothing_allocates_nothing()
 {
     let block = mapped(&adding());
-    let (forty, two) = (integer(40), integer(2));
-    let exit = run(block, 2, (&forty, &two), 3);
+    let (forty, two) = (integer(Word::from(40_i64)), integer(Word::from(2_i64)));
+    let exit = run(block, Word::from(2_usize), (&forty, &two), Words(3));
     assert_eq!(
         Exit {
             status: Status::Halted,
             allocated: 0,
-            answer: Word::from_pointer(core::ptr::from_ref(&two[1])),
+            answer: Word::from_pointer(&raw const two[1]),
             object: None,
             words: [Word::from(42_i64), Word::from(2_i64)],
         },
