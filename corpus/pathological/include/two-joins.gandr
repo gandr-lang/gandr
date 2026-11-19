@@ -1,0 +1,28 @@
+//! `two-joins` refuses two incomparable joins of the same theories.
+//!
+//! A block has one poorest join for each reachable pair. `MagmaWithUnit`
+//! repeats the `Pointed` and `Magma` join. The checker refuses the block and
+//! names the pair and both joins.
+//!
+//! - see: #1225
+
+/// `Pointed` defines a carrier with a unit.
+theory Pointed where
+  sort M : Type;
+  oper point : M;
+
+/// `Magma` defines a carrier with multiplication.
+theory Magma where
+  sort M : Type;
+  oper mul : (x : M, y : M) --> M;
+
+/// `UnitalMagma` joins `Pointed` and `Magma` once.
+theory UnitalMagma where
+  include Pointed;
+  include Magma;
+
+/// `MagmaWithUnit` adds an incomparable second join.
+@[refuses("MalformedForm")]
+theory MagmaWithUnit where
+  include Pointed;
+  include Magma;

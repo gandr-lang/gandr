@@ -1,0 +1,2 @@
+def wrong : String ;
+def wrong = 42 ;
