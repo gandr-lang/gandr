@@ -4,6 +4,11 @@
 //! answered, then an [`Outcome`]. A read outcome holds one [`Function`] for
 //! each requested path. A refused outcome holds one [`Refusal`] for each
 //! requested path that the record cannot state.
+//!
+//! A function's [`Staging`] is its body as THIR of the fragment that gandr
+//! reads: an integer literal, a read of the parameter, `if`, `return` and a
+//! call of a requested function. A body with another node stages nothing,
+//! and its staging names the first such node.
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -13,7 +18,11 @@ use crate::names::Bytes;
 use crate::names::Commit;
 use crate::names::FieldName;
 use crate::names::FunctionPath;
+use crate::names::ItemPath;
 use crate::names::LlvmType;
+use crate::names::Magnitude;
+use crate::names::NodeIndex;
+use crate::names::NodeName;
 use crate::names::Symbol;
 use crate::names::Target;
 use crate::names::TypeName;
@@ -84,6 +93,104 @@ pub struct Function
     pub arguments: Vec<Operand>,
     /// The result.
     pub result: Operand,
+    /// The body as THIR of the fragment, or the first node outside it.
+    pub body: Staging,
+}
+
+/// A function's body as THIR of the fragment, or why the body stages
+/// nothing.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Staging
+{
+    /// The body, in the fragment.
+    Staged(Body),
+    /// The body holds a node outside the fragment.
+    Outside(Outside),
+}
+
+/// A body of the fragment: each node once, each node after its children,
+/// the root last.
+///
+/// A node names a child by its [`NodeIndex`], which is below the node's own
+/// place. So the nodes form one tree, and a reader folds them in order.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Body
+{
+    /// The nodes, the root last.
+    pub nodes: Vec<Node>,
+}
+
+/// One node of THIR in the fragment.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Node
+{
+    /// An integer literal.
+    Literal(Literal),
+    /// A read of the function's one parameter.
+    Parameter,
+    /// `if condition { then } else { otherwise }`.
+    If
+    {
+        /// The condition.
+        condition: NodeIndex,
+        /// The arm that runs when the condition is true.
+        then: NodeIndex,
+        /// The arm that runs when the condition is false.
+        otherwise: NodeIndex,
+    },
+    /// `return value`.
+    Return(NodeIndex),
+    /// A call of a requested function at one argument.
+    Call
+    {
+        /// The requested function that the call names.
+        callee: FunctionPath,
+        /// The argument.
+        argument: NodeIndex,
+    },
+}
+
+/// An integer literal: its sign and its magnitude.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Literal
+{
+    /// Whether the literal is negated.
+    pub sign: Sign,
+    /// The literal's digits as a number.
+    pub magnitude: Magnitude,
+}
+
+/// The sign of an integer literal.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Sign
+{
+    /// The literal as written.
+    Plus,
+    /// The literal under a unary minus.
+    Minus,
+}
+
+/// Why a body stages nothing.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Outside
+{
+    /// The body holds a node of this kind, which the fragment lacks.
+    Node(NodeName),
+    /// The body calls an item that the request does not hold.
+    Callee(ItemPath),
+    /// The body holds more nodes than [`Body::CEILING`].
+    Large,
+}
+
+impl Body
+{
+    // economy: 4096 nodes is past each body of the fragment that the corpus
+    // holds, whose largest is 10 nodes. A larger ceiling waits for a measured
+    // body of the general fragment (#327).
+    /// The most nodes that a staged body holds. A body with more stages
+    /// nothing, so a staged body's bytes stay bounded.
+    pub const CEILING: usize = 4096;
 }
 
 /// The name of a function in the build's object, or why the object holds no

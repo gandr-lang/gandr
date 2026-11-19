@@ -19,8 +19,11 @@
 /// - see: corpus/model/interop/thir/example.gandr
 /// - see: corpus/model/interop/thir/buddy-pop.gandr
 
-// `Value`, `Item`, `Expr`, `wpFn`, `exampleBody`, `exampleSpec`,
-// `exampleMeets`, `exampleReturnsPast` and `identitySpec`.
+// `Value`, `Int`, `False`, `Expr` and `wpFn`.
+import std.thir (Value, Int, False, Expr, wpFn);
+
+// `Item`, `exampleBody`, `exampleSpec`, `exampleMeets`, `exampleReturnsPast`
+// and `identitySpec`.
 import "../../model/interop/thir/example.gandr";
 
 // `Nat`.
@@ -33,8 +36,8 @@ import "../../model/interop/thir/buddy-pop.gandr";
 /// `example`'s body paired with evidence that its transformer is below its
 /// specification at every value and postcondition.
 def exampleSpecified : *{
-  m : Expr,
-  meets : (b : Value, post : Value -> Type, exampleSpec(b, post)) -> wpFn(identitySpec, m, b, post)
+  m : Expr Item,
+  meets : (b : Value, post : Value -> Type, exampleSpec(b, post)) -> wpFn(Item, identitySpec, m, b, post)
 } = *{exampleBody, fun (b) { fun (post) { fun (h) {
   let meets = exampleMeets b post;
   meets h
@@ -45,7 +48,7 @@ def exampleSpecified : *{
 def returnsPast(
   spec : (Item, Value, Value -> Type) -> Type,
   post : Value -> Type
-) -> post(Int 0) -> wpFn(spec, exampleBody, False, post) =
+) -> post(Int 0) -> wpFn(Item, spec, exampleBody, False, post) =
   exampleReturnsPast spec post
 
 /// From the free list of `order`, `pop` answers its head and leaves
