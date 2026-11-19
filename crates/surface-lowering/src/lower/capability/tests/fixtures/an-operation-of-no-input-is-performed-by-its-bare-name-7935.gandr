@@ -1,2 +1,2 @@
-def bare() -> -F [std.io.Stdin.Eff] String { std.io.Stdin.read_line }
-def called() -> -F [std.io.Stdin.Eff] String { std.io.Stdin.read_line () }
+def bare() -> -F [std.io.Stdin.Eff] String = std.io.Stdin.read_line;
+def called() -> -F [std.io.Stdin.Eff] String = std.io.Stdin.read_line ();
