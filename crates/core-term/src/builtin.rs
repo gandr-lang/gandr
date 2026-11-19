@@ -275,4 +275,51 @@ mod tests
             );
         }
     }
+
+    /// The rows of `ledger/builtins.sql` whose place is this table are the
+    /// rows of [`Row::all`], each with its key, its kind and its direction.
+    /// A macro makes the rows of the widths, so no reader of the text finds
+    /// them, and this test reads the table itself.
+    #[test]
+    fn the_listing_holds_each_row_of_the_table_and_no_other()
+    {
+        const PLACE: &str = "crates/core-term/src/builtin.rs";
+        let listed: BTreeSet<(&str, &str, &str)> = include_str!("../../../ledger/builtins.sql")
+            .lines()
+            .filter_map(|line| {
+                let values = line
+                    .strip_prefix("INSERT INTO builtin VALUES('")?
+                    .strip_suffix("');")?;
+                let mut fields = values.split("','");
+                let (name, place, kind, direction) = (
+                    fields.next()?,
+                    fields.next()?,
+                    fields.next()?,
+                    fields.next()?,
+                );
+                (place == PLACE).then_some((name, kind, direction))
+            })
+            .collect();
+        let tabled: BTreeSet<(&str, &str, &str)> = Row::all()
+            .map(|row| {
+                let kind = match row.kind() {
+                    Kind::Native => "value",
+                    Kind::Role => "role",
+                };
+                let direction = match row.direction() {
+                    Direction::Given => "given",
+                    Direction::Found => "found",
+                };
+                (row.key().0, kind, direction)
+            })
+            .collect();
+        assert_eq!(
+            (
+                tabled.difference(&listed).collect::<alloc::vec::Vec<_>>(),
+                listed.difference(&tabled).collect::<alloc::vec::Vec<_>>()
+            ),
+            (alloc::vec::Vec::new(), alloc::vec::Vec::new()),
+            "the rows of the table that the listing lacks, then the rows of the listing that the table lacks; add or delete each in ledger/builtins.sql, then run `mise run ledger:builtins`"
+        );
+    }
 }

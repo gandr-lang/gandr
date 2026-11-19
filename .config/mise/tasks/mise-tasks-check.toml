@@ -2419,6 +2419,84 @@ read -r fields chunked layered whole grows read_only stated <<< "$counts"
 echo "shared check OK: $fields fields, each with its row; rows: $chunked chunked, $layered layered, $whole copied whole, $grows grows with the module, $read_only read only; $stated stated rows, each naming an item its file declares"
 {% endraw %}'''
 
+# The listing of the built-in names holds a row in `builtin` for every name
+# that a place of the tree gives the toolchain. Every row names such a name.
+# The one table of `gandr-core-term` gives its names through its own test,
+# since a macro makes its rows of the widths. Each other place is a list in a
+# surface crate, and `.config/builtins/names.jq` reads it.
+# - see: #8098, `ledger/builtins.sql`, `vault:01a1f320-0881-7ed1-9a54-c0c713ccf7cf`
+#
+# Each reader stands until a later unit moves its place into the table. The
+# table below names that unit for each place.
+#
+# | Place | What it holds | The unit that removes it |
+# | --- | --- | --- |
+# | `crates/surface-lowering-base/src/resolve.rs` | the atoms and the homed formers | #8073 for the atoms, #8074 for the formers |
+# | `crates/surface-grammar/src/surface/type_shell.rs` | the heads of the type grammar | #8073, #8075 and #8077 |
+# | `crates/surface-parser/src/mold.rs` | the called formers | #8075 |
+# | `crates/surface-grammar/src/highlight.rs` | the primitive types | #8073 |
+# | `crates/surface-lowering-identity/src/lower/identity.rs` | the members of `Path` and `Flow` | #8076 |
+#
+# The gate prints every finding before it fails.
+["check:builtins"]
+description = "Every built-in name of a place outside the one table has its row in the listing, and every row of such a place names one"
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+failed=0
+.config/cases/run.bash 'builtins' .config/builtins/cases.json --program .config/builtins/names.jq || failed=1
+db="$fresh/builtins.db"
+sqlite3 -bail "$db" < ledger/builtins.sql
+sqlite3 "$db" .dump > "$fresh/builtins.sql"
+if ! cmp -s "$fresh/builtins.sql" ledger/builtins.sql; then
+  diff -u ledger/builtins.sql "$fresh/builtins.sql" >&2 || true
+  echo 'ledger/builtins.sql is not its own re-dump; normalize it with `mise run ledger:builtins`' >&2
+  failed=1
+fi
+places=(
+  crates/surface-lowering-base/src/resolve.rs
+  crates/surface-grammar/src/surface/type_shell.rs
+  crates/surface-parser/src/mold.rs
+  crates/surface-grammar/src/highlight.rs
+  crates/surface-lowering-identity/src/lower/identity.rs
+)
+# The constants whose text spells a member of the member table.
+spellings=(crates/surface-lowering-base/src/lower.rs crates/surface-lowering-base/src/lower/identity.rs)
+{
+  git grep -n -I -P -e '.' -- "${places[@]}"
+  git grep -n -I -P -e '\bconst [A-Z_]+: &str = "' -- "${spellings[@]}"
+} | jq -R -s 'split("\n")' | jq -r -f .config/builtins/names.jq > "$fresh/held.tsv"
+sqlite3 -bail -tabs "$db" 'CREATE TABLE held(name TEXT, place TEXT);' ".import $fresh/held.tsv held"
+findings=$(sqlite3 -bail "$db" <<'SQL'
+SELECT h.place || ': `' || h.name || '` has no row; add'
+  || ' INSERT INTO builtin VALUES(' || quote(h.name) || ',' || quote(h.place)
+  || ',''<kind>'',''<direction>'',''<signature>'');'
+  || ' to ledger/builtins.sql, each column as its schema there states, then run `mise run ledger:builtins`'
+FROM held h
+WHERE NOT EXISTS (SELECT 1 FROM builtin b WHERE (b.name, b.place) = (h.name, h.place))
+UNION ALL
+SELECT b.place || ': `' || b.name || '`: a row whose place holds no such name; correct its name or its place, or delete it'
+FROM builtin b
+WHERE b.place <> 'crates/core-term/src/builtin.rs'
+  AND NOT EXISTS (SELECT 1 FROM held h WHERE (h.name, h.place) = (b.name, b.place));
+SQL
+)
+if [[ -n $findings ]]; then
+  printf '%s\n' "$findings" >&2
+  failed=1
+fi
+if (( failed )); then
+  echo 'builtins check FAILED' >&2
+  exit 1
+fi
+counts=$(sqlite3 -separator ' ' "$db" "SELECT (SELECT count(*) FROM held), (SELECT count(DISTINCT place) FROM held), (SELECT count(*) FROM builtin WHERE place = 'crates/core-term/src/builtin.rs');")
+read -r held held_places table <<< "$counts"
+echo "builtins check OK: $held names in $held_places places, each with its row; $table rows of the one table, which the test of gandr-core-term reads"
+{% endraw %}'''
+
 # The references ledger (`ledger/references.sql`) is what `ledger:references`
 # writes from the crates' documentation, and the documentation keeps its
 # shape: a key line names a library citation key, or `vault:` and a vault
