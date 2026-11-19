@@ -1561,7 +1561,7 @@ fn a_rewrite_with_parser_obligations_is_withdrawn_6681()
     let formatted = format(&grammar, &parsed, options).expect("the source formats");
     assert_eq!(formatted.withdrawn(), [Withdrawal {
         declaration: String::from("Expr"),
-        span: ByteSpan::new(ByteOffset::from(433_usize), ByteOffset::from(561_usize))
+        span: ByteSpan::new(ByteOffset::from(28_usize), ByteOffset::from(156_usize))
             .expect("a span"),
         reason: Withdrawn::Obligations,
     }]);
