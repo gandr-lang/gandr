@@ -1,0 +1,12 @@
+[
+  {
+    "name": "#5073: a red bottom is cut out, the members above replayed onto the trunk, the red one retargeted onto the new top and linked there, and the runs the cut made stale cancelled",
+    "upper": "apart",
+    "output": "cut: #2 ← #3 ← #4 / #3 ← #4 ← #2 / test the workspace / https://example.invalid/runs/1; upper holds upper's own; top holds top's own, upper's own; red holds red's own; gh: stack unstack 9 | pr edit 3 -R case/case --base main | pr edit 2 -R case/case --base top | api -X POST repos/case/case/actions/runs/11/cancel | api -X POST repos/case/case/actions/runs/12/cancel; link: 3 4 | 3 4 2"
+  },
+  {
+    "name": "#5073: a member above that changes a path the red bottom changes refuses the cut; nothing moves, and the server stack is left as it was",
+    "upper": "builds",
+    "output": "refused: the cut of #2 is refused: a member above it is red too, or changes a path #2 changes; gh: ; link: "
+  }
+]

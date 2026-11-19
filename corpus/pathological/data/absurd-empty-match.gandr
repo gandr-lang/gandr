@@ -1,0 +1,4 @@
+data Empty : Type where {}
+
+def absurd(v : Empty) -> Integer =
+  match v {}
