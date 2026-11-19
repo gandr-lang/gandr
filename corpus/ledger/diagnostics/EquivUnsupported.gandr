@@ -1,0 +1,11 @@
+/// `EquivUnsupported`: a universe equivalence over a data type that recurs,
+/// which the rule does not decide.
+data Nat : Type where
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+
+def same(n : Nat) -> Nat =
+  n
+
+@[refuses("EquivUnsupported")]
+def recursive : Path[.A = Type](Nat, Nat) = equiv same same;

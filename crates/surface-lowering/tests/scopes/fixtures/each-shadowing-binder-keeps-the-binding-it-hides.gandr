@@ -1,0 +1,16 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+}
+def answer : Integer = 1;
+module Counting where {
+  def two = 2;
+}
+def rec shadowed(n : Nat, m : Nat) -> Nat = match m {
+  | Zero => n
+  | Succ(n) => n
+};
+def hides(answer : Integer) -> Integer = answer;
+def opened() -> Integer = { import Counting; let two = 3; two };
+def ahead(after : Integer) -> Integer = after;
+def after : Integer = 4;

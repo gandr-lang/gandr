@@ -1,0 +1,16 @@
+// This source tests nested record updates.
+//
+// The inner update rebuilds the inner record. The outer update puts it at
+// `inner` in a new outer record.
+//
+// The run expectation checks the rebuilt nested record.
+//
+// - see: `pathological/records/deep-record-update-cost.gandr` — `deep`
+
+/// `outer` holds a tag and an inner record.
+def outer = *{tag = "t", inner = *{x = 1, y = 2}};
+
+/// `updated` rebuilds `outer` after it changes `inner.y`.
+@[runs("*{.inner = *{.x = 1, .y = 9}, .tag = \"t\"}")]
+def updated() -> *{tag : String, inner : *{x : Integer, y : Integer}} =
+  *{outer | inner = *{outer.inner | y = 9}}
