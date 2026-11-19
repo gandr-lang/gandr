@@ -3645,6 +3645,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','form::read_as_type','functio
 INSERT INTO purpose VALUES('surface-lowering-base','form::read_pieces','function','Reads a node''s children against its own rule, so each form reads its tiles and operands in written order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::repair','module','Names the reason none is held: the parser inserted nothing among the children.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::repair_at','function','Reads the repair the parser inserted at a child, so the refusal names the repair.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','form::retired_box','module','Names why an extra operand is no retired box, so an absent box has its reason.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::retired_within','function','Reads the first retired token a form holds at any depth, so a refused declaration names the old spelling and no other fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::run_reading','function','Reads how a run of glyphs reads, so an operator written wrong is refused at the run.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::shape_of','function','Reads the shape of a node, so each node is dispatched by its shape.',NULL,'fits','sound',NULL);
