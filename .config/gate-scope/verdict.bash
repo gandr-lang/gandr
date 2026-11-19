@@ -150,7 +150,7 @@ digested() { jq -e --arg check "$1" '.checks[$check].inputs != null' "$table" > 
 # the tree, and their digest at `GATE_BASE` when it reads its base. Another
 # check binds the tree and the base `GATE_BASE`.
 key() {
-  local check=$1 tree=${2:-$(git rev-parse 'HEAD^{tree}')} scope=${GATE_SCOPE:---workspace} inputs= base_inputs=
+  local check=$1 tree=${2:-$(git rev-parse 'HEAD^{tree}')} scope=${GATE_SCOPE:---workspace} inputs='' base_inputs=''
   if digested "$check"; then
     inputs=$("$here/inputs.bash" digest "$tree" "$scope" "$check")
     if [[ -n ${GATE_BASE:-} ]] && jq -e --arg check "$check" '.checks[$check].base == true' "$table" > /dev/null; then
