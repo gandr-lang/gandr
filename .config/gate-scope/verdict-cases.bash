@@ -282,6 +282,27 @@ got=$(setup "$scratch/grep-found" && workspace && gate_inputs '--workspace --exc
   && reads_inputs '--workspace --exclude c' check:clippy-plain-only)
 [[ $got == runs ]] || fail "#7684: a file outside the closure that gains the plain pass's pattern runs it" "$got"
 
+# A table whose row gives `check:purposes` the crate `a` alone. The record of
+# the check binds the paths of the row and the text of its lists.
+table() {
+  mkdir -p .config/gate-scope
+  printf '{"reads": {"every": ["Cargo.toml"], "checks": {"check:purposes": [%s]}}}\n' "$1" > .config/gate-scope/table.json
+  git add .config/gate-scope/table.json
+  git commit --quiet --message table
+  GATE_BASE=$(git rev-parse HEAD)
+}
+
+got=$(setup "$scratch/table-other" && workspace && table '"crates/a/"' \
+  && gate_inputs --workspace check:purposes && group '//! c, moved' crates/c/src/lib.rs \
+  && reads_inputs --workspace check:purposes)
+[[ $got == held ]] || fail "#7684: a change outside the row of a check of the table holds its record" "$got"
+
+got=$(setup "$scratch/table-row" && workspace && table '"crates/a/"' \
+  && gate_inputs --workspace check:purposes \
+  && group '{"reads": {"every": ["Cargo.toml"], "checks": {"check:purposes": ["crates/a/", "notes/"]}}}' .config/gate-scope/table.json \
+  && reads_inputs --workspace check:purposes)
+[[ $got == runs ]] || fail "#7684: a path that joins the row of a check of the table runs it" "$got"
+
 # A dep-info file of the crate `a` that names a file outside its crate. The
 # check refuses it by its path, until the table names it for `a`.
 got=$(
@@ -302,4 +323,4 @@ got=$(
   || fail "#7684: the dep-info check refuses a file outside the inputs by its path" "$got"
 
 (( failed == 0 )) || exit 1
-echo "verdict OK: 22 cases read, refuse and write records as recorded"
+echo "verdict OK: 24 cases read, refuse and write records as recorded"

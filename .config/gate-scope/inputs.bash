@@ -60,27 +60,34 @@ crates() {
 
 # The paths that the inputs of <check> over <scope> name, one per line, from
 # the crates of the workspace on stdin. A path that ends in `/` names a
-# directory.
+# directory. A check can set `table` in `verdicts.json`. Then it reads the
+# paths of `reads.every` and of its row in `table.json`. The gate selects the
+# check from the same list.
 paths() {
-  local scope=$1 check=$2
-  jq -r --arg scope "$scope" --arg check "$check" --slurpfile table "$table" --slurpfile checks "$here/verdicts.json" '
+  local scope=$1 check=$2 landing=$3
+  jq -r --arg scope "$scope" --arg check "$check" --slurpfile table "$table" --slurpfile checks "$here/verdicts.json" \
+    --slurpfile landing "$landing" '
     . as $crates
-    | ($crates | map({(.name): .}) | add) as $by
-    | ([$scope | splits(" +")] | . as $words
-        | [range(0; length) | select($words[.] == "--exclude") | $words[. + 1]]) as $excluded
-    | [$crates[].name | select(IN($excluded[]) | not)] as $scoped
-    | {set: $scoped, work: $scoped}
-    | until(.work | length == 0;
-        .work[0] as $n
-        | ($by[$n].deps - .set) as $new
-        | .set += $new | .work = .work[1:] + $new)
-    | .set as $closure
-    | [($closure[] | $by[.].dir + "/"),
-       ($crates[] | .dir + "/Cargo.toml"),
-       $table[0].workspace[],
-       ($closure[] | ($table[0].outside[.] // [])[]),
-       ($checks[0].checks[$check].inputs // [])[]]
-    | unique[]'
+    | if $checks[0].checks[$check].table == true then
+        $landing[0].reads.every + ($landing[0].reads.checks[$check] // []) | unique[]
+      else
+        ($crates | map({(.name): .}) | add) as $by
+        | ([$scope | splits(" +")] | . as $words
+            | [range(0; length) | select($words[.] == "--exclude") | $words[. + 1]]) as $excluded
+        | [$crates[].name | select(IN($excluded[]) | not)] as $scoped
+        | {set: $scoped, work: $scoped}
+        | until(.work | length == 0;
+            .work[0] as $n
+            | ($by[$n].deps - .set) as $new
+            | .set += $new | .work = .work[1:] + $new)
+        | .set as $closure
+        | [($closure[] | $by[.].dir + "/"),
+           ($crates[] | .dir + "/Cargo.toml"),
+           $table[0].workspace[],
+           ($closure[] | ($table[0].outside[.] // [])[]),
+           ($checks[0].checks[$check].inputs // [])[]]
+        | unique[]
+      end'
 }
 
 # The objects of the paths on stdin at <commit>, as `path<TAB>object`.
@@ -96,9 +103,20 @@ objects() {
 list() {
   local commit=$1 scope=$2 check=$3 task
   paths_file=$(mktemp)
-  trap 'rm -f "$paths_file"' RETURN
-  crates | paths "$scope" "$check" > "$paths_file"
-  objects "$commit" < "$paths_file"
+  landing_file=$(mktemp)
+  trap 'rm -f "$paths_file" "$landing_file"' RETURN
+  git show "$commit:.config/gate-scope/table.json" > "$landing_file" 2> /dev/null || echo '{}' > "$landing_file"
+  if jq -e --arg check "$check" '.checks[$check].table == true' "$here/verdicts.json" > /dev/null; then
+    # A check of the table reads no crate list, so its read needs no Cargo.
+    # The text of its two lists is an input too: a path that leaves the row
+    # changes the key.
+    echo '[]' | paths "$scope" "$check" "$landing_file" > "$paths_file"
+    objects "$commit" < "$paths_file"
+    printf 'table:%s\t%s\n' "$check" "$(jq -c --arg check "$check" '[.reads.every, (.reads.checks[$check] // [])]' "$landing_file" | sha256sum | cut -c1-64)"
+  else
+    crates | paths "$scope" "$check" "$landing_file" > "$paths_file"
+    objects "$commit" < "$paths_file"
+  fi
   # The task's own definition: what it runs, its environment, its tools and
   # its dependencies, as `mise` reads them in this checkout. The source path
   # and the directory name the checkout, so the definition omits them.
@@ -129,7 +147,7 @@ case ${1:-} in
     scope=$3
     shift 3
     crates=$(crates)
-    allowed=$(paths "$scope" none <<< "$crates")
+    allowed=$(paths "$scope" none "$here/table.json" <<< "$crates")
     # Two kinds of file of this run name the files that a unit of a workspace
     # crate reads. They are rustc's dep-info and the `rerun-if-changed` lines
     # of a build script's run. A relative path of the dep-info is relative to
