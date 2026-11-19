@@ -16,20 +16,22 @@
 # entry of the host that runs the task is skipped, since the task reads that
 # host itself.
 #
-# The work must be HEAD, on a branch: the far host gates a commit. The task
-# reads the reader's token from this host's gh and hands it to the far gate
-# on the remote shell's standard input, for that run alone. With no host
-# named, one probe for each host (`far.bash probe`), all at once, reads its
-# load, its cores and its free gate slots, and this host reads its own. When
-# this host gives no token of the reader, each probe also reads whether its
-# host's gh gives one. `choose.jq` takes the host with the least load for
-# each core among those with a free slot and a token. A host whose probe fails
-# is passed over and named. When this host is chosen, the gate runs here as
-# `mise run check`. Otherwise the task pushes the head to `origin`, as
-# `pr:open` does, and runs `far.bash` on the host. A far gate that passes
-# publishes its verdict records to `origin`, then gives its pass records.
-# `passed.bash admit` writes the pass record here with the host's name. A far
-# gate that fails or stops records nothing, and the task exits with its status.
+# The work must be HEAD on a branch. The far host gates a commit.
+#
+# The task reads the reader's token from this host's gh. It sends the token
+# on the remote shell's standard input.
+#
+# Without a named host, each host gets `far.bash probe`. Each probe reports
+# its load, cores and free gate slots. This host reports its own values. With
+# no reader token here, each probe also checks its own token.
+#
+# `choose.jq` selects the host with the least load for each core. A failed
+# probe gives no candidate. A selection of this host starts `mise run check`.
+# Another selection pushes the head and starts `far.bash`.
+#
+# A passing far gate publishes its verdict records to `origin`. `passed.bash`
+# admits its pass record here with the host's name. A failed or stopped gate
+# records nothing and returns its status.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 root=$(git rev-parse --show-toplevel)

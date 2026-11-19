@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# The gate on another host (#6996, `remote.bash` and `far.bash`) runs in
-# `check:gate-scope`. A stand-in `ssh` runs the far side on this host. It gives
-# each host a home directory. A stand-in `mise` passes or fails the far gate.
-# It writes the pass record and verdict reference. A scratch bare repository
-# is `origin`. This checkout's `.config` is linked into each scratch tree, so
-# the far side runs the tree's own scripts. The cases read the record that
-# comes here, the refusals and the probe's free slots. `choose.jq`'s cases in
-# `cases.json` hold the choice of the host.
+# A remote gate runs in `check:gate-scope`.
+# - see: #6996, `remote.bash`, `far.bash`
+#
+# A fake `ssh` starts the far side on this host. Each fake host gets a home
+# directory. A fake `mise` executes the far gate.
+#
+# The fake gate writes the pass record and verdict reference. A bare scratch
+# repository serves as `origin`. The test setup links `.config` into each
+# scratch tree. The cases inspect the returned record, refusals and free slots.
+# The `choose.jq` cases in `cases.json` select the host.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 config_dir=$(cd "$here/.." && pwd)
@@ -67,12 +69,13 @@ cat > "$scratch/far-bin/gh" << 'EOF'
 [[ "$*" == 'auth token --user reader' ]] || exit 1
 echo read-token
 EOF
-# The stand-in `mise` of the far host: `trust` passes. `run tools:check`
-# reads the host's tools. It names a lack and exits 2 when the host's home
-# holds `lacks`. `run check` touches `gated`, writes the pass record, and
-# writes the verdict reference of the tree. It fails when the host's home
-# holds `red`, or when the gate holds no reader's token. It writes the token
-# it reads with to `token` in the host's home.
+# The far host's fake `mise` handles three command calls. `trust` exits zero.
+# `run tools:check` reads the host's tools. It emits status 2 when the host
+# home holds `lacks`.
+#
+# `run check` touches `gated`. It writes the pass record and the tree's
+# verdict reference. It rejects a red gate or a gate without the reader's
+# token. It writes the token to the host's `token` file.
 cat > "$scratch/far-bin/mise" << 'EOF'
 #!/usr/bin/env bash
 case "${1:-} ${2:-}" in

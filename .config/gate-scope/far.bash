@@ -15,13 +15,13 @@
 #   far.bash gate <checkout> <origin> <trunk> <branch> <commit> <lane> [reader]
 #     Runs the landing's gate, `mise run check`, on <commit> in the lane's
 #     clone, `gandr/gate-remote/<lane>` under the state directory. The
-#     host's tools come first (`mise run tools:check`, #7127): a tool that
-#     the host lacks, or holds for another machine, stops the gate before its
-# build with the check's status 2. The gate's lines go to standard error as
-# they arrive. When the gate passes, its pass records go to standard output.
-# The far gate publishes its verdict records to the remote. Then `remote.bash`
-# admits the pass. A gate that fails or stops prints no record and exits with
-# its status.
+#     host's tools come first (`mise run tools:check`, #7127). A missing tool
+#     stops the gate before its build. It exits with status 2.
+#
+#     The gate's lines go to standard error as they arrive. On a pass, its
+#     pass records go to standard output. The far gate publishes its verdict
+#     records to the remote. Then `remote.bash` admits the pass. A failed or
+#     stopped gate prints no record and returns its status.
 #
 # A seat's gate runs with `GH_TOKEN` set, and an ssh session has none.
 # `remote.bash` writes the reader's token from its own host's gh before this

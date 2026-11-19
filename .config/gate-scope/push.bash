@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Sends the records of a pushed branch's tree to its remote (#8166). Prek
-# runs it at `pre-push`, after the commit rules accept the branch. A deletion,
-# tag or other non-branch ref has no tree that a job reads. A failed record
-# push leaves the branch push on, so the hosted job runs its check again.
+# Sends the records of a pushed branch's tree to its remote. Prek runs it at
+# `pre-push`, after the commit rules accept the branch. A deletion, tag or
+# other non-branch ref has no tree that a job reads. A failed record send does
+# not block the branch push. The hosted job then runs its check again.
+# - see: #8166
 set -euo pipefail
 head=${PRE_COMMIT_TO_REF:-}
 [[ -n $head && ! $head =~ ^0+$ ]] || exit 0
