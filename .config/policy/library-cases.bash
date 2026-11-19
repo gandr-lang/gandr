@@ -18,6 +18,7 @@
 # the scratch workspace. That workspace stands under `target`. So the run
 # takes the lane of this tree, and its `.config` points at this tree's.
 set -euo pipefail
+source .config/cases/scratch.bash
 declare -F policy > /dev/null || { echo "library case: run it from check:dylint, which exports \`policy\`" >&2; exit 2; }
 mkdir -p target
 scratch=$(mktemp -d "$PWD/target/library-case.XXXXXX")
@@ -33,8 +34,7 @@ fail() {
 # checkout. The library script must replace that root before it returns it.
 fixture=$scratch/library-fixture
 git init --quiet "$fixture"
-git -C "$fixture" config user.email test@example.invalid
-git -C "$fixture" config user.name test
+identity "$fixture"
 mkdir -p "$fixture/crates/quenchant-dylints"
 : > "$fixture/Cargo.toml"
 : > "$fixture/crates/quenchant-dylints/Cargo.toml"
