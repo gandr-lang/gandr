@@ -925,9 +925,9 @@ impl CompClosure
     #[must_use]
     pub fn environment(&self) -> &Environment
     {
-        match &self.environment {
-            &CapturedEnvironment::Owned(ref environment) => environment,
-            &CapturedEnvironment::Shared(ref environment) => environment.as_ref(),
+        match self.environment {
+            CapturedEnvironment::Owned(ref environment) => environment,
+            CapturedEnvironment::Shared(ref environment) => environment.as_ref(),
         }
     }
 }
