@@ -3612,7 +3612,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','form::Pieces','struct','Hold
 INSERT INTO purpose VALUES('surface-lowering-base','form::Placed','struct','Holds a form''s placement, so the form''s placement is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::Repair','enum','Names a form''s repair, so a repaired form is refused where it stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::Repaired','struct','Holds a form''s repair, so a repaired form is refused where it stands.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-lowering-base','form::RetiredBox','struct','Names whether an extra operand is the retired box, so the box is refused by its name.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','form::RetiredBox','struct','Holds a retired box''s full span, so its named refusal covers both types.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::RuleIdentity','struct','Names a rule by its name in its grammar, so two rules are compared by identity.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::Run','enum','Holds the operands between two of a form''s own tiles, so a form reads one, none or several.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::RunReading','enum','Names how a run of glyphs reads, so an operator written wrong is refused at the run.',NULL,'fits','sound',NULL);
@@ -3624,7 +3624,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','form::Universe','struct','Na
 INSERT INTO purpose VALUES('surface-lowering-base','form::WrittenPath','struct','Holds a dotted path as a form writes it, so the path resolves in the module its segments name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::applied_word','function','Finds the application a word heads, so a misspelt keyword is refused at the word.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::bare_bracket','function','Finds the bare bracket open at a refusal, so an index written without its operator is refused at the bracket.',NULL,'fits','record','Its documentation names an issue number as the origin of its reading.');
-INSERT INTO purpose VALUES('surface-lowering-base','form::boxed_extra','function','Names whether an extra operand of sort Type starts with `=>`, so a refused declaration names the retired box.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','form::boxed_extra','function','Finds a retired box and its full span, so a refused declaration names both types.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::classifies_codes','function','Names whether a written type classifies codes, so a kind arrow lowers as the static arrow and the formatter writes no alias for its thunk.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::cursor','module','Names the reason none is held: the next piece is not the tile asked for.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::declined','module','Names the reason none is held: the form''s kind has no declined row.',NULL,'fits','sound',NULL);

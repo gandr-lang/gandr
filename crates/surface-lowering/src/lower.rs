@@ -7371,25 +7371,25 @@ mod tests
         for (source, start, end, form) in [
             (
                 "def b : Integer => Integer;\n",
-                16,
+                8,
                 26,
                 FormName::DECLARATION,
             ),
             (
                 "def b : Integer => Integer => Integer;\n",
-                16,
+                8,
                 37,
                 FormName::DECLARATION,
             ),
             (
                 "def g : (Integer => Integer) -> Integer;\n",
-                17,
+                9,
                 27,
                 FormName::from(NamedKind("parenthesized_type")),
             ),
             (
                 "def r : *{ x : Integer => Integer };\n",
-                23,
+                15,
                 33,
                 FormName::from(NamedKind("telescope_type")),
             ),
@@ -7405,7 +7405,7 @@ mod tests
                 "lower/fixtures/a-constructor-field-names-the-fat-arrow-box-7879.gandr"
             )),
             [
-                refused(42, 52, FormName::from(NamedKind("data_generator")), boxed),
+                refused(34, 52, FormName::from(NamedKind("data_generator")), boxed),
                 refused(24, 59, FormName::DECLARATION, FormFault::MisplacedTile),
             ],
             "a constructor field names the box and keeps the fault of its line"
@@ -7450,6 +7450,54 @@ mod tests
             ),
             "an arm whose pattern is one name reads as an arm"
         );
+    }
+
+    /// #8052: a retired box extends from its type before `=>` through its
+    /// result. The named refusal covers both ends in a session type, a
+    /// parameter and a signature.
+    #[test]
+    fn the_retired_box_marks_its_whole_form_8052()
+    {
+        let pbg = grammar();
+        let lowered = |source: &'static str| {
+            let tree = gandr_surface_parser::parse(&pbg, SourceText::from(source))
+                .expect("parses")
+                .into_tree();
+            let mut arena = CoreArena::new();
+            let module = lower_module(
+                &pbg,
+                &tree,
+                &mut arena,
+                LoweringBudget::DEFAULT,
+                Recognition::default(),
+            )
+            .expect("lowers");
+            outcomes(&module)
+        };
+        let refused = |start: usize, end: usize, form: FormName| {
+            DeclarationOutcome::Refused(LoweringRefusal::MalformedForm {
+                span: span(ByteOffset::from(start), ByteOffset::from(end)),
+                form,
+                fault: FormFault::Retired(gandr_surface_grammar::RetiredForm::FatArrowBox),
+            })
+        };
+        for (source, start, end, form) in [
+            (
+                "def serve(c : t => +{more : !Integer >> t, done : end}) -> Unit = unit;\n",
+                14,
+                54,
+                FormName::from(NamedKind("def_function")),
+            ),
+            (
+                "def g(c : t => Integer) -> Unit = unit;\n",
+                10,
+                22,
+                FormName::from(NamedKind("def_function")),
+            ),
+            ("def f : t => Integer;\n", 8, 20, FormName::DECLARATION),
+        ] {
+            assert_eq!(lowered(source), [refused(start, end, form)], "{source}");
+        }
     }
 
     /// #5192: a list in parentheses outside the domain of an arrow and a
