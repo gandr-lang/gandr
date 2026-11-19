@@ -1,0 +1,443 @@
+test: typed::tests::a_member_type_naming_a_sealed_helper_reads_back_in_its_module_5391
+package: gandr-surface-dispatcher
+command: mise run debug:test gandr-surface-dispatcher typed::tests::a_member_type_naming_a_sealed_helper_reads_back_in_its_module_5391 --break module_scopes$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-dispatcher/aa1742fa6a5fedf9/out/gandr_surface_dispatcher-aa1742fa6a5fedf9"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-dispatcher/aa1742fa6a5fedf9/out/gandr_surface_dispatcher-aa1742fa6a5fedf9' (arm64).
+(lldb) settings set -- target.run-args  "typed::tests::a_member_type_naming_a_sealed_helper_reads_back_in_its_module_5391" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex module_scopes$
+Breakpoint 1: where = gandr_surface_dispatcher-aa1742fa6a5fedf9`gandr_surface_dispatcher::typed::module_scopes + 84 at typed.rs:1257:9, address = 0x00000001009be758
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_dispatcher-aa1742fa6a5fedf9`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x000000010437c7e8
+(lldb) run
+
+running 1 test
+test typed::tests::a_member_type_naming_a_sealed_helper_reads_back_in_its_module_5391 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 20136 launched: 'target/debug-trace/debug/build/gandr-surface-dispatcher/aa1742fa6a5fedf9/out/gandr_surface_dispatcher-aa1742fa6a5fedf9' (arm64)
+Process 20136 stopped
+* thread #2, name = 'typed::tests::a_member_type_naming_a_sealed_helper_reads_back_i', stop reason = breakpoint 1.1
+       frame #0: 0x00000001009be758 gandr_surface_dispatcher-aa1742fa6a5fedf9`gandr_surface_dispatcher::typed::module_scopes(module={descriptions:{closure:Absent(Whole), own:{root:Some({height:0, node:{…}, _marker:{…}}), length:1, alloc:{value:{0:{…}}}, _marker:{}}}, description_diagnostics:size=0, natives:size=0, cells:{declarations:size=1, diagnostics:size=0}, declarations:{closure:Absent(Whole), own:size=11}, data:size=1, constructors:size=1, shadowed:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, codata:size=0, structures:size=2, attributes:{entries:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, laws:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, worlds:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, interfaces:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, spellings:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, documentation:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, sources:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, inferred_exits:size=4, elidable_exits:size=3, linear_runs:size=0, nested:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:2, alloc:{value:{0:{}}}, _marker:{}}, in_scope:{frames:size=19, read:size=57, widest:45}, resolutions:size=35, reached_imports:size=0, origins:{values:size=69, computations:size=42, value_types:size=87, comp_types:size=30, declarations:size=11, cases:size=0, eliminations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, binders:size=13, components:size=0, clause_binders:size=0, forks:size=0, arrows:size=10, pairs:size=4, seconds:size=4, sum_labels:size=0, with_labels:size=0, bindings:size=5, sides:size=0, motives:size=0, labels:size=10, covers:size=0, framed:size=0, stand_ins:size=0, relations:size=0, models:size=0, scope_theories:size=0, row_theories:size=0, scope_answers:size=0, scope_laws:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, omitted:size=0}, imports:{declarations:size=0, scopes:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, unit:{sources:size=1, prelude:None}, reads:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, recognition:{scope:{current:{visible:{nodes:size=66, vacant:size=0, count:{…}}, export:{nodes:size=1, vacant:size=0, count:{…}}}, enclosing:size=0}, handler:{policy:WarnAndAllow, shadowed:size=0}}, operation_rules:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, stage_bounds:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, region_names:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, implicits:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, model_slots:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, supplies:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, handler_laws:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, models:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, qualified:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, requirements:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, offer:Absent(Unoffered), reducts:size=0, forgets:size=0, readers:size=0, forgettings:size=0, record_faces:size=0}, text={0:"theory Fam where { sort Con : Type; oper base : Con; }\nmodule Left : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\nmodule Right : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\ndef after(n : Integer) -> Integer { return n }\n"}, base={0:0}, names=size=13) at typed.rs:1257:9
+   1254	    names: &[String],
+   1255	) -> (Vec<Scope>, Vec<Option<ScopeIndex>>)
+   1256	{
+-> 1257	    let structures = module.structures();
+    	        ^
+   1258	    let mut placed: Vec<Option<ScopeIndex>> = alloc::vec![None; structures.len()];
+   1259	    let mut scopes: Vec<Scope> = Vec::new();
+   1260	    // A unit with no seal hides no member, so each type reads at the top
+(lldb) bt 24
+error: gandr_surface_dispatcher-aa1742fa6a5fedf9.gandr_surface_dispatcher.ffdcb3e8c4a106d-cgu.13.rcgu.o 0x40000d000007f192: DW_TAG_member 'owners' refers to type 0x00000000000ef49a which was unable to be parsed
+error: gandr_surface_dispatcher-aa1742fa6a5fedf9.gandr_surface_dispatcher.ffdcb3e8c4a106d-cgu.13.rcgu.o 0x40000d000007f1cf: DW_TAG_member 'successor_starts' refers to type 0x00000000000ef49a which was unable to be parsed
+* thread #2, name = 'typed::tests::a_member_type_naming_a_sealed_helper_reads_back_i', stop reason = breakpoint 1.1
+   * frame #0: 0x00000001009be758 gandr_surface_dispatcher-aa1742fa6a5fedf9`gandr_surface_dispatcher::typed::module_scopes(module={descriptions:{closure:Absent(Whole), own:{root:Some({height:0, node:{…}, _marker:{…}}), length:1, alloc:{value:{0:{…}}}, _marker:{}}}, description_diagnostics:size=0, natives:size=0, cells:{declarations:size=1, diagnostics:size=0}, declarations:{closure:Absent(Whole), own:size=11}, data:size=1, constructors:size=1, shadowed:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, codata:size=0, structures:size=2, attributes:{entries:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, laws:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, worlds:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, interfaces:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, spellings:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, documentation:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, sources:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, inferred_exits:size=4, elidable_exits:size=3, linear_runs:size=0, nested:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:2, alloc:{value:{0:{}}}, _marker:{}}, in_scope:{frames:size=19, read:size=57, widest:45}, resolutions:size=35, reached_imports:size=0, origins:{values:size=69, computations:size=42, value_types:size=87, comp_types:size=30, declarations:size=11, cases:size=0, eliminations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, binders:size=13, components:size=0, clause_binders:size=0, forks:size=0, arrows:size=10, pairs:size=4, seconds:size=4, sum_labels:size=0, with_labels:size=0, bindings:size=5, sides:size=0, motives:size=0, labels:size=10, covers:size=0, framed:size=0, stand_ins:size=0, relations:size=0, models:size=0, scope_theories:size=0, row_theories:size=0, scope_answers:size=0, scope_laws:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, omitted:size=0}, imports:{declarations:size=0, scopes:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, unit:{sources:size=1, prelude:None}, reads:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, recognition:{scope:{current:{visible:{nodes:size=66, vacant:size=0, count:{…}}, export:{nodes:size=1, vacant:size=0, count:{…}}}, enclosing:size=0}, handler:{policy:WarnAndAllow, shadowed:size=0}}, operation_rules:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, stage_bounds:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, region_names:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, implicits:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, model_slots:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, supplies:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, handler_laws:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, models:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, qualified:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, requirements:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, offer:Absent(Unoffered), reducts:size=0, forgets:size=0, readers:size=0, forgettings:size=0, record_faces:size=0}, text={0:"theory Fam where { sort Con : Type; oper base : Con; }\nmodule Left : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\nmodule Right : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\ndef after(n : Integer) -> Integer { return n }\n"}, base={0:0}, names=size=13) at typed.rs:1257:9
+     frame #1: 0x00000001009a9b20 gandr_surface_dispatcher-aa1742fa6a5fedf9`<gandr_surface_dispatcher::typed::TypeTable>::assemble(source={0:"theory Fam where { sort Con : Type; oper base : Con; }\nmodule Left : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\nmodule Right : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\ndef after(n : Integer) -> Integer { return n }\n"}, (null)=({descriptions:{closure:Absent(Whole), own:{root:Some({…}), length:1, alloc:{value:{…}}, _marker:{}}}, description_diagnostics:size=0, natives:size=0, cells:{declarations:size=1, diagnostics:size=0}, declarations:{closure:Absent(Whole), own:size=11}, data:size=1, constructors:size=1, shadowed:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, codata:size=0, structures:size=2, attributes:{entries:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, laws:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, worlds:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, interfaces:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, spellings:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, documentation:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, sources:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, inferred_exits:size=4, elidable_exits:size=3, linear_runs:size=0, nested:{root:Some({height:0, node:{…}, _marker:{…}}), length:2, alloc:{value:{0:{…}}}, _marker:{}}, in_scope:{frames:size=19, read:size=57, widest:45}, resolutions:size=35, reached_imports:size=0, origins:{values:size=69, computations:size=42, value_types:size=87, comp_types:size=30, declarations:size=11, cases:size=0, eliminations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, binders:size=13, components:size=0, clause_binders:size=0, forks:size=0, arrows:size=10, pairs:size=4, seconds:size=4, sum_labels:size=0, with_labels:size=0, bindings:size=5, sides:size=0, motives:size=0, labels:size=10, covers:size=0, framed:size=0, stand_ins:size=0, relations:size=0, models:size=0, scope_theories:size=0, row_theories:size=0, scope_answers:size=0, scope_laws:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, omitted:size=0}, imports:{declarations:size=0, scopes:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, unit:{sources:size=1, prelude:None}, reads:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, recognition:{scope:{current:{visible:{…}, export:{…}}, enclosing:size=0}, handler:{policy:WarnAndAllow, shadowed:size=0}}, operation_rules:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, stage_bounds:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, region_names:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, implicits:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, model_slots:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, supplies:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, handler_laws:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, models:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, qualified:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, requirements:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, offer:Absent(Unoffered), reducts:size=0, forgets:size=0, readers:size=0, forgettings:size=0, record_faces:size=0}, {values:{frozen:None, own:size=181}, computations:{frozen:None, own:size=106}, value_types:{frozen:None, own:size=231}, comp_types:{frozen:None, own:size=70}, words:{words:{0:size=0}}, region_binders_from:None}), run={typed:{typings:{root:Some({height:0, node:{…}, _marker:{…}}), length:11, alloc:{value:{0:{…}}}, _marker:{}}, filled:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, refused:{root:Some({height:0, node:{…}, _marker:{…}}), length:4, alloc:{value:{0:{…}}}, _marker:{}}}, signatures:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}, definitions:{bodies:{root:Some({height:0, node:{…}, _marker:{…}}), length:6, alloc:{value:{0:{…}}}, _marker:{}}, lowered:{chain:{entries:size=6}, bodies:{root:Some({…}), length:6, alloc:{value:{…}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, constructors:{root:Some({…}), length:1, alloc:{value:{…}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, fills:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, environment:{frames:size=1}}, levels:size=110}, (null)=({sources:size=1, prelude:None}, {0:0})) at typed.rs:2121:32
+     frame #2: 0x00000001009a8548 gandr_surface_dispatcher-aa1742fa6a5fedf9`<gandr_surface_dispatcher::typed::TypeTable>::typed(source={0:"theory Fam where { sort Con : Type; oper base : Con; }\nmodule Left : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\nmodule Right : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\ndef after(n : Integer) -> Integer { return n }\n"}, lowering={obligations:size=0, lowered:Module{module:{descriptions:{closure:Absent(Whole), own:{root:Some(…), length:1, alloc:{…}, _marker:{…}}}, description_diagnostics:size=0, natives:size=0, cells:{declarations:size=1, diagnostics:size=0}, declarations:{closure:Absent(Whole), own:size=11}, data:size=1, constructors:size=1, shadowed:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, codata:size=0, structures:size=2, attributes:{entries:{root:None, length:0, alloc:{…}, _marker:{…}}, laws:{root:None, length:0, alloc:{…}, _marker:{…}}, worlds:{root:None, length:0, alloc:{…}, _marker:{…}}, interfaces:{root:None, length:0, alloc:{…}, _marker:{…}}, spellings:{root:None, length:0, alloc:{…}, _marker:{…}}}, documentation:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, sources:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, inferred_exits:size=4, elidable_exits:size=3, linear_runs:size=0, nested:{root:Some({…}), length:2, alloc:{value:{…}}, _marker:{}}, in_scope:{frames:size=19, read:size=57, widest:45}, resolutions:size=35, reached_imports:size=0, origins:{values:size=69, computations:size=42, value_types:size=87, comp_types:size=30, declarations:size=11, cases:size=0, eliminations:{root:None, length:0, alloc:{…}, _marker:{…}}, binders:size=13, components:size=0, clause_binders:size=0, forks:size=0, arrows:size=10, pairs:size=4, seconds:size=4, sum_labels:size=0, with_labels:size=0, bindings:size=5, sides:size=0, motives:size=0, labels:size=10, covers:size=0, framed:size=0, stand_ins:size=0, relations:size=0, models:size=0, scope_theories:size=0, row_theories:size=0, scope_answers:size=0, scope_laws:{root:None, length:0, alloc:{…}, _marker:{…}}, omitted:size=0}, imports:{declarations:size=0, scopes:{root:None, length:0, alloc:{…}, _marker:{…}}}, unit:{sources:size=1, prelude:None}, reads:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, recognition:{scope:{current:{…}, enclosing:size=0}, handler:{policy:WarnAndAllow, shadowed:size=0}}, operation_rules:{closure:Absent(Whole), own:{root:None, length:0, alloc:{…}, _marker:{…}}}, stage_bounds:{closure:Absent(Whole), own:{root:None, length:0, alloc:{…}, _marker:{…}}}, region_names:{closure:Absent(Whole), own:{root:None, length:0, alloc:{…}, _marker:{…}}}, implicits:{closure:Absent(Whole), own:{root:None, length:0, alloc:{…}, _marker:{…}}}, model_slots:{closure:Absent(Whole), own:{root:None, length:0, alloc:{…}, _marker:{…}}}, supplies:{closure:Absent(Whole), own:{root:None, length:0, alloc:{…}, _marker:{…}}}, handler_laws:{closure:Absent(Whole), own:{root:None, length:0, alloc:{…}, _marker:{…}}}, models:{closure:Absent(Whole), own:{root:None, length:0, alloc:{…}, _marker:{…}}}, qualified:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, requirements:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, offer:Absent(Unoffered), reducts:size=0, forgets:size=0, readers:size=0, forgettings:size=0, record_faces:size=0}, arena:{values:{frozen:None, own:size=69}, computations:{frozen:None, own:size=42}, value_types:{frozen:None, own:size=88}, comp_types:{frozen:None, own:size=30}, words:{words:{0:size=0}}, region_binders_from:None}}}, checking=Whole, unit={sources:size=1, prelude:None}, base={0:0}) at typed.rs:1870:9
+     frame #3: 0x00000001009a6cf8 gandr_surface_dispatcher-aa1742fa6a5fedf9`<gandr_surface_dispatcher::typed::TypeTable>::of_parsed_unit(grammar={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=172, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:172, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3031, rctxs:size=3031, bounds:size=3031, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:23, items:201}, alloc:{}, marker:{}}}, menus:size=201, mold_labels:size=3031, adjacencies:size=7226, has_pred:size=3031, has_succ:size=3031, form_first:size=208, is_first:size=3031, form_last:size=277, complete_last:size=238, is_complete_last:size=3031, required_tail:size=39, is_required_tail:size=3031, closing:size=3031, twins:size=3031, fingerprint:{0:6974163223983438522}}, automaton:{kinds:size=3031, observations:size=3031, width:48, sets:size=864}, application:Some({0:1515}), type_application:Some({0:2247}), flat:size=3}, parsed={tree:{source:{0:"theory Fam where { sort Con : Type; oper base : Con; }\nmodule Left : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\nmodule Right : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\ndef after(n : Integer) -> Integer { return n }\n"}, grammar:{0:6974163223983438522}, nodes:size=484, starts:size=5, roots:size=1, index:{forms:size=4, digests:size=4, ranges:size=4, ranks:size=484, digest:Some({0:"?\xb7\x95*\xf3\xc0\xf8\xbf\xf4\xdc\U00000004\xa5EC4\xff\U0000001f\xe1ҭ8o\xd4n\x8c\xb8\xd8\xe9\xc1{rR"})}}, obligations:size=0}, unit={sources:size=1, prelude:None}, base={0:0}) at typed.rs:1757:12
+     frame #4: 0x000000010098ac70 gandr_surface_dispatcher-aa1742fa6a5fedf9`<gandr_surface_dispatcher::typed::TypeTable>::of_unit::{closure#0} at typed.rs:1714:9
+     frame #5: 0x00000001009a8f20 gandr_surface_dispatcher-aa1742fa6a5fedf9`anodized::__::eval_once::<core::result::Result<gandr_surface_dispatcher::typed::TypeTable, gandr_surface_dispatcher::compose::ComposeFault>, <gandr_surface_dispatcher::typed::TypeTable>::of_unit::{closure#0}>(closure={_ref__grammar:{dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{…}, _marker:{…}}), length:31, alloc:{value:{0:{…}}}, _marker:{}}, rules:size=172, rule_names:{map:{root:Some({…}), length:172, alloc:{value:{…}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3031, rctxs:size=3031, bounds:size=3031, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{…}, alloc:{…}, marker:{…}}}, menus:size=201, mold_labels:size=3031, adjacencies:size=7226, has_pred:size=3031, has_succ:size=3031, form_first:size=208, is_first:size=3031, form_last:size=277, complete_last:size=238, is_complete_last:size=3031, required_tail:size=39, is_required_tail:size=3031, closing:size=3031, twins:size=3031, fingerprint:{0:6974163223983438522}}, automaton:{kinds:size=3031, observations:size=3031, width:48, sets:size=864}, application:Some({0:1515}), type_application:Some({0:2247}), flat:size=3}, _ref__source:{__0:"theory Fam where { sort Con : Type; oper base : Con; }\nmodule Left : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\nmodule Right : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\ndef after(n : Integer) -> Integer { return n }\n"}, _ref__unit:{sources:size=1, prelude:None}, _ref__base:{__0:0}}) at __.rs:32:5 [inlined]
+     frame #6: 0x00000001009a8f00 gandr_surface_dispatcher-aa1742fa6a5fedf9`<gandr_surface_dispatcher::typed::TypeTable>::of_unit(grammar={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=172, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:172, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3031, rctxs:size=3031, bounds:size=3031, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:23, items:201}, alloc:{}, marker:{}}}, menus:size=201, mold_labels:size=3031, adjacencies:size=7226, has_pred:size=3031, has_succ:size=3031, form_first:size=208, is_first:size=3031, form_last:size=277, complete_last:size=238, is_complete_last:size=3031, required_tail:size=39, is_required_tail:size=3031, closing:size=3031, twins:size=3031, fingerprint:{0:6974163223983438522}}, automaton:{kinds:size=3031, observations:size=3031, width:48, sets:size=864}, application:Some({0:1515}), type_application:Some({0:2247}), flat:size=3}, source={0:"theory Fam where { sort Con : Type; oper base : Con; }\nmodule Left : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\nmodule Right : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\ndef after(n : Integer) -> Integer { return n }\n"}, unit={sources:size=1, prelude:None}, base={0:0}) at typed.rs:1701:5
+     frame #7: 0x0000000100989fc0 gandr_surface_dispatcher-aa1742fa6a5fedf9`<gandr_surface_dispatcher::typed::TypeTable>::of::{closure#0} at typed.rs:1646:9
+     frame #8: 0x00000001009a7a10 gandr_surface_dispatcher-aa1742fa6a5fedf9`anodized::__::eval_once::<core::result::Result<gandr_surface_dispatcher::typed::TypeTable, gandr_surface_dispatcher::compose::ComposeFault>, <gandr_surface_dispatcher::typed::TypeTable>::of::{closure#0}>(closure={_ref__grammar:{dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{…}, _marker:{…}}), length:31, alloc:{value:{0:{…}}}, _marker:{}}, rules:size=172, rule_names:{map:{root:Some({…}), length:172, alloc:{value:{…}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3031, rctxs:size=3031, bounds:size=3031, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{…}, alloc:{…}, marker:{…}}}, menus:size=201, mold_labels:size=3031, adjacencies:size=7226, has_pred:size=3031, has_succ:size=3031, form_first:size=208, is_first:size=3031, form_last:size=277, complete_last:size=238, is_complete_last:size=3031, required_tail:size=39, is_required_tail:size=3031, closing:size=3031, twins:size=3031, fingerprint:{0:6974163223983438522}}, automaton:{kinds:size=3031, observations:size=3031, width:48, sets:size=864}, application:Some({0:1515}), type_application:Some({0:2247}), flat:size=3}, _ref__source:{__0:"theory Fam where { sort Con : Type; oper base : Con; }\nmodule Left : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\nmodule Right : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\ndef after(n : Integer) -> Integer { return n }\n"}}) at __.rs:32:5 [inlined]
+     frame #9: 0x00000001009a7a0c gandr_surface_dispatcher-aa1742fa6a5fedf9`<gandr_surface_dispatcher::typed::TypeTable>::of(grammar={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=172, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:172, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3031, rctxs:size=3031, bounds:size=3031, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:23, items:201}, alloc:{}, marker:{}}}, menus:size=201, mold_labels:size=3031, adjacencies:size=7226, has_pred:size=3031, has_succ:size=3031, form_first:size=208, is_first:size=3031, form_last:size=277, complete_last:size=238, is_complete_last:size=3031, required_tail:size=39, is_required_tail:size=3031, closing:size=3031, twins:size=3031, fingerprint:{0:6974163223983438522}}, automaton:{kinds:size=3031, observations:size=3031, width:48, sets:size=864}, application:Some({0:1515}), type_application:Some({0:2247}), flat:size=3}, source={0:"theory Fam where { sort Con : Type; oper base : Con; }\nmodule Left : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\nmodule Right : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\ndef after(n : Integer) -> Integer { return n }\n"}) at typed.rs:1636:5
+     frame #10: 0x0000000100839d50 gandr_surface_dispatcher-aa1742fa6a5fedf9`gandr_surface_dispatcher::typed::tests::table(source={0:"theory Fam where { sort Con : Type; oper base : Con; }\nmodule Left : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\nmodule Right : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\ndef after(n : Integer) -> Integer { return n }\n"}) at typed.rs:6684:9
+     frame #11: 0x0000000100859c60 gandr_surface_dispatcher-aa1742fa6a5fedf9`gandr_surface_dispatcher::typed::tests::a_member_type_naming_a_sealed_helper_reads_back_in_its_module_5391 at typed.rs:8612:20
+     frame #12: 0x0000000100813204 gandr_surface_dispatcher-aa1742fa6a5fedf9`gandr_surface_dispatcher::typed::tests::a_member_type_naming_a_sealed_helper_reads_back_in_its_module_5391::{closure#0}((null)={}) at typed.rs:8595:76
+     frame #13: 0x00000001007ba2b4 gandr_surface_dispatcher-aa1742fa6a5fedf9`<gandr_surface_dispatcher::typed::tests::a_member_type_naming_a_sealed_helper_reads_back_in_its_module_5391::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #14: 0x0000000100b84ad8 gandr_surface_dispatcher-aa1742fa6a5fedf9`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #15: 0x0000000100b84ad0 gandr_surface_dispatcher-aa1742fa6a5fedf9`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #16: 0x0000000100b8fff4 gandr_surface_dispatcher-aa1742fa6a5fedf9`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #17: 0x0000000100b8ffe8 gandr_surface_dispatcher-aa1742fa6a5fedf9`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #18: 0x0000000100b8ffe8 gandr_surface_dispatcher-aa1742fa6a5fedf9`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #19: 0x0000000100b8ffe4 gandr_surface_dispatcher-aa1742fa6a5fedf9`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #20: 0x0000000100b8ffe4 gandr_surface_dispatcher-aa1742fa6a5fedf9`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #21: 0x0000000100b8ffe4 gandr_surface_dispatcher-aa1742fa6a5fedf9`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #22: 0x0000000100b8ffd8 gandr_surface_dispatcher-aa1742fa6a5fedf9`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #23: 0x0000000100b8a9e8 gandr_surface_dispatcher-aa1742fa6a5fedf9`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+(lldb) frame variable --depth 3
+(gandr_surface_lowering::module::LoweredModule *) module = 0x000000016fff3cf8 {descriptions:{closure:Absent(Whole), own:{root:Some({height:0, node:{…}, _marker:{…}}), length:1, alloc:{value:{0:{…}}}, _marker:{}}}, description_diagnostics:size=0, natives:size=0, cells:{declarations:size=1, diagnostics:size=0}, declarations:{closure:Absent(Whole), own:size=11}, data:size=1, constructors:size=1, shadowed:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, codata:size=0, structures:size=2, attributes:{entries:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, laws:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, worlds:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, interfaces:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, spellings:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, documentation:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, sources:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, inferred_exits:size=4, elidable_exits:size=3, linear_runs:size=0, nested:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:2, alloc:{value:{0:{}}}, _marker:{}}, in_scope:{frames:size=19, read:size=57, widest:45}, resolutions:size=35, reached_imports:size=0, origins:{values:size=69, computations:size=42, value_types:size=87, comp_types:size=30, declarations:size=11, cases:size=0, eliminations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, binders:size=13, components:size=0, clause_binders:size=0, forks:size=0, arrows:size=10, pairs:size=4, seconds:size=4, sum_labels:size=0, with_labels:size=0, bindings:size=5, sides:size=0, motives:size=0, labels:size=10, covers:size=0, framed:size=0, stand_ins:size=0, relations:size=0, models:size=0, scope_theories:size=0, row_theories:size=0, scope_answers:size=0, scope_laws:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, omitted:size=0}, imports:{declarations:size=0, scopes:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, unit:{sources:size=1, prelude:None}, reads:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, recognition:{scope:{current:{visible:{nodes:size=66, vacant:size=0, count:{…}}, export:{nodes:size=1, vacant:size=0, count:{…}}}, enclosing:size=0}, handler:{policy:WarnAndAllow, shadowed:size=0}}, operation_rules:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, stage_bounds:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, region_names:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, implicits:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, model_slots:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, supplies:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, handler_laws:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, models:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, qualified:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, requirements:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, offer:Absent(Unoffered), reducts:size=0, forgets:size=0, readers:size=0, forgettings:size=0, record_faces:size=0}
+(gandr_surface_syntax::span::SourceText) text = {0:"theory Fam where { sort Con : Type; oper base : Con; }\nmodule Left : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\nmodule Right : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\ndef after(n : Integer) -> Integer { return n }\n"}
+(gandr_surface_syntax::span::ByteOffset) base = {0:0}
+(&[alloc::string::String]) names = size=13 {
+  [0] = "Theory" {
+    [0] = 'T'
+    [1] = 'h'
+    [2] = 'e'
+    [3] = 'o'
+    [4] = 'r'
+    [5] = 'y'
+  }
+  [1] = "Fam" {
+    [0] = 'F'
+    [1] = 'a'
+    [2] = 'm'
+  }
+  [2] = ""
+  [3] = "Left.base" {
+    [0] = 'L'
+    [1] = 'e'
+    [2] = 'f'
+    [3] = 't'
+    [4] = '.'
+    [5] = 'b'
+    [6] = 'a'
+    [7] = 's'
+    [8] = 'e'
+  }
+  [4] = "Left.first" {
+    [0] = 'L'
+    [1] = 'e'
+    [2] = 'f'
+    [3] = 't'
+    [4] = '.'
+    [5] = 'f'
+    [6] = 'i'
+    [7] = 'r'
+    [8] = 's'
+    [9] = 't'
+  }
+  [5] = "Left.second" {
+    [0] = 'L'
+    [1] = 'e'
+    [2] = 'f'
+    [3] = 't'
+    [4] = '.'
+    [5] = 's'
+    [6] = 'e'
+    [7] = 'c'
+    [8] = 'o'
+    [9] = 'n'
+    [10] = 'd'
+  }
+  [6] = "Left.base" {
+    [0] = 'L'
+    [1] = 'e'
+    [2] = 'f'
+    [3] = 't'
+    [4] = '.'
+    [5] = 'b'
+    [6] = 'a'
+    [7] = 's'
+    [8] = 'e'
+  }
+  [7] = ""
+  [8] = "Right.base" {
+    [0] = 'R'
+    [1] = 'i'
+    [2] = 'g'
+    [3] = 'h'
+    [4] = 't'
+    [5] = '.'
+    [6] = 'b'
+    [7] = 'a'
+    [8] = 's'
+    [9] = 'e'
+  }
+  [9] = "Right.first" {
+    [0] = 'R'
+    [1] = 'i'
+    [2] = 'g'
+    [3] = 'h'
+    [4] = 't'
+    [5] = '.'
+    [6] = 'f'
+    [7] = 'i'
+    [8] = 'r'
+    [9] = 's'
+    [10] = 't'
+  }
+  [10] = "Right.second" {
+    [0] = 'R'
+    [1] = 'i'
+    [2] = 'g'
+    [3] = 'h'
+    [4] = 't'
+    [5] = '.'
+    [6] = 's'
+    [7] = 'e'
+    [8] = 'c'
+    [9] = 'o'
+    [10] = 'n'
+    [11] = 'd'
+  }
+  [11] = "Right.base" {
+    [0] = 'R'
+    [1] = 'i'
+    [2] = 'g'
+    [3] = 'h'
+    [4] = 't'
+    [5] = '.'
+    [6] = 'b'
+    [7] = 'a'
+    [8] = 's'
+    [9] = 'e'
+  }
+  [12] = "after" {
+    [0] = 'a'
+    [1] = 'f'
+    [2] = 't'
+    [3] = 'e'
+    [4] = 'r'
+  }
+}
+(lldb) up
+frame #1: 0x00000001009a9b20 gandr_surface_dispatcher-aa1742fa6a5fedf9`<gandr_surface_dispatcher::typed::TypeTable>::assemble(source={0:"theory Fam where { sort Con : Type; oper base : Con; }\nmodule Left : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\nmodule Right : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\ndef after(n : Integer) -> Integer { return n }\n"}, (null)=({descriptions:{closure:Absent(Whole), own:{root:Some({…}), length:1, alloc:{value:{…}}, _marker:{}}}, description_diagnostics:size=0, natives:size=0, cells:{declarations:size=1, diagnostics:size=0}, declarations:{closure:Absent(Whole), own:size=11}, data:size=1, constructors:size=1, shadowed:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, codata:size=0, structures:size=2, attributes:{entries:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, laws:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, worlds:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, interfaces:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, spellings:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, documentation:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, sources:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, inferred_exits:size=4, elidable_exits:size=3, linear_runs:size=0, nested:{root:Some({height:0, node:{…}, _marker:{…}}), length:2, alloc:{value:{0:{…}}}, _marker:{}}, in_scope:{frames:size=19, read:size=57, widest:45}, resolutions:size=35, reached_imports:size=0, origins:{values:size=69, computations:size=42, value_types:size=87, comp_types:size=30, declarations:size=11, cases:size=0, eliminations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, binders:size=13, components:size=0, clause_binders:size=0, forks:size=0, arrows:size=10, pairs:size=4, seconds:size=4, sum_labels:size=0, with_labels:size=0, bindings:size=5, sides:size=0, motives:size=0, labels:size=10, covers:size=0, framed:size=0, stand_ins:size=0, relations:size=0, models:size=0, scope_theories:size=0, row_theories:size=0, scope_answers:size=0, scope_laws:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, omitted:size=0}, imports:{declarations:size=0, scopes:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, unit:{sources:size=1, prelude:None}, reads:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, recognition:{scope:{current:{visible:{…}, export:{…}}, enclosing:size=0}, handler:{policy:WarnAndAllow, shadowed:size=0}}, operation_rules:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, stage_bounds:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, region_names:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, implicits:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, model_slots:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, supplies:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, handler_laws:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, models:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, qualified:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, requirements:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, offer:Absent(Unoffered), reducts:size=0, forgets:size=0, readers:size=0, forgettings:size=0, record_faces:size=0}, {values:{frozen:None, own:size=181}, computations:{frozen:None, own:size=106}, value_types:{frozen:None, own:size=231}, comp_types:{frozen:None, own:size=70}, words:{words:{0:size=0}}, region_binders_from:None}), run={typed:{typings:{root:Some({height:0, node:{…}, _marker:{…}}), length:11, alloc:{value:{0:{…}}}, _marker:{}}, filled:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, refused:{root:Some({height:0, node:{…}, _marker:{…}}), length:4, alloc:{value:{0:{…}}}, _marker:{}}}, signatures:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}, definitions:{bodies:{root:Some({height:0, node:{…}, _marker:{…}}), length:6, alloc:{value:{0:{…}}}, _marker:{}}, lowered:{chain:{entries:size=6}, bodies:{root:Some({…}), length:6, alloc:{value:{…}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, constructors:{root:Some({…}), length:1, alloc:{value:{…}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, fills:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, environment:{frames:size=1}}, levels:size=110}, (null)=({sources:size=1, prelude:None}, {0:0})) at typed.rs:2121:32
+   2118	        endpoints.sort_by_key(|&(term, ..)| term);
+   2119	        endpoints.dedup_by_key(|&mut (term, ..)| term);
+   2120	        let names = constant_names(&module, module.unit().last());
+-> 2121	        let (scopes, placed) = module_scopes(&module, source, base, &names);
+    	                               ^
+   2122	        let homes = homed_names(&module, module.unit().last());
+   2123	        let reader = module.unit().last();
+   2124	        let mut hosts: Vec<&'static str> = HOMES.iter().map(|&(_, home)| home).collect();
+(lldb) frame variable --depth 3
+(gandr_surface_syntax::span::SourceText) source = {0:"theory Fam where { sort Con : Type; oper base : Con; }\nmodule Left : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\nmodule Right : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }\n  def second(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =\n    return fun (z) { z.1 }\ndef after(n : Integer) -> Integer { return n }\n"}
+((gandr_surface_lowering::module::LoweredModule, gandr_core_term::arena::CoreArena))  = ({descriptions:{closure:Absent(Whole), own:{root:Some({…}), length:1, alloc:{value:{…}}, _marker:{}}}, description_diagnostics:size=0, natives:size=0, cells:{declarations:size=1, diagnostics:size=0}, declarations:{closure:Absent(Whole), own:size=11}, data:size=1, constructors:size=1, shadowed:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, codata:size=0, structures:size=2, attributes:{entries:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, laws:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, worlds:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, interfaces:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, spellings:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, documentation:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, sources:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, inferred_exits:size=4, elidable_exits:size=3, linear_runs:size=0, nested:{root:Some({height:0, node:{…}, _marker:{…}}), length:2, alloc:{value:{0:{…}}}, _marker:{}}, in_scope:{frames:size=19, read:size=57, widest:45}, resolutions:size=35, reached_imports:size=0, origins:{values:size=69, computations:size=42, value_types:size=87, comp_types:size=30, declarations:size=11, cases:size=0, eliminations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, binders:size=13, components:size=0, clause_binders:size=0, forks:size=0, arrows:size=10, pairs:size=4, seconds:size=4, sum_labels:size=0, with_labels:size=0, bindings:size=5, sides:size=0, motives:size=0, labels:size=10, covers:size=0, framed:size=0, stand_ins:size=0, relations:size=0, models:size=0, scope_theories:size=0, row_theories:size=0, scope_answers:size=0, scope_laws:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, omitted:size=0}, imports:{declarations:size=0, scopes:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, unit:{sources:size=1, prelude:None}, reads:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, recognition:{scope:{current:{visible:{…}, export:{…}}, enclosing:size=0}, handler:{policy:WarnAndAllow, shadowed:size=0}}, operation_rules:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, stage_bounds:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, region_names:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, implicits:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, model_slots:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, supplies:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, handler_laws:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, models:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, qualified:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, requirements:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, offer:Absent(Unoffered), reducts:size=0, forgets:size=0, readers:size=0, forgettings:size=0, record_faces:size=0}, {values:{frozen:None, own:size=181}, computations:{frozen:None, own:size=106}, value_types:{frozen:None, own:size=231}, comp_types:{frozen:None, own:size=70}, words:{words:{0:size=0}}, region_binders_from:None})
+(gandr_surface_dispatcher::typed::TypedRun) run = {typed:{typings:{root:Some({height:0, node:{…}, _marker:{…}}), length:11, alloc:{value:{0:{…}}}, _marker:{}}, filled:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, refused:{root:Some({height:0, node:{…}, _marker:{…}}), length:4, alloc:{value:{0:{…}}}, _marker:{}}}, signatures:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}, definitions:{bodies:{root:Some({height:0, node:{…}, _marker:{…}}), length:6, alloc:{value:{0:{…}}}, _marker:{}}, lowered:{chain:{entries:size=6}, bodies:{root:Some({…}), length:6, alloc:{value:{…}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, constructors:{root:Some({…}), length:1, alloc:{value:{…}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, fills:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, environment:{frames:size=1}}, levels:size=110}
+((&gandr_surface_lowering::unit::Unit, gandr_surface_syntax::span::ByteOffset))  = ({sources:size=1, prelude:None}, {0:0})
+(gandr_surface_lowering::module::LoweredModule) module = {descriptions:{closure:Absent(Whole), own:{root:Some({height:0, node:{…}, _marker:{…}}), length:1, alloc:{value:{0:{…}}}, _marker:{}}}, description_diagnostics:size=0, natives:size=0, cells:{declarations:size=1, diagnostics:size=0}, declarations:{closure:Absent(Whole), own:size=11}, data:size=1, constructors:size=1, shadowed:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, codata:size=0, structures:size=2, attributes:{entries:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, laws:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, worlds:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, interfaces:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, spellings:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, documentation:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, sources:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, inferred_exits:size=4, elidable_exits:size=3, linear_runs:size=0, nested:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:2, alloc:{value:{0:{}}}, _marker:{}}, in_scope:{frames:size=19, read:size=57, widest:45}, resolutions:size=35, reached_imports:size=0, origins:{values:size=69, computations:size=42, value_types:size=87, comp_types:size=30, declarations:size=11, cases:size=0, eliminations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, binders:size=13, components:size=0, clause_binders:size=0, forks:size=0, arrows:size=10, pairs:size=4, seconds:size=4, sum_labels:size=0, with_labels:size=0, bindings:size=5, sides:size=0, motives:size=0, labels:size=10, covers:size=0, framed:size=0, stand_ins:size=0, relations:size=0, models:size=0, scope_theories:size=0, row_theories:size=0, scope_answers:size=0, scope_laws:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, omitted:size=0}, imports:{declarations:size=0, scopes:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, unit:{sources:size=1, prelude:None}, reads:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, recognition:{scope:{current:{visible:{nodes:size=66, vacant:size=0, count:{…}}, export:{nodes:size=1, vacant:size=0, count:{…}}}, enclosing:size=0}, handler:{policy:WarnAndAllow, shadowed:size=0}}, operation_rules:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, stage_bounds:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, region_names:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, implicits:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, model_slots:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, supplies:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, handler_laws:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, models:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, qualified:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, requirements:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, offer:Absent(Unoffered), reducts:size=0, forgets:size=0, readers:size=0, forgettings:size=0, record_faces:size=0}
+(gandr_core_term::arena::CoreArena) arena = {values:{frozen:None, own:size=182}, computations:{frozen:None, own:size=106}, value_types:{frozen:None, own:size=355}, comp_types:{frozen:None, own:size=70}, words:{words:{0:size=0}}, region_binders_from:None}
+(gandr_surface_syntax::span::ByteOffset) base = {0:0}
+(gandr_surface_lowering::unit::Unit *) unit = 0x0000000170003718 {sources:size=1, prelude:None}
+(gandr_core_checker::module::TypedModule) typed = {typings:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:11, alloc:{value:{0:{}}}, _marker:{}}, filled:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, refused:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:4, alloc:{value:{0:{}}}, _marker:{}}}
+(alloc::collections::btree::map::BTreeMap<gandr_kernel_term::term::ConstantIndex, alloc::sync::Arc<gandr_core_term::syntax::DataSignature, alloc::alloc::Global>, alloc::alloc::Global>) signatures = {root:Some({height:0, node:{pointer:{parent:None, parent_idx:{…}, len:1, keys:(…), vals:(…)}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}
+(gandr_core_checker::code::CodeDefinitions) definitions = {bodies:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:6, alloc:{value:{0:{}}}, _marker:{}}, lowered:{chain:{entries:size=6}, bodies:{root:Some({height:0, node:{…}, _marker:{…}}), length:6, alloc:{value:{0:{…}}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, constructors:{root:Some({height:0, node:{…}, _marker:{…}}), length:1, alloc:{value:{0:{…}}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, fills:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, environment:{frames:size=1}}
+(alloc::vec::Vec<(gandr_surface_lowering::origin::Origin, gandr_kernel_term::types::GroundSort, gandr_kernel_strata::level::Level), alloc::alloc::Global>) levels = size=110 {
+  [0] = ({node:{0:8589934609}, span:{start:{0:99}, end:{0:103}}, provenance:Written}, Value, {constant:{0:12884901905}, atoms:{root:Some({height:381, node:{…}, _marker:{…}}), length:12884902143, alloc:{value:{0:{…}}}, _marker:{}}})
+  [1] = ({node:{0:996432412672}, span:{start:{0:8589934616}, end:{0:121}}, provenance:Inserted(Identity | Unwind | 0x60)}, Computation | 0xfe, {constant:{0:1000727379968}, atoms:{root:Some({height:206, node:{…}, _marker:{…}}), length:207, alloc:{value:{0:{…}}}, _marker:{}}})
+  [2] = ({node:{0:4}, span:{start:{0:1005022347264}, end:{0:8589934712}}, provenance:Inserted(Words)}, Computation | 0x16, {constant:{0:4}, atoms:{root:Some({height:8589934708, node:{…}, _marker:{…}}), length:268, alloc:{value:{0:{…}}}, _marker:{}}})
+  [3] = ({node:{0:269}, span:{start:{0:4369974276}, end:{0:1013612281856}}, provenance:Inserted(Classifier | 0x60)}, 0x6, {constant:{0:280}, atoms:{root:Some({height:1017907249152, node:{…}, _marker:{…}}), length:8589934682, alloc:{value:{0:{…}}}, _marker:{}}})
+  [4] = ({node:{0:285}, span:{start:{0:302}, end:{0:6173926404}}, provenance:Inserted(Force)}, 0x3c, {constant:{0:257}, atoms:{root:Some({height:8589934847, node:{…}, _marker:{…}}), length:1026497183744, alloc:{value:{0:{…}}}, _marker:{}}})
+  [5] = ({node:{0:12884901912}, span:{start:{0:399}, end:{0:403}}, provenance:Written}, Value, {constant:{0:12884901932}, atoms:{root:Some({height:485, node:{…}, _marker:{…}}), length:4, alloc:{value:{0:{…}}}, _marker:{}}})
+  [6] = ({node:{0:1035087118336}, span:{start:{0:12884902008}, end:{0:553}}, provenance:Inserted(Identity | 0x20)}, 0x4, {constant:{0:1039382085632}, atoms:{root:Some({height:546, node:{…}, _marker:{…}}), length:547, alloc:{value:{0:{…}}}, _marker:{}}})
+  [7] = ({node:{0:4369974276}, span:{start:{0:1043677052928}, end:{0:12884901990}}, provenance:Inserted(Endpoint | Unwind)}, 0x2e, {constant:{0:12884902143}, atoms:{root:Some({height:12884901978, node:{…}, _marker:{…}}), length:563, alloc:{value:{0:{…}}}, _marker:{}}})
+  [8] = ({node:{0:580}, span:{start:{0:6173926404}, end:{0:1052266987520}}, provenance:Inserted(Endpoint | Unwind | 0x20)}, Computation | 0x16, {constant:{0:580}, atoms:{root:Some({height:1056561954816, node:{…}, _marker:{…}}), length:17179869192, alloc:{value:{0:{…}}}, _marker:{}}})
+  [9] = ({node:{0:636}, span:{start:{0:643}, end:{0:17179869439}}, provenance:Inserted(Force)}, Computation | 0x4, {constant:{0:624}, atoms:{root:Some({height:17179869439, node:{…}, _marker:{…}}), length:1065151889408, alloc:{value:{0:{…}}}, _marker:{}}})
+  [10] = ({node:{0:12884901975}, span:{start:{0:526}, end:{0:530}}, provenance:Written}, Value, {constant:{0:12884901973}, atoms:{root:Some({height:522, node:{…}, _marker:{…}}), length:4, alloc:{value:{0:{…}}}, _marker:{}}})
+  [11] = ({node:{0:1073741824000}, span:{start:{0:12884901967}, end:{0:474}}, provenance:Inserted(Nested | Unwind | 0xc0)}, 0x4, {constant:{0:1078036791296}, atoms:{root:Some({height:467, node:{…}, _marker:{…}}), length:468, alloc:{value:{0:{…}}}, _marker:{}}})
+  [12] = ({node:{0:4369974276}, span:{start:{0:1082331758592}, end:{0:12884901959}}, provenance:Inserted(Quote | 0xc0)}, Computation | 0xc6, {constant:{0:12884902143}, atoms:{root:Some({height:12884901957, node:{…}, _marker:{…}}), length:446, alloc:{value:{0:{…}}}, _marker:{}}})
+  [13] = ({node:{0:447}, span:{start:{0:4}, end:{0:1090921693184}}, provenance:Inserted(Quote | 0x40)}, Computation | 0x9c, {constant:{0:417}, atoms:{root:Some({height:1095216660480, node:{…}, _marker:{…}}), length:12884901945, alloc:{value:{0:{…}}}, _marker:{}}})
+  [14] = ({node:{0:521}, span:{start:{0:530}, end:{0:12884902143}}, provenance:Inserted(Force)}, Computation | 0x34, {constant:{0:511}, atoms:{root:Some({height:12884902143, node:{…}, _marker:{…}}), length:1103806595072, alloc:{value:{0:{…}}}, _marker:{}}})
+  [15] = ({node:{0:12884901929}, span:{start:{0:461}, end:{0:479}}, provenance:Written}, Value, {constant:{0:12884901925}, atoms:{root:Some({height:455, node:{…}, _marker:{…}}), length:12884902143, alloc:{value:{0:{…}}}, _marker:{}}})
+  ...
+}
+(gandr_surface_lowering::origin::OriginTable *) origins = 0x000000016fff3eb8 {values:size=69, computations:size=42, value_types:size=87, comp_types:size=30, declarations:size=11, cases:size=0, eliminations:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, binders:size=13, components:size=0, clause_binders:size=0, forks:size=0, arrows:size=10, pairs:size=4, seconds:size=4, sum_labels:size=0, with_labels:size=0, bindings:size=5, sides:size=0, motives:size=0, labels:size=10, covers:size=0, framed:size=0, stand_ins:size=0, relations:size=0, models:size=0, scope_theories:size=0, row_theories:size=0, scope_answers:size=0, scope_laws:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, omitted:size=0}
+(alloc::vec::Vec<(gandr_surface_syntax::span::ByteOffset, gandr_surface_dispatcher::typed::Shift), alloc::alloc::Global>) shifts = size=11 {
+  [0] = ({0:121}, Returner)
+  [1] = ({0:206}, Returner)
+  [2] = ({0:210}, Become)
+  [3] = ({0:257}, Returner)
+  [4] = ({0:326}, Become)
+  [5] = ({0:399}, Returner)
+  [6] = ({0:484}, Returner)
+  [7] = ({0:488}, Become)
+  [8] = ({0:535}, Returner)
+  [9] = ({0:604}, Become)
+  [10] = ({0:636}, Returner)
+}
+(alloc::vec::Vec<(gandr_surface_lowering::origin::Origin, gandr_core_checker::refusal::TypeNode), alloc::alloc::Global>) universes = size=110 {
+  [0] = ({node:{0:8589934609}, span:{start:{0:99}, end:{0:103}}, provenance:Written}, Value({0:231}))
+  [1] = ({node:{0:12884901905}, span:{start:{0:377}, end:{0:381}}, provenance:Written}, Value({0:232}))
+  [2] = ({node:{0:8589934616}, span:{start:{0:121}, end:{0:125}}, provenance:Written}, Value({0:233}))
+  [3] = ({node:{0:8589934636}, span:{start:{0:206}, end:{0:207}}, provenance:Inserted(Decode)}, Value({0:234}))
+  [4] = ({node:{0:8589934712}, span:{start:{0:275}, end:{0:279}}, provenance:Inserted(Decode)}, Value({0:235}))
+  [5] = ({node:{0:8589934708}, span:{start:{0:268}, end:{0:269}}, provenance:Inserted(Decode)}, Value({0:236}))
+  [6] = ({node:{0:8589934694}, span:{start:{0:262}, end:{0:280}}, provenance:Written}, Value({0:237}))
+  [7] = ({node:{0:8589934682}, span:{start:{0:285}, end:{0:302}}, provenance:Inserted(Decode)}, Value({0:238}))
+  [8] = ({node:{0:8589934652}, span:{start:{0:257}, end:{0:302}}, provenance:Written}, Value({0:239}))
+  [9] = ({node:{0:12884901912}, span:{start:{0:399}, end:{0:403}}, provenance:Written}, Value({0:240}))
+  [10] = ({node:{0:12884901932}, span:{start:{0:484}, end:{0:485}}, provenance:Inserted(Decode)}, Value({0:241}))
+  [11] = ({node:{0:12884902008}, span:{start:{0:553}, end:{0:557}}, provenance:Inserted(Decode)}, Value({0:242}))
+  [12] = ({node:{0:12884902004}, span:{start:{0:546}, end:{0:547}}, provenance:Inserted(Decode)}, Value({0:243}))
+  [13] = ({node:{0:12884901990}, span:{start:{0:540}, end:{0:558}}, provenance:Written}, Value({0:244}))
+  [14] = ({node:{0:12884901978}, span:{start:{0:563}, end:{0:580}}, provenance:Inserted(Decode)}, Value({0:245}))
+  [15] = ({node:{0:12884901948}, span:{start:{0:535}, end:{0:580}}, provenance:Written}, Value({0:246}))
+  ...
+}
+(gandr_surface_lowering::described::DescribedTypes) described = {entries:size=4, contexts:size=2, uses:size=1}
+(alloc::vec::Vec<(gandr_core_checker::refusal::TermNode, usize, gandr_core_checker::refusal::TypeNode, gandr_core_term::context::BinderDepth, gandr_kernel_term::term::ConstantIndex), alloc::alloc::Global>) judged = size=141 {
+  [0] = (Value({0:1079794822}), 39, Value({0:0}), {0:2}, {0:4})
+  [1] = (Value({0:1}), 51, Value({0:124}), {0:3}, {0:5})
+  [2] = (Value({0:1}), 52, Value({0:122}), {0:3}, {0:5})
+  [3] = (Value({0:2}), 65, Value({0:145}), {0:3}, {0:5})
+  [4] = (Value({0:2}), 66, Value({0:141}), {0:3}, {0:5})
+  [5] = (Value({0:3}), 62, Value({0:137}), {0:3}, {0:5})
+  [6] = (Value({0:3}), 63, Value({0:132}), {0:3}, {0:5})
+  [7] = (Value({0:4}), 59, Value({0:41}), {0:3}, {0:5})
+  [8] = (Value({0:4}), 60, Value({0:44}), {0:3}, {0:5})
+  [9] = (Value({0:5}), 49, Value({0:121}), {0:3}, {0:5})
+  [10] = (Value({0:6}), 54, Value({0:33}), {0:3}, {0:5})
+  [11] = (Value({0:7}), 48, Value({0:41}), {0:2}, {0:5})
+  [12] = (Value({0:8}), 57, Value({0:46}), {0:3}, {0:5})
+  [13] = (Value({0:9}), 68, Value({0:142}), {0:3}, {0:5})
+  [14] = (Value({0:9}), 69, Value({0:129}), {0:3}, {0:5})
+  [15] = (Value({0:10}), 55, Value({0:128}), {0:3}, {0:5})
+  ...
+}
+(alloc::vec::Vec<(gandr_core_checker::refusal::TermNode, gandr_core_checker::refusal::TypeNode, gandr_core_checker::refusal::TypeNode, usize, (gandr_kernel_term::term::ConstantIndex, gandr_core_term::context::BinderDepth)), alloc::alloc::Global>) kept = size=107 {
+  [0] = (Value({0:0}), Value({0:44}), Value({0:44}), 39, ({0:4}, {0:2}))
+  [1] = (Value({0:1}), Value({0:124}), Value({0:122}), 52, ({0:5}, {0:3}))
+  [2] = (Value({0:2}), Value({0:145}), Value({0:141}), 66, ({0:5}, {0:3}))
+  [3] = (Value({0:3}), Value({0:137}), Value({0:132}), 63, ({0:5}, {0:3}))
+  [4] = (Value({0:4}), Value({0:41}), Value({0:44}), 60, ({0:5}, {0:3}))
+  [5] = (Value({0:5}), Value({0:121}), Value({0:121}), 49, ({0:5}, {0:3}))
+  [6] = (Value({0:6}), Value({0:33}), Value({0:33}), 54, ({0:5}, {0:3}))
+  [7] = (Value({0:7}), Value({0:41}), Value({0:41}), 48, ({0:5}, {0:2}))
+  [8] = (Value({0:8}), Value({0:46}), Value({0:46}), 57, ({0:5}, {0:3}))
+  [9] = (Value({0:9}), Value({0:142}), Value({0:129}), 69, ({0:5}, {0:3}))
+  [10] = (Value({0:10}), Value({0:128}), Value({0:128}), 55, ({0:5}, {0:3}))
+  [11] = (Value({0:11}), Value({0:33}), Value({0:33}), 71, ({0:5}, {0:3}))
+  [12] = (Value({0:12}), Value({0:29}), Value({0:29}), 92, ({0:9}, {0:2}))
+  [13] = (Value({0:13}), Value({0:191}), Value({0:189}), 105, ({0:10}, {0:3}))
+  [14] = (Value({0:14}), Value({0:212}), Value({0:208}), 119, ({0:10}, {0:3}))
+  [15] = (Value({0:15}), Value({0:204}), Value({0:199}), 116, ({0:10}, {0:3}))
+  ...
+}
+(gandr_core_term::context::BinderDepth) first_depth = {0:0}
+(gandr_surface_dispatcher::typed::{impl#4}::assemble::{closure_env#8}) first_of = {_ref__kept:size=107}
+(gandr_surface_dispatcher::typed::{impl#4}::assemble::{closure_env#9}) first_type = {_ref__first_of:{_ref__kept:size=107}}
+(alloc::vec::Vec<(gandr_surface_pretty::core_source::CoreNode, gandr_core_term::arena::ValueTypeId), alloc::alloc::Global>) opened = size=13 {
+  [0] = (Computation({0:18}), {0:13})
+  [1] = (Computation({0:24}), {0:25})
+  [2] = (Computation({0:25}), {0:26})
+  [3] = (Computation({0:26}), {0:27})
+  [4] = (Computation({0:27}), {0:28})
+  [5] = (Computation({0:28}), {0:29})
+  [6] = (Computation({0:30}), {0:6})
+  [7] = (Computation({0:36}), {0:40})
+  [8] = (Computation({0:37}), {0:41})
+  [9] = (Computation({0:38}), {0:42})
+  [10] = (Computation({0:39}), {0:43})
+  [11] = (Computation({0:40}), {0:44})
+  [12] = (Computation({0:41}), {0:17})
+}
+(alloc::vec::Vec<(gandr_core_checker::refusal::TermNode, gandr_core_checker::refusal::TypeNode, gandr_kernel_term::term::ConstantIndex), alloc::alloc::Global>) endpoints = size=0
+(alloc::vec::Vec<alloc::string::String, alloc::alloc::Global>) names = size=13 {
+  [0] = "Theory" {
+    [0] = 'T'
+    [1] = 'h'
+    [2] = 'e'
+    [3] = 'o'
+    [4] = 'r'
+    [5] = 'y'
+  }
+  [1] = "Fam" {
+    [0] = 'F'
+    [1] = 'a'
+    [2] = 'm'
+  }
+  [2] = ""
+  [3] = "Left.base" {
+    [0] = 'L'
+    [1] = 'e'
+    [2] = 'f'
+    [3] = 't'
+    [4] = '.'
+    [5] = 'b'
+    [6] = 'a'
+    [7] = 's'
+    [8] = 'e'
+  }
+  [4] = "Left.first" {
+    [0] = 'L'
+    [1] = 'e'
+    [2] = 'f'
+    [3] = 't'
+    [4] = '.'
+    [5] = 'f'
+    [6] = 'i'
+    [7] = 'r'
+    [8] = 's'
+    [9] = 't'
+  }
+  [5] = "Left.second" {
+    [0] = 'L'
+    [1] = 'e'
+    [2] = 'f'
+    [3] = 't'
+    [4] = '.'
+    [5] = 's'
+    [6] = 'e'
+    [7] = 'c'
+    [8] = 'o'
+    [9] = 'n'
+    [10] = 'd'
+  }
+  [6] = "Left.base" {
+    [0] = 'L'
+    [1] = 'e'
+    [2] = 'f'
+    [3] = 't'
+    [4] = '.'
+    [5] = 'b'
+    [6] = 'a'
+    [7] = 's'
+    [8] = 'e'
+  }
+  [7] = ""
+  [8] = "Right.base" {
+    [0] = 'R'
+    [1] = 'i'
+    [2] = 'g'
+    [3] = 'h'
+    [4] = 't'
+    [5] = '.'
+    [6] = 'b'
+    [7] = 'a'
+    [8] = 's'
+    [9] = 'e'
+  }
+  [9] = "Right.first" {
+    [0] = 'R'
+    [1] = 'i'
+    [2] = 'g'
+    [3] = 'h'
+    [4] = 't'
+    [5] = '.'
+    [6] = 'f'
+    [7] = 'i'
+    [8] = 'r'
+    [9] = 's'
+    [10] = 't'
+  }
+  [10] = "Right.second" {
+    [0] = 'R'
+    [1] = 'i'
+    [2] = 'g'
+    [3] = 'h'
+    [4] = 't'
+    [5] = '.'
+    [6] = 's'
+    [7] = 'e'
+    [8] = 'c'
+    [9] = 'o'
+    [10] = 'n'
+    [11] = 'd'
+  }
+  [11] = "Right.base" {
+    [0] = 'R'
+    [1] = 'i'
+    [2] = 'g'
+    [3] = 'h'
+    [4] = 't'
+    [5] = '.'
+    [6] = 'b'
+    [7] = 'a'
+    [8] = 's'
+    [9] = 'e'
+  }
+  [12] = "after" {
+    [0] = 'a'
+    [1] = 'f'
+    [2] = 't'
+    [3] = 'e'
+    [4] = 'r'
+  }
+}
+*** Some of the displayed variables have more members than the debugger will show by default. To show all of them, you can either use the --show-all-children option to frame variable or raise the limit by changing the target.max-children-count setting.

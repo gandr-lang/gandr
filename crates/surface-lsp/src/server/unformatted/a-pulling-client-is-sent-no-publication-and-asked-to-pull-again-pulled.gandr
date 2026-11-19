@@ -1,0 +1,2 @@
+{{"jsonrpc":"2.0","id":{id},"method":"textDocument/diagnostic","params":{{
+                        "textDocument":{{"uri":"file:///tmp/pulling.gandr"}}}}}}

@@ -1,0 +1,30 @@
+/// This source states function extensionality.
+///
+/// Functions form one path when they agree at every argument.
+/// It is the HoTT book's § 2.9 (`Path.funext`) and cubical Agda's `funExt`.
+///
+/// Double negation returns each Boolean value.
+/// Single negation differs from the identity function.
+///
+/// - see: corpus/model/identity/funext-higher.gandr
+
+/// The `not` function exchanges the two Boolean values.
+pub def not(b : Unit + Unit) -> Unit + Unit =
+  match b where
+    | +{.0 = u} => +{.1 = u}
+    | +{.1 = u} => +{.0 = u}
+
+/// The `not_not` function applies `not` two times.
+def not_not(b : Unit + Unit) -> Unit + Unit =
+  not (not b)
+
+/// The `same` function returns its Boolean argument.
+pub def same(b : Unit + Unit) -> Unit + Unit =
+  b
+
+/// The `involution` path proves that double negation is the identity.
+def involution : Path not_not same = Path.funext not_not same;
+
+/// The `not_identity` declaration refuses unequal functions.
+@[refuses("PointwiseDistinct")]
+def not_identity : Path not same = Path.funext not same;
