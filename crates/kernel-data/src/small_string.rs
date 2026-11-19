@@ -26,6 +26,7 @@
 
 use alloc::alloc::Global;
 use alloc::boxed::Box;
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::alloc::Allocator;
 use core::alloc::Layout;
@@ -33,6 +34,7 @@ use core::cmp::Ordering;
 use core::fmt;
 use core::hash::Hash;
 use core::hash::Hasher;
+use core::mem::ManuallyDrop;
 use core::ops::Deref;
 
 use anodized::spec;
@@ -801,5 +803,94 @@ impl<A: Allocator> Hash for SmallString<A>
         H: Hasher,
     {
         self.as_str().0.hash(state);
+    }
+}
+
+impl From<String> for SmallString<Global>
+{
+    /// The string's text, in the small string.
+    ///
+    /// A text of at most 23 bytes takes the inline form, and the crossing
+    /// frees the string's block. A longer text whose block is its exact length
+    /// hands that block across and copies no byte. A longer text with spare
+    /// capacity shrinks to its length first, since the heap form keeps a block
+    /// of the text's exact length.
+    ///
+    /// # Specification
+    /// - ensures: the result reads back the string's text.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an exact block crosses with the same pointer and no
+    ///   new block, and a short text takes the inline form.
+    /// - witness: `tests::small_string::a_text_in_a_block_crosses_with_no_copy`
+    #[spec(captures: before = text.len(), ensures: |ret| ret.len().0 == before)]
+    #[inline]
+    fn from(text: String) -> Self
+    {
+        if let Some(fits) = Fits::new(Text(text.as_str())) {
+            return Self::from(fits);
+        }
+        let mut text = text;
+        if text.capacity() != text.len() {
+            text.shrink_to_fit();
+        }
+        if text.capacity() == text.len() {
+            let mut text = ManuallyDrop::new(text);
+            let len = text.len();
+            let ptr = text.as_mut_ptr();
+            // SAFETY: the block holds `len` initialized bytes of a `str`, its
+            // capacity is `len`, and `text` names it no more, so the box owns
+            // it at that layout.
+            let block = unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(ptr, len)) };
+            return Self(Repr::Heap(block));
+        }
+        Self::from_in(Text(text.as_str()), Global).unwrap_or_else(|refused| refused.raise())
+    }
+}
+
+impl From<SmallString<Global>> for String
+{
+    /// The small string's text, as a `String`.
+    ///
+    /// A text in a block hands that block across and copies no byte. An inline
+    /// text and a static text take one new block.
+    ///
+    /// # Specification
+    /// - ensures: the result reads back the small string's text.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block crosses with the same pointer and no new
+    ///   block, and an inline text takes one block.
+    /// - witness: `tests::small_string::a_text_in_a_block_crosses_with_no_copy`
+    #[spec(captures: before = text.len().0, ensures: |ret| ret.len() == before)]
+    #[inline]
+    fn from(text: SmallString<Global>) -> Self
+    {
+        let text = ManuallyDrop::new(text);
+        // SAFETY: `text` never drops, so its form moves out once.
+        match unsafe { core::ptr::read(&raw const text.0) } {
+            Repr::Heap(block) => {
+                let len = block.len();
+                let ptr = Box::into_raw(block).cast::<u8>();
+                // SAFETY: `ptr` is a block of `len` bytes of a `str`, and the
+                // box names it no more, so the string owns it at that layout.
+                // The heap block's layout is the text's length, so the
+                // string's capacity is that length.
+                #[expect(
+                    clippy::same_length_and_capacity,
+                    reason = "the heap block's layout is the text's length, so the string's capacity is that length"
+                )]
+                // SAFETY: `ptr` is a block of `len` bytes of a `str`, and the
+                // box names it no more, so the string owns it at that layout.
+                let owned = unsafe { Self::from_raw_parts(ptr, len, len) };
+                owned
+            },
+            inline @ (Repr::Inline { .. } | Repr::Static(..)) => {
+                let owned = SmallString(inline);
+                Self::from(owned.as_str().0)
+            },
+        }
     }
 }
