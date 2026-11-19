@@ -1,0 +1,2 @@
+def a : Integer;
+def a = 2;
