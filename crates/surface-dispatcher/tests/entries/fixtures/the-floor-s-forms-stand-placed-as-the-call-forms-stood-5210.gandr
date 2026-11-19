@@ -3,7 +3,7 @@ theory Counter.Eff where
   oper bump : (k : C) --> C;
 
 def tallied() -> [n : Counter.Eff] Integer =
-  n.bump ()
+  n.bump
   pure 0
 
 theory Monad where

@@ -14,7 +14,7 @@ theory Counter.Eff where
 
 /// A bump, through the instance `n` its row's label binds.
 def tallied() -> [n : Counter.Eff] Integer =
-  n.bump ()
+  n.bump
   pure 0
 
 /// The bump handled at seven: the scope's clause answers.
