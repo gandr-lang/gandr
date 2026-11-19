@@ -98,10 +98,10 @@ issue_keep "$title" "$(issue_found "$title")" 1 "$scratch/observation.md" \
   mise run --quiet issue:file "$title" "$scratch/observation.md" kind:defect area:workflow status:unsectioned
 '''
 
-# The codemod of the containers (#8182). One run takes the names of crates
-# and moves each site the rules cover. A second run changes no file. The
-# sites that stay are printed with their file and their line.
-# - see: .config/mise/codemod-containers.bash, .config/ast-grep/containers
+# The codemod of the containers. One run takes the names of crates and moves
+# each site the rules cover. A second run changes no file. The task prints
+# each site that stays, with its file and its line.
+# - see: #8182, .config/mise/codemod-containers.bash, .config/ast-grep/containers
 ["codemod:containers"]
 description = "Move a crate from the containers of alloc to the containers of gandr-kernel-data"
 tools."github:ast-grep/ast-grep" = "0.51.1"

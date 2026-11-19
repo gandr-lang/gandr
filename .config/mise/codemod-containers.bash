@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# The codemod of the containers (#8182). The task `codemod:containers` runs
-# it over the crates it names. The rules live in `.config/ast-grep/containers`.
-# A second run over the same sources changes no file. Each site that no rule
-# moves is printed with its file and its line.
+# The codemod of the containers. The task runs it over the crates it names.
+# A second run over the same sources changes no file. The task prints each
+# site that no rule moves, with its file and its line.
 #
-# A test is moved too. A changed signature does not compile against a `vec!`
-# of the old type. The lint does not read a test. The compiler does.
+# The rule moves a test too. A changed signature does not compile against a
+# `vec!` of the old type. The lint does not read a test. The compiler does.
+#
+# - see: #8182
+# - see: .config/ast-grep/containers
 set -euo pipefail
 export LC_ALL=C
 

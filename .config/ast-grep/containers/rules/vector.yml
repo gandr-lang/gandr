@@ -1,8 +1,5 @@
 # A `Vec` in a type takes the small vector over the global allocator.
-# A capacity of zero is a heap vector of the same size.
-# The census sets a larger capacity where an inline capacity pays.
-# A `Vec` that names its own allocator is the next rule.
-# A test is moved too. A changed signature does not compile against `vec!`.
+# The rule moves a test too, since a changed signature does not compile against `vec!`.
 id: vec-is-small-vec
 language: Rust
 severity: hint
