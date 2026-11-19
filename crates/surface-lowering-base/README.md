@@ -73,6 +73,7 @@ The base of gandr's lowering: the parts of `gandr-surface-lowering` that read no
 - `vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a` — anchor: the data design — a sibling field is a recursive occurrence.
 - `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — anchor: the implicit-arguments design — a telescope on no function is malformed source.
 - `vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8` — background: the foreign-calls design — an extern block is an effect interface.
+- `vault:01a1e7b4-8c77-7a81-9165-ff37ea870424` — anchor: the IO direction plan (§ io-direction-interop) — a block's interface stands in the row of each caller, and the block's check runs at its own source.
 - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — lineage: a flow is a functor, and `via` its application.
 - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — lineage: a flow is named, never found.
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — lineage: a renaming mints no constant.

@@ -6,14 +6,17 @@
 //! is its result. A row names the interface, `[Name]`, and a call performs one
 //! of its operations, `Name.f(…)`; no handler the source writes answers it, so
 //! the run offers it to its host, which the program's Rust caller supplies. A
-//! block declares no name in the source's namespace, and its interface is read
-//! in the source declaring it alone.
+//! block declares no name in the source's namespace. Its interface is read in
+//! the source declaring it, and in each source whose import opens its name:
+//! `import "./ext.gandr" ;` opens it, and a listing opens it where it names it.
 //!
 //! A source reads an interface name through one table. The host's interfaces
 //! seed the table. Each block of the source goes in over them. A block thus
 //! shadows the host's interface of its name. A source with no block reads the
 //! seed itself. A host interface lives in a `std` module, and a source reads
-//! it only where it imports that module or is it ([`Reaches`], #4523).
+//! it only where it imports that module or is it ([`Reaches`], #4523). A
+//! block of the source comes first, then a block an import opens, in import
+//! order, then the host's interface.
 //!
 //! Three forms read the host's interfaces alone: the operations of a
 //! capability type, the label of an instance in a row, and the interfaces of a
@@ -37,6 +40,9 @@
 //!   declares one effect signature named by its library namespace, each
 //!   bodiless member an operation, and a declared namespace shadows a host
 //!   interface of its name.
+//! - `vault:01a1e7b4-8c77-7a81-9165-ff37ea870424` — anchor: a block's interface
+//!   stands in the row of each caller, and the block's check runs at the
+//!   block's own source.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::btree_map::Entry;
@@ -79,9 +85,12 @@ use crate::form::Placed;
 use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::import::ImportDeclaration;
+use crate::import::ImportResolution;
 use crate::import::Opening;
+use crate::import::Opens;
 use crate::resolve::SurfaceName;
 use crate::unbuilt::Unbuilt;
+use crate::unit::ImportTarget;
 use crate::unit::SourceIndex;
 
 /// The language whose blocks the collection reads.
@@ -354,24 +363,31 @@ pub struct Reaches(pub bool);
 impl Collected<'_>
 {
     /// What the source holding `at` reads the interface `name` as: a block
-    /// of its own over the name, or else the host's interface, where the
-    /// source reaches it ([`Self::reaches`]).
+    /// of its own over the name, or else a block that one of its imports
+    /// opens under the name, or else the host's interface, where the source
+    /// reaches it ([`Self::reaches`]).
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the block the source declares under `name`; else the host's
-    ///   interface of the name where the source reaches it; else none.
+    /// - ensures: the block the source declares under `name`; else the block
+    ///   that the first import opening `name` reaches under it
+    ///   ([`Self::imported_block`]); else the host's interface of the name
+    ///   where the source reaches it; else none.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a row naming `std.io.Console.Eff` reads it in a
-    ///   source importing `std.io` and reads none in a source that does not.
+    ///   source importing `std.io` and reads none in a source that does not. A
+    ///   row naming a block reads it in the block's source and in an importer,
+    ///   and reads none in a source whose imports open no block of the name.
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_host_interface_answers_only_where_its_module_is_imported_4523`
+    /// - witness: `gandr-surface-lowering::lower::boundary::tests::an_importer_performs_an_imported_block_s_interface_3138`
     ///
     /// # Clause cost
-    /// - bound: one lookup of the source's blocks, then [`Self::reaches`]: no
-    ///   more steps than the source writes imports.
+    /// - bound: one lookup of the source's blocks, one lookup for each import
+    ///   the source writes, then [`Self::reaches`]: no more steps than twice
+    ///   the source's imports.
     #[inline]
     #[spec(ensures: |ret| ret.is_none_or(|found| matches!(*found, Provider::Block(_)) || self.reaches(at, name).0))]
     #[must_use]
@@ -381,11 +397,57 @@ impl Collected<'_>
         name: &EffectName,
     ) -> Option<&Provider>
     {
-        let found = self.interfaces.named(self.unit.source_at(at), name)?;
-        match *found {
-            Provider::Host if !self.reaches(at, name).0 => None,
-            Provider::Host | Provider::Block(_) => Some(found),
+        let source = self.unit.source_at(at);
+        let own = self.interfaces.named(source, name);
+        if let Some(&Provider::Block(_)) = own {
+            return own;
         }
+        if let Maybe::Present((imported, _)) = self.imported_block(source, name) {
+            return Some(imported);
+        }
+        match own {
+            Some(&Provider::Host) if self.reaches(at, name).0 => own,
+            Some(&(Provider::Host | Provider::Block(_))) | None => None,
+        }
+    }
+
+    /// The block that an import of `source` opens under `name`, and the bytes
+    /// of that import.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the block that the first import of `source`, in written
+    ///   order, reaches under `name`, where the import resolves to a source of
+    ///   the unit and opens `name`; the unbound absence where none does.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a walk over the imports, which a
+    ///   clause would restate whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::interface`].
+    /// - witness: `gandr-surface-lowering::lower::boundary::tests::an_importer_performs_an_imported_block_s_interface_3138`
+    ///
+    /// # Clause cost
+    /// - bound: one lookup for each import that `source` writes.
+    fn imported_block(
+        &self,
+        source: SourceIndex,
+        name: &EffectName,
+    ) -> Maybe<(&Provider, ByteSpan), super::imported::Absent>
+    {
+        let spelled = SurfaceName::from(name.as_ref());
+        for import in self.imports.of(source) {
+            let (ImportResolution::Path(ImportTarget::Source(target)), Opens(true)) =
+                (import.resolution(), import.opens(spelled))
+            else {
+                continue;
+            };
+            if let Some(found @ &Provider::Block(_)) = self.interfaces.named(target, name) {
+                return Maybe::Present((found, import.span()));
+            }
+        }
+        Maybe::Absent(super::imported::Absent::Unbound)
     }
 
     /// Whether the source holding `at` may name the host interface `name`.
@@ -456,6 +518,42 @@ impl Collected<'_>
             let source = self.unit.source_at(at);
             let imports = self.home_imports(source, module);
             self.reached.extend(imports);
+        }
+    }
+
+    /// Record the import through which the source holding `at` reads the
+    /// block `name` of another source, so that import does not read as
+    /// unused.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: nothing where the source declares a block of `name`; else the
+    ///   import that [`Self::imported_block`] answers is among the reached
+    ///   imports; else nothing.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — membership is a search of the receiver's set.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an import whose block a row and a perform read is
+    ///   among the reached imports.
+    /// - witness: `gandr-surface-lowering::lower::boundary::tests::an_importer_performs_an_imported_block_s_interface_3138`
+    ///
+    /// # Cost
+    /// - allocation: the bytes of the reached import, durable by the source
+    #[inline]
+    pub fn reach_block(
+        &mut self,
+        at: ByteOffset,
+        name: &EffectName,
+    )
+    {
+        let source = self.unit.source_at(at);
+        if let Some(&Provider::Block(_)) = self.interfaces.named(source, name) {
+            return;
+        }
+        if let Maybe::Present((_, import)) = self.imported_block(source, name) {
+            let _fresh = self.reached.insert(import);
         }
     }
 
