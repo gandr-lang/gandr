@@ -16,7 +16,10 @@
 //! the portable executor.
 //!
 //! On each target, the script also gives the crate `GANDR_LLC`: the path of
-//! the `llc` of the toolchain's sysroot, which the block compiler runs.
+//! the `llc` that the block compiler runs, as `build-llc.rs` chooses it.
+
+#[path = "build-llc.rs"]
+mod llc;
 
 use core::fmt::Write as _;
 use std::env;
@@ -236,17 +239,19 @@ fn main() -> Result<(), Refusal>
     println!("cargo::rustc-check-cfg=cfg(gandr_executable)");
     // The block compiler runs the `llc` of this toolchain, which the
     // `llvm-tools` component keeps under the host's directory of the sysroot.
+    // A cross build states the path where the tests find it instead.
+    println!("cargo::rerun-if-env-changed=GANDR_LLC");
     let rustc = env::var_os("RUSTC").unwrap_or_else(|| OsString::from("rustc"));
-    let sysroot = Command::new(&rustc).args(["--print", "sysroot"]).output()?;
-    if !sysroot.status.success() {
-        return Err(Refusal::Compile(sysroot.status));
-    }
-    let llc = PathBuf::from(String::from_utf8_lossy(&sysroot.stdout).trim())
-        .join("lib")
-        .join("rustlib")
-        .join(variable("HOST")?)
-        .join("bin")
-        .join("llc");
+    let stated = env::var_os("GANDR_LLC").map_or(llc::Stated::Unstated, llc::Stated::Path);
+    let llc = llc::llc(stated, &variable("HOST")?, || {
+        let sysroot = Command::new(&rustc).args(["--print", "sysroot"]).output()?;
+        if !sysroot.status.success() {
+            return Err(Refusal::Compile(sysroot.status));
+        }
+        Ok(PathBuf::from(
+            String::from_utf8_lossy(&sysroot.stdout).trim(),
+        ))
+    })?;
     println!("cargo::rustc-env=GANDR_LLC={}", llc.display());
     let os = variable("CARGO_CFG_TARGET_OS")?;
     let arch = variable("CARGO_CFG_TARGET_ARCH")?;
