@@ -2958,17 +2958,35 @@ mod kernel_presented_readmission
         });
     }
 
-    /// A package named `std` in a fresh directory named by `label`, whose
-    /// module `std.holders` is `text`: the path of that module. Only a
-    /// package of the toolchain holds a role, so a holder is laid there.
+    /// Which text of the holders of `fixtures/ir-holders.gandr` a test lays.
     ///
     /// # Specification
     /// trivial.
-    fn laid_in_std(
-        label: &str,
-        text: &str,
-    ) -> PathBuf
+    #[derive(Clone, Copy)]
+    enum Holders
     {
+        /// The text as it stands, with the mark of `fields`.
+        Marked,
+        /// The text with the mark of `fields` taken off.
+        Unmarked,
+    }
+
+    /// A package named `std` in a fresh directory, whose module
+    /// `std.holders` is the text `holders` names: the path of that module.
+    /// Only a package of the toolchain holds a role, so a holder is laid there.
+    ///
+    /// # Specification
+    /// trivial.
+    fn laid_in_std(holders: Holders) -> PathBuf
+    {
+        let marked = include_str!("kernel_export/fixtures/ir-holders.gandr");
+        let (label, text) = match holders {
+            Holders::Marked => ("ir-holders-8071", String::from(marked)),
+            Holders::Unmarked => (
+                "ir-fields-5304",
+                marked.replace("@[builtin(\"irArgs\")]\n", ""),
+            ),
+        };
         let library = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../library/std"));
         let root =
             std::env::temp_dir().join(alloc::format!("gandr-{label}-{}", std::process::id()));
@@ -2988,10 +3006,7 @@ mod kernel_presented_readmission
     #[test]
     fn a_holder_of_e_whose_delta_case_asks_from_the_family_is_refused_by_the_checker_8071()
     {
-        let path = laid_in_std(
-            "ir-holders-8071",
-            include_str!("kernel_export/fixtures/ir-holders.gandr"),
-        );
+        let path = laid_in_std(Holders::Marked);
         let pbg = built_in().expect("the built-in grammar builds");
         let swept = export(&pbg, path.clone(), Root::Fixture);
         std::fs::remove_dir_all(
@@ -3036,9 +3051,7 @@ mod kernel_presented_readmission
         // The holder of `E` with its mark taken off: the checker admits it as
         // a plain definition, so it crosses, and the kernel meets its body
         // once the role is forged back on.
-        let unmarked = include_str!("kernel_export/fixtures/ir-holders.gandr")
-            .replace("@[builtin(\"irArgs\")]\n", "");
-        let path = laid_in_std("ir-fields-5304", &unmarked);
+        let path = laid_in_std(Holders::Unmarked);
         let pbg = built_in().expect("the built-in grammar builds");
         let swept = export(&pbg, path.clone(), Root::Fixture);
         std::fs::remove_dir_all(
