@@ -10,6 +10,7 @@
 //! reproducible.
 
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 
 use anodized::spec;
 use gandr_theory_levitation::FreeTerm;
@@ -42,9 +43,9 @@ pub struct RewriteStep
     /// The index of the fired rule in its signature's rule list.
     pub cell: GeneratorIndex,
     /// The position (argument-index path) the rewrite fired at.
-    pub pos: Vec<TermPositionIndex>,
+    pub pos: Arc<[TermPositionIndex]>,
     /// The match binding recorded when the step fired.
-    pub subst: Binding,
+    pub subst: Arc<Binding>,
 }
 
 quenchant_shape::reason_enum! {
@@ -636,7 +637,8 @@ pub fn positions(term: &FreeTerm) -> Vec<Vec<TermPositionIndex>>
             arguments.clear();
             arguments.extend(args);
             for (index, arg) in arguments.iter().copied().enumerate().rev() {
-                let mut child = position.clone();
+                let mut child = Vec::with_capacity(position.len().saturating_add(1));
+                child.extend(position.iter().copied());
                 child.push(TermPositionIndex::from(index));
                 stack.push((child, arg));
             }
@@ -675,13 +677,14 @@ pub fn one_step_rewrites(
 {
     let mut out = Vec::new();
     for position in positions(term) {
+        let position: Arc<[TermPositionIndex]> = Arc::from(position);
         for (cell_index, face) in cells.iter().enumerate() {
             if let Maybe::Present((binding, whole)) = rewrite_with_face(term, &position, face) {
                 out.push((
                     RewriteStep {
                         cell: GeneratorIndex::from(cell_index),
-                        pos: position.clone(),
-                        subst: binding,
+                        pos: Arc::clone(&position),
+                        subst: Arc::from(binding),
                     },
                     whole,
                 ));
@@ -723,10 +726,18 @@ pub fn enumerate_paths(
         for entry in &frontier {
             let (ref steps, ref term) = *entry;
             for (step, whole) in one_step_rewrites(term, cells) {
-                let mut extended = steps.clone();
-                extended.push(step);
-                out.push((extended.clone(), whole.clone()));
-                next.push((extended, whole));
+                let mut extended = Vec::with_capacity(steps.len().saturating_add(1));
+                extended.extend(steps.iter().cloned());
+                extended.push(RewriteStep {
+                    cell: step.cell,
+                    pos: Arc::clone(&step.pos),
+                    subst: Arc::clone(&step.subst),
+                });
+                out.push((extended, whole.clone()));
+                let mut next_steps = Vec::with_capacity(steps.len().saturating_add(1));
+                next_steps.extend(steps.iter().cloned());
+                next_steps.push(step);
+                next.push((next_steps, whole));
             }
         }
         frontier = next;
@@ -949,13 +960,13 @@ mod tests
         let steps = [
             RewriteStep {
                 cell: GeneratorIndex::from(0_usize),
-                pos: vec![zero],
-                subst: binding.clone(),
+                pos: vec![zero].into(),
+                subst: binding.clone().into(),
             },
             RewriteStep {
                 cell: GeneratorIndex::from(1_usize),
-                pos: vec![zero],
-                subst: binding,
+                pos: vec![zero].into(),
+                subst: binding.into(),
             },
         ];
         let cells = [first, second];
@@ -974,8 +985,8 @@ mod tests
         );
         let unknown = RewriteStep {
             cell: GeneratorIndex::from(2_usize),
-            pos: vec![TermPositionIndex::from(99_usize)],
-            subst: Binding::new(),
+            pos: vec![TermPositionIndex::from(99_usize)].into(),
+            subst: Binding::new().into(),
         };
         assert_eq!(
             apply_path(&start, &[unknown], &cells),
@@ -983,8 +994,8 @@ mod tests
         );
         let off_term = RewriteStep {
             cell: GeneratorIndex::from(0_usize),
-            pos: vec![TermPositionIndex::from(1_usize)],
-            subst: Binding::new(),
+            pos: vec![TermPositionIndex::from(1_usize)].into(),
+            subst: Binding::new().into(),
         };
         assert_eq!(
             apply_path(&start, &[off_term], &cells),

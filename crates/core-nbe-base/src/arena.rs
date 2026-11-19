@@ -77,6 +77,7 @@
 //! [term face]: crate::domain::TermFace
 //! [`CoreArena`]: gandr_core_term::CoreArena
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -1161,6 +1162,29 @@ impl DomainArena
     {
         let id = CompClosureId(id_index(ArenaLength(self.comp_closures.len())).0);
         self.comp_closures.push(CompClosure::new(
+            crate::closure::CompBody::Source(body),
+            environment,
+        ));
+        id
+    }
+    /// Close a core computation body over a shared environment.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[spec(
+        captures: entry_length = self.comp_closures.len(),
+        ensures: |ret| self.comp_closures.len().checked_sub(1) == Some(entry_length)
+            && self.comp_closure(ret).is_some_and(|closure| closure.body() == crate::closure::CompBody::Source(body)),
+    )]
+    pub fn shared_comp_closure_node(
+        &mut self,
+        body: ComputationId,
+        environment: Arc<Environment>,
+    ) -> CompClosureId
+    {
+        let id = CompClosureId(id_index(ArenaLength(self.comp_closures.len())).0);
+        self.comp_closures.push(CompClosure::shared(
             crate::closure::CompBody::Source(body),
             environment,
         ));

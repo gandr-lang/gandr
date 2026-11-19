@@ -6362,10 +6362,10 @@ fn step_case(
             Ok(())
         },
         DomainValue::Neutral { neutral, .. } => {
-            let captured = machine.capture(env)?;
+            let captured = Arc::new(machine.capture(env)?);
             let mut closures = Vec::with_capacity(branches.len());
             for &branch in branches {
-                closures.push(domain.comp_closure_node(branch, captured.clone()));
+                closures.push(domain.shared_comp_closure_node(branch, Arc::clone(&captured)));
             }
             let held = domain.hold_branches(closures);
             let grown = extend_spine(domain, neutral, Elimination::Case(held))?;

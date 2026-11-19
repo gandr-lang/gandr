@@ -9,6 +9,8 @@
 //! own encoding of a variable as `$q` under one `$p` per newer context entry,
 //! which is the independent reference the identification is compared with.
 
+use alloc::sync::Arc;
+
 use anodized::spec;
 use gandr_kernel_core::Environment;
 use gandr_kernel_core::KernelError;
@@ -304,7 +306,7 @@ enum Candidate<'signature>
 enum Generate
 {
     /// Fill a position of a sort, under a scope, with an operation budget.
-    Term(Name, Vec<Name>, usize),
+    Term(Name, Arc<[Name]>, usize),
     /// Assemble an operation from its last generated arguments.
     Close(Name, usize),
 }
@@ -377,7 +379,7 @@ fn generated(
     choices: &mut Choices,
 ) -> Case
 {
-    let mut work = vec![Generate::Term(sort.clone(), context.clone(), 5)];
+    let mut work = vec![Generate::Term(sort.clone(), Arc::from(context.clone()), 5)];
     let mut terms: Vec<(BindingTerm, FreeTerm)> = Vec::new();
     let mut candidates: Vec<Candidate<'_>> = Vec::new();
     while let Some(step) = work.pop() {
@@ -423,11 +425,13 @@ fn generated(
                             operation.arity.inputs.len(),
                         ));
                         for port in operation.arity.inputs.iter().rev() {
-                            let mut scope = scope.clone();
-                            scope.extend(port.bindings.iter().map(|binder| binder.sort.clone()));
+                            let mut extended =
+                                Vec::with_capacity(scope.len().saturating_add(port.bindings.len()));
+                            extended.extend(scope.iter().cloned());
+                            extended.extend(port.bindings.iter().map(|binder| binder.sort.clone()));
                             work.push(Generate::Term(
                                 port.sort.clone(),
-                                scope,
+                                Arc::from(extended),
                                 depth.saturating_sub(1),
                             ));
                         }
@@ -559,7 +563,13 @@ fn both_views()
             let operation = choices.pick(&source.opers);
             arguments.clear();
             arguments.extend(operation.arity.inputs.iter().map(|port| {
-                let mut context = case.binding.context.clone();
+                let mut context = Vec::with_capacity(
+                    case.binding
+                        .context
+                        .len()
+                        .saturating_add(port.bindings.len()),
+                );
+                context.extend(case.binding.context.iter().cloned());
                 context.extend(port.bindings.iter().map(|binder| binder.sort.clone()));
                 generated(&source, context, port.sort.clone(), &mut choices).binding
             }));
@@ -1036,7 +1046,7 @@ fn substitution_laws()
         );
         for (position, sort) in fixture.binding.context.iter().enumerate() {
             let term = BindingJudgement {
-                context: fixture.binding.context.clone(),
+                context: fixture.binding.context.iter().cloned().collect(),
                 sort: sort.clone(),
                 term: BindingTerm::variable(VariableIndex::from(
                     fixture.binding.context.len() - position - 1,
@@ -1098,7 +1108,7 @@ fn substitution_laws()
             weaken(
                 &semantics,
                 &BindingJudgement {
-                    context: target.clone(),
+                    context: target.iter().cloned().collect(),
                     sort: sort.clone(),
                     term: term.clone(),
                 },
