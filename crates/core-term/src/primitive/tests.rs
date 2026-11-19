@@ -556,6 +556,62 @@ fn a_width_converts_exactly_and_an_integer_by_its_remainder()
     );
 }
 
+/// Each row that names a machine operation answers, on the bounds of its
+/// width, what the operation on the zero-extended words answers cut to the
+/// width. The bounds are zero, one, the largest signed value, the least
+/// signed value and all ones. The ten widths have seven such rows each, so a
+/// row named as another's operation, or a row lost, changes one answer or
+/// the count.
+#[test]
+fn a_machine_row_answers_as_its_evaluation_8002()
+{
+    let bits = |width| match width {
+        IntegerWidth::U8 | IntegerWidth::I8 => 8_u32,
+        IntegerWidth::U16 | IntegerWidth::I16 => 16,
+        IntegerWidth::U32 | IntegerWidth::I32 => 32,
+        IntegerWidth::U64 | IntegerWidth::I64 | IntegerWidth::Usize | IntegerWidth::Isize => 64,
+    };
+    let mut rows = 0_usize;
+    for row in PRELUDE.iter().copied() {
+        let Some(MachineOperation { width, instruction }) = row.machine_operation()
+        else {
+            continue;
+        };
+        rows = rows.saturating_add(1);
+        let count = bits(width);
+        let mask = u64::MAX.unbounded_shr(64_u32.saturating_sub(count));
+        let sign = 1_u64.unbounded_shl(count.saturating_sub(1));
+        let bounds = [0_u64, 1, sign.wrapping_sub(1), sign, mask];
+        let fixed =
+            |pattern| FixedInteger::try_from((width, pattern)).expect("a pattern of the width");
+        for first in bounds {
+            for second in bounds {
+                let word = match instruction {
+                    MachineInstruction::Add => first.wrapping_add(second),
+                    MachineInstruction::Sub => first.wrapping_sub(second),
+                    MachineInstruction::Mul => first.wrapping_mul(second),
+                    MachineInstruction::And => first & second,
+                    MachineInstruction::Or => first | second,
+                    MachineInstruction::Xor => first ^ second,
+                    MachineInstruction::Not => !first,
+                };
+                let operands = [Scalar::Fixed(fixed(first)), Scalar::Fixed(fixed(second))];
+                let borrowed = operands.each_ref().map(Scalar::borrowed);
+                let arguments = borrowed
+                    .get(.. row.arguments().len())
+                    .expect("a row of one or two operands");
+                assert_eq!(
+                    Ok(Scalar::Fixed(fixed(word & mask))),
+                    row.evaluate(arguments),
+                    "{} on {first:#x} and {second:#x}",
+                    row.name().as_ref()
+                );
+            }
+        }
+    }
+    assert_eq!(70, rows, "seven machine rows for each of ten widths");
+}
+
 #[test]
 fn each_width_form_answers_at_its_bounds()
 {

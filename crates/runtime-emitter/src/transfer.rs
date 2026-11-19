@@ -68,6 +68,8 @@ use crate::lower::Bound;
 use crate::lower::Lowered;
 use crate::lower::Site;
 use crate::lower::Slot;
+use crate::lower::Unfixed;
+use crate::lower::fixed_of;
 use crate::lower::flavour;
 
 /// Why an answer could not be moved into the store.
@@ -89,6 +91,9 @@ pub enum TransferRefusal
     Cycle(Word),
     /// A head or literal object names no entry of its table.
     Entry(Word),
+    /// A machine integer's tag names no integer form, or its field sets a
+    /// bit above its width.
+    Form(Word),
     /// A cell, or a stack holding a frame no store value spells, reached the
     /// answer: only the host reads it.
     HostObject(Word),
@@ -682,6 +687,10 @@ fn closed_environment(
 ///
 /// # Errors
 /// As [`transfer`].
+///
+/// # Cost
+/// - allocation: the store value, its fields, its frames and a literal's
+///   payload, growth within the answer.
 fn allocate(
     object: Word,
     sites: &Sites<'_>,
@@ -711,7 +720,16 @@ fn allocate(
         .map_err(|unknown| TransferRefusal::Kind(unknown.0))?
     {
         Kind::Integer => {
-            HeapValue::Literal(Literal::Integer(integer_literal(field(object, Field(1)))))
+            let bits = field(object, Field(1));
+            match fixed_of(header, bits) {
+                Ok(fixed) => HeapValue::Literal(Literal::Fixed(fixed)),
+                Err(Unfixed::Integer) => {
+                    HeapValue::Literal(Literal::Integer(integer_literal(bits)))
+                },
+                Err(Unfixed::Tag(_) | Unfixed::Wider) => {
+                    return Err(TransferRefusal::Form(object));
+                },
+            }
         },
         Kind::Literal => HeapValue::Literal(
             tables

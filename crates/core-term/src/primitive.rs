@@ -870,6 +870,44 @@ pub enum Scalar<Integer = IntegerLiteral, Text = StringLiteral>
     Checked(CheckedFixed),
 }
 
+/// An operation that one instruction of each host computes on the words of
+/// its operands. A width row's answer is the low bits of the result.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum MachineInstruction
+{
+    /// The sum of two words.
+    Add,
+    /// The first word less the second.
+    Sub,
+    /// The low word of the product of two words.
+    Mul,
+    /// The bitwise conjunction of two words.
+    And,
+    /// The bitwise disjunction of two words.
+    Or,
+    /// The bitwise exclusive disjunction of two words.
+    Xor,
+    /// The bitwise negation of one word.
+    Not,
+}
+
+/// What one instruction computes for a width row: the row's width, and the
+/// instruction on the words of its operands.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct MachineOperation
+{
+    /// The width of the operands and the answer.
+    pub width: IntegerWidth,
+    /// The instruction.
+    pub instruction: MachineInstruction,
+}
+
 /// The answer of a `checked_` form: a value of the width, or its absence.
 ///
 /// # Specification
@@ -1046,6 +1084,56 @@ impl Primitive
             | Operation::Width(_) => return None,
         };
         (self.0.result == PrimitiveType::Boolean).then_some(LiteralIdentity::new(base, polarity))
+    }
+
+    /// What one instruction of a machine computes for this row, when a width
+    /// row is one: its width, and the operation on the words of its operands.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Some` exactly for a row of a width that wraps an addition, a
+    ///   subtraction or a multiplication, or that is `and`, `or`, `xor` or
+    ///   `not`. The row's answer is the low bits of the operation on the
+    ///   operands' zero-extended words, at the row's width.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — on the bounds of each width, the operation on the
+    ///   words, cut to the width, answers what the row's own evaluation
+    ///   answers; an operation that names another row's changes one.
+    /// - witness: `primitive::tests::a_machine_row_answers_as_its_evaluation_8002`
+    #[spec(ensures: |ret| ret.is_none_or(|operation| self.0.result == PrimitiveType::Fixed(operation.width)
+        && matches!(self.0.operation, Operation::Width(WidthOperation::Wrapping(_) | WidthOperation::And | WidthOperation::Or | WidthOperation::Xor | WidthOperation::Not))))]
+    #[inline]
+    #[must_use]
+    pub fn machine_operation(self) -> Option<MachineOperation>
+    {
+        let PrimitiveType::Fixed(width) = self.0.result
+        else {
+            return None;
+        };
+        let Operation::Width(operation) = self.0.operation
+        else {
+            return None;
+        };
+        let instruction = match operation {
+            WidthOperation::Wrapping(Arithmetic::Add) => MachineInstruction::Add,
+            WidthOperation::Wrapping(Arithmetic::Sub) => MachineInstruction::Sub,
+            WidthOperation::Wrapping(Arithmetic::Mul) => MachineInstruction::Mul,
+            WidthOperation::And => MachineInstruction::And,
+            WidthOperation::Or => MachineInstruction::Or,
+            WidthOperation::Xor => MachineInstruction::Xor,
+            WidthOperation::Not => MachineInstruction::Not,
+            WidthOperation::Saturating(_)
+            | WidthOperation::Checked(_)
+            | WidthOperation::Div
+            | WidthOperation::Rem
+            | WidthOperation::CheckedShl
+            | WidthOperation::CheckedShr
+            | WidthOperation::Order(_) => return None,
+        };
+        Some(MachineOperation { width, instruction })
     }
 
     /// Mint the curried computation signature described by this row.

@@ -60,6 +60,7 @@ sweep() {
 }
 
 got=$(
+  trap - EXIT
   setup "$work/one"
   echo 'maybe, edited' > corpus/model/data/data-maybe.gandr
   sweep
@@ -67,14 +68,17 @@ got=$(
 [[ $got == "swept: fixture/model/data/data-maybe.gandr" ]] || fail "#5864: a change to one corpus source sweeps that source's record alone" "$got"
 
 got=$(
+  trap - EXIT
   setup "$work/new"
   echo 'new' > corpus/model/data/data-new.gandr
   echo 'rows, edited' > crates/surface-parser/tests/recovery/strict/values.recovery
   sweep
 )
 [[ $got == "swept: fixture/model/data/data-new.gandr strict/values.gandr" ]] || fail "#5864: a new source and an edited record each name their source" "$got"
+[[ -d $work/new/.git ]] || fail "#8138: a case cleanup leaves its scratch repository until the outer cleanup" "$work/new"
 
 got=$(
+  trap - EXIT
   setup "$work/strict"
   echo 'values, edited' > crates/surface-corpus/strict/values.gandr
   sweep
@@ -82,6 +86,7 @@ got=$(
 [[ $got == "swept: strict/values.gandr" ]] || fail "#5864: a strict source is named under its root's prefix" "$got"
 
 got=$(
+  trap - EXIT
   setup "$work/parser"
   echo 'parser, edited' > crates/surface-parser/src/lib.rs
   echo 'maybe, edited' > corpus/model/data/data-maybe.gandr
@@ -90,6 +95,7 @@ got=$(
 [[ $got == "swept: every source" ]] || fail "#5864: a change to the parser runs the whole sweep" "$got"
 
 got=$(
+  trap - EXIT
   setup "$work/renamed"
   git mv corpus/model/data/data-maybe.gandr corpus/model/data/maybe.gandr
   sweep
@@ -97,6 +103,7 @@ got=$(
 [[ $got == "swept: every source" ]] || fail "#5864: a renamed source runs the whole sweep, for the record it leaves" "$got"
 
 got=$(
+  trap - EXIT
   setup "$work/none"
   echo 'readme, edited' > README.md
   echo 'ledger, edited' > corpus/ledger/rows.gandr
