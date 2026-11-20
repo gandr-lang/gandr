@@ -4,10 +4,11 @@
 # `refactor:file 7 --dry-run` over a stub `gh`. The merged pull request #7
 # closes no issue, its head is the case's branch, and its verdict is `yes`
 # with one row. The stub answers the area of each unit in the case's `units`,
-# and the case's `labels` as the repository's labels. The board holds one
-# open collector of each area: `core` is #1, `ci` is #2 and
-# `diagnostic-help` is #3. The result names the unit the task read, the lane
-# label it read, and the decision, compared with the case's `output`.
+# and the case's `labels` as the repository's labels. The board holds the
+# tree's one open collector, #1, with a heading for `core`, `ci` and
+# `diagnostic-help`. The result names the unit the task read, the lane label
+# it read, and the decision with its labels, compared with the case's
+# `output`.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 # shellcheck source=../mise/disabled-tools.bash
@@ -36,11 +37,9 @@ case $1 in
 esac
 STUB
 chmod +x "$work/gh/gh"
-collector() {
-  jq -n --argjson number "$1" --arg area "$2" '{number: $number, state: "OPEN", title: "refactor(\($area)): verdicts",
-    body: "## Observation\n\n|Kind|Where|Observation|\n|---|---|---|\n|generalise|`a.rs`|an older row|\n\nfrom: #90\n"}'
-}
-{ collector 1 core; collector 2 ci; collector 3 diagnostic-help; } | jq -s . > "$work/gh/issues.json"
+jq -n '[{number: 1, state: "OPEN", title: "refactor: verdicts",
+  body: (["## Observation", "", (("core", "ci", "diagnostic-help") | "### \(.)\n\n|Kind|Where|Observation|\n|---|---|---|\n|generalise|`a.rs`|an older row of \(.)|\n"), "from: #90", ""] | join("\n"))}]' \
+  > "$work/gh/issues.json"
 
 while IFS= read -r case; do
   : > "$work/gh/calls"
@@ -57,7 +56,7 @@ while IFS= read -r case; do
   unit=$(sed -nE 's|^api repos/[^ ]+/issues/([0-9]+) .*|#\1|p' "$work/gh/calls" | paste -sd ' ' -)
   label=$(sed -nE 's|^label list .*--search ([^ ]+) .*|\1|p' "$work/gh/calls" | paste -sd ' ' -)
   label=${label:+"lane label $label read"}
-  got="unit ${unit:-none}; ${label:-no lane label read}; $(jq -r '"\(.act) #\(.issue // "-")"' <<< "$decision" 2> /dev/null || echo "no decision")"
+  got="unit ${unit:-none}; ${label:-no lane label read}; $(jq -r '"\(.act) #\(.issue // "-") \(.labels // [] | join(" "))"' <<< "$decision" 2> /dev/null || echo "no decision")"
   if [[ $got != "$(jq -r .output <<< "$case")" ]]; then
     printf 'branch-unit case FAILED: %s\n  got: %s\n%s\n' "$(jq -r .name <<< "$case")" "$got" "$(cat "$work/err")" >&2
     failed=1

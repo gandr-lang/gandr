@@ -3348,12 +3348,13 @@ echo "$url"
 # `refactor:file <pr>` reads the pull request, the area and epic of the unit
 # it closed, and every `kind:refactor` issue, and carries out what
 # `.config/reports/filing.jq` decides. A `yes` or `maybe` with rows joins the
-# one open collector of the unit's area, `refactor(<area>): verdicts`: the
-# collector gains the rows it lacks and a `from:` line. An area with no open
-# collector gets one through `issue:file` (its labels `kind:refactor`,
-# `collector` and the unit's `area:`, linked under the unit's epic). Either
-# pages the coordinator through the page command of the stall configuration
-# (`.config/stall/stall.bash`), who queues the collector in its area's lane.
+# one open refactor collector of the tree, `refactor: verdicts`: the heading
+# of the unit's area gains the rows the collector lacks, the body a `from:`
+# line, and the issue the area's label. With no open collector, one opens
+# through `issue:file` (its labels `kind:refactor`, `collector` and the
+# unit's `area:`, linked under the unit's epic). Either pages the
+# coordinator through the page command of the stall configuration
+# (`.config/stall/stall.bash`), who queues the rows in the area's lane.
 # A pull request that closes no issue, as one advancing an epic's unit does,
 # takes the area and epic of the issue its branch names (`<lane>-<n>-…`, or
 # `<lane>-<seat>-<n>-…` from a numbered seat, #3836), and failing that the
@@ -3363,13 +3364,13 @@ echo "$url"
 # Two runs that overlap, on one host or two, each read the board before the
 # other files (#5149). So a run that opens a collector reads the board
 # again. When an earlier issue carries its `from:` line, or an earlier
-# collector of its area is open, the run closes its own collector as that
-# issue's duplicate, and adds its rows to the earlier collector when it
-# lacks them. `pr:watch` runs it when its pull request merges; `stall:watch`
+# collector is open, the run closes its own collector as that issue's
+# duplicate, and adds its rows to the earlier collector when it lacks them.
+# `pr:watch` runs it when its pull request merges; `stall:watch`
 # pages a verdict still unfiled. `--dry-run` prints the decision and changes
 # nothing. `.config/claims/branch-unit.bash` runs its cases.
 ["refactor:file"]
-description = "File a merged pull request's yes or maybe refactoring verdict on its area's refactor collector and page the coordinator"
+description = "File a merged pull request's yes or maybe refactoring verdict under its area on the tree's refactor collector and page the coordinator"
 usage = '''
 arg "<pr>" help="the merged pull request's number"
 flag "--dry-run" help="print the decision without filing or paging"
@@ -3443,20 +3444,21 @@ case $(jq -r .act <<< "$decision") in
   update)
     issue=$(jq -r .issue <<< "$decision")
     jq -j .body <<< "$decision" > "$body"
-    gh issue edit "$issue" -R "$repo" --body-file "$body" > /dev/null
-    line="refactor collector #$issue gains #$number's verdict; queue it in its area's lane"
+    mapfile -t labels < <(jq -r '.labels[] | "--add-label", .' <<< "$decision")
+    gh issue edit "$issue" -R "$repo" --body-file "$body" "${labels[@]}" > /dev/null
+    line="refactor collector #$issue gains #$number's verdict; queue its rows in their area's lane"
     ;;
   open)
     jq -j .body <<< "$decision" > "$body"
     mapfile -t labels < <(jq -r '.labels[]' <<< "$decision")
     url=$(mise run --quiet issue:file "$(jq -r .title <<< "$decision")" "$body" "${labels[@]}" ${epic:+--epic "$epic"})
     issue=${url##*/}
-    # Another run, on this host or another, can file the same verdict, or a
-    # verdict of the same area, between this run's board read and its create
-    # (#5149). So the run reads the board again: the earliest issue that
-    # carries `from: #<pr>`, or the earliest open collector of the area, is
-    # the filing. Of two runs, the later create reads after both issues
-    # exist, so it closes its own issue as the earlier one's duplicate.
+    # Another run, on this host or another, can file the same verdict, or
+    # another verdict, between this run's board read and its create (#5149).
+    # So the run reads the board again: the earliest issue that carries
+    # `from: #<pr>`, or the earliest open collector, is the filing. Of two
+    # runs, the later create reads after both issues exist, so it closes its
+    # own issue as the earlier one's duplicate.
     GH_BUDGET_TTL=0 gh issue list -R "$repo" --label kind:refactor --state all --limit 1000 --json number,state,title,body > "$scratch/after.json"
     title=$(jq -r .title <<< "$decision")
     first=$(jq -r -L "$config_dir/bodies" --argjson pr "$number" --arg title "$title" \
@@ -3470,12 +3472,13 @@ case $(jq -r .act <<< "$decision") in
         exit 0
       fi
       jq -j .body <<< "$decision" > "$body"
-      gh issue edit "$first" -R "$repo" --body-file "$body" > /dev/null
+      mapfile -t labels < <(jq -r '.labels[] | "--add-label", .' <<< "$decision")
+      gh issue edit "$first" -R "$repo" --body-file "$body" "${labels[@]}" > /dev/null
       echo "refactor:file: #$issue is closed as the duplicate of the earlier collector #$first, which gains #$number's verdict"
       issue=$first
-      line="refactor collector #$issue gains #$number's verdict; queue it in its area's lane"
+      line="refactor collector #$issue gains #$number's verdict; queue its rows in their area's lane"
     else
-      line="refactor collector #$issue opened from #$number's verdict; queue it in its area's lane"
+      line="refactor collector #$issue opened from #$number's verdict; queue its rows in their area's lane"
     fi
     ;;
 esac
@@ -3966,23 +3969,23 @@ issue_keep "$title" "$(< "$scratch/filed.json")" "$count" "$scratch/body.md" \
 # trunk, and blames each item's lines at that commit. So the job that runs it
 # checks out the whole history. `.config/dead-weight/facts.jq` reduces each
 # unit's records, in parallel, `verdicts.jq` joins them, `blame.jq` dates each
-# item, and `render.jq` writes each crate's body. Their cases are
-# `check:dead-weight`'s.
+# item, and `render.jq` writes the one body and each crate's items. Their
+# cases are `check:dead-weight`'s.
 #
-# With REPORT_FILE set, each crate keeps one issue, `refactor(<crate>): dead
-# weight`: a changed table rewrites it, an unchanged one writes nothing, and
-# a crate with no row left closes it. A night writes at most 20 issues and
-# opens at most five of them, the closings first and then the crates with
-# the most rows, so the actions identity stays within its GraphQL hour
-# (`.config/gh/calls.toml`) and the board takes the first report over some
-# nights. Without REPORT_FILE, or with `--crate`, the task prints the bodies
-# and writes nothing. GH_REPO names the repository.
+# With REPORT_FILE set, the report keeps one issue, `refactor: dead weight`,
+# found by its exact title, with one row for each crate: the crate, the
+# count of its rows and the age of its oldest row. A changed table rewrites
+# it, an unchanged one writes nothing, a tree with no row left closes it,
+# and with none filed the report opens it with the area label of each of its
+# crates. The report files no issue for a crate. Without REPORT_FILE the task
+# prints the body and writes nothing. With `--crate` it prints the items of
+# one crate and writes nothing. GH_REPO names the repository.
 ["report:dead-weight"]
-description = "Report each crate's items with no caller outside tests and its exported items with no use in another crate, on one issue per crate"
+description = "Report each crate's items with no caller outside tests and its exported items with no use in another crate, as one row for each crate on one issue"
 tools.jq = "1.8.1"
 usage = '''
 flag "--records <dir>" help="the evidence records read, of the checked-out tree; the newest landed evidence-records artifact by default"
-flag "--crate <dir>" help="print the body of one crate, its directory under crates/, with every row, and write nothing"
+flag "--crate <dir>" help="print the items of one crate, its directory under crates/, with every row, and write nothing"
 '''
 run = '''
 {% raw %}#!/usr/bin/env bash
@@ -3997,10 +4000,7 @@ source "$root/.config/gh/repo.bash"
 repo=$(repo_name)
 write=${REPORT_FILE:-}
 grace=14
-budget=28000
-opening=5
-writes=20
-if [[ -n ${usage_crate:-} ]]; then write= budget=null; fi
+if [[ -n ${usage_crate:-} ]]; then write=; fi
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 # The records and the commit they describe: a directory named by
@@ -4073,65 +4073,38 @@ lonely=$(cargo metadata --format-version 1 --no-deps --locked --manifest-path "$
         | jq -s -c --arg crate "$crate" '{($crate): unique}'
     done | jq -s -c 'add // {}')
 jq -n -c --slurpfile items "$scratch/verdicts.json" --slurpfile dates "$scratch/dates.json" --arg today "$(date -u +%F)" \
-  --argjson grace "$grace" --argjson budget "$budget" --arg repository "$repo" --arg commit "$commit" --argjson lonely "$lonely" \
-  '{items: $items[0], dates: $dates[0], today: $today, grace: $grace, budget: $budget, repository: $repository, commit: $commit, lonely: $lonely}' \
-  | jq -c -f "$rules/render.jq" > "$scratch/bodies.json"
-rows=$(jq 'map(.count) | add // 0' "$scratch/bodies.json")
-if [[ -z $write ]]; then
-  jq -r '.[] | "# \(.title)\n\n\(.body)\n"' "$scratch/bodies.json"
-  echo "report:dead-weight: $(jq length "$scratch/bodies.json") crates, $rows rows at ${commit::9}; nothing written" >&2
+  --argjson grace "$grace" --arg repository "$repo" --arg commit "$commit" --argjson lonely "$lonely" \
+  '{items: $items[0], dates: $dates[0], today: $today, grace: $grace, repository: $repository, commit: $commit, lonely: $lonely}' \
+  | jq -c -f "$rules/render.jq" > "$scratch/report.json"
+summary="$(jq '.crates | length' "$scratch/report.json") crates, $(jq .count "$scratch/report.json") rows at ${commit::9}"
+if [[ -n ${usage_crate:-} ]]; then
+  jq -r '.crates[] | "# \(.crate)\n\n\(.body)\n"' "$scratch/report.json"
+  echo "report:dead-weight: $summary; nothing written" >&2
   exit 0
 fi
-GH_BUDGET_TTL=0 gh issue list --repo "$repo" --state all --label kind:refactor --search '"dead weight" in:title' --limit 500 \
-  --json number,title,state,body > "$scratch/filed.json"
-written=0
-opened=0
-# The night's write bound: `$1` the title. A crate past it waits for a later
-# night, and its table stays as filed until then.
-room() {
-  if (( written >= writes )); then
-    echo "report:dead-weight: $1 waits for a later night; $writes issues written tonight"
-    return 1
-  fi
-  written=$((written + 1))
-}
-# A crate with no row left closes its open issue, first.
-while IFS=$'\t' read -r title crate; do
-  room "$title" || continue
-  found=$(jq -c --arg title "$title" '[.[] | select(.title == $title) | {number, state, body}] | first' "$scratch/filed.json")
-  printf 'No item of `%s` lacks a caller outside tests or a use in another crate at `%s` (#2891).\n' "$crate" "${commit::9}" > "$scratch/body.md"
-  issue_keep "$title" "$found" 0 "$scratch/body.md" true
-done < <(jq -r --slurpfile bodies "$scratch/bodies.json" '($bodies[0] | map(.title)) as $kept
-  | .[] | select(.state == "OPEN") | .title | select(test("^refactor\\(.+\\): dead weight$")) | select(. as $t | $kept | index($t) | not)
-  | [., capture("^refactor\\((?<crate>.+)\\)").crate] | @tsv' "$scratch/filed.json")
-while IFS= read -r crate; do
-  jq -c --arg crate "$crate" '.[] | select(.crate == $crate)' "$scratch/bodies.json" > "$scratch/this.json"
-  title=$(jq -r .title "$scratch/this.json")
-  jq -r .body "$scratch/this.json" > "$scratch/body.md"
-  found=$(jq -c --arg title "$title" '[.[] | select(.title == $title) | {number, state, body}] | first' "$scratch/filed.json")
-  # A body names the commit of its records, which moves each night. So a
-  # body is the same as the filed one when they differ only in that commit,
-  # and an unchanged table writes nothing.
-  if [[ $(jq -r '.state // empty' <<< "$found") == OPEN ]] \
-    && jq -e --rawfile body "$scratch/body.md" '
-      def plain: gsub("\r"; "") | rtrimstr("\n") | gsub("blob/[0-9a-f]{40}/"; "blob/") | gsub("`[0-9a-f]{9}`"; "``");
-      (.body | plain) == ($body | plain)' <<< "$found" > /dev/null; then
-    continue
-  fi
-  if [[ $found == null ]]; then
-    if (( opened >= opening )); then
-      echo "report:dead-weight: $title waits for a later night; $opening issues opened tonight"
-      continue
-    fi
-    room "$title" || continue
-    opened=$((opened + 1))
-  else
-    room "$title" || continue
-  fi
-  issue_keep "$title" "$found" "$(jq .count "$scratch/this.json")" "$scratch/body.md" \
-    gh issue create --repo "$repo" --title "$title" --label kind:refactor --label collector \
-    --label "area:$(jq -r .area "$scratch/this.json")" --label priority:backlog --label effort:easy --body-file "$scratch/body.md"
-done < <(jq -r 'sort_by(-.count, .crate)[].crate' "$scratch/bodies.json")
+title=$(jq -r .title "$scratch/report.json")
+jq -r .body "$scratch/report.json" > "$scratch/body.md"
+if [[ -z $write ]]; then
+  printf '# %s\n\n' "$title"
+  cat "$scratch/body.md"
+  echo "report:dead-weight: $summary; nothing written" >&2
+  exit 0
+fi
+found=$(GH_BUDGET_TTL=0 issue_found "$title")
+# The body names the commit of its records, which moves each night. So the
+# body is the same as the filed one when they differ only in that commit,
+# and an unchanged table writes nothing.
+if [[ $(jq -r '.state // empty' <<< "$found") == OPEN ]] \
+  && jq -e --rawfile body "$scratch/body.md" '
+    def plain: gsub("\r"; "") | rtrimstr("\n") | gsub("`[0-9a-f]{9}`"; "``");
+    (.body | plain) == ($body | plain)' <<< "$found" > /dev/null; then
+  echo "report:dead-weight: $summary; the table stands"
+  exit 0
+fi
+mapfile -t areas < <(jq -r '.areas[] | "--label", .' "$scratch/report.json")
+issue_keep "$title" "$found" "$(jq .count "$scratch/report.json")" "$scratch/body.md" \
+  gh issue create --repo "$repo" --title "$title" --label kind:refactor --label collector \
+  "${areas[@]}" --label priority:backlog --label effort:easy --body-file "$scratch/body.md"
 {% endraw %}'''
 
 # The threads outside the pool (#3610): every site that states

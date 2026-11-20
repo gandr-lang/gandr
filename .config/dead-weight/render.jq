@@ -1,16 +1,17 @@
-# The issue body of each crate (#2891), the last stage of
-# `report:dead-weight`. Input: {items, dates, today, grace, budget,
-# repository, commit, lonely}: `items` as `verdicts.jq` gives them; `dates`
-# the date of each item's lines, by "<file>:<start>-<end>", as `blame.jq`
-# gives them; `today` and the grace in days; the most characters the rows of
-# one table take, or null for no bound; the repository `OWNER/NAME` and the
-# commit the records describe; `lonely` the crates that no other crate names,
-# each with the epics its README's `## References` names. Output: one {crate,
-# area, title, count, body} for each crate with an item past the grace,
-# sorted by crate. An item with no date, or with a date in the grace, is left
-# out. A table past the budget gives the number of rows that it leaves out.
-# GitHub refuses a body past 65,536 characters, so two tables at 28,000 each
-# fit with their text.
+# The report's one issue and each crate's items (#2891), the last stage of
+# `report:dead-weight`. Input: {items, dates, today, grace, repository,
+# commit, lonely}: `items` as `verdicts.jq` gives them; `dates` the date of
+# each item's lines, by "<file>:<start>-<end>", as `blame.jq` gives them;
+# `today` and the grace in days; the repository `OWNER/NAME` and the commit
+# the records describe; `lonely` the crates that no other crate names, each
+# with the epics its README's `## References` names. Output: {title, count,
+# areas, body, crates}: the title of the one issue, its count of rows, the
+# area labels of its crates, and its body, a table with one row for each
+# crate: the crate, the count of its rows and the age of its oldest row in
+# days. `crates` holds one {crate, count, body} for each crate with an item
+# past the grace, sorted by crate, the body the tables of its items that
+# `--crate` prints. An item with no date, or with a date in the grace, is
+# left out.
 #
 # A row asks for the consumer of its item, and never for its deletion
 # (#6817): 27 deletions by the rows' `delete` took items that open units need.
@@ -28,19 +29,12 @@ def area_of:
   | if ["boot", "core", "kernel", "runtime", "storage", "surface", "theory", "workflow"] | index($word) then $word
     else "workflow" end;
 
-# The table of the rows `$rows` under the heading `$heading` and its lead,
-# with the rows that fit in `$budget` characters; `$crate` names the crate
-# for the line that counts the rows left out.
-def table($heading; $lead; $rows; $budget; $crate):
-  ($rows | map("| \(.cell) | \(if .exported then "`pub`" else "not exported" end) | \(.callers) | \(.since) |")) as $lines
-  | ([foreach $lines[] as $line (0; . + ($line | length) + 1; .)
-     | select($budget == null or . <= $budget)] | length) as $shown
-  | (($lines | length) - $shown) as $left
-  | ["## \($heading)", $lead,
-     (["| Item | Visibility | Callers | Since |", "| --- | --- | --- | --- |"] + $lines[:$shown] | join("\n")),
-     (if $left > 0 then
-        "The table leaves out \($left) more \(if $left == 1 then "row" else "rows" end). `mise run report:dead-weight --crate \($crate)` prints them all."
-      else empty end)]
+# The table of the rows `$rows` under the heading `$heading` and its lead.
+def table($heading; $lead; $rows):
+  ["## \($heading)", $lead,
+   (["| Item | Visibility | Callers | Since |", "| --- | --- | --- | --- |"]
+    + ($rows | map("| \(.cell) | \(if .exported then "`pub`" else "not exported" end) | \(.callers) | \(.since) |"))
+    | join("\n"))]
   | join("\n\n");
 
 . as $in
@@ -53,19 +47,30 @@ def table($heading; $lead; $rows; $budget; $crate):
 | map(.[0].crate as $crate
     | map(select(.verdict == "unused")) as $unused
     | map(select(.verdict == "local")) as $local
-    | {crate: $crate, area: ($crate | area_of), title: "refactor(\($crate)): dead weight",
+    | {crate: $crate,
        count: (if $lonely[$crate] != null then 1 else length end),
+       oldest: (map(days(.since; $in.today)) | max),
        body: ([
-         "This issue lists the items of `\($crate)` that no code outside tests names, and its exported items that no other crate names (#2891).",
-         "`mise run report:dead-weight` writes the tables each night from the compiler's records of `\($in.commit[:9])`. It leaves out an item that a commit touched in the last \($in.grace) days, and each item in `.config/dead-weight/kept.txt`. A unit that takes an item out cites this issue, and its `## Deletes` row needs the architect's sign-off (#6817). An item that a decision keeps goes into the kept list with its decision.",
+         "The items of `\($crate)` that no code outside tests names, and its exported items that no other crate names, at `\($in.commit[:9])` (#2891).",
          (if $lonely[$crate] != null then
             "## No consumer yet\n\nNo other crate names `\($crate)`, so each of its \(length) items waits for its consumer, and no row asks for one item.\n\n| Crate | Items | Answer |\n| --- | --- | --- |\n| `\($crate)` | \(length) | waits for \(if ($lonely[$crate] | length) > 0 then $lonely[$crate] | map("#\(.)") | join(", ") else "the epic that its README names; the README names none yet" end) |"
           else
             (if ($unused | length) > 0 then
-               table("No caller outside tests"; "The table gives each item that only tests name, or that nothing names. The answer is `find the consumer`: a test, a corpus exemplar or the crate that takes the item. A deletion is the last answer, with the architect's sign-off."; $unused; $in.budget; $crate)
+               table("No caller outside tests"; "The table gives each item that only tests name, or that nothing names. The answer is `find the consumer`: a test, a corpus exemplar or the crate that takes the item. A deletion is the last answer, with the architect's sign-off."; $unused)
              else empty end),
             (if ($local | length) > 0 then
-               table("Exported with no use in another crate"; "The table gives each exported item that only its own crate names. The answer is `find the consumer`: the crate that takes the item, or a narrower visibility once the design names none."; $local; $in.budget; $crate)
+               table("Exported with no use in another crate"; "The table gives each exported item that only its own crate names. The answer is `find the consumer`: the crate that takes the item, or a narrower visibility once the design names none."; $local)
              else empty end)
           end)
        ] | join("\n\n"))})
+| {title: "refactor: dead weight",
+   count: (map(.count) | add // 0),
+   areas: (map(.crate | "area:\(area_of)") | unique),
+   body: ([
+     "This issue lists each crate that holds items that no code outside tests names, or exported items that no other crate names (#2891).",
+     "`mise run report:dead-weight` writes the table each night from the compiler's records of `\($in.commit[:9])`. It leaves out an item that a commit touched in the last \($in.grace) days, and each item in `.config/dead-weight/kept.txt`. `mise run report:dead-weight --crate <dir>` prints the items of one crate. A unit that takes an item out cites this issue, and its `## Deletes` row needs the architect's sign-off (#6817). An item that a decision keeps goes into the kept list with its decision.",
+     "## Crates",
+     "The table gives each crate, the count of its rows and the age of its oldest row in days. The answer for each item is `find the consumer`.",
+     (["| Crate | Rows | Oldest |", "| --- | --- | --- |"] + map("| `\(.crate)` | \(.count) | \(.oldest) |") | join("\n"))
+   ] | join("\n\n")),
+   crates: map({crate, count, body})}

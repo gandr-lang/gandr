@@ -607,10 +607,10 @@ jobs:
   # rather than failing, so the job grants `pull-requests: read` (#3576).
   # Then the dead-weight report (`mise run report:dead-weight`, #2891): each
   # crate's items with no caller outside tests and its exported items with no
-  # use in another crate, on one `refactor(<crate>): dead weight` issue a
-  # crate. It reads the newest landed merge group's `evidence-records`
-  # artifact, so it builds nothing. It blames each item's lines, so the job
-  # checks out the whole history (`CI_FETCH_DEPTH`).
+  # use in another crate, as one row for each crate on one
+  # `refactor: dead weight` issue. It reads the newest landed merge group's
+  # `evidence-records` artifact, so it builds nothing. It blames each item's
+  # lines, so the job checks out the whole history (`CI_FETCH_DEPTH`).
   # Then the prose report (`mise run report:prose`, #3591): each open issue
   # body and each open pull request body that breaks a body rule, on one
   # `report: prose` issue. It builds the `prose` binary and parses under the
