@@ -36,6 +36,7 @@ members = [
   "crates/storage-store",
   "crates/storage-values",
   "crates/surface-agentic",
+  "crates/surface-build-identity",
   "crates/surface-corpus",
   "crates/surface-diagnostics",
   "crates/surface-dispatcher",
@@ -301,28 +302,29 @@ version = "0.72.1"
 default-features = false
 
 # BLAKE3 gives the digest of a content or of a node identity. The kernel keys
-# its verdicts and names its build by it. A stored stratum's key binds the
-# site's build identity by it.
+# its verdicts by it. `gandr-surface-build-identity` digests the kernel and
+# the sites with it. Each verdict key and each stratum key binds one of those
+# digests.
 #
 # The engine hub names its sockets by it, and a sweep's sample orders its
 # sources by it. A finding of the prose gate keys its sentence by it. A plan
 # keys its minimal form by it, and the emitter keys each machine block by it.
 # consumers:
 # - core-incremental
-# - kernel-core (and its build script)
+# - kernel-core
 # - runtime-emitter
 # - runtime-rust-record
 # - storage-artifact
 # - storage-records
 # - storage-schema
 # - storage-values
+# - surface-build-identity (build script, dev)
 # - surface-corpus (dev)
 # - surface-lsp
 # - surface-lsp-base
 # - surface-parser (dev)
 # - surface-syntax
 # - theory-exact-reals
-# - theory-sites (build script)
 # - workflow-prose
 # - workflow-sweep
 [workspace.dependencies.blake3]
@@ -662,6 +664,7 @@ default-features = false
 # verdict keys and receipts.
 # consumers:
 # - kernel-core
+# - surface-build-identity
 [workspace.dependencies.gandr-kernel-core-base]
 path = "crates/kernel-core-base"
 
@@ -852,6 +855,14 @@ path = "crates/storage-values"
 # - surface-driver
 [workspace.dependencies.gandr-surface-agentic]
 path = "crates/surface-agentic"
+
+# The identities of a build: the kernel's build identity and the build of the
+# theory sites, each a digest of what its library compiles. A binary alone
+# depends on it, so a change of a digest compiles no library again.
+# consumers:
+# - surface-driver
+[workspace.dependencies.gandr-surface-build-identity]
+path = "crates/surface-build-identity"
 
 # The expectation language: the expectation schemas, the strict and fixture
 # roots, the settle comparison and the report shape.
@@ -1476,6 +1487,7 @@ default-features = false
 # - core-checker
 # - core-incremental
 # - core-term
+# - surface-build-identity
 # - surface-diagnostics (dev)
 # - surface-lowering (dev)
 # - surface-pretty (dev)
@@ -2271,6 +2283,7 @@ features = ["rt", "sync", "time"]
 #   document
 # consumers:
 # - core-incremental (build script)
+# - surface-build-identity (build script, dev)
 # - surface-driver
 # - workflow-host-tools
 # - workflow-hotpath-guard

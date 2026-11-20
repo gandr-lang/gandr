@@ -50,18 +50,25 @@ name = "conversion"
 path = "benches/conversion.rs"
 required-features = ["hotpath"]
 
-# The pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled. serde_json encodes the run's summary line
-# under `--verbosity json`; the dispatcher reads the user's configuration
-# file's `[presentation]` table, and toml its `[kernel]` table. `check` and
-# `lock` open the storage tier's store, which a package's lock commits
-# through. The network's runtime reads the `--net-*` flags `run` binds a
-# program's network with. hotpath profiles the benchmark report behind the
-# `hotpath` feature. A `check` keeps the kernel's verdicts: the kernel's key
-# and policy, the dispatcher's receipt store, and getrandom's entropy for
-# minting the key, which the one writer publishes. Under `instrument`,
-# `check --activity` folds the fork's activity ring, which the fork crate
-# owns.
+# The pinned anodized facade supplies the specification helpers for `core`
+# alone. The facade does not enable its logic and BigInt features. serde_json
+# encodes the summary line of a run under `--verbosity json`. The dispatcher
+# reads the `[presentation]` table of the user's configuration file. toml
+# reads its `[kernel]` table.
+#
+# `check` and `lock` open the store of the storage tier. A lock of a package
+# commits through that store. The runtime of the network reads the `--net-*`
+# flags. `run` binds the network of a program with them. hotpath profiles the
+# benchmark report behind the `hotpath` feature.
+#
+# A `check` keeps the verdicts of the kernel. It uses the key and the policy
+# of the kernel, the receipt store of the dispatcher, and the entropy of
+# getrandom. The entropy mints the key. The one writer publishes the key.
+#
+# `gandr-surface-build-identity` gives the identities of the kernel and the
+# sites that this binary links. Each verdict key and each stratum key binds
+# one of them. Under `instrument`, `check --activity` folds the activity ring
+# of the fork crate.
 [dependencies]
 anodized.workspace = true
 clap.workspace = true
@@ -72,6 +79,7 @@ gandr-runtime-emitter.workspace = true
 gandr-runtime-net.workspace = true
 gandr-storage-store.workspace = true
 gandr-surface-agentic.workspace = true
+gandr-surface-build-identity.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-dispatcher.workspace = true
 gandr-surface-evaluate.workspace = true

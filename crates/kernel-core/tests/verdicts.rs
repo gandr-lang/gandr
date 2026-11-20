@@ -16,6 +16,7 @@ use gandr_kernel_core::ExpansionCensus;
 use gandr_kernel_core::KernelError;
 use gandr_kernel_core::Twin;
 use gandr_kernel_core::verdict::Attestation;
+use gandr_kernel_core::verdict::BuildIdentity;
 use gandr_kernel_core::verdict::KernelSigner;
 use gandr_kernel_core::verdict::NoVerdicts;
 use gandr_kernel_core::verdict::Receipt;
@@ -141,6 +142,16 @@ fn admit(
         .collect()
 }
 
+/// The build identity that these tests key under: a fixed one, in place of
+/// the digest that the driver passes.
+///
+/// # Specification
+/// trivial.
+fn build() -> BuildIdentity
+{
+    BuildIdentity::from([5_u8; 32])
+}
+
 /// The policy trusting `signer` alone.
 ///
 /// # Specification
@@ -160,7 +171,7 @@ fn recorded(
     named: ConstantIndex,
 ) -> StoredReceipt
 {
-    let mut first = Environment::recalling(trusting(signer), Arc::new(NoVerdicts));
+    let mut first = Environment::recalling(trusting(signer), Arc::new(NoVerdicts), build());
     assert_eq!(
         admit(&mut first, named),
         [Admission::Checked; 3],
@@ -186,7 +197,7 @@ fn a_verdict_is_recalled_only_under_its_own_key()
          with one content under one entry key"
     );
 
-    let mut again = Environment::recalling(trusting(&signer), Store::holding(&[&receipt]));
+    let mut again = Environment::recalling(trusting(&signer), Store::holding(&[&receipt]), build());
     assert_eq!(
         admit(&mut again, first_unit),
         [Admission::Recalled; 3],
@@ -201,13 +212,26 @@ fn a_verdict_is_recalled_only_under_its_own_key()
         "a recalled verdict is never signed again"
     );
 
-    let mut renamed = Environment::recalling(trusting(&signer), Store::holding(&[&receipt]));
+    let mut renamed =
+        Environment::recalling(trusting(&signer), Store::holding(&[&receipt]), build());
     assert_eq!(
         admit(&mut renamed, ConstantIndex::from(1_usize)),
         [Admission::Recalled, Admission::Recalled, Admission::Checked],
         "naming the second unit instead of the first is another input for the last \
          declaration alone"
     );
+
+    let mut other = Environment::recalling(
+        trusting(&signer),
+        Store::holding(&[&receipt]),
+        BuildIdentity::from([6_u8; 32]),
+    );
+    assert_eq!(
+        admit(&mut other, first_unit),
+        [Admission::Checked; 3],
+        "a kernel of another build recalls nothing that this build recorded"
+    );
+    assert_eq!(usize::from(other.recalls()), 0);
 }
 
 #[test]
@@ -217,7 +241,8 @@ fn an_unlisted_signer_recalls_nothing()
     let other = KernelSigner::from([9_u8; 32]);
     let named = ConstantIndex::from(0_usize);
     let receipt = recorded(&signer, named);
-    let mut environment = Environment::recalling(trusting(&other), Store::holding(&[&receipt]));
+    let mut environment =
+        Environment::recalling(trusting(&other), Store::holding(&[&receipt]), build());
     assert_eq!(
         admit(&mut environment, named),
         [Admission::Checked; 3],
@@ -247,7 +272,8 @@ fn a_tampered_record_recalls_nothing()
     assert_ne!(tampered, first);
     *records.first_mut().expect("the receipt holds records") = tampered;
     let altered = StoredReceipt::new(receipt.receipt(), records);
-    let mut environment = Environment::recalling(trusting(&signer), Store::holding(&[&altered]));
+    let mut environment =
+        Environment::recalling(trusting(&signer), Store::holding(&[&altered]), build());
     assert_eq!(
         admit(&mut environment, named),
         [Admission::Checked; 3],
@@ -270,7 +296,7 @@ fn a_trusted_receipt_is_found_beside_a_foreign_one()
         Store::holding(&[&other, &trusted]),
         Store::holding(&[&trusted, &other]),
     ] {
-        let mut environment = Environment::recalling(trusting(&signer), store);
+        let mut environment = Environment::recalling(trusting(&signer), store, build());
         assert_eq!(
             admit(&mut environment, named),
             [Admission::Recalled; 3],
@@ -285,7 +311,8 @@ fn a_rechecking_environment_recalls_nothing()
     let signer = KernelSigner::from([7_u8; 32]);
     let named = ConstantIndex::from(0_usize);
     let receipt = recorded(&signer, named);
-    let mut environment = Environment::recalling(TrustPolicy::Recheck, Store::holding(&[&receipt]));
+    let mut environment =
+        Environment::recalling(TrustPolicy::Recheck, Store::holding(&[&receipt]), build());
     assert_eq!(
         admit(&mut environment, named),
         [Admission::Checked; 3],
@@ -339,7 +366,7 @@ fn a_handed_on_environment_keys_on_and_signs_only_its_own()
 {
     let signer = KernelSigner::from([7_u8; 32]);
     let named = Some(ConstantIndex::from(0_usize));
-    let mut whole = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts));
+    let mut whole = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts), build());
     let _first = admit_one(&mut whole, None);
     let _second = admit_one(&mut whole, None);
     let mut handed = whole.handed_on();
@@ -378,7 +405,8 @@ fn a_handed_on_environment_keys_on_and_signs_only_its_own()
         );
     }
 
-    let mut recalling = Environment::recalling(trusting(&signer), Store::holding(&[&whole]));
+    let mut recalling =
+        Environment::recalling(trusting(&signer), Store::holding(&[&whole]), build());
     let _recalled = admit_one(&mut recalling, None);
     let _recalled = admit_one(&mut recalling, None);
     assert_eq!(usize::from(recalling.recalls()), 2);
@@ -400,7 +428,7 @@ fn a_resumed_environment_recalls_from_the_source_it_reads_6566()
 {
     let signer = KernelSigner::from([7_u8; 32]);
     let named = Some(ConstantIndex::from(0_usize));
-    let mut whole = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts));
+    let mut whole = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts), build());
     let _first = admit_one(&mut whole, None);
     let _second = admit_one(&mut whole, None);
     let mut reading = whole.handed_on();
@@ -454,11 +482,11 @@ fn a_rejected_declaration_leaves_the_keys_as_if_never_offered_6566()
 {
     let signer = KernelSigner::from([7_u8; 32]);
     let named = Some(ConstantIndex::from(0_usize));
-    let mut offered = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts));
+    let mut offered = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts), build());
     let _first = admit_one(&mut offered, None);
     reject_one(&mut offered, ConstantIndex::from(9_usize));
     let _second = admit_one(&mut offered, named);
-    let mut never = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts));
+    let mut never = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts), build());
     let _first = admit_one(&mut never, None);
     let _second = admit_one(&mut never, named);
     let (Maybe::Present(offered), Maybe::Present(never)) =
@@ -471,7 +499,8 @@ fn a_rejected_declaration_leaves_the_keys_as_if_never_offered_6566()
         never.records(),
         "the run that offered a rejected declaration keys the rest as one that never did"
     );
-    let mut recalling = Environment::recalling(trusting(&signer), Store::holding(&[&never]));
+    let mut recalling =
+        Environment::recalling(trusting(&signer), Store::holding(&[&never]), build());
     let first = admit_one(&mut recalling, None);
     reject_one(&mut recalling, ConstantIndex::from(9_usize));
     let second = admit_one(&mut recalling, named);
@@ -493,7 +522,7 @@ fn a_rejected_declaration_leaves_the_keys_as_if_never_offered_6566()
 fn a_declaration_that_names_the_vacancy_of_a_rejection_is_checked_7426()
 {
     let signer = KernelSigner::from([7_u8; 32]);
-    let mut offered = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts));
+    let mut offered = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts), build());
     let _first = admit_one(&mut offered, None);
     reject_one(&mut offered, ConstantIndex::from(9_usize));
     let _second = admit_one(&mut offered, Some(ConstantIndex::from(0_usize)));
@@ -501,7 +530,8 @@ fn a_declaration_that_names_the_vacancy_of_a_rejection_is_checked_7426()
     else {
         panic!("the run checked declarations under keys");
     };
-    let mut vacated = Environment::recalling(trusting(&signer), Store::holding(&[&offered]));
+    let mut vacated =
+        Environment::recalling(trusting(&signer), Store::holding(&[&offered]), build());
     reject_one(&mut vacated, ConstantIndex::from(9_usize));
     assert_eq!(
         admit_one(&mut vacated, None),
@@ -676,7 +706,7 @@ fn a_declaration_that_names_a_constant_with_no_content_key_is_checked_in_each_ru
         Positional::OpenSeal,
         Positional::Unkeyed,
     ] {
-        let mut first = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts));
+        let mut first = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts), build());
         let _unit = admit_one(&mut first, None);
         let positional = positional_constant(&mut first, (kind, Run::First));
         assert!(
@@ -687,7 +717,8 @@ fn a_declaration_that_names_a_constant_with_no_content_key_is_checked_in_each_ru
         else {
             panic!("{kind:?}: the first run checked the unit under its key");
         };
-        let mut second = Environment::recalling(trusting(&signer), Store::holding(&[&receipt]));
+        let mut second =
+            Environment::recalling(trusting(&signer), Store::holding(&[&receipt]), build());
         assert_eq!(
             admit_one(&mut second, None),
             Admission::Recalled,
@@ -748,7 +779,7 @@ fn a_stratum_receipt_is_believed_only_as_signed_4034()
     let named = ConstantIndex::from(0_usize);
     let admitted = recorded(&signer, named);
     let borrowed = StoredReceipt::new(receipt, admitted.records().to_vec());
-    let mut again = Environment::recalling(policy, Store::holding(&[&borrowed]));
+    let mut again = Environment::recalling(policy, Store::holding(&[&borrowed]), build());
     assert_eq!(
         admit(&mut again, named),
         [Admission::Checked; 3],
@@ -1006,7 +1037,7 @@ fn point_of(
 fn the_point_of_a_moved_sort_stands_on_the_outcomes_of_its_first_check_7341()
 {
     let signer = KernelSigner::from([7_u8; 32]);
-    let mut environment = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts));
+    let mut environment = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts), build());
     let sort = ConstantIndex::from(0_usize);
     assert_eq!(offer(&mut environment, Offered::Sort), Admission::Checked);
     let first = point_of(&mut environment, sort);
@@ -1040,7 +1071,7 @@ fn recorded_program(
     program: &[Offered],
 ) -> StoredReceipt
 {
-    let mut cold = Environment::recalling(trusting(signer), Arc::new(NoVerdicts));
+    let mut cold = Environment::recalling(trusting(signer), Arc::new(NoVerdicts), build());
     for &offered in program {
         assert_eq!(
             offer(&mut cold, offered),
@@ -1066,7 +1097,8 @@ fn rerun(
     program: &[Offered],
 ) -> Vec<Admission>
 {
-    let mut environment = Environment::recalling(trusting(signer), Store::holding(&[receipt]));
+    let mut environment =
+        Environment::recalling(trusting(signer), Store::holding(&[receipt]), build());
     program
         .iter()
         .map(|&offered| offer(&mut environment, offered))
@@ -1180,8 +1212,9 @@ fn a_key_on_demand_is_the_key_of_its_admission_7456()
         Offered::Block(Forest::AsWritten),
         Offered::Block(Forest::AsWritten),
     ];
-    let mut keyed = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts));
-    let mut rechecking = Environment::recalling(TrustPolicy::Recheck, Arc::new(NoVerdicts));
+    let mut keyed = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts), build());
+    let mut rechecking =
+        Environment::recalling(TrustPolicy::Recheck, Arc::new(NoVerdicts), build());
     for &offered in &program {
         let _keyed = offer(&mut keyed, offered);
         let _rechecked = offer(&mut rechecking, offered);
@@ -1216,7 +1249,8 @@ fn a_key_on_demand_is_the_key_of_its_admission_7456()
 fn two_definitions_under_one_atom_are_twins_on_demand_7456()
 {
     let twin = |scope: Width| {
-        let mut rechecking = Environment::recalling(TrustPolicy::Recheck, Arc::new(NoVerdicts));
+        let mut rechecking =
+            Environment::recalling(TrustPolicy::Recheck, Arc::new(NoVerdicts), build());
         for offered in [Offered::Sealed(scope), Offered::Unit, Offered::Unit] {
             let _admitted = offer(&mut rechecking, offered);
         }
@@ -1302,7 +1336,7 @@ fn words_ranked_above_a_declaration_do_not_re_key_it_6621()
     let receipt = recorded_program(&signer, &[Offered::Sort, Offered::Of(at(0_usize))]);
     let ranked = |words: usize| {
         let mut environment =
-            Environment::recalling(trusting(&signer), Store::holding(&[&receipt]));
+            Environment::recalling(trusting(&signer), Store::holding(&[&receipt]), build());
         [
             offer_ranked(&mut environment, Offered::Sort, rank(0_usize)),
             offer_ranked(&mut environment, Offered::Words(at(0_usize)), rank(words)),
@@ -1438,7 +1472,8 @@ fn a_store_written_before_the_rank_reads_a_miss_6621()
         keys(&before).is_disjoint(&keys(&recorded(&signer, named))),
         "no key of the old store is a key of this kernel"
     );
-    let mut environment = Environment::recalling(trusting(&signer), Store::holding(&[&before]));
+    let mut environment =
+        Environment::recalling(trusting(&signer), Store::holding(&[&before]), build());
     assert_eq!(
         admit(&mut environment, named),
         [Admission::Checked; 3],

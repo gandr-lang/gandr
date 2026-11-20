@@ -51,11 +51,6 @@ gandr-core-term.workspace = true
 gandr-kernel-core-base = { workspace = true, features = ["fixture"] }
 proptest.workspace = true
 
-# The build script digests the kernel crates' files and the lock into the
-# build identity every verdict key binds.
-[build-dependencies]
-blake3.workspace = true
-
 [features]
 default = []
 # The count of the frames that the checks of the process pop, which

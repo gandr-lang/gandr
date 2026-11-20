@@ -724,18 +724,6 @@ pub use gandr_kernel_core_base::verdict;
 use gandr_kernel_core_base::witness;
 mod words;
 
-/// The kernel's build identity, which `build.rs` writes: one digest of every
-/// file of every kernel crate and of the workspace lock. Each derivation of a
-/// verdict key takes it.
-///
-/// # Specification
-/// trivial.
-#[inline]
-pub(crate) fn build_identity() -> crate::verdict::BuildIdentity
-{
-    crate::verdict::BuildIdentity::from(*include_bytes!(concat!(env!("OUT_DIR"), "/kernel-build")))
-}
-
 pub use crate::admitted::AdmissionPolicy;
 pub use crate::admitted::AdmittedCount;
 pub use crate::census::ExpansionCensus;

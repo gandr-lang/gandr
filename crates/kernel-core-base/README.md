@@ -17,7 +17,7 @@ The record of the kernel. It keeps the admitted entries and the staged declarati
 
 **Why.** The record, its rewriting and its refusals name no module of the judgement, and the judgement names each of them. So the record compiles first, and an edit of the judgement does not rebuild it.
 
-**How.** `gandr-kernel-core` imports each module of this crate under its old name and re-exports each path that a consumer names today; [`src/lib.rs`](src/lib.rs) lists the modules. The judgement's build script writes the build identity, and the judgement passes it as a `BuildIdentity` to each derivation of a key, so a key binds the files of both crates. The tests that admit through `Environment` are tests of `gandr-kernel-core`.
+**How.** `gandr-kernel-core` imports each module of this crate under its old name and re-exports each path that a consumer names today; [`src/lib.rs`](src/lib.rs) lists the modules. The caller passes the build identity to the judgement as a `BuildIdentity`, and the judgement passes it to each derivation of a key, so a key binds the files of both crates. The tests that admit through `Environment` are tests of `gandr-kernel-core`.
 
 ## Provided features
 
@@ -35,7 +35,7 @@ The record of the kernel. It keeps the admitted entries and the staged declarati
 
 ## Expected features
 
-- **The judgement passes the build identity.** No derivation of a key reads a file; the caller gives the identity, as [`verdict`](src/verdict.rs) states.
+- **The caller passes the build identity.** No derivation of a key reads a file; the caller gives the identity, as [`verdict`](src/verdict.rs) states.
 - **The arena outlives the record that names it.** An entry names nodes of the term arena that it does not own, as [`env`](src/env.rs) states.
 - **The specification facade's `cfg`.** `#[spec(...)]` clauses are checked at runtime only when the whole build graph is compiled with `--cfg anodized_panic`.
 - **`alloc`.** The crate is `no_std` with `alloc`.

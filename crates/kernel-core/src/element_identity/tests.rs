@@ -2698,6 +2698,7 @@ fn a_declaration_that_took_an_admitted_result_keeps_no_verdict_3558()
                 signer.identity()
             ])),
             alloc::sync::Arc::new(crate::verdict::NoVerdicts),
+            crate::verdict::BuildIdentity::from([5_u8; 32]),
         )
         .admitting(policy);
         let mut staging = environment.stage();

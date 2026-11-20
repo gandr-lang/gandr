@@ -146,6 +146,11 @@ impl Registers
 /// # Errors
 /// [`Uninstalled`], naming the path that failed.
 ///
+/// # Cost
+/// - allocation: the paths of the stores, the stores, the caches and the
+///   registers, setup.
+/// - allocation: the words of a failure, error path.
+///
 /// # Adequacy
 /// - hypothesis: L3 — a second `check` over one cache recalls what the first
 ///   recorded and replays the strata it kept; `--recheck` and a key the policy
@@ -164,17 +169,27 @@ pub fn install(kernel: config::Kernel) -> Result<Registers, Uninstalled>
     };
     let (policy, (store, receipts), signer) = opened(trusted, key, &directory)?;
     let at = directory.join("strata");
-    let (strata, kept) =
-        StoredStrata::open(policy.clone(), &at, signer.clone()).map_err(|fault| Uninstalled {
-            path: at,
-            why: fault.to_string(),
-        })?;
-    install_verdict_cache(VerdictCache::new(policy, store, signer))
-        .and_then(|()| install_stratum_store(strata))
-        .map_err(|_installed| Uninstalled {
-            path: directory,
-            why: String::from("a cache is already installed"),
-        })?;
+    let (strata, kept) = StoredStrata::open(
+        policy.clone(),
+        &at,
+        signer.clone(),
+        gandr_surface_build_identity::sites(),
+    )
+    .map_err(|fault| Uninstalled {
+        path: at,
+        why: fault.to_string(),
+    })?;
+    install_verdict_cache(VerdictCache::new(
+        policy,
+        store,
+        signer,
+        gandr_surface_build_identity::kernel(),
+    ))
+    .and_then(|()| install_stratum_store(strata))
+    .map_err(|_installed| Uninstalled {
+        path: directory,
+        why: String::from("a cache is already installed"),
+    })?;
     Ok(Registers(Vec::from([receipts, kept])))
 }
 
@@ -294,6 +309,10 @@ pub fn hold(kernel: config::Kernel) -> Result<(), Unheld>
 /// # Errors
 /// [`Unheld`], saying why.
 ///
+/// # Cost
+/// - allocation: the store, the cache and the thread of the register, setup.
+/// - allocation: the words of a failure, error path.
+///
 /// # Adequacy
 /// - hypothesis: L3 — a trusting process installs its cache once, so a second
 ///   call finds it installed; a rechecking one installs none; one that names
@@ -322,14 +341,28 @@ fn holding(
             opened(trusted, key, &directory).map_err(|uninstalled| Unheld {
                 why: format!("{}: {}", uninstalled.path.display(), uninstalled.why),
             })?;
-        (VerdictCache::lasting(policy, store, signer), Some(register))
+        (
+            VerdictCache::lasting(
+                policy,
+                store,
+                signer,
+                gandr_surface_build_identity::kernel(),
+            ),
+            Some(register),
+        )
     }
     else {
         let mut seed = [0_u8; 32];
         getrandom::fill(&mut seed).map_err(|error| Unheld {
             why: error.to_string(),
         })?;
-        (VerdictCache::held(KernelSigner::from(seed)), None)
+        (
+            VerdictCache::held(
+                KernelSigner::from(seed),
+                gandr_surface_build_identity::kernel(),
+            ),
+            None,
+        )
     };
     install_verdict_cache(cache).map_err(|_installed| Unheld {
         why: String::from("a cache is already installed"),
@@ -438,7 +471,11 @@ mod tests
     {
         assert!(holding(config::Kernel::Rechecking, None).is_ok());
         assert!(
-            install_verdict_cache(VerdictCache::held(KernelSigner::from([3_u8; 32]))).is_ok(),
+            install_verdict_cache(VerdictCache::held(
+                KernelSigner::from([3_u8; 32]),
+                gandr_surface_build_identity::kernel()
+            ))
+            .is_ok(),
             "no cache was installed before"
         );
     }
