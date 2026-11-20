@@ -1,0 +1,6 @@
+/// `equivalence_type`: an equivalence type, written with its glyph
+/// and in ASCII.
+def same(e : Integer ≃ Integer) -> Unit =
+  pure *{}
+def sameAscii(e : Integer <~> Integer) -> Unit =
+  pure *{}
