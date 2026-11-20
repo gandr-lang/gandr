@@ -34,10 +34,13 @@ page_stopped() {
   done
 }
 
-# The page of a member that left its stack (#8225): pull request `$1` of the
-# lane `$2`, with the cause `$3`. `stack_eject` takes the member out, and its
-# lane alone gets the page, one for each member. It reads the configuration
-# that `page_stopped` reads, and with none it prints the page on stderr.
+# Page the lane `$2` when `stack_eject` cuts pull request `$1` from its
+# stack. `$3` is the cause.
+# - see: #8225
+#
+# The lane alone gets the page, and each member gets one page. The function
+# reads the configuration that `page_stopped` reads. With no configuration
+# it prints the page on stderr.
 page_left() {
   local page text
   local -a command seat

@@ -1,16 +1,25 @@
 #!/usr/bin/env bash
-# The ejection that `pr:open` and `pr:land` run (#8225, `stack_eject`), run by
-# `check:pr-stack` over the cases in `eject.json`. Each case builds a scratch
-# repository with a local bare origin: the stack `a`, `b`, `c`, bottom to
-# top, each with one commit of its own. Pull requests are numbered a 2, b 3
-# and c 4, in server stack 9. A case names the members that are red, drafts,
-# in conflict or queued. Its `builds` names a member whose commit rewrites the
-# file of the member below it, so its replay past that member conflicts.
-# `gh`, `stack_link` and `page_left` are recorded, not run. The server takes
-# every edit. The result is one line compared with the case's `output`: the
-# lines of the ejection, then the subjects main..<branch> holds for each
-# branch, the `gh` calls, each chain linked and each page; `, waits` follows
-# the lines of an ejection that returns 1.
+# The cases of the ejection that `pr:open` and `pr:land` run.
+# `check:pr-stack` runs each case of `eject.json`.
+# - see: #8225, `stack_eject`
+#
+# Each case makes a scratch repository with a local bare origin. Its stack
+# is `a`, `b`, `c`, bottom to top, and each member holds one commit of its
+# own. The pull requests are 2 for `a`, 3 for `b` and 4 for `c`, in the
+# server stack 9.
+#
+# A case names each member that is red, a draft, in conflict or queued. Its
+# `builds` names a member whose commit writes the file of the member below
+# it again. Then the function cannot replay that member past the one below.
+#
+# The harness records each call of `gh`, `stack_link` and `page_left` and
+# runs none of them. The server takes each edit.
+#
+# The result is one line, which the harness compares with the `output` of
+# the case. It holds the lines of the ejection first. Then it holds the
+# subjects that each branch holds past `main`, the `gh` calls, each chain
+# that the tool links, and each page. The text `, waits` follows the lines
+# of an ejection that returns 1.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 source "$here/stack.bash"

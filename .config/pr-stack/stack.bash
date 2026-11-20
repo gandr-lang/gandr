@@ -858,9 +858,12 @@ replay_reads() {
 # fails after the base edit sets the old base again, so the base never moves
 # without the branch (#6797). The chain without the red member is then
 # linked again (`stack_link`). The red member stays open on its base for its
-# seat. Prints one line per branch that moved. When a member above does not
-# hold the one below it, or its replay stops, `past_stopped` holds its number
-# and `past_why` the cause, so `stack_eject` takes that member out too.
+# seat. Prints one line per branch that moved.
+#
+# A member above the red one can lack the head below it, or the function
+# cannot replay it. Then `past_stopped` holds the number of that member, and
+# `past_why` holds the cause. `stack_eject` reads both and cuts that member
+# too.
 past_stopped=
 past_why=
 restack_past() {
@@ -980,9 +983,7 @@ cut_bottom() {
 # it on the top (#5073, #5902). `$3` is a JSON array of the members flagged:
 # a red one for `cut_bottom`, the held one for `pr:hold`. `heal.jq` decides
 # the cut as `pr:watch`'s heal does: no member above changes a path `$1`
-# changes, none is flagged and none is queued. With `$4` `replay`, as
-# `stack_eject` calls it, only a queued member above stops the cut, and the
-# replay itself decides the rest (#8225). `restack_past` then replays
+# changes, none is flagged and none is queued. `restack_past` then replays
 # the members above onto the member below `$1`, or the trunk, signed, with
 # #5071's server and ancestry checks. `$1` is retargeted onto the new top and
 # linked there, so it lands last once its seat clears it. Then the runs the
@@ -991,6 +992,11 @@ cut_bottom() {
 # before>\t<stack after>` on a cut. Fails naming the reason on stderr, with
 # nothing moved, when the cut is refused, waits on a queued member, or
 # conflicts.
+#
+# `$4` is `replay` when `stack_eject` calls the function. Then a queued
+# member above `$1` stops the cut, and no other rule of `heal.jq` does.
+# `restack_past` decides the rest when it replays the members.
+# - see: #8225
 cut_to_top() {
   local root=$1 stack=$2 flagged=$3 mode=${4:-heal} queued members=() member at=0 flag paths decision chain top status=0 heads=() numbers
   past_stopped=
@@ -1046,24 +1052,36 @@ cut_to_top() {
     "$(jq -r --argjson root "$root" 'map(select(.number != $root) | "#\(.number)") + ["#\($root)"] | join(" ← ")' <<< "$stack")"
 }
 
-# Take each member that cannot land out of the stack `$1` (#8225). The stack
-# is the chain that `chain.jq` reads from `open_prs`, bottom to top, with its
-# held members. A member cannot land when it is a draft or held, when it
-# conflicts with its base, or when a required check failed on its head
-# (`red_reading`). `$2` is a JSON object that gives a cause for a member by
-# its number, for a caller that knows one.
+# Cut each member that cannot land from the stack `$1`. The stack is the
+# chain that `chain.jq` reads from `open_prs`, bottom to top, with its held
+# members.
+# - see: #8225
 #
-# Each such member with a member above it that can land is cut to the top of
-# the stack (`cut_to_top` in its `replay` mode), the highest first. So each
-# cut replays only members that can land. A member above whose replay stops,
-# or whose branch does not hold the one below it, cannot land either
-# (`past_stopped`): it is taken out in the same way, and the rest go on.
+# A member cannot land in one of three cases. It is a draft or a held
+# member. It conflicts with its base. A required check fails on its head.
+# - see: `red_reading`
 #
-# Each member that this run takes out becomes a draft with the cause in its
-# hold comment, and its lane gets one page (`stack_left`). A member that was
-# held before gets neither. Prints one line for each member that left.
-# Returns 1 when a cut waits on a queued member or the server refuses it.
-# Then the stack stays as it stood.
+# `$2` is a JSON object. It gives a cause for a member by its number, for a
+# caller that knows one.
+#
+# The function cuts such a member to the top of the stack when a member
+# above it can land. It cuts the highest member first. Thus the function
+# replays the members that can land and no other member.
+# - see: `cut_to_top` in its `replay` mode
+#
+# The function cannot replay a member above it, or the branch of that member
+# lacks the head below it. That member cannot land, and the function cuts it
+# in the same way. The other members continue.
+# - see: `past_stopped`
+#
+# The function makes each member that it cuts a draft with the cause in its
+# hold comment. The lane of that member gets one page. A member that a seat
+# held before this run gets no draft and no page.
+# - see: `stack_left`
+#
+# The function prints one line for each member that it cuts. It returns 1
+# when a cut waits on a queued member or the server refuses the cut. Then
+# the stack does not change.
 stack_eject() {
   local stack=$1 preset=${2:-'{}'} required all number why red kept flagged pick status=0
   local -A cause=() fresh=()
@@ -1116,10 +1134,13 @@ stack_eject() {
   return "$status"
 }
 
-# Make pull request `$1`, on the branch `$2`, a draft that states the cause
-# `$3` in its hold comment, and page its lane (`page_left`). `stack_eject`
-# runs it for each member that it takes out. The comment has the marker and
-# the table of `pr:hold`, so each reader of a hold reads it.
+# Make pull request `$1` a draft. `$2` is its branch. State the cause `$3` in
+# its hold comment. Page its lane.
+# - see: `page_left`
+#
+# `stack_eject` runs the function for each member that it cuts. The comment
+# has the marker and the table of `pr:hold`, so each reader of a hold reads
+# it.
 stack_left() {
   local number=$1 head=$2 why=$3 cell
   gh pr ready "$number" -R "$repo" --undo > /dev/null || echo "#$number is not made a draft; hold it with \`pr:hold $number\`" >&2
@@ -1130,11 +1151,14 @@ stack_left() {
   page_left "$number" "${head%%-*}" "$why"
 }
 
-# Run `stack_eject` on each stack of the server (#8225): each chain from a
-# pull request on the trunk that no app opened. `pr:open` and `pr:land` run
-# it before they read the top, so no service has to. A stack whose cut waits
-# or is refused stays as it stood, and the others go on. Returns 1 when one
-# stays so.
+# Run `stack_eject` on each stack of the server. A stack is a chain from a
+# pull request on the trunk that no app opened.
+# - see: #8225
+#
+# `pr:open` and `pr:land` run the function before they read the top, so no
+# service is necessary. A stack does not change when its cut waits or the
+# server refuses the cut. The other stacks continue. The function returns 1
+# when one stack does not change.
 stacks_eject() {
   local open bottom stack status=0
   open=$(open_prs) || return 1

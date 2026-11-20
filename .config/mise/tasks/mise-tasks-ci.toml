@@ -4979,13 +4979,16 @@ mise run --quiet check:deletes --title "${usage_title:?}" "$body" "$from" \
 # task refuses (`wt:sweep --guard`).
 mise run wt:sweep --guard
 stacking_current || exit 2
-# The head is gated where no gate passed on its tree (#5458, #8224, `mise run
-# check`): the cheap set of `landing`, over the packages the change reaches.
-# It is gated one time, on its own fork, before the stack
-# below adds its commits to the change. A reworded commit or a rebase that
-# changes nothing keeps its tree, so its gate counts (#5076,
-# `.config/gate-scope/passed.bash`). The gate reads the work, so work that
-# HEAD does not hold is refused first.
+# `mise run check` gates the head when no pass record holds its tree. The
+# gate is the cheap set of `landing`, over the packages that the change
+# reaches. It runs one time, on the fork of the branch, before the stack
+# below adds its commits to the change.
+# - see: #5458, #8224
+#
+# A commit with new words keeps its tree, and so does a rebase that changes
+# nothing. Then the pass record of that tree counts. The gate reads the
+# work, so the task first refuses work that HEAD does not hold.
+# - see: #5076, `.config/gate-scope/passed.bash`
 passed=$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash
 # A stacked head keeps each generated artifact its own commits hold, while the
 # base below them moved (#6144). Before the push, `stale.bash` runs the check
@@ -5006,9 +5009,10 @@ if ! "$passed" require pr:open HEAD 2> /dev/null; then
   "$passed" require pr:open HEAD || exit 2
 fi
 gated=$(git rev-parse HEAD)
-# Each member that cannot land leaves its stack before the top is read
-# (#8225, `stacks_eject`), so no red or held pull request is the top and none
-# holds the members above it. A stack that cannot move stays as it stood.
+# `stacks_eject` cuts each member that cannot land before the task reads the
+# top. Thus no red or held pull request is the top, and none holds the
+# members above it. A stack that cannot move does not change.
+# - see: #8225
 stacks_eject || echo "a stack keeps a member that cannot land, as above; pr:open goes on" >&2
 unblocks=${usage_unblocks:-}
 if [[ -n "$unblocks" ]]; then
@@ -5070,12 +5074,18 @@ fi
 # (`body:check`, #2530) and keep the body rules (`body:prose`, #3591).
 mise run --quiet body:check --title "${usage_title:?}" "$body"
 mise run --quiet body:prose "$body"
-# The head that is pushed asks for no second gate (#8224): a restack above
-# rebases the branch onto the top and changes its tree, and the hosted run of
-# the new head is the proof of the combination. A generated artifact is the
-# exception: the merge queue requires no check of the recovery records, so
-# `replayed` reads each artifact the move makes due (#6144). The stack is first
-# come, first served: no `pr:open` waits on another.
+# The head that the task pushes asks for no second gate. A restack rebases
+# the branch onto the top and changes its tree. The hosted run of the new
+# head is the proof of the two together.
+# - see: #8224
+#
+# A generated artifact is the exception. The merge queue requires no check
+# of the recovery records, so `replayed` reads each artifact that the move
+# makes due.
+# - see: #6144
+#
+# The stack serves each `pr:open` in the order of arrival. No `pr:open`
+# waits for a different one.
 replayed || exit 2
 # The stack goes on from no draft (#6797): a draft holds every pull request
 # above it. The top was read through the budget's shared cache, and a seat
@@ -5103,9 +5113,9 @@ echo "$url"
 # request. `pr:land` refuses a named row without it. GitHub gives the number
 # only now, and `ledger:stamp` commits it.
 #
-# Then `check:ledger` alone runs on the stamped tree, and no gate does: the
-# stamp changes `since` values alone, and the hosted run of the stamped head
-# is the proof. The push sends the stamped head.
+# Then `check:ledger` alone runs on the stamped tree, and no gate does. The
+# stamp changes `since` values alone. The hosted run of the stamped head is
+# the proof. The push sends the stamped head.
 # - see: #7978, #8224
 number=${url##*/}
 pushed=$(git rev-parse HEAD)
@@ -5397,11 +5407,13 @@ if [[ -n $absorbing ]]; then
   exit 2
 fi
 
-# A landing asks for no local gate (#8224): `pr:open` gated the change one
-# time, and the hosted run of each head is the proof after a rebase.
+# A landing asks for no local gate. `pr:open` gates the change one time. The
+# hosted run of each head is the proof after a rebase.
+# - see: #8224
 
-# Each member that cannot land leaves its stack before the prefix is read
-# (#8225, `stacks_eject`). A stack that cannot move stays as it stood.
+# `stacks_eject` cuts each member that cannot land before the task reads the
+# prefix. A stack that cannot move does not change.
+# - see: #8225
 stacks_eject || echo "a stack keeps a member that cannot land, as above; pr:land goes on" >&2
 
 while :; do
