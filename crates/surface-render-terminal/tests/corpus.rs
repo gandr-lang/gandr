@@ -68,18 +68,21 @@ fn goldens_under(dir: &Path) -> Vec<PathBuf>
     files
 }
 
-/// Every refusing source's refusals as `gandr check` prints an unexpected
-/// one, by the source's path under `corpus/`: each diagnostic plain at the
-/// user's verbosity, in the order the source prints them, a blank line
-/// between two. A source that prints nothing has no entry.
+/// The refusals of each refusing source under `roots`, each a path under the
+/// repository's `corpus/`, as `gandr check` prints an unexpected one, by the
+/// source's path under `corpus/`: each diagnostic plain at the user's
+/// verbosity, in the order the source prints them, a blank line between two.
+/// A source that prints nothing has no entry.
 ///
 /// # Specification
 /// trivial.
-fn rendered(repository: &Path) -> BTreeMap<PathBuf, String>
+fn rendered(
+    repository: &Path,
+    roots: Vec<PathBuf>,
+) -> BTreeMap<PathBuf, String>
 {
     let corpus = repository.join("corpus");
     let prefix = format!("{}/", repository.display());
-    let roots = REFUSING.map(|directory| corpus.join(directory)).to_vec();
     let mut rendered = BTreeMap::new();
     let mut faults = Vec::new();
     let ControlFlow::Continue(_report) = Walk::new(roots).visit::<Evaluator, _, _>(
@@ -128,7 +131,11 @@ fn every_refusing_source_renders_as_its_golden()
     let goldens = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/corpus");
     let update = std::env::var_os("UPDATE_EXPECT").is_some();
     let mut expected: BTreeSet<PathBuf> = BTreeSet::new();
-    for (relative, text) in rendered(&repository) {
+    let roots = REFUSING
+        .iter()
+        .map(|directory| repository.join("corpus").join(directory))
+        .collect();
+    for (relative, text) in rendered(&repository, roots) {
         let golden = goldens.join(relative).with_extension("txt");
         if update && let Some(parent) = golden.parent() {
             std::fs::create_dir_all(parent).expect("the golden's directory is created");
@@ -157,14 +164,16 @@ fn every_refusing_source_renders_as_its_golden()
     );
 }
 
+/// The cyclic circuit's refusal names its port. The walk reads that source
+/// alone, as a refusal of one source reads nothing beside it.
 #[test]
 fn cyclic_circuit_wiring_names_its_port_5805()
 {
-    let refusals = rendered(&repository());
+    let source = "pathological/circuit/circuit-cyclic-wiring.gandr";
+    let repository = repository();
+    let refusals = rendered(&repository, vec![repository.join("corpus").join(source)]);
     let rendered = refusals
-        .get(Path::new(
-            "pathological/circuit/circuit-cyclic-wiring.gandr",
-        ))
+        .get(Path::new(source))
         .expect("the cyclic circuit fixture is refused");
     assert!(
         rendered.contains("port `z`"),

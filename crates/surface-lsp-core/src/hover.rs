@@ -3718,16 +3718,14 @@ mod tests
         use crate::position::Position;
         use crate::reading::Reading;
 
-        /// The sample: thirty-six sources, ranked by their BLAKE3 digest under
-        /// this name, at least one of each corpus class, and, in the companion,
+        /// The sample: seven sources, ranked by their BLAKE3 digest under this
+        /// name, at least one of each corpus class, and, in the companion,
         /// every source the change adds or modifies beside them
-        /// (`gandr-workflow-sweep`). Forty-eight ran 26 s to 31 s in
-        /// the enforcing checker shard, past its 30 s budget
-        /// as often as not (#4257); thirty-six keeps the slowest of those
-        /// runs near 24 s.
+        /// (`gandr-workflow-sweep`). Seven hold the sweep within the suite's
+        /// bound of a second a test.
         const SAMPLE: Sample = Sample {
             name: SampleName("every_corpus_tile_hovers_or_names_its_issue_1206"),
-            size: SampleSize(36),
+            size: SampleSize(7),
         };
 
         /// The nights the nightly profile takes to hover every source's tiles:

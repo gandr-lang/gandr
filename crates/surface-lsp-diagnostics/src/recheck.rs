@@ -2129,16 +2129,19 @@ mod tests
         use super::*;
 
         /// The sample of sources importing a sibling, each laid out after its
-        /// closure's lowering (`gandr-workflow-sweep`).
+        /// closure's lowering (`gandr-workflow-sweep`): four beside the first
+        /// of each class, which with [`ALONE`] hold the sweep within the
+        /// suite's bound of a second a test.
         const LAID: Sample = Sample {
             name: SampleName("a_recheck_keeps_the_table_its_hover_types_1521_laid"),
-            size: SampleSize(16),
+            size: SampleSize(4),
         };
 
-        /// The sample of sources standing alone (`gandr-workflow-sweep`).
+        /// The sample of sources standing alone (`gandr-workflow-sweep`): four
+        /// beside the first of each class.
         const ALONE: Sample = Sample {
             name: SampleName("a_recheck_keeps_the_table_its_hover_types_1521_alone"),
-            size: SampleSize(16),
+            size: SampleSize(4),
         };
 
         /// The nights the nightly profile takes to recheck every source: a

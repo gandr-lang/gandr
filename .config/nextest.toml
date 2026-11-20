@@ -27,6 +27,24 @@ slow-timeout = { period = "30s", terminate-after = 10 }
 filter = "test(=editor::scenarios::sweeps::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful) or test(=editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault) or test(=editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful)"
 threads-required = "num-test-threads"
 
+# The slowest tests start first, so the run ends sooner on a fixed count of
+# threads. The timing tool proposes these tables from measured times. Its
+# levels are 1, 2, 4 and 8 s, and the lowest is the bound of a second a test.
+#
+# One run of the whole suite under the `ci` profile gives these times. That
+# run holds the units of the slow tests, on a host of 32 threads at a load of
+# 46 to 50. A run that moves a test across a level's margin moves it in the
+# next proposal. A filter that names no test sets no priority, and the next
+# proposal drops it.
+# - see: `mise run ci:timing`, `crates/workflow-test-timing`, #8234, #8240
+[[profile.default.overrides]]
+filter = "test(=activity::tests::a_watcher_of_the_rows_hears_the_occupancy_move) or test(=cli::a_relay_reaches_only_a_hub_of_its_own_build) or test(=corpus::every_refusing_source_renders_as_its_golden) or test(=evaluate::tests::a_while_loop_runs_in_constant_continuation) or test(=evaluate::tests::a_while_loop_runs_in_constant_continuation_natively)"
+priority = 80
+
+[[profile.default.overrides]]
+filter = "test(=boundary::a_list_rust_holds_has_its_length_in_both_layouts) or test(=census::a_type_a_match_computes_reads_back_5383) or test(=census::an_inner_case_s_equation_types_read_back_5392) or test(=cli::a_host_interface_needs_the_import_of_its_module_4523) or test(=cli::a_language_server_stops_a_loop_at_the_server_s_budget_6325) or test(=cli::lsp_clients_share_one_engine_hub) or test(=comments::gate::the_fixture_matches_the_ledger) or test(=compose::tests::a_pasting_at_level_three_or_four_is_read_at_its_level_4431) or test(=corpus::sweeps::the_std_root_adds_one_lowering_per_module) or test(=corpus::the_identity_base_is_lowered_once_for_its_importers) or test(=corpus::the_identity_base_is_spelled_once_for_its_importers_595) or test(=e_graphs::each_first_order_block_saturates_to_its_normal_forms) or test(=e_graphs::each_ground_block_joins_exactly_what_completion_joins) or test(=environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476) or test(=evaluate::tests::a_loop_bound_to_an_inner_break_runs_in_constant_continuation) or test(=evaluate::tests::a_loop_bound_to_an_inner_break_runs_in_constant_continuation_natively) or test(=format::corpus_and_std_comment_words_keep_their_sequence_3589) or test(=forms::every_generated_edit_submits_as_the_walk_composes_it) or test(=forms::sweeps::every_corpus_edit_script_submits_as_the_walk_composes_it) or test(=hub::tests::an_attached_view_hears_the_pool_at_work) or test(=incremental::an_edit_judges_exactly_the_items_its_support_logs_separate) or test(=package::a_copy_of_the_standard_library_elsewhere_is_the_standard_library_7635) or test(=parity::sweeps::the_formatter_spells_each_declaration_as_the_printer_does_755) or test(=parity::sweeps::the_reflection_and_sheaf_printings_read_back_6084) or test(=parse::place::tests::a_resumed_copy_answers_as_a_fresh_one) or test(=parse::tests::hostile_edits_join_laid_as_whole) or test(=parse::tests::hostile_edits_reuse_only_equal_units) or test(=sharing_format::the_table_entry_boundary_accepts_under_and_refuses_over) or test(=teardown::a_spinal_deep_overlay_duplicates_and_tears_down_inside_a_small_stack) or test(=walk::walk_lengths_respect_the_chain_cap) or test(=widths::tests::each_description_compiles_on_each_target_8002)"
+priority = 70
+
 # The arm64 runner runs four tests at once in 16.7 GB. The dispatcher's
 # corpus walks need no group of their own since #4869 (#4854): a walk holds
 # 1.1 GB, and the shard peaks at 4.3 GB on a local four-thread run (#4874).

@@ -47,12 +47,12 @@ A reviewer reads the table, replaces the priority-setting overrides in `.config/
 
 | Priority | Boundary | Enters at or above | Leaves below |
 | -------: | -------: | -----------------: | -----------: |
-| 100 | 120 s | 150 s | 96 s |
-| 90 | 60 s | 75 s | 48 s |
-| 80 | 30 s | 37.5 s | 24 s |
-| 70 | 15 s | 18.75 s | 12 s |
+| 100 | 8 s | 10 s | 6.4 s |
+| 90 | 4 s | 5 s | 3.2 s |
+| 80 | 2 s | 2.5 s | 1.6 s |
+| 70 | 1 s | 1.25 s | 0.8 s |
 
-A test below a level enters it when its median reaches the boundary plus a quarter; a test at or above a level stays in it until its median falls below the boundary less a fifth. A median that wanders across a boundary between windows therefore leaves the level unchanged. A test proposed for no level runs at nextest's default of 0.
+The lowest boundary is the suite's bound of a second a test. Every test past it starts before the tests within it, and the slowest start first. A test below a level enters it when its median reaches the boundary plus a quarter. A test at or above a level stays in it until its median falls below the boundary less a fifth. A median that wanders across a boundary between windows therefore leaves the level unchanged. A test proposed for no level runs at nextest's default of 0.
 
 The summary is the lower median, the sample at position ⌊(n − 1) / 2⌋ in ascending order: a time a run actually took, and over five runs it ignores the two slowest. A row whose slowest and fastest samples differ by more than half the median is marked `unsteady`, and its level is the reviewer's decision.
 

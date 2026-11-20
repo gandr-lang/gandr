@@ -4785,6 +4785,14 @@ fi
 # `--hold "<reason>"` opens it held by the owner (#3253): a draft labelled
 # `hold:owner` with the reason commented (`pr:hold --owner`), unlinked,
 # which nothing lands until `pr:release`.
+#
+# `--findings` prints the findings of the body and stops before the gate.
+# The findings need no build, so a queue reads them in seconds before it
+# runs the gate.
+#
+# With `--findings` the task exits 0 with no refusal and 2 with one or more.
+# A `note:`, `wait:` or `arm:` line is no refusal. The task opens nothing,
+# pushes nothing, and writes the body file as the full task does.
 ["pr:open"]
 description = "Open the pull request on the server's top once its tree passes the landing's gate"
 usage = '''
@@ -4792,6 +4800,7 @@ arg "<title>" help="the pull request title: a conventional header"
 arg "<body>" help="the body file; a defect's observation block is written in place"
 flag "--unblocks <number>" help="the open pull request this fix unblocks: open on the trunk and queue on its own"
 flag "--hold <reason>" help="the owner holds it: open it as a draft labelled `hold:owner` (`pr:hold --owner`), unlinked"
+flag "--findings" help="print the findings of the body and stop before the gate: exit 0 with no refusal, 2 with one or more; open nothing"
 '''
 # `findings.jq` stops jq 1.8.2 at an assertion; the claim tasks pin 1.8.1.
 tools.jq = "1.8.1"
@@ -4917,6 +4926,12 @@ absorbing=$(jq -n --rawfile body "$body" --slurpfile issues <(printf '%s\n' "$is
   '{body: $body, issues: $issues[0], absorption: $absorption[0]}' | jq -r -L "$config_dir/bodies" -f "$config_dir/bodies/absorbing.jq")
 if [[ -n $absorbing ]]; then findings=${findings:+$findings$'\n'}$absorbing; fi
 rm -rf "$vaultdir"
+# `--findings` ends here, after the last rule of the body.
+if [[ ${usage_findings:-false} == true ]]; then
+  [[ -z "$findings" ]] || echo "$findings"
+  if [[ -n "$findings" ]] && grep -qvE '^(note|wait|arm): ' <<< "$findings"; then exit 2; fi
+  exit 0
+fi
 # A `wait:` line names a future event, never a refusal. When nothing else
 # refuses, the task prints it and its `arm:` line and exits 0. The seat
 # starts `pr:await`, and its exit wakes the seat to run `pr:open` again.

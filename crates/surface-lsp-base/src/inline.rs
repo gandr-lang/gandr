@@ -2854,15 +2854,16 @@ mod tests
         use super::super::Molder;
         use super::tools;
 
-        /// The sample: twenty-four sources, ranked by their BLAKE3 digest under
-        /// this name, at least one of each corpus class — `strict` and each
+        /// The sample: seven sources, ranked by their BLAKE3 digest under this
+        /// name, at least one of each corpus class — `strict` and each
         /// directory below `fixture` — and, in the companion, every source the
-        /// change adds or modifies beside them (`gandr-workflow-sweep`). The
-        /// `sweeps` profile reads every source, and the nightly profile
-        /// the night's slice of [`NIGHTS`].
+        /// change adds or modifies beside them (`gandr-workflow-sweep`). Seven
+        /// hold the sweep within the suite's bound of a second a test. The
+        /// `sweeps` profile reads every source, and the nightly profile the
+        /// night's slice of [`NIGHTS`].
         const SAMPLE: Sample = Sample {
             name: SampleName("every_corpus_cursor_has_a_ghost_text"),
-            size: SampleSize(24),
+            size: SampleSize(7),
         };
 
         /// The nights the nightly profile takes to read every source: a
