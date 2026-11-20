@@ -1571,6 +1571,82 @@
     }
   },
   {
+    "name": "an online runner on a loaded host leaves the suite on the hosted runner",
+    "program": "runner.jq",
+    "input": {
+      "capacity": "loaded",
+      "runners": [
+        {
+          "id": 2,
+          "name": "integration-runner",
+          "os": "Linux",
+          "status": "online",
+          "busy": false,
+          "labels": [
+            {
+              "id": 1,
+              "name": "self-hosted",
+              "type": "read-only"
+            },
+            {
+              "id": 5,
+              "name": "integration",
+              "type": "custom"
+            }
+          ]
+        }
+      ]
+    },
+    "output": {
+      "runner": "hosted",
+      "line": "The suite runs on the hosted runner: 1 online with the label integration, and their host is loaded."
+    }
+  },
+  {
+    "name": "an online runner on a free host runs the suite, and a word that is empty reads as free",
+    "program": "runner.jq",
+    "input": {
+      "capacity": "",
+      "runners": [
+        {
+          "id": 2,
+          "name": "integration-runner",
+          "os": "Linux",
+          "status": "online",
+          "busy": true,
+          "labels": [
+            {
+              "id": 1,
+              "name": "self-hosted",
+              "type": "read-only"
+            },
+            {
+              "id": 5,
+              "name": "integration",
+              "type": "custom"
+            }
+          ]
+        }
+      ]
+    },
+    "output": {
+      "runner": "integration",
+      "line": "The suite runs on the self-hosted runner: 1 online with the label integration."
+    }
+  },
+  {
+    "name": "a loaded host with no runner online gives the line of no runner",
+    "program": "runner.jq",
+    "input": {
+      "capacity": "loaded",
+      "runners": []
+    },
+    "output": {
+      "runner": "hosted",
+      "line": "The suite runs on the hosted runner: no runner with the label integration is online."
+    }
+  },
+  {
     "name": "an online runner with the label RISCV64 runs the riscv64 jobs, busy or not",
     "program": "riscv64.jq",
     "input": {

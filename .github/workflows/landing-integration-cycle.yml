@@ -149,6 +149,9 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           RUNNERS_TOKEN: ${{ steps.runners.outputs.token }}
+          # The host of the self-hosted runners writes this word from its
+          # own load, `free` or `loaded`.
+          INTEGRATION_RUNNER_CAPACITY: ${{ vars.INTEGRATION_RUNNER_CAPACITY }}
           GH_REPO: ${{ github.repository }}
           CYCLE_FILE: "true"
         run: mise run ci:cycle

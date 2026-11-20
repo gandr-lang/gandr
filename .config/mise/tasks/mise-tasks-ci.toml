@@ -1826,7 +1826,7 @@ if [[ $conflict != null ]]; then
   if [[ $start == true ]]; then say "No verdict names the tip of integration, so the suite starts there."; fi
 fi
 if [[ $start == true ]]; then
-  choice=$(runners | jq -c -s '{runners: .[0]}' | jq -c -f "$here/runner.jq")
+  choice=$(runners | jq -c -s --arg capacity "${INTEGRATION_RUNNER_CAPACITY:-}" '{runners: .[0], capacity: $capacity}' | jq -c -f "$here/runner.jq")
   say "$(jq -r .line <<< "$choice")"
   runner=$(jq -r .runner <<< "$choice")
   if [[ -z $write ]]; then
