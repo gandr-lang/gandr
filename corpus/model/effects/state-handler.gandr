@@ -1,0 +1,56 @@
+// This source tests handlers over the state theory.
+//
+// A scope fixes `S`. Clauses or a state model answer each operation.
+//
+// The kernel replays a scope as a free-model fold.
+//
+// - see: `state-model.gandr` — `Passing`
+
+// The theory `State.Eff`.
+import "./state.gandr";
+// `Passing`, the state-passing model of `State.Eff`.
+import "./state-model.gandr";
+
+/// `constant` returns four for every read. It ignores every store.
+@[runs("9")]
+def constant() -> Integer =
+  handle st : State.Eff with sort S = Integer {
+    let a = st.get;
+    st.put a;
+    let b = st.get;
+    pure a + b + 1
+  } with {
+    | pure(x) => pure x
+    | oper get(k) => k 4
+    | oper put(s, k) => k *{}
+  }
+
+/// `answeredByPassing` uses `Passing` as its state model.
+def answeredByPassing() -> Integer -> Integer =
+  handle st : State.Eff with sort S = Integer {
+    st.put 4;
+    let a = st.get;
+    let b = st.get;
+    pure fun (_s) { pure a * 10 + b }
+  } with Passing
+
+/// `answeredFromZero` runs the state model from zero.
+@[runs("44")]
+def answeredFromZero() -> Integer =
+  let f = answeredByPassing ()
+  f 0
+
+/// `answeredInScope` uses the sole state model in scope.
+def answeredInScope() -> Integer -> Integer =
+  handle st : State.Eff with sort S = Integer {
+    st.put 4;
+    let a = st.get;
+    let b = st.get;
+    pure fun (_s) { pure a * 10 + b }
+  }
+
+/// `inScopeFromZero` runs the in-scope model from zero.
+@[runs("44")]
+def inScopeFromZero() -> Integer =
+  let f = answeredInScope ()
+  f 0

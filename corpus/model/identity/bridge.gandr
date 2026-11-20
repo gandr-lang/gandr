@@ -1,0 +1,63 @@
+/// This source states parametric bridges between values.
+///
+/// A bridge relates endpoints but does not identify them.
+/// It has no reflexivity, transport, or eliminator.
+/// At the universe, a bridge is a relation between two types.
+/// At a type former, it lifts the relations of its parts.
+///
+/// The bridge fold reads a fibre from its carrier and endpoints.
+/// The checker uses that fibre to validate each bridge introduction.
+/// The fold reads a list cell by cell, a base type or a sum by its identity,
+/// and a function code by extensionality.
+///
+/// - see: corpus/pathological/identity/bridge.gandr
+/// - see: #3519 — bridge fold laws
+/// - cites: [Cavallo-2021-internal_parametricity_cubical_type_theory]
+///
+/// [Cavallo-2021-internal_parametricity_cubical_type_theory]: https://doi.org/10.46298/lmcs-17(4:5)2021 "Cavallo and Harper, Internal parametricity for cubical type theory"
+
+// The sealed points whose relation is their identity.
+import "./atom-identity.gandr";
+// The native finite lists.
+import std.list (List);
+
+/// The unit-string bridge has the total relation.
+def unitString : Bridge[.A = Type] Unit String = thunk {
+  fun (x : Unit) { fun (y : String) { return Unit } }
+};
+
+/// Equal integer lists have a cell-by-cell unit relation.
+def sameDigits : Bridge[.A = List Integer] #[1, 2] #[1, 2] = *{*{}, *{*{}, *{}}};
+
+/// Equal integers have the unit identity relation.
+def sameFour : Bridge 4 4 = *{};
+
+/// A signal has two states.
+data Signal : Type where
+  /// The halt state stops traffic.
+  | Halt : Signal
+  /// The pass state permits traffic.
+  | Pass : Signal
+
+/// The `toggle` function exchanges the signal states.
+def toggle(signal : Signal) -> Signal =
+  match signal where
+    | Halt => Pass
+    | Pass => Halt
+
+/// The `toggleTwice` function exchanges the signal states twice.
+def toggleTwice(signal : Signal) -> Signal =
+  toggle (toggle signal)
+
+/// The `steady` function returns its signal.
+def steady(signal : Signal) -> Signal =
+  signal
+
+/// The two functions agree at both signal states.
+def toggledTwice : Bridge toggleTwice steady = Path.funext toggleTwice steady;
+
+/// The sealed atom relation connects the two points.
+def originOtherBridge : Bridge Point.origin Point.other = *{};
+
+/// The atom reflexivity relates the origin to itself.
+def originHere : Bridge Point.origin Point.origin = Path.here Point.origin;

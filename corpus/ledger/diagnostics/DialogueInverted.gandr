@@ -1,0 +1,16 @@
+/// `DialogueInverted`: a dialogue that logs a receipt before the
+/// send it matches.
+
+// The native session formers.
+import std.session (Dialogue);
+
+/// A protocol that sends one string and ends.
+module Ask where
+  type Asking = String >! end;
+
+@[refuses("DialogueInverted")]
+def foretold : Dialogue Ask.Asking = dialogue
+  (right (received "yes"))
+  (left (sent "yes"))
+  (left closed)
+  (right closed);
