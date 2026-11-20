@@ -1,0 +1,14 @@
+error[UndescribedMember.SpiderBudget]: this member is a circuit rule whose tied spider legs need more trials than the budget holds
+   ╭▸ corpus/ledger/diagnostics/UndescribedMember.SpiderBudget.gandr:12:3
+   │
+12 │ ┏   rule fan : (data x : Q) <=> (
+13 │ ┃     o1 : Q,
+14 │ ┃     o2 : Q,
+15 │ ┃     o3 : Q,
+   ┆ ┇
+27 │ ┃     node : f(x) --> (o7);
+28 │ ┃   };
+   │ ┗━━━┛ a member the description does not read
+   │
+   ├ note: `Fan` is refused with UndescribedMember.SpiderBudget, as its expectation states
+   ╰ help: split the rule into rules with fewer tied legs

@@ -1,0 +1,8 @@
+/// `bare_update_field`: the retired field of a record update written with no
+/// dot, `*{ r | l = e }`. A field of an update supplies a name, so it writes
+/// the dot, `*{ r | .l = e }`. The lowering refuses the undotted field, and
+/// the refusal names it.
+type Config = *{host : String, port : Integer};
+def local : Config = *{.host = "localhost", .port = 443};
+@[refuses("RetiredSpelling.bare_update_field")]
+def secured : Config = *{local | port = 8443};
