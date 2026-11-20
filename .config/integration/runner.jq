@@ -7,11 +7,23 @@
 # at a time. Any other input gives the hosted runner, so no suite waits for
 # a runner that is offline.
 #
+# The input also holds `capacity`, the word of the repository variable
+# `INTEGRATION_RUNNER_CAPACITY`. The host of the self-hosted runners writes
+# it from its own load: `free` or `loaded`. A runner on a loaded host takes
+# the processors of the work there. So the word `loaded` gives the hosted
+# runner.
+#
+# The host stops no runner for it. A stop loses each job that the runner
+# takes at that moment. The rule reads each other word as `free`, and no
+# word too. So a variable that is absent changes nothing.
+#
 # The output is the value of landing-checks.yml's input `runner`, `integration` or
 # `hosted`, and one line. The line counts the runners and names none, since
 # a runner's name can name its host.
 [.runners // [] | .[] | select(.status == "online" and any(.labels[]; .name == "integration"))] as $online
-| if $online != [] then
+| if $online != [] and .capacity == "loaded" then
+    {runner: "hosted", line: "The suite runs on the hosted runner: \($online | length) online with the label integration, and their host is loaded."}
+  elif $online != [] then
     {runner: "integration", line: "The suite runs on the self-hosted runner: \($online | length) online with the label integration."}
   elif .runners == null then
     {runner: "hosted", line: "The suite runs on the hosted runner: the cycle cannot read the self-hosted runners."}

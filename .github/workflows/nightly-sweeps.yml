@@ -255,9 +255,12 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.runners.outputs.token }}
+          # The host of the self-hosted runners writes this word from its
+          # own load, `free` or `loaded`.
+          INTEGRATION_RUNNER_CAPACITY: ${{ vars.INTEGRATION_RUNNER_CAPACITY }}
         run: |
           gh api "repos/$GH_REPO/actions/runners?per_page=100" --jq '{runners}' > "$RUNNER_TEMP/runners.json"
-          jq -c -f .config/integration/runner.jq "$RUNNER_TEMP/runners.json" | jq -r '"runner=\(.runner)", "line=\(.line)"' >> "$GITHUB_OUTPUT"
+          jq -c --arg capacity "$INTEGRATION_RUNNER_CAPACITY" '. + {capacity: $capacity}' "$RUNNER_TEMP/runners.json" | jq -c -f .config/integration/runner.jq | jq -r '"runner=\(.runner)", "line=\(.line)"' >> "$GITHUB_OUTPUT"
           jq -c -f .config/integration/riscv64.jq "$RUNNER_TEMP/runners.json" | jq -r '"riscv64=\(.online)", "riscv64_line=\(.line)"' >> "$GITHUB_OUTPUT"
       - name: say the night's runner and whether the riscv64 jobs run
         env:
