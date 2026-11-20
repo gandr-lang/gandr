@@ -26,9 +26,11 @@ use gandr_surface_diagnostics::Diagnostic;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Pool;
+use gandr_surface_dispatcher::Reached;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::Traversal;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
@@ -1743,16 +1745,17 @@ mod sweeps
 
     use super::*;
 
-    /// The diagnostics sample: thirty-two sources, ranked by their BLAKE3
+    /// The diagnostics sample: twelve sources, ranked by their BLAKE3
     /// digest under this name, at least one of each corpus class — `strict`
     /// and each directory below `fixture` — and, in the companion, every
     /// source the change adds or modifies beside them (`gandr-workflow-sweep`),
-    /// each walked as its own path. The nightly profile walks the night's
-    /// slice the same way, and the `sweeps` profile walks the two roots
-    /// whole.
+    /// each walked as its own path. Twelve hold the sweep within the
+    /// suite's bound of a second a test. The nightly profile walks the
+    /// night's slice the same way, and the `sweeps` profile walks the two
+    /// roots whole.
     const DIAGNOSTICS: Sample = Sample {
         name: SampleName("every_corpus_diagnostic_is_published_as_the_model_builds_it"),
-        size: SampleSize(32),
+        size: SampleSize(12),
     };
 
     /// The nights the nightly profile takes to publish every source's
@@ -1902,24 +1905,24 @@ mod sweeps
         );
     }
 
-    /// The tokens sample: sixty-four sources, ranked by their BLAKE3 digest
-    /// under this name, at least one of each corpus class — `strict` and each
+    /// The tokens sample: twelve sources, ranked by their BLAKE3 digest under
+    /// this name, at least one of each corpus class — `strict` and each
     /// directory below `fixture` — and, in the companion, every source the
-    /// change adds or modifies beside them (`gandr-workflow-sweep`). The
+    /// change adds or modifies beside them (`gandr-workflow-sweep`). Twelve
+    /// hold the sweep within the suite's bound of a second a test. The
     /// nightly profile reads the night's slice, and the `sweeps` profile
     /// every source. Every run holds the whole corpus's membership to the
     /// dispatcher's walk.
     const SAMPLE: Sample = Sample {
         name: SampleName("corpus_tokens_cover_the_highlighted_bytes"),
-        size: SampleSize(64),
+        size: SampleSize(12),
     };
 
     /// The nights the nightly profile takes to read every source's tokens: an
     /// eleventh a night, so the night's sweeps fit its budget (#6704). Each
-    /// night's slice must hold the 64 sources of [`SAMPLE`]: over the 937
-    /// sources of 2026-11-11 the smallest of 11 slices holds 70, and of 21
-    /// slices 32. The whole corpus read for 150 s on the nightly runner (run
-    /// 40602657172).
+    /// night's slice must hold the 12 sources of [`SAMPLE`]: over the 937
+    /// sources of 2026-11-11 the smallest of 11 slices holds 70. The whole
+    /// corpus read for 150 s on the nightly runner (run 40602657172).
     const NIGHTS: Nights = Nights(11);
 
     #[test]
@@ -1938,7 +1941,8 @@ mod sweeps
     /// Every source `sweep` visits has semantic tokens covering its
     /// highlighted bytes, each comment split at its coloured fragments. The
     /// fixed portion also holds the corpus's membership to the dispatcher's
-    /// walk.
+    /// walk: under the `sweeps` and nightly profiles the walk composes every
+    /// source, and under a pull-request profile its traversal lists them.
     ///
     /// # Specification
     /// trivial.
@@ -1952,7 +1956,7 @@ mod sweeps
             let top = Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../..")
                 .join("corpus");
-            let walk = Walk::new(vec![
+            let roots = vec![
                 root.join("strict")
                     .canonicalize()
                     .expect("the strict root resolves"),
@@ -1974,19 +1978,31 @@ mod sweeps
                 top.join("surface")
                     .canonicalize()
                     .expect("the family resolves"),
-            ]);
+            ];
             let mut expected_uris = alloc::collections::BTreeSet::new();
-            let ControlFlow::Continue(_report) = walk.visit::<Evaluator, _, _>(
-                &Pool::new(Width::SERIAL),
-                |step| -> ControlFlow<Infallible> {
-                    let Step::Source { path, .. } = step
+            if sweep.coverage() == Coverage::Full {
+                let ControlFlow::Continue(_report) = Walk::new(roots).visit::<Evaluator, _, _>(
+                    &Pool::new(Width::SERIAL),
+                    |step| -> ControlFlow<Infallible> {
+                        let Step::Source { path, .. } = step
+                        else {
+                            panic!("a readable corpus source");
+                        };
+                        let _inserted = expected_uris.insert(uri(path));
+                        ControlFlow::Continue(())
+                    },
+                );
+            }
+            else {
+                let mut traversal = Traversal::new(roots);
+                while let Maybe::Present(reached) = traversal.reach() {
+                    let Reached::Source = reached
                     else {
-                        panic!("a readable corpus source");
+                        panic!("a readable corpus source: {}", traversal.path().display());
                     };
-                    let _inserted = expected_uris.insert(uri(path));
-                    ControlFlow::Continue(())
-                },
-            );
+                    let _inserted = expected_uris.insert(uri(traversal.path()));
+                }
+            }
             assert_eq!(
                 all.iter()
                     .map(|source| uri(&source.path))

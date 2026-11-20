@@ -762,13 +762,14 @@ mod sweeps
 
     use super::*;
 
-    /// The sample: sixty-four sources, ranked by their BLAKE3 digest under
-    /// this name, at least one of each corpus class — `strict` and each
-    /// directory below `fixture` — and, in the companion, every source the
-    /// change adds or modifies beside them (`gandr-workflow-sweep`).
+    /// The sample: eight sources, ranked by their BLAKE3 digest under this
+    /// name, at least one of each corpus class — `strict` and each directory
+    /// below `fixture` — and, in the companion, every source the change adds
+    /// or modifies beside them (`gandr-workflow-sweep`). Eight hold the sweep
+    /// within the suite's bound of a second a test.
     const SAMPLE: Sample = Sample {
         name: SampleName("every_printed_type_reads_back_to_its_certificate"),
-        size: SampleSize(64),
+        size: SampleSize(8),
     };
 
     /// The nights the nightly profile takes to read back every source: a

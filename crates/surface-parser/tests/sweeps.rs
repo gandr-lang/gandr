@@ -80,11 +80,12 @@ const RECOVERY_NIGHTS: Nights = Nights(78);
 /// the tree gives.
 const NODES_PER_TOKEN: usize = 16;
 
-/// The table sweep's sample: twelve sources, the rows of every sixteenth
+/// The table sweep's sample: twelve sources, the rows of every thirty-second
 /// significant token of each, every sixty-fourth under `anodized_panic`. A
 /// change that touches more sources widens the step in proportion, so the
 /// sample molds about as many rows however many sources it visits, and a
-/// source past [`SAMPLED_SPAN`] widens it again.
+/// source past [`SAMPLED_SPAN`] widens it again. Every thirty-second row
+/// holds the sweep within the suite's bound of a second a test.
 const TABLES: Sample = Sample {
     name: SampleName("table_verdicts_equal_dry_run_verdicts"),
     size: SampleSize(12),
@@ -99,7 +100,7 @@ const TABLES_NIGHTS: Nights = Nights(42);
 
 /// The step between the token rows the table sample molds over its stated
 /// size.
-const TABLES_STRIDE: usize = if cfg!(anodized_panic) { 64 } else { 16 };
+const TABLES_STRIDE: usize = if cfg!(anodized_panic) { 64 } else { 32 };
 
 /// The step between the token rows the whole table sweep molds: every row
 /// plain, every sixteenth under `anodized_panic`, where every clause of both

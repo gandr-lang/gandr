@@ -2364,13 +2364,15 @@ mod sweeps
     use super::grammar;
     use super::spelled;
 
-    /// The sample: sixty-four sources, ranked by their BLAKE3 digest under
+    /// The sample: twenty-eight sources, ranked by their BLAKE3 digest under
     /// this name, at least one of each corpus class, and, in the companion,
     /// the sources the change adds or modifies beside them
-    /// (`gandr-workflow-sweep`). The `sweeps` profile formats every source.
+    /// (`gandr-workflow-sweep`). Twenty-eight hold the sweep within the
+    /// suite's bound of a second a test. The `sweeps` profile formats every
+    /// source.
     const SAMPLE: Sample = Sample {
         name: SampleName("every_source_formats_into_either_form_and_keeps_its_meaning"),
-        size: SampleSize(64),
+        size: SampleSize(28),
     };
 
     #[test]

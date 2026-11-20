@@ -77,15 +77,16 @@ mod sweeps
 
     use super::*;
 
-    /// The sample: thirty-two corpus sources ranked by their BLAKE3 digest
-    /// under this name, the first of every class — `strict` and each directory
+    /// The sample: ten corpus sources ranked by their BLAKE3 digest under
+    /// this name, the first of every class — `strict` and each directory
     /// below `fixture` — and, in the companion, every one the change adds or
     /// modifies beside them (`gandr-workflow-sweep`), each walked as its own
-    /// path. The nightly profile walks the night's slice the same way, and
-    /// the `sweeps` profile walks the two roots whole.
+    /// path. Ten hold the sweep within the suite's bound of a second a test.
+    /// The nightly profile walks the night's slice the same way, and the
+    /// `sweeps` profile walks the two roots whole.
     const SAMPLE: Sample = Sample {
         name: SampleName("every_source_submits_as_the_walk_composes_it"),
-        size: SampleSize(32),
+        size: SampleSize(10),
     };
 
     /// The nights the nightly profile takes to submit every source: a

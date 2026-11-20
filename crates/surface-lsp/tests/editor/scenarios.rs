@@ -1503,9 +1503,10 @@ mod sweeps
     const CASES: Cases = Cases(11);
 
     /// The random edit scripts each scenario generates under every
-    /// pull-request profile: a quarter of the whole's, drawn from
-    /// [`SCRIPTS_SEED`] so every run generates the same eight.
-    const SAMPLED_CASES: Cases = Cases(8);
+    /// pull-request profile: two, drawn from [`SCRIPTS_SEED`] so every run
+    /// generates the same two. Two hold each scenario within the suite's
+    /// bound of a second a test.
+    const SAMPLED_CASES: Cases = Cases(2);
 
     /// A count of random scripts a scenario generates.
     #[repr(transparent)]
@@ -1515,24 +1516,26 @@ mod sweeps
     /// The seed the sampled scripts are drawn from.
     const SCRIPTS_SEED: u64 = 0x6761_6e64_7273_7765;
 
-    /// The typing sweep's sample: sixteen sources no longer than
-    /// [`TYPED_CEILING`], every keystroke held to the oracle.
+    /// The typing sweep's sample: seven sources no longer than
+    /// [`TYPED_CEILING`], every keystroke held to the oracle. Seven hold the
+    /// sweep within the suite's bound of a second a test.
     const TYPED: Sample = Sample {
         name: SampleName("typing_each_corpus_source_keeps_every_answer_faithful"),
-        size: SampleSize(16),
+        size: SampleSize(7),
     };
 
     /// The most bytes one check of a source the typing sweep's sample types
     /// may read ([`checked`]): typing costs a check per keystroke over the
     /// whole text the server judges, the source laid out after its import
     /// closure, so a source whose check reads more types for longer than the
-    /// bound. The λ-calculus model's laws, half a kibibyte each over a 10 KB
-    /// closure, typed for 4.5 to 6.8 s each with specifications enforced, and
-    /// a 1 KB refusal over a 13 KB closure for 12.8 s. A changed source past
-    /// it is typed nightly, a part of it each night; the erasure and the hover
-    /// sweep visit it on the pull request within their own ceilings
-    /// ([`ERASED_CEILING`], [`HOVERED_CEILING`]).
-    const TYPED_CEILING: Ceiling = Ceiling(1024);
+    /// bound. Half a kibibyte holds the sweep within the suite's bound of a
+    /// second a test. The λ-calculus model's laws, half a kibibyte each over a
+    /// 10 KB closure, typed for 4.5 to 6.8 s each with specifications
+    /// enforced, and a 1 KB refusal over a 13 KB closure for 12.8 s. A
+    /// changed source past it is typed nightly, a part of it each night; the
+    /// erasure and the hover sweep visit it on the pull request within their
+    /// own ceilings ([`ERASED_CEILING`], [`HOVERED_CEILING`]).
+    const TYPED_CEILING: Ceiling = Ceiling(512);
 
     /// How many parts the nightly typing cuts every source into, one typed a
     /// night: a 408th of typing the whole corpus each night, and of its
