@@ -9,6 +9,6 @@ case "$1 $2" in
   'run download')
     for dir; do :; done
     mkdir -p "$dir/junit-cargo-test-enforcing/ci-enforcing"
-    printf '<testsuites><testsuite name="s"><testcase classname="gandr-a" name="slow::t" time="%s"/></testsuite></testsuites>\n' "$(( $3 * 20 ))" > "$dir/junit-cargo-test-enforcing/ci-enforcing/junit.xml" ;;
+    printf '<testsuites><testsuite name="s"><testcase classname="gandr-a" name="slow::t" time="%s"/></testsuite></testsuites>\n' "$3" > "$dir/junit-cargo-test-enforcing/ci-enforcing/junit.xml" ;;
   *) echo "unexpected: $*" >&2; exit 2 ;;
 esac

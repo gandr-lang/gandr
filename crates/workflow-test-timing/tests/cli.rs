@@ -3,7 +3,7 @@
 //! Each case builds a store and a configuration in its own scratch directory.
 //! The fetching cases put the fake `gh` of `tests/fakes` first on the path: it
 //! logs every invocation, lists runs 9 and 7, and writes one enforcing report
-//! per downloaded run whose test took twenty seconds per unit of the run's
+//! per downloaded run whose test took one second per unit of the run's
 //! identifier.
 //!
 //! The fake is a file of the tree, never written per case: macOS assesses an
@@ -25,7 +25,7 @@ use gandr_kernel_data::SmallVec;
 /// `slow::t` taking the placeholder's seconds.
 const ENFORCING: &str = "<testsuites><testsuite name=\"s\">\
         <testcase classname=\"gandr-a\" name=\"slow::t\" time=\"SLOW\"/>\
-        <testcase classname=\"gandr-a\" name=\"parse::was_slow\" time=\"2.0\"/>\
+        <testcase classname=\"gandr-a\" name=\"parse::was_slow\" time=\"0.5\"/>\
         <testcase classname=\"gandr-a\" name=\"fast::t\" time=\"0.1\"/>\
         </testsuite></testsuites>";
 
@@ -79,7 +79,7 @@ fn a_report_reads_the_newest_stored_runs()
             "runs: 103, 102\n\n\
                  test             median  fastest  slowest  runs  current  proposed  lane\n\
                  slow::t           160.0    160.0    170.0     2        0       100  junit-cargo-test-enforcing\n\
-                 parse::was_slow     2.0      2.0      2.0     2       90         0  junit-cargo-test-enforcing\n\
+                 parse::was_slow     0.5      0.5      0.5     2       90         0  junit-cargo-test-enforcing\n\
                  \n\
                  # Proposed priority overrides: these replace the `[[profile.default.overrides]]`\n\
                  # tables of {} that set `priority`.\n\
@@ -134,7 +134,7 @@ fn times_print_each_test_by_its_slowest_lane()
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
         "junit-cargo-test-plain-only\tgandr-a\tfast::t\t3.000\n\
-         junit-cargo-test-enforcing-shard-2\tgandr-a\tparse::was_slow\t2.000\n\
+         junit-cargo-test-enforcing-shard-2\tgandr-a\tparse::was_slow\t0.500\n\
          junit-cargo-test-enforcing-shard-2\tgandr-a\tslow::t\t12.500\n",
         "the newest run alone, each test once, by the lane it held longest"
     );
@@ -297,7 +297,7 @@ fn fetched_runs_are_stored_and_read_back()
     );
     assert!(
         stdout.ends_with("filter = \"test(=slow::t)\"\npriority = 90\n\n"),
-        "a median of 140 s enters 90 and falls short of 100's 150 s: {stdout}"
+        "a median of 7 s enters 90 and falls short of 100's 10 s: {stdout}"
     );
     let mut stored: SmallVec<_, 0, Global> = std::fs::read_dir(fake.root.join("store"))
         .unwrap()
