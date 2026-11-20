@@ -26,6 +26,11 @@
 # group run the same list, so one list serves both.
 # - see: #5458, #8224, `check:landing-queue`
 #
+# The gate also runs `check:prose`. The hosted run of a pull request holds
+# that check, and the list of the merge group does not. Without it a head
+# passes the gate and fails the hosted run.
+# - see: #8230
+#
 # A rebase by the stack tool asks for no gate, since the hosted run of the
 # new head is the proof. The integration cycle runs each other check before
 # `main` moves, and it repairs in batches. `gate:all` runs each check over
@@ -74,7 +79,7 @@
 # record names the compiler, and one that differs from the tree's pin leaves
 # dead units. The first gate under a new pin builds cold anyway.
 [check]
-description = "The landing's gate: the cheap set of landing, which is the list of check:landing, over the packages the change reaches, in one of the host's gate slots"
+description = "The landing's gate: the cheap set of landing, which is the list of check:landing, and the prose check of a pull request, over the packages the change reaches, in one of the host's gate slots"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 usage = '''
@@ -90,7 +95,7 @@ if [[ ${usage_no_wait:-false} == true ]]; then export GATE_NO_WAIT=1; fi
 .config/mise/target-pin.bash
 tree=$(.config/gate-scope/passed.bash tree)
 gate_tree=$tree
-checks=(check:landing)
+checks=(check:landing check:prose)
 hold_gate_slot "mise run check"
 gate_bound
 # The gate fetches workspace sources once before fast checks fork.
@@ -98,7 +103,7 @@ gate_bound
 # The checkout stands after this fetch, and no check writes it during the run.
 cargo fetch --locked --quiet || { echo "check: cargo fetch --locked failed, so no check runs (#7492)" >&2; exit 1; }
 echo "check: gate slot $gate_slot of $gate_slots in the lane $gate_lane after $gate_wait_lane s for the lane and $gate_wait_slot s for the slot, $gate_jobs build jobs" >&2
-echo "check: the landing's gate runs the cheap set, the list of check:landing; the integration cycle and \`mise run gate:all\` run every check" >&2
+echo "check: the landing's gate runs the cheap set, the list of check:landing, and check:prose; the integration cycle and \`mise run gate:all\` run every check" >&2
 GATE_SCOPE=$(.config/gate-scope/scope.bash)
 export GATE_SCOPE
 # The base of the change, which `check:format` reads the change against
