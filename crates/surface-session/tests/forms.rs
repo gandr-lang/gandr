@@ -57,10 +57,13 @@ use crate::large::script;
 /// enforced, whose checks multiply a submission's cost about fortyfold.
 const CASES: u32 = if cfg!(anodized_panic) { 6 } else { 24 };
 
-/// The large script's module: two thousand forms, or thirty-two where
+/// The large script's module: a hundred and twenty-eight forms, sixteen
+/// times the most forms an edit after the first may mold, or thirty-two where
 /// specifications are enforced, so that lane runs every edit class through
-/// every checked clause within its time limit on the smallest runner.
-const LARGE: usize = if cfg!(anodized_panic) { 32 } else { 2_000 };
+/// every checked clause within its time limit on the smallest runner. Each
+/// revision composes the module whole beside the session, so the module's
+/// size sets the test's time.
+const LARGE: usize = if cfg!(anodized_panic) { 32 } else { 128 };
 
 /// Submit `text` to `incremental` and assert it reports what the walk's
 /// composition and a fresh session's submission of the same text report.
