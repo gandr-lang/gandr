@@ -1839,68 +1839,116 @@ fn a_recursive_thunk_computes_through_its_own_binding()
     );
 }
 
-/// Three loops that never end run until their 2²⁵ jumps are spent, filling
-/// no region: `fix x. force x`; `fix o. fix i. force o`, an inner loop left
-/// for the outer one, as a `break` commuted to the outer `continue` leaves
-/// it; and `(fix f. λn. fix k. (force f) n) ()`, a function tail-calling
-/// itself from inside a loop. Each pass's window is given back as its call
-/// begins, so neither the heap nor the window region grows. The contrast
-/// `fix x. (y ← force x; return y)` holds one frame a pass, and the window
-/// it resumes in, and fills the frame region within the same jumps.
-#[test]
-fn a_loop_holds_no_frame_across_its_iterations()
+/// The jumps each loop of [`runs_out`] runs: 2²³. The contrast fills the
+/// frame region at its 2²²and jump, so a loop that held one frame a pass would
+/// fill the frames within these jumps.
+const LOOP_JUMPS: usize = 1 << 23_u32;
+
+/// A loop that never ends, of [`runs_out`].
+#[derive(Clone, Copy, Debug)]
+enum Loop
+{
+    /// `fix x. force x`.
+    Plain,
+    /// `fix x. (y ← force x; return y)`, the contrast: one frame a pass.
+    Holding,
+    /// `fix o. fix i. force o`, an inner loop left for the outer one, as a
+    /// `break` commuted to the outer `continue` leaves it.
+    Nested,
+    /// `(fix f. λn. fix k. (force f) n) ()`, a function tail-calling itself
+    /// from inside a loop.
+    Calling,
+}
+
+/// Run `shape` for [`LOOP_JUMPS`] jumps and assert how it runs out: a loop
+/// that holds no frame spends its jumps, filling no region, as each pass's
+/// window is given back as its call begins. The contrast holds one frame a
+/// pass, and the window it resumes in, and fills the frame region first.
+///
+/// # Specification
+/// trivial.
+fn runs_out(shape: Loop)
 {
     let mut core = CoreArena::new();
     let itself = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let reentry = core.computation_force(itself);
-    let plain = core.computation_fixpoint(reentry, gandr_kernel_term::FixpointEvidence::Partial);
-    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let answered = core.computation_return(bound);
-    let held = core.computation_bind(reentry, answered);
-    let holding = core.computation_fixpoint(held, gandr_kernel_term::FixpointEvidence::Partial);
-    let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
-    let continued = core.computation_force(outer);
-    let inner = core.computation_fixpoint(continued, gandr_kernel_term::FixpointEvidence::Partial);
-    let nested = core.computation_fixpoint(inner, gandr_kernel_term::FixpointEvidence::Partial);
-    let own = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
-    let argument = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
-    let forced = core.computation_force(own);
-    let call = core.computation_application(forced, argument);
-    let looping = core.computation_fixpoint(call, gandr_kernel_term::FixpointEvidence::Partial);
-    let function = core.computation_lambda(looping);
-    let recursive = core.computation_fixpoint(
-        function,
-        gandr_kernel_term::FixpointEvidence::StructuralDescent,
+    let program = match shape {
+        Loop::Plain => {
+            core.computation_fixpoint(reentry, gandr_kernel_term::FixpointEvidence::Partial)
+        },
+        Loop::Holding => {
+            let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            let answered = core.computation_return(bound);
+            let held = core.computation_bind(reentry, answered);
+            core.computation_fixpoint(held, gandr_kernel_term::FixpointEvidence::Partial)
+        },
+        Loop::Nested => {
+            let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+            let continued = core.computation_force(outer);
+            let inner =
+                core.computation_fixpoint(continued, gandr_kernel_term::FixpointEvidence::Partial);
+            core.computation_fixpoint(inner, gandr_kernel_term::FixpointEvidence::Partial)
+        },
+        Loop::Calling => {
+            let own = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+            let argument = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+            let forced = core.computation_force(own);
+            let call = core.computation_application(forced, argument);
+            let looping =
+                core.computation_fixpoint(call, gandr_kernel_term::FixpointEvidence::Partial);
+            let function = core.computation_lambda(looping);
+            let recursive = core.computation_fixpoint(
+                function,
+                gandr_kernel_term::FixpointEvidence::StructuralDescent,
+            );
+            let unit = core.value_unit();
+            core.computation_application(recursive, unit)
+        },
+    };
+    let spent = Budget::from(LOOP_JUMPS);
+    let exhausted = match shape {
+        Loop::Holding => Declined::Exhausted(Status::FramesExhausted),
+        Loop::Plain | Loop::Nested | Loop::Calling => Declined::Spent(spent),
+    };
+    let mut arena = CommandArena::new();
+    let command = focus_computation(
+        &core,
+        program,
+        &mut arena,
+        &mut Provenance::new(),
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("a closed term focuses");
+    let run = ran(&arena, &Definitions::new(), command, spent);
+    assert!(
+        matches!(run, Err(declined) if declined == exhausted),
+        "{shape:?} runs out by {exhausted:?}: {}",
+        fingerprint(&run)
     );
-    let unit = core.value_unit();
-    let calling = core.computation_application(recursive, unit);
-    let spent = Budget::from(1_usize << 25_u32);
-    for (program, shape, exhausted) in [
-        (plain, "a loop", Declined::Spent(spent)),
-        (
-            holding,
-            "a loop holding a frame",
-            Declined::Exhausted(Status::FramesExhausted),
-        ),
-        (nested, "a nested loop", Declined::Spent(spent)),
-        (calling, "a tail call inside a loop", Declined::Spent(spent)),
-    ] {
-        let mut arena = CommandArena::new();
-        let command = focus_computation(
-            &core,
-            program,
-            &mut arena,
-            &mut Provenance::new(),
-            &gandr_core_sequent::Writers::NONE,
-        )
-        .expect("a closed term focuses");
-        let run = ran(&arena, &Definitions::new(), command, spent);
-        assert!(
-            matches!(run, Err(declined) if declined == exhausted),
-            "{shape} runs out by {exhausted:?}: {}",
-            fingerprint(&run)
-        );
-    }
+}
+
+#[test]
+fn a_loop_holds_no_frame_across_its_iterations()
+{
+    runs_out(Loop::Plain);
+}
+
+#[test]
+fn a_loop_holding_a_frame_fills_the_frames_within_the_jumps()
+{
+    runs_out(Loop::Holding);
+}
+
+#[test]
+fn a_nested_loop_holds_no_frame_across_its_iterations()
+{
+    runs_out(Loop::Nested);
+}
+
+#[test]
+fn a_tail_call_inside_a_loop_holds_no_frame_across_its_iterations()
+{
+    runs_out(Loop::Calling);
 }
 
 /// `((λ. λ. return x1) 1) 2` binds each argument at its own binder.
