@@ -1940,13 +1940,14 @@ mod sweeps
     use super::laid;
     use super::misses;
 
-    /// The sample: sixty-four sources, ranked by their BLAKE3 digest under
-    /// this name, at least one of each corpus class, and, in the companion,
-    /// every source the change adds or modifies beside them
-    /// (`gandr-workflow-sweep`).
+    /// The sample: sixteen sources, ranked by their BLAKE3 digest under this
+    /// name, at least one of each corpus class, and, in the companion, every
+    /// source the change adds or modifies beside them
+    /// (`gandr-workflow-sweep`). Sixteen hold the sweep within the suite's
+    /// bound of a second a test.
     const SAMPLE: Sample = Sample {
         name: SampleName("the_formatter_spells_each_form_as_the_printer_does_755"),
-        size: SampleSize(64),
+        size: SampleSize(16),
     };
 
     /// The nights the nightly profile takes to compare every source's forms:
@@ -1996,11 +1997,12 @@ mod sweeps
         assert!(all.is_empty(), "{} misses:\n{}", all.len(), all.join("\n"));
     }
 
-    /// The body parity's sample: sixty-four sources no longer than
-    /// [`BODIES_CEILING`], drawn as [`SAMPLE`] is.
+    /// The body parity's sample: eight sources no longer than
+    /// [`BODIES_CEILING`], drawn as [`SAMPLE`] is. Eight hold the sweep within
+    /// the suite's bound of a second a test.
     const BODIES: Sample = Sample {
         name: SampleName("the_formatter_spells_each_declaration_as_the_printer_does_755"),
-        size: SampleSize(64),
+        size: SampleSize(8),
     };
 
     /// The nights the nightly profile takes to compare every source's
@@ -2010,14 +2012,15 @@ mod sweeps
     const BODIES_NIGHTS: Nights = Nights(21);
 
     /// The most bytes of text a source of the body parity's sample lays out,
-    /// its import closure then itself: 16 KiB. The parity lowers that text
-    /// seven times and formats it four, so its cost grows with the closure,
-    /// not the source: the λ-calculus model's lemmas, 19 to 42 KB laid out,
-    /// take a quarter to four fifths of a second each in a test build, as
+    /// its import closure then itself: 8 KiB, which holds the sweep within the
+    /// suite's bound of a second a test. The parity lowers that text seven
+    /// times and formats it four, so its cost grows with the closure, not the
+    /// source: the λ-calculus model's lemmas, 19 to 42 KB laid out, take a
+    /// quarter to four fifths of a second each in a test build, as
     /// `univalence.gandr` does at 19 KB, and most of the corpus under 16 KB
     /// takes under a tenth. The whole corpus, those included, runs in about
     /// ten seconds under the `sweeps` profile.
-    const BODIES_CEILING: usize = 0x4000;
+    const BODIES_CEILING: usize = 0x2000;
 
     #[test]
     fn the_formatter_spells_each_declaration_as_the_printer_does_755()

@@ -477,14 +477,15 @@ mod sweeps
 
     use super::*;
 
-    /// The sample: twenty-four corpus sources ranked by their BLAKE3 digest
-    /// under this name, the first of every class, and, in the companion, every
+    /// The sample: eight corpus sources ranked by their BLAKE3 digest under
+    /// this name, the first of every class, and, in the companion, every
     /// one the change adds or modifies beside them (`gandr-workflow-sweep`).
+    /// Eight hold the sweep within the suite's bound of a second a test.
     /// The `sweeps` profile scripts every source; the nightly profile
     /// scripts the night's slice of [`NIGHTS`].
     const SAMPLE: Sample = Sample {
         name: SampleName("every_corpus_edit_script_submits_as_the_walk_composes_it"),
-        size: SampleSize(24),
+        size: SampleSize(8),
     };
 
     /// The nights the nightly profile takes to script every source: a
@@ -495,11 +496,12 @@ mod sweeps
     const NIGHTS: Nights = Nights(21);
 
     /// The longest source text, its import closure laid out before it, a
-    /// sampled run scripts. A script submits the text ten times, and where
-    /// specifications are enforced the corpus's longest sources (35 to 88
-    /// KiB) take two to three seconds each, where its median source takes
+    /// sampled run scripts: 6 KiB, which holds the sweep within the suite's
+    /// bound of a second a test. A script submits the text ten times, and
+    /// where specifications are enforced the corpus's longest sources (35 to
+    /// 88 KiB) take two to three seconds each, where its median source takes
     /// tens of milliseconds; the `sweeps` and nightly profiles script them.
-    const SCRIPTED_BYTES: usize = 0x4000;
+    const SCRIPTED_BYTES: usize = 0x1800;
 
     #[test]
     fn every_corpus_edit_script_submits_as_the_walk_composes_it()

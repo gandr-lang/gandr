@@ -1021,11 +1021,12 @@ mod kernel_export_gate
 
         use super::gate;
 
-        /// The sample: thirty-two sources, ranked by their BLAKE3 digest
-        /// under this name, at least one of each corpus class.
+        /// The sample: eight sources, ranked by their BLAKE3 digest under
+        /// this name, at least one of each corpus class. Eight hold the sweep
+        /// within the suite's bound of a second a test.
         const SAMPLE: Sample = Sample {
             name: SampleName("the_kernel_export_exit_gate_holds"),
-            size: SampleSize(32),
+            size: SampleSize(8),
         };
 
         #[test]
@@ -1182,11 +1183,12 @@ mod kernel_kept_export
 
         use super::sweep;
 
-        /// The sample: thirty-two sources, ranked by their BLAKE3 digest
-        /// under this name, at least one of each corpus class.
+        /// The sample: twelve sources, ranked by their BLAKE3 digest under
+        /// this name, at least one of each corpus class. Twelve hold the sweep
+        /// within the suite's bound of a second a test.
         const SAMPLE: Sample = Sample {
             name: SampleName("a_source_whose_last_form_retires_exports_its_cut_text"),
-            size: SampleSize(32),
+            size: SampleSize(12),
         };
 
         #[test]

@@ -179,16 +179,17 @@ mod sweeps
 
     use super::*;
 
-    /// The sample: sixty-four closures, ranked by their BLAKE3 digest under
-    /// this name, at least one of each corpus class, and, in the companion,
-    /// every source the change adds or modifies beside them
-    /// (`gandr-workflow-sweep`). A candidate is a corpus source that writes a
-    /// path import. The nightly profile checks the night's slice of the
+    /// The sample: seven closures, ranked by their BLAKE3 digest under this
+    /// name, at least one of each corpus class, and, in the companion, every
+    /// source the change adds or modifies beside them
+    /// (`gandr-workflow-sweep`). Seven hold the sweep within the suite's
+    /// bound of a second a test. A candidate is a corpus source that writes
+    /// a path import. The nightly profile checks the night's slice of the
     /// candidates. The `sweeps` profile checks each source under `corpus/`
     /// that writes a path import, a wider set than the candidates.
     const SAMPLE: Sample = Sample {
         name: SampleName("a_sub_closure_keeps_the_checkpoints_of_its_fresh_check_6522"),
-        size: SampleSize(64),
+        size: SampleSize(7),
     };
 
     /// The nights the nightly profile takes to check every candidate: a

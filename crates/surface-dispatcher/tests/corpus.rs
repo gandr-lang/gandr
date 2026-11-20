@@ -583,13 +583,14 @@ struct Swept
     runs: Vec<(String, bool)>,
 }
 
-/// The sample of the corpus walk: sixty-four sources, ranked by their BLAKE3
-/// digest under this name, at least one of each corpus class. A full run walks
-/// the two roots whole.
+/// The sample of the corpus walk: twelve sources, ranked by their BLAKE3
+/// digest under this name, at least one of each corpus class. Twelve hold
+/// each test that reads the walk within the suite's bound of a second a
+/// test. A full run walks the two roots whole.
 /// - see: #7809
 const WALK: Sample = Sample {
     name: SampleName("the_corpus_walk"),
-    size: SampleSize(64),
+    size: SampleSize(12),
 };
 
 /// The paths of the walk that `sweep` asks for: the strict and fixture roots
@@ -771,12 +772,13 @@ fn exported(
         .collect()
 }
 
-/// The sample of model subjects: four model sources, ranked by their BLAKE3
-/// digest under this name, each standing for its whole subject.
+/// The sample of model subjects: two model sources, ranked by their BLAKE3
+/// digest under this name, each standing for its whole subject. Two hold the
+/// sweep within the suite's bound of a second a test.
 /// - see: #7809
 const SUBJECTS: Sample = Sample {
     name: SampleName("no_subject_declares_a_name_twice"),
-    size: SampleSize(4),
+    size: SampleSize(2),
 };
 
 /// No name is exported by two sources of one model subject — the
@@ -1228,15 +1230,16 @@ mod sweeps
 
     use super::*;
 
-    /// The sample: sixty-four sources, ranked by their BLAKE3 digest under
-    /// this name, at least one of each corpus class — `strict` and each
-    /// directory below `fixture` — and, in the companion, every source the
-    /// change adds or modifies beside them (`gandr-workflow-sweep`), each
-    /// walked as its own path. The nightly profile walks the night's slice
-    /// the same way, and the `sweeps` profile walks the two roots whole.
+    /// The sample: twelve sources, ranked by their BLAKE3 digest under this
+    /// name, at least one of each corpus class — `strict` and each directory
+    /// below `fixture` — and, in the companion, every source the change adds
+    /// or modifies beside them (`gandr-workflow-sweep`), each walked as its
+    /// own path. Twelve hold the sweep within the suite's bound of a second a
+    /// test. The nightly profile walks the night's slice the same way, and
+    /// the `sweeps` profile walks the two roots whole.
     const SAMPLE: Sample = Sample {
         name: SampleName("every_width_composes_the_corpus_alike"),
-        size: SampleSize(64),
+        size: SampleSize(12),
     };
 
     /// The nights the nightly profile takes to walk every source at every
@@ -1634,22 +1637,23 @@ mod sweeps
         }
     }
 
-    /// The table parity's sample: two hundred and fifty-six sources, ranked
-    /// by their BLAKE3 digest under this name, at least one of each corpus
-    /// class, and, in the companion, every source the change adds or modifies
-    /// beside them (`gandr-workflow-sweep`); more than half of them lower
-    /// to a module and are compared. The `sweeps` and nightly profiles
-    /// visit the two roots whole.
+    /// The table parity's sample: twenty-four sources, ranked by their
+    /// BLAKE3 digest under this name, at least one of each corpus class, and,
+    /// in the companion, every source the change adds or modifies beside them
+    /// (`gandr-workflow-sweep`); more than half of them lower to a module and
+    /// are compared. Twenty-four hold the sweep within the suite's bound of a
+    /// second a test. The `sweeps` and nightly profiles visit the two roots
+    /// whole.
     const TABLED: Sample = Sample {
         name: SampleName("a_judgement_s_table_answers_as_the_table_typed_alone_1521"),
-        size: SampleSize(256),
+        size: SampleSize(24),
     };
 
     /// #1521: every corpus source, judged keeping its type table, answers
     /// every entry, every declaration, every declaration's refusal and every
     /// declared name as its table typed alone does, so a document's table can
-    /// come from the judgement that checks it. Held to the 30 s bound by its
-    /// sample (#2037).
+    /// come from the judgement that checks it. Held to the suite's bound by its
+    /// sample.
     #[test]
     fn a_judgement_s_table_answers_as_the_table_typed_alone_1521()
     {
@@ -1696,7 +1700,7 @@ mod sweeps
                 );
                 (
                     visited.into_iter().map(|source| source.path).collect(),
-                    (sweep.portion() == Portion::Fixed).then_some(128_usize),
+                    (sweep.portion() == Portion::Fixed).then_some(12_usize),
                 )
             },
         };
@@ -1986,14 +1990,15 @@ mod sweeps
         );
     }
 
-    /// The resume parity's sample: sixty-four sources, ranked by their BLAKE3
+    /// The resume parity's sample: sixteen sources, ranked by their BLAKE3
     /// digest under this name, at least one of each corpus class, and, in the
     /// companion, every source the change adds or modifies beside them
-    /// (`gandr-workflow-sweep`). The nightly profile resumes the night's
+    /// (`gandr-workflow-sweep`). Sixteen hold the sweep within the suite's
+    /// bound of a second a test. The nightly profile resumes the night's
     /// slice, and the `sweeps` profile every source.
     const RESUMED: Sample = Sample {
         name: SampleName("a_resume_onto_the_unchanged_program_gives_the_fresh_set_6549"),
-        size: SampleSize(64),
+        size: SampleSize(16),
     };
 
     /// The nights the nightly profile takes to resume every source: a seventh
@@ -2115,14 +2120,15 @@ mod sweeps
         item_program(&module, arena).ok()
     }
 
-    /// The item tables' sample: sixty-four sources, ranked by their BLAKE3
+    /// The item tables' sample: twenty sources, ranked by their BLAKE3
     /// digest under this name, at least one of each corpus class, and, in the
     /// companion, every source the change adds or modifies beside them
-    /// (`gandr-workflow-sweep`). The nightly profile mints the night's slice,
+    /// (`gandr-workflow-sweep`). Twenty hold the sweep within the suite's
+    /// bound of a second a test. The nightly profile mints the night's slice,
     /// and the `sweeps` profile every source.
     const MINTED: Sample = Sample {
         name: SampleName("every_item_table_mints_back_to_itself"),
-        size: SampleSize(64),
+        size: SampleSize(20),
     };
 
     /// The nights the nightly profile takes to mint every source: a seventh
@@ -2229,28 +2235,30 @@ mod sweeps
         );
     }
 
-    /// The deciding pass's sample: sixty-four sources, ranked by their BLAKE3
+    /// The deciding pass's sample: fourteen sources, ranked by their BLAKE3
     /// digest under this name, at least one of each corpus class, and, in the
     /// companion, every source the change adds or modifies beside them
-    /// (`gandr-workflow-sweep`). The nightly profile decides the night's
+    /// (`gandr-workflow-sweep`). Fourteen hold the sweep within the suite's
+    /// bound of a second a test. The nightly profile decides the night's
     /// slice, and the `sweeps` profile every source.
     const DECIDED: Sample = Sample {
         name: SampleName("a_deciding_pass_admits_what_its_judgement_admits"),
-        size: SampleSize(64),
+        size: SampleSize(14),
     };
 
     /// The nights the nightly profile takes to decide every source: a seventh
     /// a night, the count the nightly's sweeps share.
     const DECIDED_NIGHTS: Nights = Nights(7);
 
-    /// The table parts' sample: sixty-four sources, ranked by their BLAKE3
+    /// The table parts' sample: twelve sources, ranked by their BLAKE3
     /// digest under this name, at least one of each corpus class, and, in the
-    /// companion, every source the change adds or modifies beside them. The
+    /// companion, every source the change adds or modifies beside them.
+    /// Twelve hold the sweep within the suite's bound of a second a test. The
     /// nightly profile mints the night's slice, and the `sweeps` profile every
     /// source.
     const ENTERED: Sample = Sample {
         name: SampleName("the_table_parts_of_an_elaborated_item_mint_back_to_themselves"),
-        size: SampleSize(64),
+        size: SampleSize(12),
     };
 
     /// The nights the nightly profile takes to mint every source's table
@@ -2493,14 +2501,15 @@ mod sweeps
         );
     }
 
-    /// The reports' sample: sixty-four sources, ranked by their BLAKE3 digest
+    /// The reports' sample: twelve sources, ranked by their BLAKE3 digest
     /// under this name, at least one of each corpus class, and, in the
-    /// companion, every source the change adds or modifies beside them. The
+    /// companion, every source the change adds or modifies beside them.
+    /// Twelve hold the sweep within the suite's bound of a second a test. The
     /// nightly profile seats the night's slice, and the `sweeps` profile every
     /// source.
     const REPORTED: Sample = Sample {
         name: SampleName("the_report_parts_of_an_item_mint_back_to_themselves"),
-        size: SampleSize(64),
+        size: SampleSize(12),
     };
 
     /// The nights the nightly profile takes to seat every source's reports.
@@ -2772,14 +2781,15 @@ mod sweeps
         );
     }
 
-    /// The refusals' sample: sixty-four sources, ranked by their BLAKE3 digest
+    /// The refusals' sample: fourteen sources, ranked by their BLAKE3 digest
     /// under this name, at least one of each corpus class, and, in the
-    /// companion, every source the change adds or modifies beside them. The
-    /// nightly profile seats the night's slice, and the `sweeps` profile every
-    /// source.
+    /// companion, every source the change adds or modifies beside them.
+    /// Fourteen hold the sweep within the suite's bound of a second a test.
+    /// The nightly profile seats the night's slice, and the `sweeps` profile
+    /// every source.
     const SEATED: Sample = Sample {
         name: SampleName("a_refusal_seated_from_its_checkpoint_diagnoses_as_its_judgement"),
-        size: SampleSize(64),
+        size: SampleSize(14),
     };
 
     /// The nights the nightly profile takes to seat every source's refusals.

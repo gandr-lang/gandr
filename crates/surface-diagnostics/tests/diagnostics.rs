@@ -3362,14 +3362,15 @@ mod sweeps
 
     use super::*;
 
-    /// The sample: twenty sources under `fixture/pathological`, ranked by
-    /// their BLAKE3 digest under this name, and, in the companion, every one
-    /// the change adds or modifies beside them (`gandr-workflow-sweep`). The
-    /// `sweeps` profile cuts every pathological source, and the nightly
-    /// profile the night's slice of [`NIGHTS`].
+    /// The sample: two sources under `fixture/pathological`, ranked by their
+    /// BLAKE3 digest under this name, and, in the companion, every one the
+    /// change adds or modifies beside them (`gandr-workflow-sweep`). Two hold
+    /// the sweep within the suite's bound of a second a test. The `sweeps`
+    /// profile cuts every pathological source, and the nightly profile the
+    /// night's slice of [`NIGHTS`].
     const SAMPLE: Sample = Sample {
         name: SampleName("a_malformed_form_reports_its_parse_error_alone"),
-        size: SampleSize(20),
+        size: SampleSize(2),
     };
 
     /// The nights the nightly profile takes to cut every pathological

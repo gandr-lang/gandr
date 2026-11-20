@@ -1477,11 +1477,12 @@ mod sweeps
 
     use super::*;
 
-    /// The sample: thirty-two sources, ranked by their BLAKE3 digest under
-    /// this name, at least one of each corpus class — `strict` and each
-    /// family under the top-level `corpus` — and, in the companion, every
-    /// source the change adds or modifies beside them (`gandr-workflow-sweep`),
-    /// each walked as its own path. A sampled run holds each node and each
+    /// The sample: twelve sources, ranked by their BLAKE3 digest under this
+    /// name, at least one of each corpus class — `strict` and each family
+    /// under the top-level `corpus` — and, in the companion, every source the
+    /// change adds or modifies beside them (`gandr-workflow-sweep`), each
+    /// walked as its own path. Twelve hold the sweep within the suite's bound
+    /// of a second a test. A sampled run holds each node and each
     /// byte to the gate, and each owed kind to at most its pin, and so does
     /// the nightly profile over the night's slice. The `sweeps` profile
     /// walks the roots whole and holds the census exactly: every pin met,
@@ -1489,7 +1490,7 @@ mod sweeps
     /// written.
     const SAMPLE: Sample = Sample {
         name: SampleName("every_judged_node_answers_at_its_own_span"),
-        size: SampleSize(32),
+        size: SampleSize(12),
     };
 
     /// The nights the nightly profile takes to walk every source: a seventh
