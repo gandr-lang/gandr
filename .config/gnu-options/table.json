@@ -1,0 +1,22 @@
+[
+  {
+    "tool": "find",
+    "option": "-printf",
+    "expression": "(^[[:space:]]*|[;|&][[:space:]]*)find[[:space:]].*[[:space:]]-printf([[:space:]]|$)"
+  },
+  {
+    "tool": "stat",
+    "option": "-c",
+    "expression": "stat[[:space:]]+-c([[:space:]]|$)"
+  },
+  {
+    "tool": "date",
+    "option": "-d",
+    "expression": "date[[:space:]]+-d([[:space:]]|$)"
+  },
+  {
+    "tool": "xargs",
+    "option": "-r",
+    "expression": "(^[[:space:]]*|[;|&][[:space:]]*)xargs[[:space:]][^#]*[[:space:]]-r([[:space:]]|$)"
+  }
+]

@@ -1,0 +1,2 @@
+def past() -> +{Integer} =
+  +{.1 = 1}

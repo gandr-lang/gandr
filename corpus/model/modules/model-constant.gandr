@@ -1,0 +1,57 @@
+// This source shows constants in a theory.
+//
+// A model gives each constant with a value definition.
+//
+// The checker reads a constant value when a law applies it. The reader
+// refuses the old spelling of a constant, `oper zero : () --> M`, by its name.
+//
+// - see: #2917
+
+/// `Pointed` states one carrier constant.
+theory Pointed where
+  sort T : Type;
+  oper z : T;
+
+/// `ZeroPointed` sets its constant to zero.
+module ZeroPointed : Model(Pointed) where {
+  type T = Integer;
+  /// `z` gives the point.
+  @[runs("0")]
+  def z = 0;
+}
+
+/// `Based` defines integer values `base` and `double`.
+theory Based where
+  oper base : Integer;
+  oper double : Integer;
+
+/// `Sevens` defines seven and fourteen.
+module Sevens : Model(Based) where
+  /// `base` gives seven.
+  def base = 7;
+  /// `double` gives fourteen.
+  def double = 14;
+
+/// `seven` reads `Sevens.base`.
+@[runs("7")]
+def seven() -> Integer = Sevens.base;
+
+/// `Unital` states a unit, a product and a law.
+theory Unital where
+  sort M : Type;
+  oper e : M;
+  oper mul : (x : M, y : M) --> M;
+  rule unitL : mul e x ==> x;
+
+/// `Additive` models the integers under addition.
+module Additive : Model(Unital) where {
+  type M = Integer;
+  /// `e` gives the additive unit.
+  @[runs("0")]
+  def e = 0;
+  /// `mul` adds two integers.
+  def mul(x : Integer, y : Integer) -> Integer = x + y;
+  /// `unitL` states the left unit law.
+  @[owes(1)]
+  def unitL : (x : Integer) -> Path[.A = Integer] (mul e x) x;
+}
