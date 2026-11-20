@@ -5103,15 +5103,14 @@ echo "$url"
 # request. `pr:land` refuses a named row without it. GitHub gives the number
 # only now, and `ledger:stamp` commits it.
 #
-# Then the checks that the ledger alone selects run on the stamped tree. The
-# gate carries to that tree when the stamp changes `since` values alone. Any
-# other diff runs the gate. The push sends the stamped head and its records,
-# and a restack carries from it.
-# - see: #7978, `passed.bash stamp`
+# Then `check:ledger` alone runs on the stamped tree, and no gate does: the
+# stamp changes `since` values alone, and the hosted run of the stamped head
+# is the proof. The push sends the stamped head.
+# - see: #7978, #8224
 number=${url##*/}
 pushed=$(git rev-parse HEAD)
 # The restack above moves the fork, so the stamp reads the change from the
-# fork of the pushed head, as the carry does.
+# fork of the pushed head.
 stamp_base=$(git merge-base HEAD "origin/$base")
 if ! mise run --quiet ledger:stamp "$number" "$stamp_base"; then
   echo "#$number is open, and its ledger rows lack its number. Run \`mise run ledger:stamp $number $stamp_base\` and push, then run \`pr:land\`" >&2
