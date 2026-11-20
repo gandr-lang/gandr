@@ -1,0 +1,2 @@
+def c = M.b;
+def d = (c ;

@@ -1,0 +1,348 @@
+[
+  {
+    "name": "#6893: the chain is the longest path by whole durations, each unit named by its package and target and by its source under the workspace's root, a unit that did not run left out, each unit's front end to its code generation, the most a split of each unit takes off the chain, and the longest unit off the chain named with its slack",
+    "program": "chain.jq",
+    "args": { "top": 5 },
+    "input": [
+      { "reason": "build-started", "elapsed": 0, "cwd": "/w" },
+      {
+        "reason": "unit-registered",
+        "index": 4,
+        "package_id": "registry+https://github.com/rust-lang/crates.io-index#a@1.0.0",
+        "target": { "name": "build-script-build", "kind": "build-script" },
+        "mode": "build"
+      },
+      {
+        "reason": "unit-registered",
+        "index": 5,
+        "package_id": "registry+https://github.com/rust-lang/crates.io-index#a@1.0.0",
+        "target": { "name": "build-script-build", "kind": "build-script" },
+        "mode": "run-custom-build",
+        "dependencies": [4]
+      },
+      {
+        "reason": "unit-registered",
+        "index": 0,
+        "package_id": "registry+https://github.com/rust-lang/crates.io-index#a@1.0.0",
+        "target": { "name": "a", "kind": "lib" },
+        "mode": "build",
+        "dependencies": [5]
+      },
+      {
+        "reason": "unit-registered",
+        "index": 1,
+        "package_id": "path+file:///w/crates/b#b@0.0.0",
+        "target": { "name": "b", "kind": "lib" },
+        "mode": "build",
+        "dependencies": [0]
+      },
+      {
+        "reason": "unit-registered",
+        "index": 2,
+        "package_id": "path+file:///w/crates/c#0.0.0",
+        "target": { "name": "c", "kind": "lib" },
+        "mode": "build",
+        "dependencies": [0]
+      },
+      {
+        "reason": "unit-registered",
+        "index": 6,
+        "package_id": "git+https://example.invalid/d?rev=1#d@0.1.0",
+        "target": { "name": "d", "kind": "lib" },
+        "mode": "build"
+      },
+      {
+        "reason": "unit-registered",
+        "index": 3,
+        "package_id": "path+file:///w/crates/b#b@0.0.0",
+        "target": { "name": "b", "kind": "bin" },
+        "mode": "build",
+        "dependencies": [1, 2, 6]
+      },
+      { "reason": "unit-started", "index": 4, "elapsed": 0.0 },
+      { "reason": "unit-finished", "index": 4, "elapsed": 0.05 },
+      { "reason": "unit-started", "index": 5, "elapsed": 0.05 },
+      { "reason": "unit-finished", "index": 5, "elapsed": 0.1 },
+      { "reason": "unit-started", "index": 0, "elapsed": 0.1 },
+      { "reason": "unit-rmeta-finished", "index": 0, "elapsed": 1.1 },
+      { "reason": "unit-started", "index": 1, "elapsed": 1.2 },
+      { "reason": "unit-section-started", "index": 1, "elapsed": 2.0, "section": "codegen" },
+      { "reason": "unit-finished", "index": 0, "elapsed": 2.1 },
+      { "reason": "unit-started", "index": 2, "elapsed": 2.2 },
+      { "reason": "unit-rmeta-finished", "index": 2, "elapsed": 2.5 },
+      { "reason": "unit-finished", "index": 2, "elapsed": 2.7 },
+      { "reason": "unit-rmeta-finished", "index": 1, "elapsed": 3.2 },
+      { "reason": "unit-finished", "index": 1, "elapsed": 4.2 },
+      { "reason": "unit-started", "index": 3, "elapsed": 4.3 },
+      { "reason": "unit-section-started", "index": 3, "elapsed": 4.8, "section": "codegen" },
+      { "reason": "unit-finished", "index": 3, "elapsed": 5.3 }
+    ],
+    "output": {
+      "units": 6,
+      "wall": 5.3,
+      "time": 6.6,
+      "in_flight": 1.25,
+      "longest": { "unit": "b", "seconds": 3 },
+      "length": 6.1,
+      "pipelined": 5.1,
+      "chain": [
+        {
+          "unit": "a (build script)",
+          "source": null,
+          "seconds": 0.05,
+          "front": null,
+          "bound": 0.05,
+          "waits": "whole"
+        },
+        {
+          "unit": "a (build script, run)",
+          "source": null,
+          "seconds": 0.05,
+          "front": null,
+          "bound": 0.05,
+          "waits": "whole"
+        },
+        {
+          "unit": "a",
+          "source": null,
+          "seconds": 2,
+          "front": null,
+          "bound": 2,
+          "waits": "metadata"
+        },
+        {
+          "unit": "b",
+          "source": "crates/b",
+          "seconds": 3,
+          "front": 0.8,
+          "bound": 2.5,
+          "waits": "whole"
+        },
+        {
+          "unit": "b (bin)",
+          "source": "crates/b",
+          "seconds": 1,
+          "front": 0.5,
+          "bound": 1,
+          "waits": null
+        }
+      ],
+      "off": [{ "unit": "c", "seconds": 0.5, "slack": 2.5 }],
+      "times": {
+        "a": 2,
+        "a (build script)": 0.05,
+        "a (build script, run)": 0.05,
+        "b": 3,
+        "b (bin)": 1,
+        "c": 0.5
+      }
+    }
+  },
+  {
+    "name": "#6893: a log in which no unit ran is refused",
+    "program": "chain.jq",
+    "args": { "top": 5 },
+    "input": [
+      { "reason": "build-started", "elapsed": 0 },
+      {
+        "reason": "unit-registered",
+        "index": 0,
+        "package_id": "registry+https://github.com/rust-lang/crates.io-index#a@1.0.0",
+        "target": { "name": "a", "kind": "lib" },
+        "mode": "build"
+      },
+      { "reason": "unit-fingerprint", "index": 0, "status": "fresh" }
+    ],
+    "fails": true
+  },
+  {
+    "name": "#6893: a chain past the share over the last night on one machine opens the collector with one row naming the unit that grew most, and the crates of the workspace on the chain are listed with their front end, their edits in a week and the most a split takes off the chain",
+    "program": "chain-night.jq",
+    "input": {
+      "share": 10,
+      "run": { "id": 7, "url": "https://example.invalid/runs/7" },
+      "rows": [
+        {
+          "arch": "x86-64",
+          "head": "bbbbbbbbbbbb",
+          "machine": "x86_64, 4 threads, P",
+          "units": 3,
+          "wall": 5,
+          "time": 9,
+          "in_flight": 1.8,
+          "longest": { "unit": "b", "seconds": 4 },
+          "length": 7,
+          "pipelined": 5,
+          "chain": [
+            {
+              "unit": "a",
+              "source": null,
+              "seconds": 2,
+              "front": null,
+              "bound": 2,
+              "waits": "metadata"
+            },
+            {
+              "unit": "b",
+              "source": "crates/b",
+              "seconds": 4,
+              "front": 3,
+              "bound": 3,
+              "waits": "whole"
+            },
+            {
+              "unit": "b (bin)",
+              "source": "crates/b",
+              "seconds": 1,
+              "front": 0.5,
+              "bound": 1,
+              "waits": null
+            }
+          ],
+          "off": [{ "unit": "c", "seconds": 2, "slack": 3 }],
+          "times": { "a": 2, "b": 4, "b (bin)": 1, "c": 2 }
+        }
+      ],
+      "last": [
+        {
+          "arch": "x86-64",
+          "head": "aaaaaaaaaaaa",
+          "machine": "x86_64, 4 threads, P",
+          "units": 3,
+          "wall": 4,
+          "time": 7,
+          "in_flight": 1.75,
+          "longest": { "unit": "b", "seconds": 2 },
+          "length": 5,
+          "pipelined": 4,
+          "chain": [
+            { "unit": "a", "seconds": 2, "waits": "metadata" },
+            { "unit": "b", "seconds": 2, "waits": "whole" },
+            { "unit": "b (bin)", "seconds": 1, "waits": null }
+          ],
+          "off": [{ "unit": "c", "seconds": 2, "slack": 1 }],
+          "times": { "a": 2, "b": 2, "b (bin)": 1, "c": 2 }
+        }
+      ],
+      "issues": [],
+      "edits": { "crates/b": 6.25 }
+    },
+    "output": {
+      "summary": "## The chain of each head\n\n|Architecture|Head|Wall|Units' time|In flight|Chain|Pipelined|Last night|Change|\n|---|---|---:|---:|---:|---:|---:|---:|---:|\n|x86-64|`bbbbbbbbb`|5 s|9 s|1.8|7 s|5 s|5 s at `aaaaaaaaa`|+40 %|\n\n### x86-64 at `bbbbbbbbb`\n\nThe build runs 3 units on x86_64, 4 threads, P. The longest unit is `b` at 4 s.\n\n<details><summary>The chain: 3 units, 7 s, 5 s under pipelining</summary>\n\n|Unit|Time|The next unit waits on|\n|---|---:|---|\n|`a`|2 s|its metadata|\n|`b`|4 s|the whole unit|\n|`b (bin)`|1 s|none|\n\n</details>\n\n|The longest units off the chain|Time|Slack|\n|---|---:|---:|\n|`c`|2 s|3 s|\n\n|The crates of the chain|Time|Front end|Edits a week|At most off the chain|\n|---|---:|---:|---:|---:|\n|`b`|4 s|3 s|6.25|3 s|\n|`b (bin)`|1 s|0.5 s|6.25|1 s|\n\nThe chain of x86-64 grows +40 % over the last night. `b` grows the most: 4 s against 2 s.\n",
+      "grew": [
+        {
+          "arch": "x86-64",
+          "head": "bbbbbbbbbbbb",
+          "previous": "aaaaaaaaaaaa",
+          "now": 7,
+          "before": 5,
+          "change": 40,
+          "unit": "b",
+          "unit_now": 4,
+          "unit_before": 2
+        }
+      ],
+      "action": {
+        "number": null,
+        "title": "perf: the build's chain grows past 10 % in one night",
+        "body": "The nightly reads the chain of each architecture's cold build of the driver against the last night's (#6893). A chain that grows past 10 % in one night adds a row here, with the unit on the chain that grows the most. A landing that shortens the chain again clears its row under `## Rows`, and the collector closes once no row is open.\n\n## Nights\n\n- [ ] `x86-64 bbbbbbbbb` — the chain takes 7 s against 5 s at `aaaaaaaaa`, +40 %; `b` takes 4 s against 2 s ([run 7](https://example.invalid/runs/7))\n"
+      }
+    }
+  },
+  {
+    "name": "#6893: a growth the open collector already holds for its architecture and head adds nothing, and one on another machine compares nothing",
+    "program": "chain-night.jq",
+    "input": {
+      "share": 10,
+      "run": { "id": 8, "url": "https://example.invalid/runs/8" },
+      "rows": [
+        {
+          "arch": "x86-64",
+          "head": "bbbbbbbbbbbb",
+          "machine": "m",
+          "units": 1,
+          "wall": 7,
+          "time": 7,
+          "in_flight": 1,
+          "longest": { "unit": "b", "seconds": 7 },
+          "length": 7,
+          "pipelined": 7,
+          "chain": [{ "unit": "b", "seconds": 7, "waits": null }],
+          "off": [],
+          "times": { "b": 7 }
+        },
+        {
+          "arch": "riscv64",
+          "head": "bbbbbbbbbbbb",
+          "machine": "n",
+          "units": 1,
+          "wall": 70,
+          "time": 70,
+          "in_flight": 1,
+          "longest": { "unit": "b", "seconds": 70 },
+          "length": 70,
+          "pipelined": 70,
+          "chain": [{ "unit": "b", "seconds": 70, "waits": null }],
+          "off": [],
+          "times": { "b": 70 }
+        }
+      ],
+      "last": [
+        {
+          "arch": "x86-64",
+          "head": "aaaaaaaaaaaa",
+          "machine": "m",
+          "units": 1,
+          "wall": 5,
+          "time": 5,
+          "in_flight": 1,
+          "longest": { "unit": "b", "seconds": 5 },
+          "length": 5,
+          "pipelined": 5,
+          "chain": [{ "unit": "b", "seconds": 5, "waits": null }],
+          "off": [],
+          "times": { "b": 5 }
+        },
+        {
+          "arch": "riscv64",
+          "head": "aaaaaaaaaaaa",
+          "machine": "o",
+          "units": 1,
+          "wall": 50,
+          "time": 50,
+          "in_flight": 1,
+          "longest": { "unit": "b", "seconds": 50 },
+          "length": 50,
+          "pipelined": 50,
+          "chain": [{ "unit": "b", "seconds": 50, "waits": null }],
+          "off": [],
+          "times": { "b": 50 }
+        }
+      ],
+      "issues": [
+        {
+          "number": 12,
+          "title": "perf: the build's chain grows past 10 % in one night",
+          "body": "Lead.\n\n## Nights\n\n- [ ] `x86-64 bbbbbbbbb` — the chain takes 7 s against 5 s at `aaaaaaaaa`, +40 %; `b` takes 7 s against 5 s ([run 7](https://example.invalid/runs/7))\n"
+        }
+      ]
+    },
+    "output": {
+      "summary": "## The chain of each head\n\n|Architecture|Head|Wall|Units' time|In flight|Chain|Pipelined|Last night|Change|\n|---|---|---:|---:|---:|---:|---:|---:|---:|\n|x86-64|`bbbbbbbbb`|7 s|7 s|1|7 s|7 s|5 s at `aaaaaaaaa`|+40 %|\n|riscv64|`bbbbbbbbb`|70 s|70 s|1|70 s|70 s|50 s at `aaaaaaaaa`|another machine|\n\n### x86-64 at `bbbbbbbbb`\n\nThe build runs 1 units on m. The longest unit is `b` at 7 s.\n\n<details><summary>The chain: 1 units, 7 s, 7 s under pipelining</summary>\n\n|Unit|Time|The next unit waits on|\n|---|---:|---|\n|`b`|7 s|none|\n\n</details>\n\nNo unit stands off the chain.\n\nNo crate of the workspace stands on the chain.\n\n### riscv64 at `bbbbbbbbb`\n\nThe build runs 1 units on n. The longest unit is `b` at 70 s.\n\n<details><summary>The chain: 1 units, 70 s, 70 s under pipelining</summary>\n\n|Unit|Time|The next unit waits on|\n|---|---:|---|\n|`b`|70 s|none|\n\n</details>\n\nNo unit stands off the chain.\n\nNo crate of the workspace stands on the chain.\n\nThe chain of x86-64 grows +40 % over the last night. `b` grows the most: 7 s against 5 s.\n",
+      "grew": [
+        {
+          "arch": "x86-64",
+          "head": "bbbbbbbbbbbb",
+          "previous": "aaaaaaaaaaaa",
+          "now": 7,
+          "before": 5,
+          "change": 40,
+          "unit": "b",
+          "unit_now": 7,
+          "unit_before": 5
+        }
+      ],
+      "action": null
+    }
+  }
+]
