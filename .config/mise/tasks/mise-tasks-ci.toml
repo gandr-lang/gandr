@@ -4979,9 +4979,9 @@ mise run --quiet check:deletes --title "${usage_title:?}" "$body" "$from" \
 # task refuses (`wt:sweep --guard`).
 mise run wt:sweep --guard
 stacking_current || exit 2
-# The head is gated where no gate passed on its tree (#5458, `mise run
-# check`): the light checks, and Clippy with the compiler policy over the
-# packages the change reaches. It is gated on its own fork, before the stack
+# The head is gated where no gate passed on its tree (#5458, #8224, `mise run
+# check`): the cheap set of `landing`, over the packages the change reaches.
+# It is gated one time, on its own fork, before the stack
 # below adds its commits to the change. A reworded commit or a rebase that
 # changes nothing keeps its tree, so its gate counts (#5076,
 # `.config/gate-scope/passed.bash`). The gate reads the work, so work that
@@ -5006,6 +5006,10 @@ if ! "$passed" require pr:open HEAD 2> /dev/null; then
   "$passed" require pr:open HEAD || exit 2
 fi
 gated=$(git rev-parse HEAD)
+# Each member that cannot land leaves its stack before the top is read
+# (#8225, `stacks_eject`), so no red or held pull request is the top and none
+# holds the members above it. A stack that cannot move stays as it stood.
+stacks_eject || echo "a stack keeps a member that cannot land, as above; pr:open goes on" >&2
 unblocks=${usage_unblocks:-}
 if [[ -n "$unblocks" ]]; then
   [[ "$unblocks" =~ ^[0-9]+$ && $(gh pr view "$unblocks" -R "$repo" --json state --jq .state 2> /dev/null) == OPEN ]] \
@@ -5066,17 +5070,12 @@ fi
 # (`body:check`, #2530) and keep the body rules (`body:prose`, #3591).
 mise run --quiet body:check --title "${usage_title:?}" "$body"
 mise run --quiet body:prose "$body"
-# The head that is pushed carries the gate (#5091): a restack above rebases
-# the branch onto the top and changes its tree. The gate on the branch's own
-# commits counts while the rebase keeps their patches (`passed.bash carry`),
-# and the merge queue checks the combination. A generated artifact is the
+# The head that is pushed asks for no second gate (#8224): a restack above
+# rebases the branch onto the top and changes its tree, and the hosted run of
+# the new head is the proof of the combination. A generated artifact is the
 # exception: the merge queue requires no check of the recovery records, so
 # `replayed` reads each artifact the move makes due (#6144). The stack is first
-# come, first served: no `pr:open` waits on another, and no seat gates again
-# because another seat opened first. A rebase that changes a patch gates the
-# new head.
-"$passed" carry "$gated" HEAD "$(git merge-base HEAD "origin/$base")" || mise run check
-"$passed" require pr:open HEAD || exit 2
+# come, first served: no `pr:open` waits on another.
 replayed || exit 2
 # The stack goes on from no draft (#6797): a draft holds every pull request
 # above it. The top was read through the budget's shared cache, and a seat
@@ -5119,12 +5118,7 @@ if ! mise run --quiet ledger:stamp "$number" "$stamp_base"; then
   exit 2
 fi
 if [[ $(git rev-parse HEAD) != "$pushed" ]]; then
-  read -ra stamp_checks < <(mise tasks ls --json \
-    | jq -c '{tasks: [.[] | .name | select(startswith("check:"))], changed: ["ledger/features.sql"], comments: [], landing: true}' \
-    | jq -r -L "$config_dir/gate-scope" -f "$config_dir/gate-scope/select.jq" | jq -r 'join(" ::: ")')
-  mise run "${stamp_checks[@]}" || { echo "#$number is open, and the checks of its stamped ledger fail. Fix them and push, then run \`pr:land\`" >&2; exit 2; }
-  "$passed" stamp "$pushed" HEAD "$stamp_base" || mise run check
-  "$passed" require pr:open HEAD || exit 2
+  mise run --quiet check:ledger || { echo "#$number is open, and the check of its stamped ledger fails. Fix it and push, then run \`pr:land\`" >&2; exit 2; }
   git push --quiet --force-with-lease origin HEAD
   gated=$(git rev-parse HEAD)
 fi
@@ -5150,8 +5144,6 @@ if [[ -z "$unblocks" && -z "$stacked_past" ]]; then
       top=$stacked_top
       base=$(jq -r .head <<< "$top")
       top_number=$(jq -r .number <<< "$top")
-      "$passed" carry "$gated" HEAD "$(git merge-base HEAD "origin/$base")" || mise run check
-      "$passed" require pr:open HEAD || exit 2
       replayed || exit 2
       git push --quiet --force-with-lease origin HEAD
       if ! set_base "$number" "$base"; then
@@ -5406,21 +5398,12 @@ if [[ -n $absorbing ]]; then
   exit 2
 fi
 
-# A pull request landed from its own branch queues only on a tree the
-# landing's gate passed on (#5076, `passed.bash`). A rebase that changes the
-# head's tree, as a restack does, leaves no gate on it, so the head is gated
-# again here when it is the checked-out commit (#5458, `mise run check`). A
-# pull request landed from elsewhere is landed on its required checks.
-own=$(gh pr view --json number --jq .number 2> /dev/null) || own=
-if [[ "$own" == "$number" ]]; then
-  passed=$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash
-  if ! "$passed" require pr:land "origin/$ledger_head" 2> /dev/null; then
-    if [[ $(git rev-parse HEAD) == "$(git rev-parse "origin/$ledger_head")" && $("$passed" tree) == "$(git rev-parse 'HEAD^{tree}')" ]]; then
-      mise run check
-    fi
-    "$passed" require pr:land "origin/$ledger_head" || exit 2
-  fi
-fi
+# A landing asks for no local gate (#8224): `pr:open` gated the change one
+# time, and the hosted run of each head is the proof after a rebase.
+
+# Each member that cannot land leaves its stack before the prefix is read
+# (#8225, `stacks_eject`). A stack that cannot move stays as it stood.
+stacks_eject || echo "a stack keeps a member that cannot land, as above; pr:land goes on" >&2
 
 while :; do
   status=0

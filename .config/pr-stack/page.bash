@@ -33,3 +33,21 @@ page_stopped() {
     "${command[@]}" "${coordinator[@]}" "$text" || echo "the page to the coordinator is not delivered: $text" >&2
   done
 }
+
+# The page of a member that left its stack (#8225): pull request `$1` of the
+# lane `$2`, with the cause `$3`. `stack_eject` takes the member out, and its
+# lane alone gets the page, one for each member. It reads the configuration
+# that `page_stopped` reads, and with none it prints the page on stderr.
+page_left() {
+  local page text
+  local -a command seat
+  text="STACK left #$1 [$2]: $3"
+  page=$(stall_configuration | jq -c '.page // empty')
+  if [[ -z $page ]]; then
+    echo "no page configuration reaches the seats: $text" >&2
+    return 0
+  fi
+  mapfile -t command < <(jq -r '.command[]' <<< "$page")
+  mapfile -t seat < <(jq -r --arg lane "$2" '(.seats[$lane] // .triage)[]' <<< "$page")
+  "${command[@]}" "${seat[@]}" "$text" || echo "the page to lane $2 is not delivered: $text" >&2
+}

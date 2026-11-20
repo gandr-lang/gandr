@@ -15,46 +15,30 @@
 # its whole run, so at most `GANDR_GATE_SLOTS` gates share a host, or one for
 # each 8 cores without it, one per lane (`.config/mise/gate.bash`, #3057,
 # #4911, #6699). A lane's second gate, or a gate past the slots, waits, naming
-# the holders, or with `--no-wait` refuses at once. A change that selects no
-# check of the table's groups (Rust, rustdoc, corpus, extension, prose) runs
-# only light checks and takes no lock and no slot: it never waits behind a
-# gate that builds the workspace. A change of `//` comments alone in a crate
-# selects the Rust group alone (#6648).
+# the holders, or with `--no-wait` refuses at once.
 #
-# It is the landing's gate (#5458): `pr:open` runs it on a head that no gate
-# passed on, and `pr:land` runs it again when a rebase changes the head's
-# tree. Six lanes ran the full suite before each pull request opened, more
-# load than the hosts carry. The integration cycle runs every check before
-# `main` moves (#5438). The merge group on `landing` runs no test lane. So the
-# gate runs the light checks, which take seconds, and of the heavy checks
-# Clippy and the compiler policy (`check:landing`). It runs the enforcing
-# suites of the packages the change touches and of the corpus's readers,
-# `gandr-surface-dispatcher` and `gandr-surface-evaluate`
-# (`.config/gate-scope/test-scope.bash`, #6812): #6563 broke two tests of the
-# checker, and no stage before `landing` ran them (#6595), and #6709 and
-# #6712 each turned a test of the dispatcher red, a package they did not
-# touch. The whole suite (#6738) raised the median gate from 210 s to
-# 456.5 s. The head watcher runs the same gate on each head, over the whole
-# workspace (`GATE_TEST_EVERY_RED`). It runs no sweep and no specification
-# obligation. `gate:all` runs every check over the whole workspace.
+# It is the landing's gate (#5458, #8224): `pr:open` runs it one time, on a
+# head that no gate passed on. It runs the cheap set of `landing` and nothing
+# else. That set is the list of `check:landing`, which the hosted jobs of a
+# merge group run too (`check:landing-queue`), so one list serves both. A
+# rebase by the stack tool asks for no gate: the hosted run of the new head
+# is the proof. The integration cycle runs every other check before `main`
+# moves (#5438), and it repairs in batches. `gate:all` runs every check over
+# the whole workspace.
 #
-# It runs those checks that the change selects
-# (`.config/gate-scope/select.jq`, #4911): the paths the branch changes against
-# its fork from `origin/$trunk` (`.config/pr-stack/trunk.bash`), mapped by
-# `.config/gate-scope/table.json`. A
-# workflow-only change runs no Rust check. The Rust checks it selects run over
-# the packages the change touches and every package that depends on one
-# (`.config/gate-scope/packages.jq`, #5014), passed as `GATE_SCOPE`; a change
-# to the workspace's own configuration runs them over the whole workspace.
-# The shared formatters read the paths that the change touches, against the
-# base `GATE_BASE` (`.config/gate-scope/format.jq`, #6883).
+# The Rust checks of the set run over the packages that the change touches
+# and every package that depends on one (`.config/gate-scope/packages.jq`,
+# #5014), passed as `GATE_SCOPE`. A change to the workspace's own
+# configuration, or one that touches no package, runs them over the whole
+# workspace. The shared formatters read the paths that the change touches,
+# against the base `GATE_BASE` (`.config/gate-scope/format.jq`, #6883).
 #
 # A gate that passes records the tree of the work it read and the checks it
-# ran (`.config/gate-scope/passed.bash`, #5076), and `pr:open` and `pr:land`
-# gate a head whose tree no gate passed on. The tree is read before the
+# ran (`.config/gate-scope/passed.bash`, #5076), and `pr:open` gates a head
+# whose tree no gate passed on. The tree is read before the
 # checks run and again after them: when the work changed in between, nothing
-# is recorded. The record also holds the gate's time (#5215): its wall time,
-# each task's time and each suite's slowest tests, read from its standard
+# is recorded. The record also holds the gate's time (#5215): its wall time
+# and each task's time, read from its standard
 # error, which the gate keeps in `target/gate/<gate>.log`. Its wall time starts
 # once the gate holds its slot, and the record keeps the gate's wait for its
 # lane's lock and for its slot beside it (#6699). The gate never blocks on its
@@ -73,7 +57,7 @@
 # record names the compiler, and one that differs from the tree's pin leaves
 # dead units. The first gate under a new pin builds cold anyway.
 [check]
-description = "The landing's gate: the light checks, and Clippy with the compiler policy, the rustdoc and the adequacy witnesses over the packages the change reaches, and the enforcing suites of the packages it touches and of the dispatcher, or of the whole workspace in the head watcher, in one of the host's gate slots"
+description = "The landing's gate: the cheap set of landing, which is the list of check:landing, over the packages the change reaches, in one of the host's gate slots"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 usage = '''
@@ -89,7 +73,7 @@ if [[ ${usage_no_wait:-false} == true ]]; then export GATE_NO_WAIT=1; fi
 .config/mise/target-pin.bash
 tree=$(.config/gate-scope/passed.bash tree)
 gate_tree=$tree
-selected=$(.config/gate-scope/select.bash --landing)
+checks=(check:landing)
 hold_gate_slot "mise run check"
 gate_bound
 # The gate fetches workspace sources once before fast checks fork.
@@ -97,9 +81,7 @@ gate_bound
 # The checkout stands after this fetch, and no check writes it during the run.
 cargo fetch --locked --quiet || { echo "check: cargo fetch --locked failed, so no check runs (#7492)" >&2; exit 1; }
 echo "check: gate slot $gate_slot of $gate_slots in the lane $gate_lane after $gate_wait_lane s for the lane and $gate_wait_slot s for the slot, $gate_jobs build jobs" >&2
-mapfile -t checks <<< "$selected"
-if [[ " ${checks[*]} " != *" check:landing "* ]]; then checks+=(check:landing); fi
-echo "check: the landing's gate runs ${#checks[@]} of $(mise tasks ls --json | jq '[.[] | select(.name | startswith("check:"))] | length') checks (.config/gate-scope/table.json); the integration cycle and \`mise run gate:all\` run every one" >&2
+echo "check: the landing's gate runs the cheap set, the list of check:landing; the integration cycle and \`mise run gate:all\` run every check" >&2
 GATE_SCOPE=$(.config/gate-scope/scope.bash)
 export GATE_SCOPE
 # The base of the change, which `check:format` reads the change against
@@ -107,20 +89,6 @@ export GATE_SCOPE
 # tree.
 source .config/pr-stack/trunk.bash
 if GATE_BASE=$(git merge-base "origin/$trunk" HEAD 2> /dev/null); then export GATE_BASE; else unset GATE_BASE; fi
-if [[ " ${checks[*]} " == *" check:witnesses "* || " ${checks[*]} " == *" check:tests-enforcing "* ]]; then
-  GATE_WITNESS_SCOPE=$(.config/gate-scope/scope.bash --touched)
-  GATE_WITNESS_LISTED=$(.config/gate-scope/scope.bash --listed 2> /dev/null)
-  GATE_TEST_SCOPE=$(.config/gate-scope/test-scope.bash)
-  export GATE_WITNESS_SCOPE GATE_WITNESS_LISTED GATE_TEST_SCOPE
-  # A test that the known-red list names below the branch's base is the
-  # fixer's, and it holds no lane's gate (#7061). The head watcher reads
-  # every test, so the cycle's reading stays whole.
-  if [[ -z ${GATE_TEST_EVERY_RED:-} ]]; then
-    read -ra test_scope <<< "$GATE_TEST_SCOPE"
-    GATE_TEST_KNOWN_RED=$(.config/gate-scope/known-red.bash "${test_scope[@]}")
-    if [[ -n $GATE_TEST_KNOWN_RED ]]; then export GATE_TEST_KNOWN_RED; else unset GATE_TEST_KNOWN_RED; fi
-  fi
-fi
 mkdir -p target/gate
 SECONDS=0
 if ! bash .config/gate-scope/check-run.bash target/gate/check.log "${checks[@]}"; then
@@ -2852,6 +2820,7 @@ fi
 .config/pr-stack/past.bash || failed=1
 .config/pr-stack/heal.bash || failed=1
 .config/pr-stack/cut.bash || failed=1
+.config/pr-stack/eject.bash || failed=1
 .config/pr-stack/closed.bash || failed=1
 .config/pr-stack/watcher.bash || failed=1
 .config/pr-stack/fetched-base.bash || failed=1
@@ -3013,12 +2982,6 @@ run = ".config/gate-rows/cases.bash"
 # budget, and no gate at its budget or with no budget.
 # - see: #5215
 #
-# The carry cases build scratch repositories. A restack onto a top that
-# touches other files carries the gate to the new tree. A restack that changes
-# the branch's patch carries none. A head on the gated tree keeps its own
-# record.
-# - see: #5153, `.config/gate-scope/carry-cases.bash`
-#
 # The select cases build scratch repositories. A working change and a commit
 # of 4000 paths each select every check. That list is longer than one argument
 # holds.
@@ -3076,7 +3039,6 @@ run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 .config/cases/run.bash gate-scope .config/gate-scope/cases.json --programs .config/gate-scope --mode c --raw unmapped.jq --raw reads.jq --raw choose.jq
-.config/gate-scope/carry-cases.bash
 .config/gate-scope/select-cases.bash
 bash .config/gate-scope/check-run-cases.bash
 .config/gate-scope/tests-cases.bash

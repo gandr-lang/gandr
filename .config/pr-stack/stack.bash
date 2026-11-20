@@ -858,9 +858,15 @@ replay_reads() {
 # fails after the base edit sets the old base again, so the base never moves
 # without the branch (#6797). The chain without the red member is then
 # linked again (`stack_link`). The red member stays open on its base for its
-# seat. Prints one line per branch that moved.
+# seat. Prints one line per branch that moved. When a member above does not
+# hold the one below it, or its replay stops, `past_stopped` holds its number
+# and `past_why` the cause, so `stack_eject` takes that member out too.
+past_stopped=
+past_why=
 restack_past() {
   local stack=$1 red=$2 at heads above head onto base scratch server held gap line status=0 pushes=() leases=() moved=() old new number tip edited=0
+  past_stopped=
+  past_why=
   at=$(jq --argjson red "$red" 'map(.number) | index($red)' <<< "$stack")
   mapfile -t heads < <(jq -r '.[].head' <<< "$stack")
   above=("${heads[@]:at+1}")
@@ -870,6 +876,8 @@ restack_past() {
   onto=origin/$base
   if ! gap=$(chain_gap "origin/${heads[at]}" "${above[@]}"); then
     echo "${above[gap]} does not contain ${heads[at+gap]}, the member below it; rebase it onto ${heads[at+gap]} first" >&2
+    past_stopped=$(jq -r ".[$((at + 1 + gap))].number" <<< "$stack")
+    past_why="its branch does not hold ${heads[at+gap]}, the member below it"
     return 1
   fi
   scratch=$(mktemp -d "${TMPDIR:-/tmp}/gandr-scratch-$$.XXXXXX")
@@ -877,6 +885,8 @@ restack_past() {
   git worktree add --quiet --detach "$scratch" "origin/${heads[-1]}"
   if ! chain_replay "$scratch" "$onto" "origin/${heads[at]}" git "${above[@]}"; then
     [[ -z $chain_files ]] || echo "the restack of ${above[*]} past #$red onto $onto conflicts ($chain_files); land again once #$red is fixed" >&2
+    past_stopped=$(jq -r ".[$((at + 1 + chain_stop))].number" <<< "$stack")
+    past_why="its replay past #$red stops${chain_files:+: it conflicts in $chain_files}"
     status=1
   fi
   if (( status == 0 )); then
@@ -970,7 +980,9 @@ cut_bottom() {
 # it on the top (#5073, #5902). `$3` is a JSON array of the members flagged:
 # a red one for `cut_bottom`, the held one for `pr:hold`. `heal.jq` decides
 # the cut as `pr:watch`'s heal does: no member above changes a path `$1`
-# changes, none is flagged and none is queued. `restack_past` then replays
+# changes, none is flagged and none is queued. With `$4` `replay`, as
+# `stack_eject` calls it, only a queued member above stops the cut, and the
+# replay itself decides the rest (#8225). `restack_past` then replays
 # the members above onto the member below `$1`, or the trunk, signed, with
 # #5071's server and ancestry checks. `$1` is retargeted onto the new top and
 # linked there, so it lands last once its seat clears it. Then the runs the
@@ -980,7 +992,9 @@ cut_bottom() {
 # nothing moved, when the cut is refused, waits on a queued member, or
 # conflicts.
 cut_to_top() {
-  local root=$1 stack=$2 flagged=$3 queued members=() member at=0 flag paths decision chain top status=0 heads=() numbers
+  local root=$1 stack=$2 flagged=$3 mode=${4:-heal} queued members=() member at=0 flag paths decision chain top status=0 heads=() numbers
+  past_stopped=
+  past_why=
   queued=$(queued_of "$stack")
   mapfile -t heads < <(jq -r '.[].head' <<< "$stack")
   git fetch --quiet origin "$trunk" "${heads[@]}"
@@ -993,6 +1007,12 @@ cut_to_top() {
   done
   decision=$(jq -cn --argjson own "$(jq '.[-1].number' <<< "$stack")" '{heals: 0, own: $own, members: ($ARGS.positional | map(fromjson))}' --args "${members[@]}" \
     | jq -c -f "$pr_stack_dir/heal.jq")
+  if [[ $mode == replay ]]; then
+    decision=$(jq -cn --argjson root "$root" '($ARGS.positional | map(fromjson)) as $members
+      | ($members | map(.number) | index($root)) as $at
+      | [$members[$at + 1:][] | select(.queued) | .number] as $queued
+      | if $queued == [] then {act: "past"} else {act: "wait", queued: $queued} end' --args "${members[@]}")
+  fi
   case $(jq -r .act <<< "$decision") in
     past) ;;
     wait)
@@ -1024,6 +1044,105 @@ cut_to_top() {
   printf '%s\t%s\n' \
     "$(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$stack")" \
     "$(jq -r --argjson root "$root" 'map(select(.number != $root) | "#\(.number)") + ["#\($root)"] | join(" ← ")' <<< "$stack")"
+}
+
+# Take each member that cannot land out of the stack `$1` (#8225). The stack
+# is the chain that `chain.jq` reads from `open_prs`, bottom to top, with its
+# held members. A member cannot land when it is a draft or held, when it
+# conflicts with its base, or when a required check failed on its head
+# (`red_reading`). `$2` is a JSON object that gives a cause for a member by
+# its number, for a caller that knows one.
+#
+# Each such member with a member above it that can land is cut to the top of
+# the stack (`cut_to_top` in its `replay` mode), the highest first. So each
+# cut replays only members that can land. A member above whose replay stops,
+# or whose branch does not hold the one below it, cannot land either
+# (`past_stopped`): it is taken out in the same way, and the rest go on.
+#
+# Each member that this run takes out becomes a draft with the cause in its
+# hold comment, and its lane gets one page (`stack_left`). A member that was
+# held before gets neither. Prints one line for each member that left.
+# Returns 1 when a cut waits on a queued member or the server refuses it.
+# Then the stack stays as it stood.
+stack_eject() {
+  local stack=$1 preset=${2:-'{}'} required all number why red kept flagged pick status=0
+  local -A cause=() fresh=()
+  required=$(required_contexts) || return 1
+  all=$(pulls_reading) || return 1
+  for number in $(jq -r '.[].number' <<< "$stack"); do
+    why=$(jq -r --arg n "$number" '.[$n] // empty' <<< "$preset")
+    if [[ -z $why ]]; then
+      why=$(jq -r --argjson n "$number" '.[] | select(.number == $n)
+        | if .isInMergeQueue or .autoMergeRequest != null then "queued"
+          elif .isDraft or any(.labels.nodes[]; .name == "hold:owner") then "held"
+          elif .mergeable == "CONFLICTING" then "it conflicts with its base"
+          else empty end' <<< "$all")
+    fi
+    [[ $why != queued ]] || continue
+    if [[ -z $why ]]; then
+      red=$(red_reading "$number") || return 1
+      [[ $red == null ]] || why="its required check \`$(jq -r .check <<< "$red")\` failed"
+    fi
+    [[ -n $why ]] || continue
+    cause[$number]=$why
+    [[ $why == held ]] || fresh[$number]=1
+  done
+  kept=$stack
+  while (( ${#cause[@]} > 0 )); do
+    flagged=$(printf '%s\n' "${!cause[@]}" | jq -sc .)
+    # A flagged member with no member above it that can land stays where it
+    # is, and no cut replays it.
+    kept=$(jq -c --argjson flagged "$flagged" '. as $all
+      | ([range(0; length) | select($all[.].number | IN($flagged[]) | not)] | last // -1) as $last
+      | .[:$last + 1]' <<< "$kept")
+    pick=$(jq -r --argjson flagged "$flagged" '[.[] | select(.number | IN($flagged[])) | .number] | last // empty' <<< "$kept")
+    [[ -n $pick ]] || break
+    if cut_to_top "$pick" "$kept" "[$pick]" replay > /dev/null; then
+      echo "#$pick left the stack: ${cause[$pick]}"
+      kept=$(jq -c --argjson n "$pick" 'map(select(.number != $n))' <<< "$kept")
+    elif [[ -n $past_stopped && -z ${cause[$past_stopped]:-} ]]; then
+      cause[$past_stopped]=$past_why
+      fresh[$past_stopped]=1
+    else
+      status=1
+      break
+    fi
+  done
+  # A member whose cut waits or is refused stays in `kept`: it did not leave.
+  for number in $(printf '%s\n' "${!fresh[@]}" | sort -n); do
+    [[ $(jq --argjson n "$number" 'any(.[]; .number == $n)' <<< "$kept") == false ]] || continue
+    stack_left "$number" "$(jq -r --argjson n "$number" '.[] | select(.number == $n) | .headRefName' <<< "$all")" "${cause[$number]}"
+  done
+  return "$status"
+}
+
+# Make pull request `$1`, on the branch `$2`, a draft that states the cause
+# `$3` in its hold comment, and page its lane (`page_left`). `stack_eject`
+# runs it for each member that it takes out. The comment has the marker and
+# the table of `pr:hold`, so each reader of a hold reads it.
+stack_left() {
+  local number=$1 head=$2 why=$3 cell
+  gh pr ready "$number" -R "$repo" --undo > /dev/null || echo "#$number is not made a draft; hold it with \`pr:hold $number\`" >&2
+  cell=${why//|/\\|}
+  gh pr comment "$number" -R "$repo" --body "$(printf '<!-- hold -->\nThis pull request left its stack.\n\n| Field | Value |\n| --- | --- |\n| Reason | %s |\n| Release | repair it, rebase it onto its base and push, then `mise run pr:release %s` |\n' "$cell" "$number")" > /dev/null \
+    || echo "the hold comment of #$number is not written" >&2
+  gh_budget_stale
+  page_left "$number" "${head%%-*}" "$why"
+}
+
+# Run `stack_eject` on each stack of the server (#8225): each chain from a
+# pull request on the trunk that no app opened. `pr:open` and `pr:land` run
+# it before they read the top, so no service has to. A stack whose cut waits
+# or is refused stays as it stood, and the others go on. Returns 1 when one
+# stays so.
+stacks_eject() {
+  local open bottom stack status=0
+  open=$(open_prs) || return 1
+  for bottom in $(jq -r --arg trunk "$trunk" '.[] | select(.base == $trunk and (.bot | not)) | .number' <<< "$open"); do
+    stack=$(jq -c --argjson n "$bottom" --arg trunk "$trunk" -f "$pr_stack_dir/chain.jq" <<< "$open")
+    stack_eject "$stack" || status=1
+  done
+  return "$status"
 }
 
 # Cancel the runs a cut made stale (#5073, `stale.jq`): a queued or running
