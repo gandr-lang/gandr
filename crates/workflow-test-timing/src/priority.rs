@@ -118,27 +118,29 @@ struct Level
     leave: Duration,
 }
 
-/// The levels, highest first: boundaries at 120, 60, 30 and 15 seconds.
+/// The levels, highest first: boundaries at 8, 4, 2 and 1 seconds. The lowest
+/// boundary is the suite's bound of a second a test, so every test past it
+/// starts before the tests within it, and the slowest start first.
 const LEVELS: [Level; 4] = [
     Level {
         priority: Priority(100),
-        enter: Duration::from_secs(150),
-        leave: Duration::from_secs(96),
+        enter: Duration::from_secs(10),
+        leave: Duration::from_millis(6_400),
     },
     Level {
         priority: Priority(90),
-        enter: Duration::from_secs(75),
-        leave: Duration::from_secs(48),
+        enter: Duration::from_secs(5),
+        leave: Duration::from_millis(3_200),
     },
     Level {
         priority: Priority(80),
-        enter: Duration::from_millis(37_500),
-        leave: Duration::from_secs(24),
+        enter: Duration::from_millis(2_500),
+        leave: Duration::from_millis(1_600),
     },
     Level {
         priority: Priority(70),
-        enter: Duration::from_millis(18_750),
-        leave: Duration::from_secs(12),
+        enter: Duration::from_millis(1_250),
+        leave: Duration::from_millis(800),
     },
 ];
 
@@ -615,42 +617,42 @@ mod tests
         let secs = Duration::from_secs;
         let millis = Duration::from_millis;
         assert_eq!(
-            propose(Priority::DEFAULT, millis(18_749)),
+            propose(Priority::DEFAULT, millis(1_249)),
             Priority::DEFAULT,
             "below 70's entry"
         );
         assert_eq!(
-            propose(Priority::DEFAULT, millis(18_750)),
+            propose(Priority::DEFAULT, millis(1_250)),
             Priority(70),
             "at 70's entry"
         );
         assert_eq!(
-            propose(Priority(70), millis(11_999)),
+            propose(Priority(70), millis(799)),
             Priority::DEFAULT,
             "below 70's exit"
         );
         assert_eq!(
-            propose(Priority(70), secs(12)),
+            propose(Priority(70), millis(800)),
             Priority(70),
             "at 70's exit"
         );
         assert_eq!(
-            propose(Priority(70), secs(74)),
+            propose(Priority(70), millis(4_900)),
             Priority(80),
             "past 80's entry, short of 90's"
         );
         assert_eq!(
-            propose(Priority(100), secs(96)),
+            propose(Priority(100), millis(6_400)),
             Priority(100),
             "at 100's exit"
         );
         assert_eq!(
-            propose(Priority(100), millis(95_999)),
+            propose(Priority(100), millis(6_399)),
             Priority(90),
             "below 100's exit"
         );
         assert_eq!(
-            propose(Priority::DEFAULT, secs(175)),
+            propose(Priority::DEFAULT, secs(12)),
             Priority(100),
             "skips every lower level"
         );
@@ -810,20 +812,24 @@ mod tests
             runs: crate::report::RunCount::from(3_usize),
         };
         let secs = Duration::from_secs;
+        let millis = Duration::from_millis;
         let overrides = Overrides(SmallVec::<_, 0, Global>::from_iter([Rule {
             priority: Priority(90),
             terms: SmallVec::<_, 0, Global>::from_iter([Term::Exact(TestName::from("was_slow"))]),
         }]));
         let rows = proposals(
             SmallVec::<_, 0, Global>::from_iter([
-                (TestName::from("fast"), timing(secs(1), secs(1), secs(1))),
+                (
+                    TestName::from("fast"),
+                    timing(millis(100), millis(100), millis(100)),
+                ),
                 (
                     TestName::from("now_slow"),
-                    timing(secs(160), secs(100), secs(200)),
+                    timing(secs(16), secs(10), secs(20)),
                 ),
                 (
                     TestName::from("was_slow"),
-                    timing(secs(2), secs(2), secs(2)),
+                    timing(millis(500), millis(500), millis(500)),
                 ),
             ]),
             &overrides,
@@ -841,8 +847,8 @@ mod tests
         assert_eq!(
             Table(&rows).to_string(),
             "test      median  fastest  slowest  runs  current  proposed  lane\n\
-             now_slow   160.0    100.0    200.0     3        0       100  junit-cargo-test-enforcing  unsteady\n\
-             was_slow     2.0      2.0      2.0     3       90         0  junit-cargo-test-enforcing\n",
+             now_slow    16.0     10.0     20.0     3        0       100  junit-cargo-test-enforcing  unsteady\n\
+             was_slow     0.5      0.5      0.5     3       90         0  junit-cargo-test-enforcing\n",
             "every column, and the flag on the wide spread"
         );
     }
