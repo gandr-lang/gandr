@@ -28,13 +28,15 @@ filter = "test(=editor::scenarios::sweeps::erasing_each_corpus_source_line_by_li
 threads-required = "num-test-threads"
 
 # The slowest tests start first, so the run ends sooner on a fixed count of
-# threads. `mise run ci:timing` (`crates/workflow-test-timing`) proposes these
-# tables from measured times, at levels of 1, 2, 4 and 8 s, the bound of a
-# second a test the lowest. These come from one run of the whole suite under
-# the `ci` profile at landing 1be90d981e with #8234 to #8238, on a host of 32
-# threads at a load of 46 to 50. A run that moves a test across a level's
-# margin moves it in the next proposal. A filter that names no test sets no
-# priority, and the next proposal drops it.
+# threads. The timing tool proposes these tables from measured times. Its
+# levels are 1, 2, 4 and 8 s, and the lowest is the bound of a second a test.
+#
+# One run of the whole suite under the `ci` profile gives these times. That
+# run holds the units of the slow tests, on a host of 32 threads at a load of
+# 46 to 50. A run that moves a test across a level's margin moves it in the
+# next proposal. A filter that names no test sets no priority, and the next
+# proposal drops it.
+# - see: `mise run ci:timing`, `crates/workflow-test-timing`, #8234, #8240
 [[profile.default.overrides]]
 filter = "test(=activity::tests::a_watcher_of_the_rows_hears_the_occupancy_move) or test(=cli::a_relay_reaches_only_a_hub_of_its_own_build) or test(=corpus::every_refusing_source_renders_as_its_golden) or test(=evaluate::tests::a_while_loop_runs_in_constant_continuation) or test(=evaluate::tests::a_while_loop_runs_in_constant_continuation_natively)"
 priority = 80
