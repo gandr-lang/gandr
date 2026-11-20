@@ -1,0 +1,4 @@
+/// `explicit_runs`: asks that every run a declaration infers be written.
+@[explicit_runs]
+def answer() -> Integer =
+  42
