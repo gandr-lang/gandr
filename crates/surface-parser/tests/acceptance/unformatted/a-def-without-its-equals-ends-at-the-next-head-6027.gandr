@@ -1,0 +1,6 @@
+def rec append(a : Type, ys : {list}, xs : {list}) -> {list}
+  match xs where
+    | Nil => ys
+    | Cons(x, rest) => Cons x (append a ys rest)
+
+pub def size(a : Type, xs : {list}) -> Integer = 0;
