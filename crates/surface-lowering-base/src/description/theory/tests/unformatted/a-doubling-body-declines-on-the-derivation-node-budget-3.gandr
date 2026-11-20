@@ -1,0 +1,3 @@
+    node : l(w{below}) --> (a{level});
+    node : r(w{below}) --> (b{level});
+    node : add(a{level}, b{level}) --> (w{level});

@@ -1,0 +1,83 @@
+test: gear::a_public_salt_moves_the_cuts_6714
+package: gandr-storage-chunker
+command: mise run debug:test gandr-storage-chunker gear::a_public_salt_moves_the_cuts_6714 --break table_seed
+
+(lldb) target create "target/debug-trace/debug/build/gandr-storage-chunker/8b70ed1059aa7a59/out/tests-8b70ed1059aa7a59"
+Current executable set to 'target/debug-trace/debug/build/gandr-storage-chunker/8b70ed1059aa7a59/out/tests-8b70ed1059aa7a59' (x86_64).
+(lldb) settings set -- target.run-args  "gear::a_public_salt_moves_the_cuts_6714" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex table_seed
+Breakpoint 1: where = tests-8b70ed1059aa7a59`<gandr_storage_chunker::gear::SeedPolicy>::table_seed + 14 at gear.rs:510:15, address = 0x00000000000be22e
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-8b70ed1059aa7a59`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x00000000000d4e28
+(lldb) run
+
+running 1 test
+test gear::a_public_salt_moves_the_cuts_6714 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 3056548 launched: 'target/debug-trace/debug/build/gandr-storage-chunker/8b70ed1059aa7a59/out/tests-8b70ed1059aa7a59' (x86_64)
+Process 3056548 stopped
+* thread #2, name = 'gear::a_public_', stop reason = breakpoint 1.1
+       frame #0: 0x000055555561222e tests-8b70ed1059aa7a59`<gandr_storage_chunker::gear::SeedPolicy>::table_seed(self=PublicSalt({0:"\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a"})) at gear.rs:510:15
+   507 	    })]
+   508 	    const fn table_seed(&self) -> TableSeed
+   509 	    {
+-> 510 	        match *self {
+    	              ^
+   511 	            Self::Unsalted => TableSeed(GEAR_TABLE_SEED),
+   512 	            Self::PublicSalt(_) => TableSeed(GEAR_TABLE_SEED ^ self.folded().0),
+   513 	        }
+(lldb) bt 24
+* thread #2, name = 'gear::a_public_', stop reason = breakpoint 1.1
+   * frame #0: 0x000055555561222e tests-8b70ed1059aa7a59`<gandr_storage_chunker::gear::SeedPolicy>::table_seed(self=PublicSalt({0:"\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a"})) at gear.rs:510:15
+     frame #1: 0x00005555555af5a4 tests-8b70ed1059aa7a59`<gandr_storage_chunker::gear::ChunkerParams>::new((null)=V2, seed_policy=PublicSalt({0:"\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a"}), (null)=PreserveBytes, (null)=BetweenRecords, limits={min_bytes:{0:64}, target_bytes:{0:256}, max_bytes:{0:1024}, min_records:{0:64}, target_records:{0:256}, max_records:{0:1024}}) at gear.rs:865:82
+     frame #2: 0x00005555555a1be3 tests-8b70ed1059aa7a59`tests::gear::a_public_salt_moves_the_cuts_6714 at gear.rs:611:24
+     frame #3: 0x000055555559d1f7 tests-8b70ed1059aa7a59`tests::gear::a_public_salt_moves_the_cuts_6714::{closure#0}((null)={}) at gear.rs:582:39
+     frame #4: 0x00005555555ccd16 tests-8b70ed1059aa7a59`<tests::gear::a_public_salt_moves_the_cuts_6714::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #5: 0x00005555555cd22b tests-8b70ed1059aa7a59`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #6: 0x00005555555cd229 tests-8b70ed1059aa7a59`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #7: 0x00005555555da775 tests-8b70ed1059aa7a59`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #8: 0x00005555555da770 tests-8b70ed1059aa7a59`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #9: 0x00005555555da770 tests-8b70ed1059aa7a59`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #10: 0x00005555555da75b tests-8b70ed1059aa7a59`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #11: 0x00005555555da75b tests-8b70ed1059aa7a59`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #12: 0x00005555555da75b tests-8b70ed1059aa7a59`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #13: 0x00005555555da746 tests-8b70ed1059aa7a59`test::run_test::{closure#0} at lib.rs:677:43
+     frame #14: 0x00005555555d5134 tests-8b70ed1059aa7a59`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #15: 0x00005555555d50b9 tests-8b70ed1059aa7a59`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #16: 0x00005555555dd8d2 tests-8b70ed1059aa7a59`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #17: 0x00005555555dd8c3 tests-8b70ed1059aa7a59`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #18: 0x00005555555dd8c3 tests-8b70ed1059aa7a59`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #19: 0x00005555555dd8b3 tests-8b70ed1059aa7a59`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #20: 0x00005555555dd8b3 tests-8b70ed1059aa7a59`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #21: 0x00005555555dd8b3 tests-8b70ed1059aa7a59`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #22: 0x00005555555dd8a4 tests-8b70ed1059aa7a59`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #23: 0x000055555564bcff tests-8b70ed1059aa7a59`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [inlined]
+(lldb) frame variable --depth 3
+(gandr_storage_chunker::gear::SeedPolicy *) self = 0x00007ffff7bfe2bf PublicSalt({0:"\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a"})
+(lldb) up
+frame #1: 0x00005555555af5a4 tests-8b70ed1059aa7a59`<gandr_storage_chunker::gear::ChunkerParams>::new((null)=V2, seed_policy=PublicSalt({0:"\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a"}), (null)=PreserveBytes, (null)=BetweenRecords, limits={min_bytes:{0:64}, target_bytes:{0:256}, max_bytes:{0:1024}, min_records:{0:64}, target_records:{0:256}, max_records:{0:1024}}) at gear.rs:865:82
+   862 	            // only a salted profile builds one.
+   863 	            table: match seed_policy {
+   864 	                SeedPolicy::Unsalted => GEAR_TABLE,
+-> 865 	                SeedPolicy::PublicSalt(_) => crate::gear::gear_table(seed_policy.table_seed()),
+    	                                                                                 ^
+   866 	            },
+   867 	        }
+   868 	    }
+(lldb) frame variable --depth 3
+(gandr_storage_chunker::gear::GearTableVersion)  = V2
+(gandr_storage_chunker::gear::SeedPolicy) seed_policy = PublicSalt({0:"\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a"}) {
+  0 = {0:"\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a"}
+}
+(gandr_storage_chunker::gear::NormalizationPolicy)  = PreserveBytes
+(gandr_storage_chunker::gear::RecordBoundaryRule)  = BetweenRecords
+(gandr_storage_chunker::gear::ChunkLimits) limits = {min_bytes:{0:64}, target_bytes:{0:256}, max_bytes:{0:1024}, min_records:{0:64}, target_records:{0:256}, max_records:{0:1024}}
+(gandr_storage_chunker::gear::GearTableVersion) gear_table = V2
+(gandr_storage_chunker::gear::NormalizationPolicy) normalization = PreserveBytes
+(gandr_storage_chunker::gear::RecordBoundaryRule) record_boundary_rule = BetweenRecords

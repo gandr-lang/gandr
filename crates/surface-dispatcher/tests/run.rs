@@ -1,0 +1,1318 @@
+//! The run verb's source and script faces.
+//!
+//! [`run_source`] runs source text and [`Script`] the file `gandr run` names.
+//! These cases pin what the file face separates — a path it cannot read, a
+//! source that never reaches the machine, and a completed run — and the
+//! shebang line an executable script opens with, each against the same text
+//! run with no file.
+//!
+//! The run cases, in a `cfg(test)` module so the crate's lint wall reads them
+//! as test code rather than as shipping code.
+
+use core::net::Ipv4Addr;
+use core::net::SocketAddr;
+use core::str::FromStr as _;
+use core::time::Duration;
+use std::net::UdpSocket;
+use std::path::Path;
+use std::path::PathBuf;
+use std::thread;
+use std::time::Instant;
+
+use anodized::spec;
+use gandr_runtime_net::Binding;
+use gandr_runtime_net::Endpoint;
+use gandr_runtime_net::Frame;
+use gandr_runtime_net::Net;
+use gandr_runtime_net::Peer;
+use gandr_runtime_net::Secret;
+use gandr_runtime_net::WorldName;
+use gandr_storage_values::ChunkCount;
+use gandr_surface_dispatcher::Captured;
+use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Entered;
+use gandr_surface_dispatcher::Evaluation;
+use gandr_surface_dispatcher::ExitStatus;
+use gandr_surface_dispatcher::Hosted;
+use gandr_surface_dispatcher::LoweringCount;
+use gandr_surface_dispatcher::MigrationCount;
+use gandr_surface_dispatcher::Ran;
+use gandr_surface_dispatcher::RealsProfile;
+use gandr_surface_dispatcher::RunStatus;
+use gandr_surface_dispatcher::Script;
+use gandr_surface_dispatcher::ScriptRun;
+use gandr_surface_dispatcher::SourceFault;
+use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::Streams;
+use gandr_surface_dispatcher::Unrunnable;
+use gandr_surface_dispatcher::WorldBinding;
+use gandr_surface_dispatcher::WorldBindingError;
+use gandr_surface_dispatcher::WorldBindings;
+use gandr_surface_dispatcher::run_source;
+use gandr_surface_evaluate::Evaluator;
+use gandr_surface_grammar::built_in;
+use gandr_surface_syntax::SourceText;
+
+/// A program whose `main` returns forty-two.
+const ANSWER: &str = include_str!("run/unformatted/answer.gandr");
+
+/// The hosting endpoint's secret, fixed so a run can bind the seat to its
+/// key.
+const HOST_SECRET: &str = "0505050505050505050505050505050505050505050505050505050505050505";
+
+/// How many integers the descent case's list holds: enough for its image to
+/// span many chunks.
+const LISTED: u16 = 300;
+
+/// How long the descent case's first host stays bound after its last
+/// answer: a host whose endpoint is slow to close, which the run's next
+/// migration to the seat must not reach.
+const LINGER: Duration = Duration::from_millis(100);
+
+/// The longest a host tries to bind a socket that another host just
+/// released. A quiet host binds at the first or the second try.
+const REBIND: Duration = Duration::from_secs(60);
+
+/// How long the late-release case holds a socket before it releases it.
+/// The time is longer than 100 tries 50 ms apart. A bind with a shorter
+/// retry window fails the case.
+const LATE: Duration = Duration::from_secs(7);
+
+/// A scratch source file, removed when dropped.
+#[repr(transparent)]
+struct Scratch(PathBuf);
+
+impl Scratch
+{
+    /// `text` written to a file named for `test` and this process.
+    ///
+    /// # Specification
+    /// - requires: the derived path has a writable parent and belongs only to
+    ///   this fixture for its lifetime.
+    /// - ensures: the returned path names a regular file containing `text`.
+    /// - fails: never.
+    /// - panics: if the file cannot be written.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — isolated value, shebang and refusal files are read
+    ///   back through the script's source step and compared byte-for-byte with
+    ///   their supplied text. These cases detect truncation or a wrong source,
+    ///   not external interference or every filesystem failure.
+    /// - witness: `tests::run::run_source_file_runs_a_script_file`
+    /// - witness: `tests::run::run_source_file_accepts_an_executable_shebang_line`
+    /// - witness: `tests::run::run_source_file_surfaces_a_source_failure_unchanged`
+    #[spec(ensures: |ref ret| ret.0.metadata().is_ok_and(|metadata|
+            metadata.is_file() && u64::try_from(text.as_ref().len())
+                .is_ok_and(|offered| metadata.len() == offered)))]
+    fn write(
+        test: &Path,
+        text: SourceText<'_>,
+    ) -> Self
+    {
+        let path = std::env::temp_dir().join(format!(
+            "gandr-dispatcher-run-{}-{}.gandr",
+            test.display(),
+            std::process::id()
+        ));
+        std::fs::write(&path, text.as_ref()).expect("the scratch source is written");
+        Self(path)
+    }
+}
+
+impl Drop for Scratch
+{
+    /// Remove the file.
+    ///
+    /// # Specification
+    /// - requires: the fixture still exclusively owns its removable file.
+    /// - ensures: the fixture's path no longer names a file.
+    /// - fails: never.
+    /// - panics: if the file cannot be removed.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the value-file case retains its path across drop and
+    ///   independently observes its absence afterward, detecting a skipped
+    ///   removal on normal exit. Unwinding and external filesystem changes are
+    ///   outside this witness.
+    /// - witness: `tests::run::run_source_file_runs_a_script_file`
+    #[spec(ensures: self.0.try_exists().is_ok_and(|exists| !exists))]
+    fn drop(&mut self)
+    {
+        let removed = std::fs::remove_file(&self.0);
+        assert!(removed.is_ok(), "the scratch source is removed");
+    }
+}
+
+/// What running `text` with no file comes to.
+///
+/// # Specification
+/// - requires: the built-in grammar builds and the fixture composes.
+/// - ensures: returns the source's execution outcome; any entry run is named in
+///   the supplied source.
+/// - fails: never.
+/// - panics: if grammar construction or composition fails.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an explicit forty-two program asserts its entry and
+///   status, while empty and refused sources assert their distinct outcomes.
+///   This detects losing the entry or collapsing those outcomes, not arbitrary
+///   evaluation errors or parser recovery.
+/// - witness: `tests::run::run_source_runs_source_text`
+/// - witness: `tests::run::run_source_file_surfaces_a_source_failure_unchanged`
+#[spec(ensures: |ref ret| match *ret {
+        Ran::Entered { target, .. } => text.as_ref().contains(target.as_ref()),
+        Ran::Refused | Ran::NoProgram => true,
+        Ran::Hosted(_) => false,
+    })]
+fn ran_text(text: SourceText<'_>) -> Ran<'_>
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let mut lowerings = LoweringCount::default();
+    let (_composed, ran) = run_source::<Evaluator>(
+        &grammar,
+        text,
+        &mut lowerings,
+        &mut Streams::Captured(&mut Captured::default()),
+    )
+    .expect("the source composes");
+    ran
+}
+
+/// Assert the file's complete source, path, execution and status.
+///
+/// # Specification
+/// - requires: the fixture file is readable and composes as a module;
+///   `expected_status` is the status of `expected`.
+/// - ensures: returning establishes that the source step preserves `path` and
+///   holds `expected_text` from its base, after the prelude, and its execution
+///   equals both expectations.
+/// - fails: never.
+/// - panics: if the script does not produce that source and execution.
+///
+/// # Adequacy
+/// - hypothesis: L3 literal status and source observations distinguish an
+///   entry, refusal and empty programs and preserve the shebang's bytes; L2
+///   comparison with in-memory execution checks the two entry paths agree.
+///   Neither is an independent evaluator for arbitrary programs.
+/// - witness: `tests::run::run_source_file_runs_a_script_file`
+/// - witness: `tests::run::run_source_file_accepts_an_executable_shebang_line`
+/// - witness: `tests::run::run_source_file_surfaces_a_source_failure_unchanged`
+#[spec(requires: expected.status() == expected_status)]
+fn assert_runs_to(
+    path: &Path,
+    expected_text: SourceText<'_>,
+    expected: &Ran<'_>,
+    expected_status: RunStatus,
+)
+{
+    let mut script = Script::new(path.to_path_buf());
+    let actual = script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default()));
+    assert_eq!(
+        actual.status(),
+        expected_status,
+        "the script's status is preserved"
+    );
+    match actual {
+        ScriptRun::Source {
+            step:
+                Step::Source {
+                    path: observed_path,
+                    text,
+                    base,
+                    composed: Composed::Settled { .. },
+                    ..
+                },
+            ran,
+        } => {
+            assert_eq!(
+                observed_path, path,
+                "the source step names the supplied path"
+            );
+            assert_eq!(
+                text.as_ref().get(usize::from(base) ..),
+                Some(expected_text.as_ref()),
+                "the complete file is retained as source, after the prelude"
+            );
+            assert_eq!(ran, *expected, "the file face runs as its text does");
+        },
+        other @ (ScriptRun::Fault { .. } | ScriptRun::Source { .. }) => {
+            panic!("the script composes: {other:?}")
+        },
+    }
+}
+
+#[test]
+fn run_source_runs_source_text()
+{
+    let ran = ran_text(SourceText::from(ANSWER));
+    assert!(
+        matches!(
+            ran,
+            Ran::Entered {
+                target,
+                entered: Entered::Exited(status),
+            } if target.as_ref() == "main" && status == ExitStatus::from(42_u8)
+        ),
+        "a completed run exits with what its entry returns: {ran:?}"
+    );
+}
+
+/// A script file runs exactly as its source text does.
+#[test]
+fn run_source_file_runs_a_script_file()
+{
+    let script = Scratch::write(Path::new("value"), SourceText::from(ANSWER));
+    assert_runs_to(
+        &script.0,
+        SourceText::from(ANSWER),
+        &ran_text(SourceText::from(ANSWER)),
+        RunStatus::Value,
+    );
+    let removed_path = script.0.clone();
+    drop(script);
+    assert!(removed_path.try_exists().is_ok_and(|exists| !exists));
+}
+
+/// A shebang line does not change what a script computes.
+#[test]
+fn run_source_file_accepts_an_executable_shebang_line()
+{
+    let shebang = format!(
+        include_str!(
+            "run/unformatted/run-source-file-accepts-an-executable-shebang-line-shebang.gandr"
+        ),
+        ANSWER = ANSWER
+    );
+    let script = Scratch::write(Path::new("shebang"), SourceText::from(shebang.as_str()));
+    assert_runs_to(
+        &script.0,
+        SourceText::from(shebang.as_str()),
+        &ran_text(SourceText::from(ANSWER)),
+        RunStatus::Value,
+    );
+}
+
+/// #2302: a script is laid after the prelude, so `==` between two strings
+/// resolves the prelude's `EqString` and runs to whether they are the same
+/// text; bare, `==` would be the integer primitive and refuse them.
+#[test]
+fn a_script_compares_through_the_prelude_s_eq_2302()
+{
+    for (test, compared, status) in [
+        ("same", r#""types" == "types""#, 0_u8),
+        ("different", r#""types" == "machines""#, 1_u8),
+    ] {
+        let text = format!(
+            include_str!("run/unformatted/a-script-compares-through-the-prelude-s-eq-2302.gandr"),
+            compared = compared
+        );
+        let file = Scratch::write(
+            Path::new(&format!("eq-2302-{test}")),
+            SourceText::from(text.as_str()),
+        );
+        let mut script = Script::new(file.0.clone());
+        let run = script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default()));
+        assert!(
+            matches!(
+                run,
+                ScriptRun::Source {
+                    ran: Ran::Entered {
+                        entered: Entered::Exited(exited),
+                        ..
+                    },
+                    ..
+                } if exited == ExitStatus::from(status)
+            ),
+            "`{compared}` decides the status: {run:?}"
+        );
+    }
+}
+
+/// #2970: a script is laid out with what it imports, as `check` lays it, so
+/// its entry runs through a sibling's declaration; laid after the prelude
+/// alone, the import would name no source and nothing would run.
+#[test]
+fn a_script_runs_through_what_it_imports_2970()
+{
+    let sibling = Scratch::write(
+        Path::new("import-2970-answer"),
+        SourceText::from("pub def answer = 42 ;\n"),
+    );
+    let name = sibling
+        .0
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("the sibling's name");
+    let text = format!(
+        include_str!("run/unformatted/a-script-runs-through-what-it-imports-2970.gandr"),
+        name = name
+    );
+    let importer = Scratch::write(
+        Path::new("import-2970-main"),
+        SourceText::from(text.as_str()),
+    );
+    let mut script = Script::new(importer.0.clone());
+    let run = script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default()));
+    assert!(
+        matches!(
+            run,
+            ScriptRun::Source {
+                ran: Ran::Entered {
+                    entered: Entered::Exited(exited),
+                    ..
+                },
+                ..
+            } if exited == ExitStatus::from(42_u8)
+        ),
+        "the entry runs through the sibling's `answer`: {run:?}"
+    );
+}
+
+/// #1881: a script's arguments reach its entry, which exits with their
+/// number.
+#[test]
+fn a_script_passes_its_arguments_to_its_entry_1881()
+{
+    let counted =
+        include_str!("run/fixtures/a-script-passes-its-arguments-to-its-entry-1881-counted.gandr");
+    let file = Scratch::write(Path::new("arguments"), SourceText::from(counted));
+    for arguments in [vec![], vec![String::from("one"), String::from("two")]] {
+        let mut script = Script::new(file.0.clone());
+        let count = u8::try_from(arguments.len()).expect("a few arguments");
+        script.pass(arguments);
+        let run = script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default()));
+        assert!(
+            matches!(
+                run,
+                ScriptRun::Source {
+                    ran: Ran::Entered {
+                        entered: Entered::Exited(status),
+                        ..
+                    },
+                    ..
+                } if u8::from(status) == count
+            ),
+            "the entry exits with the number of its arguments: {run:?}"
+        );
+    }
+}
+
+#[test]
+fn run_source_file_reports_the_path_of_an_absent_file()
+{
+    let absent = std::env::temp_dir().join(format!(
+        "gandr-dispatcher-run-absent-{}.gandr",
+        std::process::id()
+    ));
+    drop(std::fs::remove_file(&absent));
+    let mut script = Script::new(absent.clone());
+    let run = script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default()));
+    assert_eq!(
+        run.status(),
+        RunStatus::Unreached,
+        "an absent file never reaches the machine"
+    );
+    assert!(
+        matches!(
+            run,
+            ScriptRun::Fault {
+                path,
+                fault: SourceFault::Unreadable(_),
+            } if path == absent
+        ),
+        "an unreadable file is a read fault naming the path it could not read: {run:?}"
+    );
+}
+
+/// The script face surfaces the source's failure unchanged.
+#[test]
+fn run_source_file_surfaces_a_source_failure_unchanged()
+{
+    for (test, text, failure) in [
+        ("no-program", "// declares nothing\n", Ran::NoProgram),
+        (
+            "no-main",
+            include_str!(
+                "run/fixtures/run-source-file-surfaces-a-source-failure-unchanged-1.gandr"
+            ),
+            Ran::NoProgram,
+        ),
+        (
+            "refused",
+            include_str!(
+                "run/fixtures/run-source-file-surfaces-a-source-failure-unchanged-2.gandr"
+            ),
+            Ran::Refused,
+        ),
+    ] {
+        assert_eq!(
+            ran_text(SourceText::from(text)),
+            failure,
+            "`{text}` fails before the machine"
+        );
+        let script = Scratch::write(Path::new(test), SourceText::from(text));
+        assert_runs_to(
+            &script.0,
+            SourceText::from(text),
+            &failure,
+            RunStatus::Unreached,
+        );
+    }
+}
+
+/// #3186: the ping exemplar run as a script with a network dials an endpoint
+/// on loopback, sends `ping`, prints the `pong` it reads back and exits 0;
+/// a `transmit` on a stream no network minted is declined, and the run is
+/// stuck at it.
+#[test]
+fn a_script_pings_over_its_network_3186()
+{
+    let loopback = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
+    let mut server =
+        Endpoint::bind(&Binding::new(Secret::generate()).at(loopback)).expect("loopback binds");
+    let socket = server
+        .sockets()
+        .iter()
+        .copied()
+        .find(SocketAddr::is_ipv4)
+        .expect("the server reports its loopback socket");
+    let peer = Peer::new(server.node_id()).at(socket);
+    let exemplar =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/distribution/ping.gandr");
+    thread::scope(|scope| {
+        let serving = scope.spawn(move || {
+            let (_, stream) = server.accept().expect("the script dials");
+            let ping = server.recv(stream).expect("the script sends");
+            server
+                .send(stream, Frame::from(b"pong".to_vec()))
+                .expect("the answer is sent");
+            server.close(stream).expect("both ends close");
+            ping
+        });
+        let mut script = Script::new(exemplar.clone());
+        script.pass(vec![peer.to_string()]);
+        script.network(Net::new(Binding::new(Secret::generate()).at(loopback)));
+        let mut console = Captured::default();
+        let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
+        assert!(
+            matches!(
+                run,
+                ScriptRun::Source {
+                    ran: Ran::Entered {
+                        entered: Entered::Exited(status),
+                        ..
+                    },
+                    ..
+                } if status == ExitStatus::from(0_u8)
+            ),
+            "the pinger exits 0: {run:?}"
+        );
+        assert_eq!(console.lines(), ["pong"], "the answer is printed");
+        assert_eq!(
+            serving.join().expect("the server ends"),
+            Frame::from(b"ping".to_vec())
+        );
+    });
+
+    let stray = Scratch::write(
+        Path::new("net-stray-3186"),
+        SourceText::from(include_str!(
+            "run/fixtures/a-script-pings-over-its-network-3186-stray.gandr"
+        )),
+    );
+    let mut script = Script::new(stray.0.clone());
+    script.network(Net::new(Binding::new(Secret::generate()).at(loopback)));
+    let run = script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default()));
+    assert!(
+        matches!(run, ScriptRun::Source {
+            ran: Ran::Entered {
+                entered: Entered::Ended(Evaluation::Stuck(_)),
+                ..
+            },
+            ..
+        }),
+        "a stream no network minted is declined: {run:?}"
+    );
+}
+
+/// The canonical bytes of the plan of the square root of two, which the
+/// exact reals exemplar admits: its cut names the laws at the reference zero.
+const ROOT_TWO: &str = "4758525001000b0000000000000001000000000200000000000000000000000012000000000100000005000000000000000002010000000100000000000000011203000000040000001402000000050000001201000000000000001204000000030000001307000000080000000800010000000001000000000000000100010100000001000000000000000100060000000900000000000000";
+
+/// #5700: the exact reals exemplar run as a script prints the two ends of
+/// an enclosure of the square root of two no wider than `2^-64`, and writes
+/// nothing to standard error. The host declines four `Reals` operations and
+/// names each cause on standard error first: text that is not hexadecimal, a
+/// forged plan whose cut names the overtness of a domain as its laws, a
+/// handle that names no plan, and a precision past the quota. Each such run
+/// is stuck at the operation, and it prints nothing.
+#[test]
+fn a_script_encloses_the_square_root_of_two_5700()
+{
+    let exemplar =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/reals/sqrt-two.gandr");
+    let mut console = Captured::default();
+    let mut script = Script::new(exemplar);
+    let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
+    assert!(
+        matches!(
+            run,
+            ScriptRun::Source {
+                ran: Ran::Entered {
+                    entered: Entered::Exited(status),
+                    ..
+                },
+                ..
+            } if status == ExitStatus::from(0_u8)
+        ),
+        "the exemplar exits 0: {run:?}"
+    );
+    assert_eq!(
+        (console.lines(), console.errors()),
+        (
+            &["3260954456333195553p-61 26087635650665564425p-64".to_owned()][..],
+            &[][..]
+        ),
+        "the enclosure is printed, and no refusal"
+    );
+
+    // A program that admits `plan`, encloses the plan at `handle` no wider
+    // than `2^-precision`, and prints the lower end.
+    let enclosing = |plan: &str, handle: &str, precision: u16| {
+        format!(
+            "import std.io;\nimport std.reals;\n\ndef main() -> [std.reals.Eff, std.io.Console.Eff] Integer =\n  let held = std.reals.admit \"{plan}\"\n  let *{{lower, upper}} = std.reals.enclose {handle} {precision}\n  std.io.Console.print lower\n  0\n"
+        )
+    };
+    let forged = format!(
+        "{}01000000",
+        ROOT_TWO
+            .strip_suffix("00000000")
+            .expect("the last reference of the plan is zero")
+    );
+    for (name, source, cause) in [
+        (
+            "not-hex",
+            enclosing("zz", "held", 64),
+            "std.reals.Eff.admit: the text is not the lowercase hexadecimal of a byte string",
+        ),
+        (
+            "forged",
+            enclosing(&forged, "held", 64),
+            "std.reals.Eff.admit: the plan is refused at node 10: a reference names an overt domain where its slot takes the laws of a cut",
+        ),
+        (
+            "unknown",
+            enclosing(ROOT_TWO, "7", 64),
+            "std.reals.Eff.enclose: the run holds no plan at the handle",
+        ),
+        (
+            "precision",
+            enclosing(ROOT_TWO, "held", 4097),
+            "std.reals.Eff.enclose: the precision is not from 0 to 4096",
+        ),
+    ] {
+        let scratch = Scratch::write(
+            Path::new(&format!("reals-{name}-5700")),
+            SourceText::from(source.as_str()),
+        );
+        let mut console = Captured::default();
+        let mut script = Script::new(scratch.0.clone());
+        let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
+        assert!(
+            matches!(run, ScriptRun::Source {
+                ran: Ran::Entered {
+                    entered: Entered::Ended(Evaluation::Stuck(_)),
+                    ..
+                },
+                ..
+            }),
+            "{name}: the run is stuck at the declined operation: {run:?}"
+        );
+        assert_eq!(
+            (console.lines(), console.errors()),
+            (&[][..], &[cause.to_owned()][..]),
+            "{name}: standard error names the cause, and nothing is printed"
+        );
+    }
+}
+
+/// #5707: the randomness exemplar run as a script exits with the sum of two
+/// draws of two bits, from 0 to 6, and prints nothing. The host declines a
+/// draw of 0, 65 or -1 bits and names the cause on standard error first. Each
+/// such run is stuck at the draw, and it prints nothing.
+#[test]
+fn a_script_draws_fair_bits_5707()
+{
+    let exemplar =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/probability/draws.gandr");
+    let mut console = Captured::default();
+    let mut script = Script::new(exemplar);
+    let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
+    assert!(
+        matches!(
+            run,
+            ScriptRun::Source {
+                ran: Ran::Entered {
+                    entered: Entered::Exited(status),
+                    ..
+                },
+                ..
+            } if (0_u8 ..= 6_u8).any(|sum| status == ExitStatus::from(sum))
+        ),
+        "the exemplar exits with a sum from 0 to 6: {run:?}"
+    );
+    assert_eq!(
+        (console.lines(), console.errors()),
+        (&[][..], &[][..]),
+        "nothing is printed, and no refusal"
+    );
+
+    for (name, width, cause) in [
+        (
+            "zero",
+            "0",
+            "std.rand.Eff.draw: a width of 0 bits lies outside 1 to 64",
+        ),
+        (
+            "wide",
+            "65",
+            "std.rand.Eff.draw: a width of 65 bits lies outside 1 to 64",
+        ),
+        (
+            "negative",
+            "(0 - 1)",
+            "std.rand.Eff.draw: a width of -1 bits lies outside 1 to 64",
+        ),
+    ] {
+        let source = format!(
+            include_str!("run/unformatted/a-script-draws-fair-bits-5707.gandr"),
+            width = width
+        );
+        let scratch = Scratch::write(
+            Path::new(&format!("rand-{name}-5707")),
+            SourceText::from(source.as_str()),
+        );
+        let mut console = Captured::default();
+        let mut script = Script::new(scratch.0.clone());
+        let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
+        assert!(
+            matches!(run, ScriptRun::Source {
+                ran: Ran::Entered {
+                    entered: Entered::Ended(Evaluation::Stuck(_)),
+                    ..
+                },
+                ..
+            }),
+            "{name}: the run is stuck at the declined draw: {run:?}"
+        );
+        assert_eq!(
+            (console.lines(), console.errors()),
+            (&[][..], &[cause.to_owned()][..]),
+            "{name}: standard error names the cause, and nothing is printed"
+        );
+    }
+}
+
+/// #5704: a script's profile sets the quotas of its run. Under `default`, an
+/// enclosure of the square root of two no wider than `2^-300` exits 0 and
+/// prints its lower end. Under `bounded`, whose finest precision is
+/// `2^-256`, the host declines that enclosure: the run is stuck at it, it
+/// prints nothing, and standard error names the cause.
+#[test]
+fn a_script_s_profile_bounds_its_run_5704()
+{
+    let scratch = Scratch::write(
+        Path::new("reals-profile-5704"),
+        SourceText::from(include_str!(
+            "run/fixtures/a-script-s-profile-bounds-its-run-5704.gandr"
+        )),
+    );
+    // Run the source under `profile`: whether it exits 0, whether it is
+    // stuck, and what it printed.
+    let run_under = |profile: RealsProfile| {
+        let mut console = Captured::default();
+        let mut script = Script::new(scratch.0.clone());
+        script.reals(profile);
+        let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
+        let exited = matches!(
+            run,
+            ScriptRun::Source {
+                ran: Ran::Entered {
+                    entered: Entered::Exited(status),
+                    ..
+                },
+                ..
+            } if status == ExitStatus::from(0_u8)
+        );
+        let stuck = matches!(run, ScriptRun::Source {
+            ran: Ran::Entered {
+                entered: Entered::Ended(Evaluation::Stuck(_)),
+                ..
+            },
+            ..
+        });
+        (exited, stuck, console)
+    };
+    let (exited, _, standard) = run_under(RealsProfile::Default);
+    assert!(exited, "under `default` the enclosure exits 0");
+    assert_eq!(
+        (standard.lines().len(), standard.errors()),
+        (1, &[][..]),
+        "under `default` the lower end is printed, and no refusal"
+    );
+    let (_, stuck, bounded) = run_under(RealsProfile::Bounded);
+    assert!(
+        stuck,
+        "under `bounded` the run is stuck at the declined enclosure"
+    );
+    assert_eq!(
+        (bounded.lines(), bounded.errors()),
+        (
+            &[][..],
+            &["std.reals.Eff.enclose: the precision is not from 0 to 256".to_owned()][..]
+        ),
+        "under `bounded` nothing is printed, and standard error names the cause"
+    );
+}
+
+/// #5703: the three comparison exemplars run as scripts. `sqrt 2 < 3/2`
+/// holds; `sqrt 2 < sqrt 2` spends each budget, `sqrt 2 · sqrt 2 < 2` spends
+/// the two smaller ones and suspends at the checker's quota, and neither
+/// prints `fails`; a machine restored from its checkpoint after one quantum
+/// holds with the work of an uninterrupted one.
+/// The host declines six operations and names each cause on standard error
+/// first: a root that is no open proposition, a budget past the quota, a
+/// handle that names no machine, the checkpoint of a decided machine, text
+/// that frames no plan, and a checkpoint whose quantum is no steps.
+#[test]
+fn a_script_decides_comparisons_through_reals_5703()
+{
+    let reals = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/reals");
+    for (exemplar, printed) in [
+        ("comparison.gandr", &["holds"][..]),
+        (
+            "boundary.gandr",
+            &[
+                "exhausted exhausted exhausted",
+                "exhausted exhausted suspended",
+            ][..],
+        ),
+        ("resume.gandr", &["exhausted", "holds", "the same work"][..]),
+    ] {
+        let mut console = Captured::default();
+        let mut script = Script::new(reals.join(exemplar));
+        let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
+        assert!(
+            matches!(
+                run,
+                ScriptRun::Source {
+                    ran: Ran::Entered {
+                        entered: Entered::Exited(status),
+                        ..
+                    },
+                    ..
+                } if status == ExitStatus::from(0_u8)
+            ),
+            "{exemplar} exits 0: {run:?}"
+        );
+        let printed: Vec<String> = printed.iter().map(|line| (*line).to_owned()).collect();
+        assert_eq!(
+            (console.lines(), console.errors()),
+            (printed.as_slice(), &[][..]),
+            "{exemplar}: its verdicts are printed, and no refusal"
+        );
+    }
+
+    // Run `source` as a script: whether it exits, whether it is stuck, how
+    // the run spells itself, and what it printed.
+    let run = |name: &str, source: &str| {
+        let scratch = Scratch::write(
+            Path::new(&format!("reals-{name}-5703")),
+            SourceText::from(source),
+        );
+        let mut console = Captured::default();
+        let mut script = Script::new(scratch.0.clone());
+        let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
+        let exited = matches!(run, ScriptRun::Source {
+            ran: Ran::Entered {
+                entered: Entered::Exited(_),
+                ..
+            },
+            ..
+        });
+        let stuck = matches!(run, ScriptRun::Source {
+            ran: Ran::Entered {
+                entered: Entered::Ended(Evaluation::Stuck(_)),
+                ..
+            },
+            ..
+        });
+        let spelled = format!("{run:?}");
+        (exited, stuck, spelled, console)
+    };
+    // Each fixture admits the plan of `sqrt 2 < 3/2`, or the plan of the
+    // square root of two for `real`, and prints the string its operations end
+    // with. The `restore` fixture restores the text that replaces its
+    // `CHECKPOINT` and steps the machine once.
+    let (exited, _, spelled, console) = run(
+        "checkpoint",
+        include_str!(
+            "run/fixtures/a-script-decides-comparisons-through-reals-5703-checkpoint.gandr"
+        ),
+    );
+    assert!(exited, "the checkpoint is printed: {spelled}");
+    let [ref text] = *console.lines()
+    else {
+        panic!("one checkpoint line: {:?}", console.lines());
+    };
+    // The text holds the length of the plan in 4 bytes, the plan in 176, and
+    // then the checkpoint, whose quantum takes its bytes 6 to 10.
+    let quantum = (4 + 176 + 6) * 2;
+    let zeroed = format!(
+        "{}00000000{}",
+        text.get(.. quantum).expect("the text holds the quantum"),
+        text.get(quantum + 8 ..)
+            .expect("the text holds the quantum")
+    );
+    let restore =
+        include_str!("run/fixtures/a-script-decides-comparisons-through-reals-5703-restore.gandr");
+    let restoring = |text: &str| restore.replace("CHECKPOINT", text);
+    for (name, source, cause) in [
+        (
+            "real",
+            include_str!("run/fixtures/a-script-decides-comparisons-through-reals-5703-real.gandr")
+                .to_owned(),
+            "std.reals.Eff.decide: the root of the plan is no open proposition",
+        ),
+        (
+            "budget",
+            include_str!(
+                "run/fixtures/a-script-decides-comparisons-through-reals-5703-budget.gandr"
+            )
+            .to_owned(),
+            "std.reals.Eff.decide: the budget is not from 0 to 1024 quanta",
+        ),
+        (
+            "no-machine",
+            include_str!(
+                "run/fixtures/a-script-decides-comparisons-through-reals-5703-no-machine.gandr"
+            )
+            .to_owned(),
+            "std.reals.Eff.step: the run holds no machine at the handle",
+        ),
+        (
+            "decided",
+            include_str!(
+                "run/fixtures/a-script-decides-comparisons-through-reals-5703-decided.gandr"
+            )
+            .to_owned(),
+            "std.reals.Eff.checkpoint: the machine is decided or holds no live obligation, so no checkpoint resumes it",
+        ),
+        (
+            "unframed",
+            restoring("00"),
+            "std.reals.Eff.restore: the checkpoint does not frame a plan of its stated length",
+        ),
+        (
+            "zeroed",
+            restoring(&zeroed),
+            "std.reals.Eff.restore: the checkpoint is refused: the checkpoint's quantum is no steps",
+        ),
+    ] {
+        let (_, stuck, spelled, console) = run(name, &source);
+        assert!(
+            stuck,
+            "{name}: the run is stuck at the declined operation: {spelled}"
+        );
+        assert_eq!(
+            (console.lines(), console.errors()),
+            (&[][..], &[cause.to_owned()][..]),
+            "{name}: standard error names the cause, and nothing is printed"
+        );
+    }
+
+    // The unchanged checkpoint restores, and its machine goes on: one quantum
+    // later a pole is still live.
+    let (exited, _, spelled, console) = run("restored", &restoring(text));
+    assert!(exited, "the unchanged checkpoint restores: {spelled}");
+    assert_eq!(
+        (console.lines(), console.errors()),
+        (&["exhausted".to_owned()][..], &[][..]),
+        "one quantum after the restore, a pole is still live"
+    );
+}
+
+/// The migration model: two migrations to the seat, answering 42.
+///
+/// # Specification
+/// trivial.
+fn model() -> PathBuf
+{
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/worlds/two-processes.gandr")
+}
+
+/// The world bindings binding `world` to `peer`.
+///
+/// # Specification
+/// trivial.
+fn bindings(
+    world: &WorldName,
+    peer: &Peer,
+) -> WorldBindings
+{
+    WorldBindings::new(vec![binding(world, peer)])
+}
+
+/// The binding of `world` to `peer`.
+///
+/// # Specification
+/// trivial.
+fn binding(
+    world: &WorldName,
+    peer: &Peer,
+) -> WorldBinding
+{
+    WorldBinding::from_str(&format!("{world}={peer}")).expect("the binding reads")
+}
+
+/// What `script` exited with, when its entry exited.
+///
+/// # Specification
+/// trivial.
+fn exited(script: &mut Script) -> Option<ExitStatus>
+{
+    match script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default())) {
+        ScriptRun::Source {
+            ran:
+                Ran::Entered {
+                    entered: Entered::Exited(status),
+                    ..
+                },
+            ..
+        } => Some(status),
+        ScriptRun::Source { .. } | ScriptRun::Fault { .. } => None,
+    }
+}
+
+#[test]
+fn a_world_binding_reads_its_name_and_its_peer()
+{
+    let peer =
+        Peer::new(Secret::generate().node_id()).at(SocketAddr::from((Ipv4Addr::LOCALHOST, 4433)));
+    let bound = bindings(&WorldName::from("seat"), &peer);
+    assert_eq!(
+        bound
+            .peer(&WorldName::from("seat"))
+            .map(ToString::to_string),
+        Some(peer.to_string()),
+        "the world names the peer after its `=`"
+    );
+    assert!(
+        bound.peer(&WorldName::from("operator")).is_none(),
+        "a world no binding names has no host"
+    );
+    for (text, refusal) in [
+        ("seat", "Unbound"),
+        (&*format!("={peer}"), "Unnamed"),
+        ("seat=not-a-key", "Peer"),
+    ] {
+        let read = WorldBinding::from_str(text);
+        assert!(
+            matches!(
+                (&read, refusal),
+                (Err(WorldBindingError::Unbound(_)), "Unbound")
+                    | (Err(WorldBindingError::Unnamed(_)), "Unnamed")
+                    | (Err(WorldBindingError::Peer(_)), "Peer")
+            ),
+            "`{text}` is refused {refusal}: {read:?}"
+        );
+    }
+}
+
+#[test]
+fn a_world_bound_to_this_host_runs_here()
+{
+    let loopback = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
+    let secret = Secret::from_str(HOST_SECRET).expect("the secret is hex");
+    let here = Peer::new(secret.node_id()).at(loopback);
+    let mut script = Script::new(model());
+    script.network(Net::new(Binding::new(secret).at(loopback)));
+    script.bindings(bindings(&WorldName::from("far"), &here));
+    assert_eq!(
+        exited(&mut script),
+        Some(ExitStatus::from(42_u8)),
+        "a world bound to this host's key runs here, and no host elsewhere is asked"
+    );
+}
+
+#[test]
+fn a_world_no_binding_names_is_refused_before_the_run()
+{
+    let elsewhere =
+        Peer::new(Secret::generate().node_id()).at(SocketAddr::from((Ipv4Addr::LOCALHOST, 4433)));
+    let mut script = Script::new(model());
+    script.bindings(bindings(&WorldName::from("near"), &elsewhere));
+    let run = script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default()));
+    assert!(
+        matches!(
+            run,
+            ScriptRun::Source {
+                ran: Ran::Entered {
+                    entered: Entered::Ended(Evaluation::Unrunnable(Unrunnable::UnboundWorld(world))),
+                    ..
+                },
+                ..
+            } if world.as_ref() == "far"
+        ),
+        "an entry that may migrate to a world no binding names never runs: {run:?}"
+    );
+}
+
+/// A network bound at `socket` under `secret`, bound again while a host that
+/// just ended there still holds the socket. A loaded host can release the
+/// socket late. So the bind tries again until [`REBIND`] has passed since the
+/// first try. Past that, the test fails with the fault of the last try.
+///
+/// # Specification
+/// trivial.
+fn bound(
+    secret: &Secret,
+    socket: SocketAddr,
+) -> Net
+{
+    let mut net = Net::new(Binding::new(secret.clone()).at(socket));
+    let started = Instant::now();
+    while let Err(fault) = net.endpoint() {
+        assert!(
+            started.elapsed() < REBIND,
+            "the host binds its socket within {REBIND:?}: {fault}"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
+    net
+}
+
+/// The lines a host on `net` prints hosting `migrations` of the source at
+/// `path`, `world` bound to `peer`, the host itself. The host keeps `net`
+/// bound for `linger` after its last answer.
+///
+/// # Specification
+/// trivial.
+fn hosted(
+    path: &Path,
+    (net, world, peer): (Net, &WorldName, &Peer),
+    (migrations, linger): (MigrationCount, Duration),
+) -> Vec<String>
+{
+    let mut script = Script::new(path.to_path_buf());
+    script.network(net);
+    script.bindings(bindings(world, peer));
+    script.hosting(migrations);
+    let mut console = Captured::default();
+    let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
+    assert!(
+        matches!(
+            run,
+            ScriptRun::Source {
+                ran: Ran::Hosted(Hosted::Answered(answered)),
+                ..
+            } if answered == migrations
+        ),
+        "the host answers each migration: {run:?}"
+    );
+    thread::sleep(linger);
+    console.lines().to_vec()
+}
+
+/// The chunks each of a host's `lines` says its migration's captures
+/// fetched.
+///
+/// # Specification
+/// trivial.
+fn fetched(lines: &[String]) -> Vec<ChunkCount>
+{
+    lines
+        .iter()
+        .map(|line| {
+            line.strip_prefix("ran a migration at seat, fetching ")
+                .and_then(|rest| rest.strip_suffix(" chunks"))
+                .and_then(|count| count.parse::<usize>().ok())
+                .map(ChunkCount::from)
+                .expect("a line naming the chunks fetched")
+        })
+        .collect()
+}
+
+/// A host that held a list and its edit at the seat ends, and another under
+/// its key takes its place. The run's next migration reads the list there:
+/// the new host fetches all of it from the runner. The one after reads the
+/// edit: naming the list it holds, the host fetches only the chunks the edit
+/// changed. The run answers as it would in one process.
+///
+/// Between the edit and the read the run migrates to a gate, which opens
+/// only once the second host holds the seat's socket. The first host stays
+/// bound for [`LINGER`] after its last answer, so a run that reached for the
+/// seat before the gate answered would find the host that ended and stop
+/// unreached. The hosts take their turns on a thread of their own, which a
+/// run that stops is not held for.
+#[test]
+fn a_second_migration_of_an_edited_list_fetches_what_changed_3365()
+{
+    let listed = (1 ..= LISTED)
+        .map(|element| element.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let text = format!(
+        include_str!(
+            "run/unformatted/a-second-migration-of-an-edited-list-fetches-what-changed-3365.gandr"
+        ),
+        listed = listed
+    );
+    let file = Scratch::write(Path::new("descent"), SourceText::from(text.as_str()));
+    let alone = exited(&mut Script::new(file.0.clone()));
+    assert_eq!(
+        alone,
+        Some(ExitStatus::from(42_u8)),
+        "in one process the run answers 42"
+    );
+    let free = || {
+        UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).expect("a free loopback port")
+    };
+    let (socket, door) = {
+        let (seat, gate) = (free(), free());
+        (
+            seat.local_addr().expect("the seat's probe has an address"),
+            gate.local_addr().expect("the gate's probe has an address"),
+        )
+    };
+    let host = Secret::from_str(HOST_SECRET).expect("the secret is hex");
+    let peer = Peer::new(host.node_id()).at(socket);
+    let keeper = Secret::generate();
+    let gatekeeper = Peer::new(keeper.node_id()).at(door);
+    let hosts = thread::spawn({
+        let (path, peer, gatekeeper) = (file.0.clone(), peer.clone(), gatekeeper.clone());
+        move || {
+            let (seat, gate) = (WorldName::from("seat"), WorldName::from("gate"));
+            let two = MigrationCount::from(2_usize);
+            thread::scope(|scope| {
+                let first = hosted(&path, (bound(&host, socket), &seat, &peer), (two, LINGER));
+                let net = bound(&host, socket);
+                let (path, seat, peer) = (&path, &seat, &peer);
+                let second =
+                    scope.spawn(move || hosted(path, (net, seat, peer), (two, Duration::ZERO)));
+                hosted(
+                    path,
+                    (bound(&keeper, door), &gate, &gatekeeper),
+                    (MigrationCount::from(1_usize), Duration::ZERO),
+                );
+                (first, second.join().expect("the second host ends"))
+            })
+        }
+    });
+    let mut script = Script::new(file.0.clone());
+    script.network(Net::new(
+        Binding::new(Secret::generate()).at(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
+    ));
+    script.bindings(WorldBindings::new(vec![
+        binding(&WorldName::from("seat"), &peer),
+        binding(&WorldName::from("gate"), &gatekeeper),
+    ]));
+    let run = script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default()));
+    let ScriptRun::Source { ref ran, .. } = run
+    else {
+        panic!("the source runs: {run:?}");
+    };
+    assert!(
+        matches!(ran, Ran::Entered { entered: Entered::Exited(status), .. } if *status == ExitStatus::from(42_u8)),
+        "across hosts the run answers 42: {ran:?}"
+    );
+    let (first, second) = hosts.join().expect("the hosts end");
+    assert_eq!(
+        fetched(&first),
+        [ChunkCount::from(0_usize); 2],
+        "the first host made both values it read"
+    );
+    let second = fetched(&second);
+    assert!(
+        matches!(*second, [whole, edit] if ChunkCount::from(0_usize) < edit && edit < whole),
+        "the second host fetches the list whole, then fewer chunks for its edit: {second:?}"
+    );
+}
+
+/// #3546: a migration's print runs at the host that serves its world. A host
+/// of the offers model serves `far`, whose row names the console. The run
+/// binds `far` to that host and exits 42, and it prints nothing itself. The
+/// host prints `far`, the line of the migration's body, before its own line
+/// for the migration.
+#[test]
+fn a_host_prints_the_line_its_migration_prints_3546()
+{
+    let offers =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/deployments/offers.gandr");
+    let socket = UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+        .and_then(|probe| probe.local_addr())
+        .expect("a free loopback port");
+    let host = Secret::from_str(HOST_SECRET).expect("the secret is hex");
+    let peer = Peer::new(host.node_id()).at(socket);
+    let far = WorldName::from("far");
+    let hosting = thread::spawn({
+        let (path, peer, far) = (offers.clone(), peer.clone(), far.clone());
+        move || {
+            hosted(
+                &path,
+                (bound(&host, socket), &far, &peer),
+                (MigrationCount::from(1_usize), Duration::ZERO),
+            )
+        }
+    });
+    let mut script = Script::new(offers);
+    script.network(Net::new(
+        Binding::new(Secret::generate()).at(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
+    ));
+    script.bindings(bindings(&far, &peer));
+    let mut console = Captured::default();
+    let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
+    let ScriptRun::Source { ref ran, .. } = run
+    else {
+        panic!("the source runs: {run:?}");
+    };
+    assert!(
+        matches!(ran, Ran::Entered { entered: Entered::Exited(status), .. } if *status == ExitStatus::from(42_u8)),
+        "across hosts the run answers 42: {ran:?}"
+    );
+    assert!(
+        console.lines().is_empty(),
+        "the run prints nothing itself: {:?}",
+        console.lines()
+    );
+    assert_eq!(
+        hosting.join().expect("the host ends"),
+        ["far", "ran a migration at far, fetching 0 chunks"],
+        "the host prints the migration's line, then its own"
+    );
+}
+
+/// A host binds a socket that another holder releases late. The holder keeps
+/// the socket for [`LATE`]. A loaded host can release a socket this late. The
+/// bind takes the socket when the holder releases it.
+#[test]
+fn a_host_binds_a_socket_released_late_4214()
+{
+    let held =
+        UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).expect("a free loopback port");
+    let socket = held.local_addr().expect("the held socket has an address");
+    let holder = thread::spawn(move || {
+        thread::sleep(LATE);
+        drop(held);
+    });
+    let mut net = bound(&Secret::generate(), socket);
+    holder.join().expect("the holder releases the socket");
+    let endpoint = net
+        .endpoint()
+        .expect("the bound network keeps its endpoint");
+    assert!(
+        endpoint.sockets().contains(&socket),
+        "the host binds the released socket {socket}: {:?}",
+        endpoint.sockets()
+    );
+}

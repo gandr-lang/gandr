@@ -1,0 +1,4 @@
+def a = 1;
+module M where {
+  def b = *{a, 2};
+}
