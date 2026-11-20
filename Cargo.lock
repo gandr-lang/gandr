@@ -1614,6 +1614,7 @@ dependencies = [
  "gandr-runtime-net",
  "gandr-storage-store",
  "gandr-surface-agentic",
+ "gandr-surface-build-identity",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
  "gandr-surface-evaluate",
@@ -1829,6 +1830,16 @@ dependencies = [
  "quenchant-shape",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "gandr-surface-build-identity"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "gandr-kernel-core-base",
+ "gandr-theory-sites",
+ "toml",
 ]
 
 [[package]]
@@ -2730,7 +2741,6 @@ dependencies = [
 name = "gandr-theory-sites"
 version = "0.0.0"
 dependencies = [
- "blake3",
  "gandr-theory-circuit-algebras",
  "quenchant-anodized",
  "quenchant-shape",

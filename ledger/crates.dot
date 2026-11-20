@@ -86,6 +86,7 @@ digraph crates {
   subgraph "cluster_surface" {
     label = "surface";
     "surface-agentic";
+    "surface-build-identity";
     "surface-corpus";
     "surface-diagnostics";
     "surface-dispatcher";
@@ -277,6 +278,8 @@ digraph crates {
   "surface-agentic" -> "surface-lsp";
   "surface-agentic" -> "surface-render-remote";
   "surface-agentic" -> "surface-tui";
+  "surface-build-identity" -> "kernel-core-base";
+  "surface-build-identity" -> "theory-sites";
   "surface-corpus" -> "core-checker";
   "surface-corpus" -> "core-term";
   "surface-corpus" -> "kernel-term";
@@ -336,6 +339,7 @@ digraph crates {
   "surface-driver" -> "runtime-net";
   "surface-driver" -> "storage-store";
   "surface-driver" -> "surface-agentic";
+  "surface-driver" -> "surface-build-identity";
   "surface-driver" -> "surface-diagnostics";
   "surface-driver" -> "surface-dispatcher";
   "surface-driver" -> "surface-evaluate";

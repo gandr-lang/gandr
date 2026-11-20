@@ -83,12 +83,11 @@ wrapper! {
     pub struct Word(usize);
 }
 
-/// The theory crates' build identity, which `build.rs` writes.
-const SITES_BUILD: &[u8; 32] = include_bytes!(concat!(env!("OUT_DIR"), "/sites-build"));
-
-/// The build of the theory crates that certifies a stratum: a digest of every
-/// theory crate's files and the workspace lock, which a stored stratum's key
-/// binds.
+/// The build of the theory sites that certifies a stratum.
+///
+/// The digest reads each file that the sites library compiles and each
+/// package that it locks. A stored stratum's key binds it, and the caller
+/// passes it.
 ///
 /// # Specification
 /// trivial.
@@ -96,17 +95,16 @@ const SITES_BUILD: &[u8; 32] = include_bytes!(concat!(env!("OUT_DIR"), "/sites-b
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SitesBuild([u8; 32]);
 
-impl SitesBuild
+impl From<[u8; 32]> for SitesBuild
 {
-    /// This build's identity.
+    /// The build whose digest is `bytes`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
-    pub const fn current() -> Self
+    fn from(bytes: [u8; 32]) -> Self
     {
-        Self(*SITES_BUILD)
+        Self(bytes)
     }
 }
 

@@ -60,12 +60,12 @@ use crate::occurrence::Accessibility;
 use crate::occurrence::Stratification;
 use crate::occurrence::Variance;
 
-/// The kernel's build identity: one digest of every file of every kernel
-/// crate and of the workspace lock.
+/// The kernel's build identity: one digest of each file that the kernel
+/// library compiles and of each package that it locks.
 ///
-/// The judgement's build script writes it, and the judgement passes it to
-/// each derivation of a key, so a key binds the files of the record and of
-/// the judgement both.
+/// The caller passes it to the judgement, and the judgement passes it to each
+/// derivation of a key, so a key binds the files of the record and of the
+/// judgement both. The driver reads it from the build of its own binary.
 ///
 /// # Specification
 /// trivial.

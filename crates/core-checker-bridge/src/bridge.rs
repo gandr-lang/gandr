@@ -589,6 +589,7 @@ use gandr_kernel_core::places;
 use gandr_kernel_core::read_step;
 use gandr_kernel_core::replay;
 use gandr_kernel_core::speculation::Speculation;
+use gandr_kernel_core::verdict::BuildIdentity;
 use gandr_kernel_core::verdict::EntryContentKey;
 use gandr_kernel_core::verdict::NoVerdicts;
 use gandr_kernel_core::verdict::TrustPolicy;
@@ -2698,18 +2699,30 @@ pub struct Recall
     policy: TrustPolicy,
     /// Where receipts are read.
     source: Arc<dyn VerdictSource>,
+    /// The build identity each entry key binds.
+    build: BuildIdentity,
     /// The fork that each check's last drain runs its obligations through.
     fork: SharedFork,
     /// What a release behind the cursor predicts of the earlier commits.
     speculation: Speculation,
 }
 
+/// The build identity that a recall which trusts no signer keys under. Such
+/// a recall recalls nothing, so the identity selects no record. A key under
+/// it differs from each key under a digest that the driver passes, up to a
+/// BLAKE3 collision.
+const RECHECKED: [u8; 32] = [0_u8; 32];
+
 impl Recall
 {
-    /// Check every declaration, recalling nothing.
+    /// Check every declaration, recalling nothing. A walk that must key keys
+    /// under a fixed identity, which no receipt meets.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared empty source of verdicts, setup.
     #[inline]
     #[must_use]
     pub fn recheck() -> Self
@@ -2717,12 +2730,14 @@ impl Recall
         Self {
             policy: TrustPolicy::Recheck,
             source: Arc::new(NoVerdicts),
+            build: BuildIdentity::from(RECHECKED),
             fork: SharedFork::serial(),
             speculation: Speculation::OFF,
         }
     }
 
-    /// Recall the verdicts `source` answers under receipts `policy` trusts.
+    /// Recall the verdicts `source` answers under receipts `policy` trusts,
+    /// each entry key bound to the build identity `build`.
     ///
     /// # Specification
     /// trivial.
@@ -2731,11 +2746,13 @@ impl Recall
     pub const fn trusting(
         policy: TrustPolicy,
         source: Arc<dyn VerdictSource>,
+        build: BuildIdentity,
     ) -> Self
     {
         Self {
             policy,
             source,
+            build,
             fork: SharedFork::serial(),
             speculation: Speculation::OFF,
         }
@@ -2792,6 +2809,9 @@ impl Recall
     ///   crosses a formation names it as a readmission that keeps names it.
     /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
     /// - witness: `bridge::tests::a_formation_over_two_twins_forms_as_a_whole_readmission_forms_it_7261`
+    ///
+    /// # Cost
+    /// - allocation: the tables of the empty environment, setup.
     #[spec(ensures: |ret| matches!(keyed, Keyed::AsRecalled) || ret.keying() == gandr_kernel_core::verdict::Keying::Keys)]
     fn environment(
         &self,
@@ -2802,7 +2822,7 @@ impl Recall
             (Keyed::Always, &TrustPolicy::Recheck) => TrustPolicy::Trusted(BTreeSet::new()),
             (Keyed::Always | Keyed::AsRecalled, policy) => policy.clone(),
         };
-        Environment::recalling(policy, Arc::clone(&self.source))
+        Environment::recalling(policy, Arc::clone(&self.source), self.build)
             .forking(self.fork.clone())
             .speculating(self.speculation)
     }

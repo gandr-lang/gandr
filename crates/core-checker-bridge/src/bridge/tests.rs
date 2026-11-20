@@ -93,6 +93,7 @@ use gandr_kernel_core::ReplayDecline;
 use gandr_kernel_core::ReplayRefusal;
 use gandr_kernel_core::TracePosition;
 use gandr_kernel_core::content_digest;
+use gandr_kernel_core::verdict::BuildIdentity;
 use gandr_kernel_core::verdict::KernelSigner;
 use gandr_kernel_core::verdict::NoVerdicts;
 use gandr_kernel_core::verdict::StoredReceipt;
@@ -189,6 +190,9 @@ use crate::report::Verdict;
 use crate::retire::Polled;
 use crate::retire::Unretired;
 use crate::template::Clock;
+
+/// The build identity that the recalls of these tests key under.
+const BUILD: [u8; 32] = [5_u8; 32];
 
 /// A module position in a fixture.
 #[repr(transparent)]
@@ -2293,7 +2297,11 @@ fn a_readmission_recalls_what_its_own_receipt_recorded()
     let signer = KernelSigner::from([5_u8; 32]);
     let trusting =
         |signer: &KernelSigner| TrustPolicy::Trusted(BTreeSet::from([signer.identity()]));
-    let cold = readmitted_under(&Recall::trusting(trusting(&signer), Arc::new(NoVerdicts)));
+    let cold = readmitted_under(&Recall::trusting(
+        trusting(&signer),
+        Arc::new(NoVerdicts),
+        BuildIdentity::from(BUILD),
+    ));
     let Maybe::Present(receipt) = cold.environment().receipt(&signer)
     else {
         panic!("a cold readmission under keys gives a receipt");
@@ -2310,7 +2318,11 @@ fn a_readmission_recalls_what_its_own_receipt_recorded()
         "every declaration the kernel checked is recorded"
     );
     let held: Arc<dyn VerdictSource> = Arc::new(Held(Arc::new(receipt)));
-    let warm = readmitted_under(&Recall::trusting(trusting(&signer), Arc::clone(&held)));
+    let warm = readmitted_under(&Recall::trusting(
+        trusting(&signer),
+        Arc::clone(&held),
+        BuildIdentity::from(BUILD),
+    ));
     assert_eq!(usize::from(warm.environment().recalls()), checked);
     assert_eq!(warm.readmitted(), cold.readmitted());
     assert_eq!(
@@ -2319,7 +2331,11 @@ fn a_readmission_recalls_what_its_own_receipt_recorded()
         "a recalled declaration exports as the checked one did"
     );
     let other = KernelSigner::from([6_u8; 32]);
-    let distrusting = readmitted_under(&Recall::trusting(trusting(&other), held));
+    let distrusting = readmitted_under(&Recall::trusting(
+        trusting(&other),
+        held,
+        BuildIdentity::from(BUILD),
+    ));
     assert_eq!(usize::from(distrusting.environment().recalls()), 0);
 }
 
@@ -2338,7 +2354,11 @@ fn a_resumed_readmission_recalls_from_its_own_source_6566()
         &mut arena,
         &report,
         (LeadingCount(1), Maybe::Absent(crossed::Absent::Unasked)),
-        &Recall::trusting(trusting.clone(), Arc::new(NoVerdicts)),
+        &Recall::trusting(
+            trusting.clone(),
+            Arc::new(NoVerdicts),
+            BuildIdentity::from(BUILD),
+        ),
         &Unretired,
         &mut Untimed,
         &Serial,
@@ -2356,7 +2376,11 @@ fn a_resumed_readmission_recalls_from_its_own_source_6566()
         &mut arena,
         &report,
         (LeadingCount(1), Maybe::Present(&record)),
-        &Recall::trusting(trusting, Arc::new(Held(Arc::new(receipt)))),
+        &Recall::trusting(
+            trusting,
+            Arc::new(Held(Arc::new(receipt))),
+            BuildIdentity::from(BUILD),
+        ),
         &Unretired,
         &mut Untimed,
         &Serial,
@@ -3973,6 +3997,7 @@ fn a_recheck_names_each_formation_in_one_walk_7456()
     let (keyed, keyings) = walked(&Recall::trusting(
         TrustPolicy::Trusted(BTreeSet::new()),
         Arc::new(NoVerdicts),
+        BuildIdentity::from(BUILD),
     ));
     let formations = |readmission: &Readmission| {
         gandr_kernel_term::decode_named(
@@ -6306,6 +6331,7 @@ fn a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845()
         &Recall::trusting(
             TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
             Arc::new(NoVerdicts),
+            BuildIdentity::from(BUILD),
         ),
         &Unretired,
         &mut Untimed,
