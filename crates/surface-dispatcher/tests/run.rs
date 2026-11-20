@@ -73,10 +73,18 @@ const LINGER: Duration = Duration::from_millis(100);
 /// released. A quiet host binds at the first or the second try.
 const REBIND: Duration = Duration::from_secs(60);
 
+/// How long a host waits between two tries to bind a socket.
+const RETRY: Duration = Duration::from_millis(50);
+
+/// How long the late-release case waits between two tries: short, so the
+/// case can hold its socket past many tries in a short time.
+const QUICK: Duration = Duration::from_millis(1);
+
 /// How long the late-release case holds a socket before it releases it.
-/// The time is longer than 100 tries 50 ms apart. A bind with a shorter
-/// retry window fails the case.
-const LATE: Duration = Duration::from_secs(7);
+/// The time is longer than 100 tries [`QUICK`] apart. A bind that stops
+/// after a count of tries fails the case. Only a bind that tries until
+/// [`REBIND`] has passed takes the socket.
+const LATE: Duration = Duration::from_millis(300);
 
 /// A scratch source file, removed when dropped.
 #[repr(transparent)]
@@ -1069,15 +1077,29 @@ fn a_world_no_binding_names_is_refused_before_the_run()
 }
 
 /// A network bound at `socket` under `secret`, bound again while a host that
-/// just ended there still holds the socket. A loaded host can release the
-/// socket late. So the bind tries again until [`REBIND`] has passed since the
-/// first try. Past that, the test fails with the fault of the last try.
+/// just ended there still holds the socket, each try [`RETRY`] after the last.
 ///
 /// # Specification
 /// trivial.
 fn bound(
     secret: &Secret,
     socket: SocketAddr,
+) -> Net
+{
+    bound_every(secret, socket, RETRY)
+}
+
+/// A network bound at `socket` under `secret`, each try `pause` after the
+/// last. A loaded host can release the socket late. So the bind tries again
+/// until [`REBIND`] has passed since the first try. Past that, the test fails
+/// with the fault of the last try.
+///
+/// # Specification
+/// trivial.
+fn bound_every(
+    secret: &Secret,
+    socket: SocketAddr,
+    pause: Duration,
 ) -> Net
 {
     let mut net = Net::new(Binding::new(secret.clone()).at(socket));
@@ -1087,7 +1109,7 @@ fn bound(
             started.elapsed() < REBIND,
             "the host binds its socket within {REBIND:?}: {fault}"
         );
-        thread::sleep(Duration::from_millis(50));
+        thread::sleep(pause);
     }
     net
 }
@@ -1293,8 +1315,9 @@ fn a_host_prints_the_line_its_migration_prints_3546()
 }
 
 /// A host binds a socket that another holder releases late. The holder keeps
-/// the socket for [`LATE`]. A loaded host can release a socket this late. The
-/// bind takes the socket when the holder releases it.
+/// the socket for [`LATE`], past 100 tries [`QUICK`] apart, so a bind that
+/// stops after a count of tries fails. The bind takes the socket when the
+/// holder releases it.
 #[test]
 fn a_host_binds_a_socket_released_late_4214()
 {
@@ -1305,7 +1328,7 @@ fn a_host_binds_a_socket_released_late_4214()
         thread::sleep(LATE);
         drop(held);
     });
-    let mut net = bound(&Secret::generate(), socket);
+    let mut net = bound_every(&Secret::generate(), socket, QUICK);
     holder.join().expect("the holder releases the socket");
     let endpoint = net
         .endpoint()

@@ -4203,8 +4203,10 @@ mod tests
         let refused = heard(&callback, &json!("404 Not Found"));
         assert_eq!(refused.json().get("version"), Some(&json!(2_i32)));
         editor.edit(&uri, &json!(3_i32), &json!("def f = 42 ;\n"));
+        // Twice the policy's first wait: a retry of the refusal, or a delivery
+        // of the next edit, arrives inside it.
         assert_eq!(
-            quiet(&callback, Duration::from_secs(1)),
+            quiet(&callback, Policy::default().first.saturating_mul(2)),
             Answer(true),
             "a listener that refused an event hears nothing more"
         );

@@ -2194,8 +2194,8 @@ fn comments_reach_no_digest_and_lose_no_byte() -> Result<(), Failure>
 // the enforcing lane is not a timing lane and this assertion stays out of it.
 // CI's plain lane runs it by name (`mise run check:tests-plain-only`). The
 // budget gates only with `GANDR_WALL_CLOCK_GATES=1`, which CI sets; without it
-// the test measures and prints, since a loaded host times its load, not the
-// parser.
+// the test parses each source once and prints that one time, since a loaded
+// host times its load, not the parser, and the repeats serve only the gate.
 #[cfg(not(anodized_panic))]
 #[test]
 fn corpus_files_cold_parse_within_p99_latency_budget() -> Result<(), Failure>
@@ -2215,7 +2215,8 @@ fn corpus_files_cold_parse_within_p99_latency_budget() -> Result<(), Failure>
     // cost the molder super-linearly — a standing performance residual.
     use std::time::Instant;
 
-    /// Timed iterations per file; the per-file cost is the minimum.
+    /// Timed iterations per file where the budget gates; the per-file cost is
+    /// the minimum. A run that does not gate parses each file once.
     const ITERS: u32 = 16;
     /// Nearest-rank percentile numerator for the p99 gate.
     const P99_NUMERATOR: usize = 99;
@@ -2232,12 +2233,14 @@ fn corpus_files_cold_parse_within_p99_latency_budget() -> Result<(), Failure>
     let pbg = built();
     let files: Vec<PathBuf> = corpus_sources().into_iter().map(|(path, _)| path).collect();
     assert!(!files.is_empty(), "the corpus sources are present");
+    let gated = std::env::var_os("GANDR_WALL_CLOCK_GATES").is_some_and(|gates| gates == "1");
+    let iterations = if gated { ITERS } else { 1 };
 
     let mut per_file_nanos: Vec<(u128, PathBuf)> = Vec::with_capacity(files.len());
     for path in &files {
         let src = read_source(path)?;
         let mut best = u128::MAX;
-        for _iter in 0 .. ITERS {
+        for _iter in 0 .. iterations {
             let start = Instant::now();
             let result = parse(pbg, SourceText::from(src.as_str()))?;
             let elapsed = start.elapsed().as_nanos();
@@ -2258,7 +2261,7 @@ fn corpus_files_cold_parse_within_p99_latency_budget() -> Result<(), Failure>
         .min(per_file_nanos.len().saturating_sub(1));
     let p99 = &per_file_nanos[rank];
     let max = per_file_nanos.last().expect("non-empty corpus");
-    if std::env::var_os("GANDR_WALL_CLOCK_GATES").is_none_or(|gates| gates != "1") {
+    if !gated {
         println!(
             "p99 corpus cold-parse {} ns (file {:?}) against the {P99_BUDGET_NANOS} ns budget; \
              slowest {} ns (file {:?}); not gated without GANDR_WALL_CLOCK_GATES=1",

@@ -932,9 +932,13 @@ impl gandr_surface_lsp::Unread for Lingering
     }
 }
 
+/// How long the idle client sits idle once the session answers: five times
+/// the quiet interval of 50 ms that the idle cases set.
+const IDLE: Duration = Duration::from_millis(250);
+
 /// What a session writes when the client, its quiet interval the setting
 /// `quiet`, opens a document, types an unfinished declaration into it and
-/// then sits idle for a second once the session answers the change: each
+/// then sits idle for [`IDLE`] once the session answers the change: each
 /// message's `id`, and each publication's version and codes. Each write of
 /// the answer first waits `slow`, as a session on a loaded host answers.
 ///
@@ -977,7 +981,7 @@ fn idled(
         read: 0_usize,
         written: output.clone(),
         answered,
-        linger: Duration::from_secs(1),
+        linger: IDLE,
     };
     let served = serve(
         &mut input,
@@ -1052,7 +1056,7 @@ fn a_held_diagnostic_publishes_after_a_slow_answer_6945()
     let publication =
         |version: i32, codes: &[&str]| json!(["textDocument/publishDiagnostics", version, codes]);
     assert_eq!(
-        idled(&json!(0.05_f64), Duration::from_millis(400)),
+        idled(&json!(0.05_f64), Duration::from_millis(50)),
         [
             json!(0_i32),
             publication(1_i32, &[]),
@@ -1060,7 +1064,7 @@ fn a_held_diagnostic_publishes_after_a_slow_answer_6945()
             publication(2_i32, &["MalformedForm"]),
         ],
         "the quiet interval runs from the publication that holds, so a session that takes \
-             longer than the client's idle second to answer still publishes what it held"
+             longer than the client's idle time to answer still publishes what it held"
     );
 }
 
