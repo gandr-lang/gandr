@@ -1,0 +1,26 @@
+error[ShapeMismatch]: expected an arrow `A → C`
+   ╭▸ corpus/pathological/control/lambda-tail.gandr:24:3
+   │
+23 │    def no_function() -> () -> Two =
+   │    │                    ───────── the type met, where an arrow `A → C` is required
+   │ ┌──┘
+   │ │
+24 │ │┏   fun (u) {
+25 │ │┃     u
+26 │ │┃   }
+   │ │┃   ╿
+   │ └┃───│
+   │  ┗━━━checked against `() -> (() -> Two)`; while checking the body of this thunk
+   │      its type is not of the required shape: found `-F (() -> Two)`
+   │
+   ├ note: `no_function` is refused with ShapeMismatch, as its expectation states
+   ╰ help: write `thunk { … }` to make the lambda a thunk. Write `return (fun …)` to return the function value.
+
+error[NotSynthesisable]: the type of a computation written where a value is read cannot be inferred where it stands
+   ╭▸ corpus/pathological/control/lambda-tail.gandr:30:16
+   │
+30 │ def unstated = fun (u) { u };
+   │                ━━━━━━━━━━━━━ needs a type to be checked against
+   │
+   ├ note: `unstated` is refused with NotSynthesisable, as its expectation states
+   ╰ help: write a type ascription for this form

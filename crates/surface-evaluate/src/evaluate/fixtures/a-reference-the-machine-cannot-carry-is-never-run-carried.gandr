@@ -1,0 +1,5 @@
+def bad : Integer = "text";
+def uses : Integer = bad;
+def later : Integer;
+def lost = missing;
+def answer = 42;

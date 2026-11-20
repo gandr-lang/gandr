@@ -1,0 +1,8 @@
+[
+  {
+    "name": "#4500: the regeneration a stale ledger names writes the worktree's grammar under a toolchain selection no host carries",
+    "environment": {
+      "GANDR_TOOLCHAIN": "absent-4500"
+    }
+  }
+]

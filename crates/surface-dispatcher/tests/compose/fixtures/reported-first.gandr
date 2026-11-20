@@ -1,0 +1,5 @@
+import "./base.gandr";
+def two : Integer = one;
+@[runs("1")]
+def ran = one;
+def told = S (tell Z);
