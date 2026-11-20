@@ -278,25 +278,6 @@ mod sweeps
         }
     }
 
-    /// Whether the item named `name` stands in a source that `sweep` walks
-    /// whenever it walks any: every item under the fixed portion, which
-    /// walks [`NAMED`], and an item of a walked source under the change's.
-    ///
-    /// # Specification
-    /// trivial.
-    fn walks(
-        sweep: &Sweep,
-        walked: &[PathBuf],
-        name: &str,
-    ) -> bool
-    {
-        let corpus = repository();
-        sweep.portion() == Portion::Fixed
-            || name
-                .split_once(' ')
-                .is_some_and(|(source, _)| walked.iter().any(|path| *path == corpus.join(source)))
-    }
-
     /// Each `runs` item that `sweep` walks writes its image, reads it back
     /// into a fresh arena that checks, and answers on both tiers what its
     /// first command answers. Its image read back writes the same bytes. An
@@ -312,6 +293,17 @@ mod sweeps
         if paths.is_empty() {
             return;
         }
+        // Whether the item named `name` stands in a source that `sweep`
+        // walks whenever it walks any: every item under the fixed portion,
+        // which walks [`NAMED`], and an item of a walked source under the
+        // change's.
+        let corpus = repository();
+        let walks = |name: &str| {
+            sweep.portion() == Portion::Fixed
+                || name.split_once(' ').is_some_and(|(source, _)| {
+                    paths.iter().any(|path| *path == corpus.join(source))
+                })
+        };
         let expected_heads: BTreeSet<String> = [
             "corpus/model/sessions/run-transport.gandr decodedRun",
             "corpus/model/sessions/seat-evolution.gandr moved",
@@ -319,7 +311,7 @@ mod sweeps
             "corpus/model/sessions/seat-prefix.gandr shown",
         ]
         .into_iter()
-        .filter(|name| walks(sweep, &paths, name))
+        .filter(|name| walks(name))
         .map(String::from)
         .collect();
         let expected_witnesses: BTreeMap<String, BTreeSet<Kind>> = [
@@ -345,7 +337,7 @@ mod sweeps
             ),
         ]
         .into_iter()
-        .filter(|&(name, _)| walks(sweep, &paths, name))
+        .filter(|&(name, _)| walks(name))
         .map(|(name, kinds)| (String::from(name), kinds))
         .collect();
         let mut heads = BTreeSet::new();
