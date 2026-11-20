@@ -1,0 +1,2 @@
+def g(x : Integer) -> Integer =
+  x 1

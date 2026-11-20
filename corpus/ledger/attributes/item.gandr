@@ -1,0 +1,8 @@
+/// `item`: each text names a Rust path and the constructor of the item type
+/// that a staged call of that path reads as. A constructor with no text is
+/// admitted.
+@[item(("identity Identity", "example Example"))]
+data Item : Type where
+  | Identity : Item
+  | Example : Item
+  | Other : Item
