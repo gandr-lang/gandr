@@ -42,6 +42,7 @@ use crate::replay::ReplaySides;
 use crate::replay::Unfoldings;
 use crate::replay::replay;
 use crate::ruled::OperationBodyFault;
+use crate::verdict::BuildIdentity;
 use crate::verdict::KernelSigner;
 use crate::verdict::NoVerdicts;
 use crate::verdict::StoredReceipt;
@@ -771,6 +772,9 @@ fn a_rank_below_an_earlier_admission_orients_as_admitted_before_it_6621()
     );
 }
 
+/// The build identity that these tests key under.
+const BUILD: [u8; 32] = [5_u8; 32];
+
 /// A fresh environment that keys each admission, so a readmission can keep
 /// an entry on its key.
 ///
@@ -782,6 +786,7 @@ fn keyed() -> Environment
     Environment::recalling(
         TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
         Arc::new(NoVerdicts),
+        BuildIdentity::from(BUILD),
     )
 }
 
@@ -1010,10 +1015,10 @@ fn a_ruled_definition_is_keyed_by_the_rank_order_of_what_it_names_6621()
         );
         environment
     };
-    let in_order = run(Environment::recalling(trusting(), Arc::new(NoVerdicts)), [
-        rank(1_usize),
-        rank(2_usize),
-    ]);
+    let in_order = run(
+        Environment::recalling(trusting(), Arc::new(NoVerdicts), BuildIdentity::from(BUILD)),
+        [rank(1_usize), rank(2_usize)],
+    );
     assert!(
         matches!(
             in_order
@@ -1036,19 +1041,19 @@ fn a_ruled_definition_is_keyed_by_the_rank_order_of_what_it_names_6621()
             .map(crate::env::AdmittedDeclaration::admission)
             .collect::<Vec<_>>()
     };
-    let again = run(Environment::recalling(trusting(), Arc::clone(&source)), [
-        rank(1_usize),
-        rank(2_usize),
-    ]);
+    let again = run(
+        Environment::recalling(trusting(), Arc::clone(&source), BuildIdentity::from(BUILD)),
+        [rank(1_usize), rank(2_usize)],
+    );
     assert_eq!(
         admissions(&again),
         [Admission::Recalled; 4],
         "a run in order recalls each declaration, `c` among them"
     );
-    let swapped = run(Environment::recalling(trusting(), source), [
-        rank(2_usize),
-        rank(1_usize),
-    ]);
+    let swapped = run(
+        Environment::recalling(trusting(), source, BuildIdentity::from(BUILD)),
+        [rank(2_usize), rank(1_usize)],
+    );
     assert_eq!(
         admissions(&swapped),
         [

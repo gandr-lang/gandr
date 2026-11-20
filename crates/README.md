@@ -45,8 +45,8 @@ flowchart BT
   runtime -->|2| kernel
   runtime -->|7| core
   runtime -->|3| storage
-  surface -->|38| theory
-  surface -->|31| kernel
+  surface -->|39| theory
+  surface -->|32| kernel
   surface -->|48| core
   surface -->|11| storage
   surface -->|11| runtime
@@ -100,6 +100,7 @@ crates/
 ├── storage-store/                 one store over both planes and named roots
 ├── storage-values/                the content-addressed value plane: typed chunk DAG and content pointers
 ├── surface-agentic/               the agentic face of the hub: the Reactive Agent Protocol's toolset by default, the Model Context Protocol for compatibility
+├── surface-build-identity/        the identities of a build that the driver passes down: the kernel's build identity and the build of the theory sites, each a digest of what its library compiles
 ├── surface-corpus/                the expectation schemas, the strict and fixture roots, the settle comparison, the runner's report shape, and the language's corpus
 ├── surface-diagnostics/           the diagnostics model: a refusal, an unsettled declaration, a goal, a warning and a ledger line built once for every face to project
 ├── surface-dispatcher/            routes a driver invocation; composes parse, lower, check and settle over the sources a verb walks

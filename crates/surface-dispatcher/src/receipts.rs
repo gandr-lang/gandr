@@ -365,6 +365,7 @@ mod tests
     use alloc::sync::Arc;
 
     use gandr_kernel_core::Environment;
+    use gandr_kernel_core::verdict::BuildIdentity;
     use gandr_kernel_core::verdict::KernelSigner;
     use gandr_kernel_core::verdict::NoVerdicts;
     use gandr_kernel_core::verdict::StoredReceipt;
@@ -387,6 +388,7 @@ mod tests
         let mut environment = Environment::recalling(
             TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
             Arc::new(NoVerdicts),
+            BuildIdentity::from([5_u8; 32]),
         );
         for _ in 0_u8 .. 2 {
             let staged = {

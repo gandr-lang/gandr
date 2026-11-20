@@ -298,9 +298,10 @@ fn a_second_recheck_judges_no_item_when_another_session_keeps_the_closure_6536()
 #[test]
 fn a_held_process_expands_no_goal_for_an_adopted_declaration_6566()
 {
-    gandr_surface_dispatcher::install_verdict_cache(VerdictCache::held(KernelSigner::from(
-        [3_u8; 32],
-    )))
+    gandr_surface_dispatcher::install_verdict_cache(VerdictCache::held(
+        KernelSigner::from([3_u8; 32]),
+        gandr_kernel_core::verdict::BuildIdentity::from([5_u8; 32]),
+    ))
     .expect("no cache is installed before the witness's");
     let path = source();
     let text = std::fs::read_to_string(&path).expect("the corpus source is read");

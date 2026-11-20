@@ -482,29 +482,21 @@ impl Environment
         Self::default()
     }
 
-    /// An empty environment that keys its admissions and recalls the verdicts
-    /// `policy` trusts from `source`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn recalling(
-        policy: crate::verdict::TrustPolicy,
-        source: alloc::sync::Arc<dyn crate::verdict::VerdictSource>,
-    ) -> Self
-    {
-        Self::recalling_under(policy, source, crate::build_identity())
-    }
-
     /// An empty environment that keys its admissions under the build
     /// identity `build`, and recalls the verdicts `policy` trusts from
     /// `source`.
     ///
+    /// The caller passes the identity of the kernel it links. A test states a
+    /// fixed one.
+    ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the tables of the empty environment, setup.
+    #[inline]
     #[must_use]
-    pub(crate) fn recalling_under(
+    pub fn recalling(
         policy: crate::verdict::TrustPolicy,
         source: alloc::sync::Arc<dyn crate::verdict::VerdictSource>,
         build: crate::verdict::BuildIdentity,
@@ -8178,6 +8170,9 @@ mod tests
         Admitted { positions, scopes }
     }
 
+    /// The build identity that the tests of this module key under.
+    const BUILD: [u8; 32] = [5_u8; 32];
+
     /// A fresh environment that keys each admission, so a readmission can
     /// keep an entry on its key.
     ///
@@ -8189,6 +8184,7 @@ mod tests
         Environment::recalling(
             crate::verdict::TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
             alloc::sync::Arc::new(crate::verdict::NoVerdicts),
+            crate::verdict::BuildIdentity::from(BUILD),
         )
     }
 
@@ -8226,7 +8222,7 @@ mod tests
         let signer = crate::verdict::KernelSigner::from([7_u8; 32]);
         let read = [[1_u8; 32], [2_u8; 32]].map(|build| {
             let build = crate::verdict::BuildIdentity::from(build);
-            let mut environment = Environment::recalling_under(
+            let mut environment = Environment::recalling(
                 crate::verdict::TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
                 alloc::sync::Arc::new(crate::verdict::NoVerdicts),
                 build,
@@ -9358,6 +9354,7 @@ mod tests
                         Verdicts::Recalled => Environment::recalling(
                             crate::verdict::TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
                             alloc::sync::Arc::clone(&store),
+                            crate::verdict::BuildIdentity::from(BUILD),
                         ),
                     };
                     let offered = match verdicts {

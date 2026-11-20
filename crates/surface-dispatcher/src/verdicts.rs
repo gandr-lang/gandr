@@ -51,6 +51,7 @@ use gandr_core_checker::bridge;
 use gandr_core_term::CoreArena;
 use gandr_kernel_core::fork::SharedFork;
 use gandr_kernel_core::speculation::Speculation;
+use gandr_kernel_core::verdict::BuildIdentity;
 use gandr_kernel_core::verdict::KernelIdentity;
 use gandr_kernel_core::verdict::KernelSigner;
 use gandr_kernel_core::verdict::StoredReceipt;
@@ -198,55 +199,77 @@ pub struct VerdictCache
     recorded: AtomicUsize,
     /// Receipts the store could not keep.
     unwritten: AtomicUsize,
+    /// The build identity of the kernel the process links, which each entry
+    /// key binds.
+    build: BuildIdentity,
 }
 
 impl VerdictCache
 {
     /// The cache believing the receipts `policy` trusts from `store`, and
-    /// signing with `signer`.
+    /// signing with `signer`, under the kernel's build identity `build`.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared handle of the store, setup.
     #[inline]
     #[must_use]
     pub fn new(
         policy: TrustPolicy,
         store: StoredVerdicts,
         signer: KernelSigner,
+        build: BuildIdentity,
     ) -> Self
     {
-        Self::keeping(policy, Kept::Stored(Arc::new(store)), signer)
+        Self::keeping(policy, Kept::Stored(Arc::new(store)), signer, build)
     }
 
     /// The cache of a process with no store on disk: it believes the receipts
-    /// `signer` gives alone, and keeps them in the process.
+    /// `signer` gives alone, and keeps them in the process, under the kernel's
+    /// build identity `build`.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the set of the trusted signer and the held receipts,
+    ///   setup.
     #[inline]
     #[must_use]
-    pub fn held(signer: KernelSigner) -> Self
+    pub fn held(
+        signer: KernelSigner,
+        build: BuildIdentity,
+    ) -> Self
     {
         Self::keeping(
             TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
             Kept::Held(HeldVerdicts::default()),
             signer,
+            build,
         )
     }
 
     /// The cache of a process that readmits many times over its life, a
     /// language server or a hub. It believes the receipts `policy` trusts from
     /// `store` and from what the process kept after the open. It keeps each
-    /// receipt it signs with `signer` in both.
+    /// receipt it signs with `signer` in both, under the kernel's build
+    /// identity `build`.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared handle of the store and the held receipts,
+    ///   setup.
     #[inline]
     #[must_use]
     pub fn lasting(
         policy: TrustPolicy,
         store: StoredVerdicts,
         signer: KernelSigner,
+        build: BuildIdentity,
     ) -> Self
     {
         Self::keeping(
@@ -256,11 +279,12 @@ impl VerdictCache
                 held: HeldVerdicts::default(),
             },
             signer,
+            build,
         )
     }
 
     /// The cache under `policy`, keeping receipts in `kept`, signing with
-    /// `signer`.
+    /// `signer`, under `build`.
     ///
     /// # Specification
     /// trivial.
@@ -268,6 +292,7 @@ impl VerdictCache
         policy: TrustPolicy,
         kept: Kept,
         signer: KernelSigner,
+        build: BuildIdentity,
     ) -> Self
     {
         Self {
@@ -277,6 +302,7 @@ impl VerdictCache
             recalled: AtomicUsize::new(0),
             recorded: AtomicUsize::new(0),
             unwritten: AtomicUsize::new(0),
+            build,
         }
     }
 
@@ -286,6 +312,10 @@ impl VerdictCache
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared source and the policy of the readmission,
+    ///   setup.
     fn recall(&self) -> bridge::Recall
     {
         let source: Arc<dyn VerdictSource> = match self.kept {
@@ -299,7 +329,7 @@ impl VerdictCache
                 store: Arc::clone(store),
             }),
         };
-        bridge::Recall::trusting(self.policy.clone(), source)
+        bridge::Recall::trusting(self.policy.clone(), source, self.build)
             .forking(forking())
             .speculating(speculation())
     }
@@ -668,6 +698,7 @@ mod tests
     use gandr_core_checker::bridge;
     use gandr_core_checker::check_module;
     use gandr_core_term::CoreArena;
+    use gandr_kernel_core::verdict::BuildIdentity;
     use gandr_kernel_core::verdict::KernelSigner;
     use gandr_kernel_core::verdict::NoVerdicts;
     use gandr_kernel_core::verdict::StoredReceipt;
@@ -687,6 +718,9 @@ mod tests
     use crate::compose::adapt;
     use crate::compose::tiers;
     use crate::receipts::StoredVerdicts;
+
+    /// The build identity that the caches of these tests key under.
+    const BUILD: [u8; 32] = [5_u8; 32];
 
     /// The fixture: two definitions, the second reading the first.
     const READMITTED: &str = include_str!("verdicts/fixtures/readmitted.gandr");
@@ -801,6 +835,7 @@ mod tests
                 TrustPolicy::Trusted(trusted.iter().map(|key| key.identity()).collect()),
                 store,
                 signer.clone(),
+                BuildIdentity::from(BUILD),
             ),
             register,
         )
@@ -829,6 +864,7 @@ mod tests
         let recall = bridge::Recall::trusting(
             TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
             Arc::new(NoVerdicts),
+            BuildIdentity::from(BUILD),
         );
         let (readmission, _) = bridge::readmit_retiring(
             &mut arena,
@@ -867,6 +903,7 @@ mod tests
                     TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
                     store,
                     signer.clone(),
+                    BuildIdentity::from(BUILD),
                 ),
                 register,
             )
@@ -902,7 +939,7 @@ mod tests
     #[test]
     fn a_held_cache_recalls_what_its_process_recorded_6566()
     {
-        let cache = VerdictCache::held(KernelSigner::from([3_u8; 32]));
+        let cache = VerdictCache::held(KernelSigner::from([3_u8; 32]), BuildIdentity::from(BUILD));
         let checked = readmitted(&cache);
         let recorded = cache.tally();
         assert_eq!(recorded.recalled, 0_usize, "{recorded}");
@@ -925,7 +962,7 @@ mod tests
     #[test]
     fn a_changed_declaration_is_checked_again_6566()
     {
-        let cache = VerdictCache::held(KernelSigner::from([3_u8; 32]));
+        let cache = VerdictCache::held(KernelSigner::from([3_u8; 32]), BuildIdentity::from(BUILD));
         let _cold = readmitted(&cache);
         let before = cache.tally();
         let changed = readmitted_from(&cache, SourceText::from(CHANGED));
@@ -953,7 +990,7 @@ mod tests
     fn a_foreign_signer_or_key_admits_nothing_6566()
     {
         let signer = KernelSigner::from([3_u8; 32]);
-        let cache = VerdictCache::held(signer.clone());
+        let cache = VerdictCache::held(signer.clone(), BuildIdentity::from(BUILD));
         let Kept::Held(ref held) = cache.kept
         else {
             panic!("a held cache keeps its receipts in the process");

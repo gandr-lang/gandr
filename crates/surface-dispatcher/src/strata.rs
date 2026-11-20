@@ -104,6 +104,7 @@ static UNSTORED: OnceLock<Arc<Unstored>> = OnceLock::new();
 /// # Specification
 /// trivial.
 fn key_of(
+    build: SitesBuild,
     family: &Family,
     at: StratumAt,
     level: StratumLevel,
@@ -112,7 +113,7 @@ fn key_of(
     let word = |count: usize| u64::try_from(count).unwrap_or(u64::MAX).to_le_bytes();
     let mut hasher = blake3::Hasher::new_derive_key(KEY_CONTEXT);
     let _site = hasher
-        .update(&<[u8; 32]>::from(SitesBuild::current()))
+        .update(&<[u8; 32]>::from(build))
         .update(&word(usize::from(at.bound)));
     match *family {
         Family::Wirings => {
@@ -427,12 +428,15 @@ pub struct StoredStrata
     refused: Mutex<Vec<(StratumAt, StratumLevel, Unreplayed)>>,
     /// The values that the contexts of this process built of the site.
     shelf: Shelf,
+    /// The build of the sites that each key binds.
+    build: SitesBuild,
 }
 
 impl StoredStrata
 {
     /// The strata believing the receipts `policy` trusts from the store at
-    /// `root`, and signing with `signer`, with the store's register.
+    /// `root`, and signing with `signer`, each keyed under the build of the
+    /// sites `build`, with the store's register.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -445,6 +449,10 @@ impl StoredStrata
     /// # Errors
     /// As above.
     ///
+    /// # Cost
+    /// - allocation: the handles of the store, its register and the list of
+    ///   refusals, setup.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`StoredStrata`].
     /// - witness: `strata::tests::a_second_store_recalls_what_the_first_kept_4034`
@@ -453,6 +461,7 @@ impl StoredStrata
         policy: TrustPolicy,
         root: &Path,
         signer: KernelSigner,
+        build: SitesBuild,
     ) -> Result<(Self, Register), StoreError>
     {
         let (store, register) = Store::open(root)?;
@@ -469,6 +478,7 @@ impl StoredStrata
                 unwritten: AtomicUsize::new(0),
                 refused: Mutex::new(Vec::new()),
                 shelf: Shelf::default(),
+                build,
             },
             register,
         ))
@@ -621,6 +631,10 @@ impl StratumStore for StoredStrata
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the path of the root and the image that the store decodes,
+    ///   durable by the stratum key.
     #[inline]
     fn recall(
         &self,
@@ -629,7 +643,7 @@ impl StratumStore for StoredStrata
         level: StratumLevel,
     ) -> Maybe<StratumImage, recalled::Absent>
     {
-        let key = key_of(family, at, level);
+        let key = key_of(self.build, family, at, level);
         let pointer = match self.pending.find(key) {
             Maybe::Present(pointer) => pointer,
             Maybe::Absent(_) => {
@@ -665,6 +679,10 @@ impl StratumStore for StoredStrata
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the receipt and the copy of the image that the store
+    ///   keeps, durable by the stratum key.
     #[inline]
     fn keep(
         &self,
@@ -675,7 +693,7 @@ impl StratumStore for StoredStrata
     )
     {
         let _before = self.certified.fetch_add(1, Ordering::Relaxed);
-        let key = key_of(family, at, level);
+        let key = key_of(self.build, family, at, level);
         let kept = Kept {
             receipt: self
                 .signer
@@ -910,6 +928,7 @@ mod tests
     use gandr_theory_sites::SegalStratum;
     use gandr_theory_sites::ShapeBudget;
     use gandr_theory_sites::ShapeSize;
+    use gandr_theory_sites::SitesBuild;
     use gandr_theory_sites::StratumImage;
     use quenchant_shape::shape::Maybe;
 
@@ -922,6 +941,16 @@ mod tests
     fn trusting(signer: &KernelSigner) -> TrustPolicy
     {
         TrustPolicy::Trusted(BTreeSet::from([signer.identity()]))
+    }
+
+    /// The build of the sites that these tests key under: a fixed one, in
+    /// place of the digest that the driver passes.
+    ///
+    /// # Specification
+    /// trivial.
+    fn build() -> SitesBuild
+    {
+        SitesBuild::from([5_u8; 32])
     }
 
     /// The profile of `inputs` input legs and one output leg.
@@ -969,8 +998,9 @@ mod tests
         let family = Family::Profiles(profiles);
         let stratum = SegalStratum::certify(catalogue, at.degree).expect("degree two is certified");
 
-        let (first, mut register) = StoredStrata::open(trusting(&signer), &root, signer.clone())
-            .expect("the stratum store opens");
+        let (first, mut register) =
+            StoredStrata::open(trusting(&signer), &root, signer.clone(), build())
+                .expect("the stratum store opens");
         let one = StratumLevel::One;
         assert!(matches!(
             first.recall(&family, at, one),
@@ -984,8 +1014,9 @@ mod tests
             Maybe::Present(stratum.image()),
             "the store that kept the stratum recalls it before the drain"
         );
-        let (early, _register) = StoredStrata::open(trusting(&signer), &root, signer.clone())
-            .expect("the stratum store opens before the drain");
+        let (early, _register) =
+            StoredStrata::open(trusting(&signer), &root, signer.clone(), build())
+                .expect("the stratum store opens before the drain");
         assert!(
             matches!(
                 early.recall(&family, at, one),
@@ -1000,8 +1031,9 @@ mod tests
             "the store that kept the stratum recalls it after the drain"
         );
 
-        let (second, _register) = StoredStrata::open(trusting(&signer), &root, signer.clone())
-            .expect("the stratum store opens again");
+        let (second, _register) =
+            StoredStrata::open(trusting(&signer), &root, signer.clone(), build())
+                .expect("the stratum store opens again");
         assert_eq!(
             second.recall(&family, at, one),
             Maybe::Present(stratum.image()),
@@ -1044,10 +1076,25 @@ mod tests
             ),
             "the whole catalogue is another root"
         );
+        let (rebuilt, _register) = StoredStrata::open(
+            trusting(&signer),
+            &root,
+            signer.clone(),
+            SitesBuild::from([6_u8; 32]),
+        )
+        .expect("the stratum store opens under another build");
+        assert!(
+            matches!(
+                rebuilt.recall(&family, at, one),
+                Maybe::Absent(recalled::Absent::Unkept)
+            ),
+            "another build of the sites is another root"
+        );
 
         let other = KernelSigner::from([8_u8; 32]);
-        let (foreign, _register) = StoredStrata::open(trusting(&other), &root, other.clone())
-            .expect("the stratum store opens a third time");
+        let (foreign, _register) =
+            StoredStrata::open(trusting(&other), &root, other.clone(), build())
+                .expect("the stratum store opens a third time");
         assert!(
             matches!(
                 foreign.recall(&family, at, one),
@@ -1084,14 +1131,16 @@ mod tests
             StratumLevel::Four,
         ];
         let image = |level: StratumLevel| StratumImage::from(level.to_string().into_bytes());
-        let (first, mut register) = StoredStrata::open(trusting(&signer), &root, signer.clone())
-            .expect("the stratum store opens");
+        let (first, mut register) =
+            StoredStrata::open(trusting(&signer), &root, signer.clone(), build())
+                .expect("the stratum store opens");
         for level in levels {
             first.keep(&Family::Chains, at, level, &image(level));
         }
         register.drain().expect("the register names each level");
-        let (second, _register) = StoredStrata::open(trusting(&signer), &root, signer.clone())
-            .expect("the stratum store opens again");
+        let (second, _register) =
+            StoredStrata::open(trusting(&signer), &root, signer.clone(), build())
+                .expect("the stratum store opens again");
         for level in levels {
             assert_eq!(
                 second.recall(&Family::Chains, at, level),
@@ -1100,7 +1149,7 @@ mod tests
             );
         }
         for (level, spelled) in [(StratumLevel::One, "1"), (StratumLevel::Two, "2")] {
-            let key = super::key_of(&Family::Chains, at, level);
+            let key = super::key_of(build(), &Family::Chains, at, level);
             assert_eq!(
                 super::root_of(at, level, key),
                 super::RootName::new(format!("stratum/{spelled}/9/5/{key}")),
