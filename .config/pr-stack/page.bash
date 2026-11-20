@@ -33,3 +33,24 @@ page_stopped() {
     "${command[@]}" "${coordinator[@]}" "$text" || echo "the page to the coordinator is not delivered: $text" >&2
   done
 }
+
+# Page the lane `$2` when `stack_eject` cuts pull request `$1` from its
+# stack. `$3` is the cause.
+# - see: #8225
+#
+# The lane alone gets the page, and each member gets one page. The function
+# reads the configuration that `page_stopped` reads. With no configuration
+# it prints the page on stderr.
+page_left() {
+  local page text
+  local -a command seat
+  text="STACK left #$1 [$2]: $3"
+  page=$(stall_configuration | jq -c '.page // empty')
+  if [[ -z $page ]]; then
+    echo "no page configuration reaches the seats: $text" >&2
+    return 0
+  fi
+  mapfile -t command < <(jq -r '.command[]' <<< "$page")
+  mapfile -t seat < <(jq -r --arg lane "$2" '(.seats[$lane] // .triage)[]' <<< "$page")
+  "${command[@]}" "${seat[@]}" "$text" || echo "the page to lane $2 is not delivered: $text" >&2
+}
