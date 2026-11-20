@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="551" height="100" viewBox="0 0 551 100" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" xml:space="preserve">
+<style>
+svg { color: #1f2328; --gandr-warrant-pending: #6e7781; --gandr-warrant-checked: #1f2328; --gandr-warrant-replayed: #1a7f37; --gandr-warrant-refused: #cf222e; --gandr-warrant-withheld: #9a6700; }
+@media (prefers-color-scheme: dark) { svg { color: #e6edf3; --gandr-warrant-pending: #8b949e; --gandr-warrant-checked: #e6edf3; --gandr-warrant-replayed: #3fb950; --gandr-warrant-refused: #f85149; --gandr-warrant-withheld: #d29922; } }
+text { fill: currentColor; }
+.gandr-warrant-pending { fill: #6e7781; }
+.gandr-warrant-checked { fill: #1f2328; }
+.gandr-warrant-replayed { fill: #1a7f37; }
+.gandr-warrant-refused { fill: #cf222e; }
+.gandr-warrant-withheld { fill: #9a6700; }
+@supports (fill: var(--gandr-warrant-checked)) {
+.gandr-warrant-pending { fill: var(--gandr-warrant-pending); }
+.gandr-warrant-checked { fill: var(--gandr-warrant-checked); }
+.gandr-warrant-replayed { fill: var(--gandr-warrant-replayed); }
+.gandr-warrant-refused { fill: var(--gandr-warrant-refused); }
+.gandr-warrant-withheld { fill: var(--gandr-warrant-withheld); }
+}
+</style>
+<text y="25"><tspan x="10">head</tspan><tspan x="55">type</tspan><tspan x="424">slot</tspan><tspan x="469">expected</tspan></text>
+<text y="45"><tspan x="10">h</tspan><tspan x="55">(<tspan text-decoration="underline">c : Integer</tspan>) -&gt; -F Integer</tspan><tspan x="433">1/1</tspan><tspan x="469">Integer</tspan></text>
+<text y="65"><tspan x="10">g</tspan><tspan x="55">(a : Integer, <tspan text-decoration="underline">b : Integer</tspan>) -&gt; -F Integer</tspan><tspan x="433">2/2</tspan><tspan x="469">Integer</tspan></text>
+<text y="85"><tspan x="10">f</tspan><tspan x="55">(a : Integer, <tspan text-decoration="underline">b : Integer</tspan>) -&gt; -F Integer</tspan><tspan x="433">2/2</tspan><tspan x="469">Integer</tspan></text>
+</svg>

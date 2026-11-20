@@ -1,0 +1,61 @@
+/// This source checks pairs against dependent record definitions.
+///
+/// It specifies how the kernel replays the unfolding.
+///
+/// Each record type is behind a stuck arm over a first field.
+/// The checker expands the call inside that record type.
+/// The kernel reads both codes after it decodes them.
+///
+/// - see: #3045
+/// - see: #2831
+import "./data-base.gandr";
+
+// The heaps and `emp`, the type of evidence that a heap is empty.
+import "./stuck-arm-call.gandr";
+
+/// The record type over a call that pairs a natural with evidence that
+/// `h` is empty.
+def evidenced(h : Heap) -> Type =
+  return type(*{v : Nat, ok : emp(h)})
+
+/// What a natural owes of a heap: nothing at zero, `evidenced` at a successor.
+def owe(h : Heap, x : Nat) -> Type =
+  match x where
+    | Zero => return Unit
+    | Succ(_s) => evidenced h
+
+/// `wpR` is a dependent record over each natural and its obligation.
+def wpR(h : Heap) -> Type =
+  return type(*{w : Nat, ok : owe(h, w)})
+
+/// Zero and the unit check against the definition's record type.
+def proof(u : Unit) -> wpR(Emp) =
+  *{Zero, u}
+
+/// `write` records a natural, empty-heap evidence and a continuation.
+def write(h : Heap, k : Nat -> Type) -> Type =
+  return type(*{v : Nat, ok : emp(h), next : k(v)})
+
+/// `matchRead` gives the rest at zero and a write at a successor.
+def matchRead(h : Heap, rest : Type, w : Nat) -> Type =
+  match w where
+    | Zero => rest
+    | Succ(_s) => write h (fun (_v) { return Unit })
+
+/// `read` records a natural and its obligation.
+def read(h : Heap, rest : Type) -> Type =
+  return type(*{w : Nat, ok : matchRead(h, rest, w)})
+
+/// `fold` makes `n` reads.
+def rec fold(n : Nat, h : Heap) -> Type =
+  match n where
+    | Zero => return Unit
+    | Succ(m) => read h (fold[<] m h)
+
+/// `twoReads` checks two explicit reads.
+def twoReads(u : Unit) -> read(Emp, read(Emp, Unit)) =
+  *{Zero, *{Zero, u}}
+
+/// `foldedReads` converts a two-read fold with explicit reads.
+def foldedReads(_u : Unit) -> read(Emp, read(Emp, Unit)) -> fold(Succ (Succ Zero), Emp) =
+  fun (h) { h }
