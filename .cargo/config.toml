@@ -34,6 +34,9 @@ MOLD_JOBS = "1"
 [net]
 git-fetch-with-cli = true
 
+[resolver]
+feature-unification = "workspace"
+
 # rustc's parallel front end compiles one crate on up to 16 threads. The
 # gain stops at 16 threads on the hosts measured. The threads take their
 # tokens from Cargo's jobserver, so a build never runs more than `-j` admits.
@@ -54,3 +57,9 @@ rustflags = ["-Clink-arg=-fuse-ld=mold", "-Clink-arg=-Wl,--compress-debug-sectio
 # restores a cached one under fresh checkout mtimes; either way an artifact
 # whose source changed would otherwise pass for fresh (#1285).
 checksum-freshness = true
+# Each build of the tree resolves the features of the whole workspace. A
+# scoped build then compiles each dependency as a build of the workspace
+# does. The two share each compiled crate in the cache of a host. Cargo
+# reads the option of `[resolver]` only with this flag.
+# - see: #8232
+feature-unification = true
