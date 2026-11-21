@@ -1,0 +1,75 @@
+/// This source compares a defined composite with `Path.step`
+/// at stuck endpoints.
+///
+/// The `concat` body is `Path.step p q`.
+/// A held call can supply an endpoint to either spelling.
+///
+/// The machine evaluates the call where the type reads it.
+/// The kernel repeats that endpoint comparison.
+/// At a stuck call, the type of `concat` reads the endpoint through the
+/// environment that its call binds. The type written with `Path.step` writes
+/// the call in place.
+///
+/// - see: #4038 — stuck endpoints
+/// - see: #4005 — returned endpoints
+/// - see: #4011 — bind over transport
+
+/// The `concat` function composes two paths.
+def concat(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  p : Path[.A = A] x y,
+  q : Path[.A = A] y z
+) -> Path[.A = A] x z =
+  Path.step p q
+
+/// The `concatHere` proof is reflexivity at the defined composite.
+def concatHere(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  p : Path[.A = A] x y,
+  q : Path[.A = A] y z
+) -> Path[.A = Path[.A = A] x z] (concat A x y z p q) (concat A x y z p q) =
+  Path.here (concat A x y z p q)
+
+/// The `atVariables` proof compares `concatHere` with `Path.step`.
+def atVariables(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  p : Path[.A = A] x y,
+  q : Path[.A = A] y z
+) -> Path[.A = Path[.A = A] x z] (Path.step p q) (Path.step p q) =
+  concatHere A x y z p q
+
+/// The `atComposite` proof uses stuck composite endpoints.
+def atComposite(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f : Path[.A = A] x y,
+  g : Path[.A = A] y z,
+  p : Path[.A = Path[.A = A] x z] (Path.step f g) (Path.step f g),
+  q : Path[.A = Path[.A = A] x z] (Path.step f g) (Path.step f g)
+) -> Path[.A = Path[.A = Path[.A = A] x z] (Path.step f g) (Path.step f g)] (Path.step p q) (
+  Path.step p q
+) =
+  concatHere (type(Path[.A = A] x z)) (Path.step f g) (Path.step f g) (Path.step f g) p q
+
+/// The `atApplication` proof uses variable-function endpoints.
+def atApplication(
+  A : Type,
+  F : A -> A,
+  x : A,
+  y : A,
+  z : A,
+  p : Path[.A = A] (F x) (F y),
+  q : Path[.A = A] (F y) z
+) -> Path[.A = Path[.A = A] (F x) z] (Path.step p q) (Path.step p q) =
+  concatHere A (F x) (F y) z p q

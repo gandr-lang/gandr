@@ -1,0 +1,5954 @@
+//! Driver binary for the gandr language toolchain.
+//!
+//! Installs as `gandr`. The driver owns the argument surface and the process
+//! boundary: it parses an invocation, routes it through the surface
+//! dispatcher, renders the outcome, and reports the run through its exit
+//! code.
+//!
+//! # Exit codes
+//!
+//! | Code | Meaning |
+//! | ---- | ------- |
+//! | `0` | every declaration settled, a script's run returned a value, every staged certificate was readmitted, every source was laid out, or a census read every path; also `--help`, `--version`, a bare `gandr`, `gandr lsp --capabilities`, a language-server session ended by `exit` after `shutdown`, a Model Context Protocol session whose input ended, an engine hub that lingered out or found another serving its socket, a read-evaluate loop that reached the end of its input or `:quit`, a terminal face the user left, and `gandr tui --smoke` |
+//! | `1` | at least one declaration is unsettled, or a source was not read as its root expects; a package's or a workspace's source states no manifest, or its manifest was edited by hand; a manifold `check` reads deploys a world its program lacks or its site does not offer; a script's run was blamed on a goal or stopped short of a value; the kernel refused a staged certificate; `gandr fmt --check` found a source out of layout; also a language-server session ended by `exit`, or by its input closing, before `shutdown` |
+//! | `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, `check`, `test` or `fmt` given no path outside every package, a user configuration file that cannot be read or names a spelling there is none of, output the driver could not write, a package manifest that could not be read or written, a language-server or Model Context Protocol stream that failed, an engine hub that could not be reached, bound or served, a fault that stopped a read-evaluate loop or a terminal face, a terminal that failed, `gandr tui` without a terminal, a script that never reached the machine: unreadable, refused, declaring no name, or running into a declaration the machine carries no image of, or a staged program that could not be checked, a family admission that faulted, or a worker pool that did not start, or a source the formatter refused or could not write back, or a source a census could not parse or lower, or that the lowering refused whole |
+//!
+//! A fault outranks an unsettled declaration: a run with both exits `2`. The
+//! walk continues past a faulted path, so every fault of a run is printed.
+//!
+//! # Verbs
+//!
+//! | Invocation | Prints | Fails on |
+//! | ---------- | ------ | -------- |
+//! | `gandr check <paths>` | each unsettled declaration, each source refused as a whole, each refusal of a manifold's deployment | any unsettled declaration or refused deployment |
+//! | `gandr check --goals <paths>` | as `check`, a declaration unsettled by its obligations alone marked `goal:` | any unsettled declaration but those |
+//! | `gandr check --grant <operations> <paths>` | as `check`, every capability a declaration holds bounded by the host operations named, comma-separated and repeatable (`--grant read,write`): one claiming another is refused by name; without the flag every held capability is owed | as `check`, and an operation no host interface offers |
+//! | `gandr check --entry <worlds> <paths>` | as `check`, every declaration entered at the worlds named, comma-separated as an `entry` attribute names them (`--entry operator,seat`): its home first, then one capability per later world; a declaration stating its own entry is checked within it, and a source declaring one of the worlds nowhere grants nothing; without the flag a declaration stands where it states | as `check` |
+//! | `gandr check --jobs <threads> <paths>` | as `check`, its sources parsed and lowered on that many threads | as `check` |
+//! | `gandr check --sources <count> <paths>` | as `check`, its walk ending once it reaches that many sources: the walk stops, names the count and the flag, and judges no source after it; `test` takes the flag too; without the flag no count ends the walk | as `check`, and a walk that reaches the count faults |
+//! | `gandr check --lint explicit-exits <paths>` | as `check`, plus a warning for every exit the lowering inferred where a body ends, each with the fix that writes its keyword; without the flag only the declarations and modules marked `@[ explicit_exits ]` are linted | as `check`: a finding settles nothing |
+//! | `gandr check --lint explicit-runs <paths>` | as `check`, plus a warning for every run the checker inferred where a computation stands in a position that reads a value, each with the fix that writes `run`; `--lint explicit-runs=effects` reports only the runs that perform an effect; without a flag only the declarations and modules marked `@[ explicit_runs ]` or `@[ explicit_runs("effects") ]` are linted | as `check`: a finding settles nothing |
+//! | `gandr check --measure <paths>` | as `check`, plus one line per declaration a settled source writes, `measure: <path>: <name>: <bytes> bytes, <entries> shared, <work> unshared, <goals> expanded, <goals> recalled, <goals> kept, <n> ns`: the bytes its segment takes in its component's kernel artifact, the subterm-table entries the segment adds and its roots' expanded work, then the goals the kernel's check of it expanded, recalled from its memo and answered by an earlier admission's kept outcome, and the time the kernel took to admit it (`gandr-surface-dispatcher`'s `measure` module); a declaration a recorded verdict admitted spells `admitted on a recorded verdict` in place of the counts | as `check`: a measure settles nothing |
+//! | `gandr check --activity <paths>` | as `check`, its lowerings forked through the pool's recording fork, plus one line per thread, `activity: <thread>: busy <time>, <share> % of the wall, <n> dropped, <n> late`, and one line for the run, to standard error; only a build with the `instrument` feature has the flag | as `check`: the occupancy settles nothing |
+//! | `gandr check --counts <paths>` | as `check`, plus one line for the run after it, `counts: <n> allocations, <n> frames`, to standard error: the allocations that every thread of the process made, the pool's workers among them, and the frames that the kernel's checks popped, which for a check that passes are the frames that it pushed; only a build with the `counts` feature has the flag | as `check`: a count settles nothing |
+//! | `gandr check --report cells <paths>` | as `check`, plus one line per cell a source discharged, `cell: <path>: <module>.<law>: <source>`: each law a model omits that the checker discharged, and the source that discharged it, `Path.here` where the law's sides convert | as `check`: a cell settles nothing |
+//! | `gandr check --verbosity <level> <paths>` | as `check`, each report at `user` (the default), `detailed` (adding its class, the producer's wording and the offending source text), `debug` (adding byte spans and the producer's refusal) or `json` (each report, ledger line and the run's summary as one line of JSON); `test` takes the flag too | as `check` |
+//! | `gandr test <paths>` | as `check`, plus every fixture, settled or not, and every pending source's refusal | as `check` |
+//! | `gandr run <file>` | the value, alone, on standard output; every report `check --goals` would print, and why a run stopped or never started, on standard error | a run blamed or stuck, or a source that never reached the machine |
+//! | `gandr run --world <world>=<key>@<ip:port> <file>` | as `run`, each migration to a world bound to another key shipped to it and its answer read back; repeatable, one per world | as `run`, and an entry that may migrate to a world no `--world` binds |
+//! | `gandr run --manifold <manifold> <file>` | as `run --world`, each world bound to the site the manifold's `placements` place it at | as `run --world`, a manifold that does not read or deploys another source, or `--world` given beside it |
+//! | `gandr host --world <world>=<key>@<ip:port> --migrations <n> <file>` | its peer spelling, `<key>@<ip:port>`, on standard error once bound; a line per migration a `run` of the same source ships here, `ran a migration at <world>, fetching <n> chunks` or `refused a migration at <world>: <reason>` | a network that fails before `n` are answered, or a source that never reached the machine |
+//! | `gandr host --site <site> [--secrets <secrets>] [--manifold <manifold>] <file>` | as `host --world`, bound at the site's sockets under its key, proven by the secret the site names, read through the `Secrets` model the secrets file declares or from `GANDR_SECRET_<NAME>`, hosting the worlds the manifold places at the site, or, with no manifold, every world the entry may migrate to | as `host --world`, a site, secrets file or manifold that does not read, a secret that is not given, spells no key or proves another key than the site's, or `--net-bind`, `--net-secret` or `--world` given beside the file it desugars from |
+//! | `gandr stage <programs>` | a line per program — the certificates the kernel readmitted and its families by how they were admitted — then the run's digest and verdict | a certificate the kernel refused, a program that could not be checked, or a family admission that faulted |
+//! | `gandr stage --jobs <threads> <programs>` | as `stage`, each program's stages forked onto that many threads | as `stage` |
+//! | `gandr fmt <paths>` | the path of each source whose layout changed, written back over it | a path that cannot be read or written back, names no source, or holds a source the formatter refuses |
+//! | `gandr fmt --check <paths>` | the path of each source out of layout; nothing is written | as `fmt`, and any source out of layout |
+//! | `gandr fmt --width <columns> <paths>` | as `fmt`, laid out at that page width instead of 100 | as `fmt` |
+//! | `gandr fmt --form <explicit\|sugared> <paths>` | as `fmt`, asking for that spelling: a source declaring a form with `@[ form(…) ]` keeps its own, and one declaring none is refused, since no layout changes a token | as `fmt` |
+//! | `gandr fmt --jobs <threads> <paths>` | as `fmt`, its sources laid out on that many threads | as `fmt` |
+//! | `gandr cells <paths>` | one line per rewriting cell of each declaration a source writes, `<path>:<line>:<column>: cell <n> <provenance>, <growth>: <hole> <count>, …`, each hole with how many times the cell's right-hand side writes it (`gandr-surface-dispatcher`'s `cells` module); nothing is checked | a path that cannot be read or names no source, or a source that does not parse or lower, or that the lowering refuses whole |
+//! | `gandr doc <path> --out <directory>` | the path of each page written, one per source under the path, then the index's (`gandr-surface-lsp`'s `doc` module): each page the source's own documentation, then each public declaration's hover block under a heading naming it | a path that names no source, or a source that cannot be read or judged, or a page that cannot be written |
+//! | `gandr lsp` | the language server's frames on standard output, until `exit`, served by the workspace's hub on Unix | a session ended before `shutdown` |
+//! | `gandr lsp --standalone` | as `lsp`, served in its own process | as `lsp` |
+//! | `gandr lsp --socket <path> --linger-ms <ms>` | as `lsp`, through the hub on that socket, a hub it starts lingering that long | as `lsp` |
+//! | `gandr lsp --capabilities` | the `initialize` result as one line of JSON | nothing |
+//! | `gandr mcp` | the Model Context Protocol server's lines on standard output, until standard input ends, served by the workspace's hub (Unix) | a stream that failed or a hub it could not reach |
+//! | `gandr mcp --socket <path> --linger-ms <ms>` | as `mcp`, through the hub on that socket, a hub it starts lingering that long | as `mcp` |
+//! | `gandr view` | the cards of the document the workspace's hub checked last, full-screen on a terminal; piped, each report's lines then a blank line (Unix) | a stream that failed, a line that is not a frame, or a hub it could not reach |
+//! | `gandr view --socket <path> --linger-ms <ms>` | as `view`, through the hub on that socket, a hub it starts lingering that long | as `view` |
+//! | `gandr view --trace` | as `view`, and on a terminal the derivation pane: the judgement nodes of the declaration at the editor's cursor, which a hub built with `instrument` traces while the view is attached | as `view` |
+//! | `gandr serve` | the URL of the toolset's manifest, then each client's timing lines, on standard error, until it is stopped; the URL also in the address file beside the socket | a socket it cannot bind or serve, an address file that names a toolset that still listens, or a toolset it cannot open |
+//! | `gandr serve --port <port>` | as `serve`, its toolset on that port | as `serve` |
+//! | `gandr serve --no-toolset` | each client's timing lines on standard error, until no client has connected for a minute | a socket it cannot bind or serve |
+//! | `gandr serve --socket <path> --linger-ms <ms>` | as `serve`, on that socket, lingering that long once it has no toolset and no client | as `serve` |
+//! | `gandr repl` | the line editor's prompt on a terminal; piped, each submission's echo and its lines, as a plain transcript | a fault that stops the loop |
+//! | `gandr repl --batch` | the plain transcript, even on a terminal | as `repl` |
+//! | `gandr tui` | the transcript, an input pane and a status line, full-screen on the terminal | a fault that stops the face, a terminal that fails, or no terminal |
+//! | `gandr tui --smoke` | `gandr tui: ready` | a fault that stops the face |
+//! | `gandr --spelling <unicode\|ascii> <verb>` | as the verb, every construct with a glyph (`≃`, `≅`, `⇝`, `∷`) written in that spelling: types in reports, hovers and published diagnostics, the loop's transcript; without the flag, the spelling the user's configuration file names (the `config` module), else Unicode | as the verb |
+//! | `gandr --memory <size> <verb>` | as the verb, each run it starts — a fixture's, a cut's, a world's, `gandr run`'s — holding its heap and its window region within the size, `512MiB` or `2GiB`: a run that asks past it stops, naming each region's bytes, the step and the remedy; the walk of `check` or `test` stops before its next source or component once it reaches the size, naming the bytes it holds, the bound and the remedy: under a cgroup that names a `memory.max`, the cgroup's charge passes the size or the cgroup's `max` count rises, else the process's resident set passes the size; without the flag, the least of the host's available memory, its cgroup's `memory.max` and its address-space limit | as the verb; a size that does not read is a malformed invocation |
+//! | `gandr --run-budget <jumps> <verb>` | as the verb, each run it starts holding its code-word jumps within the count, `16777216`: a run that spends it stops, naming the count, the flag and the remedy; without the flag, a run of `check`, `test` or `run` has no budget, and a run of `lsp` or `serve` takes the server's budget of 16 777 216 jumps; a client that starts a hub passes the flag on | as the verb; a count that does not read, or zero, is a malformed invocation |
+//!
+//! A path is a source file of any name, or a directory searched for `.gandr`
+//! sources. The directories a source sits in decide its root — `strict`,
+//! `fixture`, or `fixture/pending` — and a source under none is strict
+//! (`gandr-surface-dispatcher`'s `root` module). A path inside a package — its
+//! `package.gandr` and the modules under the directory its `sources` names —
+//! stands for the whole package, and `check`, `test` and `fmt` given no path
+//! work on the package the working directory sits in, or, in no package, on
+//! every member a `workspace.gandr` above it names, as they do given the
+//! workspace's directory (`gandr-surface-dispatcher`'s `package` and
+//! `workspace` modules). After its walk, `check` reconciles the
+//! `package.gandr.toml` of each such package with the `Package` model of its
+//! package source. It also reconciles the `workspace.gandr.toml` of each such
+//! workspace with its `Workspace` model. It writes `manifest: <path>: written`,
+//! `rewritten` or `unchanged` on standard output. It keeps a manifest that a
+//! person edited, and writes `gandr: <path>: drifted: …` on standard error. The
+//! lock of a package is `package.gandr.lock` beside its source. For a package
+//! below a workspace, the lock is its table in the `workspace.gandr.lock` that
+//! all the packages of the workspace share. Each manifold the walk settles, a
+//! source declaring `Manifold.artifact` itself, is then judged as a deployment
+//! before any process starts: a placement of a world the program does not
+//! declare, and each entry of a world's `requires [ … ]` row its site's
+//! `offers` does not answer, is `gandr: <refusal>` on standard error
+//! (`gandr-surface-dispatcher`'s `manifold` module). A refusal, an unsettled
+//! declaration and a goal each print as a located source snippet — the class
+//! and message, the path with line and column, the lines the report covers with
+//! their marks — followed by a blank line (`gandr-surface-diagnostics`'s
+//! `report` module); a settled fixture, a pending source's refusal and a
+//! pending source the lowering reads each print one ledger line, `<path>:
+//! <report>`. The driver writes plain text, without colour. Each fault is
+//! `gandr: <path>: <fault>` on standard error. Every run closes standard output
+//! with the runner's report — the sources read by root, the lowerings, the
+//! goals, the exercised table, the ledger size, the declaration and fixture
+//! counts, the surviving obligations, the refusals by class, the run's
+//! settlement and its seal — and `verdict: settled`, `unsettled` or `faulted`.
+//!
+//! `check` and `test` parse and lower their sources on `--jobs` threads (`-j`),
+//! or `GANDR_JOBS` when the flag is absent, or else the host's physical
+//! performance cores; `1` reads, parses and judges one source at a time. Every
+//! byte either stream carries, and the exit, are the same at every count: the
+//! sources are judged and printed in walk order whatever thread lowered them
+//! (`gandr-surface-dispatcher`'s `walk` module). A count of `0` is a malformed
+//! invocation. Under a jobserver that `CARGO_MAKEFLAGS` or `MAKEFLAGS` names,
+//! as cargo and a gate hand down, the pool runs a part beside the calling
+//! thread only on one of its tokens, so the count caps the threads and the
+//! jobserver bounds the parts that run (`gandr-surface-dispatcher`'s `pool`
+//! module).
+//!
+//! `gandr run` takes exactly one path, `-` among them: there is no
+//! standard-input face for it to name. The source is composed under the root
+//! its path classifies as and runs only when no declaration of it was refused;
+//! it runs the `main` it declares at its top level
+//! (`gandr-surface-dispatcher`'s `script` module), each line it prints written
+//! to standard output as it runs, and exits with the status `main` returns or
+//! passes to `Proc.exit`. A run blamed on a goal, stuck or unfinished is
+//! `` gandr: <path>: `main` <what it came to> `` on standard error; a source
+//! carrying a refusal is `gandr: <path>: refused; nothing ran` after its
+//! reports, and one declaring no `main` runs nothing — not its last
+//! declaration — and is one line on standard error naming `def main` and
+//! pointing at `gandr check` and `gandr test`.
+//!
+//! `gandr stage` takes one or more programs, each spelled `pow:LO..HI` or
+//! `double:LO..HI` with both exponents inclusive: `pow` specializes the staged
+//! power at every exponent in the range against a quoted variable, `double` the
+//! doubled iterator at every exponent against the quoted inputs two and three.
+//! Each program is checked in order on `--jobs` threads (`-j`), or
+//! `GANDR_JOBS`, or the host's physical performance cores, on one work-stealing
+//! pool (`gandr-surface-dispatcher`'s `stage` module). Its line is `<spelling>:
+//! <r> of <n> certificates readmitted; <f> families:` and the count admitted,
+//! partial, plain, refused, over the work bound and faulted, or `<spelling>:
+//! <fault>` when it could not be checked. `digest:` and sixteen hexadecimal
+//! digits name the merged syntax, certificates, readmissions and family
+//! admissions of every program, so a reader compares runs without comparing
+//! arenas; `verdict:` is `readmitted`, `refused` or `faulted`. Every byte and
+//! the exit are the same at every count. A pool that does not start is `gandr:
+//! the worker pool did not start: <error>` on standard error.
+//!
+//! `gandr fmt` reaches its paths as `check` does and lays out each source
+//! through `gandr-surface-format`, which keeps every token and comment, copies
+//! strings, holes and repaired forms as written, and refuses any
+//! layout whose parse differs from the source's (`gandr-surface-format`). Its
+//! sources are laid out on `--jobs` threads as `check`'s are, and every byte
+//! either stream carries, every source rewritten and the exit are the same at
+//! every count (`gandr-surface-dispatcher`'s `format` module). A source already
+//! in layout is not touched; a source the formatter refuses stays as written
+//! and is `gandr: <path>: not formatted: <why>` on standard error, and the
+//! formatting continues past it. A fault outranks a source out of layout:
+//! `gandr fmt --check` over both exits `2`.
+//!
+//! `gandr lsp` reads frames from standard input and writes every answer and
+//! notification to standard output; it rechecks a document whole at every
+//! synchronisation and publishes the same reports `gandr check --goals` prints
+//! for it, under the root its path classifies as (`gandr-surface-lsp`). Every
+//! `gandr lsp` started in one directory reaches one hub, so two editors on a
+//! workspace share its open documents. A stream that fails is `gandr: the
+//! language server stopped: <fault>` on standard error; a hub that cannot be
+//! reached, bound or served is `gandr: the engine hub: <error>`.
+//!
+//! `gandr mcp` reads one JSON-RPC message per line from standard input and
+//! writes each answer and notification as a line to standard output, through
+//! the same hub: its tools and resources read the documents the workspace's
+//! editors hold open, at the version they last synchronised, so a model sees
+//! the diagnostics the editor shows (`gandr-surface-agentic`). A model host
+//! runs it as a stdio server in the workspace's directory.
+//!
+//! `gandr view` attaches to the same hub's render bus and follows the document
+//! it checked last: a line naming the document, its version and how many
+//! diagnostics and holes it carries, then each diagnostic at its one-based row
+//! and column with its code and its derivation, then each hole with its goal
+//! (`gandr-surface-tui`). On a terminal it takes the screen until `q`, Esc or
+//! Ctrl-C; piped, each report prints as its lines and a blank line. Under
+//! `--trace` the hub judges each job at the trace layer while the view is
+//! attached, and the terminal shows the derivation pane; Enter shows the whole
+//! goal of the node at the cursor. A view that cannot read the hub's frames
+//! ends with `gandr: the view: <cause>` on standard error.
+//!
+//! `gandr repl` reads declarations a line at a time and submits each buffer the
+//! parser reads as complete, judging it with every declaration kept before it,
+//! as `gandr check --goals` judges a strict source; a refused submission is
+//! shown and not kept. Each submission prints its echo after `▸`, a `name : T`
+//! line per declaration it checked followed by what running it came to — `=
+//! value`, `! blame`, or `·` and why it stopped or never ran — a `? name : T`
+//! line per goal, and each refusal as `gandr check` prints it — in colour only
+//! when the line editor runs and standard output is a terminal, plain
+//! otherwise. `:type <expression>`, `:load <file>`, `:reset`, `:help` and
+//! `:quit` speak to the loop (`gandr-surface-repl`). A fault that stops the
+//! loop is `gandr: <fault>` on standard error.
+//!
+//! `gandr tui` takes the terminal for the same loop: the transcript keeps the
+//! lines `gandr repl` prints, coloured by kind with the echo highlighted, above
+//! the line being edited; Enter submits, Ctrl-C drops the line and any waiting
+//! buffer, and Esc or `:quit` leaves and restores the terminal
+//! (`gandr-surface-tui`). Without a terminal on standard input and output it
+//! draws nothing and notes `gandr: the terminal face needs a terminal on
+//! standard input and output` on standard error; `gandr tui --smoke` needs
+//! none. A fault that stops the face is `gandr: <fault>`, and a terminal that
+//! fails `gandr: the terminal failed: <error>`, on standard error.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: § quant-counts
+//!   and § quant-try-first — a hole's occurrence count under a cell's step is
+//!   reported per cell by `gandr cells`, never refused.
+//! - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — background: §
+//!   storage-programme-worlds-sessions — `gandr host` is the process a
+//!   migration is committed to and dereferenced at, and `--world` binds the
+//!   world it runs at to that process.
+//! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation
+//!   ruling (§ compilation-recipe-vocabulary) — `gandr run` runs a local
+//!   artifact, the endpoint of a one-role choreography; and §
+//!   compilation-recipe-refinements — a deployment binds worlds to sites and
+//!   never enters the artifact's identity, so `--manifold` and `--site` desugar
+//!   to `--world` and `--net-bind`.
+//! - `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: a dependent
+//!   fetches each dependency's export from the store by its address, the
+//!   coordinate only naming where to check it first (`depended`; §
+//!   package-design-typed-hydration).
+//! - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Example 1.4 and
+//!   § 6 give Catt's artifact sizes, which `gandr check --measure` prints each
+//!   declaration's bytes beside.
+//! - `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: the sharing
+//!   format's one table per artifact and its expanded-work budget, the shared
+//!   and unshared sizes a `measure:` line prints.
+//! - `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing
+//!   ratio of iterated composites grows with dimension, so a `measure:` line
+//!   prints both sizes.
+//! - `Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems`
+//!   — newest: `gandr cells` prints a row's bound as the semiring product of
+//!   its steps' weights.
+//! - `vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a` — lineage: the lead's local
+//!   hub — the sessions of a face readmit on the host's one pool, which
+//!   `host_pool` installs.
+//!
+//! # Output the driver cannot write is a fault
+//!
+//! `main` returns its exit code rather than a `Result`, so a write or flush
+//! that fails — a closed pipe, a full disk — is noted on standard error, when
+//! that is writable, and exits `2`, the code every fault shares. The runtime
+//! ignores `SIGPIPE`, so a reader that closed early surfaces as a failed write,
+//! not a signal. The alternative was returning the I/O error from `main`, whose
+//! runtime path exits `1` and would read as an unsettled run. The choice
+//! reverses if a fault class needs its own code, which would be a fourth row
+//! above.
+//!
+//! # Tests and their limits
+//!
+//! Driver routing, rendering and nontrivial test helpers carry executable
+//! predicates and bounded adequacy arguments. Exit-code domains are checked on
+//! each call; the width witness compares every byte of both streams, and the
+//! exit, of a run at several thread counts with the serial run's. The global
+//! allocator's items are the one executable exemption (the `allocator` module).
+//! The predicates do not observe opaque output streams: the CLI witnesses
+//! observe exit status, protocol framing, diagnostic identity and location,
+//! stream separation, and value multiplicity instead of incidental English
+//! wording or a copy of the producer's formatter.
+//!
+//! `scratch_ownership_keeps_simultaneous_cases_independent` runs two same-name
+//! sources in separate roots, removes one root and checks that the other still
+//! behaves independently. `a_failed_diagnostic_stream_stops_later_output`
+//! closes the diagnostic reader and verifies that neither a later summary nor a
+//! script value is emitted after that first write fails. Closed standard output
+//! covers status, check, run, help, capabilities, batch REPL and TUI smoke; a
+//! literal `-` is checked both absent and present in an owned directory.
+//!
+//! The native command smoke additionally compares independently decoded LSP
+//! initialization and capability JSON, exercises script and batch entry points,
+//! and submits a declaration on a terminal before quitting and comparing its
+//! terminal settings. These finite observations do not claim arbitrary editor
+//! timing, terminal backends, source programs or failing filesystem coverage.
+//!
+//! The exit-code witnesses are
+//! `tests::cli::a_script_that_runs_its_main_leaves_successfully` (exit `0`,
+//! the line its `main` prints alone on standard output),
+//! `tests::cli::a_script_that_blames_leaves_with_a_failure_status` (exit `1`)
+//! and `tests::cli::an_ill_typed_script_is_refused_by_the_checker` (exit `2`);
+//! `tests::cli::a_script_with_no_program_is_refused` asserts a source declaring
+//! no `main` runs nothing.
+//!
+//! # Optional tracing
+//!
+//! Build with `cargo build -p gandr-lang --features tracing` to report driver
+//! and dispatcher diagnostics on stderr. The feature forwards to
+//! `gandr-surface-dispatcher`; this driver has no evaluator dependency and does
+//! not activate evaluator tracing. A default build carries no tracing
+//! instrumentation or dependency: `cargo tree -p gandr-lang -e normal,build`
+//! lists neither `tracing` nor `tracing-subscriber` until the feature is on.
+//!
+//! Argument parsing runs before subscriber installation, so help, version and
+//! argument errors retain their ordinary output. A scoped, thread-local
+//! subscriber reports dispatch-span completion and successful output flushing,
+//! then restores the prior subscriber when the invocation ends. Libraries
+//! install no subscriber. Standard-output write and flush errors remain faults
+//! rather than successful-completion events. Tracing diagnostics may precede a
+//! fault’s `gandr:` line on stderr; stdout and exit codes are unchanged. A
+//! diagnostic an unwritable stderr refuses is dropped: the subscriber's
+//! internal-error report, which would `eprintln!` to that same stream and
+//! panic, is off.
+//!
+//! The output backend is
+//! [`tracing-subscriber`](https://docs.rs/tracing-subscriber/0.3.23/tracing_subscriber/fmt/index.html)
+//! 0.3.23 with only `fmt` and its required registry/std support. ANSI
+//! formatting, the log bridge, filter parsing, JSON and time integrations stay
+//! off. This release includes the [ANSI-input escaping
+//! fix](https://rustsec.org/advisories/RUSTSEC-2025-0055); the current events
+//! contain fixed messages and no user payloads. A global subscriber was
+//! rejected because the invocation need not own process-wide diagnostics; an
+//! environment filter adds parsing machinery for no current CLI option. Revisit
+//! those choices when the driver gains a consumer requiring them, or the
+//! selected version needs a security or maintenance replacement.
+
+// Module documentation that predates the shape lint: 6 headings outside the
+// vocabulary, 1 decision record and 2 budgets exceeded. Each allow leaves with
+// the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
+extern crate alloc;
+
+use alloc::sync::Arc;
+use core::net::SocketAddr;
+use core::num::NonZeroUsize;
+use core::ops::ControlFlow;
+#[cfg(unix)]
+use core::time::Duration;
+use std::io::IsTerminal as _;
+use std::io::Write as _;
+use std::path::Path;
+use std::path::PathBuf;
+use std::process::ExitCode;
+
+use anodized::spec;
+use gandr_kernel_core::tallied;
+use gandr_runtime_emitter::Budget;
+use gandr_runtime_emitter::budget;
+use gandr_runtime_emitter::budget::Jumps;
+#[cfg(unix)]
+use gandr_runtime_emitter::budget::Origin;
+use gandr_runtime_emitter::regions;
+use gandr_runtime_emitter::regions::Bytes;
+use gandr_runtime_emitter::regions::Memory;
+use gandr_runtime_net::Binding;
+use gandr_runtime_net::Lookup;
+use gandr_runtime_net::Net;
+use gandr_runtime_net::Secret;
+use gandr_storage_store::Register;
+use gandr_storage_store::Store;
+use gandr_surface_diagnostics::Lint;
+use gandr_surface_diagnostics::Severity;
+use gandr_surface_diagnostics::Verbosity;
+use gandr_surface_dispatcher::AuthorityError;
+use gandr_surface_dispatcher::Census;
+use gandr_surface_dispatcher::CensusStep;
+use gandr_surface_dispatcher::Class;
+use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Entered;
+use gandr_surface_dispatcher::Evaluation;
+use gandr_surface_dispatcher::Export;
+use gandr_surface_dispatcher::Exporting;
+use gandr_surface_dispatcher::FormatStep;
+use gandr_surface_dispatcher::Formatting;
+use gandr_surface_dispatcher::Fusions;
+use gandr_surface_dispatcher::Gathered;
+use gandr_surface_dispatcher::Goals;
+use gandr_surface_dispatcher::Grant;
+use gandr_surface_dispatcher::HostGrant;
+use gandr_surface_dispatcher::Hosted;
+use gandr_surface_dispatcher::Invocation;
+use gandr_surface_dispatcher::Kept;
+use gandr_surface_dispatcher::Lints;
+use gandr_surface_dispatcher::Lock;
+use gandr_surface_dispatcher::LockFault;
+use gandr_surface_dispatcher::Manifest;
+use gandr_surface_dispatcher::ManifestFault;
+use gandr_surface_dispatcher::Manifold;
+use gandr_surface_dispatcher::MigrationCount;
+use gandr_surface_dispatcher::OperationName;
+use gandr_surface_dispatcher::Outcome;
+use gandr_surface_dispatcher::Package;
+use gandr_surface_dispatcher::PackageAddress;
+use gandr_surface_dispatcher::Pool;
+use gandr_surface_dispatcher::ProgramSpec;
+use gandr_surface_dispatcher::Ran;
+use gandr_surface_dispatcher::Reached;
+use gandr_surface_dispatcher::RealsProfile;
+use gandr_surface_dispatcher::Reconciled;
+use gandr_surface_dispatcher::Repairs;
+use gandr_surface_dispatcher::Revisions;
+use gandr_surface_dispatcher::Rewrite;
+use gandr_surface_dispatcher::RunStatus;
+use gandr_surface_dispatcher::RunVerdict;
+use gandr_surface_dispatcher::Running;
+use gandr_surface_dispatcher::Script;
+use gandr_surface_dispatcher::ScriptRun;
+use gandr_surface_dispatcher::Secrets;
+use gandr_surface_dispatcher::Site;
+use gandr_surface_dispatcher::SourceCount;
+use gandr_surface_dispatcher::SourceLimit;
+use gandr_surface_dispatcher::StageVerdict;
+use gandr_surface_dispatcher::Staging;
+use gandr_surface_dispatcher::Standing;
+use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::Streams;
+use gandr_surface_dispatcher::Threads;
+use gandr_surface_dispatcher::Traversal;
+use gandr_surface_dispatcher::Unaddressed;
+use gandr_surface_dispatcher::Undeployed;
+use gandr_surface_dispatcher::Unexported;
+use gandr_surface_dispatcher::Unmanifested;
+use gandr_surface_dispatcher::Unpathed;
+use gandr_surface_dispatcher::Unresolved;
+use gandr_surface_dispatcher::Unshadowed;
+use gandr_surface_dispatcher::Verb;
+use gandr_surface_dispatcher::Walk;
+use gandr_surface_dispatcher::Width;
+use gandr_surface_dispatcher::WorldBinding;
+use gandr_surface_dispatcher::WorldBindings;
+use gandr_surface_dispatcher::WorldName;
+use gandr_surface_dispatcher::entries;
+use gandr_surface_dispatcher::measure;
+use gandr_surface_dispatcher::packaged;
+use gandr_surface_dispatcher::reconcile;
+use gandr_surface_dispatcher::reconcile_lock;
+use gandr_surface_dispatcher::relock;
+use gandr_surface_dispatcher::schedule;
+use gandr_surface_dispatcher::timed;
+use gandr_surface_evaluate::Evaluator;
+use gandr_surface_features::FeatureLedger;
+use gandr_surface_format::Form;
+use gandr_surface_format::FormatOptions;
+use gandr_surface_format::PageWidth;
+use gandr_surface_grammar::Spelling;
+use gandr_surface_grammar::built_in;
+use gandr_surface_lsp::Capabilities;
+use gandr_surface_lsp::Entry;
+use gandr_surface_lsp::File;
+#[cfg(unix)]
+use gandr_surface_lsp::Handover;
+#[cfg(unix)]
+use gandr_surface_lsp::Relayed;
+use gandr_surface_lsp::Served;
+use gandr_surface_lsp::index;
+use gandr_surface_lsp::page;
+use gandr_surface_lsp::site;
+use gandr_surface_lsp::sourced;
+use gandr_surface_render_terminal::RenderStyle;
+use gandr_surface_render_terminal::TerminalCapability;
+use gandr_surface_repl::Ended;
+use quenchant_shape::shape::Maybe;
+
+mod allocator;
+mod config;
+#[cfg(feature = "instrument")]
+mod occupancy;
+mod toolchain;
+mod verdicts;
+
+/// The process's global allocator: the private malloc zone of
+/// [`allocator::zone::Zone`] on macOS under `malloc-zone`, the system
+/// allocator otherwise.
+#[cfg(all(
+    feature = "malloc-zone",
+    target_os = "macos",
+    not(feature = "instrument")
+))]
+#[global_allocator]
+static ALLOCATOR: allocator::zone::Zone = allocator::zone::Zone;
+
+/// The process's global allocator under `instrument`: the private malloc zone
+/// of [`allocator::zone::Zone`], each allocation counted on its thread.
+#[cfg(all(feature = "malloc-zone", target_os = "macos", feature = "instrument"))]
+#[global_allocator]
+static ALLOCATOR: allocator::counting::Counting<allocator::zone::Zone> =
+    allocator::counting::Counting::over(allocator::zone::Zone);
+
+/// The process's global allocator under `instrument`: the system allocator,
+/// each allocation counted on its thread.
+#[cfg(all(
+    feature = "instrument",
+    not(all(feature = "malloc-zone", target_os = "macos"))
+))]
+#[global_allocator]
+static ALLOCATOR: allocator::counting::Counting<std::alloc::System> =
+    allocator::counting::Counting::over(std::alloc::System);
+
+/// The exit code of a run with an unsettled declaration.
+const UNSETTLED: u8 = 1;
+
+/// The exit code of a language-server session that ended before `shutdown`.
+const ABRUPT: u8 = 1;
+
+/// The exit code of a script whose run reached the machine and stopped short
+/// of a value: blamed on a goal, stuck or unfinished.
+const STOPPED: u8 = 1;
+
+/// The exit code of a fault: the engine's, a path's, the invocation's or the
+/// output's.
+const FAULTED: u8 = 2;
+
+/// The exit code of a script that never reached the machine.
+const UNREACHED: u8 = 2;
+
+/// The exit code of a staged run whose certificate the kernel refused.
+const REFUSED: u8 = 1;
+
+/// The exit code of `fmt --check` over a source out of layout.
+const UNFORMATTED: u8 = 1;
+
+/// The exit code of `gandr tokens` when the verb holds no counter: no hub
+/// answers, or the verb joins no slot or makes no FIFO. It is 125, as `env`
+/// and `timeout` exit when they fail themselves, so a command's own code
+/// stands apart from it.
+#[cfg(unix)]
+const UNHELD: u8 = 125;
+
+/// The exit code of `gandr tokens` when its command does not start, 126 as a
+/// shell's.
+#[cfg(unix)]
+const UNSTARTED: u8 = 126;
+
+/// The exit code of `gandr tokens` when no program has its command's name,
+/// 127 as a shell's.
+#[cfg(unix)]
+const UNFOUND: u8 = 127;
+
+/// gandr language toolchain driver.
+#[derive(Debug, clap::Parser)]
+#[command(name = "gandr", version, about)]
+struct Cli
+{
+    /// Write every construct that has a glyph in this spelling, over the
+    /// `presentation.spelling` of the user's configuration file.
+    #[arg(long, global = true, value_enum)]
+    spelling: Option<SpellingName>,
+    /// Bound the memory each run of the invocation holds across its heap
+    /// and its window region, `512MiB` or `2GiB`, over the host's available
+    /// memory.
+    #[arg(long, global = true, value_name = "SIZE")]
+    memory: Option<Bytes>,
+    /// Bound the code-word jumps each run of the invocation takes, a count
+    /// such as `16777216`. Without it, a run of `check`, `test` or `run` has
+    /// no budget, and a run of `lsp` or `serve` takes the server's budget.
+    #[arg(long, global = true, value_name = "JUMPS")]
+    run_budget: Option<Jumps>,
+    /// The verb; with none, the driver prints its status.
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+/// The driver's verbs.
+#[derive(Debug, clap::Subcommand)]
+enum Command
+{
+    /// Check every declaration of the sources under each path.
+    ///
+    /// Exits 0 when every declaration settles, 1 when one does not, and 2 on
+    /// an engine fault or a path that cannot be read.
+    Check
+    {
+        /// Print a declaration unsettled by its obligations alone as a goal,
+        /// rather than failing the run.
+        #[arg(long)]
+        goals: bool,
+        /// Report every finding of the named lint, not only within the forms
+        /// an attribute enables it on; repeatable.
+        #[arg(long, value_enum)]
+        lint: Vec<LintName>,
+        /// Bound every capability a declaration holds by these host
+        /// operations, comma-separated; repeatable. A held capability claiming
+        /// any other is refused. Without it, every held capability is owed.
+        #[arg(long, value_delimiter = ',', value_name = "OPERATIONS")]
+        grant: Option<Vec<OperationName>>,
+        /// Enter every declaration at these worlds, comma-separated: its home
+        /// first, then the world of each capability the host hands it, as an
+        /// `entry` attribute names them. A declaration stating its own entry
+        /// is checked within this one. Without it, a declaration stands where
+        /// it states.
+        #[arg(long, value_delimiter = ',', value_name = "WORLDS")]
+        entry: Vec<WorldName>,
+        /// Check every declaration in the kernel, recalling no recorded
+        /// verdict and recording none, over the configuration's
+        /// `kernel.policy`.
+        #[arg(long)]
+        recheck: bool,
+        /// Take a closed conversion pair's answer from the emitter tier
+        /// without the kernel deriving it: the emitter joins the trusted base
+        /// for the run. The report counts the results taken, and the verdict
+        /// names the policy and the tier. Without it, the kernel derives each.
+        #[arg(long, value_enum, value_name = "POLICY")]
+        admit: Option<AdmitPolicy>,
+        /// Print, for each declaration a settled source writes, the bytes its
+        /// segment takes in the kernel's artifact, the subterm-table entries
+        /// the segment adds and its roots' expanded work.
+        #[arg(long)]
+        measure: bool,
+        /// Print, after the run, the occupancy of each thread that the pool's
+        /// activity ring recorded: its busy time, the marks its ring dropped
+        /// and the events that reached the fold late.
+        #[cfg(feature = "instrument")]
+        #[arg(long)]
+        activity: bool,
+        /// Print, after the run, the allocations that every thread made and
+        /// the frames that the kernel's checks popped.
+        #[cfg(feature = "counts")]
+        #[arg(long)]
+        counts: bool,
+        /// Print the named report for each source, after its diagnostics:
+        /// `cells` lists each law a model omits that a source discharged.
+        #[arg(long, value_enum)]
+        report: Option<ReportName>,
+        /// How much of each report to print.
+        #[arg(long, value_enum, default_value_t = Level::User)]
+        verbosity: Level,
+        /// The threads the sources are parsed and lowered on.
+        #[command(flatten)]
+        jobs: Jobs,
+        /// The count of sources the walk reaches at most.
+        #[command(flatten)]
+        limit: Limit,
+        /// Source files, and directories searched for `.gandr` sources. A
+        /// path inside a package checks the whole package, and writes its
+        /// `package.gandr.toml` and, when it has dependencies, its lock; a
+        /// workspace's directory checks each member it names and writes
+        /// `workspace.gandr.toml`; with no path,
+        /// the package the working directory sits in, or the workspace when it
+        /// sits in none.
+        paths: Vec<PathBuf>,
+    },
+    /// Run the corpus under each path: the same pass as `check`, printing
+    /// every fixture.
+    ///
+    /// Exits as `check` does.
+    Test
+    {
+        /// How much of each report to print.
+        #[arg(long, value_enum, default_value_t = Level::User)]
+        verbosity: Level,
+        /// The threads the sources are parsed and lowered on.
+        #[command(flatten)]
+        jobs: Jobs,
+        /// The count of sources the walk reaches at most.
+        #[command(flatten)]
+        limit: Limit,
+        /// Source files, and directories searched for `.gandr` sources. A
+        /// path inside a package runs the whole package, a workspace's
+        /// directory each member it names; with no path, the package the
+        /// working directory sits in, or the workspace when it sits in none.
+        paths: Vec<PathBuf>,
+    },
+    /// Resolve each package's dependencies again and write its lock, whatever
+    /// lock stands there.
+    ///
+    /// Exits 0 when every lock is written, 1 when a package's dependencies
+    /// do not resolve, and 2 when a lock cannot be written.
+    Lock
+    {
+        /// Paths inside the packages to relock, and workspaces' directories,
+        /// each member it names; with no path, the package the working
+        /// directory sits in, or the workspace when it sits in none.
+        paths: Vec<PathBuf>,
+    },
+    /// Serve the Language Server Protocol over standard input and output.
+    ///
+    /// On Unix the session is carried to the engine hub serving the current
+    /// directory's workspace, started when none runs, so every client of one
+    /// workspace shares its open documents. Exits 0 when `exit` follows
+    /// `shutdown`, 1 when the session ends before `shutdown`, and 2 when a
+    /// stream fails or no hub can be reached.
+    Lsp
+    {
+        /// Print the capabilities the server advertises, as one line of JSON,
+        /// and exit.
+        #[arg(long)]
+        capabilities: bool,
+        /// Serve in this process, sharing nothing with other clients.
+        #[cfg(unix)]
+        #[arg(long)]
+        standalone: bool,
+        /// The hub's socket, rather than the one the current directory names.
+        #[cfg(unix)]
+        #[arg(long, value_name = "PATH", conflicts_with = "standalone")]
+        socket: Option<PathBuf>,
+        /// How long a hub this client starts waits for a client, once its
+        /// last has left, before it exits. Defaults to a minute.
+        #[cfg(unix)]
+        #[arg(long, value_name = "MILLISECONDS", conflicts_with = "standalone")]
+        linger_ms: Option<u64>,
+    },
+    /// Run the engine hub: serve the Language Server Protocol to every editor
+    /// of one workspace, and the Model Context Protocol to every model, over
+    /// one Unix socket, all of them sharing the documents the editors open.
+    ///
+    /// The hub also serves the Reactive Agent Protocol's toolset over HTTP on
+    /// the loopback interface, which is the default face for an agent. It
+    /// writes the URL of the toolset's manifest to a file beside its socket,
+    /// with the extension `rap`, for a runtime to read, and says it on
+    /// standard error. It runs until it is stopped, and it keeps each call it
+    /// acknowledged under the user's state directory until the call is
+    /// answered.
+    ///
+    /// `gandr lsp`, `gandr mcp` and `gandr view` start one with
+    /// `--no-toolset` when none runs. Exits 0 when the hub has had no client
+    /// for its linger or another hub already serves the socket, and 2 when the
+    /// socket cannot be bound or served. With the toolset, it also exits 2
+    /// when the address file names a toolset that still listens, the port
+    /// cannot be bound, the store of calls cannot be opened, the address file
+    /// cannot be written, or another hub already serves the socket.
+    #[cfg(unix)]
+    Serve
+    {
+        /// The socket to serve, rather than the one the current directory
+        /// names.
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
+        /// How long to wait for a client, once the last has left, before
+        /// exiting. Defaults to a minute.
+        #[arg(long, value_name = "MILLISECONDS")]
+        linger_ms: Option<u64>,
+        /// Serve the toolset on this port of the loopback interface, rather
+        /// than on a free port.
+        #[arg(long, value_name = "PORT")]
+        port: Option<u16>,
+        /// Serve no toolset: the hub alone, which exits after its linger.
+        #[arg(long, conflicts_with = "port")]
+        no_toolset: bool,
+    },
+    /// Serve the Model Context Protocol over standard input and output: tools
+    /// and resources reading the documents the workspace's editors hold open.
+    ///
+    /// The session is carried to the engine hub serving the current
+    /// directory's workspace, started when none runs. Exits 0 when the client
+    /// closes its input and the hub has answered, and 2 when a stream fails or
+    /// no hub can be reached.
+    #[cfg(unix)]
+    Mcp
+    {
+        /// The hub's socket, rather than the one the current directory names.
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
+        /// How long a hub this client starts waits for a client, once its
+        /// last has left, before it exits. Defaults to a minute.
+        #[arg(long, value_name = "MILLISECONDS")]
+        linger_ms: Option<u64>,
+    },
+    /// Run one build command on the host's counter, which the engine hub owns,
+    /// through a FIFO of this process's own.
+    ///
+    /// The hub serving the current directory's workspace is reached, started
+    /// when none runs. The verb then joins the hub's counter with a slot of its
+    /// own, makes its FIFO beside the counter, and runs the command with
+    /// `MAKEFLAGS` and `CARGO_MAKEFLAGS` that name the FIFO as
+    /// `--jobserver-auth=fifo:<path>`, so make, cargo and gandr draw on the
+    /// host's one counter. When the command ends, the slot gives back each
+    /// token that the command's tools read and did not write back, and the
+    /// verb writes that count on standard error when it is above 0. Exits
+    /// with the command's code, or 128 and the signal that ended it; 125 when
+    /// the verb holds no counter, 126 when the command does not start, and
+    /// 127 when no program has its name.
+    #[cfg(unix)]
+    Tokens
+    {
+        /// The hub's socket, rather than the one the current directory names.
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
+        /// How long a hub this client starts waits for a client, once its
+        /// last has left, before it exits. Defaults to a minute.
+        #[arg(long, value_name = "MILLISECONDS")]
+        linger_ms: Option<u64>,
+        /// The program to run on the FIFO, and its arguments, after `--`.
+        #[arg(last = true, required = true, value_name = "COMMAND")]
+        command: Vec<std::ffi::OsString>,
+    },
+    /// Follow the document the engine hub checked last: its diagnostics, each
+    /// at its row and column with its derivation, and its holes, beside the
+    /// editor that shows the text.
+    ///
+    /// Attaches to the render bus of the hub serving the current directory's
+    /// workspace, started when none runs. On a terminal the view takes the
+    /// screen until Esc; piped, each report prints as plain rows. Exits 0 when
+    /// the user leaves or the hub closes the bus, and 2 when a stream fails,
+    /// a line from the hub is not a frame, or no hub can be reached.
+    #[cfg(unix)]
+    View
+    {
+        /// The hub's socket, rather than the one the current directory names.
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
+        /// How long a hub this client starts waits for a client, once its
+        /// last has left, before it exits. Defaults to a minute.
+        #[arg(long, value_name = "MILLISECONDS")]
+        linger_ms: Option<u64>,
+        /// Show the derivation pane: the judgement nodes of the declaration at
+        /// the editor's cursor. A hub built with `instrument` traces each
+        /// judgement while the view is attached; another hub sends no node.
+        /// On a terminal only.
+        #[arg(long)]
+        trace: bool,
+    },
+    /// Run the read-evaluate loop over standard input and output.
+    ///
+    /// On a terminal, lines are edited with history kept for the session;
+    /// piped, each line is read in turn and a plain transcript printed. Exits
+    /// 0 at the end of input or `:quit`, and 2 when a fault stops the loop.
+    Repl
+    {
+        /// Print the plain transcript even when standard input is a terminal.
+        #[arg(long)]
+        batch: bool,
+    },
+    /// Run the read-evaluate loop full-screen: the transcript, an input pane
+    /// and a status line.
+    ///
+    /// Needs a terminal on standard input and output. Exits 0 when the user
+    /// leaves, and 2 when a fault stops the face or no terminal is attached.
+    #[cfg(not(target_os = "wasi"))]
+    Tui
+    {
+        /// Run the face once off-screen, print `gandr tui: ready`, and exit.
+        #[arg(long)]
+        smoke: bool,
+    },
+    /// Run a source as a program: check it as `check` does, then run the
+    /// `main` it declares at its top level. A source declaring no `main` runs
+    /// nothing. The program is a local artifact: the endpoint of a one-role
+    /// choreography, deployed as this process.
+    ///
+    /// A `main` returns the exit code, `def main() -> -F Integer`, or the
+    /// unit, `def main() -> -F [Console] Unit`, for 0. It reads the arguments
+    /// after the path when it takes them, `def main(args : List(String)) -> -F
+    /// Integer`, and is handed the ambient authority when it takes that, `def
+    /// main(authority : Authority) -> -F [Console] Unit`, `std.authority`'s
+    /// capability, through which each operation is this process's.
+    /// `Proc.exit(n)` ends the run with `n`, and `Console.print(s)` writes `s`
+    /// as a line of standard output. A `Net`
+    /// operation binds the program's network on first use, as the `--net-*`
+    /// flags say. A migration runs in this process, or, when `--world` or a
+    /// manifold binds any world, where those bindings bind its world; an entry
+    /// that may migrate to a world nothing binds never runs. Exits with that
+    /// code, its low byte; otherwise 1 when the run is blamed on a goal or
+    /// stops short of one, and 2 when the source never reaches the machine,
+    /// declares no `main`, or is not the program its manifold deploys.
+    Run
+    {
+        /// The source file to run.
+        path: PathBuf,
+        /// The arguments the program's `main` reads, in order.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        arguments: Vec<String>,
+        /// A world bound to the host it runs at, as `<world>=<key>@<ip:port>`;
+        /// repeated, one per world.
+        #[arg(long = "world", value_name = "WORLD=KEY@IP:PORT")]
+        worlds: Vec<WorldBinding>,
+        /// A manifold's file, binding the program's worlds to sites as
+        /// `--world` does, in place of it.
+        #[arg(long, value_name = "FILE")]
+        manifold: Option<PathBuf>,
+        /// Where the program's network binds and what key it proves.
+        // Boxed: a key outweighs every other verb's flags.
+        #[command(flatten)]
+        net: Box<NetFlags>,
+    },
+    /// Host the worlds of a source: check it as `run` does, then run each
+    /// migration another `gandr run` of the same source ships to a world its
+    /// bindings bind to this process's key, or, with none, to any world its
+    /// entry may migrate to.
+    ///
+    /// Prints its peer spelling, `<key>@<ip:port>`, on standard error once
+    /// bound. Prints `ran a migration at <world>, fetching <n> chunks` for
+    /// each migration it runs, and `refused a migration at <world>: <reason>`
+    /// for each it refuses. Exits 0 when it has answered `--migrations`, 1
+    /// when the network fails first, and 2 when the source never reaches the
+    /// machine, or its site or manifold refuses.
+    Host
+    {
+        /// The source file whose worlds are hosted.
+        path: PathBuf,
+        /// A world bound to the host it runs at, as `<world>=<key>@<ip:port>`;
+        /// repeated, one per world. Each bound to this process's key is
+        /// hosted here.
+        #[arg(
+            long = "world",
+            value_name = "WORLD=KEY@IP:PORT",
+            required_unless_present_any = ["site", "manifold"]
+        )]
+        worlds: Vec<WorldBinding>,
+        /// A site's file: the key this process proves, the name of the secret
+        /// proving it, and the sockets it binds, in place of `--net-bind` and
+        /// `--net-secret`.
+        #[arg(long, value_name = "FILE")]
+        site: Option<PathBuf>,
+        /// A file declaring the `Secrets` model of `std.secret` the site's
+        /// secret is read through, in place of the environment variable
+        /// `GANDR_SECRET_<NAME>`.
+        #[arg(long, value_name = "FILE", requires = "site")]
+        secrets: Option<PathBuf>,
+        /// A manifold's file, binding the program's worlds to sites as
+        /// `--world` does, in place of it.
+        #[arg(long, value_name = "FILE")]
+        manifold: Option<PathBuf>,
+        /// How many migrations to answer before exiting.
+        #[arg(long, value_name = "COUNT", default_value = "1")]
+        migrations: NonZeroUsize,
+        /// Where the network binds and what key it proves.
+        // Boxed: a key outweighs every other verb's flags.
+        #[command(flatten)]
+        net: Box<NetFlags>,
+    },
+    /// Check staging observer programs: build each, normalize every source,
+    /// readmit every certificate and admit every family through one memo.
+    ///
+    /// Prints one line per program, then the run's digest and verdict, the
+    /// same at every width. Exits 0 when the kernel readmits every
+    /// certificate, 1 when it refuses one, and 2 when a program cannot be
+    /// checked.
+    Stage
+    {
+        /// The threads each program's stages fork onto.
+        #[command(flatten)]
+        jobs: Jobs,
+        /// The programs, in order: `pow:LO..HI` or `double:LO..HI`, both
+        /// exponents inclusive.
+        #[arg(required = true, value_name = "PROGRAM")]
+        programs: Vec<ProgramSpec>,
+    },
+    /// Lay out the sources under each path at a page width, writing each
+    /// source whose layout changes back over it.
+    ///
+    /// Prints the path of each source whose layout changed. Exits 0 when every
+    /// source was laid out, and 2 when a path cannot be read or written, names
+    /// no source, or holds a source the formatter refuses.
+    Fmt
+    {
+        /// Write nothing; print the path of each source out of layout, and
+        /// exit 1 when there is one.
+        #[arg(long)]
+        check: bool,
+        /// The page width, in columns. Defaults to 100.
+        #[arg(long, value_name = "COLUMNS")]
+        width: Option<u32>,
+        /// The spelling each source is laid out in, explicit or sugared,
+        /// through the formatter's named rewrites; a source's own
+        /// `@[ form(…) ]` declaration wins. Defaults to each source's own
+        /// spelling, every token kept.
+        #[arg(long, value_enum)]
+        form: Option<FormName>,
+        /// The threads the sources are laid out on.
+        #[command(flatten)]
+        jobs: Jobs,
+        /// Source files, and directories searched for `.gandr` sources. A
+        /// path inside a package lays out the whole package, a workspace's
+        /// directory each member it names; with no path, the package the
+        /// working directory sits in, or the workspace when it sits in none.
+        paths: Vec<PathBuf>,
+    },
+    /// Write the documentation of the sources under a path: an HTML site, or
+    /// Markdown pages with `--markdown`.
+    ///
+    /// The site holds an index, a page per source and per public item, an
+    /// index of every item, a view of each source and a search over the items.
+    /// A reader opens its `index.html` from disk. A Markdown page holds the
+    /// source's own documentation, then each public declaration's signature as
+    /// a hover on its name shows it, then its documentation. Prints the path of
+    /// each file written. Exits 0 when every file was written, and 2 when the
+    /// path names no source, or a source cannot be read, judged or written.
+    Doc
+    {
+        /// The directory the files are written under, made when missing.
+        #[arg(long, value_name = "DIRECTORY")]
+        out: PathBuf,
+        /// Write Markdown pages and their index in place of the site.
+        #[arg(long)]
+        markdown: bool,
+        /// A source file, or a directory searched for `.gandr` sources.
+        path: PathBuf,
+    },
+    /// Report the rewriting cells of the sources under each path, one line
+    /// per cell, each hole with how many times the cell's right-hand side
+    /// writes it.
+    ///
+    /// A hole's count is its Lipschitz constant under the step: 0 for a
+    /// dropped hole, 1 for a kept one, more for a duplicated one. With
+    /// `--fusions`, each block's composition overlaps are fused too, and each
+    /// fusion cell is one more line: its two cells, the distance of its two
+    /// steps in ticks, its verdict, and each hole's composed count. Nothing is
+    /// checked. Exits 0 when every path was read, and 2 when a path cannot be
+    /// read, names no source, or holds a source the lowering cannot read.
+    Cells
+    {
+        /// Fuse each composition overlap of each block, and report the fused
+        /// cell's bound composed through its two steps in the Lawvere
+        /// quantale.
+        #[arg(long)]
+        fusions: bool,
+        /// Source files, and directories searched for `.gandr` sources.
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+    },
+    /// Link, choose and list the installed toolchains the driver runs.
+    ///
+    /// Before any verb, the driver selects a toolchain: `GANDR_TOOLCHAIN`,
+    /// then the first line of the nearest `gandr-toolchain` file in the
+    /// working directory or an ancestor, then the default. It runs the
+    /// selected toolchain's `gandr` in its own place when that is another
+    /// executable. Before it does, it names the toolchain on standard error,
+    /// unless it is the `gandr` that `cargo install` puts in the cargo home's
+    /// `bin`. `GANDR_TOOLCHAIN_HANDOFF=never` makes it run itself. Exits 0 when
+    /// the toolchains were changed or listed, and 2 when a name is not a
+    /// toolchain's, names none installed, or a file cannot be read or written.
+    Toolchain
+    {
+        /// What to do with the toolchains.
+        #[command(subcommand)]
+        action: ToolchainAction,
+    },
+}
+
+/// What `gandr toolchain` does.
+#[derive(Debug, clap::Subcommand)]
+enum ToolchainAction
+{
+    /// Link the build in a directory as a toolchain, replacing any of that
+    /// name.
+    Link
+    {
+        /// The toolchain's name: letters, digits, `.`, `-` and `_`.
+        name: String,
+        /// The directory holding the build's `gandr`.
+        path: PathBuf,
+    },
+    /// Make an installed toolchain the default.
+    Default
+    {
+        /// The toolchain's name.
+        name: String,
+    },
+    /// Print each installed toolchain and its directory, marking the default
+    /// and the selected one.
+    List,
+    /// Print this build's version, system and the features its ledger meets,
+    /// which another build reads to hold it to a package's constraint.
+    Describe,
+}
+
+/// The threads `check`, `test`, `stage` and `fmt` work on.
+#[derive(Debug, clap::Args)]
+#[repr(transparent)]
+struct Jobs
+{
+    /// Work on this many threads; 1 runs everything on one. Defaults to the
+    /// host's physical performance cores. The output is the same at every
+    /// count.
+    #[arg(long, short = 'j', env = "GANDR_JOBS", value_name = "THREADS")]
+    jobs: Option<NonZeroUsize>,
+}
+
+impl From<Jobs> for Width
+{
+    /// The width `jobs` asks for: its count, or the host's physical
+    /// performance cores when none was given.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(jobs: Jobs) -> Self
+    {
+        jobs.jobs.map_or(Self::PerformanceCores, |threads| {
+            Self::Threads(Threads::from(threads))
+        })
+    }
+}
+
+/// The count of sources that `check` and `test` reach at most.
+#[derive(Debug, clap::Args)]
+#[repr(transparent)]
+struct Limit
+{
+    /// Reach at most this many sources, then stop and name the count. With
+    /// none, only the memory bound that `--memory` names, or the host's,
+    /// ends the walk.
+    #[arg(long, value_name = "SOURCES")]
+    sources: Option<NonZeroUsize>,
+}
+
+impl From<Limit> for SourceLimit
+{
+    /// The limit that `limit` names: its count, or none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(limit: Limit) -> Self
+    {
+        limit.sources.map_or(Self::Unlimited, |count| {
+            Self::To(SourceCount::from(count.get()))
+        })
+    }
+}
+
+/// Where `gandr run` and `gandr host` bind a program's network, the key it
+/// proves, and how it finds peers.
+#[derive(Debug, clap::Args)]
+struct NetFlags
+{
+    /// The secret key the network proves, as 64 hex digits; a fresh key when
+    /// absent. Prefer the environment variable: a command line is visible to
+    /// other users of the host.
+    #[arg(
+        long = "net-secret",
+        env = "GANDR_NET_SECRET",
+        hide_env_values = true,
+        value_name = "HEX"
+    )]
+    secret: Option<Secret>,
+    /// The socket the network binds, as `ip:port`; every interface on an
+    /// ephemeral port when absent.
+    #[arg(long = "net-bind", env = "GANDR_NET_BIND", value_name = "IP:PORT")]
+    bind: Option<SocketAddr>,
+    /// How the network finds a peer: only at the addresses its spelling
+    /// names, or also by multicast DNS on the local network.
+    #[arg(
+        long = "net-lookup",
+        env = "GANDR_NET_LOOKUP",
+        value_name = "LOOKUP",
+        default_value = "explicit"
+    )]
+    lookup: Lookup,
+}
+
+impl From<NetFlags> for Binding
+{
+    /// The binding `flags` describe.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(flags: NetFlags) -> Self
+    {
+        let binding = Self::new(flags.secret.unwrap_or_else(Secret::generate)).lookup(flags.lookup);
+        match flags.bind {
+            Some(socket) => binding.at(socket),
+            None => binding,
+        }
+    }
+}
+
+/// What `gandr run` and `gandr host` give the script they run: its network,
+/// its world bindings, how many migrations it hosts instead of running, and
+/// the quotas of its exact reals.
+#[derive(Debug, Default)]
+struct Hosting
+{
+    /// The network, bound on first use.
+    network: Option<Binding>,
+    /// The world bindings, when `--world` or a manifold binds a world.
+    bindings: Option<WorldBindings>,
+    /// How many migrations `host` answers.
+    migrations: Option<MigrationCount>,
+    /// The quotas of the `Reals` operations of the run.
+    reals: RealsProfile,
+}
+
+/// A binding given twice, once by a flag and once by the file it desugars
+/// from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Doubled
+{
+    /// `--world` and `--manifold` both bind the program's worlds.
+    Worlds,
+    /// `--net-bind` and `--site` both say where the host binds.
+    Sockets,
+    /// `--net-secret` and `--site` both say what proves the host's key.
+    Secret,
+}
+
+impl core::fmt::Display for Doubled
+{
+    /// Both spellings given, and which to keep.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        match *self {
+            Self::Worlds => write!(
+                f,
+                "`--world` and `--manifold` both bind the program's worlds: `--world` is what a \
+                 manifold desugars to, so give one"
+            ),
+            Self::Sockets => write!(
+                f,
+                "`--net-bind` and `--site` both say where the host binds: `--net-bind` is what a \
+                 site desugars to, so give one"
+            ),
+            Self::Secret => write!(
+                f,
+                "`--net-secret` and `--site` both say what proves the host's key: a site's \
+                 secret is read by its name, from `--secrets` or `GANDR_SECRET_<NAME>`, so unset \
+                 `--net-secret` and `GANDR_NET_SECRET`"
+            ),
+        }
+    }
+}
+
+/// The binding the site at `file` makes, its key proven by the secret the
+/// site names, read where `secrets` says.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the site read, its secret read where `secrets` says and proving
+///   the site's key, the binding at each of the site's sockets, finding peers
+///   by multicast DNS when it names none and as `lookup` says otherwise.
+/// - provides: the network `gandr host --site` binds.
+/// - fails: as [`Site::read`] and [`Site::secret`].
+/// - panics: none.
+/// - executable: none — the clause reads the site's file again.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a host given the corpus site and its secret in the
+///   environment serves the migration model at the site's socket; one given the
+///   corpus secrets model binds the site's peer; one whose secret is missing,
+///   spells no key or proves another key is refused.
+/// - witness: `tests::net::two_processes_run_the_far_world_from_their_site_and_manifold_3374`
+/// - witness: `tests::net::a_host_reads_its_site_s_secret_by_name_3375`
+fn sited(
+    file: &Path,
+    secrets: Secrets<'_>,
+    lookup: Lookup,
+) -> Result<Binding, Undeployed>
+{
+    let site = Site::read::<Evaluator>(file)?;
+    let secret = site.secret::<Evaluator>(secrets)?;
+    let binding = site
+        .sockets()
+        .iter()
+        .fold(Binding::new(secret), |binding, &socket| binding.at(socket));
+    Ok(match site.lookup() {
+        Lookup::Mdns => binding.lookup(Lookup::Mdns),
+        Lookup::Explicit => binding.lookup(lookup),
+    })
+}
+
+/// The manifold at `file`, once it is found to deploy the source at
+/// `program`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the manifold read and found to deploy `program`.
+/// - provides: the bindings `gandr run --manifold` and `gandr host --manifold`
+///   are given.
+/// - fails: as [`Manifold::read`] and [`Manifold::deploying`].
+/// - panics: none.
+/// - executable: none — the clause reads the manifold's file and the file
+///   system again.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus manifold deploys the migration model to the
+///   corpus site across two processes, and refuses a run of another source.
+/// - witness: `tests::net::two_processes_run_the_far_world_from_their_site_and_manifold_3374`
+fn manifolded(
+    file: &Path,
+    program: &Path,
+) -> Result<Manifold, Undeployed>
+{
+    let manifold = Manifold::read::<Evaluator>(file)?;
+    manifold.deploying(program)?;
+    Ok(manifold)
+}
+
+/// How much of each report `check` and `test` print.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, clap::ValueEnum)]
+enum Level
+{
+    /// The message, the labels, the nested reasons and the note.
+    #[default]
+    User,
+    /// Adds the class, the producer's wording and the offending source text.
+    Detailed,
+    /// Adds byte spans and the producer's refusal as its implementers print
+    /// it.
+    Debug,
+    /// Every report, ledger line and the run's summary as one line of JSON.
+    Json,
+}
+
+impl From<Level> for Verbosity
+{
+    /// The verbosity `level` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(level: Level) -> Self
+    {
+        match level {
+            Level::User => Self::User,
+            Level::Detailed => Self::Detailed,
+            Level::Debug => Self::Debug,
+            Level::Json => Self::Json,
+        }
+    }
+}
+
+/// A lint `check --lint` enables everywhere, beyond the forms an attribute
+/// enables it on, each spelled as the lint is.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
+enum LintName
+{
+    /// `explicit-exits`: every exit the lowering inferred where a path
+    /// through a body ends.
+    #[value(name = "explicit-exits")]
+    Exits,
+    /// `explicit-runs`: every run the checker inferred where a computation
+    /// stands in a position that reads a value.
+    #[value(name = "explicit-runs")]
+    Runs,
+    /// `explicit-runs` under its `effects` option: every inferred run that
+    /// performs an effect.
+    #[value(name = "explicit-runs=effects")]
+    EffectfulRuns,
+}
+
+/// An admission policy `check --admit` states, spelled as the verdict names
+/// it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
+enum AdmitPolicy
+{
+    /// `native-conversion`: the kernel takes a closed conversion pair's
+    /// answer from the emitter tier.
+    NativeConversion,
+}
+
+/// A report `check --report` prints for each source, spelled as the flag
+/// names it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
+enum ReportName
+{
+    /// `cells`: each law a model omits that a source discharged, with the
+    /// source.
+    Cells,
+}
+
+/// A spelling `fmt --form` asks for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
+enum FormName
+{
+    /// The core's explicit spelling.
+    Explicit,
+    /// The surface's sugared spelling.
+    Sugared,
+}
+
+/// A spelling `--spelling` names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
+enum SpellingName
+{
+    /// Each glyph: `≃`, `≅`, `⇝`, `∷`.
+    Unicode,
+    /// Each glyph's ASCII spelling: `<~>`, `Iso(A, B)`, `~~>`, `::`.
+    Ascii,
+}
+
+impl From<SpellingName> for Spelling
+{
+    /// The spelling `name` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(name: SpellingName) -> Self
+    {
+        match name {
+            SpellingName::Unicode => Self::Unicode,
+            SpellingName::Ascii => Self::Ascii,
+        }
+    }
+}
+
+/// How a verb prints what it reports: how much of each report, the spelling
+/// every type and value is written in, and whether a check measures each
+/// declaration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Printing
+{
+    /// How much of each report prints.
+    verbosity: Verbosity,
+    /// The spelling every type and value is written in.
+    spelling: Spelling,
+    /// Whether a check prints each declaration's sizes.
+    measuring: Measuring,
+    /// Whether a check lists each cell a source discharged.
+    listing: Listing,
+    /// Whether a check prints each thread's occupancy.
+    #[cfg(feature = "instrument")]
+    occupancy: Occupancy,
+}
+
+/// Whether a check prints each declaration's sizes in its kernel artifact.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Measuring
+{
+    /// Each declaration a settled source writes prints its `measure:` line.
+    Measured,
+    /// No size prints.
+    Unmeasured,
+}
+
+/// Whether a check lists each cell a source discharged, and the source that
+/// discharged it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Listing
+{
+    /// Each discharged cell of a settled source prints its `cell:` line.
+    Listed,
+    /// No cell prints.
+    Unlisted,
+}
+
+/// Whether a check prints each thread's occupancy from the pool's activity
+/// ring.
+#[cfg(feature = "instrument")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Occupancy
+{
+    /// The walk records its lowerings, and each thread prints its
+    /// `activity:` line.
+    Printed,
+    /// No ring is made, and no occupancy prints.
+    Unprinted,
+}
+
+/// The rings of the hub's pool that a walk marks each job on, while the hub
+/// folds them for the toolset's watchers.
+#[cfg(feature = "instrument")]
+type Rings<'rings> = Option<&'rings gandr_core_fork::activity::Activity>;
+
+/// No ring: a build with no `instrument` feature marks nothing.
+#[cfg(not(feature = "instrument"))]
+type Rings<'rings> = core::marker::PhantomData<&'rings ()>;
+
+/// What a walk is run as: its verb, the lints it reports, the packages whose
+/// locks and manifests a `check` reconciles, the store their locks and
+/// exports commit to, and the hub's rings when the hub's toolset runs it.
+#[derive(Debug)]
+struct Pass<'packages>
+{
+    /// The verb the walk runs under.
+    verb: Verb,
+    /// The lints reported beyond their attributes.
+    lints: Lints,
+    /// The packages the walk's paths reached.
+    packages: &'packages [Package],
+    /// The workspaces the walk's paths gathered.
+    workspaces: &'packages [Gathered],
+    /// The store the packages are locked into, when any was reached.
+    store: Option<&'packages mut Opened>,
+    /// The rings that each job of the walk marks, when the hub folds them.
+    rings: Rings<'packages>,
+}
+
+/// A package a `check` reached, and what locking its dependencies came to
+/// before the walk.
+#[derive(Debug)]
+struct Packaged<'package>
+{
+    /// The package.
+    package: &'package Package,
+    /// What locking its dependencies came to.
+    locking: Locking,
+}
+
+/// What resolving a package's dependencies and holding its lock to them came
+/// to.
+#[derive(Debug)]
+enum Locking
+{
+    /// The lock they resolve to, what reconciling the file did, and the
+    /// package's address over the lock.
+    Held(Reconciled, Lock, Result<PackageAddress, Unaddressed>),
+    /// They resolve to no lock.
+    Unresolved(Unresolved),
+    /// The lock standing was not reconciled.
+    Refused(LockFault),
+}
+
+/// The store a `check` or a `lock` run opens, and its register, the one
+/// writer of its roots, which the run's thread owns.
+#[derive(Debug)]
+struct Opened
+{
+    /// The store.
+    store: Store,
+    /// The store's register.
+    register: Register,
+}
+
+/// The store [`config::store`] names, opened with its register, or the exit
+/// code a fault on standard error leaves the run at.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the store and the register [`Store::open_with`] opens at the
+///   directory [`config::store`] names, sealing as the configuration's
+///   `[store]` table names; when no directory is named, the table faults or the
+///   store does not open, `gandr: <why>` on standard error and the faulted
+///   exit.
+/// - provides: the one store a `check` or a `lock` run opens.
+/// - fails: the faulted exit, as above.
+/// - panics: none.
+/// - executable: none — the outcome is the environment's and the file system's.
+///
+/// # Errors
+/// The faulted [`ExitCode`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lock written through the store holds the pointers the
+///   store answers, and a homeless run with nowhere to put the store faults.
+/// - witness: `tests::cli::check_writes_a_lock_and_refuses_its_drift_3072`
+/// - witness: `tests::cli::a_package_s_lock_points_into_the_store_the_run_opens_3157`
+///
+/// # Cost
+/// - allocation: the store's root path, its seal and the fault's message, setup
+fn opened() -> Result<Opened, ExitCode>
+{
+    /// Note `why` on standard error, and give the faulted exit code. When
+    /// standard error is unwritable too, the exit code is the one channel
+    /// left.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the I/O error's payload, error path
+    fn fault(why: &impl core::fmt::Display) -> ExitCode
+    {
+        let _written = writeln!(std::io::stderr(), "gandr: {why}");
+        ExitCode::from(FAULTED)
+    }
+    let Some(root) = config::store()
+    else {
+        return Err(fault(
+            &"no directory names the store: set `XDG_DATA_HOME` or `HOME`",
+        ));
+    };
+    let seal = config::Configuration::default()
+        .seal()
+        .map_err(|error| fault(&error))?;
+    Store::open_with(&root, seal)
+        .map(|(store, register)| Opened { store, register })
+        .map_err(|error| fault(&error))
+}
+
+/// Resolve `package`'s dependencies into `store` and hold its lock to them,
+/// as `gandr check` does before it walks, so every import of a coordinate
+/// reads the lock from the walk's first source, and address the package over
+/// the lock, each identity forked on `pool`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Package::resolve`] under the built-in grammar into `store`, at
+///   the revisions the locks record ([`Revisions::Locked`]), then
+///   [`reconcile_lock`] of its lock: [`Locking::Held`] with what it did, the
+///   lock and the package's address over it, read through `store`, as
+///   [`Package::identity`] gives it; [`Locking::Refused`] with its fault, and
+///   [`Locking::Unresolved`] for dependencies that do not resolve or a grammar
+///   that does not build. Each identity forks on `pool`, and its address is the
+///   same at every width.
+/// - provides: the lock step of `gandr check`.
+/// - fails: never; each outcome is a variant.
+/// - panics: none.
+/// - executable: none — the outcome is the file's on disk, which the CLI
+///   witness observes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lock written, unchanged, drifted and relocked, and its
+///   pointers answered by the store the run opened.
+/// - witness: `tests::cli::check_writes_a_lock_and_refuses_its_drift_3072`
+/// - witness: `tests::cli::a_package_s_lock_points_into_the_store_the_run_opens_3157`
+fn locking(
+    package: &Package,
+    store: &mut Store,
+    pool: &Pool,
+) -> Locking
+{
+    let grammar = match built_in() {
+        Ok(grammar) => Arc::new(grammar),
+        Err(error) => {
+            return Locking::Unresolved(Unresolved::Unread {
+                source: package.source().to_path_buf(),
+                why: error.to_string(),
+            });
+        },
+    };
+    match package.resolve(&grammar, store, Revisions::Locked, pool) {
+        Ok(lock) => match reconcile_lock(package, &lock) {
+            Ok(reconciled) => {
+                let address = package
+                    .identity(&grammar, &Unshadowed, &lock, store, pool)
+                    .map(|identity| identity.address);
+                Locking::Held(reconciled, lock, address)
+            },
+            Err(fault) => Locking::Refused(fault),
+        },
+        Err(unresolved) => Locking::Unresolved(unresolved),
+    }
+}
+
+/// Resolve each package `paths` reach again and write its lock, whatever
+/// stands there, printing what came of each, and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the packages [`packaged`] reaches from `paths`, each in order
+///   resolved by [`Package::resolve`] under the built-in grammar into the store
+///   [`opened`] opens, each identity forked on a pool of the host's performance
+///   cores, asking the remote for a `gh:` revision its lock lacks
+///   ([`Revisions::Asked`]), and written by [`relock`]: `lock: <path>: <what>`
+///   on standard output for each lock written, rewritten or unchanged, `gandr:
+///   <root>: <why>` on standard error for dependencies that do not resolve,
+///   which exits `1`, and `gandr: <path>: <why>` for a lock that cannot be
+///   written, which exits `2`; paths reaching no package exit as [`unpathed`]
+///   does.
+/// - provides: `gandr lock`.
+/// - fails: never; every failure is an exit code.
+/// - panics: none.
+/// - executable: none — the outcome is the file's on disk, which the CLI
+///   witness observes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a drifted lock is rewritten and `check` then finds it
+///   unchanged.
+/// - witness: `tests::cli::check_writes_a_lock_and_refuses_its_drift_3072`
+fn lock(paths: Vec<PathBuf>) -> ExitCode
+{
+    let packages = match packaged::<Evaluator>(paths, Path::new(".")) {
+        Ok((_, packages, _)) => packages,
+        Err(unpackaged) => return unpathed(&unpackaged),
+    };
+    let mut stdout = std::io::stdout().lock();
+    let mut stderr = std::io::stderr().lock();
+    let grammar = match built_in() {
+        Ok(grammar) => Arc::new(grammar),
+        Err(error) => {
+            let _written = writeln!(stderr, "gandr: {error}");
+            return ExitCode::from(FAULTED);
+        },
+    };
+    let mut held = match opened() {
+        Ok(held) => held,
+        Err(exit) => return exit,
+    };
+    let pool = pooled(Width::PerformanceCores, Class::Batch);
+    let mut verdict = RunVerdict::Settled;
+    for package in &packages {
+        let path = package.lock();
+        let resolved = package.resolve(&grammar, &mut held.store, Revisions::Asked, &pool);
+        let (written, reached) = match resolved {
+            Ok(lock) => match relock(package, &lock) {
+                Ok(reconciled) => (
+                    writeln!(stdout, "lock: {}: {reconciled}", path.display()),
+                    RunVerdict::Settled,
+                ),
+                Err(fault) => (
+                    writeln!(stderr, "gandr: {}: {fault}", path.display()),
+                    RunVerdict::Faulted,
+                ),
+            },
+            Err(unresolved) => (
+                writeln!(stderr, "gandr: {}: {unresolved}", package.root().display()),
+                RunVerdict::Unsettled,
+            ),
+        };
+        if written.is_err() {
+            return ExitCode::from(FAULTED);
+        }
+        verdict = worse(verdict, reached);
+    }
+    match verdict {
+        RunVerdict::Settled => ExitCode::SUCCESS,
+        RunVerdict::Unsettled => ExitCode::from(UNSETTLED),
+        RunVerdict::Faulted => ExitCode::from(FAULTED),
+    }
+}
+
+/// The spelling `flag` names, else the one the user's configuration file
+/// `configuration` names, else [`Spelling::Unicode`].
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a named flag wins without the file being read; otherwise the file
+///   is read as `config::Configuration::presentation` states and its spelling,
+///   or Unicode when it names none, is the answer.
+/// - provides: the one precedence every face's spelling follows.
+/// - fails: the file's fault, when the flag names nothing.
+/// - panics: none.
+/// - executable: none — the result depends on the environment and the file
+///   system.
+///
+/// # Errors
+/// The [`gandr_surface_dispatcher::PresentationFault`] reading the file met.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a configured spelling prints, a flag outranks it, and a
+///   malformed file stops the run, through the binary.
+/// - witness: `tests::cli::the_configured_spelling_prints_and_the_flag_outranks_it_782`
+fn spelling(
+    flag: Option<SpellingName>,
+    configuration: &config::Configuration,
+) -> Result<Spelling, gandr_surface_dispatcher::PresentationFault>
+{
+    match flag {
+        Some(name) => Ok(Spelling::from(name)),
+        None => Ok(configuration.presentation()?.spelling.unwrap_or_default()),
+    }
+}
+
+/// The budget that the invocation binds: the count that `flag` names, else
+/// the server's budget for a verb that serves an editor, else none.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a named count is an [`Origin::Flag`] budget of that count;
+///   without one, `lsp` and `serve` take [`Budget::SERVED`], and every other
+///   verb binds nothing, so each of its runs has no budget.
+/// - provides: the one place that decides what bounds a run of the invocation.
+/// - panics: none.
+/// - executable: none — the ensures clause is the match itself, so a runtime
+///   predicate restates the body.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a named count stops a run of `gandr run` at that count,
+///   no flag lets the run halt, and a language server stops a loop at the
+///   server's budget, through the binary.
+/// - witness: `tests::cli::a_run_past_its_budget_names_its_budget_and_its_origin_6325`
+/// - witness: `tests::cli::a_language_server_stops_a_loop_at_the_server_s_budget_6325`
+fn invocation_budget(
+    flag: Option<Jumps>,
+    command: Option<&Command>,
+) -> Option<Budget>
+{
+    match (flag, command) {
+        (Some(jumps), _) => Some(Budget::flag(jumps)),
+        (None, Some(&Command::Lsp { .. })) => Some(Budget::SERVED),
+        #[cfg(unix)]
+        (None, Some(&Command::Serve { .. })) => Some(Budget::SERVED),
+        (None, Some(_) | None) => None,
+    }
+}
+
+/// The lints `names` enable everywhere, each widening the reach the others
+/// leave: `explicit-runs` reaches every run whether or not
+/// `explicit-runs=effects` is named beside it.
+///
+/// # Specification
+/// trivial.
+fn enabled(names: &[LintName]) -> Lints
+{
+    let lints = Lints::enabling(names.iter().filter_map(|name| match *name {
+        LintName::Exits => Some(Lint::ExplicitExits),
+        LintName::Runs => Some(Lint::ExplicitRuns),
+        LintName::EffectfulRuns => None,
+    }));
+    if names.contains(&LintName::EffectfulRuns) {
+        lints.asking_effects()
+    }
+    else {
+        lints
+    }
+}
+
+/// Which face of the read-evaluate loop to run.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Face
+{
+    /// The plain transcript, whatever standard input is.
+    Batch,
+    /// The line editor when standard input is a terminal, the plain transcript
+    /// otherwise.
+    ByInput,
+}
+
+/// Where the terminal face draws.
+#[cfg(not(target_os = "wasi"))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Screen
+{
+    /// The process's terminal.
+    Terminal,
+    /// A headless backend, once, for a gate without a terminal.
+    Smoke,
+}
+
+/// Parse the driver's arguments, route the invocation, render the outcome.
+///
+/// # Specification
+/// - requires: nothing of the caller; the arguments come from the process
+///   environment.
+/// - ensures: [`Cli`] parses before anything else is written. `--help` and
+///   `--version` print and exit `0`; any other argument error prints its usage
+///   message and exits `2`. A bare invocation prints one status line and exits
+///   `0`. `check`, `test` and `fmt` first widen each path inside a package to
+///   the whole package and a workspace's directory to its source and members,
+///   and with no path take the package the working directory sits in, else the
+///   workspace it sits in, exiting `2` with one `gandr:` line outside both or
+///   for a workspace naming no packages (`gandr-surface-dispatcher`'s
+///   `packaged`). `check` and `test` walk their paths, print what [`render`]
+///   prints, and exit `0`, `1` or `2` as the run settled, was unsettled or
+///   faulted, `check` reconciling each package's lock and manifest, committing
+///   its export into the store and re-admitting each dependency's export from
+///   it as [`run`] states; `check` reaching a package, and `lock`, first open
+///   the store as [`opened`] states, exiting `2` when no directory names it;
+///   `check` without `--recheck` keeps the kernel's verdicts as
+///   [`verdicts::install`] states, and runs without them after one `gandr:`
+///   line on standard error when the cache cannot be installed; `check --admit
+///   native-conversion` installs the admission policy before its walk, and its
+///   report then counts the results the kernel took from the emitter tier and
+///   its verdict names the policy and the tier; `lock` rewrites each package's
+///   lock as [`lock`] states; `run` runs its script as [`script`] states, its
+///   `Net` operations served on the network its `--net-bind`, `--net-secret`
+///   and `--net-lookup` flags bind and its migrations sent where its `--world`
+///   flags bind them, `host` hosts the worlds of its script on that network as
+///   [`script`] states, and `fmt` lays out its paths as [`fmt`] states. `lsp`
+///   serves and `lsp --capabilities` prints as [`lsp`] and [`capabilities`]
+///   state, `repl` runs as [`repl`] states, and `tui` as [`tui`] states. Every
+///   face writes its types and values in the spelling [`spelling`] resolves; a
+///   configuration file that cannot be read is `gandr: <path>: <fault>` on
+///   standard error and exits `2` before any verb runs. Output the driver
+///   cannot write is noted on standard error, when that is writable, and exits
+///   `2`.
+/// - provides: the exit code as the run's verdict. With `tracing`, a
+///   thread-local subscriber reports dispatch spans to standard error after
+///   argument parsing.
+/// - fails: never by panic or abort; every failure is an exit code.
+/// - panics: none. Output goes through locked handles and the fallible
+///   `writeln!`, never `println!`, whose write-failure path panics. Clap's
+///   command-definition assertions fire only under `debug_assertions`.
+/// - executable: none — `run` exits with a program's own status, any byte, so
+///   the codes the other verbs keep to are observed by the witnesses.
+///
+/// # Cost
+/// - allocation: the parsed invocation, the verb's policies and report, setup
+/// - allocation: a fault's line on standard error, diagnostic
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — finite settled, refused, owed, missing and malformed
+///   inputs exercise each process status and stream role. Closed output pipes
+///   distinguish swallowed writes; protocol sessions distinguish completion
+///   from abrupt termination. Misrouting, wrong severity and reordered output
+///   change these observations. Arbitrary terminal environments and tracing
+///   presentation are outside the subprocess domain.
+/// - witness: `tests::cli::a_settled_run_exits_zero`
+/// - witness: `tests::cli::an_unsettled_run_exits_one`
+/// - witness: `tests::cli::an_unreadable_path_exits_two`
+/// - witness: `tests::cli::a_malformed_invocation_exits_two`
+/// - witness: `tests::cli::unwritable_standard_output_exits_two`
+/// - witness: `tests::cli::status_and_version_identify_the_same_build`
+/// - witness: `tests::cli::lsp_serves_a_session_over_the_standard_streams`
+/// - witness: `tests::cli::a_piped_repl_session_prints_its_transcript`
+/// - witness: `tests::cli::smoke_is_terminal_free_but_interactive_tui_refuses_pipes`
+/// - witness: `tests::cli::a_script_that_runs_its_main_leaves_successfully`
+/// - witness: `tests::cli::a_script_that_blames_leaves_with_a_failure_status`
+/// - witness: `tests::cli::an_ill_typed_script_is_refused_by_the_checker`
+/// - witness: `tests::cli::fmt_rewrites_what_check_reports`
+/// - witness: `tests::cli::the_configured_spelling_prints_and_the_flag_outranks_it_782`
+/// - witness: `tests::cli::a_verb_with_no_path_checks_the_package_it_runs_in_2687`
+/// - witness: `tests::cli::check_admit_takes_the_tier_s_answer_and_says_so_3558`
+/// - witness: `tests::net::two_processes_exchange_a_ping_3186`
+///
+/// # Cost
+/// - allocation: the parsed command line and each verb's arguments, setup
+fn main() -> ExitCode
+{
+    match toolchain::proxy() {
+        Ok(toolchain::Proxied::Itself) => {},
+        #[cfg(not(unix))]
+        Ok(toolchain::Proxied::Exited(code)) => return code,
+        Err(fault) => return toolchain_fault(&fault),
+    }
+    let cli = match <Cli as clap::Parser>::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => return usage(&error),
+    };
+    // The bound every run of the invocation holds within: nothing ran
+    // before this line, so no run read another.
+    if let Some(bytes) = cli.memory
+        && let Err(bound) = regions::bind(Memory::flag(bytes))
+    {
+        return match writeln!(
+            std::io::stderr(),
+            "gandr: the memory bound is {bound} already"
+        ) {
+            Ok(()) | Err(_) => ExitCode::from(FAULTED),
+        };
+    }
+    if let Some(budget) = invocation_budget(cli.run_budget, cli.command.as_ref())
+        && let Err(bound) = budget::bind(budget)
+    {
+        return match writeln!(
+            std::io::stderr(),
+            "gandr: the run budget is {bound} already"
+        ) {
+            Ok(()) | Err(_) => ExitCode::from(FAULTED),
+        };
+    }
+    // Every verb that resolves a `gh:` coordinate, and the language server,
+    // reads its checkout from the one directory the user's cache names; with
+    // none, such a coordinate stands unfetched. Nothing installed it before,
+    // so the installation stands.
+    if let Some(checkouts) = config::checkouts() {
+        let _installed =
+            gandr_surface_dispatcher::install_hydration(gandr_surface_dispatcher::Hydration::new(
+                checkouts,
+                String::from(gandr_surface_dispatcher::GITHUB),
+            ));
+    }
+    // A `thir` mark stages a Rust function's body through the reader beside
+    // this executable, and the user's cache keeps each record. With no reader
+    // there, each mark is refused by name.
+    if let Some(reader) = std::env::current_exe()
+        .ok()
+        .and_then(|driver| Some(driver.parent()?.join("gandr-rust-reader")))
+        .filter(|reader| reader.is_file())
+        && let Some(records) = config::rust_records()
+    {
+        let _installed = gandr_surface_dispatcher::install_stager(
+            gandr_surface_dispatcher::Stager::new(records, reader),
+        );
+    }
+    // The one reading of the user's file, which the spelling and a check's
+    // kernel policy both ask, on the first question asked of it.
+    let configuration = config::Configuration::default();
+    let spelling = match spelling(cli.spelling, &configuration) {
+        Ok(spelling) => spelling,
+        Err(fault) => {
+            return match writeln!(std::io::stderr(), "gandr: {fault}") {
+                // When standard error is unwritable too, the exit code is the
+                // one channel left.
+                Ok(()) | Err(_) => ExitCode::from(FAULTED),
+            };
+        },
+    };
+    // The place of the standard library that the host's profile names: an
+    // import of `std` from outside the standard library reads it first
+    // (#7685).
+    match configuration.library() {
+        Ok(Some(place)) => {
+            // This is the one naming of the process, so none stands before it.
+            let _named = gandr_surface_dispatcher::profile_standard(place);
+        },
+        Ok(None) => {},
+        Err(fault) => {
+            return match writeln!(std::io::stderr(), "gandr: {fault}") {
+                Ok(()) | Err(_) => ExitCode::from(FAULTED),
+            };
+        },
+    }
+    #[cfg(feature = "tracing")]
+    let _subscriber = tracing::subscriber::set_default(
+        tracing_subscriber::fmt()
+            .with_writer(std::io::stderr)
+            .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+            // A diagnostic the stream refuses is dropped: the subscriber's own
+            // report of the failure would go to the same refused stream
+            // through `eprintln!`, which panics.
+            .log_internal_errors(false)
+            .finish(),
+    );
+    #[cfg(feature = "tracing")]
+    let _span = tracing::info_span!("driver").entered();
+    // The packages a `check` reached, whose locks and manifests it reconciles,
+    // and the store their locks and exports commit to.
+    let mut packages: Vec<Package> = Vec::new();
+    // The workspaces that a `check` works on. It reconciles their manifests.
+    let mut workspaces: Vec<Gathered> = Vec::new();
+    // The network, bindings and migrations a `run` or `host` gives its program.
+    let mut hosting = Hosting::default();
+    let mut store: Option<Opened> = None;
+    let mut registers = verdicts::Registers::default();
+    let mut measuring = Measuring::Unmeasured;
+    let mut listing = Listing::Unlisted;
+    #[cfg(feature = "instrument")]
+    let mut occupancy = Occupancy::Unprinted;
+    #[cfg(feature = "counts")]
+    let mut counted = false;
+    let (invocation, verbosity) = match cli.command {
+        None => (Invocation::Status, Verbosity::User),
+        Some(Command::Check {
+            goals,
+            lint,
+            grant,
+            entry,
+            recheck,
+            admit,
+            measure,
+            #[cfg(feature = "instrument")]
+            activity,
+            #[cfg(feature = "counts")]
+            counts,
+            report,
+            verbosity,
+            jobs,
+            limit,
+            paths,
+        }) => {
+            if measure {
+                measuring = Measuring::Measured;
+            }
+            #[cfg(feature = "instrument")]
+            if activity {
+                occupancy = Occupancy::Printed;
+            }
+            #[cfg(feature = "counts")]
+            {
+                counted = counts;
+            }
+            if report == Some(ReportName::Cells) {
+                listing = Listing::Listed;
+            }
+            let grant = match grant {
+                None => HostGrant::UNBOUNDED,
+                Some(operations) => match HostGrant::within(&operations) {
+                    Ok(grant) => grant,
+                    Err(refused) => return ungranted(&refused),
+                },
+            };
+            let grant = grant.entering(entry);
+            let paths = match packaged::<Evaluator>(paths, Path::new(".")) {
+                Ok((paths, reached, gathered)) => {
+                    workspaces = gathered;
+                    if !reached.is_empty() {
+                        store = Some(match opened() {
+                            Ok(held) => held,
+                            Err(exit) => return exit,
+                        });
+                        packages = reached;
+                    }
+                    paths
+                },
+                Err(unpackaged) => return unpathed(&unpackaged),
+            };
+            if !recheck {
+                let kernel = match configuration.kernel() {
+                    Ok(kernel) => kernel,
+                    Err(fault) => {
+                        return match writeln!(std::io::stderr(), "gandr: {fault}") {
+                            Ok(()) | Err(_) => ExitCode::from(FAULTED),
+                        };
+                    },
+                };
+                match verdicts::install(kernel) {
+                    Ok(installed) => registers = installed,
+                    // The check runs without the cache; standard error says
+                    // why, or, unwritable, is passed over as the warning it is.
+                    Err(uninstalled) => drop(writeln!(std::io::stderr(), "gandr: {uninstalled}")),
+                }
+            }
+            if admit == Some(AdmitPolicy::NativeConversion)
+                && gandr_surface_dispatcher::install_admission_policy(
+                    gandr_kernel_core::AdmissionPolicy::NativeConversion,
+                )
+                .is_err()
+            {
+                return match writeln!(
+                    std::io::stderr(),
+                    "gandr: an admission policy is installed already"
+                ) {
+                    Ok(()) | Err(_) => ExitCode::from(FAULTED),
+                };
+            }
+            (
+                Invocation::Check {
+                    goals: if goals { Goals::Reported } else { Goals::Gated },
+                    lints: enabled(&lint),
+                    grant,
+                    paths,
+                    sources: SourceLimit::from(limit),
+                    width: Width::from(jobs),
+                },
+                Verbosity::from(verbosity),
+            )
+        },
+        Some(Command::Test {
+            verbosity,
+            jobs,
+            limit,
+            paths,
+        }) => (
+            Invocation::Test {
+                paths: match packaged::<Evaluator>(paths, Path::new(".")) {
+                    Ok((paths, ..)) => paths,
+                    Err(unpackaged) => return unpathed(&unpackaged),
+                },
+                sources: SourceLimit::from(limit),
+                width: Width::from(jobs),
+            },
+            Verbosity::from(verbosity),
+        ),
+        Some(Command::Lock { paths }) => return lock(paths),
+        Some(Command::Run {
+            path,
+            arguments,
+            worlds,
+            manifold,
+            net,
+        }) => {
+            if manifold.is_some() && !worlds.is_empty() {
+                return doubled(Doubled::Worlds);
+            }
+            hosting.reals = match configuration.reals() {
+                Ok(profile) => profile,
+                Err(fault) => {
+                    return match writeln!(std::io::stderr(), "gandr: {fault}") {
+                        Ok(()) | Err(_) => ExitCode::from(FAULTED),
+                    };
+                },
+            };
+            let mut binding = Binding::from(*net);
+            hosting.bindings = match manifold {
+                Some(file) => match manifolded(&file, &path) {
+                    Ok(manifold) => {
+                        if manifold.lookup() == Lookup::Mdns {
+                            binding = binding.lookup(Lookup::Mdns);
+                        }
+                        Some(manifold.into_bindings())
+                    },
+                    Err(refused) => return undeployed(&refused),
+                },
+                None => (!worlds.is_empty()).then(|| WorldBindings::new(worlds)),
+            };
+            hosting.network = Some(binding);
+            (Invocation::Run { path, arguments }, Verbosity::User)
+        },
+        Some(Command::Host {
+            path,
+            worlds,
+            site,
+            secrets,
+            manifold,
+            migrations,
+            net,
+        }) => {
+            if manifold.is_some() && !worlds.is_empty() {
+                return doubled(Doubled::Worlds);
+            }
+            if site.is_some() && net.bind.is_some() {
+                return doubled(Doubled::Sockets);
+            }
+            if site.is_some() && net.secret.is_some() {
+                return doubled(Doubled::Secret);
+            }
+            hosting.reals = match configuration.reals() {
+                Ok(profile) => profile,
+                Err(fault) => {
+                    return match writeln!(std::io::stderr(), "gandr: {fault}") {
+                        Ok(()) | Err(_) => ExitCode::from(FAULTED),
+                    };
+                },
+            };
+            hosting.network = Some(match site {
+                Some(file) => {
+                    let secrets = secrets
+                        .as_deref()
+                        .map_or(Secrets::Environment, Secrets::Model);
+                    match sited(&file, secrets, net.lookup) {
+                        Ok(binding) => binding,
+                        Err(refused) => return undeployed(&refused),
+                    }
+                },
+                None => Binding::from(*net),
+            });
+            hosting.bindings = match manifold {
+                Some(file) => match manifolded(&file, &path) {
+                    Ok(manifold) => Some(manifold.into_bindings()),
+                    Err(refused) => return undeployed(&refused),
+                },
+                None => (!worlds.is_empty()).then(|| WorldBindings::new(worlds)),
+            };
+            hosting.migrations = Some(MigrationCount::from(migrations.get()));
+            (
+                Invocation::Run {
+                    path,
+                    arguments: Vec::new(),
+                },
+                Verbosity::User,
+            )
+        },
+        Some(Command::Stage { jobs, programs }) => (
+            Invocation::Stage {
+                programs,
+                width: Width::from(jobs),
+            },
+            Verbosity::User,
+        ),
+        Some(Command::Fmt {
+            check,
+            width,
+            form,
+            jobs,
+            paths,
+        }) => (
+            Invocation::Format {
+                paths: match packaged::<Evaluator>(paths, Path::new(".")) {
+                    Ok((paths, ..)) => paths,
+                    Err(unpackaged) => return unpathed(&unpackaged),
+                },
+                options: FormatOptions {
+                    page: width.map_or_else(|| FormatOptions::default().page, PageWidth::from),
+                    form: match form {
+                        None => Form::Source,
+                        Some(FormName::Explicit) => Form::Explicit,
+                        Some(FormName::Sugared) => Form::Sugared,
+                    },
+                    ..FormatOptions::default()
+                },
+                rewrite: if check {
+                    Rewrite::Check
+                }
+                else {
+                    Rewrite::InPlace
+                },
+                width: Width::from(jobs),
+            },
+            Verbosity::User,
+        ),
+        Some(Command::Cells { fusions, paths }) => (
+            Invocation::Cells {
+                paths,
+                fusions: if fusions {
+                    Fusions::Composed
+                }
+                else {
+                    Fusions::Omitted
+                },
+            },
+            Verbosity::User,
+        ),
+        Some(Command::Doc {
+            out,
+            markdown,
+            path,
+        }) => {
+            return doc(
+                &path,
+                &out,
+                if markdown {
+                    Pages::Markdown
+                }
+                else {
+                    Pages::Site
+                },
+            );
+        },
+        Some(Command::Toolchain { action }) => return toolchains(action),
+        Some(Command::Lsp {
+            capabilities: true, ..
+        }) => return capabilities(),
+        #[cfg(unix)]
+        Some(Command::Lsp {
+            standalone: false,
+            socket,
+            linger_ms,
+            ..
+        }) => {
+            return relayed(
+                socket.as_deref(),
+                linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
+                spelling,
+            );
+        },
+        Some(Command::Lsp { .. }) => {
+            held(&configuration);
+            return lsp(spelling);
+        },
+        #[cfg(unix)]
+        Some(Command::Serve {
+            socket,
+            linger_ms,
+            port,
+            no_toolset,
+        }) => {
+            let toolset = match (!no_toolset)
+                .then(|| {
+                    configuration.deliveries().map(|policy| {
+                        (
+                            core::net::SocketAddr::from((
+                                core::net::Ipv4Addr::LOCALHOST,
+                                port.unwrap_or(0_u16),
+                            )),
+                            policy,
+                        )
+                    })
+                })
+                .transpose()
+            {
+                Ok(toolset) => toolset,
+                Err(fault) => {
+                    return match writeln!(std::io::stderr(), "gandr: {fault}") {
+                        Ok(()) | Err(_) => ExitCode::from(FAULTED),
+                    };
+                },
+            };
+            let counting = match configuration.compile_width() {
+                Ok(counting) => counting,
+                Err(fault) => {
+                    return match writeln!(std::io::stderr(), "gandr: {fault}") {
+                        Ok(()) | Err(_) => ExitCode::from(FAULTED),
+                    };
+                },
+            };
+            held(&configuration);
+            return hub(
+                socket,
+                linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
+                spelling,
+                toolset,
+                counting,
+            );
+        },
+        #[cfg(unix)]
+        Some(Command::Mcp { socket, linger_ms }) => {
+            return mcp(
+                socket.as_deref(),
+                linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
+                spelling,
+            );
+        },
+        #[cfg(unix)]
+        Some(Command::Tokens {
+            socket,
+            linger_ms,
+            command,
+        }) => {
+            return tokens(
+                socket,
+                linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
+                spelling,
+                &command,
+            );
+        },
+        Some(Command::Repl { batch }) => {
+            return repl(if batch { Face::Batch } else { Face::ByInput }, spelling);
+        },
+        #[cfg(unix)]
+        Some(Command::View {
+            socket,
+            linger_ms,
+            trace,
+        }) => {
+            return view(
+                socket,
+                linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
+                spelling,
+                if trace {
+                    gandr_surface_tui::Layers::Trace
+                }
+                else {
+                    gandr_surface_tui::Layers::Silent
+                },
+            );
+        },
+        #[cfg(not(target_os = "wasi"))]
+        Some(Command::Tui { smoke }) => {
+            return tui(
+                if smoke {
+                    Screen::Smoke
+                }
+                else {
+                    Screen::Terminal
+                },
+                spelling,
+            );
+        },
+    };
+    let mut stdout = std::io::stdout().lock();
+    let mut stderr = std::io::stderr().lock();
+    let rendered = render(
+        gandr_surface_dispatcher::dispatch(invocation),
+        Printing {
+            verbosity,
+            spelling,
+            measuring,
+            listing,
+            #[cfg(feature = "instrument")]
+            occupancy,
+        },
+        (&packages, &workspaces),
+        hosting,
+        store.as_mut(),
+        &mut stdout,
+        &mut stderr,
+    );
+    // The run's workers handed the receipts and the strata they kept to the
+    // registers this thread owns. A naming that does not reach the store
+    // costs a later run a check, so its fault is passed over as a warning.
+    if let Err(fault) = registers.drain() {
+        drop(writeln!(stderr, "gandr: {fault}"));
+    }
+    // The counts read every thread and every check of the run, so they print
+    // once the run and its registers are done.
+    #[cfg(feature = "counts")]
+    if counted {
+        drop(writeln!(
+            stderr,
+            "counts: {} allocations, {} frames",
+            allocator::counting::allocations(),
+            gandr_kernel_core::check::popped()
+        ));
+    }
+    let flushed = rendered.and_then(|exit| stdout.flush().map(|()| exit));
+    match flushed {
+        Ok(exit) => {
+            #[cfg(feature = "tracing")]
+            tracing::info!("output flushed");
+            exit
+        },
+        Err(error) => match writeln!(stderr, "gandr: cannot write the output: {error}") {
+            // When standard error is unwritable too, the exit code is the one
+            // channel left.
+            Ok(()) | Err(_) => ExitCode::from(FAULTED),
+        },
+    }
+}
+
+/// Keep the kernel's verdicts for a language server or a hub, in this
+/// installation's store and in the process, under the kernel policy
+/// `configuration` names; a policy that cannot be read, or a cache that cannot
+/// be installed, is noted on standard error and every declaration is checked.
+///
+/// # Specification
+/// trivial.
+fn held(configuration: &config::Configuration)
+{
+    let noted = match configuration.kernel() {
+        Ok(kernel) => match verdicts::hold(kernel) {
+            Ok(()) => return,
+            Err(unheld) => writeln!(std::io::stderr(), "gandr: {unheld}"),
+        },
+        Err(fault) => writeln!(std::io::stderr(), "gandr: {fault}"),
+    };
+    // Unwritable, the note is passed over as the warning it is.
+    drop(noted);
+}
+
+/// Serve the language server over standard input and output until the
+/// session ends, its user's configuration naming `spelling`, its sessions,
+/// judgements and kernel admissions on a pool at the host's width, and choose
+/// the exit code.
+///
+/// # Specification
+/// - requires: nothing; the streams come from the process.
+/// - ensures: client frames are fed to `gandr-surface-lsp` and its protocol
+///   responses written to standard output until exit or EOF; notifications do
+///   not acquire request replies; each synchronisation's timing line goes to
+///   standard error. The session ends as [`ended`] states.
+/// - provides: the editor's entry point without a hub.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — initialize/shutdown/exit, premature EOF and a
+///   truncated frame are observed as protocol output and exit codes. Wrong
+///   framing, lost replies and collapsed clean/abrupt/fault statuses change
+///   these traces. Arbitrary methods and live-editor timing are excluded.
+/// - witness: `tests::cli::lsp_serves_a_session_over_the_standard_streams`
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(ABRUPT) || ret == ExitCode::from(FAULTED))]
+fn lsp(spelling: Spelling) -> ExitCode
+{
+    let mut input = std::io::BufReader::new(std::io::stdin());
+    let mut output = std::io::stdout().lock();
+    let mut log = std::io::stderr();
+    ended(gandr_surface_lsp::serve(
+        &mut input,
+        &mut output,
+        &mut log,
+        workspace(spelling),
+    ))
+}
+
+/// The workspace a language server or a hub serves over: its user's
+/// configuration naming `spelling`, its saves kept in the directory
+/// [`config::checkpoints`] names, and its work on [`host_pool`]. A directory
+/// that cannot be made keeps no save, noted on standard error, and the server
+/// serves on.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a workspace spelled `spelling` on a pool at the host's width,
+///   keeping saves when a cache directory is named and can be made.
+/// - provides: one workspace for `gandr lsp` and `gandr serve`.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the result depends on the environment and the file
+///   system, which the clauses cannot observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a session served over the standard streams.
+/// - witness: `tests::cli::lsp_serves_a_session_over_the_standard_streams`
+fn workspace(spelling: Spelling) -> gandr_surface_lsp::Workspace
+{
+    let workspace = gandr_surface_lsp::Workspace::spelled(spelling).pooled(host_pool());
+    let Some(directory) = config::checkpoints()
+    else {
+        return workspace;
+    };
+    match gandr_surface_lsp::Saved::at(&directory) {
+        Ok(saved) => workspace.saving(saved),
+        Err(error) => {
+            let _noted = writeln!(
+                std::io::stderr(),
+                "gandr: {}: saves keep no checkpoints: {error}",
+                directory.display()
+            );
+            workspace
+        },
+    }
+}
+
+/// The pool at the host's performance cores that a face's sessions mold on
+/// and its judgements run on. The process installs the pool for its
+/// readmissions too, as `check` installs its own: the sessions readmit at the
+/// host's width, under the speculation group, with the obligations forked. A
+/// person waits on each of its readmissions, so it takes as a keystroke.
+///
+/// # Specification
+/// trivial.
+fn host_pool() -> Arc<Pool>
+{
+    let pool = Arc::new(pooled(Width::PerformanceCores, Class::Keystroke));
+    gandr_surface_dispatcher::install_session(&pool);
+    pool
+}
+
+/// A pool of `width` threads under the process's grant, taken as `class`,
+/// which keeps the host's measured park-to-wake cost in [`config::pool`]'s
+/// directory, so a later run reads it in place of a fresh measure. A jobserver
+/// that the parent names bounds the parts that the pool runs at once.
+///
+/// # Specification
+/// trivial.
+fn pooled(
+    width: Width,
+    class: Class,
+) -> Pool
+{
+    let pool = Pool::new(width).granted(Grant::of_process(class));
+    match config::pool() {
+        Some(directory) => pool.kept_in(directory),
+        None => pool,
+    }
+}
+
+/// The exit code a language-server session that ended as `served` owes.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `0` after shutdown, `1` before it; a failed stream is noted on
+///   standard error when writable and exits `2`.
+/// - provides: one mapping for the standalone server and the relay.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — clean, abrupt and broken sessions, standalone and
+///   relayed, exit with distinct codes.
+/// - witness: `tests::cli::lsp_serves_a_session_over_the_standard_streams`
+/// - witness: `tests::cli::lsp_clients_share_one_engine_hub`
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(ABRUPT) || ret == ExitCode::from(FAULTED))]
+fn ended(served: Result<Served, gandr_surface_lsp::TransportFault>) -> ExitCode
+{
+    match served {
+        Ok(Served::Clean) => ExitCode::SUCCESS,
+        Ok(Served::Abrupt) => ExitCode::from(ABRUPT),
+        Err(fault) => {
+            match writeln!(
+                std::io::stderr(),
+                "gandr: the language server stopped: {fault}"
+            ) {
+                // When standard error is unwritable too, the exit code is the
+                // one channel left.
+                Ok(()) | Err(_) => ExitCode::from(FAULTED),
+            }
+        },
+    }
+}
+
+/// The socket `socket` names, or the one the running build's hub of the
+/// current directory's workspace listens on when it names none.
+///
+/// # Specification
+/// trivial.
+#[cfg(unix)]
+fn hub_socket(socket: Option<PathBuf>) -> std::io::Result<PathBuf>
+{
+    if let Some(socket) = socket {
+        return Ok(socket);
+    }
+    let workspace = std::env::current_dir()?;
+    gandr_surface_lsp::socket_for(&workspace).map_err(std::io::Error::other)
+}
+
+/// Note `error`, what stopped reaching or running the hub, on standard error
+/// when writable, and exit `2`.
+///
+/// # Specification
+/// trivial.
+#[cfg(unix)]
+fn hub_fault(error: &std::io::Error) -> ExitCode
+{
+    match writeln!(std::io::stderr(), "gandr: the engine hub: {error}") {
+        // When standard error is unwritable too, the exit code is the one
+        // channel left.
+        Ok(()) | Err(_) => ExitCode::from(FAULTED),
+    }
+}
+
+/// Note `fault`, what stopped the toolchain's selection or its management,
+/// on standard error when writable, and exit `2`.
+///
+/// # Specification
+/// trivial.
+fn toolchain_fault(fault: &toolchain::ToolchainFault) -> ExitCode
+{
+    match writeln!(std::io::stderr(), "gandr: {fault}") {
+        // When standard error is unwritable too, the exit code is the one
+        // channel left.
+        Ok(()) | Err(_) => ExitCode::from(FAULTED),
+    }
+}
+
+/// Run `gandr toolchain`'s `action`: link a build, make one the default, or
+/// list them.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on success, a link names the build, the default names an
+///   installed toolchain, or each installed toolchain is printed as `<name>
+///   <directory>`, followed by `(default)` and `(selected)` where they hold.
+/// - provides: the exit code: 0 on success, 2 on a fault, which standard error
+///   names.
+/// - fails: never; every fault is the exit code.
+/// - panics: none.
+/// - executable: none — the outcome is the file system's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a linked toolchain is listed, runs through the proxy, and
+///   answers as the default.
+/// - witness: `tests::cli::a_linked_toolchain_is_the_one_the_proxy_runs`
+/// - witness: `tests::cli::the_environment_outranks_the_pin_and_the_pin_the_default`
+fn toolchains(action: ToolchainAction) -> ExitCode
+{
+    let done = match action {
+        ToolchainAction::Link { name, path } => name
+            .parse::<toolchain::Name>()
+            .and_then(|name| toolchain::link(&name, &path).map(|_link| ())),
+        ToolchainAction::Default { name } => name
+            .parse::<toolchain::Name>()
+            .and_then(|name| toolchain::make_default(&name)),
+        ToolchainAction::List => listed(),
+        ToolchainAction::Describe => return described(),
+    };
+    match done {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(fault) => toolchain_fault(&fault),
+    }
+}
+
+/// Print this build's description: its version, its system, and each feature
+/// its ledger meets, as `gandr_surface_dispatcher::Described` reads it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the description on standard output and exit `0`; a ledger that
+///   does not read or an unwritable output is noted on standard error and exits
+///   `2`.
+/// - provides: what a proxy of another build holds this build to a package's
+///   constraint by.
+/// - fails: never; every fault is the exit code.
+/// - panics: none.
+/// - executable: none — the output is a stream's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the description names the running version and system.
+/// - witness: `tests::cli::a_package_s_constraint_chooses_among_the_toolchains`
+fn described() -> ExitCode
+{
+    let written = match FeatureLedger::built_in() {
+        Ok(ledger) => write!(
+            std::io::stdout().lock(),
+            "{}",
+            gandr_surface_dispatcher::Running::this(&ledger)
+        )
+        .map_err(|error| error.to_string()),
+        Err(fault) => Err(fault.to_string()),
+    };
+    match written {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(fault) => match writeln!(std::io::stderr(), "gandr: {fault}") {
+            // When standard error is unwritable too, the exit code is the one
+            // channel left.
+            Ok(()) | Err(_) => ExitCode::from(FAULTED),
+        },
+    }
+}
+
+/// Print each installed toolchain, its directory, and whether it is the
+/// default and the selected one.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one line per installed toolchain, in name order.
+/// - fails: [`toolchain::ToolchainFault`] when the toolchains or the selection
+///   cannot be read or the package's constraint refuses the selection, and its
+///   `Io` variant when standard output refuses a line.
+/// - panics: none.
+/// - executable: none — the output is a stream's.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`toolchains`].
+/// - witness: `tests::cli::the_environment_outranks_the_pin_and_the_pin_the_default`
+fn listed() -> Result<(), toolchain::ToolchainFault>
+{
+    let installed = toolchain::installed()?;
+    let default = toolchain::selected_default()?;
+    let selected = toolchain::selected()?;
+    let mut stdout = std::io::stdout().lock();
+    for (name, directory) in installed {
+        let chosen = matches!(default, Maybe::Present(ref chosen) if *chosen == name);
+        let running = matches!(selected, Maybe::Present(ref chosen) if chosen.name == name);
+        let marked = match (chosen, running) {
+            (true, true) => " (default, selected)",
+            (true, false) => " (default)",
+            (false, true) => " (selected)",
+            (false, false) => "",
+        };
+        writeln!(stdout, "{name} {}{marked}", directory.display()).map_err(|error| {
+            toolchain::ToolchainFault::Io {
+                path: PathBuf::from("-"),
+                error,
+            }
+        })?;
+    }
+    Ok(())
+}
+
+/// The handover the variable [`toolchain::HANDOVER`] names, read and removed,
+/// or an empty one when it names none.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the handover the file holds, and the file removed; an empty
+///   handover when the variable is unset.
+/// - fails: when the file cannot be opened, read or removed.
+/// - panics: none.
+/// - executable: none — the file is gone once read.
+///
+/// # Errors
+/// The error opening, reading or removing the file, naming it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the next image resumes the session the last one left.
+/// - witness: `tests::cli::a_language_server_follows_a_toolchain_switch`
+#[cfg(unix)]
+fn handed_over() -> std::io::Result<Handover>
+{
+    let Some(path) = std::env::var_os(toolchain::HANDOVER).map(PathBuf::from)
+    else {
+        return Ok(Handover::default());
+    };
+    let named = |error: std::io::Error| {
+        std::io::Error::new(
+            error.kind(),
+            format!("the handover {}: {error}", path.display()),
+        )
+    };
+    let file = std::fs::File::open(&path).map_err(named)?;
+    let handover = Handover::read(&mut std::io::BufReader::new(file))
+        .map_err(|fault| named(std::io::Error::other(fault.to_string())))?;
+    std::fs::remove_file(&path).map_err(named)?;
+    Ok(handover)
+}
+
+/// The client input a face's leg reads: the bytes the last image carried over,
+/// then standard input.
+#[cfg(unix)]
+type Resumed = std::io::Chain<std::io::Cursor<Vec<u8>>, std::fs::File>;
+
+/// Whether a face follows the selection, and from which image.
+#[cfg(unix)]
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Following(Maybe<toolchain::Image, ()>);
+
+#[cfg(unix)]
+impl Following
+{
+    /// The selected `gandr` when it is another image than the one followed
+    /// from.
+    ///
+    /// # Specification
+    /// trivial.
+    fn moved(self) -> Maybe<PathBuf, toolchain::unmoved::Absent>
+    {
+        match self.0 {
+            Maybe::Present(image) => toolchain::moved(image),
+            Maybe::Absent(()) => Maybe::Absent(toolchain::unmoved::Absent::Unfollowed),
+        }
+    }
+}
+
+/// How one leg of a face's session ended.
+#[cfg(unix)]
+enum Leg
+{
+    /// The session ended, with this exit code.
+    Ended(ExitCode),
+    /// The face's relay asks to move with this handover.
+    Switched(Handover),
+}
+
+/// Carry a face's session on the standard streams to the hub at `socket`,
+/// starting one lingering `linger` and configured with `spelling` when none
+/// answers, each leg as `leg` relays it, and follow the selection across
+/// builds.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each leg runs against the hub [`reach_hub`] reaches, opened by
+///   the handover [`handed_over`] reads, and the session ends with the exit
+///   code a leg ends with. With no `socket` named, a leg ending
+///   [`Leg::Switched`] while the selection names another image switches: the
+///   handover goes to a file beside the hub's socket, and the selected
+///   toolchain runs in this process's place with the same arguments and
+///   [`toolchain::HANDOVER`] naming the file. A selection back on the running
+///   image by then resumes the session on this build's hub. A hub never
+///   reached, a handover unread or an exec failed is noted on standard error
+///   and exits `2`.
+/// - provides: both faces' sessions across builds.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+/// - executable: none — success may replace the process.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a session of either face across a switch of the default
+///   goes on in the next build.
+/// - witness: `tests::cli::a_language_server_follows_a_toolchain_switch`
+/// - witness: `tests::cli::a_model_session_follows_a_toolchain_switch`
+#[cfg(unix)]
+fn followed<Relay>(
+    socket: Option<&Path>,
+    (linger, spelling): (Duration, Spelling),
+    mut leg: Relay,
+) -> ExitCode
+where
+    Relay: FnMut(Resumed, std::os::unix::net::UnixStream, &Handover, Following) -> Leg,
+{
+    use std::io::Read as _;
+    use std::os::fd::AsFd as _;
+
+    // An image that cannot be read never moves: the session stays where it
+    // started.
+    let following = Following(match toolchain::Image::running() {
+        Ok(image) if socket.is_none() => Maybe::Present(image),
+        Ok(_) | Err(_) => Maybe::Absent(()),
+    });
+    let mut handover = match handed_over() {
+        Ok(handover) => handover,
+        Err(error) => return hub_fault(&error),
+    };
+    loop {
+        let reached =
+            reach_hub(socket.map(Path::to_path_buf), linger, spelling).and_then(|stream| {
+                let standard = std::fs::File::from(std::io::stdin().as_fd().try_clone_to_owned()?);
+                Ok((stream, standard))
+            });
+        let (stream, standard) = match reached {
+            Ok(reached) => reached,
+            Err(error) => return hub_fault(&error),
+        };
+        let input = std::io::Cursor::new(handover.carried().0.clone()).chain(standard);
+        let next = match leg(input, stream, &handover, following) {
+            Leg::Ended(code) => return code,
+            Leg::Switched(next) => next,
+        };
+        if let Maybe::Present(path) = following.moved() {
+            return switched(&next, path);
+        }
+        handover = next;
+    }
+}
+
+/// Carry the language-server session on the standard streams to the hub at
+/// `socket`, starting one lingering `linger` and configured with `spelling`
+/// when none answers, and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the session runs as [`followed`] carries it, each leg as
+///   `gandr_surface_lsp::relay` relays it, and ends as [`ended`] states.
+/// - provides: the editor's entry point on Unix.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a client finding no hub starts one that outlives it by
+///   its linger; two clients of one hub both end cleanly; a session across a
+///   switch of the default publishes the next build's diagnostics.
+/// - witness: `tests::cli::lsp_clients_share_one_engine_hub`
+/// - witness: `tests::cli::a_language_server_follows_a_toolchain_switch`
+#[cfg(unix)]
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(ABRUPT) || ret == ExitCode::from(FAULTED))]
+fn relayed(
+    socket: Option<&Path>,
+    linger: Duration,
+    spelling: Spelling,
+) -> ExitCode
+{
+    followed(
+        socket,
+        (linger, spelling),
+        |input, stream, handover, following| match gandr_surface_lsp::relay(
+            input,
+            &mut std::io::stdout().lock(),
+            stream,
+            handover.replay(),
+            move || matches!(following.moved(), Maybe::Present(_)),
+        ) {
+            Ok(Relayed::Ended(served)) => Leg::Ended(ended(Ok(served))),
+            Ok(Relayed::Switched(next)) => Leg::Switched(next),
+            Err(fault) => Leg::Ended(ended(Err(fault))),
+        },
+    )
+}
+
+/// Hand `handover` to the toolchain at `path` and run it in this process's
+/// place, or note why not and exit `2`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: never returns once the handover is written and the exec succeeds;
+///   otherwise the cause is noted on standard error and the exit code is `2`.
+/// - fails: never by panic.
+/// - panics: none.
+/// - executable: none — success replaces the process.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`relayed`]'s switch.
+/// - witness: `tests::cli::a_language_server_follows_a_toolchain_switch`
+#[cfg(unix)]
+fn switched(
+    handover: &Handover,
+    path: PathBuf,
+) -> ExitCode
+{
+    let written = hub_socket(None).and_then(|socket| {
+        let file = socket.with_file_name(format!("handover-{}", std::process::id()));
+        let mut writing = std::fs::File::create(&file)?;
+        handover
+            .write(&mut writing)
+            .map_err(|fault| std::io::Error::other(fault.to_string()))?;
+        std::io::stdout().flush()?;
+        Ok(file)
+    });
+    let file = match written {
+        Ok(file) => file,
+        Err(error) => return hub_fault(&error),
+    };
+    toolchain_fault(&toolchain::switch(path, &file))
+}
+
+/// Carry the Model Context Protocol session on the standard streams to the
+/// hub at `socket`, starting one lingering `linger` and configured with
+/// `spelling` when none answers, and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the session runs as [`followed`] carries it, each leg as
+///   `gandr_surface_agentic::relay` relays it, and exits `0` once the hub has
+///   answered all of standard input; a failed stream is noted on standard error
+///   and exits `2`.
+/// - provides: `gandr mcp`, a model's entry point.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a model session reads the diagnostics an editor's session
+///   published through the same hub; a session across a switch of the default
+///   is answered by the next build.
+/// - witness: `tests::cli::mcp_reads_what_an_editor_holds_open`
+/// - witness: `tests::cli::a_model_session_follows_a_toolchain_switch`
+#[cfg(unix)]
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
+fn mcp(
+    socket: Option<&Path>,
+    linger: Duration,
+    spelling: Spelling,
+) -> ExitCode
+{
+    followed(
+        socket,
+        (linger, spelling),
+        |input, stream, handover, following| match gandr_surface_agentic::relay(
+            input,
+            &mut std::io::stdout().lock(),
+            stream,
+            handover.replay(),
+            move || matches!(following.moved(), Maybe::Present(_)),
+        ) {
+            Ok(gandr_surface_agentic::Relayed::Ended) => Leg::Ended(ExitCode::SUCCESS),
+            Ok(gandr_surface_agentic::Relayed::Switched(next)) => Leg::Switched(next),
+            Err(error) => Leg::Ended(hub_fault(&error)),
+        },
+    )
+}
+
+/// Run `command` on the host's counter beside the hub at `socket`, starting
+/// one lingering `linger` and configured with `spelling` when none answers,
+/// through a FIFO of this process's own, and choose the exit code.
+///
+/// # Specification
+/// - requires: `command` names a program and then its arguments.
+/// - ensures: the hub that [`reach_hub`] reaches holds the connection until the
+///   command ends. The verb asks the hub one `server/discover` and reads its
+///   answer: the hub answers once it runs its loop, after it owns the counter.
+///   The verb then holds the counter in the directory of the hub's socket with
+///   a porter of its own, and runs the command with `MAKEFLAGS` and
+///   `CARGO_MAKEFLAGS` that [`jobserver_flags`] makes. When the command ends,
+///   the porter ends: the FIFO goes away, and the slot gives back each token
+///   that the command's tools read and did not write back. The verb writes that
+///   count on standard error when it is above 0, so the output of a command
+///   whose tools write back each token stays the command's own. It exits with
+///   the command's code, or 128 and its signal. It exits `125` when it holds no
+///   counter, `126` when the command does not start, and `127` when no program
+///   has its name, the cause noted on standard error when writable.
+/// - provides: `gandr tokens`, the hold of one build command on the host's
+///   counter.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+/// - executable: none — the exit code is the command's own, which no predicate
+///   over the verb's arguments names.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a command that the verb runs names a FIFO of the verb's
+///   own beside the hub's socket, a token that its tool keeps comes back at its
+///   end, and the verb's exit code is the command's.
+/// - witness: `tests::cli::tokens_runs_a_command_on_a_fifo_of_its_own_7688`
+///
+/// # Cost
+/// - allocation: the paths, the flags, the hub's answer and the porter's
+///   threads, setup
+#[cfg(unix)]
+fn tokens(
+    socket: Option<PathBuf>,
+    linger: Duration,
+    spelling: Spelling,
+    command: &[std::ffi::OsString],
+) -> ExitCode
+{
+    let Some((program, arguments)) = command.split_first()
+    else {
+        return unheld(&"no command to run");
+    };
+    let named = match hub_socket(socket) {
+        Ok(named) => named,
+        Err(error) => return unheld(&format_args!("the engine hub: {error}")),
+    };
+    let held = match reach_hub(Some(named.clone()), linger, spelling) {
+        Ok(held) => held,
+        Err(error) => return unheld(&format_args!("the engine hub: {error}")),
+    };
+    let directory = named.parent().unwrap_or_else(|| Path::new("."));
+    // A hub binds its socket before it owns the counter, and it accepts a
+    // connection only once it runs its loop. So its answer to one request
+    // comes after it owns the counter.
+    let answered = held.try_clone().and_then(|reading| {
+        use std::io::BufRead as _;
+
+        (&held).write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server/discover\"}\n")?;
+        let mut answer = String::new();
+        match std::io::BufReader::new(reading).read_line(&mut answer)? {
+            0 => Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof)),
+            _ => Ok(()),
+        }
+    });
+    if let Err(error) = answered {
+        return unheld(&format_args!("the engine hub: {error}"));
+    }
+    let porter = match gandr_surface_dispatcher::Porter::hold(directory) {
+        Ok(porter) => porter,
+        Err(error) => {
+            return unheld(&format_args!(
+                "no hold of the host's tokens in {}: {error}",
+                directory.display()
+            ));
+        },
+    };
+    let flags = jobserver_flags(std::env::var_os("MAKEFLAGS").as_deref(), porter.fifo());
+    let ran = std::process::Command::new(program)
+        .args(arguments)
+        .env("MAKEFLAGS", &flags)
+        .env("CARGO_MAKEFLAGS", &flags)
+        .status();
+    let kept = porter.end();
+    drop(held);
+    if kept != gandr_surface_dispatcher::Reaped::NONE {
+        // When standard error is unwritable, the count has no channel, and
+        // the exit code stays the command's.
+        let _noted = writeln!(
+            std::io::stderr(),
+            "gandr tokens: tokens from the hands of the command's tools, which the reap gives back: {kept}"
+        );
+    }
+    match ran {
+        Ok(status) => exit_of(status),
+        Err(error) => {
+            let _noted = writeln!(
+                std::io::stderr(),
+                "gandr tokens: the command {} does not start: {error}",
+                Path::new(program).display()
+            );
+            ExitCode::from(if error.kind() == std::io::ErrorKind::NotFound {
+                UNFOUND
+            }
+            else {
+                UNSTARTED
+            })
+        },
+    }
+}
+
+/// Note on standard error that `gandr tokens` holds no counter, for `cause`,
+/// and give its exit code.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the note, error path
+#[cfg(unix)]
+fn unheld<Cause>(cause: &Cause) -> ExitCode
+where
+    Cause: core::fmt::Display + ?Sized,
+{
+    match writeln!(std::io::stderr(), "gandr tokens: {cause}") {
+        // When standard error is unwritable too, the exit code is the one
+        // channel left.
+        Ok(()) | Err(_) => ExitCode::from(UNHELD),
+    }
+}
+
+/// The exit code that stands for a command's `status`: its own code, or 128
+/// and the signal that ended it, as a shell's.
+///
+/// # Specification
+/// trivial.
+#[cfg(unix)]
+fn exit_of(status: std::process::ExitStatus) -> ExitCode
+{
+    use std::os::unix::process::ExitStatusExt as _;
+
+    let code = status
+        .code()
+        .or_else(|| status.signal().map(|signal| signal.saturating_add(128)));
+    ExitCode::from(
+        code.and_then(|code| u8::try_from(code).ok())
+            .unwrap_or(FAULTED),
+    )
+}
+
+/// The `MAKEFLAGS` of a command that draws on the FIFO at `fifo`: each word of
+/// `inherited` but a jobserver's, with the FIFO named before a `--` word,
+/// which starts the variables of make.
+///
+/// # Specification
+/// - ensures: the result names `fifo` as `--jobserver-auth=fifo:<path>`, and no
+///   other jobserver.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a command that the verb runs reads the verb's FIFO in
+///   place of the jobserver that the verb's `MAKEFLAGS` names, and keeps the
+///   other words, the variables after `--` among them.
+/// - witness: `tests::cli::tokens_runs_a_command_on_a_fifo_of_its_own_7688`
+///
+/// # Cost
+/// - allocation: the flags, setup
+#[cfg(unix)]
+#[spec(ensures: |ref ret| ret.to_string_lossy().matches("--jobserver-").count() == 1
+    && ret.to_string_lossy().contains(&format!("--jobserver-auth=fifo:{}", fifo.display())))]
+fn jobserver_flags(
+    inherited: Option<&std::ffi::OsStr>,
+    fifo: &Path,
+) -> std::ffi::OsString
+{
+    let text = inherited.map_or_else(Default::default, std::ffi::OsStr::to_string_lossy);
+    let mut flags = std::ffi::OsString::new();
+    let mut named = false;
+    for word in text.split_ascii_whitespace() {
+        if word.starts_with("--jobserver-auth=") || word.starts_with("--jobserver-fds=") {
+            continue;
+        }
+        if word == "--" && !named {
+            if !flags.is_empty() {
+                flags.push(" ");
+            }
+            flags.push("--jobserver-auth=fifo:");
+            flags.push(fifo);
+            named = true;
+        }
+        if !flags.is_empty() {
+            flags.push(" ");
+        }
+        flags.push(word);
+    }
+    if !named {
+        if !flags.is_empty() {
+            flags.push(" ");
+        }
+        flags.push("--jobserver-auth=fifo:");
+        flags.push(fifo);
+    }
+    flags
+}
+
+/// Attach to the render bus of the hub at `socket`, starting one lingering
+/// `linger` and configured with `spelling` when none answers, follow it, and
+/// choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the attach is sent to the hub [`reach_hub`] reaches; with
+///   standard input and output both terminals, the bus is followed as
+///   `gandr_surface_tui::follow` states at `layers`, and otherwise its reports
+///   are printed as `gandr_surface_tui::follow_plain` states. The view exits
+///   `0` when it completes, and `2` when a hub is never reached, a stream fails
+///   or the view ends faulted, the cause noted on standard error when writable.
+/// - provides: `gandr view`, the side view beside an editor.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a piped view prints the report of a document an editor
+///   opens through the same hub, then the next one after the editor's edit.
+/// - witness: `tests::cli::a_view_follows_what_an_editor_holds_open`
+#[cfg(unix)]
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
+fn view(
+    socket: Option<PathBuf>,
+    linger: Duration,
+    spelling: Spelling,
+    layers: gandr_surface_tui::Layers,
+) -> ExitCode
+{
+    let attached = reach_hub(socket, linger, spelling).and_then(|mut stream| {
+        stream.write_all(gandr_surface_lsp::RENDER_BUS_PREFACE.as_bytes())?;
+        let reading = std::io::BufReader::new(stream.try_clone()?);
+        Ok((stream, reading))
+    });
+    let (mut writing, reading) = match attached {
+        Ok(ends) => ends,
+        Err(error) => return hub_fault(&error),
+    };
+    let terminal = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+    let followed = if terminal {
+        gandr_surface_tui::follow(reading, &mut writing, layers)
+    }
+    else {
+        gandr_surface_tui::follow_plain(reading, &mut std::io::stdout().lock())
+    };
+    let noted = match followed {
+        Ok(Ended::Completed) => return ExitCode::SUCCESS,
+        Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: the view: {fault}"),
+        Err(error) => writeln!(std::io::stderr(), "gandr: the view: {error}"),
+    };
+    match noted {
+        // When standard error is unwritable too, the exit code is the one
+        // channel left.
+        Ok(()) | Err(_) => ExitCode::from(FAULTED),
+    }
+}
+
+/// A connection to the hub at `socket`, started lingering `linger` and
+/// configured with `spelling` when none answers.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a hub answering at once is connected; otherwise this executable
+///   is started detached as `gandr serve --no-toolset` on the socket with
+///   `--spelling` naming `spelling`, and with the `--run-budget` that the
+///   invocation names, so the hub serves no toolset and lingers out. The socket
+///   is tried every 20 ms while the started hub lives. When that hub exits, the
+///   socket is tried once more: a hub that exits because another hub serves the
+///   socket leaves the client to that hub.
+/// - provides: one way every client reaches its workspace's hub.
+/// - fails: when the socket cannot be named, the hub cannot be started, or the
+///   started hub exits and no hub answers.
+/// - panics: none.
+/// - executable: none — the result is a socket connection to another process.
+///
+/// # Errors
+/// The error naming the socket or starting the hub, or the started hub's exit
+/// with the last connect error.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a client finding no hub starts one, and the next client
+///   connects to it; a client whose hub exits with no socket names that exit.
+/// - witness: `tests::cli::lsp_clients_share_one_engine_hub`
+/// - witness: `tests::cli::mcp_reads_what_an_editor_holds_open`
+/// - witness: `tests::cli::a_view_follows_what_an_editor_holds_open`
+/// - witness: `tests::cli::a_client_names_the_exit_of_a_hub_that_binds_no_socket_7524`
+#[cfg(unix)]
+fn reach_hub(
+    socket: Option<PathBuf>,
+    linger: Duration,
+    spelling: Spelling,
+) -> std::io::Result<std::os::unix::net::UnixStream>
+{
+    use std::os::unix::net::UnixStream;
+    use std::os::unix::process::CommandExt as _;
+
+    let socket = hub_socket(socket)?;
+    if let Ok(stream) = UnixStream::connect(&socket) {
+        return Ok(stream);
+    }
+    let budget = budget::bound();
+    let mut hub = std::process::Command::new(std::env::current_exe()?);
+    if matches!(budget.origin(), Origin::Flag) {
+        hub.arg("--run-budget").arg(u64::from(budget).to_string());
+    }
+    let mut child = hub
+        .arg("serve")
+        .arg("--no-toolset")
+        .arg("--socket")
+        .arg(&socket)
+        .arg("--linger-ms")
+        .arg(linger.as_millis().to_string())
+        .arg("--spelling")
+        .arg(match spelling {
+            Spelling::Unicode => "unicode",
+            Spelling::Ascii => "ascii",
+        })
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .env_remove(toolchain::HANDOVER)
+        .process_group(0_i32)
+        .spawn()?;
+    // The wait is bounded by the started hub's life, never by a time that the
+    // host's load moves. The hub outlives this client by its linger, so it is
+    // never waited on once it answers.
+    loop {
+        std::thread::sleep(Duration::from_millis(20));
+        let error = match UnixStream::connect(&socket) {
+            Ok(stream) => return Ok(stream),
+            Err(error) => error,
+        };
+        if let Some(exit) = child.try_wait()? {
+            return UnixStream::connect(&socket).map_err(|_again| {
+                std::io::Error::other(format!(
+                    "the hub this client started stopped with {exit} before it answered: {error}"
+                ))
+            });
+        }
+    }
+}
+
+/// Run the engine hub on `socket`, lingering `linger` once its last client
+/// leaves, its workspace configured with `spelling`, its kernel admissions on
+/// a pool at the host's width, with the toolset at the address of `toolset`
+/// and its delivery policy when one is named, its host's counter set to
+/// `counting` tokens when it names a width, and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the hub binds `socket` through `gandr_surface_lsp::bind` and runs
+///   as `gandr_surface_lsp::run_hub` states, with this crate's Model Context
+///   Protocol face (`gandr_surface_agentic::serve`) for connections speaking
+///   lines, its render bus reading the store [`config::store`] names when it
+///   names one, its timing lines on standard error, and exits `0` when it
+///   lingers out; a socket another hub serves exits `0` at once, noted on
+///   standard error. A socket that cannot be bound or served is noted and exits
+///   `2`. With `toolset`, the hub also serves [`toolset`]'s face beside its
+///   socket, writes the manifest's URL to the address file beside the socket
+///   and says it on standard error, and runs until it is stopped. It removes
+///   the file when it stops. An address file that names a toolset that still
+///   listens, a toolset that cannot open, a file that cannot be written, or a
+///   socket another hub serves is noted and exits `2`.
+/// - provides: `gandr serve`.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a hub serving a client exits `0` after its linger and
+///   removes its socket; a hub with its toolset writes the URL of its manifest
+///   to the address file and serves the manifest there, and a second hub of the
+///   workspace refuses and names the file.
+/// - witness: `tests::cli::lsp_clients_share_one_engine_hub`
+/// - witness: `tests::cli::serve_offers_the_toolset_by_default`
+///
+/// # Cost
+/// - allocation: the paths beside the socket, the toolset and the workspace,
+///   setup
+#[cfg(unix)]
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
+fn hub(
+    socket: Option<PathBuf>,
+    linger: Duration,
+    spelling: Spelling,
+    toolset: Option<(core::net::SocketAddr, gandr_surface_agentic::Policy)>,
+    counting: Option<gandr_surface_dispatcher::Threads>,
+) -> ExitCode
+{
+    let socket = match hub_socket(socket) {
+        Ok(socket) => socket,
+        Err(error) => return hub_fault(&error),
+    };
+    let toolset = match toolset
+        .map(|(address, policy)| {
+            // A second hub of the workspace stops here, before it binds a port
+            // or opens the store of calls that the first one holds.
+            let announcement = gandr_surface_agentic::Announcement::beside(&socket);
+            announcement.vacant()?;
+            self::toolset(address, policy).map(|toolset| {
+                let verbs: alloc::sync::Arc<dyn gandr_surface_agentic::Verbs> =
+                    alloc::sync::Arc::new(HubVerbs { spelling });
+                (toolset.walking(verbs), announcement)
+            })
+        })
+        .transpose()
+    {
+        Ok(toolset) => toolset,
+        Err(error) => return hub_fault(&error),
+    };
+    match gandr_surface_lsp::bind(&socket) {
+        Ok(Maybe::Present(listener)) => {
+            let (beside, _announced) = match toolset {
+                Some((toolset, announcement)) => {
+                    match toolset.address().and_then(|address| {
+                        announcement
+                            .write(address)
+                            .map(|announced| (address, announced))
+                    }) {
+                        Ok((address, announced)) => {
+                            drop(writeln!(
+                                std::io::stderr(),
+                                "gandr: the toolset is at http://{address}/.well-known/rap-toolset"
+                            ));
+                            let beside: gandr_surface_lsp::Beside = Box::new(
+                                move |workspace: alloc::sync::Arc<
+                                    std::sync::Mutex<gandr_surface_lsp::Workspace>,
+                                >,
+                                      peer: gandr_surface_lsp::Peer| {
+                                    if let Err(error) =
+                                        toolset.serve(&workspace, peer, std::io::stderr())
+                                    {
+                                        drop(writeln!(
+                                            std::io::stderr(),
+                                            "gandr: the toolset stopped: {error}"
+                                        ));
+                                    }
+                                },
+                            );
+                            (Some(beside), Some(announced))
+                        },
+                        Err(error) => return hub_fault(&error),
+                    }
+                },
+                None => (None, None),
+            };
+            let stored = config::store().map_or_else(
+                || workspace(spelling),
+                |directory| workspace(spelling).storing(gandr_surface_lsp::Stored::at(directory)),
+            );
+            let served = match counting {
+                Some(width) => stored.counting(width),
+                None => stored,
+            };
+            match gandr_surface_lsp::run_hub(
+                &listener,
+                &socket,
+                linger,
+                std::io::stderr(),
+                Some(gandr_surface_agentic::serve),
+                beside,
+                served,
+            ) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => hub_fault(&error),
+            }
+        },
+        Ok(Maybe::Absent(gandr_surface_lsp::bind::Absent::Served)) => {
+            let served = writeln!(
+                std::io::stderr(),
+                "gandr: a hub already serves {}",
+                socket.display()
+            );
+            match (served, toolset) {
+                (Ok(()) | Err(_), None) => ExitCode::SUCCESS,
+                // The hub that serves the socket has no toolset to give.
+                (Ok(()) | Err(_), Some(_)) => ExitCode::from(FAULTED),
+            }
+        },
+        Err(error) => hub_fault(&error),
+    }
+}
+
+/// The toolset of the current directory's workspace, listening at `address`,
+/// its calls and its subscriptions kept under the user's state directory, its
+/// deliveries retried as `policy` states.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the listener is bound at `address`, the store of calls is
+///   `<calls>/<workspace>.jsonl`, and the table of subscriptions is
+///   `<subscriptions>/<workspace>.json`, where `<calls>` is [`config::calls`],
+///   `<subscriptions>` is [`config::subscriptions`] and `<workspace>` is
+///   `gandr_surface_lsp::workspace_name` of the current directory. So every
+///   build of the driver reads one store and one table per workspace.
+/// - provides: `gandr serve`'s face.
+/// - fails: when the address cannot be bound, no directory names the state, the
+///   current directory cannot be read, or the store or the table cannot open.
+/// - panics: none.
+/// - executable: none — the effects are a listener and files.
+///
+/// # Errors
+/// The error binding, reading the directory, or opening the store or the
+/// table, or one that says no directory names the state.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`hub`].
+/// - witness: `tests::cli::serve_offers_the_toolset_by_default`
+#[cfg(unix)]
+fn toolset(
+    address: core::net::SocketAddr,
+    policy: gandr_surface_agentic::Policy,
+) -> std::io::Result<gandr_surface_agentic::Toolset>
+{
+    let listener = std::net::TcpListener::bind(address)?;
+    let unstated =
+        || std::io::Error::other("no directory names the state: set `XDG_STATE_HOME` or `HOME`");
+    let calls = config::calls().ok_or_else(unstated)?;
+    let subscriptions = config::subscriptions().ok_or_else(unstated)?;
+    let workspace = gandr_surface_lsp::workspace_name(&std::env::current_dir()?)?;
+    gandr_surface_agentic::Toolset::open(
+        listener,
+        &calls.join(&workspace).with_extension("jsonl"),
+        &subscriptions.join(&workspace).with_extension("json"),
+        policy,
+    )
+}
+
+/// The verbs that the hub's toolset walks with: `gandr check` and `gandr
+/// test`, as the command line runs them, at the user's verbosity and in
+/// `spelling`.
+#[cfg(unix)]
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct HubVerbs
+{
+    /// The spelling every type and value is written in.
+    spelling: Spelling,
+}
+
+#[cfg(unix)]
+impl HubVerbs
+{
+    /// Walk `paths` under `verb` on the hub's `pool` as `gandr check` and
+    /// `gandr test` walk them, each job marked on `rings` when they are given:
+    /// a check gated, with no lint beyond the attributes, granted every
+    /// operation, its packages locked into the store that opens for them.
+    /// Paths that no package admits, and a store that does not open, are one
+    /// fault line.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The first write error, which stops the walk.
+    ///
+    /// # Cost
+    /// - allocation: the packages, the store and the walk's report, setup
+    /// - allocation: a fault's line, diagnostic
+    fn walked(
+        self,
+        (verb, paths): (Verb, Vec<PathBuf>),
+        (pool, rings): (&Pool, Rings<'_>),
+        (printed, faulted): (
+            &mut gandr_surface_agentic::JobStream,
+            &mut gandr_surface_agentic::JobStream,
+        ),
+    ) -> std::io::Result<()>
+    {
+        let (paths, reached, gathered) = match packaged::<Evaluator>(paths, Path::new(".")) {
+            Ok(packaged) => packaged,
+            Err(unpackaged) => return writeln!(faulted, "gandr: {unpackaged}"),
+        };
+        let invocation = match verb {
+            Verb::Check(goals) => Invocation::Check {
+                goals,
+                lints: enabled(&[]),
+                grant: HostGrant::UNBOUNDED,
+                paths,
+                sources: SourceLimit::Unlimited,
+                width: Width::PerformanceCores,
+            },
+            Verb::Test => Invocation::Test {
+                paths,
+                sources: SourceLimit::Unlimited,
+                width: Width::PerformanceCores,
+            },
+        };
+        // A test reaches no package, as `gandr test` reaches none.
+        let (packages, workspaces) = match verb {
+            Verb::Check(_) => (reached, gathered),
+            Verb::Test => (Vec::new(), Vec::new()),
+        };
+        let mut store = if packages.is_empty() {
+            None
+        }
+        else {
+            match opened() {
+                Ok(held) => Some(held),
+                Err(_exit) => {
+                    return writeln!(faulted, "gandr: the store of packages did not open");
+                },
+            }
+        };
+        let Outcome::Run {
+            verb, lints, walk, ..
+        } = gandr_surface_dispatcher::dispatch(invocation)
+        else {
+            return writeln!(faulted, "gandr: the verb did not walk");
+        };
+        run(
+            Pass {
+                verb,
+                lints,
+                packages: &packages,
+                workspaces: &workspaces,
+                store: store.as_mut(),
+                rings,
+            },
+            walk,
+            pool,
+            Printing {
+                verbosity: Verbosity::User,
+                spelling: self.spelling,
+                measuring: Measuring::Unmeasured,
+                listing: Listing::Unlisted,
+                #[cfg(feature = "instrument")]
+                occupancy: Occupancy::Unprinted,
+            },
+            &mut Stream::Job(printed),
+            &mut Stream::Job(faulted),
+        )
+        .map(|_exit| ())
+    }
+}
+
+#[cfg(unix)]
+impl gandr_surface_agentic::Verbs for HubVerbs
+{
+    /// Walk `paths` under `verb` on the hub's `pool`, as [`HubVerbs::walked`]
+    /// walks them with no ring.
+    ///
+    /// # Specification
+    /// trivial.
+    fn walk(
+        &self,
+        verb: Verb,
+        paths: Vec<PathBuf>,
+        pool: &Pool,
+        streams: (
+            &mut gandr_surface_agentic::JobStream,
+            &mut gandr_surface_agentic::JobStream,
+        ),
+    ) -> std::io::Result<()>
+    {
+        self.walked((verb, paths), (pool, Rings::default()), streams)
+    }
+
+    /// Walk `paths` under `verb` on the hub's `pool`, as [`HubVerbs::walked`]
+    /// walks them, each job marked on `rings`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    fn walk_recording(
+        &self,
+        verb: Verb,
+        paths: Vec<PathBuf>,
+        (pool, rings): (&Pool, &gandr_core_fork::activity::Activity),
+        streams: (
+            &mut gandr_surface_agentic::JobStream,
+            &mut gandr_surface_agentic::JobStream,
+        ),
+    ) -> std::io::Result<()>
+    {
+        self.walked((verb, paths), (pool, Some(rings)), streams)
+    }
+}
+
+/// Run the read-evaluate loop on the standard streams, its session on
+/// [`host_pool`], writing its types and values in `spelling`, and choose the
+/// exit code.
+///
+/// # Specification
+/// - requires: nothing; the streams come from the process.
+/// - ensures: under [`Face::Batch`], or when standard input is not a terminal,
+///   every line of standard input is offered to the loop and its plain
+///   transcript written to standard output; otherwise the line editor reads the
+///   terminal, and refusals are coloured when standard output is a terminal
+///   too. The loop exits `0` when its input ends or the user quits, and `2`
+///   when a fault stops it or its output cannot be written, the fault noted on
+///   standard error when that is writable.
+/// - provides: `gandr repl`.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — a piped load, type query, refused declaration and quit
+///   leave exact transcript rows and an unread suffix; explicit batch agrees
+///   with pipe selection. Wrong routing, failure classification or reads past
+///   quit change the observations. Interactive editing and terminal colour
+///   appearance are outside these finite pipe sessions.
+/// - witness: `tests::cli::a_piped_repl_session_prints_its_transcript`
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
+fn repl(
+    face: Face,
+    spelling: Spelling,
+) -> ExitCode
+{
+    let input = std::io::stdin();
+    let mut output = std::io::stdout().lock();
+    let ended = match (face, input.is_terminal()) {
+        (Face::Batch, _) | (Face::ByInput, false) => gandr_surface_repl::run_batch(
+            input.lock(),
+            &mut output,
+            RenderStyle::Plain,
+            (spelling, host_pool()),
+        ),
+        (Face::ByInput, true) => {
+            let style = RenderStyle::for_terminal(TerminalCapability::from(output.is_terminal()));
+            gandr_surface_repl::run_interactive(&mut output, style, (spelling, host_pool()))
+        },
+    };
+    let noted = match ended {
+        Ok(Ended::Completed) => return ExitCode::SUCCESS,
+        Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: {fault}"),
+        Err(error) => writeln!(std::io::stderr(), "gandr: cannot write the output: {error}"),
+    };
+    match noted {
+        // When standard error is unwritable too, the exit code is the one
+        // channel left.
+        Ok(()) | Err(_) => ExitCode::from(FAULTED),
+    }
+}
+
+/// Run the terminal face, or its smoke face, its session on [`host_pool`],
+/// writing its types and values in `spelling`, and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing; the streams come from the process.
+/// - ensures: under [`Screen::Smoke`], the face runs once off-screen and `gandr
+///   tui: ready` is printed on standard output; no terminal is touched. Under
+///   [`Screen::Terminal`], with standard input and output both terminals, the
+///   face takes the terminal until the user leaves and then restores it;
+///   without them nothing is drawn and the missing terminal is noted on
+///   standard error. Either face exits `0` when it completes, and `2` when a
+///   fault stops it, the terminal fails, its output cannot be written or no
+///   terminal is attached, the cause noted on standard error when that is
+///   writable.
+/// - provides: `gandr tui` and `gandr tui --smoke`.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — headless launch into a closed pipe and terminal launch
+///   without an attached terminal expose failure status and stream routing.
+///   Success/failure confusion, swallowed output errors or terminal escape
+///   leakage change the observations. Real terminal restoration is outside
+///   these subprocess fixtures and is exercised by the smoke run.
+/// - witness: `tests::cli::smoke_is_terminal_free_but_interactive_tui_refuses_pipes`
+/// - witness: `tests::cli::unwritable_standard_output_exits_two`
+#[cfg(not(target_os = "wasi"))]
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
+fn tui(
+    screen: Screen,
+    spelling: Spelling,
+) -> ExitCode
+{
+    let attached = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+    let noted = match (screen, attached) {
+        (Screen::Smoke, _) => match gandr_surface_tui::run_smoke(&mut std::io::stdout().lock()) {
+            Ok(Ended::Completed) => return ExitCode::SUCCESS,
+            Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: {fault}"),
+            Err(error) => writeln!(std::io::stderr(), "gandr: cannot write the output: {error}"),
+        },
+        (Screen::Terminal, false) => writeln!(
+            std::io::stderr(),
+            "gandr: the terminal face needs a terminal on standard input and output; `gandr repl` reads a pipe"
+        ),
+        (Screen::Terminal, true) => match gandr_surface_tui::run(spelling, host_pool()) {
+            Ok(Ended::Completed) => return ExitCode::SUCCESS,
+            Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: {fault}"),
+            Err(error) => writeln!(std::io::stderr(), "gandr: the terminal failed: {error}"),
+        },
+    };
+    match noted {
+        // When standard error is unwritable too, the exit code is the one
+        // channel left.
+        Ok(()) | Err(_) => ExitCode::from(FAULTED),
+    }
+}
+
+/// What `gandr doc` writes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Pages
+{
+    /// A Markdown page per source and an index.
+    Markdown,
+    /// The HTML site.
+    Site,
+}
+
+/// Write the documentation of the sources under `path` into `out`, printing
+/// the path of each file written, and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each source the walk reaches under `path`, in walk order, is
+///   named by its path relative to `path`, the file's own name when `path` is a
+///   file. For [`Pages::Markdown`], each source has its [`page`] written at
+///   that name under `out`, its extension `md`, and the page's path printed on
+///   standard output; then `index.md` under `out` holds [`index`] of the pages
+///   titled by `path`'s last component, and its path is printed. For
+///   [`Pages::Site`], each source is read for the site, and then each file of
+///   [`site`] over them, titled the same, is written under `out` and its path
+///   printed, in the site's order. A source that cannot be read or paged, a
+///   file that cannot be written and a path naming no source are each `gandr:
+///   <path>: <why>` on standard error, and the run goes on past them. The exit
+///   is two when any of them happened, and zero otherwise.
+/// - provides: `gandr doc`.
+/// - fails: never; every failure is an exit code.
+/// - panics: none.
+/// - executable: none — the pages are files, which the CLI witness reads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a package of two sources, one documented, writes its
+///   Markdown pages and its index at their paths, and its site at its paths,
+///   and a path naming no source exits two.
+/// - witness: `tests::cli::doc_writes_a_page_per_source_and_an_index_4906`
+/// - witness: `tests::cli::doc_writes_an_html_site_4909`
+///
+/// # Cost
+/// - allocation: each page's text, the site's files and their paths, growth
+///   within the package's sources
+fn doc(
+    path: &Path,
+    out: &Path,
+    pages: Pages,
+) -> ExitCode
+{
+    let mut stdout = std::io::stdout().lock();
+    let mut stderr = std::io::stderr().lock();
+    let mut traversal = Traversal::new(Vec::from([path.to_path_buf()]));
+    let (mut entries, mut sources, mut faulted) = (Vec::new(), Vec::new(), false);
+    let mut fault =
+        |stderr: &mut std::io::StderrLock<'_>, at: &Path, why: core::fmt::Arguments<'_>| {
+            faulted = true;
+            writeln!(stderr, "gandr: {}: {why}", at.display())
+        };
+    let write = |target: &Path, contents: &str| {
+        target
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|()| std::fs::write(target, contents))
+            .map_err(|error| error.to_string())
+    };
+    while let Maybe::Present(reached) = traversal.reach() {
+        let source = traversal.path().to_path_buf();
+        let noted = match reached {
+            Reached::Source => {
+                let relative = source
+                    .strip_prefix(path)
+                    .ok()
+                    .filter(|relative| !relative.as_os_str().is_empty())
+                    .or_else(|| source.file_name().map(Path::new))
+                    .unwrap_or(&source)
+                    .to_path_buf();
+                match pages {
+                    Pages::Markdown => {
+                        let written = page(&source, &relative)
+                            .map_err(|unpaged| unpaged.to_string())
+                            .and_then(|paged| {
+                                let target = out.join(&relative).with_extension("md");
+                                write(&target, &paged.markdown).map(|()| (target, paged.summary))
+                            });
+                        match written {
+                            Ok((target, summary)) => {
+                                entries.push(Entry {
+                                    page: relative.with_extension("md"),
+                                    source: relative,
+                                    summary,
+                                });
+                                writeln!(stdout, "{}", target.display())
+                            },
+                            Err(why) => fault(&mut stderr, &source, format_args!("{why}")),
+                        }
+                    },
+                    Pages::Site => match sourced(&source, relative) {
+                        Ok(read) => {
+                            sources.push(read);
+                            Ok(())
+                        },
+                        Err(unpaged) => fault(&mut stderr, &source, format_args!("{unpaged}")),
+                    },
+                }
+            },
+            Reached::Unreadable(error) => fault(&mut stderr, &source, format_args!("{error}")),
+            Reached::NoSource => fault(&mut stderr, &source, format_args!("names no source")),
+        };
+        if noted.is_err() {
+            return ExitCode::from(FAULTED);
+        }
+    }
+    let package = path
+        .canonicalize()
+        .ok()
+        .and_then(|canonical| canonical.file_name().map(PathBuf::from))
+        .unwrap_or_else(|| path.to_path_buf());
+    let files = match pages {
+        Pages::Markdown => Vec::from([File {
+            path: PathBuf::from("index.md"),
+            contents: index(&package, &entries),
+        }]),
+        Pages::Site => site(&package, &sources),
+    };
+    for file in files {
+        let target = out.join(&file.path);
+        let noted = match write(&target, &file.contents) {
+            Ok(()) => writeln!(stdout, "{}", target.display()),
+            Err(why) => fault(&mut stderr, &target, format_args!("{why}")),
+        };
+        if noted.is_err() {
+            return ExitCode::from(FAULTED);
+        }
+    }
+    if faulted {
+        return ExitCode::from(FAULTED);
+    }
+    ExitCode::SUCCESS
+}
+
+/// Print the capabilities the language server advertises, and choose the exit
+/// code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: standard output receives the `initialize` result as one line of
+///   JSON and the process exits `0`; output the driver cannot write is noted on
+///   standard error, when that is writable, and exits `2`.
+/// - provides: what a client or a packager reads without starting a session.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a closed output pipe observes write refusal and exit
+///   status. A swallowed write failure or success status changes the result.
+///   The successful JSON surface is exercised by the command smoke; protocol
+///   capability contents belong to the server rather than this adapter.
+/// - witness: `tests::cli::unwritable_standard_output_exits_two`
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
+fn capabilities() -> ExitCode
+{
+    let mut stdout = std::io::stdout().lock();
+    let written = writeln!(stdout, "{Capabilities}").and_then(|()| stdout.flush());
+    match written {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            match writeln!(std::io::stderr(), "gandr: cannot write the output: {error}") {
+                Ok(()) | Err(_) => ExitCode::from(FAULTED),
+            }
+        },
+    }
+}
+
+/// Print clap's message for `error` and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a help or version request prints to standard output and exits
+///   `0`; any other argument error prints its usage message to standard error
+///   and exits `2`, as does a message that cannot be printed.
+/// - provides: the exit of an invocation clap did not accept.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — help, version, an unknown verb, missing paths and closed
+///   output pipes expose status and output-stream choice. Accepting malformed
+///   arguments, wrong destinations and swallowed writes change those finite
+///   observations. Localized usage wording is outside them.
+/// - witness: `tests::cli::a_malformed_invocation_exits_two`
+/// - witness: `tests::cli::help_exits_zero`
+/// - witness: `tests::cli::unwritable_standard_output_exits_two`
+/// - witness: `tests::cli::status_and_version_identify_the_same_build`
+#[spec(ensures: |ret| ret == ExitCode::from(FAULTED)
+    || (!error.use_stderr() && ret == ExitCode::SUCCESS))]
+fn usage(error: &clap::Error) -> ExitCode
+{
+    match (error.print(), error.use_stderr()) {
+        (Ok(()), false) => ExitCode::SUCCESS,
+        (Ok(()), true) | (Err(_), _) => ExitCode::from(FAULTED),
+    }
+}
+
+/// Refuse a `--grant` naming an operation the host does not declare.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one line on standard error, `gandr: --grant: no host interface
+///   offers` and the operation in backticks, or the host table's own conflict;
+///   exits `2`, a malformed invocation, whether or not the line could be
+///   written.
+/// - provides: the exit of a grant the host cannot give.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an undeclared operation exits two naming it, before any
+///   source is read.
+/// - witness: `tests::cli::a_grant_bounds_held_capabilities_and_refuses_an_unknown_operation`
+#[spec(ensures: |ret| ret == ExitCode::from(FAULTED))]
+fn ungranted(refused: &AuthorityError) -> ExitCode
+{
+    let mut stderr = std::io::stderr().lock();
+    let _written = match *refused {
+        AuthorityError::Undeclared(ref operation) => writeln!(
+            stderr,
+            "gandr: --grant: no host interface offers `{}`",
+            operation.as_ref()
+        ),
+        AuthorityError::Restriction(_) | AuthorityError::Conflict(_) => {
+            writeln!(stderr, "gandr: --grant: the host's interfaces conflict")
+        },
+    };
+    ExitCode::from(FAULTED)
+}
+
+/// Refuse a verb that has no paths to walk.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one line on standard error, `gandr:` and why no package was found
+///   from the working directory, or why the workspace the verb works on names
+///   none; exits `2`, a malformed invocation, whether or not the line could be
+///   written.
+/// - provides: the exit of `check`, `test` or `fmt` run with no path where no
+///   package or workspace is, or in a workspace that names no packages.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `check` with no path in a directory with no package
+///   source above it, and in a workspace naming a directory that roots no
+///   package, each exits two before any source is read.
+/// - witness: `tests::cli::a_verb_with_no_path_checks_the_package_it_runs_in_2687`
+/// - witness: `tests::cli::a_workspace_checks_each_member_it_names_2687`
+#[spec(ensures: |ret| ret == ExitCode::from(FAULTED))]
+fn unpathed(unpathed: &Unpathed) -> ExitCode
+{
+    let mut stderr = std::io::stderr().lock();
+    let _written = writeln!(stderr, "gandr: {unpathed}");
+    ExitCode::from(FAULTED)
+}
+
+/// Refuse a `run` or a `host` whose site or manifold refuses.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one line on standard error, `gandr:` and why the file refused;
+///   exits `2`, a malformed invocation, whether or not the line could be
+///   written.
+/// - provides: the exit of a deployment that binds nothing.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run of another source than the corpus manifold deploys
+///   exits two before any source is read, naming both paths.
+/// - witness: `tests::net::two_processes_run_the_far_world_from_their_site_and_manifold_3374`
+#[spec(ensures: |ret| ret == ExitCode::from(FAULTED))]
+fn undeployed(refused: &Undeployed) -> ExitCode
+{
+    let mut stderr = std::io::stderr().lock();
+    let _written = writeln!(stderr, "gandr: {refused}");
+    ExitCode::from(FAULTED)
+}
+
+/// Refuse a `run` or a `host` given one binding twice.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one line on standard error, `gandr:` and both spellings given;
+///   exits `2`, a malformed invocation, whether or not the line could be
+///   written.
+/// - provides: the exit of a deployment spelled by both a flag and a file.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run given `--world` beside the corpus manifold exits
+///   two, naming both.
+/// - witness: `tests::net::two_processes_run_the_far_world_from_their_site_and_manifold_3374`
+///
+/// # Cost
+/// - allocation: the fault's message, error path
+#[spec(ensures: |ret| ret == ExitCode::from(FAULTED))]
+fn doubled(doubled: Doubled) -> ExitCode
+{
+    let mut stderr = std::io::stderr().lock();
+    let _written = writeln!(stderr, "gandr: {doubled}");
+    ExitCode::from(FAULTED)
+}
+
+/// Render `outcome` and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the status prints one line naming the driver's version. A walk
+///   prints, for each source, each diagnostic the dispatcher's `entries` yields
+///   for its step under the verb, laid out by `gandr-surface-render-terminal`:
+///   each refusal, unsettled declaration and goal as a plain source snippet
+///   followed by an empty line, and each ledger line — a settled fixture or a
+///   pending source's refusal under `test`, a pending source the lowering read
+///   — prefixed with its path. Under `check --measure` each settled source then
+///   prints its `measure:` lines, as [`run`] states. Each path the walk cannot
+///   carry through the pipeline is a line on standard error. A walk under
+///   `check` then reconciles the lock and the manifest of each package
+///   `reached` holds, commits its export into `store`, re-admits each
+///   dependency's export from it, and reconciles the manifest of each workspace
+///   `reached` holds, as [`run`] does. The run's report and its verdict close
+///   standard output, and the exit code is the verdict's, or a lock's, a
+///   manifest's, an export's or a dependency's export's when that is worse. A
+///   script follows [`script`], its entry's `Net` operations served on a
+///   network bound as `hosting` says, its migrations sent where `hosting`'s
+///   bindings bind them, or its worlds served when `hosting` serves, the
+///   network bound first and its peer spelling, `<key>@<ip:port>`, the first
+///   line on standard error: what it prints goes to standard output, what it
+///   writes to standard error goes there beside its diagnostics, the lines it
+///   reads come from standard input, and its run status chooses the exit. A
+///   staging follows [`stage`], a formatting [`fmt`], and a census [`cells`].
+/// - provides: the one renderer every verb that reports through the dispatcher
+///   shares.
+/// - fails: the first write error on either stream.
+/// - panics: none.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — settled, refused, owed, pending and unreadable sources
+///   expose report selection and status precedence under both verbs. Missing
+///   diagnostics, ledger leakage or fault demotion changes the observations.
+///   Arbitrary source programs and output devices are excluded.
+/// - witness: `tests::cli::a_settled_run_exits_zero`
+/// - witness: `tests::cli::an_unsettled_run_exits_one`
+/// - witness: `tests::cli::goals_report_an_obligation_without_failing`
+/// - witness: `tests::cli::the_test_verb_prints_every_fixture_and_pending_source`
+/// - witness: `tests::cli::an_unreadable_path_exits_two`
+/// - witness: `tests::cli::a_failed_diagnostic_stream_stops_later_output`
+/// - witness: `tests::cli::every_width_stages_the_serial_run`
+/// - witness: `tests::cli::fmt_rewrites_what_check_reports`
+/// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
+/// - witness: `tests::cli::cells_reports_each_hole_s_count`
+///
+/// # Cost
+/// - allocation: each report's text, the rewritten sources and the I/O error's
+///   payload, growth within the sources
+#[spec(captures: [status = matches!(outcome, Outcome::Status(_)), script = matches!(outcome, Outcome::Script(_))],
+    ensures: |ref ret| ret.as_ref().map_or(true, |exit|
+        (script || *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED))
+            && (!status || *exit == ExitCode::SUCCESS)))]
+fn render(
+    outcome: Outcome,
+    printing: Printing,
+    reached: (&[Package], &[Gathered]),
+    hosting: Hosting,
+    store: Option<&mut Opened>,
+    stdout: &mut std::io::StdoutLock<'static>,
+    stderr: &mut std::io::StderrLock<'static>,
+) -> std::io::Result<ExitCode>
+{
+    match outcome {
+        Outcome::Status(report) => {
+            writeln!(stdout, "gandr {} — {report}", env!("CARGO_PKG_VERSION"))?;
+            Ok(ExitCode::SUCCESS)
+        },
+        // The driver's pool: one per process, at the verb's width, its threads
+        // started on the first fork of two items or more. Wider than one
+        // thread, the checks of each readmission run on it, and the last
+        // drain of each kernel check forks its obligations on it too.
+        Outcome::Run {
+            verb,
+            lints,
+            walk,
+            width,
+        } => {
+            let pool = Arc::new(pooled(width, Class::Batch));
+            // A process renders one outcome, so no fork or pool is installed
+            // yet.
+            gandr_surface_dispatcher::install_width(&pool, &walk);
+            run(
+                Pass {
+                    verb,
+                    lints,
+                    packages: reached.0,
+                    workspaces: reached.1,
+                    store,
+                    rings: Rings::default(),
+                },
+                walk,
+                &pool,
+                printing,
+                &mut Stream::Out(stdout),
+                &mut Stream::Err(stderr),
+            )
+        },
+        Outcome::Script(mut runnable) => {
+            if let Some(binding) = hosting.network {
+                let mut net = Net::new(binding);
+                // A host binds now and names itself, so a runner can be told
+                // where it is; a binding refused here is refused again, and
+                // reported, at the host's first arrival.
+                if hosting.migrations.is_some()
+                    && let Ok(endpoint) = net.endpoint()
+                {
+                    writeln!(stderr, "{}", endpoint.peer())?;
+                }
+                runnable.network(net);
+            }
+            if let Some(bindings) = hosting.bindings {
+                runnable.bindings(bindings);
+            }
+            if let Some(migrations) = hosting.migrations {
+                runnable.hosting(migrations);
+            }
+            runnable.reals(hosting.reals);
+            script(&mut runnable, printing.spelling, stderr)
+        },
+        Outcome::Stage(staging) => {
+            let pool = pooled(staging.width(), Class::Batch);
+            stage(staging, &pool, stdout, stderr)
+        },
+        Outcome::Format(formatting) => {
+            let pool = pooled(formatting.width(), Class::Batch);
+            fmt(formatting, &pool, stdout, stderr)
+        },
+        Outcome::Cells(census) => cells(census, stdout, stderr),
+    }
+}
+
+/// Lay out `formatting`'s sources on `pool`, printing the path of each whose
+/// layout changed, and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each source whose layout changed is its path, as one line on
+///   standard output, in walk order: written back under `fmt`, untouched under
+///   `fmt --check`. A source already in layout prints nothing. Each path that
+///   cannot be read or written back, names no source, or holds a source the
+///   formatter refuses is `gandr: <path>: <fault>` on standard error, and the
+///   formatting continues past it. Each declaration of a laid-out source that
+///   kept its spelling because a rewrite would have changed what it lowers to
+///   is ``gandr: <path>:<line>:<column>: `<name>` keeps its spelling:
+///   <reason>`` on standard error, after the source's path if any, and changes
+///   no exit. The exit is two when any path faulted; otherwise one under `fmt
+///   --check` when any source is out of layout, and zero. Every byte written,
+///   every source rewritten and the exit are the same at every width.
+/// - provides: `gandr fmt` and `gandr fmt --check`.
+/// - fails: the first write error on either stream, printing nothing after it;
+///   at one thread no source after it is laid out, and at a wider one every
+///   source already has been.
+/// - panics: none.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source out of layout, one in layout and a missing path
+///   under `fmt --check`, then `fmt`, then `fmt --check` again, observe each
+///   stream, each exit, and the source's bytes after each run. Fault precedence
+///   over a change, the check writing nothing and a second check passing are
+///   each distinguished; a sugared match over a stated sum keeps nothing.
+///   Formatter refusals, unwritable sources and a withdrawn declaration's line
+///   are outside these fixtures: no rewrite of the table changes what a corpus
+///   source lowers to, and the formatter's own tests withdraw one.
+/// - witness: `tests::cli::fmt_rewrites_what_check_reports`
+/// - witness: `tests::cli::fmt_sugars_a_match_over_a_stated_sum_791`
+///
+/// # Cost
+/// - allocation: each source's text and its rewrite, growth within the sources
+#[spec(captures: [checking = formatting.rewrite() == Rewrite::Check],
+    ensures: |ref ret| ret.as_ref().map_or(true, |exit|
+        *exit == ExitCode::SUCCESS || *exit == ExitCode::from(FAULTED)
+            || (checking && *exit == ExitCode::from(UNFORMATTED))))]
+fn fmt(
+    formatting: Formatting,
+    pool: &Pool,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
+) -> std::io::Result<ExitCode>
+{
+    let rewrite = formatting.rewrite();
+    let (mut changed, mut faulted) = (false, false);
+    let visited = formatting.visit(pool, |step| {
+        let written = match step {
+            FormatStep::Unchanged { path, withdrawn } => kept(stderr, path, &withdrawn),
+            FormatStep::Changed { path, withdrawn } => {
+                changed = true;
+                writeln!(stdout, "{}", path.display()).and_then(|()| kept(stderr, path, &withdrawn))
+            },
+            FormatStep::Fault { path, fault } => {
+                faulted = true;
+                writeln!(stderr, "gandr: {}: {fault}", path.display())
+            },
+        };
+        match written {
+            Ok(()) => ControlFlow::Continue(()),
+            Err(error) => ControlFlow::Break(error),
+        }
+    });
+    if let ControlFlow::Break(error) = visited {
+        return Err(error);
+    }
+    Ok(match (faulted, changed, rewrite) {
+        (true, ..) => ExitCode::from(FAULTED),
+        (false, true, Rewrite::Check) => ExitCode::from(UNFORMATTED),
+        (false, false, _) | (false, true, Rewrite::InPlace) => ExitCode::SUCCESS,
+    })
+}
+
+/// Print each declaration of the source at `path` that kept its spelling as
+/// ``gandr: <path>:<line>:<column>: `<name>` keeps its spelling: <reason>``.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: each kept declaration's message, diagnostic
+fn kept(
+    stderr: &mut impl std::io::Write,
+    path: &std::path::Path,
+    withdrawn: &[Kept],
+) -> std::io::Result<()>
+{
+    for declaration in withdrawn {
+        writeln!(stderr, "gandr: {}:{declaration}", path.display())?;
+    }
+    Ok(())
+}
+
+/// Step `census`, printing each cell of each source on a line, then each
+/// fusion cell, and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each cell of each source the census reads is `<path>:<row>` on
+///   standard output, the row rendered as the dispatcher's `CellRow` renders
+///   it, sources in walk order and each source's cells in the census's. Each
+///   source's fusion rows and its blocks past the fusion budget follow its
+///   cells, rendered as `FusionRow` and `OverBudget` render them. Each path the
+///   census cannot read is `gandr: <path>: <fault>` on standard error, and the
+///   census continues past it. The exit is two when any path faulted, and zero
+///   otherwise.
+/// - provides: `gandr cells`.
+/// - fails: the first write error on either stream, printing nothing after it
+///   and reading no source after it.
+/// - panics: none.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus exemplar beside a missing path observes every
+///   line on both streams and the exit; dropping a row, a fault, or the fault's
+///   exit changes the observation.
+/// - witness: `tests::cli::cells_reports_each_hole_s_count`
+///
+/// # Cost
+/// - allocation: each row's text and the I/O error's payload, diagnostic
+#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
+    *exit == ExitCode::SUCCESS || *exit == ExitCode::from(FAULTED)))]
+fn cells(
+    mut census: Census,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
+) -> std::io::Result<ExitCode>
+{
+    let mut faulted = false;
+    while let Maybe::Present(step) = census.step() {
+        match step {
+            CensusStep::Source {
+                path,
+                cells,
+                fusions,
+                over,
+            } => {
+                for row in &cells {
+                    writeln!(stdout, "{}:{row}", path.display())?;
+                }
+                for row in &fusions {
+                    writeln!(stdout, "{}:{row}", path.display())?;
+                }
+                for block in &over {
+                    writeln!(stdout, "{}:{block}", path.display())?;
+                }
+            },
+            CensusStep::Fault { path, fault } => {
+                faulted = true;
+                writeln!(stderr, "gandr: {}: {fault}", path.display())?;
+            },
+        }
+    }
+    Ok(if faulted {
+        ExitCode::from(FAULTED)
+    }
+    else {
+        ExitCode::SUCCESS
+    })
+}
+
+/// Check `staging`'s programs, printing one line per program, then the run's
+/// digest and verdict, and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each program's line in order on standard output — its spelling,
+///   the certificates the kernel readmitted and each family class's count, or
+///   the fault that left it unchecked — then `digest: ` and sixteen hexadecimal
+///   digits, then `verdict: ` and the verdict. The exit is zero when every
+///   certificate was readmitted, one when the kernel refused one, and two when
+///   a program could not be checked or a family's admission faulted. A pool
+///   that does not start is `gandr: ` and the fault on standard error, and
+///   exits two. Every byte written and the exit are the same at every width.
+/// - provides: `gandr stage`.
+/// - fails: the first write error on either stream.
+/// - panics: none.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — the power and double programs print the same lines,
+///   digest, verdict and exit at one thread, several and the host's width, by
+///   flag and by environment; a malformed spelling exits two before anything
+///   runs. A refused certificate cannot be built from a spelling; its exit is
+///   the dispatcher's verdict witness.
+/// - witness: `tests::cli::every_width_stages_the_serial_run`
+/// - witness: `tests::cli::a_malformed_invocation_exits_two`
+///
+/// # Cost
+/// - allocation: the staged program's tables and each report line, growth
+///   within the program's run
+#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
+    *exit == ExitCode::SUCCESS || *exit == ExitCode::from(REFUSED) || *exit == ExitCode::from(FAULTED)))]
+fn stage(
+    staging: Staging,
+    pool: &Pool,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
+) -> std::io::Result<ExitCode>
+{
+    let run = match staging.run(pool) {
+        Ok(run) => run,
+        Err(fault) => {
+            writeln!(stderr, "gandr: {fault}")?;
+            return Ok(ExitCode::from(FAULTED));
+        },
+    };
+    for staged in run.programs() {
+        writeln!(stdout, "{staged}")?;
+    }
+    let verdict = run.verdict();
+    writeln!(stdout, "digest: {}", run.digest())?;
+    writeln!(stdout, "verdict: {verdict}")?;
+    Ok(match verdict {
+        StageVerdict::Readmitted => ExitCode::SUCCESS,
+        StageVerdict::Refused => ExitCode::from(REFUSED),
+        StageVerdict::Faulted => ExitCode::from(FAULTED),
+    })
+}
+
+/// A stream that [`run`] writes to: the closed set of the writers its two
+/// hosts hand it. The command line hands the process's standard output and
+/// standard error, and the hub hands a job's two streams. The walk has one
+/// instance, and each write is one match.
+enum Stream<'stream>
+{
+    /// Standard output, locked for the run.
+    Out(&'stream mut std::io::StdoutLock<'static>),
+    /// Standard error, locked for the run.
+    Err(&'stream mut std::io::StderrLock<'static>),
+    /// One stream of a job of the hub.
+    #[cfg(unix)]
+    Job(&'stream mut gandr_surface_agentic::JobStream),
+}
+
+impl std::io::Write for Stream<'_>
+{
+    /// Write `buf` to the stream held.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the bytes that a job's stream keeps, growth within the
+    ///   job's output
+    /// - allocation: the I/O error's payload, error path
+    fn write(
+        &mut self,
+        buf: &[u8],
+    ) -> std::io::Result<usize>
+    {
+        match *self {
+            Self::Out(ref mut out) => out.write(buf),
+            Self::Err(ref mut err) => err.write(buf),
+            #[cfg(unix)]
+            Self::Job(ref mut job) => job.write(buf),
+        }
+    }
+
+    /// Write the whole of `buf` to the stream held.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the bytes that a job's stream keeps, growth within the
+    ///   job's output
+    /// - allocation: the I/O error's payload, error path
+    fn write_all(
+        &mut self,
+        buf: &[u8],
+    ) -> std::io::Result<()>
+    {
+        match *self {
+            Self::Out(ref mut out) => out.write_all(buf),
+            Self::Err(ref mut err) => err.write_all(buf),
+            #[cfg(unix)]
+            Self::Job(ref mut job) => job.write_all(buf),
+        }
+    }
+
+    /// Flush the stream held.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the I/O error's payload, error path
+    fn flush(&mut self) -> std::io::Result<()>
+    {
+        match *self {
+            Self::Out(ref mut out) => out.flush(),
+            Self::Err(ref mut err) => err.flush(),
+            #[cfg(unix)]
+            Self::Job(ref mut job) => job.flush(),
+        }
+    }
+}
+
+/// Visit `walk` on `pool` under the pass's verb, printing each step at the
+/// verbosity and in the spelling `printing` names, then each manifest the
+/// packages and workspaces of the pass reconcile, then the report and the
+/// verdict.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: consumes the walk, writing each step in walk order: each
+///   diagnostic the dispatcher's `entries` yields for a source step under
+///   `verb`, each lint reaching where `lints` says, laid out by
+///   `gandr-surface-render-terminal`, to standard output at `verbosity` with
+///   every type in `spelling` — below the JSON level a report as a plain
+///   snippet followed by an empty line and a ledger line as itself, at it each
+///   entry as one line of JSON — and each fault as one `gandr: <path>: <fault>`
+///   line to standard error. Under `check` measuring, each source step's
+///   diagnostics are followed by its declarations' measures, as [`measured`]
+///   states, and under `check --report cells` by its discharged cells, as
+///   [`discharged_cells`] states. Before the walk, each package of the pass is
+///   locked into the pass's store as [`locking`] states, its identity forked on
+///   `pool`. Under `check`, each package of the pass first prints what locking
+///   its dependencies came to, as [`locked`] states; then each whose package
+///   source settled with no refusal has its manifest read from the package
+///   source's program and reconciled: each written, rewritten or unchanged is
+///   the line `manifest: <path>: <what>` on standard output, at the JSON level
+///   an object whose `level` is `manifest`; a package source that states no
+///   manifest, and a manifest refused as drift, are each `gandr: <path>: <why>`
+///   on standard error and unsettle the run, and one that cannot be read or
+///   written faults it. Each package whose lock is held and whose sources all
+///   settled then commits its export, the artifacts the walk admitted for its
+///   sources as [`Exporting`] keeps them, into the pass's store under its
+///   address's root, as
+///   [`Export::commit`](gandr_surface_dispatcher::Export::commit) states,
+///   printing nothing; a store that refuses the commit is `gandr: <root>:
+///   <why>` on standard error and faults the run, and so is an artifact that
+///   does not cut, while a source path that does not spell unsettles it. Once
+///   every export of the run is committed, each package whose lock is held
+///   reads each dependency's export by its address's root and re-admits it
+///   through the kernel, as [`depended`] states, and under `check` each
+///   manifold the walk settled is judged as a deployment, as [`deployed`]
+///   states. Then the final report, at the detailed and debug levels the line
+///   `kernel: <n> recalled, <n> recorded, <n> unwritten; signed by <key>` when
+///   a verdict cache is installed, and the line `strata: <n> recalled, <n>
+///   certified, <n> refused, <n> unattested, <n> unwritten; signed by <key>`
+///   with one `strata:` line per refusal when a stratum store is installed and
+///   was asked, and the verdict, at the JSON level as one object whose `level`
+///   is `summary`. The exit is zero for settled, one for unsettled and two for
+///   faulted, as the walk's final report decides under the offered verb, or a
+///   lock, a manifest, an export, a dependency's export or a deployment when
+///   that is worse, at every verbosity. Every byte written and the exit are the
+///   same at every width, save the time each measure line reads off the clock.
+/// - provides: ordered rendering and severity aggregation for check and test.
+/// - fails: the first write error, without visiting or writing anything after
+///   it.
+/// - panics: none.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Cost
+/// - allocation: the walk's report and its rendered lines, setup
+/// - allocation: a fault's line on standard error, diagnostic
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — mixed settled, refused and unreadable paths and
+///   fixture/pending roots expose continuation, stream separation and fault
+///   precedence. Missing sources, reordered severity or wrong ledger selection
+///   changes exact counts and statuses. The corpus and a faulting path list
+///   print byte-identical streams and exits at one thread and several, set by
+///   flag and by environment. Arbitrary filesystems are excluded.
+/// - witness: `tests::cli::an_unreadable_path_exits_two`
+/// - witness: `tests::cli::the_test_verb_prints_every_fixture_and_pending_source`
+/// - witness: `tests::cli::a_failed_diagnostic_stream_stops_later_output`
+/// - witness: `tests::cli::sweeps::every_width_prints_the_serial_run_of_the_model_corpus`
+/// - witness: `tests::cli::sweeps::every_width_prints_the_serial_run_of_the_pathological_corpus`
+/// - witness: `tests::cli::sweeps::every_width_prints_the_serial_run_of_the_other_roots`
+/// - witness: `tests::cli::every_width_prints_the_serial_check`
+/// - witness: `tests::cli::verbosity_chooses_how_much_of_a_report_prints`
+/// - witness: `tests::cli::a_lint_reports_each_inferred_exit_and_its_fix_settles_it`
+/// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
+/// - witness: `tests::cli::a_second_check_recalls_what_the_first_recorded_2799`
+/// - witness: `tests::cli::a_checked_package_s_export_is_named_by_its_address_3225`
+/// - witness: `tests::cli::a_dependent_re_admits_its_dependency_s_export_3285`
+/// - witness: `tests::cli::a_manifold_s_deployment_is_judged_at_its_check_3523`
+/// - witness: `tests::cli::check_measures_each_declaration_a_source_writes`
+/// - witness: `tests::cli::check_reports_each_cell_a_source_discharges_4112`
+#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
+    *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED)))]
+fn run(
+    pass: Pass<'_>,
+    walk: Walk,
+    pool: &Pool,
+    printing: Printing,
+    stdout: &mut Stream<'_>,
+    stderr: &mut Stream<'_>,
+) -> std::io::Result<ExitCode>
+{
+    let Pass {
+        verb,
+        lints,
+        packages,
+        workspaces,
+        mut store,
+        rings,
+    } = pass;
+    // Each package is locked before the walk, so every import of a
+    // coordinate reads the lock from the walk's first source. The pass holds a
+    // store whenever it holds a package.
+    let packages: Vec<Packaged<'_>> = store.as_deref_mut().map_or_else(Vec::new, |held| {
+        packages
+            .iter()
+            .map(|package| Packaged {
+                package,
+                locking: locking(package, &mut held.store, pool),
+            })
+            .collect()
+    });
+    let packages = packages.as_slice();
+    let Printing {
+        verbosity,
+        spelling,
+        measuring,
+        listing,
+        #[cfg(feature = "instrument")]
+        occupancy,
+    } = printing;
+    let checking = matches!(verb, Verb::Check(_));
+    let measured_walk = checking && measuring == Measuring::Measured;
+    let listed_walk = checking && listing == Listing::Listed;
+    let walk = if measured_walk {
+        walk.measuring()
+    }
+    else {
+        walk
+    };
+    // The manifest each package's source states, and the export its sources
+    // build, by the package's place.
+    let mut manifests: Vec<Option<Result<Manifest, Unmanifested>>> =
+        packages.iter().map(|_| None).collect();
+    let mut exportings: Vec<Exporting> = packages.iter().map(|_| Exporting::default()).collect();
+    // Each settled manifold the walk read, judged as a deployment after it.
+    let mut manifolds: Vec<PathBuf> = Vec::new();
+    let visitor = |mut step: Step<'_>| {
+        // The step's place among the packages, read once for its export and
+        // its manifest.
+        let attributed = if checking {
+            attributed(&step, packages)
+        }
+        else {
+            None
+        };
+        if let Some(ref attributed) = attributed {
+            file_export(&step, packages, attributed, &mut exportings);
+        }
+        match step {
+            Step::Source { .. } => {
+                // `check` proposes a repair as a fix only once the source the
+                // repair writes settles its declaration; `test` names it alone.
+                let repairs = if checking {
+                    Repairs::Checked
+                }
+                else {
+                    Repairs::Named
+                };
+                for diagnostic in entries::<Evaluator>(&step, verb)
+                    .linting(lints)
+                    .spelling(spelling)
+                    .repairing(repairs)
+                {
+                    let separator = match (diagnostic.severity, verbosity) {
+                        (
+                            Severity::Error | Severity::Warning | Severity::Goal | Severity::Note,
+                            Verbosity::User | Verbosity::Detailed | Verbosity::Debug,
+                        ) => "\n",
+                        (
+                            Severity::Error | Severity::Warning | Severity::Goal | Severity::Note,
+                            Verbosity::Json,
+                        )
+                        | (Severity::Ledger, _) => "",
+                    };
+                    let written = writeln!(
+                        stdout,
+                        "{}{separator}",
+                        gandr_surface_render_terminal::render(
+                            &diagnostic,
+                            RenderStyle::Plain,
+                            verbosity
+                        )
+                    );
+                    if let Err(error) = written {
+                        return ControlFlow::Break(error);
+                    }
+                }
+                if measured_walk && let Err(error) = measured(&step, stdout, stderr) {
+                    return ControlFlow::Break(error);
+                }
+                if listed_walk && let Err(error) = discharged_cells(&step, stdout) {
+                    return ControlFlow::Break(error);
+                }
+                if checking {
+                    if let Some(ref attributed) = attributed {
+                        read_manifest(&mut step, packages, attributed, &mut manifests);
+                    }
+                    read_manifold(&step, &mut manifolds);
+                }
+            },
+            Step::Fault { path, fault } => {
+                if let Err(error) = writeln!(stderr, "gandr: {}: {fault}", path.display()) {
+                    return ControlFlow::Break(error);
+                }
+            },
+        }
+        ControlFlow::Continue(())
+    };
+    #[cfg(feature = "instrument")]
+    let (visited, occupied) = match (occupancy, rings) {
+        (Occupancy::Printed, _) => {
+            let (visited, occupied) = occupancy::visited(walk, pool, visitor);
+            (visited, Some(occupied))
+        },
+        (Occupancy::Unprinted, Some(rings)) => {
+            (occupancy::recorded(walk, (pool, rings), visitor), None)
+        },
+        (Occupancy::Unprinted, None) => (walk.visit::<Evaluator, _, _>(pool, visitor), None),
+    };
+    #[cfg(not(feature = "instrument"))]
+    let visited = {
+        let core::marker::PhantomData = rings;
+        walk.visit::<Evaluator, _, _>(pool, visitor)
+    };
+    let report = match visited {
+        ControlFlow::Continue(report) => report,
+        ControlFlow::Break(error) => return Err(error),
+    };
+    // A walk that ends at a bound names the bound and the flag that raises
+    // it; its verdict is a fault (#7551).
+    if report.ended() != gandr_surface_dispatcher::Ended::Whole {
+        writeln!(stderr, "gandr: {}", report.ended())?;
+    }
+    #[cfg(feature = "instrument")]
+    if let Some(occupied) = occupied {
+        occupied.print(stderr)?;
+    }
+    let mut verdict = report.verdict(verb);
+    for ((packaged, manifest), exporting) in packages.iter().zip(manifests).zip(exportings) {
+        let (reached, address) = locked(packaged, verbosity, stdout, stderr)?;
+        verdict = worse(verdict, reached);
+        if let Some(manifest) = manifest {
+            let reached = manifested(
+                packaged.package,
+                manifest,
+                address,
+                verbosity,
+                stdout,
+                stderr,
+            )?;
+            verdict = worse(verdict, reached);
+        }
+        if let (Some(&Ok(ref address)), Some(held)) = (address, store.as_deref_mut()) {
+            let reached = exported(packaged.package, exporting, address, held, stderr)?;
+            verdict = worse(verdict, reached);
+        }
+    }
+    for gathered in workspaces {
+        let reached = gathered_manifest(gathered, verbosity, stdout, stderr)?;
+        verdict = worse(verdict, reached);
+    }
+    for manifold in &manifolds {
+        let reached = deployed(manifold, stderr)?;
+        verdict = worse(verdict, reached);
+    }
+    // Every export of the run is committed before any is read, so a dependent
+    // reads a dependency the same run checked, whatever their order.
+    if checking && let Some(held) = store.as_deref() {
+        for packaged in packages {
+            if let Locking::Held(_, ref lock, _) = packaged.locking {
+                let reached = depended(
+                    packaged.package,
+                    lock,
+                    &held.store,
+                    verbosity,
+                    stdout,
+                    stderr,
+                )?;
+                verdict = worse(verdict, reached);
+            }
+        }
+    }
+    let admitted = gandr_surface_dispatcher::admitted_tally();
+    if verbosity == Verbosity::Json {
+        let mut summary = serde_json::json!({
+            "level": "summary",
+            "report": report.to_string(),
+            "verdict": verdict.to_string(),
+        });
+        if let Maybe::Present(tally) = admitted
+            && let Some(fields) = summary.as_object_mut()
+        {
+            let _absent = fields.insert("admitted".to_owned(), tally.to_string().into());
+            let _absent =
+                fields.insert("admitting".to_owned(), tally.admitting().to_string().into());
+        }
+        writeln!(stdout, "{summary}")?;
+    }
+    else {
+        writeln!(stdout, "{report}")?;
+        if matches!(verbosity, Verbosity::Detailed | Verbosity::Debug) {
+            if let Maybe::Present(tally) = gandr_surface_dispatcher::verdict_tally() {
+                writeln!(stdout, "kernel: {tally}")?;
+            }
+            if let Maybe::Present(tally) = gandr_surface_dispatcher::strata_tally()
+                && tally.asked() == gandr_surface_dispatcher::Asking::Asked
+            {
+                writeln!(stdout, "strata: {tally}")?;
+                for refusal in tally.refusals() {
+                    writeln!(stdout, "strata: {refusal}")?;
+                }
+            }
+        }
+        match admitted {
+            Maybe::Present(tally) => {
+                writeln!(stdout, "admitted: {tally}")?;
+                writeln!(stdout, "verdict: {verdict}, {}", tally.admitting())?;
+            },
+            Maybe::Absent(_) => writeln!(stdout, "verdict: {verdict}")?,
+        }
+    }
+    Ok(match verdict {
+        RunVerdict::Settled => ExitCode::SUCCESS,
+        RunVerdict::Unsettled => ExitCode::from(UNSETTLED),
+        RunVerdict::Faulted => ExitCode::from(FAULTED),
+    })
+}
+
+/// Print each declaration a settled source writes, measured in its
+/// component's kernel artifact and in its admission's tally, and the schedule
+/// that the checks of its component can reach.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for a settled source whose admission ran, one line on standard
+///   output per declaration it writes that crossed into the kernel, in its
+///   report's order: `measure: <path>: <name>: <bytes> bytes, <entries> shared,
+///   <work> unshared, <goals> expanded, <goals> recalled, <goals> kept,
+///   <time>`. The three goal counts are the census the kernel's check of it
+///   charged. A declaration this kernel did not check spells `admitted on a
+///   recorded verdict` or `admitted unchecked` in their place. The time is `<n>
+///   ns` when its admission was timed, and otherwise `untimed`, `unoffered` or
+///   `admitted in a block`. Then one line for the component's schedule:
+///   `schedule: <path>: <n> jobs, <n> dependences, <n> untimed, serial <n> ns,
+///   critical path <n> ns, released <n> ns, chain of <n>: <names>`, where the
+///   names are the structured names of the jobs of the critical path, in chain
+///   order, each apart by `, `, and `@<position>` names a job by its kernel
+///   position when its declaration has no name. Then one line for the
+///   speculation group that the admission ran under: `speculation: <path>: rank
+///   <setting>, order.generative <setting>, order.twin <setting>,
+///   order.manifest <setting>, signature <setting>; <n> rollbacks`, each
+///   setting `on` or `off`. An artifact that does not decode is `gandr: <path>:
+///   <why>` on standard error. Any other step prints nothing.
+/// - fails: the first write error, without writing anything after it.
+/// - panics: none.
+/// - executable: none — the lines are the streams'.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two sources checked with `--measure` over a fresh store
+///   print one line per declaration each writes and none for one imported, each
+///   with a census that charges a goal and a time, and one schedule line each.
+///   A check without the flag prints none. Measured again, each line spells the
+///   recorded verdict that admitted it in place of counts its check never
+///   charged.
+/// - witness: `tests::cli::check_measures_each_declaration_a_source_writes`
+/// - witness: `tests::cli::check_measures_the_speculation_each_width_runs_under_3476`
+///
+/// # Cost
+/// - allocation: each declaration's census line, diagnostic
+fn measured(
+    step: &Step<'_>,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
+) -> std::io::Result<()>
+{
+    let Step::Source {
+        path, ref composed, ..
+    } = *step
+    else {
+        return Ok(());
+    };
+    match measure(composed) {
+        Ok(Maybe::Present(rows)) => {
+            for row in rows {
+                write!(
+                    stdout,
+                    "measure: {}: {}: {} bytes, {} shared, {} unshared, ",
+                    path.display(),
+                    row.name(),
+                    usize::from(row.bytes()),
+                    row.shared(),
+                    row.unshared(),
+                )?;
+                match row.census() {
+                    Maybe::Present(census) => write!(
+                        stdout,
+                        "{} expanded, {} recalled, {} kept, ",
+                        u64::from(census.expansions()),
+                        u64::from(census.recalls()),
+                        u64::from(census.kept())
+                    )?,
+                    Maybe::Absent(tallied::Absent::Recalled) => {
+                        write!(stdout, "admitted on a recorded verdict, ")?;
+                    },
+                    Maybe::Absent(tallied::Absent::Unchecked) => {
+                        write!(stdout, "admitted unchecked, ")?;
+                    },
+                }
+                match row.took() {
+                    Maybe::Present(took) => writeln!(stdout, "{} ns", took.wall().as_nanos())?,
+                    Maybe::Absent(timed::Absent::Untimed) => writeln!(stdout, "untimed")?,
+                    Maybe::Absent(timed::Absent::Unoffered) => writeln!(stdout, "unoffered")?,
+                    Maybe::Absent(timed::Absent::Block) => writeln!(stdout, "admitted in a block")?,
+                }
+            }
+            match schedule(composed) {
+                Ok(Maybe::Present(row)) => {
+                    let checks = row.schedule();
+                    let bound = checks.bound();
+                    write!(
+                        stdout,
+                        "schedule: {}: {} jobs, {} dependences, {} untimed, serial {} ns, critical path {} ns, released {} ns, chain of {}:",
+                        path.display(),
+                        checks.jobs().len(),
+                        checks.dependences().edges().len(),
+                        checks.untimed().len(),
+                        bound.serial().as_nanos(),
+                        bound.critical().as_nanos(),
+                        bound.released().as_nanos(),
+                        row.chain().len(),
+                    )?;
+                    let mut separator = " ";
+                    for &(position, ref name) in row.chain() {
+                        if name.is_empty() {
+                            write!(stdout, "{separator}@{}", usize::from(position))?;
+                        }
+                        else {
+                            write!(stdout, "{separator}{name}")?;
+                        }
+                        separator = ", ";
+                    }
+                    writeln!(stdout)?;
+                    writeln!(
+                        stdout,
+                        "speculation: {}: {}; {} rollbacks",
+                        path.display(),
+                        checks.speculation(),
+                        checks.rollbacks(),
+                    )
+                },
+                Ok(Maybe::Absent(_)) => Ok(()),
+                Err(fault) => writeln!(stderr, "gandr: {}: {fault}", path.display()),
+            }
+        },
+        Ok(Maybe::Absent(_)) => Ok(()),
+        Err(fault) => writeln!(stderr, "gandr: {}: {fault}", path.display()),
+    }
+}
+
+/// Print each cell a settled source discharged, and the source that
+/// discharged it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a source step whose module settled prints one line to standard
+///   output per law its models omit that the checker discharged, in its
+///   report's order: `cell: <path>: <module>.<law>: <source>`. A law no source
+///   discharged, and any other step, prints nothing.
+/// - fails: the first write error, without writing anything after it.
+/// - panics: none.
+/// - executable: none — this writes to an external sink and returns no
+///   comparable state.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source whose model omits a law whose sides convert
+///   prints its cell `here`, and the cell of a law whose sides part prints
+///   nothing. A check without the flag prints no cell.
+/// - witness: `tests::cli::check_reports_each_cell_a_source_discharges_4112`
+fn discharged_cells(
+    step: &Step<'_>,
+    stdout: &mut impl std::io::Write,
+) -> std::io::Result<()>
+{
+    let Step::Source {
+        path,
+        composed: Composed::Settled { ref report, .. },
+        ..
+    } = *step
+    else {
+        return Ok(());
+    };
+    for declaration in report.declarations() {
+        if let Maybe::Present((ref cell, filler)) = *declaration.discharged() {
+            write!(stdout, "cell: {}: ", path.display())?;
+            for (position, segment) in cell.iter().enumerate() {
+                if position > 0 {
+                    write!(stdout, ".")?;
+                }
+                write!(stdout, "{segment}")?;
+            }
+            writeln!(stdout, ": {filler}")?;
+        }
+    }
+    Ok(())
+}
+
+/// Print what locking `packaged`'s dependencies came to, and the verdict it
+/// leaves the run at, beside the lock it holds.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a lock held is `lock: <path>: <what>` on standard output, at the
+///   JSON level an object whose `level` is `lock`, when it records a dependency
+///   or was written, and settles, holding the lock; a package with no
+///   dependency and no lock prints nothing. Dependencies that do not resolve
+///   are `gandr: <root>: <why>` on standard error, and a lock refused as drift
+///   `gandr: <path>: <why>`, each unsettling the run and holding no lock; a
+///   lock that cannot be read or written faults it.
+/// - provides: the lock line `run` prints for each package.
+/// - fails: the first write error on either stream.
+/// - panics: none.
+/// - executable: none — as [`manifested`].
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lock written, unchanged and drifted each print and exit
+///   as stated.
+/// - witness: `tests::cli::check_writes_a_lock_and_refuses_its_drift_3072`
+///
+/// # Cost
+/// - allocation: the lock's text and path, and each message, growth within the
+///   package's sources
+fn locked<'packaged>(
+    packaged: &'packaged Packaged<'_>,
+    verbosity: Verbosity,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
+) -> std::io::Result<(
+    RunVerdict,
+    Option<&'packaged Result<PackageAddress, Unaddressed>>,
+)>
+{
+    let path = packaged.package.lock();
+    match packaged.locking {
+        Locking::Held(reconciled, ref lock, ref address) => {
+            if lock.coordinates().next().is_some() || reconciled != Reconciled::Unchanged {
+                if verbosity == Verbosity::Json {
+                    let line = serde_json::json!({
+                        "level": "lock",
+                        "path": path.display().to_string(),
+                        "reconciled": reconciled.to_string(),
+                    });
+                    writeln!(stdout, "{line}")?;
+                }
+                else {
+                    writeln!(stdout, "lock: {}: {reconciled}", path.display())?;
+                }
+            }
+            Ok((RunVerdict::Settled, Some(address)))
+        },
+        Locking::Unresolved(ref unresolved) => {
+            writeln!(
+                stderr,
+                "gandr: {}: {unresolved}",
+                packaged.package.root().display()
+            )?;
+            Ok((RunVerdict::Unsettled, None))
+        },
+        Locking::Refused(ref fault) => {
+            writeln!(stderr, "gandr: {}: {fault}", path.display())?;
+            Ok((
+                match *fault {
+                    LockFault::Drifted(_) | LockFault::Edited => RunVerdict::Unsettled,
+                    LockFault::Io(_) => RunVerdict::Faulted,
+                },
+                None,
+            ))
+        },
+    }
+}
+
+/// Check that the running toolchain meets what `package`'s package source asks
+/// of it, then reconcile the manifest with what the package source states, and
+/// print the package's address, printing what came of each, and the verdict it
+/// leaves the run at.
+///
+/// # Specification
+/// - requires: `manifest` is what `package`'s package source states, and
+///   `address`, when given, the package's address over the lock its
+///   dependencies resolve to, as [`locking`] computed it.
+/// - ensures: a package source that states no manifest is `gandr: <source>:
+///   <why>` on standard error and unsettles the run. A manifest whose toolchain
+///   the running one leaves unmet
+///   ([`gandr_surface_dispatcher::Toolchain::unmet`] against the built-in
+///   features ledger) is `gandr: <source>: <clause>: …` on standard error, one
+///   line per constraint unmet, writes nothing and unsettles. Otherwise the
+///   manifest is reconciled at `package`'s root: written, rewritten or
+///   unchanged is `manifest: <path>: <what> (address <hex>)` on standard
+///   output, the address `address` holds, at the JSON level an object whose
+///   `level` is `manifest` carrying `address`, and settles. A package with no
+///   address prints the line without it, then `gandr: <source>: <why>` on
+///   standard error, and unsettles; one given no address prints the line
+///   without it and settles, its lock having unsettled the run already; drift
+///   is `gandr: <path>: <why>` on standard error and unsettles; a file that
+///   cannot be read or written likewise, and faults.
+/// - provides: the manifest step `run` takes for each package.
+/// - fails: the first write error on either stream.
+/// - panics: none.
+/// - executable: none — the outcome is the file's on disk and the streams'
+///   bytes, which the CLI witnesses observe.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a manifest written, unchanged, rewritten and drifted, and
+///   a package source stating no version, each print and exit as stated; the
+///   address stays across an inert edit and moves with a content one.
+/// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
+/// - witness: `tests::cli::check_writes_a_lock_and_refuses_its_drift_3072`
+/// - witness: `tests::cli::a_package_s_toolchain_is_met_or_refused_by_its_clause_3135`
+///
+/// # Cost
+/// - allocation: the manifest's text and path, and each message, growth within
+///   the package's sources
+fn manifested(
+    package: &Package,
+    manifest: Result<Manifest, Unmanifested>,
+    address: Option<&Result<PackageAddress, Unaddressed>>,
+    verbosity: Verbosity,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
+) -> std::io::Result<RunVerdict>
+{
+    let manifest = match manifest {
+        Ok(manifest) => manifest,
+        Err(unmanifested) => {
+            writeln!(
+                stderr,
+                "gandr: {}: {unmanifested}",
+                package.source().display()
+            )?;
+            return Ok(RunVerdict::Unsettled);
+        },
+    };
+    let ledger = match FeatureLedger::built_in() {
+        Ok(ledger) => ledger,
+        Err(fault) => {
+            writeln!(stderr, "gandr: the built-in features ledger: {fault}")?;
+            return Ok(RunVerdict::Faulted);
+        },
+    };
+    let unmet = manifest.toolchain().unmet(&Running::this(&ledger));
+    if !unmet.is_empty() {
+        for clause in &unmet {
+            writeln!(stderr, "gandr: {}: {clause}", package.source().display())?;
+        }
+        return Ok(RunVerdict::Unsettled);
+    }
+    let path = package.manifest();
+    match reconcile(&path, &manifest) {
+        Ok(reconciled) => {
+            let shown = address
+                .and_then(|address| address.as_ref().ok())
+                .map(ToString::to_string);
+            if verbosity == Verbosity::Json {
+                let line = serde_json::json!({
+                    "level": "manifest",
+                    "path": path.display().to_string(),
+                    "reconciled": reconciled.to_string(),
+                    "address": shown,
+                });
+                writeln!(stdout, "{line}")?;
+            }
+            else if let Some(ref shown) = shown {
+                writeln!(
+                    stdout,
+                    "manifest: {}: {reconciled} (address {shown})",
+                    path.display()
+                )?;
+            }
+            else {
+                writeln!(stdout, "manifest: {}: {reconciled}", path.display())?;
+            }
+            match address {
+                None | Some(&Ok(_)) => Ok(RunVerdict::Settled),
+                Some(&Err(ref unaddressed)) => {
+                    writeln!(
+                        stderr,
+                        "gandr: {}: {unaddressed}",
+                        package.source().display()
+                    )?;
+                    Ok(RunVerdict::Unsettled)
+                },
+            }
+        },
+        Err(fault) => {
+            writeln!(stderr, "gandr: {}: {fault}", path.display())?;
+            Ok(match fault {
+                ManifestFault::Drifted => RunVerdict::Unsettled,
+                ManifestFault::Io(_) => RunVerdict::Faulted,
+            })
+        },
+    }
+}
+
+/// Make the manifest of a gathered workspace agree with what its model states.
+/// Print the result, and give the verdict that it leaves the run at.
+///
+/// # Specification
+/// - requires: `gathered` is a workspace the run works on, as
+///   [`gandr_surface_dispatcher::Workspace::members`] gathered it.
+/// - ensures: if the model states no manifest, the function writes `gandr:
+///   <source>: <why>` on standard error, and the run is unsettled. If not, it
+///   reconciles the manifest beside the source of the workspace. A manifest
+///   that it writes, rewrites or keeps gives `manifest: <path>: <what>` on
+///   standard output, and the run stays settled. At the JSON level, this line
+///   is an object whose `level` is `manifest`. Drift gives `gandr: <path>:
+///   <why>` on standard error, and the run is unsettled. A file that the
+///   function cannot read or write gives the same line, and the run faults.
+/// - provides: the manifest step of a workspace, which `run` does after the
+///   steps of its packages.
+/// - fails: the first write error on either stream.
+/// - panics: none.
+/// - executable: none — the outcome is the file on disk and the bytes of the
+///   streams, which the CLI witnesses observe.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a check keeps the manifest of the witness workspace, and
+///   writes a manifest where none stands.
+/// - witness: `tests::cli::the_witness_workspace_s_manifests_are_its_models_2687`
+/// - witness: `tests::cli::a_workspace_checks_each_member_it_names_2687`
+///
+/// # Cost
+/// - allocation: each member's manifest, path and message, growth within the
+///   workspace's members
+fn gathered_manifest(
+    gathered: &Gathered,
+    verbosity: Verbosity,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
+) -> std::io::Result<RunVerdict>
+{
+    let manifest = match gathered.manifest {
+        Ok(ref manifest) => manifest,
+        Err(ref unstated) => {
+            writeln!(
+                stderr,
+                "gandr: {}: {unstated}",
+                gathered.workspace.source().display()
+            )?;
+            return Ok(RunVerdict::Unsettled);
+        },
+    };
+    let path = gathered.workspace.manifest();
+    match reconcile(&path, manifest) {
+        Ok(reconciled) => {
+            if verbosity == Verbosity::Json {
+                let line = serde_json::json!({
+                    "level": "manifest",
+                    "path": path.display().to_string(),
+                    "reconciled": reconciled.to_string(),
+                });
+                writeln!(stdout, "{line}")?;
+            }
+            else {
+                writeln!(stdout, "manifest: {}: {reconciled}", path.display())?;
+            }
+            Ok(RunVerdict::Settled)
+        },
+        Err(fault) => {
+            writeln!(stderr, "gandr: {}: {fault}", path.display())?;
+            Ok(match fault {
+                ManifestFault::Drifted => RunVerdict::Unsettled,
+                ManifestFault::Io(_) => RunVerdict::Faulted,
+            })
+        },
+    }
+}
+
+/// Where a step's source sits among the run's packages.
+///
+/// # Specification
+/// trivial.
+struct Attributed
+{
+    /// The step's path, canonical.
+    canonical: PathBuf,
+    /// The place of the innermost package whose root holds it.
+    place: usize,
+}
+
+/// The package `step` is a source of: of `packages`, the one whose root is
+/// the longest that holds the step's path.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the step's canonical path and the place of the package whose root
+///   is the longest that holds it, the innermost package's when two roots hold
+///   it; none for a path that does not canonicalize or that lies under no
+///   package's root.
+/// - provides: the one attribution of a step that its export and its manifest
+///   both read, so the path canonicalizes once.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the canonical path is the file system's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a package checked whole exports what its walk admitted
+///   and writes the manifest its package source states, and two package sources
+///   sharing an import each write their own.
+/// - witness: `tests::cli::a_checked_package_s_export_is_named_by_its_address_3225`
+/// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
+/// - witness: `tests::cli::a_workspace_checks_each_member_it_names_2687`
+fn attributed(
+    step: &Step<'_>,
+    packages: &[Packaged<'_>],
+) -> Option<Attributed>
+{
+    let (Step::Source { path, .. } | Step::Fault { path, .. }) = *step;
+    let canonical = path.canonicalize().ok()?;
+    let (_, place) = packages
+        .iter()
+        .enumerate()
+        .filter(|&(_, packaged)| canonical.starts_with(packaged.package.root()))
+        .map(|(place, packaged)| (packaged.package.root().as_os_str().len(), place))
+        .max_by_key(|&(depth, _)| depth)?;
+    Some(Attributed { canonical, place })
+}
+
+/// Read the manifest a package's source states, when `step` is that package
+/// source and settled, into the package's place in `manifests`.
+///
+/// # Specification
+/// - requires: `manifests` holds one place per package, in order, and
+///   `attributed` is the step's attribution.
+/// - ensures: a settled source step whose canonical path is the package source
+///   of the package it is attributed to has that package's place set to
+///   [`Manifest::of`] its program, its report of the package source's own
+///   declarations, and the package; any other step changes nothing.
+/// - provides: the manifest `run` reconciles after the walk.
+/// - fails: never; a package source that states no manifest is the place's
+///   error.
+/// - panics: none.
+/// - executable: none — the clause is the body's one match; the CLI witness
+///   observes the manifest written from the package source and none from an
+///   unsettled one.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a package checked whole writes the manifest its package
+///   source states, one whose package source is unsettled writes none, and two
+///   package sources sharing an import each write their own.
+/// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
+/// - witness: `tests::cli::a_workspace_checks_each_member_it_names_2687`
+///
+/// # Cost
+/// - allocation: the package's manifest, growth within the packages of the run
+fn read_manifest(
+    step: &mut Step<'_>,
+    packages: &[Packaged<'_>],
+    attributed: &Attributed,
+    manifests: &mut [Option<Result<Manifest, Unmanifested>>],
+)
+{
+    let Step::Source {
+        standing: Standing::Settled,
+        composed:
+            Composed::Settled {
+                ref mut program,
+                ref report,
+                ..
+            },
+        ..
+    } = *step
+    else {
+        return;
+    };
+    if let (Some(packaged), Some(slot)) = (
+        packages.get(attributed.place),
+        manifests.get_mut(attributed.place),
+    ) && packaged.package.source() == attributed.canonical
+    {
+        *slot = Some(Manifest::of::<Evaluator>(program, report, packaged.package));
+    }
+}
+
+/// Keep `step`'s path among `manifolds` when its source is a manifold's that
+/// settled.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a settled source that [`Manifold::stated`] finds an artifact of
+///   its own in, by its program and report, has its path pushed; any other step
+///   changes nothing.
+/// - provides: the manifolds `run` judges as deployments once the walk ends.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause is the body's one match; the CLI witness
+///   observes each deployment judged.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a manifold checked is judged as a deployment, and a site
+///   beside it is not.
+/// - witness: `tests::cli::a_manifold_s_deployment_is_judged_at_its_check_3523`
+///
+/// # Cost
+/// - allocation: the manifold's path, growth within the manifolds of the run
+fn read_manifold(
+    step: &Step<'_>,
+    manifolds: &mut Vec<PathBuf>,
+)
+{
+    if let Step::Source {
+        path,
+        standing: Standing::Settled,
+        composed:
+            Composed::Settled {
+                ref program,
+                ref report,
+                ..
+            },
+        ..
+    } = *step
+        && let Maybe::Present(_) = Manifold::stated(program, report)
+    {
+        manifolds.push(path.to_path_buf());
+    }
+}
+
+/// Judge the manifold at `file` as a deployment, each refusal written to
+/// `stderr`, and the verdict it leaves the run at.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the manifold read as [`Manifold::read`] reads it and judged as
+///   [`Manifold::judged`] judges it; each refusal, the read's or the
+///   judgement's, is one `gandr: <why>` line on standard error and unsettles
+///   the run, and a deployment that holds prints nothing and settles.
+/// - provides: the deployment check `gandr check` makes of each manifold.
+/// - fails: the first write error.
+/// - panics: none.
+/// - executable: none — the judgement checks other sources; the CLI witness
+///   observes each outcome.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a deployment whose site answers each entry its world
+///   requires settles; one whose site leaves an interface out or binds a label
+///   at other sorts, and one placing a world the program lacks, are each
+///   refused by name.
+/// - witness: `tests::cli::a_manifold_s_deployment_is_judged_at_its_check_3523`
+///
+/// # Cost
+/// - allocation: the deployment's tables and each refusal's message, growth
+///   within the manifold's worlds
+fn deployed(
+    file: &Path,
+    stderr: &mut impl std::io::Write,
+) -> std::io::Result<RunVerdict>
+{
+    let refused = match Manifold::read::<Evaluator>(file) {
+        Ok(manifold) => manifold.judged::<Evaluator>(),
+        Err(undeployed) => Vec::from([undeployed]),
+    };
+    for undeployed in &refused {
+        writeln!(stderr, "gandr: {undeployed}")?;
+    }
+    Ok(if refused.is_empty() {
+        RunVerdict::Settled
+    }
+    else {
+        RunVerdict::Unsettled
+    })
+}
+
+/// File `step` into the export of the package it is attributed to.
+///
+/// # Specification
+/// - requires: `exportings` holds one export per package, in order, and
+///   `attributed` is the step's attribution.
+/// - ensures: the step is taken by [`Exporting::take`] into the place of the
+///   package it is attributed to, by its path from that package's root.
+/// - provides: the export `run` commits after the walk.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause is the body's one take; the CLI witness
+///   observes the export a package's check commits.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a package checked whole exports what its walk admitted,
+///   and one with an unsettled source exports nothing.
+/// - witness: `tests::cli::a_checked_package_s_export_is_named_by_its_address_3225`
+fn file_export(
+    step: &Step<'_>,
+    packages: &[Packaged<'_>],
+    attributed: &Attributed,
+    exportings: &mut [Exporting],
+)
+{
+    if let Some(packaged) = packages.get(attributed.place)
+        && let Ok(from) = attributed.canonical.strip_prefix(packaged.package.root())
+        && let Some(exporting) = exportings.get_mut(attributed.place)
+    {
+        exporting.take(from, step);
+    }
+}
+
+/// Commit `package`'s export into the store `held` holds, and name it through
+/// its register under `address`, when every source it was built from settled,
+/// and the verdict that leaves the run at.
+///
+/// # Specification
+/// - requires: `exporting` took every step of `package`'s sources, and
+///   `address` is the package's address over its lock.
+/// - ensures: an export is committed by
+///   [`Export::commit`](gandr_surface_dispatcher::Export::commit) and settles,
+///   printing nothing; a store that refuses it is `gandr: <root>: <why>` on
+///   standard error and faults. A package with no export prints nothing when a
+///   source did not settle or was not checked, the walk having reported it;
+///   otherwise `gandr: <root>: <why>` on standard error, unsettling for a path
+///   that does not spell and faulting for an artifact that does not cut.
+/// - provides: the export step `run` takes for each package.
+/// - fails: the first write error on standard error.
+/// - panics: none.
+/// - executable: none — the outcome is the store's on disk.
+///
+/// # Errors
+/// The [`std::io::Error`] of the write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a package checked whole names its export by its address,
+///   the same pointer on a second check, and an unsettled one names none.
+/// - witness: `tests::cli::a_checked_package_s_export_is_named_by_its_address_3225`
+///
+/// # Cost
+/// - allocation: the export's pointer and its message, growth within the
+///   package's sources
+fn exported(
+    package: &Package,
+    exporting: Exporting,
+    address: &PackageAddress,
+    held: &mut Opened,
+    stderr: &mut impl std::io::Write,
+) -> std::io::Result<RunVerdict>
+{
+    let root = package.root().display();
+    match exporting.finish() {
+        Ok(export) => match export.commit(&held.store, &mut held.register, address) {
+            Ok(_pointer) => Ok(RunVerdict::Settled),
+            Err(fault) => {
+                writeln!(stderr, "gandr: {root}: {fault}")?;
+                Ok(RunVerdict::Faulted)
+            },
+        },
+        Err(Unexported::Unsettled { .. } | Unexported::Faulted { .. }) => Ok(RunVerdict::Settled),
+        Err(unexported @ Unexported::Unspelled { .. }) => {
+            writeln!(stderr, "gandr: {root}: {unexported}")?;
+            Ok(RunVerdict::Unsettled)
+        },
+        Err(unexported @ Unexported::Uncut { .. }) => {
+            writeln!(stderr, "gandr: {root}: {unexported}")?;
+            Ok(RunVerdict::Faulted)
+        },
+    }
+}
+
+/// Re-admit the export of each dependency `lock` names, read from `store`
+/// by its address's root, and the verdict that leaves the run at.
+///
+/// # Specification
+/// - requires: `lock` is the lock `package` holds.
+/// - ensures: for each coordinate of `lock`, in order, the address of the
+///   identity its pointer names is read from `store` as [`Lock::resolved`]
+///   reads it, and the root of the address, [`Export::root`], looked up. An
+///   export that the root names and that re-admits ([`Export::readmit`])
+///   settles, and at the detailed and debug levels prints `export: <root>:
+///   <coordinate>: <n> declarations re-admitted from <export root>` on standard
+///   output. A root that names nothing is `gandr: <root>: <coordinate>: no
+///   export at <export root>; check <dependency> first` on standard error and
+///   leaves the verdict, the dependency being judged from its sources in the
+///   dependent's unit. An identity or an export the store cannot read back, and
+///   an export the kernel refuses, are `gandr: <root>: <coordinate>: <why>` on
+///   standard error and fault the run.
+/// - provides: the read of each dependency's export `run` takes for each
+///   package whose lock is held, after every export of the run committed.
+/// - fails: the first write error on either stream.
+/// - panics: none.
+/// - executable: none — the outcome is the kernel's replay of what the store
+///   holds.
+///
+/// # Errors
+/// The [`std::io::Error`] of the write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a dependent checked with its dependency re-admits the
+///   dependency's export, and one checked alone against a fresh store notes the
+///   missing export and settles.
+/// - witness: `tests::cli::a_dependent_re_admits_its_dependency_s_export_3285`
+///
+/// # Cost
+/// - allocation: each dependency's export and message, growth within the
+///   package's dependencies
+fn depended(
+    package: &Package,
+    lock: &Lock,
+    store: &Store,
+    verbosity: Verbosity,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
+) -> std::io::Result<RunVerdict>
+{
+    let root = package.root().display();
+    let mut verdict = RunVerdict::Settled;
+    for (coordinate, address) in lock.resolved(store) {
+        let address = match address {
+            Ok(address) => address,
+            Err(Unaddressed::Unstored { ref fault, .. }) => {
+                writeln!(stderr, "gandr: {root}: {coordinate}: {fault}")?;
+                verdict = RunVerdict::Faulted;
+                continue;
+            },
+            Err(ref unaddressed) => {
+                writeln!(stderr, "gandr: {root}: {coordinate}: {unaddressed}")?;
+                verdict = RunVerdict::Faulted;
+                continue;
+            },
+        };
+        let name = Export::root(&address);
+        let Maybe::Present(pointer) = store.roots().root(&name)
+        else {
+            let dependency = gandr_surface_dispatcher::locked_source(package, coordinate)
+                .and_then(|source| match Package::discover(&source) {
+                    Maybe::Present(found) => Some(found.root().to_path_buf()),
+                    Maybe::Absent(gandr_surface_dispatcher::package_root::Absent::Unpackaged) => {
+                        None
+                    },
+                })
+                .unwrap_or_else(|| coordinate.named(package.root()));
+            let dependency = dependency.canonicalize().unwrap_or(dependency);
+            writeln!(
+                stderr,
+                "gandr: {root}: {coordinate}: no export at {name}; check {} first",
+                dependency.display()
+            )?;
+            continue;
+        };
+        let readmitted = store
+            .deref::<Export>(pointer)
+            .map_err(|fault| fault.to_string())
+            .and_then(|export| export.readmit().map_err(|refused| refused.to_string()));
+        match readmitted {
+            Ok(declarations) => {
+                if matches!(verbosity, Verbosity::Detailed | Verbosity::Debug) {
+                    writeln!(
+                        stdout,
+                        "export: {root}: {coordinate}: {} declarations re-admitted from {name}",
+                        usize::from(declarations)
+                    )?;
+                }
+            },
+            Err(why) => {
+                writeln!(stderr, "gandr: {root}: {coordinate}: {name}: {why}")?;
+                verdict = RunVerdict::Faulted;
+            },
+        }
+    }
+    Ok(verdict)
+}
+
+/// The worse of two verdicts: a fault outranks an unsettled run, which
+/// outranks a settled one.
+///
+/// # Specification
+/// trivial.
+const fn worse(
+    one: RunVerdict,
+    other: RunVerdict,
+) -> RunVerdict
+{
+    match (one, other) {
+        (RunVerdict::Faulted, _) | (_, RunVerdict::Faulted) => RunVerdict::Faulted,
+        (RunVerdict::Unsettled, _) | (_, RunVerdict::Unsettled) => RunVerdict::Unsettled,
+        (RunVerdict::Settled, RunVerdict::Settled) => RunVerdict::Settled,
+    }
+}
+
+/// Run `runnable`, its types written in `spelling`, printing what it prints on
+/// standard output and everything else on standard error, and choose the exit
+/// code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a path that cannot be read as one source is `gandr: <path>:
+///   <fault>` on standard error. Otherwise every report `gandr check --goals`
+///   prints for the source, its types in `spelling`, goes to standard error as
+///   a plain snippet followed by an empty line, and every ledger line beside
+///   them; then a source declaring an entry runs it and writes nothing but the
+///   lines it prints, each written to standard output as it runs. A run blamed,
+///   stuck or unfinished, and an entry that reaches a declaration the machine
+///   carries no image of, is one line on standard error: `gandr:`, the path,
+///   the entry's name in backticks and the evaluation's spelling. A source
+///   carrying a refusal is `gandr: <path>: refused; nothing ran`, and one
+///   declaring no `main` at its top level runs nothing — not its last
+///   declaration — and is one line on standard error naming `def main` and
+///   pointing at `gandr check` and `gandr test`. A script that serves writes a
+///   line to standard output for each migration it answers, and, when the
+///   network fails first, one line on standard error counting those answered.
+///   The exit code is an entry's exit status when it returned or exited with
+///   one, or `0` for serving that answered every migration asked for; otherwise
+///   `1` for a run that stopped short of one, and `2` for a script that never
+///   reached the machine.
+/// - provides: `gandr run`, with what it prints on the one stream a caller
+///   reads.
+/// - fails: the first write error on either stream.
+/// - panics: none.
+/// - executable: none — the exit code is the process's status, which the
+///   witnesses observe by spawning the binary.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an entry, blame, type refusal, unrelated declaration
+///   refusal, absent source and a source declaring no `main` are observed
+///   through exact status, printed lines and separate diagnostic streams. Wrong
+///   status, repeated lines or evaluation after refusal changes these
+///   observations. Arbitrary machine programs and interruption timing are
+///   outside them. An entry returning a code, one exiting through `Proc.exit`,
+///   one counting its arguments and one reaching a goal observe the entry's
+///   statuses. Two processes, one serving the seat of the migration model and
+///   one running it, observe the served lines and the run's status.
+/// - witness: `tests::cli::a_script_that_runs_its_main_leaves_successfully`
+/// - witness: `tests::cli::a_script_that_blames_leaves_with_a_failure_status`
+/// - witness: `tests::cli::an_ill_typed_script_is_refused_by_the_checker`
+/// - witness: `tests::cli::an_outcome_only_refusal_is_visible_in_a_script_run`
+/// - witness: `tests::cli::an_absent_script_is_refused_by_path`
+/// - witness: `tests::cli::a_script_with_no_program_is_refused`
+/// - witness: `tests::cli::a_failed_diagnostic_stream_stops_later_output`
+/// - witness: `tests::cli::a_program_leaves_with_its_entry_s_status_1881`
+/// - witness: `tests::cli::a_program_prints_hello_world_2279`
+/// - witness: `tests::cli::a_program_reads_and_answers_on_the_standard_streams_2970`
+/// - witness: `tests::net::two_processes_run_the_far_world_s_migrations_there`
+///
+/// # Cost
+/// - allocation: the script's source, its program and the run's store, growth
+///   within the script's run
+fn script(
+    runnable: &mut Script,
+    spelling: Spelling,
+    stderr: &mut impl std::io::Write,
+) -> std::io::Result<ExitCode>
+{
+    let ran = runnable.run::<Evaluator>(&mut Streams::Standard);
+    let status = ran.status();
+    let mut exited = None;
+    match ran {
+        ScriptRun::Fault { path, fault } => {
+            writeln!(stderr, "gandr: {}: {fault}", path.display())?;
+        },
+        ScriptRun::Source { step, ran } => {
+            for diagnostic in
+                entries::<Evaluator>(&step, Verb::Check(Goals::Reported)).spelling(spelling)
+            {
+                let rendered = gandr_surface_render_terminal::render(
+                    &diagnostic,
+                    RenderStyle::Plain,
+                    Verbosity::User,
+                );
+                match diagnostic.severity {
+                    Severity::Error | Severity::Warning | Severity::Goal | Severity::Note => {
+                        writeln!(stderr, "{rendered}\n")?;
+                    },
+                    Severity::Ledger => writeln!(stderr, "{rendered}")?,
+                }
+            }
+            let (path, text) = match step {
+                Step::Source { path, ref text, .. } => (path.display(), text.as_ref()),
+                Step::Fault { path, .. } => (path.display(), ""),
+            };
+            match ran {
+                Ran::Entered {
+                    entered: Entered::Exited(code),
+                    ..
+                } => exited = Some(u8::from(code)),
+                Ran::Entered {
+                    target,
+                    entered: Entered::Ended(Evaluation::Holed { at, .. }),
+                } => {
+                    // The hole as the source writes it, and its line and
+                    // column, counted from one.
+                    let written = match at {
+                        Maybe::Present(span) => text
+                            .get(usize::from(span.start()) .. usize::from(span.end()))
+                            .zip(text.get(.. usize::from(span.start()))),
+                        Maybe::Absent(_) => None,
+                    };
+                    match written {
+                        Some((hole, before)) => {
+                            let line = before.matches('\n').count().saturating_add(1);
+                            let column = before
+                                .rsplit('\n')
+                                .next()
+                                .map_or(0, |last| last.chars().count())
+                                .saturating_add(1);
+                            writeln!(
+                                stderr,
+                                "gandr: {path}:{line}:{column}: `{target}` reached the hole `{hole}`"
+                            )?;
+                        },
+                        None => writeln!(stderr, "gandr: {path}: `{target}` reached a hole")?,
+                    }
+                },
+                Ran::Entered {
+                    target,
+                    entered: Entered::Ended(evaluation),
+                } => {
+                    writeln!(stderr, "gandr: {path}: `{target}` {evaluation}")?;
+                },
+                Ran::Refused => writeln!(stderr, "gandr: {path}: refused; nothing ran")?,
+                Ran::NoProgram => writeln!(
+                    stderr,
+                    "gandr: {path}: declares no `main` to run; a program runs its `def main() -> \
+                     Unit {{ … }}`, and a source of declarations alone is checked by `gandr \
+                     check` or tested by `gandr test`"
+                )?,
+                Ran::Hosted(Hosted::Answered(_)) => {},
+                Ran::Hosted(Hosted::Faulted { answered }) => writeln!(
+                    stderr,
+                    "gandr: {path}: the network failed after {} migrations",
+                    usize::from(answered)
+                )?,
+            }
+        },
+    }
+    Ok(match (exited, status) {
+        (Some(code), _) => ExitCode::from(code),
+        (None, RunStatus::Value) => ExitCode::SUCCESS,
+        (None, RunStatus::Failed) => ExitCode::from(STOPPED),
+        (None, RunStatus::Unreached) => ExitCode::from(UNREACHED),
+    })
+}

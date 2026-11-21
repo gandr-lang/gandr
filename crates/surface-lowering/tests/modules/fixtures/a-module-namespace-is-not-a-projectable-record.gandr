@@ -1,0 +1,4 @@
+module M where { def x = 1; module inner where { def y = 2; } }
+def known = M.x;
+def unknown = M.nonesuch;
+def whole = M.inner;
