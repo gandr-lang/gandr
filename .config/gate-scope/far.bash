@@ -135,7 +135,7 @@ case ${1:-} in
     echo "gate:remote: the gate of $commit runs on $(hostname -s) in the clone of the lane $lane" >&2
     mise run tools:check >&2
     mise run check >&2
-    .config/gate-scope/verdict.bash publish HEAD \
+    .config/gate-scope/tool.bash gandr-workflow-gate gate verdict publish HEAD \
       || echo "gate:remote: the verdict records were not sent, so hosted jobs run their checks again (#8166)" >&2
     records=$(git rev-parse --path-format=absolute --git-common-dir)/gandr-gate/$(git rev-parse 'HEAD^{tree}')
     for file in "$records"/*.json; do

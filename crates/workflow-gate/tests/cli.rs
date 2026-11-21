@@ -1058,3 +1058,156 @@ fn a_record_of_two_keys_holds_each_and_no_third()
     );
     assert_eq!(output.status.code(), Some(1_i32));
 }
+
+/// Runs `gate verdict $verb` with `$args` in `$root`, as `read!` runs a read.
+/// Git signs a commit with the key `$signing`.
+macro_rules! verdict {
+    ($root:expr, $verb:literal, $signing:expr, $args:expr, $env:expr $(,)?) => {{
+        let root: &Path = &$root;
+        let base = root.parent().unwrap();
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut paths = vec![manifest.join("tests/fakes")];
+        paths.extend(std::env::split_paths(
+            &std::env::var_os("PATH").unwrap_or_default(),
+        ));
+        let signing: &Path = &$signing;
+        let variables: &[(&str, &str)] = &$env;
+        Command::new(env!("CARGO_BIN_EXE_gate"))
+            .arg("--tables")
+            .arg(manifest.join("tests/tables"))
+            .args(["verdict", $verb])
+            .args($args)
+            .current_dir(root)
+            .env_clear()
+            .env("PATH", std::env::join_paths(paths).unwrap())
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .env("GIT_CONFIG_COUNT", "4")
+            .env("GIT_CONFIG_KEY_0", "user.name")
+            .env("GIT_CONFIG_VALUE_0", "case")
+            .env("GIT_CONFIG_KEY_1", "user.email")
+            .env("GIT_CONFIG_VALUE_1", "case@example.invalid")
+            .env("GIT_CONFIG_KEY_2", "gpg.format")
+            .env("GIT_CONFIG_VALUE_2", "ssh")
+            .env("GIT_CONFIG_KEY_3", "user.signingkey")
+            .env("GIT_CONFIG_VALUE_3", signing)
+            .env("FAKE_CARGO_METADATA", base.join("metadata.json"))
+            .env("FAKE_MISE_TASKS", base.join("tasks.json"))
+            .env("GATE_INPUTS_TASK", "case-task")
+            .env("GATE_VERDICT_RUSTC", manifest.join("tests/fakes/rustc"))
+            .env("GATE_VERDICT_POLICY", "case-policy")
+            .env("GATE_VERDICT_REMOTE", base.join("remote.git"))
+            .envs(variables.iter().copied())
+            .output()
+            .unwrap()
+    }};
+}
+
+#[test]
+fn a_gate_writes_one_record_for_its_checks()
+{
+    let root = remote!("write-gate");
+    let dir = root.parent().unwrap().to_path_buf();
+    let earlier = commit!(root, TWO, ["-m", "earlier base"]);
+    let base = commit!(root, THREE, ["-p", earlier.as_str(), "-m", "base"]);
+    let head = commit!(root, ONE, ["-p", base.as_str(), "-m", "head"]);
+    head!(root, head);
+    let signing = dir.join("signing");
+    let made = Command::new("ssh-keygen")
+        .args(["-q", "-t", "ed25519", "-N", "", "-C", "case", "-f"])
+        .arg(&signing)
+        .output()
+        .unwrap();
+    assert!(made.status.success(), "ssh-keygen: {}", err!(made));
+    let public = std::fs::read_to_string(dir.join("signing.pub")).unwrap();
+    std::fs::write(
+        dir.join("signers"),
+        format!("case@example.invalid namespaces=\"git\" {public}"),
+    )
+    .unwrap();
+    // The gate runs `check:gate`, whose task depends on the two checks of
+    // `verdicts.json`. It holds no row itself.
+    std::fs::write(
+        dir.join("tasks.json"),
+        "[{\"name\":\"check:gate\",\"depends\":[\"check:scoped\",[\"check:tree --quick\"]]}]",
+    )
+    .unwrap();
+    let scope = format!("--workspace --exclude base-{}", cut!(base, 7));
+    let environment = [("GATE_BASE", base.as_str()), ("GATE_SCOPE", scope.as_str())];
+    let output = verdict!(root, "write", signing, [ONE, "check:gate"], environment);
+    let refs = git!(root, [
+        "for-each-ref",
+        "--format=%(objectname) %(refname)",
+        "refs/verdicts/"
+    ]);
+    let record = cut!(refs, 40).to_owned();
+    assert_eq!(
+        err!(output),
+        format!(
+            "verdict: check:scoped passes on {tree}; the record is {short}\n\
+             verdict: check:tree passes on {tree}; the record is {short}\n",
+            tree = cut!(ONE, 12),
+            short = cut!(record, 12)
+        )
+    );
+    assert_eq!(output.status.code(), Some(0_i32));
+    let inputs_key = out!(key!(root, ["--tree", ONE, "check:scoped"], environment));
+    let tree_key = out!(key!(root, ["--tree", ONE, "check:tree"], environment));
+    assert_eq!(
+        refs,
+        format!(
+            "{record} refs/verdicts/{ONE}/check-tree/{}\n{record} refs/verdicts/inputs/check-scoped/{}",
+            hash!(tree_key.trim_end()),
+            hash!(inputs_key.trim_end())
+        )
+    );
+    let sent = verdict!(root, "publish", signing, ["HEAD"], []);
+    assert_eq!(
+        err!(sent),
+        format!(
+            "verdict: pushed the records of the tree {}: check-scoped check-tree\n",
+            cut!(ONE, 12)
+        )
+    );
+    let output = read!(root, ["check:scoped", "check:tree"], [
+        ("GATE_BASE", base.as_str()),
+        ("GATE_VERDICT_TRUNK_OK", base.as_str()),
+    ]);
+    assert_eq!(
+        err!(output),
+        format!(
+            "verdict: check:scoped holds on {tree}: the record {short} binds this run's key, so the check \
+             does not run again\n\
+             verdict: check:tree holds on {tree}: the record {short} binds this run's key, so the check \
+             does not run again\n",
+            tree = cut!(ONE, 12),
+            short = cut!(record, 12)
+        )
+    );
+    assert_eq!(output.status.code(), Some(0_i32));
+    // A check that the gate held did not run, so the gate signs no record of
+    // it.
+    let held = [
+        ("GATE_BASE", base.as_str()),
+        ("GATE_SCOPE", scope.as_str()),
+        ("GATE_HELD", "check:tree"),
+    ];
+    let output = verdict!(root, "write", signing, [ONE, "check:gate"], held);
+    let after = git!(root, [
+        "for-each-ref",
+        "--format=%(objectname) %(refname)",
+        "refs/verdicts/"
+    ]);
+    let (tree_ref, inputs_ref) = after.split_once('\n').unwrap();
+    let second = cut!(inputs_ref, 40);
+    assert_eq!(
+        err!(output),
+        format!(
+            "verdict: check:scoped passes on {}; the record is {}\n",
+            cut!(ONE, 12),
+            cut!(second, 12)
+        )
+    );
+    assert_ne!(second, record);
+    assert_eq!(cut!(tree_ref, 40), record);
+}

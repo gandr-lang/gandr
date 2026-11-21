@@ -1,0 +1,31 @@
+//! A rule of an operation that states no symmetry fires in one order only.
+//!
+//! A rule fires in the two orders of its arguments where its theory states
+//! that the operation is commutative. A theory that does not state the law
+//! gives no such right. A match that tries the two orders for each operation
+//! admits a false path.
+//!
+//! The theory of a series has one rule and no symmetry. The checker matches
+//! the rule in the written order, so it refuses the path for the other order.
+//!
+//! - see: #8299
+
+/// The theory of two switches in a series, with no law of commutativity.
+theory Series where
+  /// The states of a switch.
+  sort S : Type;
+  /// The open switch.
+  oper open : S;
+  /// The shut switch.
+  oper shut : S;
+  /// Two switches in a series.
+  oper both : (x : S, y : S) --> S;
+  /// An open switch first opens the series.
+  rule bothOpen : both open x <=> open;
+
+/// The rule does not fire where the open switch stands second.
+///
+/// - see: #8299
+@[refuses("EndpointMismatch")]
+def openSecond(x : Terms Series) -> Path (Series.both x Series.open) Series.open = Path.here
+  Series.open;

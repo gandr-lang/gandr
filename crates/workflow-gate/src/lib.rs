@@ -19,6 +19,8 @@
 //! - [`read`] gives the [`Reading`] of a [`ReadRequest`]: which check holds on
 //!   a tree, by the inputs of its base or by a signed record of a pass, with
 //!   one line for each fact and an [`End`].
+//! - [`write()`] signs one record of a [`WriteRequest`] for the checks of a
+//!   gate, and [`send`] pushes the records of a tree for a [`SendRequest`].
 //! - [`Parts`] holds the count and the time of each call of a run, and
 //!   [`Elapsed`] writes a time.
 //! - [`GateError`] is each refusal of a run.
@@ -43,6 +45,7 @@ mod record;
 mod run;
 mod tables;
 mod verdict;
+mod write;
 
 pub use crate::call::Elapsed;
 pub use crate::call::Parts;
@@ -62,3 +65,7 @@ pub use crate::run::lists;
 pub use crate::verdict::Key;
 pub use crate::verdict::KeyRequest;
 pub use crate::verdict::keys;
+pub use crate::write::SendRequest;
+pub use crate::write::WriteRequest;
+pub use crate::write::send;
+pub use crate::write::write;

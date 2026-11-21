@@ -690,6 +690,82 @@ impl Tasks
         })?;
         Ok(format!("task:{check}\t{}", Digest::from(text.as_bytes())))
     }
+
+    /// Each check that a run of `checks` runs: each of `checks`, and each task
+    /// that a `depends` of one of them names, again and again. A gate that
+    /// runs `check:landing` runs Clippy and the policy too.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the names in the order of their text, each one time. A name
+    ///   of `depends` is the first word of its entry, or of the first entry of
+    ///   its list. A check that no task holds stands as itself.
+    /// - provides: the checks whose records a gate writes.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the outcome is a value, which the case of a write
+    ///   pins.
+    ///
+    /// # Cost
+    /// - allocation: the set of the names and the worklist, growth within the
+    ///   tasks
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a check whose task depends on two checks; a run that
+    ///   follows no `depends` writes no record of the two.
+    /// - witness: `tests::cli::a_gate_writes_one_record_for_its_checks`
+    #[inline]
+    #[must_use]
+    pub fn ran(
+        &self,
+        checks: &[Check],
+    ) -> Vec<Check>
+    {
+        // A fixed definition depends on no task, so each check stands as
+        // itself.
+        let listed = match *self {
+            Self::Listed(ref listed) => Some(listed),
+            Self::Fixed { .. } => None,
+        };
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        let mut work: Vec<String> = checks
+            .iter()
+            .map(|check| check.as_ref().to_owned())
+            .collect();
+        while let Some(name) = work.pop() {
+            if !seen.insert(name.clone()) {
+                continue;
+            }
+            let Some(text) = listed.and_then(|listed| listed.get(&name))
+            else {
+                continue;
+            };
+            let definition: serde_json::Value = serde_json::from_str(text).unwrap_or_default();
+            for entry in definition
+                .get("depends")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                let first = match *entry {
+                    serde_json::Value::Array(ref items) => {
+                        items.first().and_then(serde_json::Value::as_str)
+                    },
+                    serde_json::Value::String(ref text) => Some(text.as_str()),
+                    serde_json::Value::Null
+                    | serde_json::Value::Bool(_)
+                    | serde_json::Value::Number(_)
+                    | serde_json::Value::Object(_) => None,
+                };
+                if let Some(word) = first.and_then(|text| text.split(' ').next()) {
+                    work.push(word.to_owned());
+                }
+            }
+        }
+        seen.into_iter()
+            .map(|name| Check::from(name.as_str()))
+            .collect()
+    }
 }
 
 #[cfg(test)]

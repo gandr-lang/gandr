@@ -104,7 +104,8 @@ fn landing(
     Ok(out)
 }
 
-/// Where a run stands: the root of the worktree and its two tables.
+/// Where a run stands: the root of the worktree, its two tables and the tasks
+/// when the caller read them.
 #[derive(Clone, Debug)]
 pub struct Ground
 {
@@ -112,6 +113,9 @@ pub struct Ground
     pub root: PathBuf,
     /// The tables of the worktree.
     pub tables: Tables,
+    /// The definition of each task, when the caller read them; the run then
+    /// starts no mise of its own.
+    pub tasks: Option<Tasks>,
 }
 
 impl Ground
@@ -173,7 +177,11 @@ impl Ground
             &Answer::from(std::fs::read(&inputs).map_err(|error| unread(&inputs, &error))?),
             &Answer::from(std::fs::read(&verdicts).map_err(|error| unread(&verdicts, &error))?),
         )?;
-        Ok(Self { root, tables })
+        Ok(Self {
+            root,
+            tables,
+            tasks: None,
+        })
     }
 }
 
@@ -236,7 +244,11 @@ impl World
         parts: &Parts,
     ) -> Result<Self, GateError>
     {
-        let Ground { root, tables } = ground;
+        let Ground {
+            root,
+            tables,
+            tasks: given,
+        } = ground;
         let fixed = std::env::var("GATE_INPUTS_TASK").ok();
         let manifest = root.join("Cargo.toml");
         let manifest = manifest.to_string_lossy();
@@ -272,8 +284,7 @@ impl World
                 .start(&root)
             })
             .transpose()?;
-        let mise = fixed
-            .is_none()
+        let mise = (fixed.is_none() && given.is_none())
             .then(|| {
                 Program {
                     part: Part::from("mise tasks ls"),
@@ -296,15 +307,14 @@ impl World
             || Ok(Workspace::default()),
             |running| Workspace::read(&running.finish(parts)?, &root),
         )?;
-        let tasks = mise.map_or_else(
-            || {
-                Ok(Tasks::fixed(
-                    &request.checks,
-                    &Answer::from(fixed.clone().unwrap_or_default().into_bytes()),
-                ))
-            },
-            |running| Tasks::read(&running.finish(parts)?),
-        )?;
+        let tasks = match (given, mise) {
+            (Some(tasks), _) => tasks,
+            (None, Some(running)) => Tasks::read(&running.finish(parts)?)?,
+            (None, None) => Tasks::fixed(
+                &request.checks,
+                &Answer::from(fixed.unwrap_or_default().into_bytes()),
+            ),
+        };
         Ok(Self {
             root,
             workspace,

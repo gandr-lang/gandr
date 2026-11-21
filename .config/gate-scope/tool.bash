@@ -24,7 +24,9 @@
 # crate again. So the build runs with no such variable, and the binary runs
 # with the caller's environment.
 set -euo pipefail
-here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+# The physical directory: a checkout whose `.config` links to another tree
+# builds from the tree that holds the crates.
+here=$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)
 root=${here%/.config/gate-scope}
 package=${1:?usage: tool.bash <package> <binary> [argument]...}
 binary=${2:?usage: tool.bash <package> <binary> [argument]...}

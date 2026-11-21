@@ -8,6 +8,10 @@ A gate of a landing asks which of its long checks must run. A check must run whe
 | ------- | -------------- |
 | `gate inputs list <commit> <scope> <check>` | the inputs of the check over the scope at the commit, one per line: a path, a tab and its object |
 | `gate inputs digest --commit <commit>... --check <check>... <scope>` | one line for each commit and each check: the commit, the check and the SHA-256 of that list |
+| `gate verdict key [--tree <tree>] <check>...` | the key of the verdict of each check, one line of JSON each |
+| `gate verdict read <check>...` | to standard error, which check holds on the tree of `HEAD`, by the inputs of its base or by a signed record of a pass |
+| `gate verdict write <tree> <check>...` | to standard error, the one signed record of the checks that a gate ran on the tree, which the ref of each check names |
+| `gate verdict publish <commit>` | to standard error, the records of the tree of the commit that one push sends |
 
 `--tables <directory>` names the directory of `inputs.json` and `verdicts.json`. `--times` prints each part of the run to standard error: its time, the count of its calls and its name.
 
@@ -30,7 +34,7 @@ A check that sets `table` in `verdicts.json` reads the paths of its row of `tabl
 | Work | How many times |
 | ---- | -------------- |
 | `cargo metadata` | one time, and no time when each check reads the table |
-| `mise tasks ls` | one time, and no time when `GATE_INPUTS_TASK` gives the task |
+| `mise tasks ls` | one time, and no time when `GATE_INPUTS_TASK` gives the task to a key or a read. A write lists the tasks one time, for the checks that each task depends on |
 | `git cat-file --batch-check` | one time, with each `<commit>:<path>` one time |
 | `git cat-file --batch` | one time, for the table of each commit |
 | `git grep` | one time for each distinct tree that a grep reads |

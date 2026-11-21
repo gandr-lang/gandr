@@ -197,7 +197,7 @@ impl Drop for Allowed
 /// The first 12 characters of a name, as a line of a read shows it.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
-struct Short<'name>(&'name str);
+pub struct Short<'name>(pub &'name str);
 
 impl fmt::Display for Short<'_>
 {
@@ -235,7 +235,7 @@ impl fmt::Display for Short<'_>
 ///   key; another digest changes the asserted line.
 /// - witness: `tests::cli::a_check_with_no_record_runs`
 #[inline]
-fn hash(key: &Key) -> String
+pub fn hash(key: &Key) -> String
 {
     let digest = Digest::from(key.as_ref().as_bytes()).to_string();
     digest.get(.. 16).unwrap_or(&digest).to_owned()
@@ -254,7 +254,7 @@ fn hash(key: &Key) -> String
 ///   name with its colon lists no ref.
 /// - witness: `tests::cli::a_record_with_a_body_of_another_key_does_not_hold`
 #[inline]
-fn segment(check: &Check) -> String
+pub fn segment(check: &Check) -> String
 {
     check.as_ref().replace(':', "-")
 }

@@ -119,7 +119,7 @@ if GATE_BASE=$(git merge-base "origin/$trunk" HEAD 2> /dev/null); then export GA
 # that holds. A check of that list prints the fact and exits 0. The read
 # binds the tree of a commit, so a worktree with work that no commit holds
 # reads nothing.
-# - see: `.config/gate-scope/verdict.bash`, #7684, #8265
+# - see: `crates/workflow-gate`, #7684, #8265
 GATE_HELD=
 if [[ -n ${GATE_BASE:-} && $tree == "$(git rev-parse 'HEAD^{tree}')" ]]; then
   # The gate asks for the four checks that take the time. Each of them
@@ -127,7 +127,7 @@ if [[ -n ${GATE_BASE:-} && $tree == "$(git rev-parse 'HEAD^{tree}')" ]]; then
   # and the check takes less than that. The reader exits 1 when one check
   # does not hold, and the gate keeps each check that does.
   recorded=(check:clippy-plain-only check:clippy-enforcing check:dylint check:purposes)
-  GATE_HELD=$({ .config/gate-scope/verdict.bash read "${recorded[@]}" 2>&1 || true; } \
+  GATE_HELD=$({ .config/gate-scope/tool.bash gandr-workflow-gate gate verdict read "${recorded[@]}" 2>&1 || true; } \
     | awk '$1 == "verdict:" && $3 == "holds" { printf "%s%s", sep, $2; sep = " " }') || GATE_HELD=
   if [[ -n $GATE_HELD ]]; then
     echo "check: $GATE_HELD hold by the base or by a record of a pass, so the gate runs none of them again" >&2
@@ -145,7 +145,7 @@ fi
 # Each check that a job of the pull request or of the merge group runs again
 # gets a signed record of this pass. `pr:open` pushes the records.
 # - see: #7684
-.config/gate-scope/verdict.bash write "$tree" "${checks[@]}" || echo "check: no record of the pass is written, so the jobs run the checks again (#7684)" >&2
+.config/gate-scope/tool.bash gandr-workflow-gate gate verdict write "$tree" "${checks[@]}" || echo "check: no record of the pass is written, so the jobs run the checks again (#7684)" >&2
 gate_ran=1
 {% endraw %}'''
 
