@@ -1,0 +1,18 @@
+data L : Type where { | N : L | C : (h : Integer, t : L) --> L }
+
+def second(xs : L) -> Integer =
+  match xs where
+    | C(_, C(y, _)) => y
+    | C(_, N) => 0
+    | N => 0
+
+def tail(xs : L) -> L =
+  match xs where
+    | C(_, t @ C(_, _)) => t
+    | C(_, _) => N
+    | N => N
+
+def head(xs : L) -> Integer =
+  match xs where
+    | C(h, /* the tail */ _) => h
+    | N => 0

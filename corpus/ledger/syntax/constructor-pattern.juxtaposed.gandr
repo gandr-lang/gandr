@@ -1,0 +1,10 @@
+/// `constructor_pattern.juxtaposed`: a constructor pattern applied by
+/// juxtaposition, a nested operand in parentheses.
+data Stack : Type where
+  | Empty : Stack
+  | Push : (x : Integer, rest : Stack) --> Stack
+def second(xs : Stack) -> Integer =
+  match xs where
+    | Push _ (Push y _) => y
+    | Push x Empty => x
+    | Empty => 0

@@ -6141,6 +6141,28 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                 .push((queued.slot, head.span, PatternReading::Constructor));
             return Ok(shape);
         }
+        // A group of one, `(p)`, is the pattern `p`: it encloses an operand of
+        // a juxtaposed constructor pattern, `C x (C y rest)`. Its entry takes
+        // the group's slot, and the shape written now gives way to it.
+        if name == FormName::TUPLE_PATTERN
+            && let [
+                Piece::Tile {
+                    label: TileName::PAREN_OPEN,
+                    ..
+                },
+                Piece::Operand(inner),
+                Piece::Tile {
+                    label: TileName::PAREN_CLOSE,
+                    ..
+                },
+            ] = *pieces.pieces.as_slice()
+        {
+            work.push(Queued {
+                at: inner,
+                ..queued
+            });
+            return Ok(Matcher::Wild);
+        }
         // A match scrutinee is a value, so a group in parentheses here stands
         // where a stored product's pattern `*{p, q}` belongs.
         if name == FormName::TUPLE_PATTERN {

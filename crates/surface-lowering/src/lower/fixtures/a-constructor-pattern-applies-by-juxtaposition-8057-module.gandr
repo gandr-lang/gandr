@@ -1,0 +1,33 @@
+data L : Type where { | N : L | C : (h : Integer, t : L) --> L }
+
+def juxtaposed(xs : L) -> Integer =
+  match xs where
+    | C h _ => h
+    | N => 0
+
+def called(xs : L) -> Integer =
+  match xs where
+    | C(h, _) => h
+    | N => 0
+
+def nested(xs : L) -> Integer =
+  match xs where
+    | C _ (C y _) => y
+    | C _ N => 0
+    | N => 0
+
+def nested_called(xs : L) -> Integer =
+  match xs where
+    | C(_, C(y, _)) => y
+    | C(_, N) => 0
+    | N => 0
+
+def qualified(xs : L) -> Integer =
+  match xs where
+    | L.C h _ => h
+    | L.N => 0
+
+def qualified_called(xs : L) -> Integer =
+  match xs where
+    | L.C(h, _) => h
+    | L.N => 0

@@ -1,5 +1,7 @@
 /// `pattern-matching`: `case` matches a value against nested constructor
-/// patterns, a wildcard taking what the arms before it left.
+/// patterns, a wildcard taking what the arms before it left. A constructor
+/// pattern applies its operands by juxtaposition, and a nested operand stands
+/// in parentheses.
 data Inner : Type where
   | No : Inner
   | Yes : (n : Integer) --> Inner
@@ -12,7 +14,7 @@ data Outer : Type where
 /// The integer two constructors down, or zero.
 def depth(m : Outer) -> Integer =
   match m where
-    | Some(Yes(n)) => n
+    | Some (Yes n) => n
     | _ => 0
 
 /// The match run on a value holding 41.

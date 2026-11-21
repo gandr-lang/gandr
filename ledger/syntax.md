@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x53c763f0bd91f147`
-- Rules: 161 — 160 committed, 1 internal
-- Molds: 3112
+- Grammar fingerprint: `0x2fd2cdd750e9b0e6`
+- Rules: 162 — 161 committed, 1 internal
+- Molds: 3114
 - Attributes: 22
 
 ## Reading a form
@@ -47,13 +47,14 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`circuit_declaration`](../corpus/ledger/syntax/circuit-declaration.gandr) | `⦅ oper ‖ rule ⦆ ‹identifier› : ( ⦅ ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ‖ bind ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦅ , ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ‖ bind ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆? ⦅ { ⦅ node ⦅ ‹identifier› ⦆? : ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ‖ feed ⦅ ‹identifier› ⦆? : ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ⦆* } ⦆?` | `item.singleton` | `circuit_declaration` * | admitted | Keyword, FunctionDef, Other, VariableParam, Operator, VariableDef, FunctionCall |
 | [`derived_rule_declaration`](../corpus/ledger/syntax/derived-rule-declaration.gandr) | `rule ‹type_identifier› . ‹identifier› : EXPRESSION ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ EXPRESSION ;` | `item.singleton` | `derived_rule_declaration` * | admitted | Keyword, Type, Other, Member, Operator |
 
-## `pattern` — 13 rules
+## `pattern` — 14 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
 | [`wildcard`](../corpus/ledger/syntax/wildcard.gandr) | `_` | `pattern.atom` | `wildcard` | admitted | Variable |
 | [`constructor_pattern`](../corpus/ledger/syntax/constructor-pattern.gandr) | `‹constructor› ⦅ . ⦅ ‹constructor› ‖ ‹identifier› ⦆ ⦆? ⦅ ( PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦆? ) ⦆?` | `pattern.atom` | `constructor_pattern` | admitted | Constructor, Other, Member |
-| [`tuple_pattern`](../corpus/ledger/syntax/tuple-pattern.gandr) | `( . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ⦆* ⦅ , ⦆? ) ‖ ( PATTERN , PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦆? )` | `pattern.atom` | `tuple_pattern` | admitted | Other, Member, Number |
+| [`constructor_pattern.juxtaposed`](../corpus/ledger/syntax/constructor-pattern.juxtaposed.gandr) | `PATTERN   PATTERN` | `pattern.juxtaposition` | `constructor_pattern` | admitted | Other |
+| [`tuple_pattern`](../corpus/ledger/syntax/tuple-pattern.gandr) | `( . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ⦆* ⦅ , ⦆? ) ‖ ( PATTERN ⦅ ) ‖ , PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦆? ) ⦆` | `pattern.atom` | `tuple_pattern` | admitted | Other, Member, Number |
 | [`telescope_pattern`](../corpus/ledger/syntax/telescope-pattern.gandr) | `*{ ⦅ ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ‖ PATTERN ⦅ = PATTERN ⦆? ⦆ ⦅ , ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ‖ PATTERN ⦅ = PATTERN ⦆? ⦆ ⦆* ⦅ , ⦆? ⦆? }` | `pattern.atom` | `telescope_pattern` * | admitted | Other, Member, Number |
 | [`labelled_sum_pattern`](../corpus/ledger/syntax/labelled-sum-pattern.gandr) | `+{ . ⦅ ‹identifier› ‖ ‹number› ⦆ = PATTERN }` | `pattern.atom` | `labelled_sum_pattern` * | admitted | Other, Member, Number |
 | [`list_pattern`](../corpus/ledger/syntax/list-pattern.gandr) | `#[ ⦅ PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦅ ⟨rest_pattern⟩ ⦆? ⦆? ‖ ⟨rest_pattern⟩ ⦆? ]` | `pattern.atom` | `list_pattern` | admitted | Other, Operator |
@@ -265,7 +266,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`item`](../corpus/ledger/attributes/item.gandr) | a text payload | a constructor |
 | [`inert`](../corpus/ledger/attributes/inert.gandr) | no payload | a declaration |
 
-## Decisions — 109 of 161 rules decided at every token
+## Decisions — 110 of 162 rules decided at every token
 
 Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
 
@@ -294,7 +295,8 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `inner_attribute_member` | module_member | 12 | `@![` | — | 4 |
 | `wildcard` | pattern | 1 | `_` | — | 0 |
 | `constructor_pattern` | pattern | 8 | `constructor` | — | 2 |
-| `tuple_pattern` | pattern | 17 | `(` | — | 8 |
+| `constructor_pattern.juxtaposed` | pattern | 1 | ` ` | — | 0 |
+| `tuple_pattern` | pattern | 18 | `(` | — | 8 |
 | `telescope_pattern` | pattern | 14 | `*{` | — | 10 |
 | `labelled_sum_pattern` | pattern | 6 | `+{` | — | 0 |
 | `list_pattern` | pattern | 6 | `#[` | — | 2 |
@@ -445,7 +447,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `type_identifier` | 221 | 34 | 2 |
 | `=` | 152 | 38 | 0 |
 | `;` | 137 | 25 | 0 |
-| `)` | 131 | 32 | 0 |
+| `)` | 132 | 32 | 0 |
 | `(` | 127 | 31 | 5 |
 | `.` | 96 | 44 | 3 |
 | `type_variable` | 92 | 15 | 3 |
@@ -498,6 +500,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `Type` | 4 | 4 | 1 |
 | `def` | 4 | 4 | 2 |
 | `⊸` | 4 | 4 | 1 |
+| ` ` | 3 | 3 | 3 |
 | `+{` | 3 | 3 | 3 |
 | `-F` | 3 | 3 | 3 |
 | `..` | 3 | 2 | 1 |
@@ -516,7 +519,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `true` | 3 | 3 | 3 |
 | `via` | 3 | 2 | 0 |
 | `~>` | 3 | 2 | 0 |
-| ` ` | 2 | 2 | 2 |
 | `#[` | 2 | 2 | 2 |
 | `&{` | 2 | 2 | 2 |
 | `*` | 2 | 2 | 2 |

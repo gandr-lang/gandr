@@ -2460,7 +2460,9 @@ pub fn written_children<'tree>(
                         && read.repair == Maybe::Absent(repair::Absent::Unrepaired)
                 },
                 | NodeLabel::Meld(mold)
-                    if (Some(mold) == pbg.application() || Some(mold) == pbg.application_in(Sort::Type))
+                    if (Some(mold) == pbg.application()
+                        || Some(mold) == pbg.application_in(Sort::Type)
+                        || Some(mold) == pbg.application_in(Sort::Pattern))
                         && matches!(read.pieces.first(), Some(Piece::Operand(_) | Piece::Tile { .. }))
                         && matches!(read.pieces.last(), Some(&Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE) =>
                 {
@@ -2676,7 +2678,9 @@ fn application_spine(
 {
     let application = match tree.node(position)?.label() {
         NodeLabel::Meld(mold)
-            if Some(mold) == pbg.application() || Some(mold) == pbg.application_in(Sort::Type) =>
+            if Some(mold) == pbg.application()
+                || Some(mold) == pbg.application_in(Sort::Type)
+                || Some(mold) == pbg.application_in(Sort::Pattern) =>
         {
             mold
         },
@@ -2689,6 +2693,7 @@ fn application_spine(
         | NodeLabel::Doc => return None,
     };
     let in_type = Some(application) == pbg.application_in(Sort::Type);
+    let in_pattern = Some(application) == pbg.application_in(Sort::Pattern);
     let applied = |at: NodeIndex| {
         tree.node(at)
             .is_some_and(|node| node.label() == NodeLabel::Meld(application))
@@ -2754,6 +2759,10 @@ fn application_spine(
     // reserved type word at the head, `Integer`, reads as the name it spells,
     // so its application is refused as a head no former answers.
     let head_tile = tree.node(head.node).and_then(|node| match node.label() {
+        NodeLabel::Tile(mold) if in_pattern => match tile_name(pbg, node, mold) {
+            Ok(label) if label == TileName::CONSTRUCTOR => Some(label),
+            Ok(_) | Err(_) => None,
+        },
         NodeLabel::Tile(mold) if in_type => match tile_name(pbg, node, mold) {
             Ok(label) if label == TileName::TYPE_IDENTIFIER || label == TileName::TYPE_VARIABLE => {
                 Some(label)
@@ -2782,6 +2791,9 @@ fn application_spine(
     let mark = read.pieces.len();
     if head_tile.is_none() && in_type {
         qualified_head(pbg, tree, head, read);
+    }
+    if head_tile.is_none() && in_pattern {
+        constructor_head(pbg, tree, head, read);
     }
     if read.pieces.len() == mark {
         read.pieces
@@ -2892,6 +2904,79 @@ fn qualified_head(
     }
     else {
         read.pieces.truncate(mark);
+    }
+}
+
+/// Write the head of the juxtaposed constructor pattern `head`, `M.Cons`,
+/// into `read`, from its last piece to its first, as the spine writes its
+/// pieces.
+///
+/// # Specification
+/// - requires: `head` is the head of a pattern's application spine.
+/// - ensures: when `head` is a constructor pattern whose pieces are a
+///   constructor, and a `.` with a constructor or a name after it, with no
+///   argument list, `read` gains those pieces in reverse order. `read` is
+///   unchanged otherwise.
+/// - provides: the head half of the juxtaposed constructor pattern, `M.Cons x
+///   rest`, which reads as the call form `M.Cons(x, rest)` reads.
+/// - fails: never.
+/// - panics: none.
+/// - economy: one walk over the head's children, written into `read`'s buffer,
+///   with no allocation beyond the buffer's growth.
+/// - executable: none — the pieces are the head's children in the tree, which a
+///   predicate could check only by repeating the walk.
+///
+/// # Cost
+/// - allocation: the pieces of the head, growth within `read`'s buffer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Cons _ rest` lowers as `Cons(_, rest)`, and a qualified
+///   head as its call form.
+/// - witness: `gandr-surface-lowering::lower::tests::a_constructor_pattern_applies_by_juxtaposition_8057`
+fn constructor_head(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    head: Placed,
+    read: &mut Pieces,
+)
+{
+    let mark = read.pieces.len();
+    for child in tree.children(head.node) {
+        let Some(node) = tree.node(child)
+        else {
+            continue;
+        };
+        let placed = Placed::of(child, node);
+        let first = read.pieces.len() == mark;
+        let label = match node.label() {
+            NodeLabel::Space | NodeLabel::Doc => continue,
+            NodeLabel::Tile(mold) => tile_name(pbg, node, mold),
+            NodeLabel::Meld(_)
+            | NodeLabel::Wald
+            | NodeLabel::Grout { .. }
+            | NodeLabel::GhostClose { .. } => {
+                read.pieces.truncate(mark);
+                return;
+            },
+        };
+        match label {
+            Ok(label)
+                if (first && label == TileName::CONSTRUCTOR)
+                    || (!first
+                        && (label == TileName::DOT
+                            || label == TileName::CONSTRUCTOR
+                            || label == TileName::IDENTIFIER)) =>
+            {
+                read.pieces.push(Piece::Tile { label, at: placed });
+            },
+            Ok(_) | Err(_) => {
+                read.pieces.truncate(mark);
+                return;
+            },
+        }
+    }
+    if let Some(link) = read.pieces.get_mut(mark ..) {
+        link.reverse();
     }
 }
 

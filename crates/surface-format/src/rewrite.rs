@@ -143,6 +143,10 @@ pub enum RewriteName
     /// = c ;`, a body of statements in a block after `=`; both forms move it,
     /// as `=` is the one spelling of a body.
     BodyAfterEquals,
+    /// A constructor pattern: `C(p, q)` and `C p q`, as a type reads a
+    /// juxtaposition; both forms write the juxtaposition, an operand that is
+    /// no atom in its parentheses.
+    ConstructorPattern,
 }
 
 impl fmt::Display for RewriteName
@@ -176,6 +180,7 @@ impl fmt::Display for RewriteName
             Self::JoinedDefinition => "joined-definition",
             Self::TypeApplication => "type-application",
             Self::BodyAfterEquals => "body-after-equals",
+            Self::ConstructorPattern => "constructor-pattern",
         })
     }
 }
@@ -220,7 +225,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 42] = [
+pub const REWRITES: [Rewrite; 44] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -561,6 +566,22 @@ pub const REWRITES: [Rewrite; 42] = [
         to: Spelling("def f() -> B = c ;"),
         enabled: Enabled::On,
     },
+    Rewrite {
+        name: RewriteName::ConstructorPattern,
+        direction: Direction::Sugar,
+        mold: MoldName("constructor_pattern"),
+        from: Spelling("C(p, q)"),
+        to: Spelling("C p q"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::ConstructorPattern,
+        direction: Direction::Desugar,
+        mold: MoldName("constructor_pattern"),
+        from: Spelling("C(p, q)"),
+        to: Spelling("C p q"),
+        enabled: Enabled::On,
+    },
 ];
 
 /// Which rewrites a form runs.
@@ -755,13 +776,19 @@ impl Band
                 | "f_type.result.labelled",
                 _,
             )
-            | ("application_expression" | "type_application.juxtaposed", Position::First) => {
-                Self::Application
-            },
+            | (
+                "application_expression"
+                | "type_application.juxtaposed"
+                | "constructor_pattern.juxtaposed",
+                Position::First,
+            ) => Self::Application,
             ("u_type" | "at_type", _)
-            | ("application_expression" | "type_application.juxtaposed", Position::Later) => {
-                Self::Atom
-            },
+            | (
+                "application_expression"
+                | "type_application.juxtaposed"
+                | "constructor_pattern.juxtaposed",
+                Position::Later,
+            ) => Self::Atom,
             ("product_type", _) => Self::Bridge,
             ("sum_type", _) => Self::Product,
             // A protocol step's payload stands left of `>!` or `>?` as an
@@ -787,7 +814,9 @@ impl Band
             | "f_type.row.labelled"
             | "f_type.result.labelled"
             | "at_type" => Self::Bridge,
-            "application_expression" | "type_application.juxtaposed" => Self::Application,
+            "application_expression"
+            | "type_application.juxtaposed"
+            | "constructor_pattern.juxtaposed" => Self::Application,
             "product_type" => Self::Product,
             "sum_type" => Self::Sum,
             "lazy_product_type" => Self::Lazy,
@@ -803,7 +832,12 @@ impl Band
             | "mu_session_type"
             // A lambda binds loose, as the printer binds it, so a parenthesis
             // around one as a first argument leads its juxtaposition (#5750).
-            | "lambda_expression" => Self::Loose,
+            | "lambda_expression"
+            // A pattern's operator binds loose, so an operand of a juxtaposed
+            // constructor pattern keeps its parentheses, `C (x ∷ rest)`.
+            | "cons_pattern"
+            | "or_pattern"
+            | "as_pattern" => Self::Loose,
             _ => Self::Atom,
         }
     }
@@ -2299,6 +2333,9 @@ impl<'source> Respelling<'_, 'source>
                 out.place(&self.operand(path), Band::Atom);
                 Band::Application
             },
+            (RewriteName::ConstructorPattern, Direction::Sugar | Direction::Desugar) => {
+                self.juxtaposed_pattern(&mut out, parts)?
+            },
             (RewriteName::TypeApplication, Direction::Sugar | Direction::Desugar) => {
                 if self
                     .called
@@ -3565,7 +3602,7 @@ impl<'source> Respelling<'_, 'source>
                         if led.is_none() {
                             led = Some(operand.enclosed() == Enclosed::Yes);
                         }
-                        out.glue();
+                        out.glue(Spacing::TypeGlue);
                         out.place(&operand, Band::Atom);
                     }
                     else if carrier {
@@ -3666,10 +3703,57 @@ impl<'source> Respelling<'_, 'source>
         let led = operands.first().map_or(Enclosed::No, Operand::enclosed);
         out.fragment(head);
         for operand in &operands {
-            out.glue();
+            out.glue(Spacing::TypeGlue);
             out.place(operand, Band::Atom);
         }
         Some(juxtaposition(Band::Atom, led))
+    }
+
+    /// Write the constructor pattern whose parts are `parts` as
+    /// juxtaposition, `C p q`. Parenthesize each operand that is no atom.
+    /// Write each comment of `parts` before the operand it preceded, and a
+    /// comment after the last operand after it. Do not write a pattern with
+    /// no list or with an empty list.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the operands and the comments, growth within the pattern's
+    ///   operands
+    fn juxtaposed_pattern(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<Band>
+    {
+        let (owns, operands) = split(parts);
+        let open = owns
+            .iter()
+            .position(|&own| <&str>::from(own) == OPEN_PAREN.0)?;
+        let (head, list) = owns.split_at(open);
+        if head.is_empty()
+            || operands.is_empty()
+            || list.len() != operands.len().saturating_add(1)
+            || list.last().map(|&own| <&str>::from(own)) != Some(")")
+        {
+            return None;
+        }
+        let operands: Vec<Operand<'source>> = operands
+            .into_iter()
+            .map(|operand| self.operand(operand))
+            .collect();
+        let comments = comments_by_operand(parts);
+        for &own in head {
+            out.fragment(own);
+        }
+        for (index, operand) in operands.iter().enumerate() {
+            out.glue(Spacing::PatternGlue);
+            out.comments(comments.get(index).map_or(&[][..], Vec::as_slice));
+            out.place(operand, Band::Atom);
+        }
+        out.comments(comments.get(operands.len()).map_or(&[][..], Vec::as_slice));
+        Some(Band::Application)
     }
 
     /// The band a form of the rule `rule` over `parts` binds at: the rule's
@@ -3831,7 +3915,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 40] = [
+const RULES: [MoldName; 45] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -3872,6 +3956,11 @@ const RULES: [MoldName; 40] = [
     MoldName("def_value"),
     MoldName("module_definition_member"),
     MoldName("attributed_module_member"),
+    MoldName("constructor_pattern"),
+    MoldName("constructor_pattern.juxtaposed"),
+    MoldName("cons_pattern"),
+    MoldName("or_pattern"),
+    MoldName("as_pattern"),
 ];
 
 /// The block a form reaches through a `Sort::Block` hole, read among its
@@ -4284,21 +4373,25 @@ impl<'source> Builder<'source>
         self.gap(Spelling(" "));
     }
 
-    /// Write the empty tile a type's juxtaposition stands on, after a
-    /// space, as the parser reads it before each operand. The layout reads
-    /// the spine of a respelled type at these tiles, as it reads a written
-    /// one.
+    /// Write the empty tile a juxtaposition stands on, after a space, as the
+    /// parser reads it before each operand: a type's, `Maybe A`, under
+    /// [`Spacing::TypeGlue`], and a pattern's, `Cons x rest`, under
+    /// [`Spacing::PatternGlue`]. The layout reads the spine of a respelled
+    /// form at these tiles, as it reads a written one.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Cost
     /// - allocation: one leaf of the respelled stream, growth within the source
-    fn glue(&mut self)
+    fn glue(
+        &mut self,
+        context: Spacing,
+    )
     {
         self.gap(Spelling(" "));
         let leaf = Leaf {
-            context: Spacing::TypeGlue,
+            context,
             ..self.written(SourceFragment::from(""), Material::Token)
         };
         self.leaves.push(leaf);

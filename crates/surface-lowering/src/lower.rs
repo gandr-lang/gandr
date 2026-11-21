@@ -5046,6 +5046,52 @@ mod tests
         );
     }
 
+    /// #8057: a constructor pattern applied by juxtaposition lowers to the
+    /// case tree its call form lowers to. A nested pattern in parentheses and
+    /// a qualified head do the same.
+    #[test]
+    fn a_constructor_pattern_applies_by_juxtaposition_8057()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(include_str!(
+                "lower/fixtures/a-constructor-pattern-applies-by-juxtaposition-8057-module.gandr"
+            )),
+            &mut arena,
+        );
+        let body = |wanted: &str| {
+            let declaration = module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"));
+            let DeclarationOutcome::Completed { body, .. } = declaration.outcome()
+            else {
+                panic!("`{wanted}` completes: {:?}", declaration.outcome());
+            };
+            body
+        };
+        for (juxtaposed, called, reason) in [
+            ("juxtaposed", "called", "`C h _` lowers as `C(h, _)`"),
+            (
+                "nested",
+                "nested_called",
+                "`C _ (C y _)` lowers as `C(_, C(y, _))`",
+            ),
+            (
+                "qualified",
+                "qualified_called",
+                "`L.C h _` lowers as `L.C(h, _)`",
+            ),
+        ] {
+            assert_eq!(
+                gandr_core_term::equal_certificate_syntax(&arena, body(juxtaposed), body(called)),
+                gandr_core_term::CertificateEquality::Equal,
+                "{reason}"
+            );
+        }
+    }
+
     #[test]
     fn a_product_binder_splits_as_the_tuple_binder_4853()
     {

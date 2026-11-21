@@ -1460,7 +1460,8 @@ enum Tile
 /// the body after it (#5326). A form with no body has no such column, so its
 /// type's spine breaks as an expression's does (#7939). Nor is a call's in
 /// call form that a postfix form takes as its target, `f(x).l`: a break there
-/// would give the postfix form the group alone (#5665).
+/// would give the postfix form the group alone (#5665). Nor is a constructor
+/// pattern's, `Cons x rest`: an arm's pattern keeps the line of its `|`.
 ///
 /// # Specification
 /// trivial.
@@ -1472,6 +1473,7 @@ fn tile(
     let typed = placed.context == space::Context::TypeGlue;
     if matches!(placed.element, Element::Text(text) if <&str>::from(text).is_empty())
         && placed.context != space::Context::CallGlue
+        && placed.context != space::Context::PatternGlue
         && (!typed || held == Held::Typed)
     {
         Tile::Juxtaposition

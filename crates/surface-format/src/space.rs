@@ -95,6 +95,10 @@ pub enum Context
     /// there would make the group an argument of its own and give the
     /// postfix form the group alone. The layout never breaks a spine there.
     CallGlue,
+    /// The empty tile of a constructor pattern's juxtaposition, `Cons x
+    /// rest`. The layout never breaks a pattern's spine at it, since an arm's
+    /// pattern stands on the line of its `|`.
+    PatternGlue,
 }
 
 impl Context
@@ -148,6 +152,7 @@ impl Context
             "?" if rule == "receive_session_type" => Self::Prefix,
             "!" | "\\" | ".." | "~" => Self::Prefix,
             "" if rule == "type_application.juxtaposed" => Self::TypeGlue,
+            "" if rule == "constructor_pattern.juxtaposed" => Self::PatternGlue,
             _ => Self::Plain,
         }
     }
@@ -204,6 +209,7 @@ pub fn padding(open: Token<'_>) -> Padding
             | Context::Signature
             | Context::Plain
             | Context::TypeGlue
+            | Context::PatternGlue
             | Context::CallGlue => Padding::Pad,
         };
     }
@@ -358,6 +364,7 @@ pub fn join(
             | Context::Plain
             | Context::Written
             | Context::TypeGlue
+            | Context::PatternGlue
             | Context::CallGlue => Join::Touch,
         };
     }

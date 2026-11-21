@@ -89,21 +89,22 @@ use crate::failure::Failure;
 /// words, quotes, expansions and operators (#1057), then by a type signature
 /// with no body, `type T : K;` (#8073), then by the protocol steps `T >! S`
 /// and `T >? S` and the recursion `rec X => S`, then by the static bracket's
-/// face form `T[f ↦ v]` leaving the grammar (#8188).
-const BUILT_IN_FINGERPRINT: u64 = 0x53c7_63f0_bd91_f147;
+/// face form `T[f ↦ v]` leaving the grammar (#8188), then by the juxtaposed
+/// constructor pattern `C p q` and the group of one pattern `(p)` (#8057).
+const BUILT_IN_FINGERPRINT: u64 = 0x2fd2_cdd7_50e9_b0e6;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3112);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3114);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 92;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
-    (" ", 2),
+    (" ", 3),
     ("!", 1),
     ("!=", 1),
     ("\"", 12),
@@ -114,7 +115,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("&&", 1),
     ("&{", 2),
     ("(", 127),
-    (")", 131),
+    (")", 132),
     ("*", 2),
     ("*=", 16),
     ("*{", 9),

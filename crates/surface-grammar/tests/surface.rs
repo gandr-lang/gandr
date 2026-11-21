@@ -62,6 +62,7 @@ const EXPECTED_PRECEDENCE_GROUPS: &[(&str, Assoc)] = &[
     ("expression.pipe", Assoc::Left),
     ("expression.application", Assoc::Left),
     ("type.juxtaposition", Assoc::Left),
+    ("pattern.juxtaposition", Assoc::Left),
 ];
 
 /// The built-in tighter-than edges, in the DAG's edge order.
@@ -75,6 +76,7 @@ const EXPECTED_PRECEDENCE_EDGES: &[(&str, &str)] = &[
     ("expression.and", "expression.or"),
     ("expression.or", "expression.pipe"),
     ("pattern.atom", "pattern.cons"),
+    ("pattern.atom", "pattern.juxtaposition"),
     ("pattern.as", "pattern.or"),
     ("type.atom", "type.path"),
     ("type.path", "type.application"),
@@ -91,6 +93,7 @@ const EXPECTED_PRECEDENCE_EDGES: &[(&str, &str)] = &[
     ("expression.pipe", "expression.pure"),
     ("expression.application", "expression.unary"),
     ("type.juxtaposition", "type.application"),
+    ("pattern.juxtaposition", "pattern.cons"),
 ];
 
 /// The group of `dag` named `name`.
@@ -329,6 +332,7 @@ fn built_in_precedence_bands_are_exact() -> Result<(), Failure>
     ]);
     assert_chain(dag, &[
         PrecName("pattern.atom"),
+        PrecName("pattern.juxtaposition"),
         PrecName("pattern.cons"),
         PrecName("pattern.as"),
         PrecName("pattern.or"),

@@ -1518,6 +1518,7 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "joined-definition",
             "type-application",
             "body-after-equals",
+            "constructor-pattern",
         ],
         "each rewrite is named as a caller selects it, in the table's order"
     );
@@ -2345,6 +2346,32 @@ fn a_constructor_result_is_written_juxtaposed_5803()
             spelled(&grammar, source, form, Selection::Every),
             formatted,
             "{form}"
+        );
+    }
+}
+
+/// A constructor pattern is written juxtaposed in either form. A nested
+/// pattern and an alias take parentheses as operands, a nullary constructor
+/// stays bare, and a comment inside the list rides before its operand (#8057).
+#[test]
+fn a_constructor_pattern_is_written_juxtaposed_8057()
+{
+    let grammar = grammar();
+    let source =
+        include_str!("rewrite/unformatted/a-constructor-pattern-is-written-juxtaposed-8057.gandr");
+    let formatted = include_str!(
+        "rewrite/unformatted/a-constructor-pattern-is-written-juxtaposed-8057-formatted.gandr"
+    );
+    for form in [Form::Sugared, Form::Explicit] {
+        assert_eq!(
+            spelled(&grammar, source, form, Selection::Every),
+            formatted,
+            "{form}"
+        );
+        assert_eq!(
+            spelled(&grammar, formatted, form, Selection::Every),
+            formatted,
+            "{form}, a second pass"
         );
     }
 }

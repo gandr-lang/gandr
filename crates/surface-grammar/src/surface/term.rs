@@ -115,13 +115,14 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.pipe", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.application", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 112 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=13 => Sort::Item, 14..=20 => Sort::ModuleMember, 21..=32 | 103 => Sort::Pattern, 33..=37 => Sort::Instantiation, 111 => Sort::Block, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "statement_block")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.juxtaposition", "pattern.atom", "expression.pure", "expression.pipe", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.application", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 113 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=13 => Sort::Item, 14..=20 => Sort::ModuleMember, 21..=33 | 104 => Sort::Pattern, 34..=38 => Sort::Instantiation, 112 => Sort::Block, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "statement_block")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
     let pat_or = precs.prec(PrecName("pattern.or"))?;
     let pat_as = precs.prec(PrecName("pattern.as"))?;
     let pat_cons = precs.prec(PrecName("pattern.cons"))?;
+    let pat_juxtaposition = precs.prec(PrecName("pattern.juxtaposition"))?;
     let pat_atom = precs.prec(PrecName("pattern.atom"))?;
     let pure = precs.prec(PrecName("expression.pure"))?;
     let pipe = precs.prec(PrecName("expression.pipe"))?;
@@ -145,6 +146,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
         or: pat_or,
         as_p: pat_as,
         cons: pat_cons,
+        juxtaposition: pat_juxtaposition,
         atom: pat_atom,
     });
     instantiations(&mut out, atom, pure);
@@ -1748,7 +1750,7 @@ fn attributes_parameters_externs(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 12 && added.iter().zip(["wildcard", "constructor_pattern", "tuple_pattern", "telescope_pattern", "labelled_sum_pattern", "list_pattern", "rest_pattern", "literal_pattern", "hole.pattern", "cons_pattern", "or_pattern", "as_pattern"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Pattern && rule.prec() == match name { "or_pattern" => precs.or, "as_pattern" => precs.as_p, "cons_pattern" => precs.cons, _ => precs.atom } && rule.provenance().0 == if name == "hole.pattern" { "hole" } else { name })))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 13 && added.iter().zip(["wildcard", "constructor_pattern", "constructor_pattern.juxtaposed", "tuple_pattern", "telescope_pattern", "labelled_sum_pattern", "list_pattern", "rest_pattern", "literal_pattern", "hole.pattern", "cons_pattern", "or_pattern", "as_pattern"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Pattern && rule.prec() == match name { "or_pattern" => precs.or, "as_pattern" => precs.as_p, "cons_pattern" => precs.cons, "constructor_pattern.juxtaposed" => precs.juxtaposition, _ => precs.atom } && rule.provenance().0 == match name { "hole.pattern" => "hole", "constructor_pattern.juxtaposed" => "constructor_pattern", _ => name })))]
 fn patterns(
     out: &mut Vec<Rule>,
     precs: PatternPrecs,
@@ -1758,6 +1760,7 @@ fn patterns(
         or,
         as_p,
         cons,
+        juxtaposition,
         atom,
     } = precs;
     let s = Sort::Pattern;
@@ -1782,11 +1785,27 @@ fn patterns(
             opt(seq([t(TileLabel("(")), comma1(h(s)), t(TileLabel(")"))])),
         ]),
     ));
+    // A constructor applied by juxtaposition, `Cons _ rest`, as a value call
+    // is written, `f x`. Its tile is the zero-width application tile, which
+    // the melder pushes between two pattern operands. Its provenance is
+    // `constructor_pattern`, so the lowering reads `Cons _ rest` as the
+    // constructor pattern with the operands `_` and `rest`. The band binds
+    // tighter than the word cons and looser than an atom: `Cons x (Cons y
+    // rest)` writes its nested operand in parentheses.
+    out.push(r(
+        RuleName("constructor_pattern.juxtaposed"),
+        Provenance("constructor_pattern"),
+        s,
+        juxtaposition,
+        seq([h(s), t(TileLabel(super::APPLICATION)), h(s)]),
+    ));
     // A group of patterns receiving a call's outputs, positional `(q, r)` or
     // labelled `(.q, .r)`, `(.r = rem, .q = quo)`. The labelled group takes a
     // `(` of its own, decided by the very next tile, as the labelled telescope
     // does, so a dot after an operand is never a label's. A stored product
-    // takes the pattern `*{p, q}`.
+    // takes the pattern `*{p, q}`. A group of one, `(p)`, shares the `( p`
+    // prefix and closes at `)`. It encloses an operand of a juxtaposed
+    // constructor pattern that is not atomic, `Cons x (Cons y rest)`.
     out.push(r(
         RuleName("tuple_pattern"),
         Provenance("tuple_pattern"),
@@ -1801,9 +1820,14 @@ fn patterns(
             seq([
                 t(TileLabel("(")),
                 h(s),
-                repeat1(seq([t(TileLabel(",")), h(s)])),
-                opt(t(TileLabel(","))),
-                t(TileLabel(")")),
+                alt([
+                    t(TileLabel(")")),
+                    seq([
+                        repeat1(seq([t(TileLabel(",")), h(s)])),
+                        opt(t(TileLabel(","))),
+                        t(TileLabel(")")),
+                    ]),
+                ]),
             ]),
         ]),
     ));
@@ -2510,6 +2534,9 @@ struct PatternPrecs
     /// The word cons `g ∷ p`, right-associative, between the binding and the
     /// atoms.
     cons: Prec,
+    /// The juxtaposed constructor pattern `C p q`, left-associative, between
+    /// the word cons and the atoms.
+    juxtaposition: Prec,
     /// Every atomic pattern.
     atom: Prec,
 }
