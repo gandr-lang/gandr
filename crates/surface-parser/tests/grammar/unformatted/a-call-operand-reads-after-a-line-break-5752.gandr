@@ -1,0 +1,2 @@
+def x : Vec a
+  plus(m, Zero);
