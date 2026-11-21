@@ -14,9 +14,9 @@
 theory Series where
   /// The states of a switch.
   sort S : Type;
-  /// The switch that is open.
+  /// The open switch.
   oper open : S;
-  /// The switch that is shut.
+  /// The shut switch.
   oper shut : S;
   /// Two switches in a series.
   oper both : (x : S, y : S) --> S;
