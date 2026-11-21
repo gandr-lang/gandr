@@ -161,6 +161,7 @@ INSERT INTO position VALUES('crates/kernel-term/src/presented.rs','Reflexivities
 INSERT INTO position VALUES('crates/kernel-term/src/presented.rs','RewriteFuel','','none',NULL,'A budget.');
 INSERT INTO position VALUES('crates/kernel-term/src/presented.rs','RuleIndex','','local',NULL,'A rule''s place in the written order of its declaration while a check reads it.');
 INSERT INTO position VALUES('crates/kernel-term/src/presented.rs','RuleVariable','kernel-term::encode','kept',NULL,'A rule''s pattern variable, numbered by its first occurrence in the rule.');
+INSERT INTO position VALUES('crates/kernel-term/src/presented.rs','Swaps','','none',NULL,'A mask of the nodes of a left side whose two arguments are swapped.');
 INSERT INTO position VALUES('crates/kernel-term/src/presented.rs','TermPosition','','local',NULL,'A place in one flattened term.');
 INSERT INTO position VALUES('crates/kernel-term/src/presented.rs','VariableCount','','none',NULL,'A count of variables.');
 INSERT INTO position VALUES('crates/kernel-term/src/session.rs','PayloadSlot','kernel-core-base::encoding','kept',NULL,'A payload''s place in the telescope of one code, which the graph''s words write.');
