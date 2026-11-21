@@ -1,0 +1,33 @@
+//! `std.overflow`: the effect of an operation whose result has no value of its
+//! width. A program must not test each sum by hand, and an overflow must stop
+//! the computation. So the operation `overflow` passes no continuation, and no
+//! handler resumes it. Its clause abandons the computation after it.
+//!
+//! The reason names the operation and its cause. A source handles the effect
+//! with a scope at its site, and its clause can give the reason in the place of
+//! the answer.
+//!
+//! - see: #7968
+
+/// Why an operation has no answer of its width.
+pub data Cause : Type where
+  /// The exact result is out of the range of the width.
+  | Overflowed : Cause
+  /// The divisor is zero.
+  | ZeroDivisor : Cause
+  /// The shift amount is out of the range of the width.
+  | ShiftOutOfRange : Cause
+
+/// The reason of an overflow: the name of the operation and its cause.
+pub data Reason : Type where
+  /// The operation `operation` has no answer of its width, for `cause`.
+  | Reason : (operation : String, cause : Cause) --> Reason
+
+/// The overflow of an operation. Its one operation passes no continuation.
+pub theory Overflow.Eff where
+  /// The reason, which a scope fixes to `Reason`.
+  sort R : Type+;
+  /// The carrier, the answer of the handler.
+  sort C : Type;
+  /// The operation has no answer of its width, for `reason`.
+  oper overflow : (reason : R) --> C;

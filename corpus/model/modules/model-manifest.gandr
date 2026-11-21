@@ -1,0 +1,37 @@
+// This source shows a manifest sort in a model type.
+//
+// `Metrics` and `Sealed` fix `Ratio` as `Integer`.
+//
+// The checker reads each sealed scale at that stated sort. The model type gives
+// the sort. So a model need not give it, and a sealed model keeps it.
+//
+// - see: #2917
+
+/// `Metering` states a ratio and three values.
+theory Metering where
+  sort Ratio : Type;
+  oper base : Integer;
+  oper double : Integer;
+  oper scale : Ratio;
+
+/// `Metrics` fixes `Ratio` as `Integer`.
+module Metrics : Model(Metering) with sort Ratio = Integer where
+  /// `base` gives seven.
+  def base = 7;
+  /// `double` gives fourteen.
+  def double = 14;
+  /// `scale` gives one.
+  def scale = 1;
+
+/// `Sealed` fixes `Ratio` as `Integer`.
+module Sealed :> Model(Metering) with sort Ratio = Integer where
+  /// `base` gives seven.
+  def base = 7;
+  /// `double` gives fourteen.
+  def double = 14;
+  /// `scale` gives two.
+  def scale = 2;
+
+/// `sealed_scale` reads the sealed scale as an integer.
+@[runs("2")]
+def sealed_scale() -> Integer = Sealed.scale;

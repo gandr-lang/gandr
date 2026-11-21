@@ -1,0 +1,150 @@
+# The uses of the provider that one name `__NAMES__` stands for, in the files
+# `__FILES__` where it stands for one: an id of the arena, a holder of one,
+# or a re-export of either. The codemod fills the name and the files from the
+# imports of each file. A use outside a body takes the brand `'r`, and a use
+# in a body takes the elided brand `'_`. A use with generic arguments takes
+# the brand first among them. The definition's own name, a struct literal and
+# a struct pattern are not uses.
+id: use-takes-brand-__ID__
+language: Rust
+severity: hint
+files: __FILES__
+message: the use of a provider takes the region's brand
+rule:
+  pattern: $NAME
+  kind: type_identifier
+  regex: ^(__NAMES__)$
+  all:
+    - not:
+        inside:
+          kind: generic_type
+    - not:
+        inside:
+          kind: scoped_type_identifier
+    - not:
+        inside:
+          field: name
+          any:
+            - kind: struct_item
+            - kind: enum_item
+            - kind: union_item
+            - kind: type_item
+            - kind: trait_item
+            - kind: associated_type
+            - kind: type_parameter
+            - kind: type_binding
+    - not:
+        inside:
+          kind: struct_expression
+          field: name
+    - not:
+        inside:
+          kind: struct_pattern
+          field: type
+    - not:
+        inside:
+          kind: block
+          stopBy: end
+fix: $NAME<'r>
+---
+id: use-in-body-takes-elided-brand-__ID__
+language: Rust
+severity: hint
+files: __FILES__
+message: the use of a provider in a body takes the elided brand
+rule:
+  pattern: $NAME
+  kind: type_identifier
+  regex: ^(__NAMES__)$
+  inside:
+    kind: block
+    stopBy: end
+  all:
+    - not:
+        inside:
+          kind: generic_type
+    - not:
+        inside:
+          kind: scoped_type_identifier
+    - not:
+        inside:
+          field: name
+          any:
+            - kind: struct_item
+            - kind: enum_item
+            - kind: union_item
+            - kind: type_item
+            - kind: trait_item
+            - kind: associated_type
+            - kind: type_parameter
+            - kind: type_binding
+    - not:
+        inside:
+          kind: struct_expression
+          field: name
+    - not:
+        inside:
+          kind: struct_pattern
+          field: type
+fix: $NAME<'_>
+---
+id: use-arguments-take-brand-__ID__
+language: Rust
+severity: hint
+files: __FILES__
+message: the use of a provider takes the region's brand
+rule:
+  pattern: $ARGUMENTS
+  kind: type_arguments
+  inside:
+    kind: generic_type
+    has:
+      field: type
+      kind: type_identifier
+      regex: ^(__NAMES__)$
+  all:
+    - not:
+        has:
+          kind: lifetime
+          regex: ^'(r|_)$
+    - not:
+        inside:
+          kind: block
+          stopBy: end
+transform:
+  BRANDED:
+    replace:
+      source: $ARGUMENTS
+      replace: ^<
+      by: "<'r, "
+fix: $BRANDED
+---
+id: use-arguments-in-body-take-elided-brand-__ID__
+language: Rust
+severity: hint
+files: __FILES__
+message: the use of a provider in a body takes the elided brand
+rule:
+  pattern: $ARGUMENTS
+  kind: type_arguments
+  inside:
+    kind: generic_type
+    has:
+      field: type
+      kind: type_identifier
+      regex: ^(__NAMES__)$
+  all:
+    - not:
+        has:
+          kind: lifetime
+          regex: ^'(r|_)$
+    - inside:
+        kind: block
+        stopBy: end
+transform:
+  BRANDED:
+    replace:
+      source: $ARGUMENTS
+      replace: ^<
+      by: "<'_, "
+fix: $BRANDED

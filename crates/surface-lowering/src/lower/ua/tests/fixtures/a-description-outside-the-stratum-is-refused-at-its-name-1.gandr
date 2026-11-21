@@ -1,0 +1,5 @@
+theory Two where {
+  sort Ob : Type;
+  sort Ar : Type;
+  oper f : (a : Ob) --> (b : Ob);
+}
