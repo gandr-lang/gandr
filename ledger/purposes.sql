@@ -3291,7 +3291,6 @@ INSERT INTO purpose VALUES('surface-grammar','model::CandidateCount','struct','N
 INSERT INTO purpose VALUES('surface-grammar','model::LabelText','struct','Names a label as a token spells it, declared or not, so a parser resolves it to the declared tile label.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::LeftOperand','enum','Names what a rule admits as its left operand, any whole operand or a name, so the melder refuses a qualified path over a whole form.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::MoldCount','struct','Names how many molds a grammar declares, so a build reports the table''s size.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-grammar','model::OldSpelling','struct','Names the text that a source writes for an old spelling, so the refusal''s message and the resolver read one string.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::Pbg','struct','Holds the checked precedence-bounded grammar, which exists only once its three build-time gates have passed, so a parser and a highlighter read the molds and the relations it holds.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::PbgError','enum','Names every refusal of grammar construction and lookup, so a build or a lookup reports the fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::PrecName','struct','Names one precedence group, so a rule and a precedence DAG are keyed by it.',NULL,'fits','sound',NULL);
@@ -3301,10 +3300,9 @@ INSERT INTO purpose VALUES('surface-grammar','model::Provenance','struct','Names
 INSERT INTO purpose VALUES('surface-grammar','model::Regex','struct','Holds a regular expression over grammar symbols, stored flat in pre-order, so a rule''s form is walked without a pointer to its own type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::RegexShape','enum','Names the root of a regex subtree with its children as views, so a form is read one level deep.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::RegexView','struct','Holds a borrowed subtree of a regex, so a form is walked by offset.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-grammar','model::Removal','enum','Names whether an adaptation record keeps an old spelling, its replacement and the issue that removes it, or the retired form that a source meets as a refusal, so the syntax ledger marks each old spelling.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-grammar','model::Removal','enum','Names whether an adaptation record keeps a shape of the surface, or an old spelling that the grammar still parses with its replacement and the issue that removes it, so the syntax ledger marks each old spelling.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::RemovalIssue','struct','Names the tracker issue that removes an old spelling, so check:ledger reads its state.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::Replacement','struct','Names the spelling that stays in the place of an old one, so the syntax ledger row points a reader at it.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-grammar','model::RetiredForm','enum','Names each old spelling that a source meets as a refusal, with its surface, its replacement and its written text, so the refusal and its ledger row hold one string.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::Rule','struct','Holds one grammar rule, a named form of one sort at one precedence, so a grammar is built from its rules.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::RuleName','struct','Names one grammar rule, so a rule is named in a refusal or a provenance.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::Sort','enum','Names a grammar sort, the closed set of things a hole can stand for, so a rule and a mold are keyed by it.',NULL,'fits','sound',NULL);
@@ -3444,6 +3442,8 @@ INSERT INTO purpose VALUES('surface-lowering','lower::closure::Onto','enum','Nam
 INSERT INTO purpose VALUES('surface-lowering','lower::lower_module','function','Lowers a module''s molded tree into a core arena, so the module''s declarations are minted.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::lower_unit','function','Lowers a unit''s sources one at a time into one arena, so a sibling''s declarations are the prefix of its importer''s constants.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','attribute::AttributeEntry','struct','Holds one filed attribute entry, so a lowered module''s attributes are read under the declaration''s content identity.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','attribute::AttributePlace','enum','Names where an attribute block stands, before a declaration or before a constructor arm, so an attribute at a place it does not take is refused by that place.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','attribute::AttributePlaces','enum','Names the places where a registered attribute stands, so the registry states the place of each attribute.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','attribute::AttributeRegistry','struct','Holds the closed registry of attributes, so an unknown name gets a bounded suggestion.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','attribute::AttributeSchema','enum','Names the payload form an attribute''s schema admits, so a payload of a form the schema does not admit is refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','attribute::AttributeTable','struct','Holds the attribute side table a lowered module carries beside its declarations, so an attribute''s payload is read under the declaration''s content identity.',NULL,'fits','sound',NULL);
@@ -3460,6 +3460,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','attribute::names','module','
 INSERT INTO purpose VALUES('surface-lowering-base','attribute::payload','module','Names the reason none is held: the attribute was filed with no payload value.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','attribute::payload_form','function','Names the form a payload takes, so a payload''s form is checked against the schema.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','attribute::payload_verdict','function','Names the verdict a payload''s schema returns, so a payload''s form is checked against the schema.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','attribute::placed','module','Names the reason no place is refused: the attribute takes the place where it stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','attribute::registry','module','Names the reason none is held: the registry holds no entry for the spelling.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','attribute::suggestion','module','Names the reason none is held: no registered name sits near the spelling.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','attribute::texts','function','Reads the texts a `distributes` payload holds in written order, so the corpus reads each stated weight and outcome.',NULL,'fits','sound',NULL);
@@ -3616,7 +3617,6 @@ INSERT INTO purpose VALUES('surface-lowering-base','form::Pieces','struct','Hold
 INSERT INTO purpose VALUES('surface-lowering-base','form::Placed','struct','Holds a form''s placement, so the form''s placement is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::Repair','enum','Names a form''s repair, so a repaired form is refused where it stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::Repaired','struct','Holds a form''s repair, so a repaired form is refused where it stands.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-lowering-base','form::RetiredBox','struct','Holds a retired box''s full span, so its named refusal covers both types.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::RuleIdentity','struct','Names a rule by its name in its grammar, so two rules are compared by identity.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::Run','enum','Holds the operands between two of a form''s own tiles, so a form reads one, none or several.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::RunReading','enum','Names how a run of glyphs reads, so an operator written wrong is refused at the run.',NULL,'fits','sound',NULL);
@@ -3628,7 +3628,6 @@ INSERT INTO purpose VALUES('surface-lowering-base','form::Universe','struct','Na
 INSERT INTO purpose VALUES('surface-lowering-base','form::WrittenPath','struct','Holds a dotted path as a form writes it, so the path resolves in the module its segments name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::applied_word','function','Finds the application a word heads, so a misspelt keyword is refused at the word.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::bare_bracket','function','Finds the bare bracket open at a refusal, so an index written without its operator is refused at the bracket.',NULL,'fits','record','Its documentation names an issue number as the origin of its reading.');
-INSERT INTO purpose VALUES('surface-lowering-base','form::boxed_extra','function','Finds a retired box and its full span, so a refused declaration names both types.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::classifies_codes','function','Names whether a written type classifies codes, so a kind arrow lowers as the static arrow and the formatter writes no alias for its thunk.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::cursor','module','Names the reason none is held: the next piece is not the tile asked for.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::declined','module','Names the reason none is held: the form''s kind has no declined row.',NULL,'fits','sound',NULL);
@@ -3649,8 +3648,6 @@ INSERT INTO purpose VALUES('surface-lowering-base','form::read_as_type','functio
 INSERT INTO purpose VALUES('surface-lowering-base','form::read_pieces','function','Reads a node''s children against its own rule, so each form reads its tiles and operands in written order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::repair','module','Names the reason none is held: the parser inserted nothing among the children.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::repair_at','function','Reads the repair the parser inserted at a child, so the refusal names the repair.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-lowering-base','form::retired_box','module','Names why an extra operand is no retired box, so an absent box has its reason.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-lowering-base','form::retired_within','function','Reads the first retired token a form holds at any depth, so a refused declaration names the old spelling and no other fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::run_reading','function','Reads how a run of glyphs reads, so an operator written wrong is refused at the run.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::shape_of','function','Reads the shape of a node, so each node is dispatched by its shape.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::stop_of','function','Finds where a form itself stopped, so a torn form is refused where it left its shape.',NULL,'fits','sound',NULL);
@@ -3986,6 +3983,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','module::RecordFaces','struct
 INSERT INTO purpose VALUES('surface-lowering-base','module::Required','struct','Holds one entry of a world''s requirement row as its source writes it, so a deployment check reads its label, its interface and the sorts it fixes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','module::SlotIndex','struct','Names the index of a slot, so the slot''s index is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','module::SlotRefused','struct','Holds whether a declaration slot already holds a refusal.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','module::Standing','enum','Names what an attribute stands on, its declaration or one constructor of a data declaration, so the constructor''s mark is read by that constructor.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','module::Structure','struct','Holds one module as the collection pass found it: a stratum item.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','module::StructureIndex','struct','Names the index of a structure, so the structure''s index is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','module::THEORY_CODE','constant','Holds the name the presentation code takes.',NULL,'fits','sound',NULL);
@@ -4007,7 +4005,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','module::data::CellForm','str
 INSERT INTO purpose VALUES('surface-lowering-base','module::data::ClosedTerm','struct','Holds a closed constructor term as written: its nodes over the family''s tags, and the written node each spells.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','module::data::Constructor','struct','Holds a constructor, as a term or a pattern naming it resolves it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','module::data::DataForm','struct','Holds one data declaration, as the collection pass read it.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-lowering-base','module::data::DataMember','struct','Holds one member of a data declaration''s body: its first tile and the attribute blocks written before it, which state the expectation of the declaration the member is held apart as.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','module::data::DataMember','struct','Holds one member of a data declaration''s body: its first tile, the constructor it declares, and the attribute blocks written before it, which stand on that constructor or state the expectation of the declaration the member is held apart as.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','module::data::DataParameter','struct','Holds one parameter of a data declaration: its name''s tile and its classifier.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','module::data::FieldForm','struct','Holds one entry of a telescope a data declaration writes, a generator''s field or an index of its kind: the name it binds, when written, and its type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','module::data::GeneratorForm','struct','Holds one generator of a data declaration: its name''s tile, its fields and the indices its result states.',NULL,'fits','sound',NULL);
@@ -4018,6 +4016,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','module::data::closed_term','
 INSERT INTO purpose VALUES('surface-lowering-base','module::data::closed_term','module','Names the reason the term spells no closed constructor term.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','module::data::data_kind::Absent','enum','Names why a data declaration states no universe.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','module::data::field_name::Absent','enum','Names why a telescope entry binds no name.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','module::data::member_constructor::Absent','enum','Names why a member of a data declaration declares no constructor.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','module::data::port::Absent','enum','Names why a generator is no output of a multi-output constructor.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','module::data::reflexivities_around','function','Gives the term written at `at` with every `Path.here` call around it taken off, and those calls, the outermost first.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','module::data_signature','module','Names the reason none is held: the index is past the module''s signature list.',NULL,'fits','sound',NULL);
@@ -6709,8 +6708,6 @@ INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::SyntaxLedger','struc
 INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::exemplars::ExemplarFault','enum','Why one exemplar does not show what its name says.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::exemplars::ExemplarFinding','struct','One exemplar that does not hold, by its path.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::exemplars::ExemplarReport','struct','What a verification of the exemplar directory found.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::fences::FenceFinding','struct','One fenced `gandr` block that writes a retired spelling, by its path and line.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::fences::FenceReport','struct','What a read of the fenced `gandr` blocks of the prose found.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::recovery::RecoveryFinding','struct','A mutant whose first error does not mark its mutation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::recovery::RecoveryReport','struct','What a sweep of the syntax exemplars found.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::recovery::RecoveryTally','struct','What became of a sweep''s mutants, each counted once.',NULL,'fits','sound',NULL);

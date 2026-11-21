@@ -245,7 +245,7 @@
       "action": {
         "number": null,
         "title": "perf: the build's chain grows past 10 % in one night",
-        "body": "The nightly reads the chain of each architecture's cold build of the driver against the last night's (#6893). A chain that grows past 10 % in one night adds a row here, with the unit on the chain that grows the most. A landing that shortens the chain again clears its row under `## Rows`, and the collector closes once no row is open.\n\n## Nights\n\n- [ ] `x86-64 bbbbbbbbb` — the chain takes 7 s against 5 s at `aaaaaaaaa`, +40 %; `b` takes 4 s against 2 s ([run 7](https://example.invalid/runs/7))\n"
+        "body": "The nightly reads the chain of each architecture's cold build of the driver against the last night's (#6893). A chain that grows past 10 % in one night adds a row here, with the unit on the chain that grows the most. A landing that shortens the chain again clears its row under `## Rows`, and the collector closes once no row is open.\n\n## Nights\n\n- [ ] `x86-64 bbbbbbbbb` — the chain takes 7 s against 5 s at `aaaaaaaaa`. The change is +40 %. `b` takes 4 s against 2 s. The night is [run 7](https://example.invalid/runs/7).\n"
       }
     }
   },
@@ -343,6 +343,73 @@
         }
       ],
       "action": null
+    }
+  },
+  {
+    "name": "#7895: the row of a growth reads as sentences of one clause, so the body that opens the collector passes body:prose on a runner",
+    "program": "chain-night.jq",
+    "input": {
+      "share": 10,
+      "run": { "id": 9, "url": "https://example.invalid/runs/9" },
+      "rows": [
+        {
+          "arch": "riscv64",
+          "head": "dddddddddddd",
+          "machine": "riscv64, 4 threads",
+          "units": 1,
+          "wall": 5,
+          "time": 5,
+          "in_flight": 1,
+          "longest": { "unit": "d", "seconds": 5 },
+          "length": 5,
+          "pipelined": 5,
+          "chain": [
+            { "unit": "d", "source": null, "seconds": 5, "front": null, "bound": 5, "waits": null }
+          ],
+          "off": [],
+          "times": { "d": 5 }
+        }
+      ],
+      "last": [
+        {
+          "arch": "riscv64",
+          "head": "cccccccccccc",
+          "machine": "riscv64, 4 threads",
+          "units": 1,
+          "wall": 3,
+          "time": 3,
+          "in_flight": 1,
+          "longest": { "unit": "d", "seconds": 3 },
+          "length": 3,
+          "pipelined": 3,
+          "chain": [{ "unit": "d", "seconds": 3, "waits": null }],
+          "off": [],
+          "times": { "d": 3 }
+        }
+      ],
+      "issues": [],
+      "edits": {}
+    },
+    "output": {
+      "summary": "## The chain of each head\n\n|Architecture|Head|Wall|Units' time|In flight|Chain|Pipelined|Last night|Change|\n|---|---|---:|---:|---:|---:|---:|---:|---:|\n|riscv64|`ddddddddd`|5 s|5 s|1|5 s|5 s|3 s at `ccccccccc`|+66.67 %|\n\n### riscv64 at `ddddddddd`\n\nThe build runs 1 units on riscv64, 4 threads. The longest unit is `d` at 5 s.\n\n<details><summary>The chain: 1 units, 5 s, 5 s under pipelining</summary>\n\n|Unit|Time|The next unit waits on|\n|---|---:|---|\n|`d`|5 s|none|\n\n</details>\n\nNo unit stands off the chain.\n\nNo crate of the workspace stands on the chain.\n\nThe chain of riscv64 grows +66.67 % over the last night. `d` grows the most: 5 s against 3 s.\n",
+      "grew": [
+        {
+          "arch": "riscv64",
+          "head": "dddddddddddd",
+          "previous": "cccccccccccc",
+          "now": 5,
+          "before": 3,
+          "change": 66.67,
+          "unit": "d",
+          "unit_now": 5,
+          "unit_before": 3
+        }
+      ],
+      "action": {
+        "number": null,
+        "title": "perf: the build's chain grows past 10 % in one night",
+        "body": "The nightly reads the chain of each architecture's cold build of the driver against the last night's (#6893). A chain that grows past 10 % in one night adds a row here, with the unit on the chain that grows the most. A landing that shortens the chain again clears its row under `## Rows`, and the collector closes once no row is open.\n\n## Nights\n\n- [ ] `riscv64 ddddddddd` — the chain takes 5 s against 3 s at `ccccccccc`. The change is +66.67 %. `d` takes 5 s against 3 s. The night is [run 9](https://example.invalid/runs/9).\n"
+      }
     }
   }
 ]

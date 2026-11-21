@@ -1170,10 +1170,15 @@ enum Continuation
 /// constructors, at the bars' column, is no part of the last one. A comment
 /// is no statement, so code after a comment the group opens with starts one
 /// wherever the comment stands. A line after an attribute block, `@[ … ]`,
-/// starts the member the attribute decorates, at the attribute's indent.
+/// starts the member the attribute decorates, at the attribute's indent, and
+/// an attribute block on a line of its own starts a statement too: it stands
+/// before the member it decorates, as one before a constructor arm does.
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the items of the group, growth within the group's elements
 fn items<'group, 'source>(
     placed: &'group [Placed<'source>],
     docs: &[Built],
@@ -1234,6 +1239,8 @@ fn items<'group, 'source>(
                 let barred =
                     matches!(current.element, Element::Text(text) if <&str>::from(text) == "|");
                 let unseparated = !ended && !barred && breaks;
+                let attribute = matches!(current.element, Element::Group(GroupId(group))
+                    if docs.get(group).is_some_and(|built| built.opens == Opens::Attribute));
                 let deeper = base.is_some_and(|statement| current.indent > statement);
                 // A separator on a line of its own ends the statement before
                 // it.
@@ -1250,7 +1257,7 @@ fn items<'group, 'source>(
                         },
                         (Columns::Read, Some(None)) | (Columns::Unread, Some(_)) => deeper,
                     };
-                if unseparated && continues && (!armed || deeper) {
+                if unseparated && continues && !attribute && (!armed || deeper) {
                     continuation = Continuation::Continued;
                 }
                 else {

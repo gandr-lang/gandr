@@ -241,7 +241,6 @@ impl LoweringRefusal<'_>
             | Self::BareFeedback { .. }
             | Self::IllFormedDescription { .. }
             | Self::UnresolvedName { .. }
-            | Self::RetiredName { .. }
             | Self::BuiltinMark { .. }
             | Self::StagedBody { .. }
             | Self::UnresolvedDocLink { .. }
@@ -264,6 +263,7 @@ impl LoweringRefusal<'_>
             | Self::MissingPayload { .. }
             | Self::NonValuePayload { .. }
             | Self::IllTypedPayload { .. }
+            | Self::MisplacedAttribute { .. }
             | Self::ForwardMemberReference { .. }
             | Self::PhaseDependence { .. }
             | Self::InertRead { .. }
@@ -325,7 +325,6 @@ impl LoweringRefusal<'_>
                 ..
             } => FailureClass::Unimplemented(TrackingIssue::UNDECIDED_CONDITION),
             Self::UnresolvedName { .. }
-            | Self::RetiredName { .. }
             | Self::BuiltinMark { .. }
             | Self::StagedBody { .. }
             | Self::UnresolvedDocLink { .. }
@@ -348,6 +347,7 @@ impl LoweringRefusal<'_>
             | Self::MissingPayload { .. }
             | Self::NonValuePayload { .. }
             | Self::IllTypedPayload { .. }
+            | Self::MisplacedAttribute { .. }
             | Self::ForwardMemberReference { .. }
             | Self::PhaseDependence { .. }
             | Self::InertRead { .. }

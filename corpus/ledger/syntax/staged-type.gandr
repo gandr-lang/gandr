@@ -1,12 +1,5 @@
-/// `staged_type`: a type at a stage its signature binds. The bracket also
-/// reads the retired forms that fixed a record type's fields, and refuses
-/// them by name: `.#{` of `extension_type` replaces them.
+/// `staged_type`: a type at a stage its signature binds.
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-type Pair = *{left : Integer, right : Integer} where
-  face lefty = {left};
-  face righty = {right};
 def kept[i : Size](n : Nat[i]) -> Nat[i] = n;
-@[refuses("RetiredSpelling.bracket_faces")]
-def faced : Pair[lefty ↦ *{.left = 1}, righty |-> *{.right = 2}] = *{};

@@ -208,10 +208,6 @@ pub enum DescriptionFault
     NoType,
     /// A sort's classifier is no universe.
     NoUniverse,
-    /// The retired rule arrow has no rewrite-face reading.
-    RetiredRuleArrow,
-    /// The retired operation lead is not a synonym for an operation member.
-    RetiredOperation,
     /// The native interpreter refused a well-formed description leaf.
     NativeDecode(gandr_core_term::description::DecodeError),
     /// The description checker refused the declaration.
@@ -581,13 +577,6 @@ impl DescriptionDiagnostic
                 },
                 Maybe::Absent(_) => malformed(),
             },
-            DescriptionFault::Signature(crate::circuit::SignatureFault::Retired(retired)) => {
-                LoweringRefusal::MalformedForm {
-                    span: self.span,
-                    form: crate::form::FormName::DECLARATION,
-                    fault: crate::error::FormFault::Retired(retired),
-                }
-            },
             DescriptionFault::IllFormed(ref reason) => LoweringRefusal::IllFormedDescription {
                 span: self.span,
                 fault: self.span,
@@ -612,8 +601,6 @@ impl DescriptionDiagnostic
             | DescriptionFault::FamilyHead
             | DescriptionFault::MemberPolarity
             | DescriptionFault::NoType
-            | DescriptionFault::RetiredRuleArrow
-            | DescriptionFault::RetiredOperation
             | DescriptionFault::Signature(_) => malformed(),
         }
     }
@@ -1363,7 +1350,8 @@ impl Reader<'_, '_>
         Ok(read.pieces)
     }
 
-    /// `member` past the attribute blocks written before it.
+    /// `member` without the attribute blocks written before it, and without
+    /// those at its end, which stand before the next member.
     ///
     /// # Specification
     /// trivial.
@@ -1372,25 +1360,27 @@ impl Reader<'_, '_>
         member: &'member [Piece],
     ) -> &'member [Piece]
     {
-        let unattributed = member
-            .iter()
-            .position(|piece| {
-                let &Piece::Operand(operand) = piece
-                else {
-                    return true;
-                };
-                !self.tree.node(operand.node).is_some_and(|node| {
-                    matches!(
-                        shape_of(self.grammar, node),
-                        Ok(Shape::Form {
-                            former: crate::form::Former::AttributeBlock,
-                            ..
-                        })
-                    )
-                })
+        let written = |piece: &Piece| {
+            let &Piece::Operand(operand) = piece
+            else {
+                return true;
+            };
+            !self.tree.node(operand.node).is_some_and(|node| {
+                matches!(
+                    shape_of(self.grammar, node),
+                    Ok(Shape::Form {
+                        former: crate::form::Former::AttributeBlock,
+                        ..
+                    })
+                )
             })
-            .unwrap_or(member.len());
-        member.get(unattributed ..).unwrap_or_default()
+        };
+        let start = member.iter().position(written).unwrap_or(member.len());
+        let end = member
+            .iter()
+            .rposition(written)
+            .map_or(start, |last| last.saturating_add(1_usize));
+        member.get(start .. end).unwrap_or_default()
     }
 
     /// Read a family head and every member independently.
@@ -1408,6 +1398,10 @@ impl Reader<'_, '_>
     ///
     /// # Errors
     /// Returns `FamilyHead` or `Malformed` when the head cannot be read.
+    ///
+    /// # Cost
+    /// - allocation: the members of the description it reads, durable by the
+    ///   declaration
     ///
     /// # Adequacy
     /// - hypothesis: L3 — member-local and family-wide failures have different
@@ -1506,9 +1500,6 @@ impl Reader<'_, '_>
                         written.operations.push(ports);
                     })
                 }
-            }
-            else if member.eat(Spelling("op")).0 {
-                Err(member.fault(DescriptionFault::RetiredOperation))
             }
             else {
                 match polarity {

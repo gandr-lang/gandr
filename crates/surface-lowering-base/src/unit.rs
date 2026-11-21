@@ -334,7 +334,7 @@ pub enum StagedName<'marks>
     /// A node of THIR outside the fragment, by rustc's name of its kind.
     Node(&'marks gandr_runtime_rust_record::NodeName),
     /// The path of a callee: a call outside the request, or a call that no
-    /// text of the item mark states.
+    /// item mark states.
     Callee(&'marks str),
     /// A body past the most nodes that a staged body holds.
     Large,

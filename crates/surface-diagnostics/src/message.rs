@@ -274,12 +274,6 @@ fn lowered(
 {
     match refusal {
         LoweringRefusal::UnresolvedName { name, .. } => write!(f, "`{name}` is not defined"),
-        LoweringRefusal::RetiredName { form, .. } => write!(
-            f,
-            "`{}` is a retired spelling, and `{}` replaces it",
-            form.written().0,
-            form.replaced_by().0
-        ),
         LoweringRefusal::BuiltinMark { fault, .. } => f.write_str(match fault {
             BuiltinFault::NoRow => "the `builtin` key names no row of the builtin table",
             BuiltinFault::Bodied => "a declaration of a given row has no body",
@@ -297,8 +291,8 @@ fn lowered(
             StagedFault::Unread(_) => "the reader gives no body for the function",
             StagedFault::Outside(_) => "the staged body is outside the fragment",
             StagedFault::NotExpr => "the type of a staged signature is no `Expr` of an item type",
-            StagedFault::Unmapped { .. } => "a staged call names a path that the item mark does not state",
-            StagedFault::ItemMark => "a text of the item mark names no path and constructor of the type",
+            StagedFault::Unmapped { .. } => "a staged call names a path that no item mark states",
+            StagedFault::ItemMark => "an item mark states no path, or a path of another constructor",
         }),
         LoweringRefusal::UnresolvedDocLink { name, .. } => {
             write!(
@@ -569,11 +563,6 @@ fn lowered(
                      operator `{}`",
                     operator.as_ref()
                 ),
-                FormFault::Retired(retired) | FormFault::Repaired(Repair::Retired(retired)) => write!(
-                    f,
-                    "this spelling is retired, and `{}` replaces it",
-                    retired.replaced_by().0
-                ),
                 FormFault::NotAName => {
                     write!(f, "this {form} names its match with a name, and a pattern stands here")
                 },
@@ -631,6 +620,9 @@ fn lowered(
             written,
             ..
         } => write!(f, "the attribute `{name}` takes {expected}, not {written}"),
+        LoweringRefusal::MisplacedAttribute {
+            name, place, takes, ..
+        } => write!(f, "the attribute `{name}` stands on {takes}, not on {place}"),
         LoweringRefusal::ForwardMemberReference { name, .. } => {
             write!(f, "the member `{name}` is used before it is declared")
         },
@@ -1825,6 +1817,7 @@ pub mod tests
     use gandr_surface_corpus::RefusalName;
     use gandr_surface_corpus::RefusalOf;
     use gandr_surface_lowering::AscriptionForm;
+    use gandr_surface_lowering::AttributePlace;
     use gandr_surface_lowering::AttributeRegistry;
     use gandr_surface_lowering::AttributeSchema;
     use gandr_surface_lowering::CandidateCount;
@@ -2086,6 +2079,12 @@ pub mod tests
                 name: registered,
                 expected: AttributeSchema::Integer,
                 written: PayloadForm::Text,
+            },
+            LoweringRefusal::MisplacedAttribute {
+                span,
+                name: registered,
+                place: AttributePlace::Declaration,
+                takes: AttributePlace::Constructor,
             },
             LoweringRefusal::ForwardMemberReference {
                 span,

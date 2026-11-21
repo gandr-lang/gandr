@@ -2033,6 +2033,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// # Errors
     /// [`LoweringRefusal::BudgetExceeded`].
     ///
+    /// # Cost
+    /// - allocation: the set of slots that the module holds, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — `M.B` and `M.Box.B` name the constructor in a value
     ///   and `M.B(x)` in a pattern, and a family the module does not hold is no
@@ -4036,6 +4039,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// [`LoweringRefusal::UnknownMold`], [`LoweringRefusal::UnknownMember`] and
     /// [`LoweringRefusal::BudgetExceeded`].
     ///
+    /// # Cost
+    /// - allocation: the refusal it returns, error path
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::annotated`], and a constructor a typed
     ///   `let` binds.
@@ -5893,8 +5899,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     ///   components and a sum pattern's payload are queued with the component's
     ///   or summand's type the queued pattern's stated type writes, when it
     ///   writes one.
-    /// - fails: as [`Self::pattern`]; a group in parentheses, which matches a
-    ///   stored product here, with [`FormFault::product_pattern`].
+    /// - fails: as [`Self::pattern`]; a group in parentheses, which stands
+    ///   where a stored product's pattern belongs, with
+    ///   [`FormFault::MisplacedTile`].
     /// - panics: none.
     ///
     /// # Errors
@@ -5909,7 +5916,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// - witness: `gandr-surface-lowering::lower::native::tests::patterns_outside_the_fragment_are_declined_by_name`
     /// - witness: `gandr-surface-lowering::lower::native::tests::telescope_patterns_split_and_project`
     /// - witness: `gandr-surface-lowering::lower::native::tests::sum_patterns_case_on_the_stated_arity`
-    /// - witness: `gandr-surface-lowering::lower::tests::a_parenthesized_product_pattern_is_refused_by_name_5192`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_parenthesized_product_pattern_is_a_misplaced_tile_5192`
     #[spec(captures: before = patterns.shapes.len(), ensures: patterns.shapes.len() >= before)]
     fn pattern_shape(
         &mut self,
@@ -6132,10 +6139,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                 .push((queued.slot, head.span, PatternReading::Constructor));
             return Ok(shape);
         }
-        // A match scrutinee is a value, so a group in parentheses here matches
-        // a stored product: its pattern is `*{p, q}`.
+        // A match scrutinee is a value, so a group in parentheses here stands
+        // where a stored product's pattern `*{p, q}` belongs.
         if name == FormName::TUPLE_PATTERN {
-            return Err(here.fault(at.span, FormFault::product_pattern()));
+            return Err(here.fault(at.span, FormFault::MisplacedTile));
         }
         if name == FormName::TELESCOPE_PATTERN {
             let mut cursor = Cursor::new(&pieces.pieces, at.span);
@@ -10514,6 +10521,9 @@ fn variable(
 /// # Errors
 /// [`LoweringRefusal::MalformedLiteral`].
 ///
+/// # Cost
+/// - allocation: the refusal it returns, error path
+///
 /// # Adequacy
 /// - hypothesis: L3 — a literal column compares against the written integer.
 /// - witness: `gandr-surface-lowering::lower::native::tests::literal_patterns_compare_and_branch`
@@ -11149,6 +11159,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     ///
     /// # Errors
     /// The refusals of `Self::resolve_name`.
+    ///
+    /// # Cost
+    /// - allocation: the refusal it returns, error path
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a claim on an earlier declaration and on a name

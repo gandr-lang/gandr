@@ -497,9 +497,6 @@ pub enum FormFault
     /// A run of symbols one edit from this operator, read as a name that
     /// nothing in scope declares: the operator misspelt, `∷∷` for `∷`.
     MisspeltOperator(crate::form::TileName),
-    /// A retired spelling of a form: the grammar names the spelling that
-    /// replaces it.
-    Retired(gandr_surface_grammar::RetiredForm),
     /// A pattern stands where the form binds a name: the left side of an
     /// as-pattern, `x @ p`.
     NotAName,
@@ -569,8 +566,8 @@ pub enum StagedFault
     Outside(crate::unit::MarkIndex),
     /// The declared type is not `Expr` of `std.thir` at a data type.
     NotExpr,
-    /// A staged call names a path that no text of the item type's mark
-    /// states.
+    /// A staged call names a path that no item mark of a constructor of the
+    /// item type states.
     Unmapped
     {
         /// The mark whose body holds the call.
@@ -578,62 +575,9 @@ pub enum StagedFault
         /// The call's place in the body.
         node: gandr_runtime_rust_record::NodeIndex,
     },
-    /// A text of the item type's mark is no path and constructor, names no
-    /// constructor of the type, or states a path or a constructor again.
+    /// An item mark states an empty path, stands on a constructor with
+    /// fields, or states a path that another constructor's mark states.
     ItemMark,
-}
-
-impl FormFault
-{
-    /// The fault of a path-shaped type under `head` written over three
-    /// operands, its carrier first: `Path(A, a, b)` for
-    /// `Path[.A = A](a, b)`.
-    ///
-    /// # Specification
-    /// - requires: `head` is the tile of `Path`, `Bridge` or `Flow`.
-    /// - ensures: [`FormFault::Retired`] with the retired form of that head;
-    ///   the form of `Path` for any other head.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — each of the three heads, written with its carrier
-    ///   first, is refused with the form of its own head.
-    /// - witness: `gandr-surface-lowering::lower::identity::tests::a_carrier_written_first_is_refused_5024`
-    #[spec(ensures: |ret| matches!(ret, Self::Retired(gandr_surface_grammar::RetiredForm::PositionalPathCarrier | gandr_surface_grammar::RetiredForm::PositionalBridgeCarrier | gandr_surface_grammar::RetiredForm::PositionalFlowCarrier)))]
-    #[inline]
-    #[must_use]
-    pub fn carrier_first(head: crate::form::TileName) -> Self
-    {
-        Self::Retired(if head == crate::form::TileName::BRIDGE {
-            gandr_surface_grammar::RetiredForm::PositionalBridgeCarrier
-        }
-        else if head == crate::form::TileName::FLOW_TYPE {
-            gandr_surface_grammar::RetiredForm::PositionalFlowCarrier
-        }
-        else {
-            gandr_surface_grammar::RetiredForm::PositionalPathCarrier
-        })
-    }
-
-    /// The fault of a group in parentheses that matches a stored product:
-    /// `(p, q)` for `*{p, q}`.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: [`FormFault::Retired`] of the retired product pattern.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a `let` group and a match arm's group over a stored
-    ///   product are each refused with this fault.
-    /// - witness: `gandr-surface-lowering::lower::tests::a_parenthesized_product_pattern_is_refused_by_name_5192`
-    #[spec(ensures: |ret| matches!(ret, Self::Retired(gandr_surface_grammar::RetiredForm::ParenthesizedProductPattern)))]
-    #[inline]
-    #[must_use]
-    pub const fn product_pattern() -> Self
-    {
-        Self::Retired(gandr_surface_grammar::RetiredForm::ParenthesizedProductPattern)
-    }
 }
 
 impl fmt::Display for FormFault
@@ -670,13 +614,6 @@ impl fmt::Display for FormFault
             Self::Misspelt(keyword) => write!(f, "misspells `{}`", keyword.as_ref()),
             Self::MisspeltOperator(operator) => {
                 write!(f, "misspells the operator `{}`", operator.as_ref())
-            },
-            Self::Retired(form) => {
-                write!(
-                    f,
-                    "uses a retired spelling in place of `{}`",
-                    form.replaced_by().0
-                )
             },
             Self::NotAName => f.write_str("binds a pattern where it takes a name"),
             Self::BareIndex => f.write_str("indexes an element with a bare bracket"),
@@ -1000,16 +937,6 @@ pub enum LoweringRefusal<'source>
         name: SurfaceName<'source>,
     },
 
-    /// A name that no binder or declaration answers and that a retired
-    /// spelling of a form writes: `unit` for the unit value.
-    RetiredName
-    {
-        /// The bytes the name covers.
-        span: ByteSpan,
-        /// The retired spelling the name writes.
-        form: gandr_surface_grammar::RetiredForm,
-    },
-
     /// A `builtin` mark that binds its declaration to no row of the builtin
     /// table.
     BuiltinMark
@@ -1319,6 +1246,21 @@ pub enum LoweringRefusal<'source>
         expected: AttributeSchema,
         /// The form the payload was written as.
         written: PayloadForm,
+    },
+
+    /// An attribute written at a place that the registry does not let it
+    /// stand: before a declaration where it takes a constructor, or the
+    /// reverse.
+    MisplacedAttribute
+    {
+        /// The bytes the attribute covers.
+        span: ByteSpan,
+        /// The registered name written at the wrong place.
+        name: RegisteredAttribute,
+        /// The place where it is written.
+        place: crate::attribute::AttributePlace,
+        /// The place that it takes.
+        takes: crate::attribute::AttributePlace,
     },
 
     /// A module member named at or after the position of the member that
@@ -2366,6 +2308,9 @@ impl fmt::Display for LoweringRefusal<'_>
                 written,
                 ..
             } => write!(f, "`{name}` takes {expected} and was given {written}"),
+            Self::MisplacedAttribute {
+                name, place, takes, ..
+            } => write!(f, "`{name}` stands on {takes}, and here it stands on {place}"),
             Self::ForwardMemberReference { name, .. } => write!(
                 f,
                 "the member `{name}` is declared at or after the member naming it; a member \
@@ -2728,11 +2673,6 @@ impl fmt::Display for LoweringRefusal<'_>
                 "the lowering minted no body for `{name}`, or neither a type nor a body, and \
                  refused nothing in it"
             ),
-            Self::RetiredName { form, .. } => write!(
-                f,
-                "this name is a retired spelling, and `{}` replaces it",
-                form.replaced_by().0
-            ),
             Self::BuiltinMark { fault, .. } => f.write_str(match fault {
                 BuiltinFault::NoRow => "the mark's key names no row of the builtin table",
                 BuiltinFault::Bodied => {
@@ -2765,11 +2705,11 @@ impl fmt::Display for LoweringRefusal<'_>
                     "the type of a staged signature is `Expr` of `std.thir` at an item type"
                 },
                 StagedFault::Unmapped { .. } => {
-                    "a staged call names a path that the item mark does not state"
+                    "a staged call names a path that no item mark states"
                 },
                 StagedFault::ItemMark => {
-                    "each text of an item mark is a Rust path and a constructor of the type, \
-                     each one time"
+                    "each item mark states a Rust path, on a constructor with no fields, \
+                     each path one time"
                 },
             }),
         }
@@ -2909,7 +2849,6 @@ impl LoweringRefusal<'_>
     {
         match *self {
             Self::UnresolvedName { span, .. }
-            | Self::RetiredName { span, .. }
             | Self::BuiltinMark { span, .. }
             | Self::StagedBody { span, .. }
             | Self::UnresolvedDocLink { span, .. }
@@ -2936,6 +2875,7 @@ impl LoweringRefusal<'_>
             | Self::MissingPayload { span, .. }
             | Self::NonValuePayload { span, .. }
             | Self::IllTypedPayload { span, .. }
+            | Self::MisplacedAttribute { span, .. }
             | Self::ForwardMemberReference { span, .. }
             | Self::PhaseDependence { span, .. }
             | Self::InertRead { span, .. }
@@ -3691,7 +3631,6 @@ mod tests
             &FormFault::MissingOpen(ClosingClass::Brace),
             &FormFault::Misspelt(crate::form::TileName::SEMICOLON),
             &FormFault::MisspeltOperator(crate::form::TileName::SEMICOLON),
-            &FormFault::Retired(gandr_surface_grammar::RetiredForm::ShapeMember),
             &FormFault::NotAName,
         ]));
         assert_apart(&render(&[

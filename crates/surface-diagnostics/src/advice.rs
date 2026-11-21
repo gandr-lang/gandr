@@ -172,12 +172,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::UnresolvedName { name, .. } => {
             format!("define `{name}`, or import the module that exports it")
         },
-        LoweringRefusal::RetiredName { form, .. } => {
-            format!(
-                "write `{}` in place of the retired spelling",
-                form.replaced_by().0
-            )
-        },
         LoweringRefusal::BuiltinMark { fault, .. } => String::from(match fault {
             BuiltinFault::NoRow => "name a row of the builtin table by its key, as `string.append`",
             BuiltinFault::Bodied => "delete the body, and the row gives the value",
@@ -195,10 +189,10 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             StagedFault::Unread(_) => "make the crate build, and name a public function of it",
             StagedFault::Outside(_) => "write the function in the fragment of the calculus",
             StagedFault::NotExpr => "declare the signature at `Expr` of the item type",
-            StagedFault::Unmapped { .. } => "state the path and its constructor in the item mark",
-            StagedFault::ItemMark => {
-                "write each text as a Rust path, a space and a constructor, each one time"
+            StagedFault::Unmapped { .. } => {
+                "write the path in the item mark of the constructor that stands for it"
             },
+            StagedFault::ItemMark => "write each path one time, on a constructor with no fields",
         }),
         LoweringRefusal::UnresolvedDocLink { name, .. } => {
             format!("declare `{name}`, or link to a name this source declares")
@@ -370,6 +364,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         },
         LoweringRefusal::IllTypedPayload { name, expected, .. } => {
             format!("give `{name}` {expected}")
+        },
+        LoweringRefusal::MisplacedAttribute { name, takes, .. } => {
+            format!("write `{name}` before {takes}")
         },
         LoweringRefusal::NonValuePayload { .. } => {
             String::from("give the attribute a value payload")
@@ -709,12 +706,6 @@ fn malformed(
             format!(
                 "write the operator `{}` in place of this run",
                 operator.as_ref()
-            )
-        },
-        FormFault::Retired(retired) | FormFault::Repaired(Repair::Retired(retired)) => {
-            format!(
-                "write `{}` in place of the retired spelling",
-                retired.replaced_by().0
             )
         },
         FormFault::NotAName => String::from("write a name before the `@`"),
@@ -1453,7 +1444,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 248] = [
+    const WORDED: [&str; 249] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1501,6 +1492,7 @@ mod tests
         "HeldCaptured",
         "HeldKept",
         "IllTypedPayload",
+        "MisplacedAttribute",
         "ModelAmbiguous",
         "NonCovariantMotive",
         "NotSynthesisable",

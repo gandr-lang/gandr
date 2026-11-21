@@ -5,9 +5,10 @@ data Expr(f : Type) : Type where
   | Return : (e : Expr f) --> Expr f
   | Call : (g : f, e : Expr f) --> Expr f
 
-@[item(("identity Identity", "example Example"))]
 data Item : Type where
+  @[item("identity")]
   | Identity : Item
+  @[item("example")]
   | Example : Item
 
 @[thir(("example.rs", "example"))]

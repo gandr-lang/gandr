@@ -14,13 +14,14 @@
 // The values, the expressions over the crate's items, and the transformers.
 import std.thir (Value, Int, True, False, Expr, Lit, Param, If, Return, Call, wpFn);
 
-/// An item of the crate, which a call names. The item mark states the Rust
-/// path of each, so a staged call reads as its item.
-@[item(("identity Identity", "example Example"))]
+/// An item of the crate, which a call names. The item mark of each
+/// constructor states its Rust path, so a staged call reads as its item.
 pub data Item : Type where
   /// `identity`, which answers its argument.
+  @[item("identity")]
   | Identity : Item
   /// `example`, the function under proof.
+  @[item("example")]
   | Example : Item
 
 /// `identity`'s body, `x`.

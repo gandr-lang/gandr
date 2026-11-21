@@ -447,6 +447,21 @@ pub struct DataMember
     pub introducer: Placed,
     /// The attribute blocks written before it, in order.
     pub blocks: Vec<Placed>,
+    /// The name tile of the constructor that the member declares, or the
+    /// absence for a member that declares none.
+    pub constructor: Maybe<Placed, member_constructor::Absent>,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a member of a data declaration holds no constructor.
+    pub mod member_constructor {
+        /// The reason no constructor is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The member is no constructor arm.
+            Unwritten,
+        }
+    }
 }
 
 /// Where the generators of a constructor's family are read from.
@@ -1172,6 +1187,11 @@ impl<'source> Collector<'_, 'source>
     /// [`LoweringRefusal::MalformedForm`] and
     /// [`LoweringRefusal::OutOfFragment`].
     ///
+    /// # Cost
+    /// - allocation: the parameters, the indices, the generators, the
+    ///   operations, the cells and each member with its attribute blocks,
+    ///   growth within the declaration's body
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the witnesses below read each member shape the
     ///   pending corpus writes, pass over the description route's members,
@@ -1281,6 +1301,7 @@ impl<'source> Collector<'_, 'source>
                     first: at,
                     introducer: blocks.first().copied().unwrap_or(at),
                     blocks: core::mem::take(&mut blocks),
+                    constructor: Maybe::Absent(member_constructor::Absent::Unwritten),
                 });
             }
             match piece {
@@ -1295,6 +1316,9 @@ impl<'source> Collector<'_, 'source>
                         Maybe::Present(Piece::Tile { label, at })
                             if label == TileName::CONSTRUCTOR =>
                         {
+                            if let Some(member) = members.last_mut() {
+                                member.constructor = Maybe::Present(at);
+                            }
                             generators.extend(self.generator(
                                 at,
                                 cursor,
@@ -1628,6 +1652,47 @@ impl<'source> Collector<'_, 'source>
         Ok(generators)
     }
 
+    /// Read the one operand of a generator's side, `form` naming what an
+    /// extra operand is in. An attribute block after it stays unread, since
+    /// it stands before the next member.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the next operand, the cursor past it and before any attribute
+    ///   block that follows it.
+    /// - fails: no operand; a second operand that is no attribute block.
+    /// - panics: none.
+    /// - executable: none — whether the next operand is an attribute block is a
+    ///   read of the syntax tree, which a predicate would repeat.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a mark before the second arm of a data type stands on
+    ///   that arm's constructor, and the arm before it keeps its type.
+    /// - witness: `gandr-surface-lowering::lower::thir::tests::an_attribute_before_a_constructor_arm_stands_on_it_8119`
+    fn side(
+        &self,
+        cursor: &mut Cursor<'_>,
+        form: FormName,
+    ) -> Result<Placed, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(Piece::Operand(first)) = cursor.peek()
+        else {
+            return one_in(form, cursor.operands());
+        };
+        let _side = cursor.read();
+        match cursor.peek() {
+            Maybe::Present(Piece::Operand(next))
+                if self.root_former(next) != Ok(Maybe::Present(Former::AttributeBlock)) =>
+            {
+                Err(extra_operand(form, next))
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => Ok(first),
+        }
+    }
+
     /// Read the signature a generator, or a data header's kind, writes after
     /// its colon, `form` naming what a misplaced tile is out of place in.
     ///
@@ -1648,6 +1713,10 @@ impl<'source> Collector<'_, 'source>
     /// [`LoweringRefusal::MalformedForm`] and
     /// [`LoweringRefusal::OutOfFragment`].
     ///
+    /// # Cost
+    /// - allocation: the entries and the grades of the telescope, growth within
+    ///   the generator's fields
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — nullary, single-port and telescoped generators read
     ///   their fields, and a header reads its named indices; a missing result
@@ -1664,7 +1733,7 @@ impl<'source> Collector<'_, 'source>
     {
         let Maybe::Present(open) = cursor.tile(TileName::PAREN_OPEN)
         else {
-            let side = one_in(form, cursor.operands())?;
+            let side = self.side(cursor, form)?;
             if let Maybe::Absent(_) = cursor.tile(TileName::GENERATOR) {
                 return Ok(Signature::Bare(side));
             }
@@ -1701,6 +1770,10 @@ impl<'source> Collector<'_, 'source>
     /// [`LoweringRefusal::MalformedForm`] and
     /// [`LoweringRefusal::OutOfFragment`].
     ///
+    /// # Cost
+    /// - allocation: the outputs of a group and their grades, growth within the
+    ///   generator's outputs
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::generator_signature`].
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
@@ -1718,7 +1791,7 @@ impl<'source> Collector<'_, 'source>
             return Ok(Signature::Arrow {
                 entries,
                 grades,
-                result: one_in(form, cursor.operands())?,
+                result: self.side(cursor, form)?,
             });
         };
         let (outputs, graded) = self.entries(cursor, form)?;

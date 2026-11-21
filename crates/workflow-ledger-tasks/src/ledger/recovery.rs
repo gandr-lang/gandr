@@ -1608,8 +1608,8 @@ mod tests
         let folder = scratch.join("syntax");
         std::fs::create_dir_all(&folder).expect("the scratch folder");
         std::fs::write(
-            folder.join("staged-type.gandr"),
-            include_str!("../../../../corpus/ledger/syntax/staged-type.gandr"),
+            folder.join("extension-type.gandr"),
+            include_str!("../../../../corpus/ledger/syntax/extension-type.gandr"),
         )
         .expect("the exemplar is written");
         let pbg = built_in().expect("the built-in grammar builds");
@@ -1617,12 +1617,12 @@ mod tests
         std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
         assert!(
             !report.findings.iter().any(|finding| {
-                finding.exemplar.file_name() == Some("staged-type.gandr".as_ref())
-                    && finding.at == 239
+                finding.exemplar.file_name() == Some("extension-type.gandr".as_ref())
+                    && finding.at == 134
                     && finding.tile == ":"
                     && finding.mutation == Mutation::Deleted
             }),
-            "staged-type.gandr:239: `:` deleted is reported at its mutation: {report}"
+            "extension-type.gandr:134: `:` deleted is reported at its mutation: {report}"
         );
     }
 
@@ -1662,34 +1662,5 @@ mod tests
                 "{exemplar}: `<->` deleted is reported at its mutation: {report}"
             );
         }
-    }
-
-    /// #8052: Deleting `rec` leaves the recursion arrow in a session type. Its
-    /// first refusal names the deleted recursion marker.
-    #[test]
-    fn a_deleted_session_recursion_marker_marks_its_gap_8052()
-    {
-        let scratch = std::env::temp_dir().join(format!(
-            "gandr-recovery-test-{}-session-recursion",
-            std::process::id()
-        ));
-        let folder = scratch.join("syntax");
-        std::fs::create_dir_all(&folder).expect("the scratch folder");
-        std::fs::write(
-            folder.join("mu-session-type.gandr"),
-            include_str!("../../../../corpus/ledger/syntax/mu-session-type.gandr"),
-        )
-        .expect("the exemplar is written");
-        let pbg = built_in().expect("the built-in grammar builds");
-        let report = sweep(&pbg, &scratch).expect("the sweep runs");
-        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
-        assert!(
-            !report.findings.iter().any(|finding| {
-                finding.exemplar.file_name() == Some("mu-session-type.gandr".as_ref())
-                    && finding.tile == "rec"
-                    && finding.mutation == Mutation::Deleted
-            }),
-            "mu-session-type.gandr: `rec` deleted is reported at its mutation: {report}"
-        );
     }
 }

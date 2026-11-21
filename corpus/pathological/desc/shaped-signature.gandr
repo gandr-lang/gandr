@@ -33,10 +33,3 @@ theory TwoBoundaries where
   boundary Square {a, b, c, d};
   boundary Line {a, b};
   sort Cell : Type;
-
-/// `shape` is the retired spelling of the shape parameter, refused naming
-/// `boundary`, so the word is the site's alone.
-@[refuses("RetiredSpelling.shape_member")]
-theory Retired where
-  shape Square : 4 {left = {0, 2};};
-  sort Cell : Type;

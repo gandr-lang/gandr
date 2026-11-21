@@ -33,7 +33,6 @@ use super::written::WrittenTerm;
 use super::written::head;
 use super::written::member_name;
 use super::written::port_name;
-use crate::circuit::SignatureFault;
 use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Placed;
@@ -98,14 +97,10 @@ impl Reader<'_, '_>
                 sort,
             }])
         };
-        // An operation of no input and one result is written `oper f : R`:
-        // the reader refuses the empty input list `() -->` by its name.
+        // An operation of no input and one result is written `oper f : R`,
+        // and an empty input list `() -->` is malformed.
         if listed && inputs.is_empty() && !tupled {
-            return Err(
-                run.fault(DescriptionFault::Signature(SignatureFault::Retired(
-                    gandr_surface_grammar::RetiredForm::EmptyOperationInputs,
-                ))),
-            );
+            return Err(run.fault(DescriptionFault::Malformed));
         }
         let input_count =
             u32::try_from(inputs.len()).map_err(|_error| run.fault(DescriptionFault::Malformed))?;
@@ -245,13 +240,12 @@ impl Reader<'_, '_>
     ///   the written face holds its name tile when one is written, and each
     ///   side's nodes. `<=>` states [`RuleOrientation::Unpinned`]; `==>` states
     ///   [`RuleOrientation::Pinned`] left to right.
-    /// - fails: a member with no colon is malformed; only `==>` and `<=>` are
-    ///   written face arrows; `~>` is the retired spelling; unsupported terms
-    ///   are located.
+    /// - fails: a member with no colon is malformed, and so is a face arrow
+    ///   other than `==>` and `<=>`; unsupported terms are located.
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `Malformed` or `RetiredRuleArrow` for unreadable faces.
+    /// Returns `Malformed` for unreadable faces.
     ///
     /// # Cost
     /// - allocation: the face and its written nodes, durable by the face
@@ -279,13 +273,6 @@ impl Reader<'_, '_>
             Maybe::Present(name.span)
         };
         let lhs = run.take()?;
-        if run.at(Spelling("~>")).0 {
-            let arrow = run.take()?;
-            return Err(DescriptionDiagnostic {
-                span: arrow.span,
-                fault: DescriptionFault::RetiredRuleArrow,
-            });
-        }
         let orientation = if run.at(Spelling("<=>")).0 {
             RuleOrientation::Unpinned
         }
@@ -448,14 +435,12 @@ impl Reader<'_, '_>
                         run.end()?;
                         match <[Placed; 1]>::try_from(components) {
                             Ok([only]) => pending.push(TermFrame::Read(only)),
-                            // `c ()` applies a constant to no input: the
+                            // `c ()` applies a constant to no input, and the
                             // constant is its bare name `c`.
                             Err(components) if components.is_empty() => {
                                 return Err(DescriptionDiagnostic {
                                     span: at.span,
-                                    fault: DescriptionFault::Signature(SignatureFault::Retired(
-                                        gandr_surface_grammar::RetiredForm::EmptyOperationCall,
-                                    )),
+                                    fault: DescriptionFault::Malformed,
                                 });
                             },
                             Err(components) => {
@@ -590,14 +575,12 @@ impl Reader<'_, '_>
                     else {
                         TermKind::Operation
                     };
-                    // `c()` calls a constant with no input: the constant is
-                    // its bare name `c`.
+                    // `c()` calls a constant with no input, and the constant
+                    // is its bare name `c`.
                     if args.is_empty() && matches!(kind, TermKind::Operation) {
                         return Err(DescriptionDiagnostic {
                             span: at.span,
-                            fault: DescriptionFault::Signature(SignatureFault::Retired(
-                                gandr_surface_grammar::RetiredForm::EmptyOperationCall,
-                            )),
+                            fault: DescriptionFault::Malformed,
                         });
                     }
                     pending.push(TermFrame::Apply(name, ArgumentCount(args.len()), kind));

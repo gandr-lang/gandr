@@ -32,8 +32,6 @@ mod ledger;
 pub use crate::ledger::ExemplarFault;
 pub use crate::ledger::ExemplarFinding;
 pub use crate::ledger::ExemplarReport;
-pub use crate::ledger::FenceFinding;
-pub use crate::ledger::FenceReport;
 pub use crate::ledger::LedgerFault;
 pub use crate::ledger::LedgerRun;
 pub use crate::ledger::LedgerTask;

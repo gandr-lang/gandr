@@ -1,5 +1,0 @@
-/// `shape_member`: the retired member `shape` of a theory. The member
-/// `boundary` states the carrier of the signature's cells, and the member
-/// `face` names each face of it. The reader refuses `shape` by its name.
-@[refuses("RetiredSpelling.shape_member")]
-theory Cells where {shape Square : 4 {left = {0, 2};}; sort A : Type;}

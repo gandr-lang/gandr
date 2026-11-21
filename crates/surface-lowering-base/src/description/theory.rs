@@ -786,12 +786,6 @@ impl Reader<'_, '_>
                 }
                 continue;
             }
-            if reading.eat(Spelling("shape")).0 {
-                diagnostics.push(reading.signature_fault(SignatureFault::Retired(
-                    gandr_surface_grammar::RetiredForm::ShapeMember,
-                )));
-                continue;
-            }
             if reading.eat(Spelling("boundary")).0 {
                 match Self::named_points(&mut reading) {
                     Ok(_) if boundary.is_some() => {
@@ -874,14 +868,13 @@ impl Reader<'_, '_>
                 });
             }
             let result = if reading.eat(Spelling("sort")).0
-                || reading.eat(Spelling("shape")).0
                 || reading.eat(Spelling("boundary")).0
                 || reading.eat(Spelling("face")).0
             {
                 continue;
             }
             else if reading.eat(Spelling("data")).0 {
-                Err(reading.signature_fault(SignatureFault::RetiredDataMember))
+                Err(reading.signature_fault(SignatureFault::DataMember))
             }
             else if reading.eat(Spelling("oper")).0 || reading.at(Spelling("obs")).0 {
                 let kind = if reading.eat(Spelling("obs")).0 {
@@ -1795,17 +1788,15 @@ impl Reader<'_, '_>
             return Err(run.signature_fault(SignatureFault::OperationFiller));
         }
         // An operation of no input and one unnamed result is a constant,
-        // `oper c : T`: the reader refuses the empty input list `() -->` by its
-        // name. An unnamed port carries the name `fresh_port` mints.
+        // `oper c : T`, and an empty input list `() -->` is malformed. An
+        // unnamed port carries the name `fresh_port` mints.
         if kind == OperationKind::Operation
             && thunked.is_none()
             && boundary.inputs.is_empty()
             && matches!(boundary.outputs.as_slice(), [only]
                 if only.name.as_ref().starts_with(FRESH_PORT))
         {
-            return Err(run.signature_fault(SignatureFault::Retired(
-                gandr_surface_grammar::RetiredForm::EmptyOperationInputs,
-            )));
+            return Err(run.fault(DescriptionFault::Malformed));
         }
         run.end()?;
         let ports: Vec<&SortRef> = boundary.inputs.iter().chain(&boundary.outputs).collect();

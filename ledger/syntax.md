@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x89dcd73b0c01fa71`
+- Grammar fingerprint: `0x53c763f0bd91f147`
 - Rules: 161 — 160 committed, 1 internal
-- Molds: 3117
+- Molds: 3112
 - Attributes: 22
 
 ## Reading a form
@@ -171,7 +171,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`type_application`](../corpus/ledger/syntax/type-application.gandr) | `⦅ ‹type_identifier› ‖ ‹type_variable› ⦅ [ < ] ⦆? ⦆ ( ⦅ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ⦆? ) ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.application` | `type_application` | admitted | Type, TypeVariable, Other, Operator |
 | [`type_application.juxtaposed`](../corpus/ledger/syntax/type-application.juxtaposed.gandr) | `TYPE   TYPE` | `type.juxtaposition` | `type_application` | admitted | Other |
 | [`type_path`](../corpus/ledger/syntax/type-path.gandr) | `TYPE . ⦅ ‹type_variable› . ⦆* ⦅ ‹type_identifier› ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆? ‖ ‹type_variable› ( ⦅ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ⦆? ) ⦆ ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.path` | `type_path` * | admitted | Other, TypeVariable, Type |
-| [`staged_type`](../corpus/ledger/syntax/staged-type.gandr) | `TYPE [ ⦅ ⦅ < ⦆? ‹identifier› ⦅ ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆? ‖ ↦ EXPRESSION ⦅ , ‹identifier› ↦ EXPRESSION ⦆* ] ⦆ ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ] ⦆` or `TYPE [ ⦅ ⦅ < ⦆? ‹identifier› ⦅ ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆? ‖ \|-> EXPRESSION ⦅ , ‹identifier› \|-> EXPRESSION ⦆* ] ⦆ ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ] ⦆` | `type.path` | `staged_type` * | admitted | Other, Operator, VariableParam |
+| [`staged_type`](../corpus/ledger/syntax/staged-type.gandr) | `TYPE [ ⦅ ⦅ < ⦆? ‹identifier› ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆? ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ] ⦆` | `type.path` | `staged_type` * | admitted | Other, Operator, VariableParam |
 | [`extension_type`](../corpus/ledger/syntax/extension-type.gandr) | `TYPE .#{ ⦅ ‹identifier› ↦ EXPRESSION ⦅ , ‹identifier› ↦ EXPRESSION ⦆* ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ⦆ }` or `TYPE .#{ ⦅ ‹identifier› \|-> EXPRESSION ⦅ , ‹identifier› \|-> EXPRESSION ⦆* ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ⦆ }` | `type.path` | `extension_type` * | admitted | Other, VariableParam, Operator |
 | [`parenthesized_type`](../corpus/ledger/syntax/parenthesized-type.gandr) | `( TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? )` | `type.atom` | `parenthesized_type` | admitted | Other |
 | [`telescope_type`](../corpus/ledger/syntax/telescope-type.gandr) | `*{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `telescope_type` * | admitted | Other |
@@ -228,59 +228,42 @@ A rule no source can mold, with the reason and what the reason is read from: the
 | ---- | ---- | ---- | ------ | --------- |
 | `instantiation.type` | instantiation | `TYPE` | the form holds no tile, so no tree names the rule | grammar |
 
-## Superseded — 18 spellings
+## Superseded — 1 spelling
 
-An old spelling and the spelling that replaces it. A spelling the grammar still parses, so that a stale source reaches the decline of the elaborator, names the open issue that removes it, and `check:ledger` refuses a row whose issue does not stand open. A spelling that a source meets as a refusal names the refusal, and `check:ledger` refuses a row whose exemplar under `corpus/ledger/syntax/superseded/` does not state it.
+An old spelling that the grammar still parses, so that a stale source reaches the decline of the elaborator, and the spelling that replaces it. Each names the open issue that removes it, and `check:ledger` refuses a row whose issue does not stand open.
 
 | Rule | Old spelling | Replaced by | Removal | Why the record stands |
 | ---- | ------------ | ----------- | ------- | --------------------- |
-| `attribute_block` | `native_attribute` | `builtin` | refused as [`RetiredSpelling.native_attribute`](../corpus/ledger/syntax/superseded/native-attribute.gandr) | a native value is a row of the builtin table: `@[builtin("key")]` binds it, and the reader refuses `native` by name |
-| `attribute_block` | `builtin_word` | `builtin("key")` | refused as [`RetiredSpelling.builtin_word`](../corpus/ledger/syntax/superseded/builtin-word.gandr) | a `builtin` mark names its row by a key in quotes, as each row of the builtin table: the reader refuses a bare word by name |
-| `tuple_pattern` | `parenthesized_product_pattern` | `*{p, q}` | refused as [`RetiredSpelling.parenthesized_product_pattern`](../corpus/ledger/syntax/superseded/parenthesized-product-pattern.gandr) | a group in parentheses over a stored product, in a `let` or a match arm, is refused by name: `*{p, q}` is the pattern; a group over a call's outputs keeps its reading |
-| `telescope_expression` | `unit_value` | `*{}` | refused as [`RetiredSpelling.unit_value`](../corpus/ledger/syntax/superseded/unit-value.gandr) | the unit value is the empty telescope `*{}`: the name `unit`, where no declaration binds it, is refused by name |
-| `telescope_expression` | `bare_record_field` | `*{ .l = e }` | refused as [`RetiredSpelling.bare_record_field`](../corpus/ledger/syntax/superseded/bare-record-field.gandr) | a field of a record literal supplies a name, so it writes the dot, `*{ .l = e }`: the undotted `*{ l = e }` is refused by name |
-| `telescope_expression` | `bare_update_field` | `*{ r \| .l = e }` | refused as [`RetiredSpelling.bare_update_field`](../corpus/ledger/syntax/superseded/bare-update-field.gandr) | a field of a record update supplies a name, so it writes the dot, `*{ r \| .l = e }`: the undotted `*{ r \| l = e }` is refused by name |
-| `function_type` | `fat_arrow_box` | `A -> B` | refused as [`RetiredSpelling.fat_arrow_box`](../corpus/ledger/syntax/superseded/fat-arrow-box.gandr) | the box `A => B` in a signature, a nested box, a group in parentheses or a record field is refused by name; a parameter, a result and a constructor field keep their faults, and a box in an expression hole is not named |
-| `path_type` | `positional_path_carrier` | `Path[.A = A](a, b)` | refused as [`RetiredSpelling.positional_path_carrier`](../corpus/ledger/syntax/superseded/positional-path-carrier.gandr) | a carrier written first, by position, is refused by name: the head takes its carrier by name |
-| `bridge_type` | `positional_bridge_carrier` | `Bridge[.A = A](a, b)` | refused as [`RetiredSpelling.positional_bridge_carrier`](../corpus/ledger/syntax/superseded/positional-bridge-carrier.gandr) | a carrier written first, by position, is refused by name: the head takes its carrier by name |
-| `flow_type` | `positional_flow_carrier` | `Flow[.A = A](a, b)` | refused as [`RetiredSpelling.positional_flow_carrier`](../corpus/ledger/syntax/superseded/positional-flow-carrier.gandr) | a carrier written first, by position, is refused by name: the head takes its carrier by name |
 | `type_application` | `glued_type_application` | `type_application.juxtaposed` | removed by #5330 | the glued head `T(a, b)` stays read until the sources move to `T a b` |
-| `extension_type` | `bracket_fields` | `T.#{.l = v}` | refused as [`RetiredSpelling.bracket_fields`](../corpus/ledger/syntax/superseded/bracket-fields.gandr) | the static bracket that fixes a record type's fields by label, `T[.l = v]`, is refused by name; a stage `T[i]` and a supply by name `f[.a = A]` keep the bracket |
-| `extension_type` | `bracket_faces` | `T.#{f ↦ v}` | refused as [`RetiredSpelling.bracket_faces`](../corpus/ledger/syntax/superseded/bracket-faces.gandr) | the static bracket that fixes a face's fields, `T[f ↦ v]`, or the fields of each face of a system is refused by name |
-| `parenthesized_type` | `parenthesized_product` | `*{A, B}` | refused as [`RetiredSpelling.parenthesized_product`](../corpus/ledger/syntax/superseded/parenthesized-product.gandr) | a list in parentheses outside the domain of an arrow and a function's outputs is refused by name at its first comma: `*{A, B}` is the product |
-| `telescope_type` | `view_telescope` | `*{ … }` | refused as [`RetiredSpelling.view_telescope`](../corpus/ledger/syntax/superseded/view-telescope.gandr) | the glued token `#{` is refused by name: `*{` opens the telescope and the record |
-| `theory_declaration` | `shape_member` | `boundary B {…}; face f = {…}` | refused as [`RetiredSpelling.shape_member`](../corpus/ledger/syntax/superseded/shape-member.gandr) | the member `shape` is refused by name: `boundary` states the carrier of the signature's cells, and `face` names each face of it |
-| `theory_declaration` | `empty_operation_inputs` | `oper c : T` | refused as [`RetiredSpelling.empty_operation_inputs`](../corpus/ledger/syntax/superseded/empty-operation-inputs.gandr) | an operation of no input is a constant: `oper c : T` states it, and the reader refuses `() -->` by name |
-| `theory_declaration` | `empty_operation_call` | `c` | refused as [`RetiredSpelling.empty_operation_call`](../corpus/ledger/syntax/superseded/empty-operation-call.gandr) | a constant is its bare name in a term: the reader refuses `c ()` by name |
 
 ## Attributes — 22 attributes
 
-Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes, linking its exemplar, which the exemplar gate lowers and checks the attribute is filed.
+Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes and the places where it stands, linking its exemplar, which the exemplar gate lowers and checks the attribute is filed.
 
-| Attribute | Payload |
-| --------- | ------- |
-| [`checks`](../corpus/ledger/attributes/checks.gandr) | no payload |
-| [`owes`](../corpus/ledger/attributes/owes.gandr) | an integer payload |
-| [`refuses`](../corpus/ledger/attributes/refuses.gandr) | a text payload |
-| [`runs`](../corpus/ledger/attributes/runs.gandr) | a text payload |
-| [`normalizes`](../corpus/ledger/attributes/normalizes.gandr) | a text payload |
-| [`decomposes`](../corpus/ledger/attributes/decomposes.gandr) | an unquoted form |
-| [`traces`](../corpus/ledger/attributes/traces.gandr) | an unquoted form |
-| [`reads`](../corpus/ledger/attributes/reads.gandr) | an unquoted form |
-| [`distributes`](../corpus/ledger/attributes/distributes.gandr) | a text or a tuple of texts |
-| [`doc`](../corpus/ledger/attributes/doc.gandr) | a text payload |
-| [`explicit_exits`](../corpus/ledger/attributes/explicit_exits.gandr) | no payload |
-| [`explicit_runs`](../corpus/ledger/attributes/explicit_runs.gandr) | no payload or the text "effects" |
-| [`respects`](../corpus/ledger/attributes/respects.gandr) | a declared name or a tuple of declared names |
-| [`entry`](../corpus/ledger/attributes/entry.gandr) | a declared name or a tuple of declared names |
-| [`form`](../corpus/ledger/attributes/form.gandr) | one of the words `explicit`, `sugared` |
-| [`identity`](../corpus/ledger/attributes/identity.gandr) | a tuple of two or three declared names: a relation, its reflexivity and optionally its transport law |
-| [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` |
-| [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
-| [`builtin`](../corpus/ledger/attributes/builtin.gandr) | a text payload |
-| [`thir`](../corpus/ledger/attributes/thir.gandr) | a text or a tuple of texts |
-| [`item`](../corpus/ledger/attributes/item.gandr) | a text or a tuple of texts |
-| [`inert`](../corpus/ledger/attributes/inert.gandr) | no payload |
+| Attribute | Payload | Stands on |
+| --------- | ------- | --------- |
+| [`checks`](../corpus/ledger/attributes/checks.gandr) | no payload | a declaration |
+| [`owes`](../corpus/ledger/attributes/owes.gandr) | an integer payload | a declaration |
+| [`refuses`](../corpus/ledger/attributes/refuses.gandr) | a text payload | a declaration |
+| [`runs`](../corpus/ledger/attributes/runs.gandr) | a text payload | a declaration |
+| [`normalizes`](../corpus/ledger/attributes/normalizes.gandr) | a text payload | a declaration |
+| [`decomposes`](../corpus/ledger/attributes/decomposes.gandr) | an unquoted form | a declaration |
+| [`traces`](../corpus/ledger/attributes/traces.gandr) | an unquoted form | a declaration |
+| [`reads`](../corpus/ledger/attributes/reads.gandr) | an unquoted form | a declaration |
+| [`distributes`](../corpus/ledger/attributes/distributes.gandr) | a text or a tuple of texts | a declaration |
+| [`doc`](../corpus/ledger/attributes/doc.gandr) | a text payload | a declaration or a constructor |
+| [`explicit_exits`](../corpus/ledger/attributes/explicit_exits.gandr) | no payload | a declaration |
+| [`explicit_runs`](../corpus/ledger/attributes/explicit_runs.gandr) | no payload or the text "effects" | a declaration |
+| [`respects`](../corpus/ledger/attributes/respects.gandr) | a declared name or a tuple of declared names | a declaration |
+| [`entry`](../corpus/ledger/attributes/entry.gandr) | a declared name or a tuple of declared names | a declaration |
+| [`form`](../corpus/ledger/attributes/form.gandr) | one of the words `explicit`, `sugared` | a declaration |
+| [`identity`](../corpus/ledger/attributes/identity.gandr) | a tuple of two or three declared names: a relation, its reflexivity and optionally its transport law | a declaration |
+| [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` | a declaration |
+| [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names | a declaration |
+| [`builtin`](../corpus/ledger/attributes/builtin.gandr) | a text payload | a declaration |
+| [`thir`](../corpus/ledger/attributes/thir.gandr) | a text or a tuple of texts | a declaration |
+| [`item`](../corpus/ledger/attributes/item.gandr) | a text payload | a constructor |
+| [`inert`](../corpus/ledger/attributes/inert.gandr) | no payload | a declaration |
 
 ## Decisions — 109 of 161 rules decided at every token
 
@@ -424,7 +407,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `type_application` | type | 13 | `type_identifier` `type_variable` | `moded_type`, `type_identifier`, `type_variable` | 4 |
 | `type_application.juxtaposed` | type | 1 | ` ` | — | 0 |
 | `type_path` | type | 17 | `.` | — | 9 |
-| `staged_type` | type | 22 | `[` | — | 4 |
+| `staged_type` | type | 17 | `[` | — | 4 |
 | `extension_type` | type | 15 | `.#{` | — | 2 |
 | `parenthesized_type` | type | 6 | `(` | — | 4 |
 | `telescope_type` | type | 6 | `*{` | — | 4 |
@@ -456,8 +439,8 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 
 | Label | Molds | Rules | Opening |
 | ----- | ----- | ----- | ------- |
-| `identifier` | 433 | 59 | 3 |
-| `,` | 282 | 47 | 0 |
+| `identifier` | 432 | 59 | 3 |
+| `,` | 281 | 47 | 0 |
 | `:` | 253 | 33 | 0 |
 | `type_identifier` | 221 | 34 | 2 |
 | `=` | 152 | 38 | 0 |
@@ -467,7 +450,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `.` | 96 | 44 | 3 |
 | `type_variable` | 92 | 15 | 3 |
 | `}` | 80 | 40 | 0 |
-| `]` | 79 | 40 | 0 |
+| `]` | 78 | 40 | 0 |
 | `{` | 61 | 29 | 2 |
 | `[` | 60 | 33 | 4 |
 | `number` | 58 | 33 | 3 |
@@ -514,7 +497,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `@[` | 4 | 3 | 2 |
 | `Type` | 4 | 4 | 1 |
 | `def` | 4 | 4 | 2 |
-| `↦` | 4 | 2 | 0 |
 | `⊸` | 4 | 4 | 1 |
 | `+{` | 3 | 3 | 3 |
 | `-F` | 3 | 3 | 3 |
@@ -545,6 +527,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `hole_name` | 2 | 2 | 0 |
 | `include` | 2 | 2 | 1 |
 | `typed_number` | 2 | 2 | 2 |
+| `↦` | 2 | 1 | 0 |
 | `⇝` | 2 | 2 | 1 |
 | `∷` | 2 | 2 | 1 |
 | `≃` | 2 | 2 | 1 |
