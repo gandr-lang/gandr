@@ -1447,7 +1447,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 249] = [
+    const WORDED: [&str; 250] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
