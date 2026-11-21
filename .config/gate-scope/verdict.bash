@@ -256,6 +256,10 @@ case ${1:-} in
     failed=0
     for check in "${ran[@]}"; do
       jq -e --arg check "$check" '.checks | has($check)' "$table" > /dev/null || continue
+      # A check that the gate holds does not run, so the gate signs no record
+      # of it. Its base or an older record answers for it.
+      # - see: #8265, #8268
+      [[ " ${GATE_HELD:-} " != *" $check "* ]] || continue
       k=$(key "$check" "$tree")
       signed=false
       for attempt in 1 2; do
