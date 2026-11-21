@@ -149,6 +149,12 @@ fn every_member_admits_as_its_plain_replay()
         panic!("paying family");
     };
     let token = arena.alloc_type(Type::In(Model(0))).unwrap();
+    // Each step's readmission reads the one production of the template.
+    let productions = [Production::Go(template)];
+    let [Production::Go(ref template)] = productions
+    else {
+        panic!("the production is the template's");
+    };
     for step in &family {
         assert_eq!(
             template.admit(&arena, step.source, &mut Budget(100_000)),
@@ -169,7 +175,7 @@ fn every_member_admits_as_its_plain_replay()
             &mut arena,
             &[token],
             &certificate,
-            &[Production::Go(template.clone())],
+            &productions,
             &mut Budget(100_000),
         );
         assert_eq!(compressed, plain);

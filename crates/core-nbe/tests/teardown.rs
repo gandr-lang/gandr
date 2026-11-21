@@ -307,7 +307,6 @@ fn deep_overlay() -> (Overlay, OverlayValueId, OverlayValueTypeId)
     let mut lifted = overlay
         .mint_value_type(ValueTypeNode::Grafted(ValueTypeGraft::Unit))
         .expect("a leaf names no child");
-    let target = Level::zero().succ().expect("level one exists");
     let mut remaining = CHAIN_LINKS;
     while remaining > 0 {
         let left = overlay
@@ -332,10 +331,11 @@ fn deep_overlay() -> (Overlay, OverlayValueId, OverlayValueTypeId)
                 body,
             }))
             .expect("the link below and the body resolve");
+        // Each lift owns its level, so each link mints level one.
         lifted = overlay
             .mint_value_type(ValueTypeNode::Grafted(ValueTypeGraft::Lift {
                 inner: lifted,
-                target: target.clone(),
+                target: Level::zero().succ().expect("level one exists"),
             }))
             .expect("the type below resolves");
         remaining = remaining.saturating_sub(1);
@@ -420,11 +420,10 @@ fn unshared_chain() -> (CoreArena, ValueId, ValueTypeId)
     let mut core = CoreArena::new();
     let mut top = core.value_unit();
     let mut lifted = core.value_type_unit();
-    let target = Level::zero().succ().expect("level one exists");
     let mut remaining = CHAIN_LINKS;
     while remaining > 0 {
         top = core.value_tuple(&[top, top]);
-        lifted = core.value_type_lift(lifted, target.clone());
+        lifted = core.value_type_lift(lifted, Level::zero().succ().expect("level one exists"));
         remaining = remaining.saturating_sub(1);
     }
     (core, top, lifted)

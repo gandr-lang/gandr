@@ -1044,14 +1044,18 @@ fn substitution_laws()
             substitute(&semantics, &newest, &fixture.binding.context, &single),
             expected
         );
+        // One judgement over the context, its sort and its variable set for
+        // each position.
+        let mut term = BindingJudgement {
+            context: fixture.binding.context.clone(),
+            sort: newest.sort.clone(),
+            term: v::<0>(),
+        };
         for (position, sort) in fixture.binding.context.iter().enumerate() {
-            let term = BindingJudgement {
-                context: fixture.binding.context.clone(),
-                sort: sort.clone(),
-                term: BindingTerm::variable(VariableIndex::from(
-                    fixture.binding.context.len() - position - 1,
-                )),
-            };
+            term.sort = sort.clone();
+            term.term = BindingTerm::variable(VariableIndex::from(
+                fixture.binding.context.len() - position - 1,
+            ));
             assert_eq!(
                 substitute(
                     &semantics,
@@ -1101,22 +1105,19 @@ fn substitution_laws()
     let extension = Name::from("B");
     let mut lifted_target = target.clone();
     lifted_target.push(extension.clone());
-    let mut lifted_images: Vec<_> = images
-        .iter()
-        .zip(&judgement.context)
-        .map(|(term, sort)| {
-            weaken(
-                &semantics,
-                &BindingJudgement {
-                    context: target.clone(),
-                    sort: sort.clone(),
-                    term: term.clone(),
-                },
-                extension.clone(),
-            )
-            .term
-        })
-        .collect();
+    // One judgement over the target, its sort and its term set for each
+    // image.
+    let mut image = BindingJudgement {
+        context: target.clone(),
+        sort: Name::from("R"),
+        term: v::<0>(),
+    };
+    let mut lifted_images = Vec::with_capacity(images.len().saturating_add(1));
+    for (term, sort) in images.iter().zip(&judgement.context) {
+        image.sort = sort.clone();
+        image.term = term.clone();
+        lifted_images.push(weaken(&semantics, &image, extension.clone()).term);
+    }
     lifted_images.push(v::<0>());
     let weakened = weaken(&semantics, &judgement, extension.clone());
     assert_eq!(
