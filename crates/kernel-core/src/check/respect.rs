@@ -265,8 +265,8 @@ pub(super) fn obliged(
 }
 
 /// Decide that the case `case` respects every rule of its scrutinee's type,
-/// read as `reading` says, a fold resting on `laws` where it computes a rule's
-/// sides apart.
+/// read as `reading` says, resting on `laws` where it computes a rule's sides
+/// apart.
 ///
 /// # Specification
 /// - requires: `reading`'s data application names an admitted data declaration,
@@ -274,9 +274,9 @@ pub(super) fn obliged(
 /// - ensures: `Ok(())` exactly when, for every rule `l ==> r` in written order,
 ///   `F(l)` converts with `F(r)` under [`crate::replay::convert`] within
 ///   [`ReplayBudget::DEFAULT`], `l` and `r` built over one fresh variable per
-///   pattern variable, or the reading is a fold and the law at the rule's
-///   position relates the two sides as [`lawful`] decides; `arena` holds what
-///   it held on entry either way.
+///   pattern variable, or the law at the rule's position relates the two sides
+///   as [`lawful`] decides, for a fold at its first binder and for a case that
+///   is no fixpoint; `arena` holds what it held on entry either way.
 /// - fails: [`KernelError::RuleNotRespected`] naming the first rule respected
 ///   neither way; [`KernelError::NotADataType`] or [`KernelError::ArenaFault`]
 ///   for a reading whose type or case the arena and the entries do not hold, or
@@ -303,6 +303,7 @@ pub(super) fn obliged(
 ///   whose law states the other cancellation.
 /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 /// - witness: `tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
+/// - witness: `tests::native_formers::a_case_that_is_no_fixpoint_rests_on_the_law_of_its_rule_8333`
 #[spec(
     captures: before = arena.watermark(),
     ensures: |ret| arena.watermark() == before
@@ -369,12 +370,16 @@ pub(super) fn respected(
             {
                 return Ok(());
             }
-            match (reading, laws.get(index).filter(|_| first)) {
-                (Reading::Fold { arrow, .. }, Some(&law)) => {
+            let by = match reading {
+                Reading::Fold { arrow, .. } => Eliminator::Fold(arrow),
+                Reading::Case { .. } => Eliminator::Case,
+            };
+            match laws.get(index).filter(|_| first) {
+                Some(&law) => {
                     let related = lawful(
                         arena,
                         (entries, unfoldings),
-                        (obliged, arrow),
+                        (obliged, by),
                         (rule, signature, declaration),
                         law,
                     )?;
@@ -383,7 +388,7 @@ pub(super) fn respected(
                         Related::Apart => Err(refusal),
                     }
                 },
-                (Reading::Fold { .. } | Reading::Case { .. }, _) => Err(refusal),
+                None => Err(refusal),
             }
         });
         arena.truncate_to(watermark);
@@ -407,6 +412,19 @@ struct Obliged
     head: ComputationId,
     /// The scrutinee's data application, shifted past the pattern's binders.
     datatype: ValueTypeId,
+}
+
+/// How a law reads the map out of the type whose rule it speaks of.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Eliminator
+{
+    /// A fold: a structural fixpoint of this type.
+    Fold(CompTypeId),
+    /// A case that is no fixpoint: its motive and its branches are the map.
+    Case,
 }
 
 /// Whether a law relates a fold's two sides of its rule.
@@ -760,15 +778,18 @@ pub(super) fn sethood(
 /// and the law's declared type alone.
 ///
 /// # Specification
-/// - requires: `obliged` is `rule`'s obligation at the fold whose type is
-///   `arrow`, over the data declaration `declaration` whose signature is
+/// - requires: `obliged` is `rule`'s obligation at the fold or the case that
+///   `by` names, over the data declaration `declaration` whose signature is
 ///   `signature`.
-/// - ensures: [`Related::Related`] exactly when `arrow` is a non-dependent
-///   arrow into a returner, `law` names an admitted declaration whose type is a
-///   path type behind one parameter per pattern variable, each parameter's
-///   classifier converts with its instance's, the path's carrier with the
-///   codomain, and each endpoint, read in place or sequenced, with its side
-///   under [`crate::replay::convert`]; [`Related::Apart`] otherwise.
+/// - ensures: [`Related::Related`] exactly when the eliminator answers in a
+///   returner, `law` names an admitted declaration whose type is a path type
+///   behind one parameter per pattern variable, each parameter's classifier
+///   converts with its instance's, the path's carrier with the carrier at each
+///   side, and each endpoint, read in place or sequenced, with its side under
+///   [`crate::replay::convert`]; [`Related::Apart`] otherwise. A fold answers
+///   in the codomain of its non-dependent arrow, and a variable at the own type
+///   is read as the fold's call on it. A case answers in its motive at each
+///   side, and such a variable is read as the case on it.
 /// - fails: [`KernelError::ArenaFault`] for a rule side that does not read
 ///   against the constructor table.
 /// - panics: none.
@@ -788,37 +809,59 @@ pub(super) fn sethood(
 /// - hypothesis: L3 — the winding number is admitted on the circle's two
 ///   cancellation laws and refused when the laws are crossed.
 /// - witness: `tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
+/// - witness: `tests::native_formers::a_case_that_is_no_fixpoint_rests_on_the_law_of_its_rule_8333`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::ArenaFault | KernelError::DataArgumentArity)))]
 fn lawful(
     arena: &mut TermArena,
     (entries, unfoldings): (&Entries, &Unfoldings),
-    (obliged, arrow): (Obliged, CompTypeId),
+    (obliged, by): (Obliged, Eliminator),
     (rule, signature, declaration): (&PresentedRule, super::former::Signature<'_>, ConstantIndex),
     law: ConstantIndex,
 ) -> Result<Related, KernelError>
 {
-    let Some(&CompType::Arrow { codomain, .. }) = arena.comp_type(arrow)
-    else {
-        return Ok(Related::Apart);
-    };
-    let Some(&CompType::Returner(codomain)) = arena.comp_type(codomain)
-    else {
-        return Ok(Related::Apart);
-    };
     let Some(entry) = entries.get(usize::from(law))
     else {
         return Ok(Related::Apart);
     };
     let bound = u32::from(rule.variables());
     let mut table = ContentTable::new_in(Global);
-    let codomain = shift_value_type(
-        arena,
-        &mut table,
-        &mut NullMemo,
-        codomain,
-        BinderDepth::NONE,
-        BinderDepth::from(bound),
-    );
+    // The carrier at each side of the rule, beneath the pattern's binders.
+    let (codomain, other) = match by {
+        Eliminator::Fold(arrow) => {
+            let Some(&CompType::Arrow { codomain, .. }) = arena.comp_type(arrow)
+            else {
+                return Ok(Related::Apart);
+            };
+            let Some(&CompType::Returner(codomain)) = arena.comp_type(codomain)
+            else {
+                return Ok(Related::Apart);
+            };
+            let codomain = shift_value_type(
+                arena,
+                &mut table,
+                &mut NullMemo,
+                codomain,
+                BinderDepth::NONE,
+                BinderDepth::from(bound),
+            );
+            (codomain, codomain)
+        },
+        Eliminator::Case => {
+            let Some(&Computation::DataCase { motive, .. }) = arena.computation(obliged.head)
+            else {
+                return Ok(Related::Apart);
+            };
+            let (from, to) = obliged.sides;
+            let from = substitute_comp_type(arena, &mut table, &mut NullMemo, motive, from);
+            let to = substitute_comp_type(arena, &mut table, &mut NullMemo, motive, to);
+            let (Some(&CompType::Returner(from)), Some(&CompType::Returner(to))) =
+                (arena.comp_type(from), arena.comp_type(to))
+            else {
+                return Ok(Related::Apart);
+            };
+            (from, to)
+        },
+    };
     let slots = rule
         .slots(&crate::presented::slot_table(
             arena,
@@ -836,9 +879,35 @@ fn lawful(
             for (variable, slot) in (0_u32 ..).map(RuleVariable::from).zip(slots) {
                 let bound_at = arena.value_variable(pattern_binder(rule.variables(), variable));
                 let (instance, classifier) = match slot {
-                    RuleSlot::Own => {
-                        let folded = arena.computation_application(obliged.head, bound_at);
-                        (arena.value_returned(folded), codomain)
+                    RuleSlot::Own => match by {
+                        Eliminator::Fold(_) => {
+                            let folded = arena.computation_application(obliged.head, bound_at);
+                            (arena.value_returned(folded), codomain)
+                        },
+                        Eliminator::Case => {
+                            let Some(&Computation::DataCase {
+                                motive,
+                                ref branches,
+                                ..
+                            }) = arena.computation(obliged.head)
+                            else {
+                                return Err(KernelError::ArenaFault);
+                            };
+                            let branches = branches.clone();
+                            let at = substitute_comp_type(
+                                arena,
+                                &mut table,
+                                &mut NullMemo,
+                                motive,
+                                bound_at,
+                            );
+                            let Some(&CompType::Returner(classifier)) = arena.comp_type(at)
+                            else {
+                                return Ok(Related::Apart);
+                            };
+                            let read = arena.computation_data_case(bound_at, motive, branches);
+                            (arena.value_returned(read), classifier)
+                        },
                     },
                     RuleSlot::Other(field) => (
                         bound_at,
@@ -876,7 +945,9 @@ fn lawful(
     else {
         return Ok(Related::Apart);
     };
-    if crate::conv::convert_value_type(arena, codomain, carrier).is_err() {
+    if crate::conv::convert_value_type(arena, codomain, carrier).is_err()
+        || crate::conv::convert_value_type(arena, other, carrier).is_err()
+    {
         return Ok(Related::Apart);
     }
     for (side, endpoint) in [(obliged.left, left), (obliged.right, right)] {

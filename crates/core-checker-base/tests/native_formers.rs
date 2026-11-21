@@ -1923,6 +1923,110 @@ fn a_law_is_stated_bare_only_over_no_variable()
     }
 }
 
+/// A case that is no fixpoint rests on the law of its rule. Over three
+/// constants with `Amber ~> Green`, a case returns `low` at `Amber` and
+/// `other` at `Green`. It is admitted on a law `low = other`, stated bare
+/// or as a function of no argument. It is refused by the rule with the
+/// crossed law, and with no law.
+///
+/// - see: #8333
+#[test]
+fn a_case_that_is_no_fixpoint_rests_on_the_law_of_its_rule_8333()
+{
+    use gandr_kernel_term::RuleNode;
+    let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+    let (low, other) = (ConstantIndex::from(1_usize), ConstantIndex::from(2_usize));
+    let law = ConstantIndex::from(3_usize);
+    let first = gandr_kernel_term::RuleIndex::from(0_usize);
+    for (crossed, behind, named, admitted) in [
+        (false, false, true, true),
+        (false, true, true, true),
+        (true, false, true, false),
+        (false, false, false, false),
+    ] {
+        let mut arena = CoreArena::new();
+        let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+        let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let returner = arena.comp_type_returner(integer);
+        let rules = SmallVec::<_, 0, Global>::from_iter([gandr_kernel_term::PresentedRule::new(
+            [c(1)].into(),
+            [c(2)].into(),
+        )]);
+        let presented = Declaration::data(
+            ConstantIndex::from(0_usize),
+            DataSignature::new(vec![], vec![vec![], vec![], vec![]], kind)
+                .presented(gandr_kernel_term::Presentation::new(rules))
+                .into(),
+            OriginToken::from(0_usize),
+        );
+        let [at_low, at_other] = [low, other].map(|constant| arena.value_constant(constant));
+        let path = if crossed {
+            arena.value_type_path(integer, at_other, at_low)
+        }
+        else {
+            arena.value_type_path(integer, at_low, at_other)
+        };
+        let stated = if behind {
+            let returns = arena.comp_type_returner(path);
+            arena.value_type_thunk(returns)
+        }
+        else {
+            path
+        };
+        // `λy. case y { Red ⇒ return other; Amber ⇒ return low; Green ⇒
+        // return other }`, with no fixpoint.
+        let [red, green] = [(); 2].map(|()| arena.computation_return(at_other));
+        let amber = arena.computation_return(at_low);
+        let scrutinee = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let case = arena.computation_data_case(
+            scrutinee,
+            returner,
+            vec![red, amber, green],
+            [0_usize, 0, 0]
+                .map(gandr_kernel_term::FieldCount::from)
+                .to_vec(),
+        );
+        let lambda = arena.computation_lambda(case);
+        let body = arena.value_thunk(lambda);
+        let arrow = arena.comp_type_arrow(own, returner);
+        let declared = arena.value_type_thunk(arrow);
+        let hole = |constant: ConstantIndex, stated| {
+            Declaration::new(
+                constant,
+                Maybe::Present(stated),
+                Maybe::Absent(gandr_core_checker_base::body::Absent::Hole),
+                OriginToken::from(usize::from(constant)),
+            )
+        };
+        let laws = if named { vec![law] } else { vec![] };
+        let declarations = vec![
+            presented,
+            hole(low, integer),
+            hole(other, integer),
+            hole(law, stated),
+            definition(ConstantIndex::from(4_usize), declared, body).lawful(laws),
+        ];
+        let (report, _) = run(&mut arena, &declarations);
+        let verdict = report.judged()[4].verdict();
+        if admitted {
+            assert!(
+                matches!(verdict, Verdict::Checked { .. }),
+                "the law relates the two arms of the case: {verdict:?}"
+            );
+        }
+        else {
+            assert!(
+                matches!(
+                    verdict,
+                    Verdict::Refused(CheckRefusal::RuleNotRespected { rule, .. }) if rule == first
+                ),
+                "a crossed law, or no law, leaves the case refused by its rule: {verdict:?}"
+            );
+        }
+    }
+}
+
 #[test]
 fn a_fold_into_the_paths_of_a_set_respects_its_rules()
 {

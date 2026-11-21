@@ -69,6 +69,12 @@
 //! `model` derives, and a handler of the theory owes the same law by
 //! conversion ([`crate::handler`]).
 //!
+//! A case that is no fixpoint rests on its laws in the same way. Its motive
+//! gives the carrier of the law at each side of the rule. A variable of the
+//! rule at the type of the scrutinee is read as the case on that variable. A
+//! type with no recursive constructor has no fold, so the encoder of a layout
+//! of such a type is a case of this kind.
+//!
 //! A case that respects every rule, by conversion or by its law, is admitted;
 //! one that does not is refused `RuleNotRespected`, naming the case, the
 //! rule's position and its two sides as built. Witnesses:
@@ -186,8 +192,8 @@ pub enum Reading
 }
 
 /// Decide that the case `at` respects every rule of `signature`, read as
-/// `reading` says, resting a fold on the laws its declaration names where
-/// conversion does not decide.
+/// `reading` says, resting on the laws its declaration names where conversion
+/// does not decide.
 ///
 /// # Specification
 /// - requires: `signature` presents the scrutinee's type at `reading`'s data
@@ -197,9 +203,9 @@ pub enum Reading
 ///   [`crate::code::CodeDefinitions::convert_rigidly`], `l` and `r` built over
 ///   one fresh variable per pattern variable and `F` read as `reading` says — a
 ///   fold past `k` leading arguments applied first to `k` fresh variables bound
-///   outside the rule's own; or, at a fold over its first binder, the law at
-///   the rule's position among the laws the declaration under judgement names
-///   relates them, as [`lawful`] decides.
+///   outside the rule's own; or the law at the rule's position among the laws
+///   the declaration under judgement names relates them, as [`lawful`] decides,
+///   at a fold over its first binder and at a case that is no fixpoint.
 /// - fails: [`CheckRefusal::RuleNotRespected`] at `at` naming the first rule
 ///   whose sides neither convert nor are related by a law, with the two sides
 ///   as built; [`CheckRefusal::MachineInvariant`] for a rule side that does not
@@ -346,16 +352,21 @@ pub fn respected(
             .get(index)
             .copied()
             .filter(|_| leading == 0);
-        let related = match (reading, law) {
-            (Reading::Fold { arrow, .. }, Some(law)) => {
+        let related = match law {
+            Some(law) => {
+                let by = match reading {
+                    Reading::Fold { arrow, .. } => Eliminator::Fold(arrow),
+                    Reading::Case { .. } => Eliminator::Case,
+                };
                 let obliged = Obliged {
                     sides: obligation,
+                    ends: (left, right),
                     head,
                     datatype,
                 };
-                lawful(context, (obliged, arrow), (rule, signature), law)?
+                lawful(context, (obliged, by), (rule, signature), law)?
             },
-            (Reading::Fold { .. } | Reading::Case { .. }, _) => Related::Apart,
+            None => Related::Apart,
         };
         if related == Related::Apart {
             return Err(CheckRefusal::RuleNotRespected {
@@ -554,10 +565,22 @@ struct Obliged
 {
     /// `F(l)` and `F(r)`.
     sides: (ComputationId, ComputationId),
-    /// The fixpoint, shifted past the pattern's binders.
+    /// `l` and `r`.
+    ends: (ValueId, ValueId),
+    /// The fixpoint or the case, shifted past the pattern's binders.
     head: ComputationId,
     /// The scrutinee's data application, shifted past the pattern's binders.
     datatype: ValueTypeId,
+}
+
+/// How a law reads the map out of the type whose rule it speaks of.
+#[derive(Clone, Copy, Debug)]
+enum Eliminator
+{
+    /// A fold: a structural fixpoint of this type.
+    Fold(CompTypeId),
+    /// A case that is no fixpoint: its motive and its branches are the map.
+    Case,
 }
 
 /// Whether a law relates a fold's two sides of its rule.
@@ -616,16 +639,20 @@ fn pattern_binder(
 /// ahead as elaboration binds them.
 ///
 /// # Specification
-/// - requires: `obliged` is `rule`'s obligation at a fold whose type is
-///   `arrow`, built beneath `rule`'s pattern binders over a data application of
-///   `signature`.
-/// - ensures: [`Related::Related`] exactly when `arrow` is `A → F C`, the law's
-///   declared type is `Path[.A = C'](a, b)` for a rule over no variable or `U
-///   (Π (x₁ : A₁) … (xₙ : Aₙ). F Path[.A = C'](a, b))` with one parameter per
-///   variable, each `Aᵢ` equivalent to the classifier of the `i`th variable's
-///   reading, `C'` equivalent to `C`, and at the instance `a` converts with
-///   `F(l)` and `b` with `F(r)`, each endpoint read in place or sequenced;
-///   [`Related::Apart`] otherwise, a conversion that faults included.
+/// - requires: `obliged` is `rule`'s obligation at the fold or the case that
+///   `by` names, built beneath `rule`'s pattern binders over a data application
+///   of `signature`.
+/// - ensures: [`Related::Related`] exactly when the eliminator answers in `F
+///   C`, the law's declared type is `Path[.A = C'](a, b)` for a rule over no
+///   variable or `U (Π (x₁ : A₁) … (xₙ : Aₙ). F Path[.A = C'](a, b))` with one
+///   parameter per variable, each `Aᵢ` equivalent to the classifier of the
+///   `i`th variable's reading, `C'` equivalent to `C` at each side, and at the
+///   instance `a` converts with `F(l)` and `b` with `F(r)`, each endpoint read
+///   in place or sequenced; [`Related::Apart`] otherwise, a conversion that
+///   faults included. A fold answers in the codomain of its arrow `A → F C`,
+///   and a variable at the own type is read as the fold's call on it. A case
+///   answers in its motive at each side, and such a variable is read as the
+///   case on it.
 /// - fails: [`CheckRefusal::MachineInvariant`] when the rule does not read
 ///   against the signature's constructor table.
 /// - panics: none.
@@ -647,25 +674,16 @@ fn pattern_binder(
 ///   cancellation laws and refused when a law states another path.
 /// - witness: `tests::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
 /// - witness: `tests::native_formers::a_law_is_stated_bare_only_over_no_variable`
+/// - witness: `tests::native_formers::a_case_that_is_no_fixpoint_rests_on_the_law_of_its_rule_8333`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
 fn lawful(
     context: &mut CheckingContext<'_>,
-    (obliged, arrow): (Obliged, CompTypeId),
+    (obliged, by): (Obliged, Eliminator),
     (rule, signature): (&PresentedRule, &DataSignature),
     law: ConstantIndex,
 ) -> Result<Related, CheckRefusal>
 {
     let arena = context.arena();
-    let Some(&CompType::Arrow { codomain, .. }) = arena.comp_type(arrow)
-    else {
-        return Ok(Related::Apart);
-    };
-    let Some(&CompType::Returner {
-        result: carrier, ..
-    }) = arena.comp_type(codomain)
-    else {
-        return Ok(Related::Apart);
-    };
     let Some(&ValueType::Data { declaration, .. }) = arena.value_type(obliged.datatype)
     else {
         return Err(CheckRefusal::MachineInvariant);
@@ -679,8 +697,42 @@ fn lawful(
         .slots(&crate::former::slot_table(arena, declaration, signature))
         .map_err(|_fault| CheckRefusal::MachineInvariant)?;
     let bound = u32::from(rule.variables());
-    let carrier = shift_value_type(context.arena_mut(), carrier, Binders::from(bound))
-        .settle(context.arena_mut());
+    // The carrier at each side of the rule, beneath the pattern's binders.
+    let (carrier, other) = match by {
+        Eliminator::Fold(arrow) => {
+            let Some(&CompType::Arrow { codomain, .. }) = arena.comp_type(arrow)
+            else {
+                return Ok(Related::Apart);
+            };
+            let Some(&CompType::Returner {
+                result: carrier, ..
+            }) = arena.comp_type(codomain)
+            else {
+                return Ok(Related::Apart);
+            };
+            let carrier = shift_value_type(context.arena_mut(), carrier, Binders::from(bound))
+                .settle(context.arena_mut());
+            (carrier, carrier)
+        },
+        Eliminator::Case => {
+            let Some(&Computation::DataCase { motive, .. }) = arena.computation(obliged.head)
+            else {
+                return Ok(Related::Apart);
+            };
+            let (from, to) = obliged.ends;
+            let arena = context.arena_mut();
+            let from = instantiate_comp_type(arena, motive, from);
+            let to = instantiate_comp_type(arena, motive, to);
+            let (
+                Some(&CompType::Returner { result: from, .. }),
+                Some(&CompType::Returner { result: to, .. }),
+            ) = (arena.comp_type(from), arena.comp_type(to))
+            else {
+                return Ok(Related::Apart);
+            };
+            (from, to)
+        },
+    };
     let parameters = gandr_core_term::BinderDepth::from(signature.parameters().len());
     // A law over no variable may state its path bare; any other states it
     // behind one parameter per variable.
@@ -695,9 +747,34 @@ fn lawful(
                     pattern_binder(rule.variables(), variable),
                 );
                 let (instance, classifier) = match slot {
-                    RuleSlot::Own => {
-                        let folded = arena.computation_application(obliged.head, reached);
-                        (arena.value_returned(folded), carrier)
+                    RuleSlot::Own => match by {
+                        Eliminator::Fold(_) => {
+                            let folded = arena.computation_application(obliged.head, reached);
+                            (arena.value_returned(folded), carrier)
+                        },
+                        Eliminator::Case => {
+                            let Some(&Computation::DataCase {
+                                motive,
+                                ref branches,
+                                ref arities,
+                                ..
+                            }) = arena.computation(obliged.head)
+                            else {
+                                return Err(CheckRefusal::MachineInvariant);
+                            };
+                            let (branches, arities) =
+                                (branches.clone(), alloc::sync::Arc::clone(arities));
+                            let at = instantiate_comp_type(arena, motive, reached);
+                            let Some(&CompType::Returner {
+                                result: classifier, ..
+                            }) = arena.comp_type(at)
+                            else {
+                                return Ok(Related::Apart);
+                            };
+                            let read =
+                                arena.computation_data_case(reached, motive, branches, arities);
+                            (arena.value_returned(read), classifier)
+                        },
                     },
                     RuleSlot::Other(field) => (
                         reached,
@@ -738,11 +815,13 @@ fn lawful(
     else {
         return Ok(Related::Apart);
     };
-    if !matches!(
-        crate::conversion::equivalent(context, carrier, stated),
-        Ok(Agreement::Convertible)
-    ) {
-        return Ok(Related::Apart);
+    for at in [carrier, other] {
+        if !matches!(
+            crate::conversion::equivalent(context, at, stated),
+            Ok(Agreement::Convertible)
+        ) {
+            return Ok(Related::Apart);
+        }
     }
     let (from, to) = obliged.sides;
     for (side, endpoint) in [(from, left), (to, right)] {

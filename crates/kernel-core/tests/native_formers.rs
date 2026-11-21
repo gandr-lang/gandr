@@ -1003,6 +1003,113 @@ fn assume(
         .position()
 }
 
+/// - see: #8333
+#[test]
+fn a_case_that_is_no_fixpoint_rests_on_the_law_of_its_rule_8333()
+{
+    use gandr_kernel_term::Presentation;
+    use gandr_kernel_term::PresentedRule;
+    use gandr_kernel_term::RuleNode;
+    let amber = RuleNode::Constructor(ConstructorTag::from(1_usize));
+    let green = RuleNode::Constructor(ConstructorTag::from(2_usize));
+    // Three constants, and the rule `Amber ~> Green`.
+    let mut environment = Environment::new();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let signal = staging
+        .data(
+            LevelSignature::monomorphic(),
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::from_iter([]),
+                SmallVec::<_, 0, Global>::from_iter([]),
+                SmallVec::<_, 0, Global>::from_iter([]),
+            ]),
+            kind,
+        )
+        .presented(Presentation::new(SmallVec::<_, 0, Global>::from_iter([
+            PresentedRule::new([amber].into(), [green].into()),
+        ])));
+    let signal = environment
+        .add_decl(signal)
+        .expect("the signal admits")
+        .position();
+    // Two integers that conversion does not read, and three laws: `low =
+    // other` bare, the same law as a function of no argument, and the
+    // crossed law `other = low`.
+    let level = |arena: &mut gandr_kernel_term::TermArena| {
+        arena.value_type_base(gandr_kernel_term::BaseType::Integer)
+    };
+    let low = assume(&mut environment, level);
+    let other = assume(&mut environment, level);
+    let path = |from: ConstantIndex, to: ConstantIndex| {
+        move |arena: &mut gandr_kernel_term::TermArena| {
+            let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+            let from = arena.value_constant(from);
+            let to = arena.value_constant(to);
+            arena.value_type_path(integer, from, to)
+        }
+    };
+    let bare = assume(&mut environment, path(low, other));
+    let crossed = assume(&mut environment, path(other, low));
+    let behind = assume(&mut environment, |arena| {
+        let stated = path(low, other)(arena);
+        let returner = arena.comp_type_returner(stated);
+        arena.value_type_thunk(returner)
+    });
+    // `λy. case y { Red ⇒ return other; Amber ⇒ return low; Green ⇒ return
+    // other }`, with no fixpoint: at `Amber` and at `Green` it computes two
+    // constants, which meet only by the law.
+    let encode = |environment: &mut Environment, laws: SmallVec<ConstantIndex, 0, Global>| {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let datatype = arena.value_type_data(signal, SmallVec::<_, 0, Global>::from_iter([]));
+        let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let motive = arena.comp_type_returner(integer);
+        let at_low = arena.value_constant(low);
+        let at_other = arena.value_constant(other);
+        let red = arena.computation_return(at_other);
+        let amber = arena.computation_return(at_low);
+        let green = arena.computation_return(at_other);
+        let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let case = arena.computation_data_case(
+            argument,
+            motive,
+            SmallVec::<_, 0, Global>::from_iter([red, amber, green]),
+        );
+        let lambda = arena.computation_lambda(case);
+        let body = arena.value_thunk(lambda);
+        let arrow = arena.comp_type_arrow(datatype, motive);
+        let declared = arena.value_type_thunk(arrow);
+        let declaration = staging
+            .def(LevelSignature::monomorphic(), declared, body)
+            .lawful(laws);
+        environment.add_decl(declaration)
+    };
+    let first = Err(KernelError::RuleNotRespected(
+        gandr_kernel_term::RuleIndex::from(0_usize),
+    ));
+    assert_eq!(
+        encode(&mut environment, SmallVec::new()).map(|_admitted| ()),
+        first,
+        "with no law the case computes the two sides of the rule apart"
+    );
+    assert_eq!(
+        encode(&mut environment, SmallVec::from_iter([crossed])).map(|_admitted| ()),
+        first,
+        "the crossed law states another path, and the case stays refused"
+    );
+    assert!(
+        encode(&mut environment, SmallVec::from_iter([bare])).is_ok(),
+        "the bare law relates the two arms of the case"
+    );
+    assert!(
+        encode(&mut environment, SmallVec::from_iter([behind])).is_ok(),
+        "the law as a function of no argument relates the two arms also"
+    );
+}
+
 #[test]
 fn a_fold_rests_on_the_law_of_each_rule_it_computes_apart()
 {
