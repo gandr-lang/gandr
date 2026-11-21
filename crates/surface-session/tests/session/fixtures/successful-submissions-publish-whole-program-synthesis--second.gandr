@@ -1,0 +1,2 @@
+def retained = 40;
+def appended = retained;
