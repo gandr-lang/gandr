@@ -2962,7 +2962,7 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a port at a name that its source binds reads that
     ///   source's member, and a name that nothing binds answers nothing.
-    /// - witness: `gandr-surface-dispatcher::compose::a_port_sort_reads_the_binding_of_its_theory_s_source_8139`
+    /// - witness: `gandr-surface-lowering::lower::row::tests::a_port_sort_reads_the_binding_of_its_theory_s_source_8139`
     /// - witness: `gandr-surface-lowering::lower::row::tests::a_port_sort_no_scope_binds_is_refused_at_its_bytes_8139`
     #[spec(ensures: |ref ret| match *ret {
         Ok(Maybe::Present(member)) => member.name == name,

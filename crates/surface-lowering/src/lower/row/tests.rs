@@ -238,3 +238,55 @@ fn the_scope_wins_over_the_atom_8139()
         "`word` checks at the source's `Integer`, and `number` is refused: {report:?}"
     );
 }
+
+/// #8139: a port names the type member that the scope of its theory's source
+/// binds, in a unit whose other source uses the theory. The first source
+/// binds `Integer` to the strings and declares `Shout`, whose `say` gives an
+/// `Integer`. The second source imports it and sees the atom `Integer`. A
+/// model whose `say` gives a string checks, and a model whose `say` gives the
+/// atom is refused.
+#[test]
+fn a_port_sort_reads_the_binding_of_its_theory_s_source_8139()
+{
+    use alloc::format;
+
+    use crate::unit::ImportTarget;
+    use crate::unit::SourceIndex;
+
+    let shout = include_str!(
+        "tests/unformatted/a-port-sort-reads-the-binding-of-its-theory-s-source-8139-shout.gandr"
+    );
+    let own = include_str!(
+        "tests/unformatted/a-port-sort-reads-the-binding-of-its-theory-s-source-8139.gandr"
+    );
+    let text = format!("{shout}{own}");
+    let unit = Unit::new(vec![
+        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+        UnitSource::new(ByteOffset::from(shout.len()), vec![ImportTarget::Source(
+            SourceIndex::from(0_usize),
+        )]),
+    ])
+    .expect("two sources make a unit");
+    let mut arena = CoreArena::new();
+    let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
+    let report = judged(&module, &mut arena);
+    let said: Vec<bool> = module
+        .declarations()
+        .iter()
+        .filter(|declaration| !matches!(declaration.outcome(), DeclarationOutcome::Refused(_)))
+        .zip(report.judged())
+        .filter(|&(declaration, _)| declaration.name() == SurfaceName::from("say"))
+        .map(|(_, judged)| {
+            matches!(
+                judged.verdict(),
+                gandr_core_checker::Verdict::Checked { .. }
+            )
+        })
+        .collect();
+    assert_eq!(
+        said,
+        vec![true, true, false, false],
+        "each model declares its `say` twice: `Loud`'s word checks and `Quiet`'s number is \
+         refused, so the port names the first source's `Integer`, the strings: {report:?}"
+    );
+}
