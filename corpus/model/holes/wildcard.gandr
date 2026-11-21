@@ -1,0 +1,46 @@
+//! This source shows wildcards in value and type positions.
+//!
+//! A wildcard stands for a term that equations force. A hole is for the author
+//! to fill.
+//!
+//! The elaborator binds a most general solution only where a comparison forces
+//! it. The checker writes the solution in place of the wildcard. The kernel
+//! readmits the declaration as if an author wrote the term.
+//!
+//! - see: `corpus/pathological/holes/wildcard.gandr` — wildcard refusals.
+//! - see: #528
+//! - see: #1979 — `endForced`, `endSigned`, `endMet`
+//!
+/// This function is the identity at an explicit type.
+pub def idAt(a : Type, y : a) -> a = y;
+
+/// The argument `3` forces `_` to `Integer`.
+@[runs("3")]
+def forced() -> Integer = idAt _ 3;
+
+/// This function returns the first value at explicit types.
+def firstAt(a : Type, b : Type, x : a, y : b) -> a = x;
+
+/// Each argument forces its own wildcard type.
+@[runs("5")]
+def bothForced() -> Integer = firstAt _ _ 5 (*{});
+
+/// This function is the identity at a named implicit type.
+def same[a : Type](y : a) -> a = y;
+
+/// This wildcard supplies a named implicit slot. It asks the solver for the
+/// value that an omitted implicit leaves there.
+@[runs("3")]
+def slotForced() -> Integer = same[.a = _] 3;
+
+/// This ascription forces the path's right end to `3`.
+@[runs("*{thunk { fun (a) { a } }, thunk { fun (a) { a } }}")]
+def endForced() -> Path 3 3 = (Path.here 3 : Path 3 _);
+
+/// This annotation forces the right end from the point. No other type meets
+/// the annotation.
+def endSigned = (Path.here 3 : Path 3 _);
+
+/// This ascription forces a path's right end from its type.
+def endMet(q : Path 3 3) -> Path 3 3 =
+  (q : Path 3 _)

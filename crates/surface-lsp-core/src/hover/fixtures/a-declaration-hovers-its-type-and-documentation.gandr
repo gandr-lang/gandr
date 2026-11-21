@@ -1,0 +1,3 @@
+/// The one answer.
+def answer = 42;
+def plain : String;

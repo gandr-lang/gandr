@@ -1,0 +1,3 @@
+/// `force_expression`: forcing a thunk.
+def forced(k : () -> Integer) -> Integer =
+  force k
