@@ -1355,6 +1355,10 @@ struct Form<'gap>
 /// - witness: `parse::gap::tests::a_source_that_owes_nothing_keeps_its_parse_5433`
 /// - witness: `parse::gap::tests::a_bracket_left_open_before_a_closer_of_another_family_is_closed_there_6103`
 /// - witness: `parse::gap::tests::a_bracket_left_open_before_a_call_of_its_type_is_closed_there_6364`
+///
+/// # Cost
+/// - allocation: the places of the scan, the copy of each form a place is
+///   judged in, and the repaired parse, growth within the forms that owe
 pub(super) fn gapped<'source>(
     pbg: &Pbg,
     parsed: &ParseResult<'source>,
