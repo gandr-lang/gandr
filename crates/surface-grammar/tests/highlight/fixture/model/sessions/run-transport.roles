@@ -468,7 +468,4 @@
 2417..2424 Type "Decoded"
 2425..2426 Other "="
 2427..2435 Variable "heardRun"
-2436..2436 Other ""
-2436..2437 Other "("
-2437..2438 Other ")"
-2438..2439 Other ";"
+2435..2436 Other ";"

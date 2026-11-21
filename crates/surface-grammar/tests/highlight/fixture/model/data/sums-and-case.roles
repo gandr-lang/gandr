@@ -73,7 +73,4 @@
 570..577 TypeBuiltin "Integer"
 578..579 Other "="
 580..584 Variable "pick"
-585..585 Other ""
-585..586 Other "("
-586..587 Other ")"
-587..588 Other ";"
+584..585 Other ";"

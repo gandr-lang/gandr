@@ -6460,6 +6460,71 @@ mod tests
         );
     }
 
+    /// #8079: the bare name of a definition of no input where a type is read
+    /// is the decode of what its run returns, the core that `unit()` gave
+    /// before the bare name ran: the force of the declaration, returned.
+    #[test]
+    fn a_bare_name_of_no_input_where_a_type_is_read_decodes_its_run_8079()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def unit() -> -F Type { return Integer } def two : unit ;"),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let declared = declared_of(lowered[1]);
+        let Some(&ValueType::Element { code, .. }) = arena.value_type(declared)
+        else {
+            panic!("the run where a type is read decodes");
+        };
+        let Some(&Value::Returned(ran)) = arena.value(code)
+        else {
+            panic!("the code is what the run returns: {:?}", arena.value(code));
+        };
+        let Some(&Computation::Force(head)) = arena.computation(ran)
+        else {
+            panic!(
+                "the run is the force of the declaration: {:?}",
+                arena.computation(ran)
+            );
+        };
+        assert_eq!(
+            arena.value(head).cloned(),
+            Some(Value::Constant(ConstantIndex::from(0_usize))),
+            "the head is `unit`"
+        );
+    }
+
+    /// #8079: `thunk { now }` passes the definition of no input as a value
+    /// with no run: the constant itself, the argument `apply now` passed
+    /// before the bare name ran.
+    #[test]
+    fn a_thunk_of_a_bare_name_of_no_input_is_its_constant_8079()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def now() -> Integer = 3; def apply(f : () -> Integer) -> Integer = f (); def \
+                 passed() -> Integer = apply (thunk { now });",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let Some(&Value::Thunk(body)) = arena.value(body_of(lowered[2]))
+        else {
+            panic!("`passed` lowers to a thunk value");
+        };
+        let Some(&Computation::Application(_, argument)) = arena.computation(body)
+        else {
+            panic!("`passed` applies `apply`: {:?}", arena.computation(body));
+        };
+        assert_eq!(
+            arena.value(argument).cloned(),
+            Some(Value::Constant(ConstantIndex::from(0_usize))),
+            "the argument is the constant `now`, with no thunk of its force"
+        );
+    }
+
     /// #7564: a `match` where a type is read is the decode of the code it
     /// returns, as a call there is, and a function's result takes the returner
     /// over that decode.

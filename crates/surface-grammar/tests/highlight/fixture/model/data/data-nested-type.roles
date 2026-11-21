@@ -72,7 +72,4 @@
 567..574 TypeBuiltin "Integer"
 575..576 Other "="
 577..586 Variable "sum_first"
-587..587 Other ""
-587..588 Other "("
-588..589 Other ")"
-589..590 Other ";"
+586..587 Other ";"

@@ -2,7 +2,7 @@ error[InstanceAmbiguous]: `say`'s instance `out` could be `b` or `a`, each an in
    ╭▸ corpus/pathological/control/named-instances.gandr:23:7
    │
 23 │       say ();
-   │       ━━━━━━ an instance with several in scope
+   │       ━━━ an instance with several in scope
    │
    ├ note: `ambiguous` is refused with InstanceAmbiguous, as its expectation states
    ╰ help: supply the intended instance by name
@@ -11,7 +11,7 @@ error[InstanceUnanswered]: `say` performs `std.io.Console.Eff` through its insta
    ╭▸ corpus/pathological/control/named-instances.gandr:37:49
    │
 37 │ def unanswered() -> [std.io.Console.Eff] Unit = say ();
-   │                                                 ━━━━━━ an instance with none in scope
+   │                                                 ━━━ an instance with none in scope
    │
    ├ note: `unanswered` is refused with InstanceUnanswered, as its expectation states
    ╰ help: handle the interface or supply its instance by name
@@ -48,7 +48,8 @@ error[CapabilityAmplified]: this capability grants less than the one expected he
    │ ││     ┬──────────┯────
    │ ││     │          │
    │ ││     │          a capability granting less: expected `Cap {print} at p`, found `Cap {exit} at p`
-   │ ││     checked against `-F [std.process.Exit.Eff, p : std.process.Exit.Eff] Integer`; while checking the argument of this application
+   │ ││     checked against `-F [std.process.Exit.Eff, p : std.process.Exit.Eff] Integer`; while synthesising the computation this binds
+   │ ││     synthesised; while checking the argument of this application
 57 │ ││     pure 0
 58 │ ││   } with {
 59 │ ││     | pure(x) => pure x

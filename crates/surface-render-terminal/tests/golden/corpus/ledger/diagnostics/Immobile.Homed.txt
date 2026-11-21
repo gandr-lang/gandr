@@ -1,12 +1,12 @@
 error[Immobile.Homed]: a thunk crossing to another world reads this declaration away from its home, and its type is not mobile
-   ╭▸ corpus/ledger/diagnostics/Immobile.Homed.gandr:15:33
+   ╭▸ corpus/ledger/diagnostics/Immobile.Homed.gandr:15:41
    │
 14 │ ┌ def homed() -> () -> Integer =
-15 │ │   migrate [seat] { pure thunk { pending () } }
-   │ │   ┬─────────────────────────────┯━━━━━━──────│
-   │ └───│─────────────────────────────│────────────┤
-   │     │                             │            checked against `() -> (() -> Integer)`; while checking the body of this thunk
-   │     │                             a declaration homed where the thunk is formed, whose type is not mobile: found `() -> Integer`
+15 │ │   migrate [seat] { pure thunk { let n = pending; pure n } }
+   │ │   ┬─────────────────────────────────────┯━━━━━━───────────│
+   │ └───│─────────────────────────────────────│─────────────────┤
+   │     │                                     │                 checked against `() -> (() -> Integer)`; while checking the body of this thunk
+   │     │                                     a declaration homed where the thunk is formed, whose type is not mobile: found `() -> Integer`
    │     checked against `-F (() -> Integer)`; while checking the body of this migration at its world
    │
    ├ note: `homed` is refused with Immobile.Homed, as its expectation states

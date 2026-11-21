@@ -3235,7 +3235,7 @@ fn a_declaration_naming_a_refused_one_is_a_note()
         text,
         Verb::Check(Goals::Gated),
     );
-    let called = nth(text, SourceText::from("a ()"))[0];
+    let called = nth(text, SourceText::from("a\n\ndef c"))[0];
     let call = ByteSpan::new(
         called.start(),
         ByteOffset::from(usize::from(called.start()) + 1),
