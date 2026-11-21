@@ -1,0 +1,4 @@
+{NAT}{MAYBE}def code : Type ;
+def code = Nat ;
+def partial : Type ;
+def partial = Maybe ;

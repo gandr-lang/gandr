@@ -1,0 +1,32 @@
+[
+  {
+    "name": "an issue opened with only a kind gets needs:triage",
+    "input": ["kind:gap"],
+    "output": "add"
+  },
+  {
+    "name": "an issue opened with only an area gets needs:triage",
+    "input": ["area:core"],
+    "output": "add"
+  },
+  {
+    "name": "an issue opened bare gets needs:triage",
+    "input": [],
+    "output": "add"
+  },
+  {
+    "name": "a flagged issue missing its area keeps the flag",
+    "input": ["kind:gap", "needs:triage"],
+    "output": "keep"
+  },
+  {
+    "name": "a flagged issue given its area loses the flag",
+    "input": ["kind:gap", "needs:triage", "area:workflow"],
+    "output": "remove"
+  },
+  {
+    "name": "a filed issue without the flag is left alone",
+    "input": ["kind:defect", "area:surface", "status:claimed"],
+    "output": "keep"
+  }
+]

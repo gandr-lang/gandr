@@ -1,0 +1,42 @@
+// Vector programs as they should read, and what refuses each of them.
+//
+// A case on a vector binds each arm's index equation, prunes an arm whose ends
+// are apart, and solves an equation with a variable side. An equation between
+// two applications of one constructor splits into one equation for each field.
+// A binder of a recursion's stage moves along its equation and keeps its stage.
+// The model source `injective-index` holds `tail` and `zip`.
+//
+// The checker refuses `headOfEmpty` by the name its attribute states. The
+// length of the empty vector is apart from the length that `head` takes.
+//
+// - owes: #3517 — an implicit block on `def rec`, for `zip`
+// - see: #3481 — the spike that wrote these programs
+
+// The naturals the lengths count in.
+import "../../model/data/data-base.gandr";
+
+// The vectors and the vector two long.
+import "../../model/data/vectors.gandr";
+
+/// The first element, its element type and length implicit. `VNil` stands at
+/// zero, apart from `Succ(n)`, so the case leaves its arm out.
+def head[a : Type, n : Nat](v : Vec a (Succ n)) -> a =
+  match v where
+    | VCons(_, h, _) => h
+
+/// The head of the vector two long. The checker splits `Succ` against
+/// `Succ (Succ Zero)`, so `n` stands at `Succ Zero`.
+@[runs("1")]
+def firstOfPair() -> Integer = head (pair ());
+
+/// The head of the empty vector. `Zero` and `Succ` are two constructors, so
+/// the empty vector's length is apart from `Succ n`.
+@[refuses("TypeMismatch")]
+def headOfEmpty() -> Integer = head (VNil : Vec Integer Zero);
+
+/// The length one, written as a call.
+def single() -> Nat = Succ Zero;
+
+/// The vector two long, at a length with a call under `Succ`. The checker
+/// pairs the field of each `Succ`, and the call converts with its value.
+def pairViaCall() -> Vec Integer (Succ (single())) = pair ();

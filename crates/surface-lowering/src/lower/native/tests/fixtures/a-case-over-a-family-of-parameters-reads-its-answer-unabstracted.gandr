@@ -1,0 +1,2 @@
+data Box(a : Type) : Type where { | Put : (x : a) --> Box a }
+def same(b : Box Integer) -> Path[.A = Box Integer](b, b) = match b { | Put(x) => Path.here b };
