@@ -703,6 +703,20 @@ enum Owed
     Nothing,
 }
 
+/// What an application applies its arguments to.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Callee
+{
+    /// The computation the head at this node lowered to.
+    Head(NodeIndex),
+    /// The run of the definition of no input at this constant: its bare
+    /// name, which has no head node of its own.
+    Invoked(ConstantIndex),
+}
+
 /// Whether a form can stand where a value is expected.
 ///
 /// # Specification
@@ -5317,7 +5331,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             ret.is_err()
                 || matches!(
                     self.cx().plans.get(site.at.node),
-                    Some(&(Plan::Variable(..) | Plan::Constant(_) | Plan::Forced(_) | Plan::Primitive(_) | Plan::StaticApplication(..) | Plan::ListNil | Plan::Atom(_)))
+                    Some(&(Plan::Variable(..) | Plan::Constant(_) | Plan::Forced(_) | Plan::Invoked(..) | Plan::Primitive(_) | Plan::StaticApplication(..) | Plan::ListNil | Plan::Atom(_)))
                 )
         },
     )]
@@ -5456,6 +5470,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                             | Plan::StaticApplication(..)
                             | Plan::Constant(_)
                             | Plan::Forced(_)
+                            | Plan::Invoked(..)
                             | Plan::Atom(_)
                             | Plan::Universe(_)
                             | Plan::Constructor(_)
@@ -5695,7 +5710,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 | Resolved::Declaration { constant, .. }
                     if self.cx().invoked.contains(&site.at.node) =>
                 {
-                    matches!(self.cx().plans.get(site.at.node), Some(&Plan::Application(..)))
+                    matches!(self.cx().plans.get(site.at.node), Some(&Plan::Invoked(invoked, _)) if invoked == constant)
                         || self.cx().plans.get(site.at.node) == Some(&Plan::Forced(Code::Constant(constant)))
                 },
                 | _ => !self.cx().invoked.contains(&site.at.node),
@@ -5717,27 +5732,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             {
                 let _fresh = self.cx_mut().invoked.insert(site.at.node);
                 let frame = self.require(site, Produced::Computation)?;
-                // The name's own tile, the last a name or a module's member
-                // writes, heads the call a supply plans.
-                let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
-                let read = read_pieces(self.cx().pbg, self.cx().tree, site.at.node, &mut scratch);
-                let tile = scratch.pieces.iter().rev().find_map(|piece| match *piece {
-                    Piece::Tile { label, at }
-                        if label == TileName::IDENTIFIER || label == TileName::TYPE_IDENTIFIER =>
-                    {
-                        Some(at)
-                    },
-                    Piece::Tile { .. } | Piece::Operand(_) => None,
-                });
-                self.cx_mut().scratch = scratch;
-                read?;
-                if let Some(tile) = tile {
-                    let name = self.cx().name_at(tile);
-                    if self.ran_name(site, frame, (tile, name), (slot, constant))?
-                        == arity::Planned(true)
-                    {
-                        return self.shared().admit_read(site, slot);
-                    }
+                let name = self.cx().name_at(site.at);
+                if self.ran_name(site, frame, name, (slot, constant))? == arity::Planned(true) {
+                    return self.shared().admit_read(site, slot);
                 }
                 let _constant = self.resolved_term(site, frame, resolved)?;
                 self.plan(site, Plan::Forced(Code::Constant(constant)));
@@ -10158,7 +10155,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             ret.is_err()
                 || matches!(
                     self.cx().plans.get(site.at.node),
-                    Some(&(Plan::Constant(_) | Plan::Forced(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::SelectedOutput { .. } | Plan::Data(..) | Plan::Codata(..) | Plan::Constructor(_) | Plan::Exercise(_) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
+                    Some(&(Plan::Constant(_) | Plan::Forced(_) | Plan::Invoked(..) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::SelectedOutput { .. } | Plan::Data(..) | Plan::Codata(..) | Plan::Constructor(_) | Plan::Exercise(_) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
                 )
         },
     )]
@@ -12742,11 +12739,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   of it to at least one argument is the call, a computation the position
     ///   nests. A call of it with no argument, `f()`, is the force of its head
     ///   where a value is read, as the expression grammar reads `f()` (#6787).
-    ///   In a static abstraction's body, the type its operator denotes, that
-    ///   call is the unquote a type reads, and the body quotes it; its
-    ///   telescope is read once that quote is chosen (#3786). Every argument is
-    ///   read as a value under the site's frame, and a binder so named is
-    ///   recorded by
+    ///   A definition of no input is that call at its bare name, and each list
+    ///   written after it moves one place: the first is a second list, and a
+    ///   second is no form. In a static abstraction's body, the type its
+    ///   operator denotes, that call is the unquote a type reads, and the body
+    ///   quotes it; its telescope is read once that quote is chosen (#3786).
+    ///   Every argument is read as a value under the site's frame, and a binder
+    ///   so named is recorded by
     ///   [`Self::name_in_type`](crate::lower::Expressions::name_in_type):
     ///   quoted in a body quote, mentioned elsewhere. Each argument of a decode
     ///   or an unquote counts in the type's telescope, as a family's arguments
@@ -12755,13 +12754,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - provides: the one reading of a type operator's use, bare or applied,
     ///   as a value or as the type it denotes.
     /// - fails: yields the arity refusal for a data family applied to other
-    ///   than its parameter count, and for a dynamic function named bare where
-    ///   a type is read, which computes a code only once applied (#690); the
-    ///   wrong-sort refusal where the position reads neither a value nor the
-    ///   sort of the decode's universe, and for a flattened model implicit,
-    ///   which is its components and no value (`ModelsRef::unflattened`);
-    ///   propagates [`LoweringRefusal::BudgetExceeded`] from the walk of the
-    ///   code's type.
+    ///   than its parameter count, for a dynamic function named bare where a
+    ///   type is read, which computes a code only once applied (#690), and for
+    ///   two lists after a definition of no input; the wrong-sort refusal where
+    ///   the position reads neither a value nor the sort of the decode's
+    ///   universe, and for a flattened model implicit, which is its components
+    ///   and no value (`ModelsRef::unflattened`); propagates
+    ///   [`LoweringRefusal::BudgetExceeded`] from the walk of the code's type.
     /// - panics: none.
     ///
     /// # Errors
@@ -12811,8 +12810,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                                 || self.cx().static_bodies.contains(&site.at.node))
                     },
                     | Some(&Plan::Reapplied(_, planned, again, _)) => {
-                        planned == self.cx().kept(applied)
-                            && matches!(lists, Lists::Again(written) if self.cx().kept(written) == again)
+                        (planned == self.cx().kept(applied)
+                            && matches!(lists, Lists::Again(written) if self.cx().kept(written) == again))
+                            || (lists != Lists::Bare || applied.start < applied.end)
+                                && again == self.cx().kept(applied)
                     },
                     | Some(&(Plan::Data(_, planned) | Plan::Codata(_, planned))) => planned == self.cx().kept(applied),
                     | _ => false,
@@ -12880,6 +12881,28 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     }
             },
         };
+        // A definition of no input runs at its bare name, so each list written
+        // after it moves one place: the first applies what the run returns,
+        // and a second is no form.
+        let run = dynamic
+            && matches!(resolved, Resolved::Declaration { constant, .. }
+                if self.cx().collected.no_input.contains(&SlotIndex::from(usize::from(constant))));
+        let (applied, again) = if run {
+            if let Some(again) = again {
+                return Err(site.out(FragmentBoundary::Arity(OperandCount::from(
+                    again.end.saturating_sub(again.start),
+                ))));
+            }
+            let first = Stretch {
+                start: applied.start,
+                end: applied.start,
+            };
+            (first, called.then_some(applied))
+        }
+        else {
+            (applied, again)
+        };
+        let called = called || run;
         // A static abstraction's body is the type its operator denotes, so a
         // dynamic call written there is the type of the code it returns, and
         // the body quotes it (#3786).
@@ -12994,7 +13017,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// Read the head `resolved` as the call a type path or a type's call form
     /// writes: applied to the arguments `applied` holds, and its result to
     /// those `again` holds when it writes a second list (#5213). A head written
-    /// with no list stands bare.
+    /// with no list stands bare. The type grammar ends a qualified link at a
+    /// value name only before a list, so an empty list after a definition of
+    /// no input stands for its bare name.
     ///
     /// # Specification
     /// trivial.
@@ -13013,6 +13038,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         match (applied, again) {
             (Some(first), Some(second)) => {
                 self.listed_application(site, resolved, first, Lists::Again(second))
+            },
+            (Some(first), None)
+                if first.start == first.end
+                    && matches!(resolved, Resolved::Declaration { constant, .. }
+                        if self.cx().collected.no_input.contains(&SlotIndex::from(usize::from(constant)))) =>
+            {
+                self.listed_application(site, resolved, first, Lists::Bare)
             },
             (Some(first), None) => self.listed_application(site, resolved, first, Lists::Called),
             (None, _) => self.static_application(site, resolved, none),
@@ -15958,7 +15990,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                 | Plan::Ascribed(..)
                 | Plan::Packed(_) => Some(Produced::Value),
                 | Plan::Plugged { .. }
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::ReturnAll(_) | Plan::SelectedOutput { .. } | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Forced(_) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::ReturnAll(_) | Plan::SelectedOutput { .. } | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Forced(_) | Plan::Invoked(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -16252,7 +16284,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             Plan::Transparent(child) => self.cx().lowered_at(child),
             Plan::Former(former, argument) => self.mint_former(former, argument, sink, origin),
             Plan::Application(head, arguments) => {
-                self.mint_application(head, arguments, sink, origin)
+                self.mint_application(Callee::Head(head), arguments, sink, origin)
+            },
+            Plan::Invoked(constant, arguments) => {
+                self.mint_application(Callee::Invoked(constant), arguments, sink, origin)
             },
             Plan::Function(function) => self.mint_function(&function, sink, origin),
             Plan::Method(called) => {
@@ -17672,6 +17707,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             | Plan::FixedCarrier(..)
             | Plan::Called(..)
             | Plan::Forced(_)
+            | Plan::Invoked(..)
             | Plan::StaticApplication(..)
             | Plan::Tuple(_)
             | Plan::ReturnAll(_)
@@ -18542,7 +18578,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
         Maybe::Present(ascribed)
     }
 
-    /// Mint an application of `head` to `arguments`, left to right.
+    /// Mint an application of `callee` to `arguments`, left to right.
     ///
     /// # Specification
     /// - requires: every node the plan names is already minted or absent.
@@ -18560,8 +18596,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     ///   ([`Context::abstracted`](gandr_surface_lowering_base::lower::Context::abstracted))
     ///   mints `λ … λ. app(…)`, `k` lambdas marked as an implicit's insertion
     ///   over the application of the head and every other argument raised past
-    ///   them; a call of no arguments is its head's own computation; nothing is
-    ///   minted when the head or a written argument did not lower.
+    ///   them; a call of no arguments is its head's own computation; the run of
+    ///   a definition of no input applies `force c` for its constant `c`, the
+    ///   force marked as inserted; nothing is minted when the head or a written
+    ///   argument did not lower.
     /// - provides: the curried elimination of a lambda.
     /// - fails: never.
     /// - panics: none.
@@ -18598,41 +18636,54 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                 keys().any(|key| self.cx().components.contains_key(&key)),
             )
         },
-        ensures: |ret| match self.cx().computation_at(head) {
-            | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
-            | Maybe::Present(called) => {
-                match written
-                    .iter()
-                    .find_map(|&argument| match self.cx().value_at(argument) {
-                        | Maybe::Present(_) => None,
-                        | Maybe::Absent(reason) => Some(reason),
-                    }) {
-                    | Some(reason) => ret == Maybe::Absent(reason),
-                    | None if supplied && ret == Maybe::Absent(lowered::Absent::Unminted) => true,
-                    | None if arguments == FormStretch::default() => {
-                        ret == Maybe::Present(Lowered::Computation(called))
-                    },
-                    | None if opened => {
-                        matches!(ret, Maybe::Present(Lowered::Computation(id)) if sink.origins.computation(id) == Maybe::Present(origin.inserted(Insertion::Implicit)))
-                    },
-                    | None => {
-                        matches!(ret, Maybe::Present(Lowered::Computation(id)) if sink.origins.computation(id) == Maybe::Present(origin))
-                    },
-                }
+        ensures: |ret| match callee {
+            | Callee::Invoked(_) => matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))),
+            | Callee::Head(head) => match self.cx().computation_at(head) {
+                | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
+                | Maybe::Present(called) => {
+                    match written
+                        .iter()
+                        .find_map(|&argument| match self.cx().value_at(argument) {
+                            | Maybe::Present(_) => None,
+                            | Maybe::Absent(reason) => Some(reason),
+                        }) {
+                        | Some(reason) => ret == Maybe::Absent(reason),
+                        | None if supplied && ret == Maybe::Absent(lowered::Absent::Unminted) => true,
+                        | None if arguments == FormStretch::default() => {
+                            ret == Maybe::Present(Lowered::Computation(called))
+                        },
+                        | None if opened => {
+                            matches!(ret, Maybe::Present(Lowered::Computation(id)) if sink.origins.computation(id) == Maybe::Present(origin.inserted(Insertion::Implicit)))
+                        },
+                        | None => {
+                            matches!(ret, Maybe::Present(Lowered::Computation(id)) if sink.origins.computation(id) == Maybe::Present(origin))
+                        },
+                    }
+                },
             },
         },
     )]
     fn mint_application(
         &self,
-        head: NodeIndex,
+        callee: Callee,
         arguments: FormStretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let mut applied = match self.cx().computation_at(head) {
-            Maybe::Present(called) => called,
-            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        let mut applied = match callee {
+            Callee::Head(head) => match self.cx().computation_at(head) {
+                Maybe::Present(called) => called,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+            Callee::Invoked(constant) => {
+                let head = sink.arena.value_constant(constant);
+                sink.origins.record_value(head, origin);
+                let forced = sink.arena.computation_force(head);
+                sink.origins
+                    .record_computation(forced, origin.inserted(Insertion::Force));
+                forced
+            },
         };
         let positions = self.spread(arguments);
         let key = |position: usize| self.cx().operands.locate(At::from(position));
@@ -18736,6 +18787,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             // A call through a joint injects the argument its member stages,
             // the first; the later ones pass as written.
             if position == positions.start
+                && let Callee::Head(head) = callee
                 && let Some(&summand) = self.cx().injected.get(&head)
             {
                 let injected = sink.arena.value_injection(summand, passed);

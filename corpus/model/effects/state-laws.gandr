@@ -27,7 +27,7 @@ def counter() -> (Integer -> Integer) =
 /// `counted` runs `counter` from zero.
 @[runs("2")]
 def counted() -> Integer =
-  let f = counter ()
+  let f = counter
   f 0
 
 /// `readTwice` handles two reads as one read.

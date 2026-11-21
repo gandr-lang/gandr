@@ -5,6 +5,6 @@ theory Store.Eff where {
 }
 def read() -> [st : Store.Eff with sort S = Integer] Integer = st.get;
 def scoped() -> Integer = handle st : Store.Eff with sort S = Integer {
-  read ()
+  read
 } with { | pure(x) => pure x | oper get(k) => k 4 };
 def given(m : Model Store.Eff with sort S = Integer) -> Integer = pure 0;

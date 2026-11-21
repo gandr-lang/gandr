@@ -65,7 +65,7 @@ def summedFrom() -> (List Integer -> Integer) =
 /// `summedFrom` over `#[3, 2]`: the sum is 5.
 @[runs("5")]
 def summedModelled() -> Integer =
-  let answer = summedFrom ()
+  let answer = summedFrom
   answer #[3, 2]
 
 /// The entry: exit with the sum of two draws of two bits.

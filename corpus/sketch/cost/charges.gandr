@@ -43,10 +43,10 @@ def lookup(cache : Ref (Map String String), load : String -> String, key : Strin
 /// The steps under the counting model, which answers their count of three.
 def countedSteps() -> Nat =
   countOf (handle cost : Cost {
-    threeSteps ()
+    threeSteps
   } with Counting)
 
 /// The steps with no model named. The default makes each charge the identity,
 /// so the answer is seven and the run counts nothing.
 def plainSteps() -> Integer =
-  threeSteps ()
+  threeSteps

@@ -24,11 +24,11 @@ def threeSteps() -> [cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
 /// The steps under the counting model.
 def countedSteps() -> (Nat -> Nat) -> Nat =
   handle cost : Cost.Eff with sort N = Nat -> Nat {
-    let _answer = threeSteps ();
+    let _answer = threeSteps;
     pure counted
   } with Counting
 
 /// The bound two is one step too small: the count of the steps is three, so
 /// `Count.le` answers `false`.
 @[refuses("EndpointMismatch")]
-def boundTwo : Path (Count.le (countOf (countedSteps)) (2 : Nat)) true = Path.here true;
+def boundTwo : Path (Count.le (countOf countedSteps) (2 : Nat)) true = Path.here true;

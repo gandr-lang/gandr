@@ -65,7 +65,7 @@ def spin() -> [Partial, cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
 /// has no count.
 def countedSpin() -> [Partial] ((Nat -> Nat) -> Nat) =
   handle cost : Cost.Eff with sort N = Nat -> Nat {
-    let _answer = spin ();
+    let _answer = spin;
     pure counted
   } with Counting
 
@@ -79,7 +79,7 @@ def once() -> [Partial, cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
 /// The loop that ends, under the counting model.
 def countedOnce() -> [Partial] ((Nat -> Nat) -> Nat) =
   handle cost : Cost.Eff with sort N = Nat -> Nat {
-    let _answer = once ();
+    let _answer = once;
     pure counted
   } with Counting
 

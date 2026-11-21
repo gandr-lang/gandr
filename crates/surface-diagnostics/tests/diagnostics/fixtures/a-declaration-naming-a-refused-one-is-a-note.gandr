@@ -2,10 +2,10 @@ def a() -> Integer =
   return 1 ^ 2
 
 def b() -> Integer =
-  return a ()
+  return a
 
 def c() -> Integer =
   1
 
 def d() -> Integer =
-  c ()
+  c

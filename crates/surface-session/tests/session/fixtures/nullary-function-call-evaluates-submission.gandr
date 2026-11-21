@@ -1,2 +1,2 @@
 def step() -> Integer = 1;
-def called() -> Integer = become step ();
+def called() -> Integer = become step;

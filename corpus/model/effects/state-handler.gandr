@@ -37,7 +37,7 @@ def answeredByPassing() -> Integer -> Integer =
 /// `answeredFromZero` runs the state model from zero.
 @[runs("44")]
 def answeredFromZero() -> Integer =
-  let f = answeredByPassing ()
+  let f = answeredByPassing
   f 0
 
 /// `answeredInScope` uses the sole state model in scope.
@@ -52,5 +52,5 @@ def answeredInScope() -> Integer -> Integer =
 /// `inScopeFromZero` runs the in-scope model from zero.
 @[runs("44")]
 def inScopeFromZero() -> Integer =
-  let f = answeredInScope ()
+  let f = answeredInScope
   f 0
