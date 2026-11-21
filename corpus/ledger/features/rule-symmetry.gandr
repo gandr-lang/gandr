@@ -1,0 +1,24 @@
+/// `rule-symmetry` states that an operation is commutative, by a rule that
+/// swaps its two arguments.
+///
+/// Implemented: the rule is admitted, and no reader rewrites by it. A model
+/// owes the law as a member, and a case on the terms owes its respect.
+///
+/// Not implemented: the conversion of two terms under the law, and the match of
+/// a rule in the other order of its arguments.
+///
+/// Each rule that rewrites decides a path as before.
+///
+/// - owes: #8280 — the conversion of two terms under the symmetry
+/// - see: corpus/model/desc/rule-symmetry.gandr
+
+// `Vote`, `Tally`, `TallyInVote` and `poll`.
+import "../../model/desc/rule-symmetry.gandr";
+
+/// The fold reads a meet with the empty tally on the left to the vote against.
+@[runs("Vote.nay")]
+def leftEmpty() -> Terms Vote = poll (Tally.meet Tally.none Tally.all);
+
+/// The fold reads the other order of that meet to the same vote.
+@[runs("Vote.nay")]
+def rightEmpty() -> Terms Vote = poll (Tally.meet Tally.all Tally.none);

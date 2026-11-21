@@ -1,0 +1,2 @@
+def r$0ing : *{n : Integer, v : Path[.A = Integer](n, n)} ;
+def ring = *{2, Path.here 2} ;

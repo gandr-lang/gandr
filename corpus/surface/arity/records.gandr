@@ -1,0 +1,51 @@
+// Records: a literal by label or shorthand, a pattern punning or renaming a
+// field, a field selected by label.
+//
+// A record's fields are read by label, so the order a literal writes them in
+// changes nothing. A wider record stands where a narrower one is asked.
+//
+// Each `runs` row states the record or the field the program answers, and the
+// printer writes a record back in its type's field order.
+//
+// - see: #855 — `selected`
+
+@[checks, form(explicit)]
+def point : *{n : Integer, s : String};
+def point = *{.s = "x", .n = 3};
+
+@[checks]
+def shorthand : *{n : Integer, s : String};
+def shorthand = *{.n = 3, .s = "x"};
+
+@[checks]
+def punned(r : *{n : Integer, s : String}) -> -F String =
+  match r where
+    | *{.n, .s} => return s
+
+@[checks]
+def renamed(r : *{n : Integer, s : String}) -> -F Integer =
+  match r where
+    | *{.n = m} => return m
+
+@[runs("*{.n = 3, .s = \"x\"}")]
+def whole : *{n : Integer, s : String};
+def whole = *{.s = "x", .n = 3};
+
+@[runs("\"x\"")]
+def named() -> -F String = punned (*{.s = "x", .n = 3});
+
+@[runs("3")]
+def numbered() -> -F Integer = renamed (*{.n = 3, .s = "x"});
+
+@[runs("4")]
+def widened() -> -F Integer = renamed (*{.a = *{}, .n = 4, .s = "y"});
+
+/// A field selected by its label off a record no field depends on reads the
+/// field the pattern `*{.n = m}` reads.
+@[checks]
+def selected(r : *{n : Integer, s : String}) -> -F Integer =
+  r.n
+
+/// `selected` answers the field its label names.
+@[runs("3")]
+def picked() -> -F Integer = selected (*{.s = "x", .n = 3});

@@ -1,0 +1,2 @@
+import "./base.gandr" as old : Older renaming {{ {renaming} }} ;
+def relayed = old.answer ;
