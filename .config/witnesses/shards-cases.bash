@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Each enforcing shard lists every package whose tests its members' witnesses
+# name (#7089), run by `check:witness-cases`. A witness spelled
+# `<package>::<path>` names a test of another package (#7039), and a shard
+# resolves its members' witnesses against its own listing. So the package
+# that a witness names stands in its owner's shard. The shards are the
+# matrix of `cargo-test-enforcing-shard` in `landing-checks.yml`: each shard's
+# `packages`, and the shard of `excludes`, `rest`, that takes every other
+# package. On 962d3729c the split of #6885 left `gandr-surface-lowering-base`
+# in `rest`, while two witnesses of `gandr-surface-lowering` in `lowering`
+# named its tests, and the integration cycle failed.
+#
+# The cases read the tree's witnesses and its packages. The tree's `landing-checks.yml`
+# gives no refusal. A copy whose `lowering` shard leaves the base crate out
+# gives a refusal that names it, from a member of `lowering` whose witness
+# names a test of the base crate (#6904 moves those witnesses into
+# `gandr-surface-lowering-expression`).
+set -euo pipefail
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+failed=0
+fail() {
+  echo "witness-shards: $*" >&2
+  failed=1
+}
+
+# The rerun task selects the test-holding package of a qualified witness.
+rerun_case() {
+  local selection=target/evidence/selection
+  local result
+  local saved=false
+  if [[ -e $selection ]]; then
+    mv "$selection" "$scratch/selection"
+    saved=true
+  fi
+  mkdir -p "$(dirname "$selection")"
+  cat > "$selection" <<'EOF'
+-p
+gandr-core-checker-base
+-E
+(package(=gandr-core-checker-base) & test(=gandr-core-checker-bridge::bridge::tests::an_undecided_pair_crosses_with_its_second_certificate_3557))
+EOF
+  if ! result=$(NEXTEST_STATUS_LEVEL=pass mise run --quiet evidence:witnesses 2>&1); then
+    fail "#8010: a qualified witness did not run"
+  elif [[ $result != *an_undecided_pair_crosses_with_its_second_certificate_3557* ]]; then
+    fail "#8010: the qualified witness ran no named test"
+  fi
+  rm -f "$selection"
+  if [[ $saved == true ]]; then
+    mv "$scratch/selection" "$selection"
+  fi
+}
+
+# Each workspace package and its directory below the tree, longest first, so
+# a nested package takes its own files.
+cargo metadata --locked --no-deps --format-version 1 \
+  | jq -r --arg root "$PWD/" '[.packages[] | {name, dir: (.manifest_path | ltrimstr($root) | sub("/?Cargo.toml$"; ""))}]
+      | sort_by(.dir | length) | reverse[] | "\(.dir)\t\(.name)"' > "$scratch/packages"
+# Each witness that names another package's test: its file and the package.
+git grep -n -o -E 'witness: `gandr-[a-z0-9-]+::' -- 'crates/*.rs' \
+  | awk -F: '{ named = $0; sub(/.*witness: `/, "", named); sub(/::$/, "", named); print $1 "\t" named }' > "$scratch/witnesses"
+
+# The refusals of the shards of `$1`: one line for each owner and named
+# package in two shards.
+refusals() {
+  yq -o json 'explode(.) | .jobs["cargo-test-enforcing-shard"].strategy.matrix.include' "$1" \
+    | jq -r '.[] | select(.packages != null) | .shard as $shard | .packages | split(" ")[] | select(. != "") | "\(.)\t\($shard)"' \
+    > "$scratch/shards"
+  awk -F'\t' '
+    FILENAME == ARGV[1] { dirs[++n] = $1; names[n] = $2; next }
+    FILENAME == ARGV[2] { shard[$1] = $2; next }
+    {
+      owner = ""
+      for (i = 1; i <= n; i++) if (index($1, dirs[i] "/") == 1) { owner = names[i]; break }
+      if (owner == "" || owner == $2) next
+      a = (owner in shard) ? shard[owner] : "rest"
+      b = ($2 in shard) ? shard[$2] : "rest"
+      if (a != b) print owner " in " a " names a test of " $2 " in " b " (" $1 ")"
+    }
+  ' "$scratch/packages" "$scratch/shards" "$scratch/witnesses" | sort -u
+}
+
+got=$(refusals .github/workflows/landing-checks.yml)
+[[ -z $got ]] || fail "#7089: a shard of landing-checks.yml leaves out a package whose tests its members' witnesses name: $got"
+
+awk '{ sub(/ gandr-surface-lowering-base$/, ""); print }' .github/workflows/landing-checks.yml > "$scratch/landing-checks.yml"
+got=$(refusals "$scratch/landing-checks.yml")
+[[ $got == *" in lowering names a test of gandr-surface-lowering-base in rest"* ]] \
+  || fail "#7089: a lowering shard without gandr-surface-lowering-base gave no refusal: ${got:-none}"
+
+rerun_case
+
+(( failed == 0 )) || exit 1
+echo "witness shards OK: each shard lists the packages whose tests its members' witnesses name, and a shard that leaves one out is refused"

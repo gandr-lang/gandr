@@ -1,0 +1,10 @@
+theory Store.Eff where {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S). C) --> C;
+}
+def read() -> [st : Store.Eff with sort S = Integer] Integer = st.get;
+def scoped() -> Integer = handle st : Store.Eff with sort S = Integer {
+  read ()
+} with { | pure(x) => pure x | oper get(k) => k 4 };
+def given(m : Model Store.Eff with sort S = Integer) -> Integer = pure 0;

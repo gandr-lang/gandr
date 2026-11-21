@@ -1,0 +1,3 @@
+module AA = MkCounter(A);
+def aa : AA.T = AA.seed;
+def crossed : A.T = AA.seed;

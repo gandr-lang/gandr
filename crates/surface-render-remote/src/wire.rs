@@ -1,0 +1,1937 @@
+//! The versioned render-bus frame: the envelope that carries the presentation
+//! seam across a process boundary.
+//!
+//! # Routing
+//!
+//! A frame is document-scoped or connection-scoped. A document-scoped frame
+//! carries the document's URI and the editor's version of it — the version the
+//! report describes — and a renderer paints it only while that version matches
+//! the buffer it shows, asking for a [`FrameBody::Resync`] otherwise, so a
+//! stale report is dropped rather than painted. A connection-scoped frame
+//! concerns no one document.
+//!
+//! # Versioning
+//!
+//! The wire image carries [`WIRE_SCHEMA_VERSION`] in every frame, and a decode
+//! refuses any other. The version moves whenever a wire field is renamed,
+//! removed, or changes meaning; an added field leaves it.
+//!
+//! # Session shape
+//!
+//! The message set is the projection of one binary session,
+//! `Attach >? Hello >! rec X => (Frame >! X & Stack >! X & Derivation >! X &
+//! Opened >! X & Activity >! X & Store >! X & Trace >? X & Open >? X &
+//! Resync >? X & Detach >? end)`, so a typed endpoint can carry the same
+//! frames as its messages.
+//!
+//! # The frame
+//!
+//! A `RenderFrame` is a `FrameBody` under a `FrameScope`. `Frame`, `Stack`,
+//! `Derivation`, `Open`, `Opened` and `Resync` are document-scoped: they carry
+//! the document's URI and the editor's version of it, the version the report
+//! describes, and a renderer paints a report only
+//! while that version matches the buffer it shows, asking for a resync
+//! otherwise, so a stale report is dropped rather than painted. `Hello`, the
+//! documents a server tracks, `Activity`, the pool's activity at one tick,
+//! `Store`, the store under the hub's data directory, `Trace`, the client's
+//! subscription to the trace layer, and `Detach` are connection-scoped. The
+//! constructors are the only way to
+//! build a frame, so the scope always suits the body.
+//!
+//! The wire image is `{"schema_version", "doc_uri", "doc_version", "body"}`,
+//! the body adjacently tagged by `kind` and `data`, the two routing keys `null`
+//! for a connection-scoped frame. The decode refuses another schema version,
+//! one routing key without the other, and routing that disagrees with the body,
+//! each with a message naming the broken rule. `WIRE_SCHEMA_VERSION` is `1`; it
+//! moves when a wire field is renamed, removed or changes meaning, and an added
+//! field leaves it.
+//!
+//! The alternative was two optional routing fields on the frame itself, which
+//! admits a URI without a version in memory and leaves the check to every
+//! reader. The choice reverses if a body ever concerns several documents at
+//! once, which would replace the scope's single document with a set.
+
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
+
+use anodized::spec;
+
+use crate::account::AccountCard;
+use crate::account::AccountEdit;
+use crate::account::AccountKey;
+use crate::activity::PoolActivity;
+use crate::derivation::DerivationCard;
+use crate::derivation::NodeAt;
+use crate::present::DiagCard;
+use crate::present::GoalCard;
+use crate::present::HlSpan;
+use crate::present::MarkSpan;
+use crate::stack::StackCard;
+use crate::store::StoreCard;
+use crate::visual::Count;
+
+/// A render-bus wire schema version.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct WireSchemaVersion(u32);
+
+impl From<u32> for WireSchemaVersion
+{
+    /// Read a `u32` as a schema version.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(version: u32) -> Self
+    {
+        Self(version)
+    }
+}
+
+impl From<WireSchemaVersion> for u32
+{
+    /// Read the version back out as a `u32`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(version: WireSchemaVersion) -> Self
+    {
+        version.0
+    }
+}
+
+impl fmt::Display for WireSchemaVersion
+{
+    /// Write the version number.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        self.0.fmt(f)
+    }
+}
+
+/// The render-bus wire schema version this crate writes and reads.
+pub const WIRE_SCHEMA_VERSION: WireSchemaVersion = WireSchemaVersion(1);
+
+/// The editor's version of a document, as the language server protocol counts
+/// it.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct DocVersion(i32);
+
+impl From<i32> for DocVersion
+{
+    /// Read an `i32` as a document version.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(version: i32) -> Self
+    {
+        Self(version)
+    }
+}
+
+impl From<DocVersion> for i32
+{
+    /// Read the version back out as an `i32`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(version: DocVersion) -> Self
+    {
+        version.0
+    }
+}
+
+/// A document's URI, as the language server protocol names a document.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct DocumentUri(String);
+
+impl From<String> for DocumentUri
+{
+    /// Read a string as a document URI.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(uri: String) -> Self
+    {
+        Self(uri)
+    }
+}
+
+impl AsRef<str> for DocumentUri
+{
+    /// Borrow the URI's text.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &str
+    {
+        &self.0
+    }
+}
+
+impl fmt::Display for DocumentUri
+{
+    /// Write the URI.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(&self.0)
+    }
+}
+
+/// A document's identity at one version: its URI and the editor's version.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct DocId
+{
+    /// The document's URI.
+    pub uri: DocumentUri,
+    /// The editor's version of the document.
+    pub version: DocVersion,
+}
+
+/// What a frame is about: one document at one version, or the connection.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum FrameScope
+{
+    /// The frame concerns the connection, no one document.
+    Connection,
+    /// The frame concerns this document at this version.
+    Document(DocId),
+}
+
+/// The renderer-facing report a [`FrameBody::Frame`] carries: the document's
+/// text, highlights, marks, diagnostic cards and goal cards over one document
+/// version.
+///
+/// # Specification
+/// - provides: under the `serde` feature, a decode that reads an image without
+///   `source` as the empty text, so an image written before the field was added
+///   still decodes at the same schema version.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ReportView
+{
+    /// The document's text at the report's version, which every byte range
+    /// below addresses; empty when the producer paints over a buffer the
+    /// renderer already holds.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub source: String,
+    /// The highlight spans over the document.
+    pub highlights: Vec<HlSpan>,
+    /// The mark spans: error underlines and hole tints.
+    pub marks: Vec<MarkSpan>,
+    /// The diagnostic cards.
+    pub diagnostics: Vec<DiagCard>,
+    /// The goal cards, in source order.
+    pub goals: Vec<GoalCard>,
+}
+
+/// The payload of a [`RenderFrame`].
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(tag = "kind", content = "data", rename_all = "snake_case")
+)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FrameBody
+{
+    /// Server to client on attach: the documents the server tracks.
+    /// Connection-scoped.
+    Hello
+    {
+        /// The tracked documents, each at its current version.
+        docs: Vec<DocId>,
+    },
+    /// The whole report for one document version. Document-scoped.
+    Frame
+    {
+        /// The report.
+        report: ReportView,
+    },
+    /// Client to server: the client fell behind and asks for a whole
+    /// [`Self::Frame`] at the frame's document version, with the whole
+    /// [`Self::Accounts`]. Document-scoped.
+    Resync,
+    /// The whole account of one document version: one card per declaration,
+    /// in document order. Document-scoped.
+    Accounts
+    {
+        /// The cards.
+        cards: Vec<AccountCard>,
+    },
+    /// The edits that take the account a renderer holds for the document to
+    /// the account at the frame's version. Document-scoped.
+    AccountPatch
+    {
+        /// The edits, to be applied in order.
+        edits: Vec<AccountEdit>,
+    },
+    /// The context stack at the cursor of the document version, whole.
+    /// Document-scoped.
+    Stack
+    {
+        /// The card.
+        card: StackCard,
+    },
+    /// The judgement nodes of the declaration at the cursor of the document
+    /// version, whole: each goal and type on one line, cut to the room that
+    /// the columns of the client's [`Self::Trace`] give it. Document-scoped.
+    Derivation
+    {
+        /// The card.
+        card: DerivationCard,
+    },
+    /// Client to server: the client opens the node at `at` of the derivation
+    /// card keyed `key`, and asks for its whole goal. Document-scoped.
+    Open
+    {
+        /// The key of the card.
+        key: AccountKey,
+        /// The node.
+        at: NodeAt,
+    },
+    /// Server to client, for each [`Self::Open`]: the whole goal of the node
+    /// at `at` of the derivation card keyed `key`, laid out at the client's
+    /// columns. Document-scoped.
+    Opened
+    {
+        /// The key of the card.
+        key: AccountKey,
+        /// The node.
+        at: NodeAt,
+        /// The whole goal; absent when the server holds no such node or the
+        /// printer refused it.
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        goal: Option<String>,
+    },
+    /// Server to client, for each tick of the hub's work ledger that changes
+    /// it: the activity of the hub's pool. Connection-scoped.
+    Activity
+    {
+        /// The activity.
+        activity: PoolActivity,
+    },
+    /// Server to client, on attach: the values of the store under the hub's
+    /// data directory. Connection-scoped.
+    Store
+    {
+        /// The card.
+        card: StoreCard,
+    },
+    /// Client to server: the client shows the trace layer, its panes this
+    /// many columns wide. The server traces each judgement while the client
+    /// is attached and sends the [`Self::Derivation`] at the cursor.
+    /// Connection-scoped.
+    Trace
+    {
+        /// The columns of the client's panes.
+        columns: Count,
+    },
+    /// Either direction: close the stream. Connection-scoped.
+    Detach,
+}
+
+/// One render-bus message: a body and the scope it is routed by.
+///
+/// # Specification
+/// - ensures: a [`FrameBody::Frame`], [`FrameBody::Resync`],
+///   [`FrameBody::Accounts`], [`FrameBody::AccountPatch`],
+///   [`FrameBody::Stack`], [`FrameBody::Derivation`], [`FrameBody::Open`] or
+///   [`FrameBody::Opened`] is document-scoped and a [`FrameBody::Hello`],
+///   [`FrameBody::Activity`], [`FrameBody::Store`], [`FrameBody::Trace`] or
+///   [`FrameBody::Detach`] is connection-scoped, in every frame built by the
+///   thirteen constructors or decoded.
+/// - provides: under the `serde` feature, the wire image `{"schema_version",
+///   "doc_uri", "doc_version", "body"}`, the two routing keys `null` for a
+///   connection-scoped frame; the decode refuses another schema version, keys
+///   present one without the other, and keys that disagree with the body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RenderFrame
+{
+    /// The frame's routing.
+    scope: FrameScope,
+    /// The frame's payload.
+    body: FrameBody,
+}
+
+impl RenderFrame
+{
+    /// The attach greeting: the documents the server tracks.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a connection-scoped [`FrameBody::Hello`] carrying `docs`
+    ///   unchanged.
+    /// - provides: the server's first message.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — connection scope and hello identity are checked for a
+    ///   one-document greeting; empty and populated greetings also round-trip
+    ///   at L2. These observations do not cover arbitrary document lists.
+    /// - witness: `wire::tests::connection_scoped_constructors_omit_routing_keys`
+    /// - witness: `wire::tests::every_body_variant_round_trips_through_json`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Connection, &FrameBody::Hello { .. }),
+    ))]
+    pub const fn hello(docs: Vec<DocId>) -> Self
+    {
+        Self {
+            scope: FrameScope::Connection,
+            body: FrameBody::Hello { docs },
+        }
+    }
+
+    /// The whole report for `document`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a frame scoped to `document` whose body is
+    ///   [`FrameBody::Frame`] carrying `report` unchanged.
+    /// - provides: the message a renderer paints.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact document routing is observed for an empty
+    ///   report; the populated highlight and goal report round-trips at L2.
+    ///   Scope, body kind and payload preservation are distinguished on these
+    ///   fixtures, not on every report or document URI.
+    /// - witness: `wire::tests::document_scoped_constructors_populate_routing_keys`
+    /// - witness: `wire::tests::every_body_variant_round_trips_through_json`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Document(_), &FrameBody::Frame { .. }),
+    ))]
+    pub const fn frame(
+        document: DocId,
+        report: ReportView,
+    ) -> Self
+    {
+        Self {
+            scope: FrameScope::Document(document),
+            body: FrameBody::Frame { report },
+        }
+    }
+
+    /// The request for a whole frame at `document`'s version.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a frame scoped to `document` whose body is
+    ///   [`FrameBody::Resync`].
+    /// - provides: the client's catch-up request.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the exact document and resync body are observed for
+    ///   one document; an independent JSON image fixes the routing-key roles.
+    ///   This bounds the claim to those versions and URI.
+    /// - witness: `wire::tests::document_scoped_constructors_populate_routing_keys`
+    /// - witness: `wire::tests::frame_body_is_adjacently_tagged_on_the_wire`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Document(_), &FrameBody::Resync),
+    ))]
+    pub const fn resync(document: DocId) -> Self
+    {
+        Self {
+            scope: FrameScope::Document(document),
+            body: FrameBody::Resync,
+        }
+    }
+
+    /// The whole account of `document`: `cards`, in document order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a frame scoped to `document` whose body is
+    ///   [`FrameBody::Accounts`] carrying `cards` unchanged.
+    /// - provides: the snapshot a renderer starts its account from.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the document routing and the cards survive a round
+    ///   trip through JSON, and the decode refuses the body unrouted.
+    /// - witness: `wire::tests::the_card_bodies_are_document_scoped`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Document(_), &FrameBody::Accounts { .. }),
+    ))]
+    pub const fn accounts(
+        document: DocId,
+        cards: Vec<AccountCard>,
+    ) -> Self
+    {
+        Self {
+            scope: FrameScope::Document(document),
+            body: FrameBody::Accounts { cards },
+        }
+    }
+
+    /// The edits that take a renderer's account of `document` to its account
+    /// at `document`'s version.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a frame scoped to `document` whose body is
+    ///   [`FrameBody::AccountPatch`] carrying `edits` unchanged.
+    /// - provides: the patch a renderer applies after a change.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`RenderFrame::accounts`].
+    /// - witness: `wire::tests::the_card_bodies_are_document_scoped`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Document(_), &FrameBody::AccountPatch { .. }),
+    ))]
+    pub const fn account_patch(
+        document: DocId,
+        edits: Vec<AccountEdit>,
+    ) -> Self
+    {
+        Self {
+            scope: FrameScope::Document(document),
+            body: FrameBody::AccountPatch { edits },
+        }
+    }
+
+    /// The context stack at the cursor of `document`: `card`, whole.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a frame scoped to `document` whose body is
+    ///   [`FrameBody::Stack`] carrying `card` unchanged.
+    /// - provides: the card the stack pane paints.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a card of two spines, one with a filled parameter and
+    ///   one with no declared head, survives a round trip through JSON, and the
+    ///   decode refuses the body unrouted.
+    /// - witness: `wire::tests::the_card_bodies_are_document_scoped`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Document(_), &FrameBody::Stack { .. }),
+    ))]
+    pub const fn stack(
+        document: DocId,
+        card: StackCard,
+    ) -> Self
+    {
+        Self {
+            scope: FrameScope::Document(document),
+            body: FrameBody::Stack { card },
+        }
+    }
+
+    /// The judgement nodes of the declaration at the cursor of `document`:
+    /// `card`, whole.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a frame scoped to `document` whose body is
+    ///   [`FrameBody::Derivation`] carrying `card` unchanged.
+    /// - provides: the card the derivation pane paints.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a card of two nodes, one placed and typed and one
+    ///   with neither, survives a round trip through JSON, and the decode
+    ///   refuses the body unrouted.
+    /// - witness: `wire::tests::the_card_bodies_are_document_scoped`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Document(_), &FrameBody::Derivation { .. }),
+    ))]
+    pub const fn derivation(
+        document: DocId,
+        card: DerivationCard,
+    ) -> Self
+    {
+        Self {
+            scope: FrameScope::Document(document),
+            body: FrameBody::Derivation { card },
+        }
+    }
+
+    /// The client's ask for the whole goal of the node at `at` of the
+    /// derivation card of `document` keyed `key`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a frame scoped to `document` whose body is
+    ///   [`FrameBody::Open`] carrying `key` and `at` unchanged.
+    /// - provides: the ask of a pane that opens the node in focus.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the ask survives a round trip through JSON, and the
+    ///   decode refuses the body unrouted.
+    /// - witness: `wire::tests::the_card_bodies_are_document_scoped`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Document(_), &FrameBody::Open { .. }),
+    ))]
+    pub const fn open(
+        document: DocId,
+        key: AccountKey,
+        at: NodeAt,
+    ) -> Self
+    {
+        Self {
+            scope: FrameScope::Document(document),
+            body: FrameBody::Open { key, at },
+        }
+    }
+
+    /// The whole goal `goal` of the node at `at` of the derivation card of
+    /// `document` keyed `key`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a frame scoped to `document` whose body is
+    ///   [`FrameBody::Opened`] carrying `key`, `at` and `goal` unchanged.
+    /// - provides: the answer to an [`RenderFrame::open`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the answer with a goal of two lines survives a round
+    ///   trip through JSON, and the decode refuses the body unrouted.
+    /// - witness: `wire::tests::the_card_bodies_are_document_scoped`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Document(_), &FrameBody::Opened { .. }),
+    ))]
+    pub const fn opened(
+        document: DocId,
+        key: AccountKey,
+        at: NodeAt,
+        goal: Option<String>,
+    ) -> Self
+    {
+        Self {
+            scope: FrameScope::Document(document),
+            body: FrameBody::Opened { key, at, goal },
+        }
+    }
+
+    /// The activity of the hub's pool at one tick.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a connection-scoped [`FrameBody::Activity`] carrying
+    ///   `activity` unchanged.
+    /// - provides: the message that the activity pane paints.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the activity of two cores survives a round trip
+    ///   through JSON with no routing keys, and the decode refuses it routed.
+    /// - witness: `wire::tests::the_activity_body_is_connection_scoped`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Connection, &FrameBody::Activity { .. }),
+    ))]
+    pub const fn activity(activity: PoolActivity) -> Self
+    {
+        Self {
+            scope: FrameScope::Connection,
+            body: FrameBody::Activity { activity },
+        }
+    }
+
+    /// The values of the store under the hub's data directory.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a connection-scoped [`FrameBody::Store`] carrying `card`
+    ///   unchanged.
+    /// - provides: the message that the store pane paints.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a card of two rows, one resident and one refused,
+    ///   with its owed cells survives a round trip through JSON with no routing
+    ///   keys, and the decode refuses it routed.
+    /// - witness: `wire::tests::the_store_body_is_connection_scoped_6296`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Connection, &FrameBody::Store { .. }),
+    ))]
+    pub const fn store(card: StoreCard) -> Self
+    {
+        Self {
+            scope: FrameScope::Connection,
+            body: FrameBody::Store { card },
+        }
+    }
+
+    /// The client's subscription to the trace layer, its panes `columns`
+    /// wide.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a connection-scoped [`FrameBody::Trace`] carrying `columns`
+    ///   unchanged.
+    /// - provides: the message that turns the trace layer on for a client.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the subscription survives a round trip through JSON
+    ///   with no routing keys, and the decode refuses it routed.
+    /// - witness: `wire::tests::the_activity_body_is_connection_scoped`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Connection, &FrameBody::Trace { .. }),
+    ))]
+    pub const fn trace(columns: Count) -> Self
+    {
+        Self {
+            scope: FrameScope::Connection,
+            body: FrameBody::Trace { columns },
+        }
+    }
+
+    /// The close of the stream.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a connection-scoped [`FrameBody::Detach`].
+    /// - provides: either side's last message.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the parameterless close has connection scope and a
+    ///   detach body. This exhausts this constructor's input domain, without
+    ///   claiming exhaustive codec behavior.
+    /// - witness: `wire::tests::connection_scoped_constructors_omit_routing_keys`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Connection, &FrameBody::Detach),
+    ))]
+    pub const fn detach() -> Self
+    {
+        Self {
+            scope: FrameScope::Connection,
+            body: FrameBody::Detach,
+        }
+    }
+
+    /// The frame's routing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn scope(&self) -> &FrameScope
+    {
+        &self.scope
+    }
+
+    /// The frame's payload.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn body(&self) -> &FrameBody
+    {
+        &self.body
+    }
+}
+
+/// The encode image of a [`RenderFrame`], borrowing the frame's parts.
+#[cfg(feature = "serde")]
+#[derive(serde::Serialize)]
+struct RenderFrameImage<'frame>
+{
+    /// Always [`WIRE_SCHEMA_VERSION`].
+    schema_version: WireSchemaVersion,
+    /// The document's URI; `None` for a connection-scoped frame.
+    doc_uri: Option<&'frame DocumentUri>,
+    /// The document's version; `None` exactly when [`Self::doc_uri`] is.
+    doc_version: Option<DocVersion>,
+    /// The payload.
+    body: &'frame FrameBody,
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for RenderFrame
+{
+    /// Encode the frame with its schema version and its routing keys.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the image carries [`WIRE_SCHEMA_VERSION`], the document's URI
+    ///   and version for a document-scoped frame and `null` for both otherwise,
+    ///   and the adjacently tagged body.
+    /// - fails: propagates the serializer's own error.
+    /// - panics: none.
+    /// - executable: none — the generic serializer's success value does not
+    ///   expose the encoded fields to a postcondition.
+    ///
+    /// # Errors
+    /// The serializer's error.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — independent hello and resync JSON images fix the
+    ///   schema field, routing keys and adjacent tags. L2 round-trips exercise
+    ///   all four bodies and empty/populated reports, but do not independently
+    ///   prove every payload encoding or arbitrary serializer behavior.
+    /// - witness: `wire::tests::frame_body_is_adjacently_tagged_on_the_wire`
+    /// - witness: `wire::tests::every_body_variant_round_trips_through_json`
+    #[inline]
+    fn serialize<S>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let (doc_uri, doc_version) = match self.scope {
+            FrameScope::Connection => (None, None),
+            FrameScope::Document(ref document) => (Some(&document.uri), Some(document.version)),
+        };
+        let image = RenderFrameImage {
+            schema_version: WIRE_SCHEMA_VERSION,
+            doc_uri,
+            doc_version,
+            body: &self.body,
+        };
+
+        image.serialize(serializer)
+    }
+}
+
+/// The decode image of a [`RenderFrame`]: its fields before the routing and
+/// version checks.
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+struct RenderFrameWire
+{
+    /// The decoded schema version.
+    schema_version: WireSchemaVersion,
+    /// The decoded document URI, absent for a connection-scoped frame.
+    doc_uri: Option<DocumentUri>,
+    /// The decoded document version, absent with the URI.
+    doc_version: Option<DocVersion>,
+    /// The decoded payload; its variant decides which routing is lawful.
+    body: FrameBody,
+}
+
+/// A connection-scoped body a decoded frame routed to a document.
+#[cfg(feature = "serde")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ConnectionBody
+{
+    /// [`FrameBody::Hello`].
+    Hello,
+    /// [`FrameBody::Activity`].
+    Activity,
+    /// [`FrameBody::Store`].
+    Store,
+    /// [`FrameBody::Trace`].
+    Trace,
+    /// [`FrameBody::Detach`].
+    Detach,
+}
+
+/// A document-scoped body a decoded frame left unrouted.
+#[cfg(feature = "serde")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DocumentBody
+{
+    /// [`FrameBody::Frame`].
+    Frame,
+    /// [`FrameBody::Resync`].
+    Resync,
+    /// [`FrameBody::Accounts`].
+    Accounts,
+    /// [`FrameBody::AccountPatch`].
+    AccountPatch,
+    /// [`FrameBody::Stack`].
+    Stack,
+    /// [`FrameBody::Derivation`].
+    Derivation,
+    /// [`FrameBody::Open`].
+    Open,
+    /// [`FrameBody::Opened`].
+    Opened,
+}
+
+/// Why a decoded image is not a frame.
+#[cfg(feature = "serde")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FrameDecodeError
+{
+    /// The image is at another schema version.
+    SchemaVersion
+    {
+        /// The version the image carries.
+        found: WireSchemaVersion,
+    },
+    /// One routing key is present without the other.
+    RoutingLockstep,
+    /// A connection-scoped body carries document routing keys.
+    ConnectionScopedRouted
+    {
+        /// The body.
+        body: ConnectionBody,
+    },
+    /// A document-scoped body carries no routing keys.
+    DocumentScopedUnrouted
+    {
+        /// The body.
+        body: DocumentBody,
+    },
+}
+
+#[cfg(feature = "serde")]
+impl fmt::Display for FrameDecodeError
+{
+    /// Write the broken invariant.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: names the version found and the version supported, the
+    ///   lockstep rule, or the body and the routing it requires.
+    /// - provides: the message a decode failure carries.
+    /// - fails: propagates the formatter's own write failure unchanged.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes write status, not the text
+    ///   emitted into the caller's sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — version numbers, routing-key identifiers and each
+    ///   body tag are observed in successful formatting, independently of the
+    ///   English sentence. This detects lost diagnostic parameters, not every
+    ///   wording error or the behavior of an arbitrary rejecting sink.
+    /// - witness: `wire::tests::decode_error_display_preserves_diagnostic_parameters`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::SchemaVersion { found } => write!(
+                f,
+                "render frame schema_version {found} is not the supported wire schema {WIRE_SCHEMA_VERSION}"
+            ),
+            Self::RoutingLockstep => f.write_str(
+                "render frame doc_uri and doc_version must be present or absent in lockstep",
+            ),
+            Self::ConnectionScopedRouted { body } => {
+                let name = match body {
+                    ConnectionBody::Hello => "hello",
+                    ConnectionBody::Activity => "activity",
+                    ConnectionBody::Store => "store",
+                    ConnectionBody::Trace => "trace",
+                    ConnectionBody::Detach => "detach",
+                };
+                write!(
+                    f,
+                    "{name} render frames must not carry document routing keys"
+                )
+            },
+            Self::DocumentScopedUnrouted { body } => {
+                let name = match body {
+                    DocumentBody::Frame => "frame",
+                    DocumentBody::Resync => "resync",
+                    DocumentBody::Accounts => "accounts",
+                    DocumentBody::AccountPatch => "account_patch",
+                    DocumentBody::Stack => "stack",
+                    DocumentBody::Derivation => "derivation",
+                    DocumentBody::Open => "open",
+                    DocumentBody::Opened => "opened",
+                };
+                write!(f, "{name} render frames require document routing keys")
+            },
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl RenderFrame
+{
+    /// Validate a decoded image into a frame.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success the frame carries the image's body, scoped to the
+    ///   image's document when both routing keys are present and to the
+    ///   connection when both are absent.
+    /// - fails: [`FrameDecodeError::SchemaVersion`] for any version but
+    ///   [`WIRE_SCHEMA_VERSION`]; [`FrameDecodeError::RoutingLockstep`] for one
+    ///   key without the other; [`FrameDecodeError::ConnectionScopedRouted`]
+    ///   and [`FrameDecodeError::DocumentScopedUnrouted`] for routing that
+    ///   disagrees with the body. The checks run in that order.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The [`FrameDecodeError`] naming the first broken invariant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — typed refusals distinguish foreign schema endpoints,
+    ///   both partial routes and all four body/scope mismatches. Overlapping
+    ///   violations establish schema-before-lockstep-before-body precedence. L2
+    ///   lawful-body round-trips cover payload preservation on finite fixtures;
+    ///   arbitrary payloads and URIs are not exhaustively enumerated.
+    /// - witness: `wire::tests::every_body_variant_round_trips_through_json`
+    /// - witness: `wire::tests::a_frame_is_refused_at_another_schema_version`
+    /// - witness: `wire::tests::deserialize_rejects_doc_uri_doc_version_lockstep_violations`
+    /// - witness: `wire::tests::deserialize_rejects_body_routing_mismatches`
+    /// - witness: `wire::tests::decode_refusals_preserve_validation_precedence`
+    #[spec(
+        captures: [
+            schema = wire.schema_version,
+            has_uri = wire.doc_uri.is_some(),
+            version = wire.doc_version,
+            kind = core::mem::discriminant(&wire.body),
+            connection = matches!(
+                wire.body,
+                FrameBody::Hello { .. }
+                    | FrameBody::Activity { .. }
+                    | FrameBody::Store { .. }
+                    | FrameBody::Trace { .. }
+                    | FrameBody::Detach
+            ),
+            routed = match wire.body {
+                FrameBody::Hello { .. } => Some(ConnectionBody::Hello),
+                FrameBody::Activity { .. } => Some(ConnectionBody::Activity),
+                FrameBody::Store { .. } => Some(ConnectionBody::Store),
+                FrameBody::Trace { .. } => Some(ConnectionBody::Trace),
+                FrameBody::Detach => Some(ConnectionBody::Detach),
+                FrameBody::Frame { .. }
+                | FrameBody::Resync
+                | FrameBody::Accounts { .. }
+                | FrameBody::AccountPatch { .. }
+                | FrameBody::Stack { .. }
+                | FrameBody::Derivation { .. }
+                | FrameBody::Open { .. }
+                | FrameBody::Opened { .. } => None,
+            },
+            unrouted = match wire.body {
+                FrameBody::Frame { .. } => Some(DocumentBody::Frame),
+                FrameBody::Resync => Some(DocumentBody::Resync),
+                FrameBody::Accounts { .. } => Some(DocumentBody::Accounts),
+                FrameBody::AccountPatch { .. } => Some(DocumentBody::AccountPatch),
+                FrameBody::Stack { .. } => Some(DocumentBody::Stack),
+                FrameBody::Derivation { .. } => Some(DocumentBody::Derivation),
+                FrameBody::Open { .. } => Some(DocumentBody::Open),
+                FrameBody::Opened { .. } => Some(DocumentBody::Opened),
+                FrameBody::Hello { .. }
+                | FrameBody::Activity { .. }
+                | FrameBody::Store { .. }
+                | FrameBody::Trace { .. }
+                | FrameBody::Detach => None,
+            },
+        ],
+        ensures: |ref ret| match *ret {
+            Err(FrameDecodeError::SchemaVersion { found }) =>
+                schema != WIRE_SCHEMA_VERSION && found == schema,
+            Err(FrameDecodeError::RoutingLockstep) =>
+                schema == WIRE_SCHEMA_VERSION && has_uri != version.is_some(),
+            Err(FrameDecodeError::ConnectionScopedRouted { body }) =>
+                schema == WIRE_SCHEMA_VERSION && has_uri && version.is_some()
+                    && connection && routed == Some(body),
+            Err(FrameDecodeError::DocumentScopedUnrouted { body }) =>
+                schema == WIRE_SCHEMA_VERSION && !has_uri && version.is_none()
+                    && !connection && unrouted == Some(body),
+            Ok(ref frame) => schema == WIRE_SCHEMA_VERSION
+                && has_uri == version.is_some() && has_uri != connection
+                && core::mem::discriminant(&frame.body) == kind
+                && match frame.scope {
+                    FrameScope::Connection => !has_uri,
+                    FrameScope::Document(ref routed) => Some(routed.version) == version,
+                },
+        },
+    )]
+    fn from_wire(wire: RenderFrameWire) -> Result<Self, FrameDecodeError>
+    {
+        if wire.schema_version != WIRE_SCHEMA_VERSION {
+            return Err(FrameDecodeError::SchemaVersion {
+                found: wire.schema_version,
+            });
+        }
+        let scope = match (wire.doc_uri, wire.doc_version) {
+            (Some(uri), Some(version)) => FrameScope::Document(DocId { uri, version }),
+            (None, None) => FrameScope::Connection,
+            (Some(_), None) | (None, Some(_)) => return Err(FrameDecodeError::RoutingLockstep),
+        };
+        let unrouted = match (&wire.body, &scope) {
+            (
+                &(FrameBody::Hello { .. }
+                | FrameBody::Activity { .. }
+                | FrameBody::Store { .. }
+                | FrameBody::Trace { .. }
+                | FrameBody::Detach),
+                &FrameScope::Connection,
+            )
+            | (
+                &(FrameBody::Frame { .. }
+                | FrameBody::Resync
+                | FrameBody::Accounts { .. }
+                | FrameBody::AccountPatch { .. }
+                | FrameBody::Stack { .. }
+                | FrameBody::Derivation { .. }
+                | FrameBody::Open { .. }
+                | FrameBody::Opened { .. }),
+                &FrameScope::Document(_),
+            ) => None,
+            (&FrameBody::Hello { .. }, &FrameScope::Document(_)) => {
+                return Err(FrameDecodeError::ConnectionScopedRouted {
+                    body: ConnectionBody::Hello,
+                });
+            },
+            (&FrameBody::Activity { .. }, &FrameScope::Document(_)) => {
+                return Err(FrameDecodeError::ConnectionScopedRouted {
+                    body: ConnectionBody::Activity,
+                });
+            },
+            (&FrameBody::Store { .. }, &FrameScope::Document(_)) => {
+                return Err(FrameDecodeError::ConnectionScopedRouted {
+                    body: ConnectionBody::Store,
+                });
+            },
+            (&FrameBody::Trace { .. }, &FrameScope::Document(_)) => {
+                return Err(FrameDecodeError::ConnectionScopedRouted {
+                    body: ConnectionBody::Trace,
+                });
+            },
+            (&FrameBody::Detach, &FrameScope::Document(_)) => {
+                return Err(FrameDecodeError::ConnectionScopedRouted {
+                    body: ConnectionBody::Detach,
+                });
+            },
+            (&FrameBody::Frame { .. }, &FrameScope::Connection) => Some(DocumentBody::Frame),
+            (&FrameBody::Resync, &FrameScope::Connection) => Some(DocumentBody::Resync),
+            (&FrameBody::Accounts { .. }, &FrameScope::Connection) => Some(DocumentBody::Accounts),
+            (&FrameBody::AccountPatch { .. }, &FrameScope::Connection) => {
+                Some(DocumentBody::AccountPatch)
+            },
+            (&FrameBody::Stack { .. }, &FrameScope::Connection) => Some(DocumentBody::Stack),
+            (&FrameBody::Derivation { .. }, &FrameScope::Connection) => {
+                Some(DocumentBody::Derivation)
+            },
+            (&FrameBody::Open { .. }, &FrameScope::Connection) => Some(DocumentBody::Open),
+            (&FrameBody::Opened { .. }, &FrameScope::Connection) => Some(DocumentBody::Opened),
+        };
+        if let Some(body) = unrouted {
+            return Err(FrameDecodeError::DocumentScopedUnrouted { body });
+        }
+
+        Ok(Self {
+            scope,
+            body: wire.body,
+        })
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'input> serde::Deserialize<'input> for RenderFrame
+{
+    /// Decode a frame and validate its version and routing.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success, the frame [`RenderFrame::from_wire`] validates
+    ///   from the decoded image.
+    /// - fails: the deserializer's error for a malformed image, and a custom
+    ///   error carrying the [`FrameDecodeError`] message for an image that
+    ///   breaks a frame invariant.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The deserializer's error, or the broken invariant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — foreign versions, partial routes and every wrong
+    ///   body/scope pairing fail as data errors; typed validation establishes
+    ///   the rejection precedence without pinning prose. L2 successful JSON
+    ///   round-trips cover all bodies on finite payloads. Other formats and
+    ///   malformed serializer-specific representations remain outside this set.
+    /// - witness: `wire::tests::every_body_variant_round_trips_through_json`
+    /// - witness: `wire::tests::a_frame_is_refused_at_another_schema_version`
+    /// - witness: `wire::tests::deserialize_rejects_doc_uri_doc_version_lockstep_violations`
+    /// - witness: `wire::tests::deserialize_rejects_body_routing_mismatches`
+    /// - witness: `wire::tests::decode_refusals_preserve_validation_precedence`
+    #[inline]
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |frame| matches!(
+        (&frame.scope, &frame.body),
+        (
+            &FrameScope::Connection,
+            &(FrameBody::Hello { .. }
+                | FrameBody::Activity { .. }
+                | FrameBody::Store { .. }
+                | FrameBody::Trace { .. }
+                | FrameBody::Detach),
+        )
+            | (&FrameScope::Document(_), &(FrameBody::Frame { .. }
+                | FrameBody::Resync
+                | FrameBody::Accounts { .. }
+                | FrameBody::AccountPatch { .. }
+                | FrameBody::Stack { .. }
+                | FrameBody::Derivation { .. }
+                | FrameBody::Open { .. }
+                | FrameBody::Opened { .. })),
+    )))]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'input>,
+    {
+        let wire = RenderFrameWire::deserialize(deserializer)?;
+
+        Self::from_wire(wire).map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::string::String;
+    use alloc::string::ToString as _;
+    use alloc::vec;
+    use alloc::vec::Vec;
+    use core::num::NonZeroU32;
+
+    use super::DocId;
+    use super::DocVersion;
+    use super::DocumentUri;
+    use super::FrameBody;
+    use super::FrameScope;
+    use super::RenderFrame;
+    use super::ReportView;
+    use super::WIRE_SCHEMA_VERSION;
+    use crate::account::AccountCard;
+    use crate::account::AccountEdit;
+    use crate::account::AccountKey;
+    use crate::account::CheckerVerdict;
+    use crate::activity::CoreActivity;
+    use crate::activity::Lengths;
+    use crate::activity::Load;
+    use crate::activity::PoolActivity;
+    use crate::activity::TaskKind;
+    use crate::derivation::DerivationCard;
+    use crate::derivation::DerivationRow;
+    use crate::derivation::Direction;
+    use crate::derivation::Memo;
+    use crate::derivation::NodeAt;
+    use crate::present::ByteOffset;
+    use crate::present::ByteRange;
+    use crate::present::GoalCard;
+    use crate::present::HlRole;
+    use crate::present::HlSpan;
+    use crate::stack::SpineRow;
+    use crate::stack::StackCard;
+    use crate::store::OwedCell;
+    use crate::store::StoreCard;
+    use crate::store::StoreKey;
+    use crate::store::StoreKind;
+    use crate::store::StoreResidence;
+    use crate::store::StoreRow;
+    use crate::store::UnitNumber;
+    use crate::visual::Count;
+    use crate::visual::SampleUnit;
+    use crate::visual::Samples;
+    use crate::visual::Warrant;
+
+    /// An editor version, written as a count.
+    #[repr(transparent)]
+    struct Version(i32);
+
+    /// The document `file:///a.gandr` at the [`Version`] given.
+    ///
+    /// # Specification
+    /// trivial.
+    fn document(Version(version): Version) -> DocId
+    {
+        DocId {
+            uri: DocumentUri::from(alloc::string::String::from("file:///a.gandr")),
+            version: DocVersion::from(version),
+        }
+    }
+
+    /// The JSON image of `frame`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn image(frame: &RenderFrame) -> serde_json::Value
+    {
+        serde_json::to_value(frame).expect("a frame serializes")
+    }
+
+    #[test]
+    fn a_document_uri_reads_as_the_text_it_was_made_from()
+    {
+        let DocId { uri, .. } = document(Version(1));
+        assert_eq!(AsRef::<str>::as_ref(&uri), "file:///a.gandr");
+        assert_eq!(uri.to_string(), "file:///a.gandr");
+    }
+
+    #[test]
+    fn document_scoped_constructors_populate_routing_keys()
+    {
+        let report = RenderFrame::frame(document(Version(7)), ReportView::default());
+        assert_eq!(
+            &FrameScope::Document(document(Version(7))),
+            report.scope(),
+            "a report is routed to its document at its version"
+        );
+        assert_eq!(
+            &FrameBody::Frame {
+                report: ReportView::default(),
+            },
+            report.body(),
+            "the report is carried unchanged"
+        );
+
+        let resync = RenderFrame::resync(document(Version(8)));
+        assert_eq!(
+            &FrameScope::Document(document(Version(8))),
+            resync.scope(),
+            "a resync is routed to the version it asks for"
+        );
+        assert_eq!(&FrameBody::Resync, resync.body(), "the body is a resync");
+    }
+
+    #[test]
+    fn connection_scoped_constructors_omit_routing_keys()
+    {
+        let hello = RenderFrame::hello(vec![document(Version(1))]);
+        assert_eq!(
+            &FrameScope::Connection,
+            hello.scope(),
+            "the greeting concerns the connection"
+        );
+        assert_eq!(
+            &FrameBody::Hello {
+                docs: vec![document(Version(1))],
+            },
+            hello.body(),
+            "the greeting carries the tracked documents"
+        );
+
+        let detach = RenderFrame::detach();
+        assert_eq!(
+            &FrameScope::Connection,
+            detach.scope(),
+            "the close concerns the connection"
+        );
+        assert_eq!(&FrameBody::Detach, detach.body(), "the body is a close");
+    }
+
+    #[test]
+    fn every_body_variant_round_trips_through_json()
+    {
+        let report = ReportView {
+            source: "def x = ?0 ;".into(),
+            highlights: vec![HlSpan {
+                range: ByteRange::new(ByteOffset::from(0_usize), ByteOffset::from(3_usize))
+                    .expect("an ordered range"),
+                role: HlRole::Keyword,
+            }],
+            goals: vec![GoalCard {
+                label: "?0".into(),
+                note: "hole".into(),
+                expected: None,
+                ctx: Vec::new(),
+                range: ByteRange::new(ByteOffset::from(8_usize), ByteOffset::from(9_usize))
+                    .expect("an ordered range"),
+            }],
+            ..ReportView::default()
+        };
+        let frames = [
+            RenderFrame::hello(vec![document(Version(1))]),
+            RenderFrame::hello(Vec::new()),
+            RenderFrame::frame(document(Version(2)), report),
+            RenderFrame::frame(document(Version(2)), ReportView::default()),
+            RenderFrame::resync(document(Version(2))),
+            RenderFrame::detach(),
+        ];
+        for frame in frames {
+            let json = serde_json::to_string(&frame).expect("serialize");
+            let back: RenderFrame = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(frame, back, "the frame round-trips: {json}");
+        }
+    }
+
+    #[test]
+    fn a_report_written_without_its_source_still_decodes()
+    {
+        let mut image = image(&RenderFrame::frame(document(Version(3)), ReportView {
+            source: "def x = 1 ;".into(),
+            ..ReportView::default()
+        }));
+        assert_eq!(
+            image["body"]["data"]["report"]["source"], "def x = 1 ;",
+            "the text is on the wire"
+        );
+        drop(
+            image["body"]["data"]["report"]
+                .as_object_mut()
+                .and_then(|report| report.remove("source")),
+        );
+        let decoded: RenderFrame =
+            serde_json::from_value(image).expect("a report without its text decodes");
+        assert_eq!(
+            RenderFrame::frame(document(Version(3)), ReportView::default()),
+            decoded,
+            "the missing text reads as empty, at the same schema version"
+        );
+    }
+
+    #[test]
+    fn a_frame_is_refused_at_another_schema_version()
+    {
+        let frame = RenderFrame::resync(document(Version(2)));
+        let mut foreign = image(&frame);
+        assert_eq!(
+            u32::from(WIRE_SCHEMA_VERSION),
+            foreign["schema_version"],
+            "the image carries the supported version"
+        );
+        let back: RenderFrame =
+            serde_json::from_value(foreign.clone()).expect("the supported version decodes");
+        assert_eq!(frame, back, "the version round-trips with the frame");
+
+        for version in [0_u32, 2_u32, u32::MAX] {
+            foreign["schema_version"] = serde_json::Value::from(version);
+            let wire = serde_json::from_value(foreign.clone()).expect("well-typed wire fields");
+            assert_eq!(
+                Err(super::FrameDecodeError::SchemaVersion {
+                    found: version.into()
+                }),
+                RenderFrame::from_wire(wire),
+            );
+            assert!(
+                serde_json::from_value::<RenderFrame>(foreign.clone())
+                    .expect_err("a foreign schema is rejected")
+                    .is_data()
+            );
+        }
+    }
+
+    #[test]
+    fn deserialize_rejects_doc_uri_doc_version_lockstep_violations()
+    {
+        for key in ["doc_version", "doc_uri"] {
+            let mut partial = image(&RenderFrame::resync(document(Version(2))));
+            partial[key] = serde_json::Value::Null;
+            let wire = serde_json::from_value(partial.clone()).expect("well-typed wire fields");
+            assert_eq!(
+                Err(super::FrameDecodeError::RoutingLockstep),
+                RenderFrame::from_wire(wire)
+            );
+            assert!(
+                serde_json::from_value::<RenderFrame>(partial)
+                    .expect_err("partial routing is rejected")
+                    .is_data()
+            );
+        }
+    }
+
+    #[test]
+    fn deserialize_rejects_body_routing_mismatches()
+    {
+        let routed = |frame: &RenderFrame| {
+            let mut routed = image(frame);
+            routed["doc_uri"] = serde_json::Value::from("file:///a.gandr");
+            routed["doc_version"] = serde_json::Value::from(2_i32);
+            routed
+        };
+        let unrouted = |frame: &RenderFrame| {
+            let mut unrouted = image(frame);
+            unrouted["doc_uri"] = serde_json::Value::Null;
+            unrouted["doc_version"] = serde_json::Value::Null;
+            unrouted
+        };
+        let cases = [
+            (
+                routed(&RenderFrame::hello(Vec::new())),
+                super::FrameDecodeError::ConnectionScopedRouted {
+                    body: super::ConnectionBody::Hello,
+                },
+            ),
+            (
+                routed(&RenderFrame::detach()),
+                super::FrameDecodeError::ConnectionScopedRouted {
+                    body: super::ConnectionBody::Detach,
+                },
+            ),
+            (
+                unrouted(&RenderFrame::frame(
+                    document(Version(2)),
+                    ReportView::default(),
+                )),
+                super::FrameDecodeError::DocumentScopedUnrouted {
+                    body: super::DocumentBody::Frame,
+                },
+            ),
+            (
+                unrouted(&RenderFrame::resync(document(Version(2)))),
+                super::FrameDecodeError::DocumentScopedUnrouted {
+                    body: super::DocumentBody::Resync,
+                },
+            ),
+        ];
+        for (image, expected) in cases {
+            let wire = serde_json::from_value(image.clone()).expect("well-typed wire fields");
+            assert_eq!(Err(expected), RenderFrame::from_wire(wire));
+            assert!(
+                serde_json::from_value::<RenderFrame>(image)
+                    .expect_err("the body disagrees with its routing")
+                    .is_data()
+            );
+        }
+    }
+
+    #[test]
+    fn the_card_bodies_are_document_scoped()
+    {
+        let card = AccountCard {
+            key: AccountKey::from(alloc::string::String::from("k")),
+            name: alloc::string::String::from("x"),
+            verdict: CheckerVerdict::Checked,
+            kernel: None,
+            compile: None,
+            counts: None,
+            timing: None,
+        };
+        let frames = [
+            (
+                RenderFrame::accounts(document(Version(4)), vec![card.clone()]),
+                super::DocumentBody::Accounts,
+            ),
+            (
+                RenderFrame::account_patch(document(Version(4)), vec![
+                    AccountEdit::Put {
+                        at: 0,
+                        card: card.clone(),
+                    },
+                    AccountEdit::Drop { key: card.key },
+                ]),
+                super::DocumentBody::AccountPatch,
+            ),
+            (
+                RenderFrame::stack(document(Version(4)), StackCard {
+                    offset: ByteOffset::from(9_usize),
+                    rows: vec![
+                        SpineRow {
+                            head: alloc::string::String::from("plus"),
+                            ty: Some(alloc::string::String::from("(n : Nat, m : Nat) -> -F Nat")),
+                            filled: Some(
+                                ByteRange::new(
+                                    ByteOffset::from(10_usize),
+                                    ByteOffset::from(17_usize),
+                                )
+                                .expect("an ordered range"),
+                            ),
+                            slot: Count(1),
+                            arity: Some(Count(2)),
+                            expected: Some(alloc::string::String::from("Nat")),
+                        },
+                        SpineRow {
+                            head: alloc::string::String::from("f"),
+                            ty: None,
+                            filled: None,
+                            slot: Count(0),
+                            arity: None,
+                            expected: None,
+                        },
+                    ],
+                }),
+                super::DocumentBody::Stack,
+            ),
+            (
+                RenderFrame::derivation(document(Version(4)), DerivationCard {
+                    key: AccountKey::from(alloc::string::String::from("k")),
+                    declaration: alloc::string::String::from("x"),
+                    columns: Count(80),
+                    rows: vec![
+                        DerivationRow {
+                            depth: Count(0),
+                            warrant: Warrant::Replayed,
+                            direction: Direction::Checking,
+                            goal: Some(alloc::string::String::from("\\n => n")),
+                            ty: Some(alloc::string::String::from("(n : Nat) -> -F Nat")),
+                            rule: alloc::string::String::from("Lambda"),
+                            cover: Count(0),
+                            memo: Some(Memo::Miss),
+                            nodes: Count(2),
+                            wall: Count(1_500),
+                            span: Some(
+                                ByteRange::new(
+                                    ByteOffset::from(8_usize),
+                                    ByteOffset::from(15_usize),
+                                )
+                                .expect("an ordered range"),
+                            ),
+                        },
+                        DerivationRow {
+                            depth: Count(1),
+                            warrant: Warrant::Refused,
+                            direction: Direction::Synthesis,
+                            goal: None,
+                            ty: None,
+                            rule: alloc::string::String::from("Variable"),
+                            cover: Count(1),
+                            memo: None,
+                            nodes: Count(1),
+                            wall: Count(200),
+                            span: None,
+                        },
+                    ],
+                }),
+                super::DocumentBody::Derivation,
+            ),
+            (
+                RenderFrame::open(
+                    document(Version(4)),
+                    AccountKey::from(alloc::string::String::from("k")),
+                    NodeAt(1),
+                ),
+                super::DocumentBody::Open,
+            ),
+            (
+                RenderFrame::opened(
+                    document(Version(4)),
+                    AccountKey::from(alloc::string::String::from("k")),
+                    NodeAt(1),
+                    Some(alloc::string::String::from("let a = x ;\n  a")),
+                ),
+                super::DocumentBody::Opened,
+            ),
+        ];
+        for (frame, body) in frames {
+            let decoded: RenderFrame =
+                serde_json::from_value(image(&frame)).expect("an account frame decodes");
+            assert_eq!(decoded, frame);
+            assert_eq!(decoded.scope, FrameScope::Document(document(Version(4))));
+            let mut unrouted = image(&frame);
+            unrouted["doc_uri"] = serde_json::Value::Null;
+            unrouted["doc_version"] = serde_json::Value::Null;
+            let wire = serde_json::from_value(unrouted).expect("well-typed wire fields");
+            assert_eq!(
+                RenderFrame::from_wire(wire),
+                Err(super::FrameDecodeError::DocumentScopedUnrouted { body })
+            );
+        }
+    }
+
+    #[test]
+    fn the_activity_body_is_connection_scoped()
+    {
+        let load = |busy: u64, lengths: Option<Lengths>| Load {
+            occupancy: Samples::new(SampleUnit::Nanoseconds, vec![Count(busy), Count(0)])
+                .expect("two samples fit a ring"),
+            busy: Count(busy),
+            lengths,
+        };
+        let lengths = Lengths {
+            p50: Count(40),
+            p99: Count(90),
+        };
+        let frame = RenderFrame::activity(PoolActivity {
+            window: Count(2_000_000_000),
+            cores: vec![
+                CoreActivity {
+                    world: Some(Count(0)),
+                    core: Count(0),
+                    now: Some(TaskKind::Replay),
+                    load: load(700, Some(lengths)),
+                },
+                CoreActivity {
+                    world: None,
+                    core: Count(1),
+                    now: None,
+                    load: load(0, None),
+                },
+            ],
+            totals: load(700, Some(lengths)),
+        });
+        let decoded: RenderFrame =
+            serde_json::from_value(image(&frame)).expect("an activity frame decodes");
+        assert_eq!(decoded, frame, "the activity survives the round trip");
+        assert_eq!(decoded.scope, FrameScope::Connection);
+        let core = &image(&frame)["body"]["data"]["activity"]["cores"][1];
+        assert!(
+            core.get("world").is_none() && core.get("now").is_none(),
+            "an absent world and an idle core take no bytes: {core}"
+        );
+        let mut routed = image(&frame);
+        routed["doc_uri"] = serde_json::Value::from("file:///a.gandr");
+        routed["doc_version"] = serde_json::Value::from(2_i32);
+        let wire = serde_json::from_value(routed).expect("well-typed wire fields");
+        assert_eq!(
+            RenderFrame::from_wire(wire),
+            Err(super::FrameDecodeError::ConnectionScopedRouted {
+                body: super::ConnectionBody::Activity
+            })
+        );
+        let trace = RenderFrame::trace(Count(96));
+        let decoded: RenderFrame =
+            serde_json::from_value(image(&trace)).expect("a trace frame decodes");
+        assert_eq!(decoded, trace, "the subscription survives the round trip");
+        let mut routed = image(&trace);
+        routed["doc_uri"] = serde_json::Value::from("file:///a.gandr");
+        routed["doc_version"] = serde_json::Value::from(2_i32);
+        let wire = serde_json::from_value(routed).expect("well-typed wire fields");
+        assert_eq!(
+            RenderFrame::from_wire(wire),
+            Err(super::FrameDecodeError::ConnectionScopedRouted {
+                body: super::ConnectionBody::Trace
+            })
+        );
+    }
+
+    /// A store card survives the round trip with no routing keys, each owed
+    /// cell carries its unit as a number, and the decode refuses the body
+    /// routed (#6296).
+    #[test]
+    fn the_store_body_is_connection_scoped_6296()
+    {
+        let unit =
+            |number: u32| UnitNumber::from(NonZeroU32::new(number).expect("a unit is numbered"));
+        let frame = RenderFrame::store(StoreCard {
+            rows: vec![
+                StoreRow {
+                    key: StoreKey::from(String::from("ab")),
+                    kind: StoreKind::Export,
+                    residence: StoreResidence::Cam {
+                        bytes: Count(4_096),
+                        chunks: Count(14),
+                        shared: Count(2),
+                    },
+                },
+                StoreRow {
+                    key: StoreKey::from(String::from("cd")),
+                    kind: StoreKind::Receipt,
+                    residence: StoreResidence::Refused {
+                        why: String::from("a chunk does not verify"),
+                    },
+                },
+            ],
+            owed: vec![OwedCell {
+                column: String::from("wrote"),
+                unit: unit(3_022),
+            }],
+            refused: None,
+        });
+        let decoded: RenderFrame =
+            serde_json::from_value(image(&frame)).expect("a store frame decodes");
+        assert_eq!(decoded, frame, "the card survives the round trip");
+        assert_eq!(decoded.scope, FrameScope::Connection);
+        assert_eq!(
+            image(&frame)["body"]["data"]["card"]["owed"][0]["unit"],
+            serde_json::Value::from(3_022_u32),
+            "an owed cell carries its unit's number"
+        );
+        assert_eq!(
+            unit(3_022).to_string(),
+            "#3022",
+            "a unit prints as its issue"
+        );
+        let mut routed = image(&frame);
+        routed["doc_uri"] = serde_json::Value::from("file:///a.gandr");
+        routed["doc_version"] = serde_json::Value::from(2_i32);
+        let wire = serde_json::from_value(routed).expect("well-typed wire fields");
+        assert_eq!(
+            RenderFrame::from_wire(wire),
+            Err(super::FrameDecodeError::ConnectionScopedRouted {
+                body: super::ConnectionBody::Store
+            })
+        );
+        let zero = serde_json::from_value::<UnitNumber>(serde_json::Value::from(0_u32));
+        assert!(zero.is_err(), "no unit is numbered zero");
+    }
+
+    #[test]
+    fn frame_body_is_adjacently_tagged_on_the_wire()
+    {
+        let resync = image(&RenderFrame::resync(document(Version(5))));
+        assert_eq!(
+            serde_json::json!({
+                "schema_version": u32::from(WIRE_SCHEMA_VERSION),
+                "doc_uri": "file:///a.gandr",
+                "doc_version": 5_i32,
+                "body": {"kind": "resync"},
+            }),
+            resync,
+            "a document-scoped frame carries both routing keys and a tagged body"
+        );
+
+        let hello = image(&RenderFrame::hello(vec![document(Version(1))]));
+        assert_eq!(
+            serde_json::json!({
+                "schema_version": u32::from(WIRE_SCHEMA_VERSION),
+                "doc_uri": null,
+                "doc_version": null,
+                "body": {
+                    "kind": "hello",
+                    "data": {"docs": [{"uri": "file:///a.gandr", "version": 1_i32}]},
+                },
+            }),
+            hello,
+            "a connection-scoped frame nulls both routing keys"
+        );
+    }
+
+    #[test]
+    fn decode_refusals_preserve_validation_precedence()
+    {
+        let mut overlapping = image(&RenderFrame::hello(Vec::new()));
+        overlapping["schema_version"] = serde_json::Value::from(u32::MAX);
+        overlapping["doc_uri"] = serde_json::Value::from("file:///a.gandr");
+        let wire = serde_json::from_value(overlapping.clone()).expect("well-typed wire fields");
+        assert_eq!(
+            Err(super::FrameDecodeError::SchemaVersion {
+                found: u32::MAX.into()
+            }),
+            RenderFrame::from_wire(wire),
+        );
+        overlapping["schema_version"] = serde_json::Value::from(u32::from(WIRE_SCHEMA_VERSION));
+        let wire = serde_json::from_value(overlapping.clone()).expect("well-typed wire fields");
+        assert_eq!(
+            Err(super::FrameDecodeError::RoutingLockstep),
+            RenderFrame::from_wire(wire)
+        );
+        overlapping["doc_version"] = serde_json::Value::from(i32::MIN);
+        let wire = serde_json::from_value(overlapping.clone()).expect("well-typed wire fields");
+        assert_eq!(
+            Err(super::FrameDecodeError::ConnectionScopedRouted {
+                body: super::ConnectionBody::Hello
+            }),
+            RenderFrame::from_wire(wire),
+        );
+        assert!(
+            serde_json::from_value::<RenderFrame>(overlapping)
+                .expect_err("routing still disagrees with the hello body")
+                .is_data()
+        );
+    }
+
+    #[test]
+    fn decode_error_display_preserves_diagnostic_parameters()
+    {
+        let version = super::FrameDecodeError::SchemaVersion {
+            found: u32::MAX.into(),
+        }
+        .to_string();
+        let found = u32::MAX.to_string();
+        let supported = WIRE_SCHEMA_VERSION.to_string();
+        assert!(
+            version
+                .split(|ch: char| !ch.is_ascii_digit())
+                .filter(|part| !part.is_empty())
+                .eq([found.as_str(), supported.as_str()])
+        );
+        let lockstep = super::FrameDecodeError::RoutingLockstep.to_string();
+        assert!(lockstep.contains("doc_uri") && lockstep.contains("doc_version"));
+        for (error, kind) in [
+            (
+                super::FrameDecodeError::ConnectionScopedRouted {
+                    body: super::ConnectionBody::Hello,
+                },
+                "hello",
+            ),
+            (
+                super::FrameDecodeError::ConnectionScopedRouted {
+                    body: super::ConnectionBody::Detach,
+                },
+                "detach",
+            ),
+            (
+                super::FrameDecodeError::DocumentScopedUnrouted {
+                    body: super::DocumentBody::Frame,
+                },
+                "frame",
+            ),
+            (
+                super::FrameDecodeError::DocumentScopedUnrouted {
+                    body: super::DocumentBody::Resync,
+                },
+                "resync",
+            ),
+        ] {
+            assert!(
+                error
+                    .to_string()
+                    .split_whitespace()
+                    .any(|word| word == kind)
+            );
+        }
+    }
+}
