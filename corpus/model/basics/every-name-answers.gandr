@@ -1,0 +1,32 @@
+//! `every-name-answers` writes each kind of name that the editor answers.
+//!
+//! A reader asks the editor where the source declares a name and what the
+//! name is. A name that answers nothing leaves the reader to search the text.
+//!
+//! A family, its constructors, a function, its parameter and a `let` binder
+//! each answer a definition request at each use. The type table names each
+//! binder at its declaration. Rename and references find each binder through
+//! that name.
+//!
+//! Limits: no source declares the builtin `Type`. The coverage sweep of the
+//! language server keys it as the one gap of this source.
+//!
+//! - see: crates/surface-lsp-core/coverage.ledger
+
+/// A colour that the functions below match on.
+data Colour : Type where
+  /// The first colour.
+  | Red : Colour
+  /// The second colour.
+  | Green : Colour
+
+/// The other colour.
+def swap(c : Colour) -> Colour =
+  match c where
+    | Red => Green
+    | Green => Red
+
+/// The colour after two swaps. It equals the colour itself.
+def backAgain(c : Colour) -> Colour =
+  let once = swap c;
+  swap once
