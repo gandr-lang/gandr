@@ -118,13 +118,25 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 continue;
             };
             let bodied = matches!(slot.definition, Maybe::Present(_));
+            // An atom binds no parameter and a former binds one: a count
+            // that differs states a type that is not the row's.
+            let bound = cx
+                .collected
+                .builtin_parameters
+                .get(&SlotIndex::from(index))
+                .map_or(0_usize, Vec::len);
             let found = match (homed, Row::named(Key(key.as_ref()))) {
                 (false, _) => Err(BuiltinFault::OutsideToolchain),
                 (true, Maybe::Absent(_)) => Err(BuiltinFault::NoRow),
                 (true, Maybe::Present(row)) => match (row.direction(), bodied) {
                     (Direction::Given, true) => Err(BuiltinFault::Bodied),
                     (Direction::Found, false) => Err(BuiltinFault::Unbodied),
-                    (Direction::Given, false) | (Direction::Found, true) => Ok(row),
+                    (Direction::Given, false) | (Direction::Found, true) => match (row, bound) {
+                        (Row::Atom(_), 0_usize)
+                        | (Row::Former(_), 1_usize)
+                        | (Row::Native(_) | Row::Role(_), _) => Ok(row),
+                        (Row::Atom(_) | Row::Former(_), _) => Err(BuiltinFault::TypeDiffers),
+                    },
                 },
             };
             read.push((SlotIndex::from(index), mark.at.node, mark.span, found));
@@ -135,9 +147,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     let _first = cx.natives.insert(slot, primitive);
                     continue;
                 },
-                // A use of the type member reads the atom of its row, as
-                // `stated_type` plans it.
-                Ok(Row::Atom(_)) => continue,
+                // A use of the type member reads the atom or the former of
+                // its row, as `stated_type` and `type_application` plan it.
+                Ok(Row::Atom(_) | Row::Former(_)) => continue,
                 Ok(Row::Role(role)) => match cx.roles.entry(role) {
                     Entry::Vacant(vacant) => {
                         let _first = vacant.insert(slot);

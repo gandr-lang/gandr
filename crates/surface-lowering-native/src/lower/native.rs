@@ -381,6 +381,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::builtin::TypeAtom;
+use gandr_core_term::builtin::TypeFormer;
 use gandr_core_term::hole::HoleId;
 use gandr_core_term::hole::TermId;
 use gandr_core_term::pattern::Pattern;
@@ -543,7 +544,6 @@ use crate::resolve::OperandCount;
 use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
-use crate::resolve::TypeFormer;
 use crate::resolve::binder_site;
 use crate::resolve::binder_type;
 use crate::resolve::type_former;
@@ -6516,6 +6516,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::list_pattern`].
     /// - witness: `gandr-surface-lowering::lower::native::tests::list_patterns_case_on_the_native_list`
+    ///
+    /// # Cost
+    /// - allocation: the text of a declared former's `builtin` key, setup
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |element| matches!(stated, Maybe::Present(_)) || matches!(*element, Maybe::Absent(_))))]
     fn listed(
         &mut self,
@@ -6529,7 +6532,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
         if let Maybe::Present(typed) = self.unwrapped(stated)?
             && typed.former == Former::TypeApplication
             && typed.keyword.is_some_and(|head| {
-                self.cx().former(self.cx().name_at(head)) == Maybe::Present(TypeFormer::List)
+                self.cx().former(self.cx().name_at(head), head) == Maybe::Present(TypeFormer::List)
             })
             && let [element] = typed.operands[..]
         {

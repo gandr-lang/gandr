@@ -120,6 +120,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::builtin::TypeAtom;
+use gandr_core_term::builtin::TypeFormer;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -401,28 +402,6 @@ impl fmt::Display for HeadArity
     }
 }
 
-/// A unary type head: a type former of the fragment.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum TypeFormer
-{
-    /// `+U C`, the thunk of a computation type, which is a value type.
-    Thunk,
-    /// `-F A`, the returner over a value type, which is a computation type.
-    Returner,
-    /// `List(A)`, the native finite lists over a value type.
-    List,
-    /// `Run(S)`, the value type of the complete recorded runs of the session
-    /// code `S`, which is read as a value.
-    Run,
-    /// `Prefix(S)`, the value type of the recorded prefixes of the session
-    /// code `S`, closed or still open, which is read as a value.
-    Prefix,
-    /// `Dialogue(S)`, the value type of the complete dialogues over the
-    /// session code `S`, its left endpoint following `S` and its right the
-    /// dual, which is read as a value.
-    Dialogue,
-}
-
 /// The nullary type heads the ambient scope answers, with the spellings the
 /// surface writes them as. `Buf` and `Web` are no rows: their home is
 /// `std.buffer`, and [`HOMED_ATOMS`] answers them where a source imports them
@@ -608,14 +587,12 @@ pub fn type_atom(name: SurfaceName<'_>) -> Maybe<TypeAtom, type_head::Absent>
 pub fn type_former(name: SurfaceName<'_>) -> Maybe<TypeFormer, type_head::Absent>
 {
     let spelled: &str = name.as_ref();
-    let found = TYPE_FORMERS
-        .into_iter()
-        .find_map(|(entry, former)| (entry == spelled).then_some(former));
-
-    found.map_or(
-        Maybe::Absent(type_head::Absent::Unregistered),
-        Maybe::Present,
-    )
+    for (entry, former) in TYPE_FORMERS {
+        if entry == spelled {
+            return Maybe::Present(former);
+        }
+    }
+    Maybe::Absent(type_head::Absent::Unregistered)
 }
 
 /// The type former `name` spells when the module spelled `module` homes it.
@@ -650,16 +627,12 @@ pub fn homed_former(
 ) -> Maybe<TypeFormer, type_head::Absent>
 {
     let (home, spelled): (&str, &str) = (module.as_ref(), name.as_ref());
-    let found = HOMED_FORMERS
-        .into_iter()
-        .find_map(|(entry, spelling, former)| {
-            (entry == home && spelling == spelled).then_some(former)
-        });
-
-    found.map_or(
-        Maybe::Absent(type_head::Absent::Unregistered),
-        Maybe::Present,
-    )
+    for (entry, spelling, former) in HOMED_FORMERS {
+        if entry == home && spelling == spelled {
+            return Maybe::Present(former);
+        }
+    }
+    Maybe::Absent(type_head::Absent::Unregistered)
 }
 
 /// The type atom `name` spells when the module spelled `module` homes it.
