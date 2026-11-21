@@ -1,0 +1,142 @@
+#:tombi toml-version = "v1.0.0"
+
+# Every test finishes within 30 s, plain and with specifications enforced. A
+# test over the budget is split, sampled or made cheaper; no profile a gate
+# runs raises the budget for one. Locally (`default`) and in CI (`ci` and
+# `ci-enforcing`, on each pull request and merge-queue entry) a test past the
+# budget is marked slow and runs on, so a loaded host lengthens a gate and
+# never fails it (#3912), and a slow test never dequeues a pull request:
+# `mise run ci:slow-file` files it for triage (#3752). Only a test past
+# 5 minutes, a hang, is killed and fails the run.
+# `status-level = "pass"` keeps every test's elapsed time on the local run, and
+# the CI profile's JUnit report carries per-test durations, so timing outliers
+# stay visible without a separate instrumentation pass.
+[profile.default]
+status-level = "pass"
+final-status-level = "slow"
+failure-output = "immediate"
+slow-timeout = { period = "30s", terminate-after = 10 }
+
+# The sweeps that are wide by design reserve every thread of the run. Each
+# one asks for `Width::Reserved` in its own body and takes the host's width,
+# so nextest runs no other test beside it. nextest passes no
+# `threads-required` to a test, so the test states its width itself, and
+# `check:reserved-width` holds this filter and those tests equal (#7539). An
+# override of the default profile holds in every profile.
+[[profile.default.overrides]]
+filter = "test(=editor::scenarios::sweeps::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful) or test(=editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault) or test(=editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful)"
+threads-required = "num-test-threads"
+
+# The slowest tests start first, so the run ends sooner on a fixed count of
+# threads. The timing tool proposes these tables from measured times. Its
+# levels are 1, 2, 4 and 8 s, and the lowest is the bound of a second a test.
+#
+# One run of the whole suite under the `ci` profile gives these times. That
+# run holds the units of the slow tests, on a host of 32 threads at a load of
+# 46 to 50. A run that moves a test across a level's margin moves it in the
+# next proposal. A filter that names no test sets no priority, and the next
+# proposal drops it.
+# - see: `mise run ci:timing`, `crates/workflow-test-timing`, #8234, #8240
+[[profile.default.overrides]]
+filter = "test(=activity::tests::a_watcher_of_the_rows_hears_the_occupancy_move) or test(=cli::a_relay_reaches_only_a_hub_of_its_own_build) or test(=corpus::every_refusing_source_renders_as_its_golden) or test(=evaluate::tests::a_while_loop_runs_in_constant_continuation) or test(=evaluate::tests::a_while_loop_runs_in_constant_continuation_natively)"
+priority = 80
+
+[[profile.default.overrides]]
+filter = "test(=boundary::a_list_rust_holds_has_its_length_in_both_layouts) or test(=census::a_type_a_match_computes_reads_back_5383) or test(=census::an_inner_case_s_equation_types_read_back_5392) or test(=cli::a_host_interface_needs_the_import_of_its_module_4523) or test(=cli::a_language_server_stops_a_loop_at_the_server_s_budget_6325) or test(=cli::lsp_clients_share_one_engine_hub) or test(=comments::gate::the_fixture_matches_the_ledger) or test(=compose::tests::a_pasting_at_level_three_or_four_is_read_at_its_level_4431) or test(=corpus::sweeps::the_std_root_adds_one_lowering_per_module) or test(=corpus::the_identity_base_is_lowered_once_for_its_importers) or test(=corpus::the_identity_base_is_spelled_once_for_its_importers_595) or test(=e_graphs::each_first_order_block_saturates_to_its_normal_forms) or test(=e_graphs::each_ground_block_joins_exactly_what_completion_joins) or test(=environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476) or test(=evaluate::tests::a_loop_bound_to_an_inner_break_runs_in_constant_continuation) or test(=evaluate::tests::a_loop_bound_to_an_inner_break_runs_in_constant_continuation_natively) or test(=format::corpus_and_std_comment_words_keep_their_sequence_3589) or test(=forms::every_generated_edit_submits_as_the_walk_composes_it) or test(=forms::sweeps::every_corpus_edit_script_submits_as_the_walk_composes_it) or test(=hub::tests::an_attached_view_hears_the_pool_at_work) or test(=incremental::an_edit_judges_exactly_the_items_its_support_logs_separate) or test(=package::a_copy_of_the_standard_library_elsewhere_is_the_standard_library_7635) or test(=parity::sweeps::the_formatter_spells_each_declaration_as_the_printer_does_755) or test(=parity::sweeps::the_reflection_and_sheaf_printings_read_back_6084) or test(=parse::place::tests::a_resumed_copy_answers_as_a_fresh_one) or test(=parse::tests::hostile_edits_join_laid_as_whole) or test(=parse::tests::hostile_edits_reuse_only_equal_units) or test(=sharing_format::the_table_entry_boundary_accepts_under_and_refuses_over) or test(=teardown::a_spinal_deep_overlay_duplicates_and_tears_down_inside_a_small_stack) or test(=walk::walk_lengths_respect_the_chain_cap) or test(=widths::tests::each_description_compiles_on_each_target_8002)"
+priority = 70
+
+# The arm64 runner runs four tests at once in 16.7 GB. The dispatcher's
+# corpus walks need no group of their own since #4869 (#4854): a walk holds
+# 1.1 GB, and the shard peaks at 4.3 GB on a local four-thread run (#4874).
+[profile.ci]
+status-level = "slow"
+final-status-level = "slow"
+failure-output = "immediate-final"
+fail-fast = false
+slow-timeout = { period = "30s", terminate-after = 10 }
+
+[profile.ci.junit]
+path = "junit.xml"
+
+# Nextest stores reports by profile, independently of Cargo's target directory.
+# Separate names prevent the enforcing pass from overwriting the plain report.
+[profile.ci-enforcing]
+inherits = "ci"
+
+# The riscv64 lane runs the tests from an archive that an x86-64 runner
+# builds (`nightly-riscv64-tests.yml`). The driver runs itself, not the default toolchain,
+# when its directory holds Cargo's `.cargo-lock` (#4510). So the archive
+# carries that file, and the extracted directory is a profile directory, as
+# the build's directory is.
+[profile.riscv64]
+inherits = "ci"
+
+[profile.riscv64.archive]
+include = [
+  { path = "riscv64gc-unknown-linux-gnu/debug/.cargo-lock", relative-to = "target", on-missing = "error" },
+]
+
+# The sweeps whole. A sweep drives the whole corpus through one feature and
+# sits in a `sweeps` module, which is all this filter names: a new sweep joins
+# by where it is written. Under every other profile but `nightly` a sweep
+# visits its stated sample, so it never leaves the pull-request lanes; under
+# this one it visits every source (`gandr-workflow-sweep` reads the profile's
+# name) and prints what it counts — the hover coverage by node kind, the
+# read-back census by class — as a report, held to no ceiling (#467). This
+# profile is the local whole run and the records' rewrite (`mise run
+# ci:recovery`); its limit is a slow local machine's.
+[profile.sweeps]
+default-filter = "test(/(^|::)sweeps::/)"
+status-level = "pass"
+final-status-level = "slow"
+failure-output = "immediate-final"
+fail-fast = false
+slow-timeout = { period = "60s", terminate-after = 20 }
+
+# The nightly run (`mise run ci:sweeps-nightly`), held to fifteen minutes
+# summed over the whole workflow, twenty at the most, the sweeps job to its
+# 504 s share, its 458 s in nightly 40667395217 scaled by 900/818 (#3013).
+# A sweep too costly to visit the whole corpus inside its
+# share rotates (`gandr-workflow-sweep`'s rotation), each over the nights it
+# states beside its sample, sized from the nightly's timings: the sweeps share
+# one count, seven, and a sweep whose night would pass half the share's test
+# wall takes its own, so the typing cuts every source into 136 parts, the
+# table sweep visits a fourteenth, the hovers at every position rotate over
+# seventeen and the token drops over twenty-six. The six cheapest sweeps
+# visit the corpus whole.
+# nextest does not inherit a default filter, so the profile states it again.
+# The limit is the slowest sweep's share of the budget: a sweep's night is
+# sized to at most 170 s. A sweep that outgrows it ends there and passes
+# (`on-timeout = "pass"`, nextest's `TIMEOUT-PASS`), so a timeout never turns
+# the night red (#3975): the night's reports job reads this profile's JUnit
+# report and files the sweep on its own collector (`mise run ci:slow-file`,
+# 240 s its budget). A failed assertion still fails the night.
+[profile.nightly]
+inherits = "sweeps"
+default-filter = "test(/(^|::)sweeps::/)"
+slow-timeout = { period = "60s", terminate-after = 4, on-timeout = "pass" }
+
+[profile.nightly.junit]
+path = "junit.xml"
+
+# The instrumented enforcing run is a report, never a gate, and instrumentation
+# multiplies the specification cost several times over, so its limit is its
+# own: ten minutes, which the first hosted measurement's slowest test needed.
+# The sweeps run their samples here, as in every pull-request lane.
+[profile.coverage]
+inherits = "ci-enforcing"
+slow-timeout = { period = "60s", terminate-after = 10 }
+
+# A sweep that reaches the coverage limit ends there and passes, so the upload
+# still runs (#3975); `report-coverage.yml` files it as the nightly does.
+[[profile.coverage.overrides]]
+filter = "test(/(^|::)sweeps::/)"
+slow-timeout = { period = "60s", terminate-after = 10, on-timeout = "pass" }
+
+# A witnessed mutation run (`mise run mutants:witnessed`). A witness the
+# default profile ends at five minutes fails, and a failed witness reads its
+# mutant caught, so on a loaded machine a slow witness would catch what it
+# misses. Nothing is ended here: cargo-mutants' own `--timeout` bounds each
+# mutant and reads an overrun as a timeout. The sweeps run their samples.
+[profile.mutants]
+slow-timeout = { period = "60s" }

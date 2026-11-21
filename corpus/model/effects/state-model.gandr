@@ -1,0 +1,99 @@
+//! This source defines state-passing models of `State.Eff`.
+//!
+//! `get` gives the current state to its continuation. The carrier is a
+//! function from state to result.
+//! In the standard model of a second-order signature, the binder of a
+//! representable sort is an exponential.
+//!
+//! The checker derives model operations from the stated theory.
+//!
+//! Limits: a law that relates terms at the port of `get` is a path between
+//! host functions. The derivation does not state such a law yet.
+//!
+//! - see: `../../pathological/effects/state-model.gandr` — model refusals
+//! - see: #2421 — `carried`
+//! - cites: [Fiore-2010-second_order_equational_logic]
+//!
+//! [Fiore-2010-second_order_equational_logic]: https://doi.org/10.1007/978-3-642-15205-4_26 "Fiore and Hur, Second-Order Equational Logic"
+
+// The theories `State.Eff` and `StatePutPut`.
+import "./state.gandr";
+// The counts, three states, and their negation, a path between types.
+import "../identity/model-counter.gandr";
+
+/// `Passing` uses the current integer as its state.
+module Passing : Model(State.Eff) with sort S = Integer where
+  /// `C` maps the current state to an integer.
+  type C = Integer -> Integer;
+  /// `get` gives the current state to its continuation.
+  def get(k : Integer -> (Integer -> Integer)) -> Integer -> Integer =
+    fun (s) { let after = k s; after s }
+  /// `put` runs its continuation at the stored state.
+  def put(s : Integer, k : Integer -> Integer) -> Integer -> Integer =
+    fun (_old) { k s }
+
+/// `putThenGet` stores four and reads it twice.
+@[runs("44")]
+def putThenGet() -> Integer =
+  let read = Passing.get (fun (s) { pure fun (t) { pure s * 10 + t } })
+  let program = Passing.put 4 read
+  program 0
+
+/// `Overwriting` models the put-put law.
+/// Put-put relates no term at the port of `get`.
+module Overwriting : Model(StatePutPut) with sort S = Integer where
+  /// `C` maps the current state to an integer.
+  type C = Integer -> Integer;
+  /// `get` gives the current state to its continuation.
+  def get(k : Integer -> (Integer -> Integer)) -> Integer -> Integer =
+    fun (s) { let after = k s; after s }
+  /// `put` runs its continuation at the stored state.
+  def put(s : Integer, k : Integer -> Integer) -> Integer -> Integer =
+    fun (_old) { k s }
+  /// `putPut` keeps the second stored value.
+  def putPut(s : Integer, u : Integer, k : Integer -> Integer) -> Path (put s (put u k)) (put u k) =
+    Path.here (put u k)
+
+/// `shown` maps three count values to integers.
+def shown(c : Unit + (Unit + Unit)) -> Integer =
+  match c where
+    | +{.0 = u} => 0
+    | +{.1 = rest} => match rest where
+      | +{.0 = u} => 1
+      | +{.1 = v} => 2
+
+/// `passing` writes the state-passing model as a record.
+def passing : Model State.Eff with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) -> Integer) = *{
+  .get = fun (k) { pure fun (s) { let after = k s; after s } },
+  .put = fun (s) { fun (k) { pure fun (_old) { k s } } }
+};
+
+/// `negated` carries the state model along count negation.
+/// A model is a record, so the carried model is a model again with its `get`
+/// conjugated by the negation.
+def negated : Model State.Eff with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) -> Integer) = Path.walk
+  (fun (x) {
+    type(Model State.Eff with sort S = x with sort C = (x -> Integer))
+  })
+  countsNegated
+  passing;
+
+/// `putGet` runs a model that stores and reads a count.
+def putGet(
+  m : Model State.Eff with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) -> Integer)
+) -> Integer =
+  match m where
+    | *{.get = g, .put = p} => {
+      let read = g (fun (s) {
+        pure fun (t) { let a = shown s; let b = shown t; pure a * 10 + b }
+      });
+      let program = p (+{.1 = +{.0 = *{}}}) read;
+      program (+{.0 = *{}})
+    }
+
+/// `direct` runs `putGet` through `passing`.
+@[runs("11")]
+def direct() -> Integer = putGet passing;
+
+/// `carried` runs `putGet` through `negated`.
+def carried() -> Integer = putGet negated;

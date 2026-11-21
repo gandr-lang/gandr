@@ -1,0 +1,820 @@
+use alloc::format;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::Verdict;
+use gandr_core_term::CertificateEquality;
+use gandr_core_term::ComponentCount;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::equal_certificate_syntax;
+use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::session::SessionAction;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::SourceText;
+
+use super::ElidableExit;
+use super::Exit;
+use super::Exits;
+use super::ExitsRef;
+use super::Explicitness;
+use super::InferredExit;
+use super::Leaves;
+use super::Returned;
+use crate::budget::Fuel;
+use crate::budget::LoweringBudget;
+use crate::error::FragmentBoundary;
+use crate::error::LoweringRefusal;
+use crate::fixture::grammar;
+use crate::fixture::parsed;
+use crate::fixture::span;
+use crate::form::FormName;
+use crate::form::Shape;
+use crate::form::shape_of;
+use crate::lower::Lowerer;
+use crate::lower::native::tests::assert_accepted;
+use crate::lower::native::tests::body_named;
+use crate::lower::native::tests::judged;
+use crate::lower::native::tests::lowered;
+use crate::lower::native::tests::refusal_of;
+use crate::lower::native::tests::tail_of;
+use crate::module::collect;
+use crate::namespace::Recognition;
+use crate::origin::Labelled;
+use crate::resolve::SurfaceName;
+use crate::unit::Unit;
+
+/// The naturals every witness matches on.
+const NAT: &str = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n";
+
+/// The bytes `needle` spells in `source`, which spells it once.
+///
+/// # Specification
+/// - requires: `source` spells `needle` exactly once.
+/// - ensures: the span of that spelling.
+/// - fails: never.
+/// - panics: if `needle` is spelled no time or more than once.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the survey and refusal witnesses locate their forms here.
+/// - witness: `lower::exits::tests::code_no_path_reaches_is_refused`
+#[spec(ensures: |ret| source.as_ref().get(usize::from(ret.start()) .. usize::from(ret.end())) == Some(needle.as_ref()))]
+pub(in crate::lower) fn spelled(
+    source: SourceText<'_>,
+    needle: SourceText<'_>,
+) -> ByteSpan
+{
+    let (text, wanted): (&str, &str) = (source.as_ref(), needle.as_ref());
+    let Some(start) = text.find(wanted)
+    else {
+        panic!("`{needle}` is spelled");
+    };
+    assert_eq!(
+        text.rfind(wanted),
+        Some(start),
+        "`{needle}` is spelled once"
+    );
+    let Some(end) = start.checked_add(wanted.len())
+    else {
+        panic!("a spelling ends inside the source");
+    };
+
+    span(ByteOffset::from(start), ByteOffset::from(end))
+}
+
+/// Assert that every form spelling exactly each needle of `source` surveys
+/// as the answer beside it.
+///
+/// # Specification
+/// trivial.
+pub(in crate::lower) fn assert_surveyed(
+    source: SourceText<'_>,
+    expected: &[(SourceText<'_>, Leaves)],
+)
+{
+    let pbg = grammar();
+    let tree = parsed(&pbg, source);
+    let mut fuel = Fuel::new(LoweringBudget::DEFAULT);
+    let collected = collect(&pbg, &tree, &Unit::single(), &mut fuel).expect("the module collects");
+    let mut lowerer = Lowerer::new(&pbg, &tree, collected, fuel, Recognition::default());
+    Exits::new(&mut lowerer)
+        .survey()
+        .expect("the survey stays within the allowance");
+    let mut surveyed: Vec<Leaves> = Vec::new();
+    for &(needle, leaves) in expected {
+        let at = spelled(source, needle);
+        surveyed.clear();
+        surveyed.extend(
+            tree.positions()
+                .filter(|&position| {
+                    tree.node(position).is_some_and(|node| {
+                        node.span() == at && matches!(shape_of(&pbg, node), Ok(Shape::Form { .. }))
+                    })
+                })
+                .map(|position| ExitsRef::new(&lowerer).leaves_at(position)),
+        );
+        assert!(!surveyed.is_empty(), "`{needle}` is a form");
+        assert!(
+            surveyed.iter().all(|&held| held == leaves),
+            "`{needle}` surveys as {leaves:?}, not {surveyed:?}"
+        );
+    }
+}
+
+/// Every computation reachable from `root` through binds, lambdas, matches,
+/// list cases, splits, fixpoints, holds, placements, receives, offers and
+/// the heads of applications.
+///
+/// # Specification
+/// trivial.
+pub(in crate::lower) fn reachable(
+    arena: &CoreArena,
+    root: ComputationId,
+) -> Vec<ComputationId>
+{
+    let mut seen = Vec::new();
+    let mut pending = Vec::from([root]);
+    while let Some(next) = pending.pop() {
+        seen.push(next);
+        match arena.computation(next) {
+            Some(&Computation::Bind(first, second)) => pending.extend([first, second]),
+            Some(
+                &Computation::Lambda(under)
+                | &Computation::Split { body: under, .. }
+                | &Computation::Fixpoint { body: under, .. }
+                | &Computation::Application(under, _)
+                | &Computation::Memory(MemoryForm::Hold { body: under, .. })
+                | &Computation::Session(
+                    SessionAction::Place { body: under, .. }
+                    | SessionAction::Receive { body: under, .. },
+                ),
+            ) => {
+                pending.push(under);
+            },
+            Some(&Computation::Session(SessionAction::Offer { ref arms, .. })) => {
+                pending.extend(arms.values().copied());
+            },
+            Some(&Computation::ListCase {
+                on_nil, on_cons, ..
+            }) => {
+                pending.extend([on_nil, on_cons]);
+            },
+            Some(&Computation::DataCase { ref branches, .. }) => {
+                pending.extend(branches.iter().copied());
+            },
+            Some(&Computation::Case { ref branches, .. }) => {
+                pending.extend(branches.iter().copied());
+            },
+            _ => {},
+        }
+    }
+
+    seen
+}
+
+/// Assert that the bodies of `lowered` and `written` are the same syntax.
+///
+/// # Specification
+/// trivial.
+pub(in crate::lower) fn assert_same_body(
+    module: &crate::module::LoweredModule<'_>,
+    arena: &CoreArena,
+    (lowered, written): (SurfaceName<'_>, SurfaceName<'_>),
+)
+{
+    let (left, right) = (body_named(module, lowered), body_named(module, written));
+    assert_eq!(
+        equal_certificate_syntax(arena, left, right),
+        CertificateEquality::Equal,
+        "`{lowered}` lowers to the body `{written}` spells by hand"
+    );
+}
+
+#[test]
+fn the_paths_of_a_computation_are_surveyed_through_nesting()
+{
+    let source = format!(
+        include_str!(
+            "tests/unformatted/the-paths-of-a-computation-are-surveyed-through-nesting.gandr"
+        ),
+        NAT = NAT
+    );
+    assert_surveyed(SourceText::from(source.as_str()), &[
+        (
+            "match n { | Zero => pure n | Succ(p) => pure p }",
+            Leaves::Never,
+        ),
+        (
+            "match n { | Zero => return n | Succ(p) => pure p }",
+            Leaves::Sometimes,
+        ),
+        (
+            "match n { | Zero => pure n | Succ(p) => match p { | Zero => return p | Succ(q) => pure q } }",
+            Leaves::Sometimes,
+        ),
+        (
+            "match p { | Zero => return p | Succ(q) => pure q }",
+            Leaves::Sometimes,
+        ),
+        (
+            "match n { | Zero => pure n | Succ(p) => match p { | Zero => pure p | Succ(q) => pure q } }",
+            Leaves::Never,
+        ),
+        (
+            "match n { | Zero => return n | Succ(p) => match p { | Zero => return p | Succ(q) => return q } }",
+            Leaves::Always,
+        ),
+        (
+            "match p { | Zero => return p | Succ(q) => return q }",
+            Leaves::Always,
+        ),
+        (
+            "match n { | Zero => return n | Succ(p) => return p }",
+            Leaves::Always,
+        ),
+        ("thunk { return Zero }", Leaves::Never),
+        ("return Zero", Leaves::Always),
+        ("&{.0 => return Succ Zero, .1 => pure Zero}", Leaves::Never),
+    ].map(|(needle, leaves)| (SourceText::from(needle), leaves)));
+}
+
+#[test]
+fn a_bound_match_continues_its_block_at_each_local_arm()
+{
+    let source = format!(
+        include_str!("tests/unformatted/a-bound-match-continues-its-block-at-each-local-arm.gandr"),
+        NAT = NAT
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert_same_body(
+        &module,
+        &arena,
+        (SurfaceName::from("once"), SurfaceName::from("once_by_hand")),
+    );
+    let kept = tail_of(&arena, body_named(&module, SurfaceName::from("kept")));
+    assert!(
+        matches!(
+            arena.computation(kept),
+            Some(&Computation::Bind(bound, _))
+                if matches!(arena.computation(bound), Some(Computation::DataCase { .. }))
+        ),
+        "a match holding no exit binds the rest of its block once"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_bound_match_continues_its_block_through_a_split_arm()
+{
+    let source = format!(
+        include_str!(
+            "tests/unformatted/a-bound-match-continues-its-block-through-a-split-arm.gandr"
+        ),
+        NAT = NAT
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert_same_body(
+        &module,
+        &arena,
+        (
+            SurfaceName::from("split"),
+            SurfaceName::from("split_by_hand"),
+        ),
+    );
+}
+
+#[test]
+fn a_block_ending_in_a_statement_returns_the_unit_1205()
+{
+    let source =
+        include_str!("tests/fixtures/a-block-ending-in-a-statement-returns-the-unit-1205.gandr");
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let returns = |id: ComputationId| matches!(arena.computation(id), Some(Computation::Return(_)));
+    let stated = tail_of(&arena, body_named(&module, SurfaceName::from("stated")));
+    assert!(
+        matches!(
+            arena.computation(stated),
+            Some(&Computation::Bind(ran, rest))
+                if returns(ran)
+                    && matches!(
+                        arena.computation(rest),
+                        Some(&Computation::Split { arity, body, .. })
+                            if arity == ComponentCount::default() && returns(body)
+                    )
+        ),
+        "a statement no path leaves runs as written, its unit split, and the unit returned; \
+         the checker checks a match there against the unit at the block's row"
+    );
+    assert_same_body(
+        &module,
+        &arena,
+        (SurfaceName::from("some"), SurfaceName::from("some_by_hand")),
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_block_final_semicolon_returns_the_unit_in_both_spellings_7733()
+{
+    let source = include_str!(
+        "tests/fixtures/a-block-final-semicolon-returns-the-unit-in-both-spellings-7733.gandr"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    assert_same_body(
+        &module,
+        &arena,
+        (SurfaceName::from("laid"), SurfaceName::from("braced")),
+    );
+    let returns = |id: ComputationId| matches!(arena.computation(id), Some(Computation::Return(_)));
+    let laid = tail_of(&arena, body_named(&module, SurfaceName::from("laid")));
+    assert!(
+        matches!(
+            arena.computation(laid),
+            Some(&Computation::Bind(ran, rest))
+                if returns(ran)
+                    && matches!(
+                        arena.computation(rest),
+                        Some(&Computation::Split { arity, body, .. })
+                            if arity == ComponentCount::default() && returns(body)
+                    )
+        ),
+        "the laid-out block runs its last statement, splits its unit and returns the unit"
+    );
+    let report = judged(&module, &mut arena);
+    let names: Vec<SurfaceName<'_>> = module
+        .declarations()
+        .iter()
+        .map(crate::module::LoweredDeclaration::name)
+        .collect();
+    assert_eq!(
+        names,
+        ["laid", "braced", "kept", "dropped"].map(SurfaceName::from),
+        "every declaration lowers"
+    );
+    let verdicts: Vec<Verdict> = report
+        .judged()
+        .iter()
+        .map(gandr_core_checker::Judged::verdict)
+        .collect();
+    assert!(
+        matches!(verdicts.as_slice(), [
+            Verdict::Checked { .. },
+            Verdict::Checked { .. },
+            Verdict::Checked { .. },
+            Verdict::Refused(CheckRefusal::ShapeMismatch { .. }),
+        ]),
+        "a bare last statement keeps its value, and one before `;` is discarded against \
+         the unit: {verdicts:?}"
+    );
+}
+
+#[test]
+fn a_use_a_local_end_replaces_keeps_its_bytes()
+{
+    let source = format!(
+        "{NAT}def twice(n : Nat) -> -F Nat {{ let m = match n {{ | Zero => return n | Succ(p) => {{ let q = match p {{ | Zero => return p | Succ(r) => pure r }} ; pure q }} }} ; return Succ m }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let text = SourceText::from(source.as_str());
+    let at = |needle: &str| {
+        usize::from(spelled(text, SourceText::from(needle)).start())
+            .saturating_add(needle.len().saturating_sub(1))
+    };
+    let named = |offset: usize| {
+        module
+            .origins()
+            .labels()
+            .iter()
+            .find(|label| usize::from(label.span.start()) == offset)
+            .map(|label| label.labelled.clone())
+    };
+    let (used, passed, scrutinised) = (
+        named(at("Succ m")),
+        named(at("pure q")),
+        named(at("match p")),
+    );
+    assert!(
+        matches!(used, Some(Labelled::Value(_))),
+        "the bound match's binder, instantiated away, answers at its use: {used:?}"
+    );
+    assert_eq!(
+        used, passed,
+        "a chain of instantiations answers both uses at the value that replaced them"
+    );
+    assert!(
+        matches!(scrutinised, Some(Labelled::Value(_))),
+        "a scrutinee a leaf's copy replaces answers at its bytes: {scrutinised:?}"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn an_exit_under_nesting_leaves_its_function()
+{
+    let source = format!(
+        include_str!("tests/unformatted/an-exit-under-nesting-leaves-its-function.gandr"),
+        NAT = NAT
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert_same_body(
+        &module,
+        &arena,
+        (SurfaceName::from("pick"), SurfaceName::from("pick_by_hand")),
+    );
+    assert_same_body(
+        &module,
+        &arena,
+        (SurfaceName::from("deep"), SurfaceName::from("deep_by_hand")),
+    );
+    for name in ["pick", "deep"] {
+        let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
+        let binds: Vec<ComputationId> = reachable(&arena, tail)
+            .into_iter()
+            .filter(|&node| matches!(arena.computation(node), Some(&Computation::Bind(..))))
+            .collect();
+        assert!(
+            binds.is_empty(),
+            "every exit of `{name}` ends its body, under no bind: {binds:?}"
+        );
+    }
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("pick")));
+    let unrecorded: Vec<ComputationId> = reachable(&arena, tail)
+        .into_iter()
+        .filter(|&node| {
+            matches!(arena.computation(node), Some(&Computation::DataCase { .. }))
+                && matches!(
+                    module.origins().case(node),
+                    quenchant_shape::shape::Maybe::Absent(_)
+                )
+        })
+        .collect();
+    assert!(
+        unrecorded.is_empty(),
+        "each match of `pick`, copied or rebuilt under the exit, keeps its patterns: \
+         {unrecorded:?}"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn code_no_path_reaches_is_refused()
+{
+    let source = format!(
+        include_str!("tests/unformatted/code-no-path-reaches-is-refused.gandr"),
+        NAT = NAT
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut CoreArena::new());
+    for (name, unreached) in [
+        ("after", "let k = m ; return k"),
+        ("last", "return m"),
+        ("nested", "return Succ q"),
+    ] {
+        assert_eq!(
+            refusal_of(&module, SurfaceName::from(name)),
+            LoweringRefusal::Unreachable {
+                span: spelled(
+                    SourceText::from(source.as_str()),
+                    SourceText::from(unreached)
+                ),
+            },
+            "`{name}` is refused at the code after a statement that always exits"
+        );
+    }
+}
+
+/// The bytes `needle` spells at its last spelling inside `context`, which
+/// `source` spells once.
+///
+/// # Specification
+/// - requires: `source` spells `context` exactly once, and `context` spells
+///   `needle`.
+/// - ensures: the span of `needle`'s last spelling inside `context`.
+/// - fails: never.
+/// - panics: if `context` is not spelled once or does not spell `needle`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the inference witnesses locate each tail here.
+/// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
+#[spec(ensures: |ret| source.as_ref().get(usize::from(ret.start()) .. usize::from(ret.end())) == Some(needle.as_ref()))]
+pub(in crate::lower) fn spelled_within(
+    source: SourceText<'_>,
+    context: SourceText<'_>,
+    needle: SourceText<'_>,
+) -> ByteSpan
+{
+    let outer = spelled(source, context);
+    let (text, wanted): (&str, &str) = (context.as_ref(), needle.as_ref());
+    let Some(offset) = text.rfind(wanted)
+    else {
+        panic!("`{context}` spells `{needle}`");
+    };
+    let (Some(start), Some(end)) = (
+        usize::from(outer.start()).checked_add(offset),
+        usize::from(outer.start())
+            .checked_add(offset)
+            .and_then(|start| start.checked_add(wanted.len())),
+    )
+    else {
+        panic!("a spelling ends inside the source");
+    };
+
+    span(ByteOffset::from(start), ByteOffset::from(end))
+}
+
+#[test]
+fn a_tail_without_an_exit_takes_the_one_its_polarity_names()
+{
+    let source = format!(
+        include_str!(
+            "tests/unformatted/a-tail-without-an-exit-takes-the-one-its-polarity-names.gandr"
+        ),
+        NAT = NAT
+    );
+    let text = SourceText::from(source.as_str());
+    let mut arena = CoreArena::new();
+    let module = lowered(text, &mut arena);
+    for (elided, written) in [
+        ("value", "value_by_hand"),
+        ("built", "built_by_hand"),
+        ("counted", "counted_by_hand"),
+        ("paired", "paired_by_hand"),
+        ("annotated", "annotated_by_hand"),
+        ("called", "called_by_hand"),
+        ("produced", "produced_by_hand"),
+        ("produced", "produced_returned"),
+        ("arms", "arms_by_hand"),
+        ("sequenced", "sequenced_by_hand"),
+        ("early", "early_by_hand"),
+        ("suspended", "suspended_by_hand"),
+    ] {
+        assert_same_body(
+            &module,
+            &arena,
+            (SurfaceName::from(elided), SurfaceName::from(written)),
+        );
+    }
+    let at = |context: &str, needle: &str| {
+        spelled_within(text, SourceText::from(context), SourceText::from(needle))
+    };
+    let inferred = |span, exit| InferredExit {
+        span,
+        exit,
+        explicitness: Explicitness::Unasked,
+    };
+    assert_eq!(
+        module.inferred_exits(),
+        [
+            inferred(at("Nat = n;", "n"), Exit::Return),
+            inferred(at("= Succ n;", "Succ n"), Exit::Return),
+            inferred(at("= 3;", "3"), Exit::Return),
+            inferred(at("= *{n, n};", "*{n, n}"), Exit::Return),
+            inferred(at("= (Succ n : Nat);", "(Succ n : Nat)"), Exit::Return),
+            inferred(at("Nat = value n;", "value n"), Exit::Become),
+            inferred(at("= pure n;", "pure n"), Exit::Become),
+            inferred(at("Zero => n |", "n"), Exit::Return),
+            inferred(at("=> value p", "value p"), Exit::Become),
+            inferred(at("; Succ m }", "Succ m"), Exit::Return),
+            inferred(at("; pure q }", "pure q"), Exit::Become),
+            inferred(
+                at("= thunk { value n };", "thunk { value n }"),
+                Exit::Return
+            ),
+            inferred(at("thunk { value n }", "value n"), Exit::Become),
+        ],
+        "each tail written without an exit takes the one its polarity names, at its own \
+         bytes, and a written exit or a bound match's local end takes none"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn an_explicit_exits_attribute_asks_within_its_form()
+{
+    let source = format!(
+        include_str!("tests/unformatted/an-explicit-exits-attribute-asks-within-its-form.gandr"),
+        NAT = NAT
+    );
+    let text = SourceText::from(source.as_str());
+    let module = lowered(text, &mut CoreArena::new());
+    let at = |context: &str, needle: &str| {
+        spelled_within(text, SourceText::from(context), SourceText::from(needle))
+    };
+    let inferred = |span, exit, explicitness| InferredExit {
+        span,
+        exit,
+        explicitness,
+    };
+    assert_eq!(
+        module.inferred_exits(),
+        [
+            inferred(at("= n;", "n"), Exit::Return, Explicitness::Asked),
+            inferred(at("= kept n;", "kept n"), Exit::Become, Explicitness::Asked),
+            inferred(at("= Succ n;", "Succ n"), Exit::Return, Explicitness::Asked),
+            inferred(at("= Zero;", "Zero"), Exit::Return, Explicitness::Unasked),
+        ],
+        "a module's attribute asks for its members' exits, a declaration's for its own, \
+         and a refused declaration lists none"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("twice")),
+            LoweringRefusal::DuplicateAttribute { .. }
+        ),
+        "the declaration whose exit goes unlisted is refused"
+    );
+}
+
+/// An inner block leading a module's body, `@![ explicit_exits ]`, asks for
+/// its members' exits as an outer block before the module does, a nested
+/// module's too; one after a member is refused under the module's name, and
+/// asks for nothing; one doubling an outer block's attribute is refused as a
+/// block doubling another's is.
+#[test]
+fn an_inner_attribute_decorates_its_module()
+{
+    let source = format!(
+        include_str!("tests/unformatted/an-inner-attribute-decorates-its-module.gandr"),
+        NAT = NAT
+    );
+    let text = SourceText::from(source.as_str());
+    let module = lowered(text, &mut CoreArena::new());
+    let at = |context: &str, needle: &str| {
+        spelled_within(text, SourceText::from(context), SourceText::from(needle))
+    };
+    let inferred = |span, exit, explicitness| InferredExit {
+        span,
+        exit,
+        explicitness,
+    };
+    assert_eq!(
+        module.inferred_exits(),
+        [
+            inferred(at("= n;", "n"), Exit::Return, Explicitness::Asked),
+            inferred(at("= Zero;", "Zero"), Exit::Return, Explicitness::Unasked),
+            inferred(at("= Succ n;", "Succ n"), Exit::Return, Explicitness::Asked),
+        ],
+        "a leading inner block asks for its module's exits, a nested one's too, and the late \
+         one asks for none"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("twice")),
+            LoweringRefusal::DuplicateAttribute { .. }
+        ),
+        "an inner block doubling the outer block's attribute refuses the module's first member"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("Late")),
+            LoweringRefusal::MalformedForm {
+                fault: crate::FormFault::MisplacedTile,
+                ..
+            }
+        ),
+        "an inner block after a member is refused under its module's name"
+    );
+}
+
+#[test]
+fn a_tail_return_of_a_value_is_listed_as_elidable_1327()
+{
+    let source = format!(
+        include_str!("tests/unformatted/a-tail-return-of-a-value-is-listed-as-elidable-1327.gandr"),
+        NAT = NAT
+    );
+    let text = SourceText::from(source.as_str());
+    let mut arena = CoreArena::new();
+    let module = lowered(text, &mut arena);
+    let at = |context: &str, needle: &str| {
+        spelled_within(text, SourceText::from(context), SourceText::from(needle))
+    };
+    let elidable = |context: &str, written: &str, value: &str, returned: Returned| ElidableExit {
+        span: at(context, written),
+        value: at(context, value),
+        returned,
+    };
+    assert_eq!(
+        module.elidable_exits(),
+        [
+            elidable(
+                "= return Succ n;",
+                "return Succ n",
+                "Succ n",
+                Returned::Value
+            ),
+            elidable("Zero => return m |", "return m", "m", Returned::Value),
+            elidable("=> return p }", "return p", "p", Returned::Value),
+            elidable("Zero => return k |", "return k", "k", Returned::Value),
+            elidable(
+                "= return succeeded n;",
+                "return succeeded n",
+                "succeeded n",
+                Returned::Run
+            ),
+            elidable(
+                "= return (Succ n);",
+                "return (Succ n)",
+                "(Succ n)",
+                Returned::Value
+            ),
+        ],
+        "a tail's return of a value is listed, in a body, in a match arm and grouped, and so is \
+         one of a call, as a run; an early one, one of a grouped type or of a hole, one written \
+         as a statement or in tail position of one, one an attribute asks for and one in a \
+         refused declaration are not"
+    );
+    for (written, bare) in [("succeeded", "succeeded_bare"), ("arms", "arms_bare")] {
+        assert_same_body(
+            &module,
+            &arena,
+            (SurfaceName::from(written), SurfaceName::from(bare)),
+        );
+    }
+}
+
+#[test]
+fn a_match_continuing_its_block_answers_what_the_block_does()
+{
+    let source = format!(
+        include_str!(
+            "tests/unformatted/a-match-continuing-its-block-answers-what-the-block-does.gandr"
+        ),
+        NAT = NAT
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let refused = refusal_of(&module, SurfaceName::from("stated"));
+    let written = spelled(
+        SourceText::from(source.as_str()),
+        SourceText::from("match n -> (-F Nat)"),
+    );
+    let answer = span(
+        ByteOffset::from(usize::from(written.end()).saturating_sub("(-F Nat)".len())),
+        written.end(),
+    );
+    assert!(
+        matches!(
+            refused,
+            LoweringRefusal::OutOfFragment { span, form, boundary: FragmentBoundary::JoinsBlock, .. }
+                if form == FormName::MATCH && span == answer
+        ),
+        "a written answer on a match continuing its block is refused at itself: {refused:?}"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_variable_answering_at_its_own_bytes_gains_no_label()
+{
+    let source =
+        include_str!("tests/fixtures/a-variable-answering-at-its-own-bytes-gains-no-label.gandr");
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let used = spelled(SourceText::from(source), SourceText::from("return m"));
+    let at = usize::from(used.end()).saturating_sub(1_usize);
+    let labelled: Vec<_> = module
+        .origins()
+        .labels()
+        .iter()
+        .filter(|label| usize::from(label.span.start()) == at)
+        .collect();
+    assert!(
+        labelled.is_empty(),
+        "the binder of an absent field is replaced by a value at its own bytes, so its use keeps \
+         no label: {labelled:?}"
+    );
+}
+
+#[test]
+fn a_renamed_parameter_type_stands_in_only_at_other_bytes()
+{
+    let source =
+        include_str!("tests/fixtures/a-renamed-parameter-type-stands-in-only-at-other-bytes.gandr");
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let origins = module.origins();
+    let beside: Vec<_> = origins
+        .stand_ins()
+        .iter()
+        .filter(|&&(standing, written)| {
+            matches!(
+                origins.value_type(standing),
+                quenchant_shape::shape::Maybe::Present(now) if now.span() == written.span()
+            )
+        })
+        .collect();
+    assert!(
+        !origins.stand_ins().is_empty() && beside.is_empty(),
+        "the functor's renamed parameter types stand in where the template writes them, never at \
+         the bytes their replacement already answers at: {beside:?}"
+    );
+}

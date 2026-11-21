@@ -1,0 +1,8 @@
+error[UnknownTactic]: a splice runs a tactic: `assumption`, or `intro(t)` of a tactic `t`, under fewer than 32 introductions, or `ports e` of a call that returns several outputs
+  ╭▸ corpus/ledger/diagnostics/UnknownTactic.gandr:3:38
+  │
+3 │ def named(x : Integer) -> Integer = ~x;
+  │                                      ━ a splice of no tactic
+  │
+  ├ note: `named` is refused with UnknownTactic, as its expectation states
+  ╰ help: replace the tactic with a supported tactic

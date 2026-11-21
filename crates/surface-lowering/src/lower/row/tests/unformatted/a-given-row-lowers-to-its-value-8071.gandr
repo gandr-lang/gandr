@@ -1,0 +1,6 @@
+@[builtin("string.append")]
+def append : (a : String, b : String) -> String;
+
+def joined(a : String, b : String) -> String = append a b;
+
+def direct(a : String, b : String) -> String = string.append a b;
