@@ -416,6 +416,149 @@ fn a_held_call_under_a_presented_constructor_reads_as_what_it_returns()
     );
 }
 
+/// The body of the constant at 1 in the witness of a definition leaf.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Body
+{
+    /// `unloop(base)`, which gives a redex under `loop`.
+    Back,
+    /// `base`, which gives none.
+    Base,
+}
+
+#[test]
+fn a_definition_under_a_presented_constructor_reads_as_its_body_8283()
+{
+    // `loop(named)` against `base`. The body of the constant `named` at 1 is
+    // `unloop(base)`. No decision names the leaf under `loop`. So the normal
+    // form reads the leaf by its body, and the word cancels. The kernel reads
+    // the same leaf by its unfolding. A name whose body is `base` gives no
+    // redex, so its word stays apart. Over a free circle nothing cancels.
+    let decided = |circle_is: Circle, body: Body| {
+        let mut core = CoreArena::new();
+        let own = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let body = match body {
+            Body::Back => core_word(&mut core, &[Unloop]),
+            Body::Base => core_word(&mut core, &[]),
+        };
+        let leaf = core.value_constant(ConstantIndex::from(1_usize));
+        let word =
+            core.value_constructor(ConstantIndex::from(0_usize), own, Loop.tag(), alloc::vec![
+                leaf
+            ]);
+        let base = core_word(&mut core, &[]);
+        let mut chain = DefinitionChain::new();
+        let _height = chain
+            .define(
+                ConstantIndex::from(1_usize),
+                GlobalIndex::from(0_u32),
+                Transparency::Manifest,
+                &[],
+            )
+            .expect("the name admits");
+        let Ok(mut chain) = LoweredChain::lower(chain, |_entry| Ok::<_, ConstantIndex>(body))
+        else {
+            panic!("the name lowers");
+        };
+        if circle_is == Circle::Presented {
+            chain.present(
+                ConstantIndex::from(0_usize),
+                Presented::new(circle(), [0_usize, 1, 1].map(FieldCount::from).into()),
+            );
+        }
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root())
+            .reading_endpoints(Endpoints::Hold);
+        let mut domain = DomainArena::new();
+        let left = eval_value(&core, &mut domain, definitions, Fuel::from(64_u32), word)
+            .expect("the word evaluates");
+        let right = eval_value(&core, &mut domain, definitions, Fuel::from(64_u32), base)
+            .expect("the word evaluates");
+        let mut log = TraceLog::new();
+        let report = decide::<_, NullMemo>(
+            &core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            Problem::values(left, right),
+            &mut log,
+        )
+        .expect("the machine answers");
+        (
+            report.verdict(),
+            log.decisions().copied().collect::<Vec<_>>(),
+        )
+    };
+    let (verdict, decisions) = decided(Circle::Presented, Body::Back);
+    assert_eq!(verdict, MachineVerdict::Convertible, "{decisions:?}");
+    let mut environment = Environment::new();
+    let mut staging = environment.stage();
+    let kind = staging
+        .arena()
+        .value_type_universe(GroundSort::Value, Level::zero());
+    let own = staging.arena().value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
+    let staged = staging
+        .data(
+            LevelSignature::monomorphic(),
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+            ]),
+            kind,
+        )
+        .presented(circle());
+    let _circle = environment.add_decl(staged).expect("the circle admits");
+    let mut arena = environment.arena().clone();
+    let back = kernel_word(&mut arena, &[Unloop]);
+    let named = arena.value_constant(ConstantIndex::from(1_usize));
+    let own = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
+    let word = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        own,
+        Loop.tag(),
+        SmallVec::<_, 0, Global>::from_iter([named]),
+    );
+    let base = kernel_word(&mut arena, &[]);
+    let unfoldings = Unfoldings::new(alloc::vec![Unfoldable::Opaque, Unfoldable::Body(back)])
+        .presenting(Presentations::of(environment.entries()));
+    let replayed = replay(
+        &mut arena,
+        &unfoldings,
+        ReplaySides::Values(word, base),
+        EngineClaim::Convertible,
+        decisions.iter().map(|decision| {
+            decision.map(|node: TraceNode| match node {
+                TraceNode::Constant(constant) => ReplayNode::Constant(constant),
+                TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
+            })
+        }),
+        ReplayBudget::DEFAULT,
+    );
+    assert_eq!(
+        replayed,
+        KernelVerdict::Convertible,
+        "the kernel reads the leaf and replays the derivation: {decisions:?}"
+    );
+    assert_eq!(
+        decided(Circle::Presented, Body::Base).0,
+        MachineVerdict::NotConvertible,
+        "`loop(base)` is not `base`"
+    );
+    assert_eq!(
+        decided(Circle::Free, Body::Back).0,
+        MachineVerdict::NotConvertible,
+        "over a free circle `loop(unloop(base))` is not `base`"
+    );
+}
+
 /// The sort `S`, with `Base` at tag 0 and `Other` at tag 1.
 const SORT: usize = 0;
 /// The words of one loop at `Base`.
