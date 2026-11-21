@@ -658,22 +658,19 @@ fn add_type_rules(
     // bracket names a method's deduced mode where a view's type reads its
     // element after it, `View[m](a)`.
     //
-    // The bracket also reads `Config[.port = 443]` and
-    // `Config[secure ↦ *{.port = 443}]`. The lowering gives each one a tile
-    // out of place, and the reader `.#{` of `extension_type` fixes a record's
+    // The bracket also reads `Config[.port = 443]`, which the lowering gives a
+    // tile out of place: the reader `.#{` of `extension_type` fixes a record's
     // fields. The field form opens with `.`, where a stage opens with `<` or a
-    // name. The face form and a stage share their name, and the token after
-    // it, `↦` or `]`, decides between them. The forms are alternatives of one
-    // rule, so the `[` after a type keeps one mold. A second rule over the
-    // same `[` would tie with this one at every staged type.
+    // name. The forms are alternatives of one rule, so the `[` after a type
+    // keeps one mold. A second rule over the same `[` would tie with this one
+    // at every staged type.
     //
     // A field's value is a type hole, as a value a type takes as a call's
     // argument is: a number, a boolean, a string, a name or a call. After `=`
     // in a type, an expression hole lets a declaration's own `= e`, cut off by
     // a bracket the source leaves open, read as a fixed value. The recovery
     // then marks the open bracket at the declaration's end and not where it
-    // was left open. The `,` after a face's expression hole lets the recovery
-    // of a dropped token read a system in sources that write no face (#5106).
+    // was left open.
     rules.push(rule(
         RuleName("staged_type"),
         ty,
@@ -685,27 +682,12 @@ fn add_type_rules(
                 Regex::seq([
                     Regex::optional(tile(TileLabel("<"))),
                     tile(TileLabel("identifier")),
-                    Regex::alt([
-                        Regex::seq([
-                            tile(TileLabel("]")),
-                            Regex::optional(Regex::seq([
-                                tile(TileLabel("(")),
-                                comma1(Regex::sort(ty)),
-                                tile(TileLabel(")")),
-                            ])),
-                        ]),
-                        Regex::seq([
-                            tile(TileLabel("↦")),
-                            Regex::sort(Sort::Expression),
-                            Regex::repeat(Regex::seq([
-                                tile(TileLabel(",")),
-                                tile(TileLabel("identifier")),
-                                tile(TileLabel("↦")),
-                                Regex::sort(Sort::Expression),
-                            ])),
-                            tile(TileLabel("]")),
-                        ]),
-                    ]),
+                    tile(TileLabel("]")),
+                    Regex::optional(Regex::seq([
+                        tile(TileLabel("(")),
+                        comma1(Regex::sort(ty)),
+                        tile(TileLabel(")")),
+                    ])),
                 ]),
                 Regex::seq([
                     comma1(Regex::seq([

@@ -1608,8 +1608,8 @@ mod tests
         let folder = scratch.join("syntax");
         std::fs::create_dir_all(&folder).expect("the scratch folder");
         std::fs::write(
-            folder.join("staged-type.gandr"),
-            include_str!("../../../../corpus/ledger/syntax/staged-type.gandr"),
+            folder.join("extension-type.gandr"),
+            include_str!("../../../../corpus/ledger/syntax/extension-type.gandr"),
         )
         .expect("the exemplar is written");
         let pbg = built_in().expect("the built-in grammar builds");
@@ -1617,12 +1617,12 @@ mod tests
         std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
         assert!(
             !report.findings.iter().any(|finding| {
-                finding.exemplar.file_name() == Some("staged-type.gandr".as_ref())
-                    && finding.at == 239
+                finding.exemplar.file_name() == Some("extension-type.gandr".as_ref())
+                    && finding.at == 134
                     && finding.tile == ":"
                     && finding.mutation == Mutation::Deleted
             }),
-            "staged-type.gandr:239: `:` deleted is reported at its mutation: {report}"
+            "extension-type.gandr:134: `:` deleted is reported at its mutation: {report}"
         );
     }
 

@@ -5,8 +5,7 @@
 //! member `T` names, `type T = *{…} where face f = { … }`.
 //!
 //! A system of faces, `T.#{f ↦ v, g ↦ w}`, fixes the fields of each face it
-//! names. The static bracket's forms `T[.l = v]` and `T[f ↦ v]` are retired
-//! spellings, and the lowering refuses each one by name.
+//! names.
 //!
 //! # A patched type is a core former over its base
 //!
