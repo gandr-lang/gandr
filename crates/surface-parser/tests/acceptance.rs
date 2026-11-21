@@ -2418,10 +2418,10 @@ fn a_product_opens_with_its_own_sign() -> Result<(), Failure>
         "def picked = r.*{ .a };",
     ] {
         labels(source)?;
-        let retired = source.replace("*{", "#{");
+        let glued = source.replace("*{", "#{");
         assert!(
-            !bool::from(parse(pbg, SourceText::from(retired.as_str()))?.is_clean()),
-            "the retired spelling {retired:?} owes a repair"
+            !bool::from(parse(pbg, SourceText::from(glued.as_str()))?.is_clean()),
+            "the text {glued:?}, with `#{{` for `*{{`, owes a repair"
         );
     }
     for source in [

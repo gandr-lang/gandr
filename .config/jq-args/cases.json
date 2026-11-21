@@ -92,7 +92,7 @@
         {
           "file": "a.bash",
           "line": "6",
-          "text": "  # The old form was jq --argjson issues \"$issues\"."
+          "text": "  # The call was once jq --argjson issues \"$issues\"."
         }
       ],
       "small": []
@@ -129,7 +129,7 @@
     ]
   },
   {
-    "name": "#7091: the old form of #7062 refuses",
+    "name": "#7091: the first call of #7062 refuses",
     "input": {
       "added": [
         {
@@ -145,7 +145,7 @@
     ]
   },
   {
-    "name": "#7091: the old form of #7076 refuses",
+    "name": "#7091: the first call of #7076 refuses",
     "input": {
       "added": [
         {
@@ -164,7 +164,7 @@
     ]
   },
   {
-    "name": "#7091: the old form of #7089 refuses",
+    "name": "#7091: the first call of #7089 refuses",
     "input": {
       "added": [
         {

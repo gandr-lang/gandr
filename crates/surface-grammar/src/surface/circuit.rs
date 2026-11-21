@@ -643,8 +643,8 @@ fn top_level_judgment() -> Regex
 /// `sort` a colour, `data` a constructor, `oper` a circuit 1-cell, `obs` an
 /// observation of a sort, `rule` a rewrite face. `sort` and `data` are
 /// boundary-only; `oper` and `rule` may carry a filler, and `obs` rides
-/// `oper`'s form. `shape` is the retired spelling of the shape parameter,
-/// read so the description refuses it naming `boundary`. `include` names a
+/// `oper`'s form. `shape` reads a member that the description refuses as
+/// malformed, and no source writes it. `include` names a
 /// theory whose members the block extends. `ext` states an extension type
 /// over the boundary: a sort of cells fixed to a constant on a face. `law`
 /// states an equation no rule orients, as the path type a model proves it at.
@@ -653,8 +653,8 @@ fn top_level_judgment() -> Regex
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the sort, data, circuit-judgment, retired shape, include,
-///   extension, law, boundary and face member alternatives.
+/// - ensures: the sort, data, circuit-judgment, `shape`, include, extension,
+///   law, boundary and face member alternatives.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -691,8 +691,8 @@ fn theory_member() -> Regex
             signature(),
         ]),
         circuit_judgment(),
-        // `shape Square : 4 { left = {0, 2}; }` — the retired spelling of
-        // the shape parameter, read so the description refuses it by name.
+        // `shape Square : 4 { left = {0, 2}; }`: the description refuses this
+        // member as malformed.
         seq([
             t(TileLabel("shape")),
             t(TileLabel("type_identifier")),

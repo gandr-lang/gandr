@@ -1277,7 +1277,7 @@
       "surface": ["crates/surface-grammar/src/grammar.rs"],
       "spelled": [7001]
     },
-    "output": "the line `spelling: the new form` states none of the three forms, `spelling: sole`, `spelling: replaces <old>, refused here` or `spelling: replaces <old>, refused by #n` (#6876); write one of them, then run `pr:open` again\nthe line `spelling: replaces …, refused by #7000` names #7000, which does not stand open: name the open unit that refuses the old spelling, or refuse it in this change and write `refused here`, then run `pr:open` again"
+    "output": "the line `spelling: the new form` states none of the three forms, `spelling: sole`, `spelling: replaces <old>, refused here` or `spelling: replaces <old>, refused by #n` (#6876); write one of them, then run `pr:open` again\nthe line `spelling: replaces …, refused by #7000` names #7000, which does not stand open: name the open unit that refuses the replaced spelling, or refuse it in this change and write `refused here`, then run `pr:open` again"
   },
   {
     "name": "#6876: a replaced spelling refused in the change, or by an open unit, opens",
