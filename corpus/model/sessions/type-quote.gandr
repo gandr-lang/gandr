@@ -1,0 +1,41 @@
+// This source quotes types for expression arguments.
+//
+// An expression reads a receive's `?` as a hole.
+// An expression reads a labelled sum's `+{` as an injection.
+// The quote gives such a type one argument spelling.
+// A signature writes the type without the quote.
+//
+// The checker reads the quoted form as a type argument.
+//
+// - see: #839
+// - see: #1728 — `run_over_binder`
+
+// The native session formers.
+import std.session (Run);
+
+// The seat's protocol and its messages.
+import "./seat-base.gandr";
+
+/// The stationary flow at a protocol that opens with a receive.
+def quoted_receive : Flow[.A = Type](
+  (Seat.Dispatch) >? end,
+  (Seat.Dispatch) >? end
+) = Flow.stay (type((Seat.Dispatch) >? end));
+
+/// The stationary flow at a labelled sum of one summand.
+def quoted_sum : Flow[.A = Type](+{Unit}, +{Unit}) = Flow.stay (type(+{Unit}));
+
+/// `protocol` compares the written seat protocol with its named form.
+def protocol : Flow[.A = Type](Seat.SeatEnd, (Seat.Dispatch) >? rec turn => +{
+  report : (Seat.Report) >! &{next : turn, retire : end},
+  handoff : (Seat.Handoff) >! end
+}) = Flow.sim Seat.SeatEnd (type((Seat.Dispatch) >? rec turn => +{
+  report : (Seat.Report) >! &{next : turn, retire : end},
+  handoff : (Seat.Handoff) >! end
+}));
+
+/// `run_over_binder` reads a motive binder in a run protocol.
+/// The checker carries the run without payload codes.
+/// Limits: a quote may not read that binder.
+def run_over_binder(served : Run ((Seat.Dispatch) >? end)) -> Run ((Seat.Dispatch) >? end) =
+  Path.walk (fun (X) { Run (type(X >? end)) }) (Path.here Seat.Dispatch) served

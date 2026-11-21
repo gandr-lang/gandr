@@ -1,0 +1,12 @@
+theory Toggle where {
+  sort T : Type;
+  oper start : T;
+  oper step : (t : T) --> T;
+  oper read : (t : T) --> Integer;
+}
+def derived : Model Toggle with sort T = Integer;
+def written : *{
+  start : Integer,
+  step : +U (Integer -> -F Integer),
+  read : +U (Integer -> -F Integer)
+};

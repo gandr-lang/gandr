@@ -1,0 +1,9 @@
+/// `modules`: a module groups declarations under a name, and a member is
+/// reached through it.
+pub module Origin where
+  /// The starting point.
+  def zero() -> Integer = 0;
+
+/// The member called through its module's name.
+@[runs("0")]
+def started() -> Integer = Origin.zero ();

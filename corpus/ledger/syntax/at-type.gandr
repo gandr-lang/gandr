@@ -1,0 +1,4 @@
+/// `at_type`: a type placed at a world.
+world seat;
+def kept(n : Integer at seat) -> -F (Integer at seat) =
+  pure n
