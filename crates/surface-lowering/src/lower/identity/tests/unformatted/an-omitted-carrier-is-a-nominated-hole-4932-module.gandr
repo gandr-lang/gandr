@@ -1,0 +1,5 @@
+def path : Path(4, 4);
+def path = Path.here 4;
+def directed : Flow(4, 4);
+def directed = Flow.stay 4;
+def unfixed : Path(fun (y) { y }, fun (y) { y });

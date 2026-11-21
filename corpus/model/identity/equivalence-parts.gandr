@@ -1,0 +1,30 @@
+/// This source reads selected fields of quasi-inverse and equivalence records.
+///
+/// A pattern may name every field or select one label.
+/// A dependent field type can still read an unused forward map.
+///
+/// The checker keeps each field name available inside the matching arm.
+/// A label pattern uses a fresh name when no variable name occurs.
+///
+/// - see: corpus/model/identity/equivalence.gandr
+import "./equivalence.gandr";
+
+/// The `backOf` match reads the quasi-inverse backward map.
+def backOf(a : Type, b : Type, i : a ≅ b) -> b -> a =
+  match i where
+    | *{t, k, s, r} => k
+
+/// The `leftOf` match reads the equivalence left inverse.
+def leftOf(a : Type, b : Type, e : a ≃ b) -> b -> a =
+  match e where
+    | *{t, *{g, s}, *{h, r}} => g
+
+/// The label pattern reads the quasi-inverse backward map.
+def fromByLabel(a : Type, b : Type, i : a ≅ b) -> b -> a =
+  match i where
+    | *{.from = k} => k
+
+/// The label pattern binds the backward map as `into`.
+def fromAsInto(a : Type, b : Type, i : a ≅ b) -> b -> a =
+  match i where
+    | *{.from = into} => into
