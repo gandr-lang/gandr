@@ -23,6 +23,7 @@
 //! range meets are tried in one trial of the document, and a repair is offered
 //! as a fix only when the document it writes refuses less.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
@@ -31,6 +32,7 @@ use core::iter;
 use std::path::Path;
 
 use anodized::spec;
+use gandr_kernel_data::ThinShared;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_pretty::Style;
 use gandr_surface_render_remote::HlRole;
@@ -173,7 +175,7 @@ pub fn repairs(
         found.push(CodeAction {
             title,
             kind: "quickfix",
-            diagnostics: Vec::from([diagnostic.clone()]),
+            diagnostics: iter::once(diagnostic.clone()).collect(),
             is_preferred: true,
             edit,
         });
@@ -347,7 +349,7 @@ pub fn fills(
         })
         .collect();
     kept.sort_by_key(|&(_, after)| after);
-    let named: Vec<Value> = diagnostics
+    let named: ThinShared<(), Value, Global> = diagnostics
         .iter()
         .filter(|diagnostic| {
             diagnostic

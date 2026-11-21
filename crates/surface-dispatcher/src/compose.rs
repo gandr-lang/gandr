@@ -178,6 +178,7 @@
 //!   re-assessment (§ kernel-reassessment-design, item 9) — the editor shows
 //!   each declaration's kernel tier, computed off the keystroke path.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
@@ -237,6 +238,7 @@ use gandr_core_term::hole::HoleId;
 use gandr_kernel_check_memo::MemoActivity;
 use gandr_kernel_core::ExpansionCensus;
 use gandr_kernel_core::tallied;
+use gandr_kernel_data::Shared;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::EncodedArtifact;
 use gandr_kernel_term::Names;
@@ -475,19 +477,19 @@ pub enum Composed<'source>
         /// Every core node the lowering minted, mapped back to the syntax
         /// that produced it: the table a checker refusal's node is located
         /// through.
-        origins: OriginTable,
+        origins: Shared<OriginTable, Global>,
         /// The types the checker refusals compare, and the types and binders
         /// their failures name, spelled in each spelling while the arena was
         /// at hand: the table a refusal's types are read from.
-        spellings: TypeSpellings,
+        spellings: Shared<TypeSpellings, Global>,
         /// The failure the checking machine kept for each refused body, by
         /// admission position: the rules it stood inside and the hypotheses
         /// in scope.
-        failures: Failures,
+        failures: Shared<Failures, Global>,
         /// What the report of each checker refusal reads through the origin
         /// table, located while the arena was at hand: a refusal names its
         /// nodes by their content keys, and a key does not locate a node.
-        locations: Locations,
+        locations: Shared<Locations, Global>,
         /// Every builtin the source's declarations and binders shadowed, in
         /// the order shadowed: under the warn-and-allow policy the source's
         /// binding wins and each is a warning, not a refusal. The composition
@@ -535,7 +537,7 @@ pub enum Composed<'source>
         /// Where each declaration that crossed into the kernel stands in the
         /// kernel artifact, by its module position, when the admission was
         /// asked to record it.
-        positions: Maybe<ArtifactPositions, positioned::Absent>,
+        positions: Maybe<Shared<ArtifactPositions, Global>, positioned::Absent>,
         /// The module's declarations focused into the command IL, ready to
         /// run any of them.
         program: Program<'source>,
@@ -628,7 +630,7 @@ impl Composed<'_>
         self,
         kernel: EncodedArtifact,
         keys: Names,
-        positions: Maybe<ArtifactPositions, positioned::Absent>,
+        positions: Maybe<Shared<ArtifactPositions, Global>, positioned::Absent>,
         declined: &[Declined],
     ) -> Self
     {
@@ -752,6 +754,11 @@ impl<'source> Judged<'source>
     /// - hypothesis: L3 — as [`judge_module`], which is this after [`judge`].
     /// - witness: `compose::tests::a_kernel_disagreement_is_an_engine_fault`
     /// - witness: `tests::compose::the_kernel_artifact_holds_what_crossed_under_its_names`
+    ///
+    /// # Cost
+    /// - allocation: the shared positions of the composition, durable by the
+    ///   composition
+    /// - allocation: the shared fault of a readmission, error path
     #[inline]
     #[spec(ensures: |ret| match ret {
         Ok(Composed::Settled { ref kernel, .. }) => matches!(kernel, Maybe::Present(_)),
@@ -770,9 +777,9 @@ impl<'source> Judged<'source>
             bridge::LeadingCount::NONE,
             Maybe::Absent(bridge::crossed::Absent::Unasked),
         );
-        let kernel = artifact.map_err(ComposeFault::Readmission)?;
+        let kernel = artifact.map_err(|fault| ComposeFault::Readmission(Shared::new(fault)))?;
         let composed = self.settled.map_err(ComposeFault::Settle)?;
-        Ok(composed.admitted(kernel, keys, positions, &declined))
+        Ok(composed.admitted(kernel, keys, positions.map(Shared::new), &declined))
     }
 }
 
@@ -1637,16 +1644,16 @@ impl ArtifactPositions
 pub enum ComposeFault<'source>
 {
     /// The parser could not commit its tree.
-    Parse(MeldError),
+    Parse(Shared<MeldError, Global>),
     /// The lowering met an engine fault — an exhausted allowance, a tree of
     /// another grammar, a mold outside the grammar's table — so no declaration
     /// of the source can be trusted.
-    Lowering(LoweringRefusal<'source>),
+    Lowering(Shared<LoweringRefusal<'source>, Global>),
     /// The settle comparison was handed verdicts that are not the module's
     /// own.
     Settle(SettleFault),
     /// The kernel did not re-derive a declaration the checker accepted.
-    Readmission(bridge::Readmitted),
+    Readmission(Shared<bridge::Readmitted, Global>),
 }
 
 impl fmt::Display for ComposeFault<'_>
@@ -1676,8 +1683,10 @@ impl fmt::Display for ComposeFault<'_>
     ) -> fmt::Result
     {
         match *self {
-            Self::Parse(ref fault) => write!(f, "the parser could not commit its tree: {fault}"),
-            Self::Lowering(ref refusal) => write!(f, "the lowering faulted: {refusal}"),
+            Self::Parse(ref fault) => {
+                write!(f, "the parser could not commit its tree: {}", **fault)
+            },
+            Self::Lowering(ref refusal) => write!(f, "the lowering faulted: {}", **refusal),
             Self::Settle(ref fault) => write!(f, "the settle comparison faulted: {fault}"),
             Self::Readmission(ref readmitted) => {
                 write!(
@@ -2078,6 +2087,11 @@ impl<'source> Lowering<'source>
 /// - witness: `tests::compose::a_root_that_is_no_list_of_declarations_is_refused_whole`
 /// - witness: `tests::compose::each_composition_lowers_once`
 /// - witness: `tests::script::run_source_counts_lowerings_with_saturation`
+///
+/// # Cost
+/// - allocation: the tree, the arena and the lowered module, growth within the
+///   source
+/// - allocation: the shared fault of a parse or of a lowering, error path
 #[inline]
 #[spec(
     captures: [before = lowerings.0],
@@ -2089,7 +2103,7 @@ impl<'source> Lowering<'source>
         Ok(Lowering { lowered: Lowered::Refused(refusal), .. }) =>
             refusal.classify() != FailureClass::EngineFault,
         Ok(Lowering { lowered: Lowered::Module { .. }, .. }) | Err(ComposeFault::Parse(_)) => true,
-        Err(ComposeFault::Lowering(refusal)) => refusal.classify() == FailureClass::EngineFault,
+        Err(ComposeFault::Lowering(ref refusal)) => refusal.classify() == FailureClass::EngineFault,
         Err(ComposeFault::Readmission(_) | ComposeFault::Settle(_)) => false,
     },
 )]
@@ -2099,7 +2113,7 @@ pub fn lower_source<'source>(
     lowerings: &mut LoweringCount,
 ) -> Result<Lowering<'source>, ComposeFault<'source>>
 {
-    let parsed = parse(grammar, source).map_err(ComposeFault::Parse)?;
+    let parsed = parse(grammar, source).map_err(|fault| ComposeFault::Parse(Shared::new(fault)))?;
     lower_parsed(
         grammar,
         parsed,
@@ -2134,6 +2148,10 @@ pub fn lower_source<'source>(
 ///   to the walk's compositions.
 /// - witness: `compose::tests::a_lowering_carries_the_parse_obligations`
 /// - witness: `tests::compose::each_composition_lowers_once`
+///
+/// # Cost
+/// - allocation: the arena and the lowered module, growth within the source
+/// - allocation: the shared fault of a lowering, error path
 #[inline]
 #[spec(
     captures: [before = lowerings.0, obligations = parsed.obligations().to_vec()],
@@ -2176,6 +2194,11 @@ pub fn lower_parsed<'source>(
 /// - hypothesis: L3 — a fixture importer lowers over its sibling and settles,
 ///   the pair counted as two sources lowered.
 /// - witness: `tests::walk::an_importer_is_judged_over_its_sibling`
+///
+/// # Cost
+/// - allocation: the tree, the arena and the lowered module, growth within the
+///   source
+/// - allocation: the shared fault of a parse or of a lowering, error path
 #[inline]
 #[spec(
     captures: [before = lowerings.0],
@@ -2192,7 +2215,7 @@ pub fn lower_unit_source<'source>(
     lowerings: &mut LoweringCount,
 ) -> Result<Lowering<'source>, ComposeFault<'source>>
 {
-    let parsed = parse(grammar, source).map_err(ComposeFault::Parse)?;
+    let parsed = parse(grammar, source).map_err(|fault| ComposeFault::Parse(Shared::new(fault)))?;
     lower_parsed_unit(grammar, parsed, unit, lowerings, &mut Decisions::none())
 }
 
@@ -2219,6 +2242,10 @@ pub fn lower_unit_source<'source>(
 /// - witness: `tests::compose::each_composition_lowers_once`
 /// - witness: `tests::walk::an_importer_is_judged_over_its_sibling`
 /// - witness: `tests::compose::a_tree_of_another_grammar_faults_every_lowering_route`
+///
+/// # Cost
+/// - allocation: the arena and the lowered module, growth within the source
+/// - allocation: the shared fault of a lowering, error path
 #[inline]
 #[spec(
     captures: [before = lowerings.0],
@@ -2239,7 +2266,7 @@ pub fn lower_parsed_unit<'source>(
     let lowered = match lowering::lower(grammar, &tree, unit, &mut arena, lowerings, decisions) {
         Ok(module) => Lowered::Module { module, arena },
         Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
-            return Err(ComposeFault::Lowering(refusal));
+            return Err(ComposeFault::Lowering(Shared::new(refusal)));
         },
         Err(refusal) => Lowered::Refused(refusal),
     };
@@ -2357,6 +2384,10 @@ pub fn lower_prelude(grammar: &Arc<Pbg>) -> Option<ClosureLowering>
 /// - witness: `compose::tests::a_closure_lowers_once_and_resumes_per_document_1033`
 /// - witness: `tests::compose::a_tree_of_another_grammar_faults_every_lowering_route`
 /// - witness: `tests::compose::a_refused_source_is_carried_on_every_resumed_route`
+///
+/// # Cost
+/// - allocation: the arena and the lowered module, growth within the source
+/// - allocation: the shared fault of a lowering, error path
 #[inline]
 #[spec(
     captures: [before = lowerings.0],
@@ -2377,7 +2408,7 @@ pub fn lower_resumed_unit<'held>(
     let lowered = match lowering::resume(closure, &tree, unit, &mut arena, lowerings, decisions) {
         Ok(module) => Lowered::Module { module, arena },
         Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
-            return Err(ComposeFault::Lowering(refusal));
+            return Err(ComposeFault::Lowering(Shared::new(refusal)));
         },
         Err(refusal) => Lowered::Refused(refusal),
     };
@@ -2935,6 +2966,10 @@ impl Recorded
 /// - witness: `tests::compose::a_closure_judged_once_judges_each_document_alike_776`
 /// - witness: `tests::compose::a_tree_of_another_grammar_faults_every_lowering_route`
 /// - witness: `tests::compose::a_refused_source_is_carried_on_every_resumed_route`
+///
+/// # Cost
+/// - allocation: the arena and the lowered module, growth within the source
+/// - allocation: the shared fault of a lowering, error path
 #[inline]
 #[spec(
     captures: [before = lowerings.0],
@@ -2975,13 +3010,13 @@ pub fn lower_onto_closure<'held>(
                     Checking::Whole,
                 ),
                 Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
-                    return Err(ComposeFault::Lowering(refusal));
+                    return Err(ComposeFault::Lowering(Shared::new(refusal)));
                 },
                 Err(refusal) => (Lowered::Refused(refusal), Checking::Whole),
             }
         },
         Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
-            return Err(ComposeFault::Lowering(refusal));
+            return Err(ComposeFault::Lowering(Shared::new(refusal)));
         },
         Err(refusal) => (Lowered::Refused(refusal), Checking::Whole),
     };
@@ -3478,7 +3513,7 @@ struct Share<'source>
     /// Its refusals no expectation can state.
     unstatable: Vec<LoweringRefusal<'source>>,
     /// The types the unit's checker refusals compare and its failures name.
-    spellings: TypeSpellings,
+    spellings: Shared<TypeSpellings, Global>,
     /// The builtins it shadowed.
     shadowed: Vec<ShadowedBuiltin>,
     /// The exits the lowering inferred in it.
@@ -3750,7 +3785,7 @@ where
     let projected = match settled_report {
         Ok((report, layout)) => {
             let keys = NodeKeys::new(&arena, &layout);
-            let failures = Failures::of(&verdicts, &keys);
+            let failures = Shared::new(Failures::of(&verdicts, &keys));
             located(
                 module.origins_mut(),
                 &verdicts,
@@ -3791,13 +3826,18 @@ where
                 },
             );
             spelled.tick();
+            let spellings = Shared::new(spellings);
+            let locations = Shared::new(locations);
             let unit = Unitwide {
                 unstatable: unstatable(&module),
                 runs: inferred_runs(&module, &verdicts),
                 deprecated: module.deprecated_uses(&arena),
             };
             let whole = earlier.is_empty() && usize::from(last.start) == 0_usize;
-            let earlier = earlier
+            // Each earlier member takes its share and its program while the
+            // module is at hand. The unit's origin table joins them after the
+            // module gives it up, so no member copies the table.
+            let earlier: Vec<_> = earlier
                 .iter()
                 .map(|&member| {
                     let own = owned(&report, (&module, &verdicts), member);
@@ -3809,15 +3849,7 @@ where
                     );
                     let mut program = program.clone();
                     program.run_within(own_constants(&module, member));
-                    Ok(settled(
-                        held,
-                        (
-                            module.origins().clone(),
-                            failures.clone(),
-                            locations.clone(),
-                            program,
-                        ),
-                    ))
+                    (held, program)
                 })
                 .collect();
             let own = if whole {
@@ -3828,12 +3860,23 @@ where
                 owned(&report, (&module, &verdicts), last)
             };
             let last_share = share(last, (own, spellings), (&arena, &module, &verdicts), &unit);
+            let origins = Shared::new(module.into_origins());
             Projected {
-                earlier,
-                last: Ok(settled(
-                    last_share,
-                    (module.into_origins(), failures, locations, program),
-                )),
+                earlier: earlier
+                    .into_iter()
+                    .map(|(held, program)| {
+                        Ok(settled(
+                            held,
+                            (
+                                origins.clone(),
+                                failures.clone(),
+                                locations.clone(),
+                                program,
+                            ),
+                        ))
+                    })
+                    .collect(),
+                last: Ok(settled(last_share, (origins, failures, locations, program))),
             }
         },
         Err(fault) => Projected {
@@ -4014,7 +4057,7 @@ fn owned<'source>(
     && ret.unreached.iter().all(|span| member.start <= span.start() && span.start() <= member.end))]
 fn share<'source>(
     member: Member,
-    (report, spellings): (SettleReport<'source>, TypeSpellings),
+    (report, spellings): (SettleReport<'source>, Shared<TypeSpellings, Global>),
     (arena, module, verdicts): (&CoreArena, &LoweredModule<'source>, &ModuleReport),
     unit: &Unitwide<'source>,
 ) -> Share<'source>
@@ -4292,7 +4335,12 @@ fn unreached_imports(
 /// - allocation: the empty names of a pending export, setup
 fn settled<'source>(
     share: Share<'source>,
-    (origins, failures, locations, program): (OriginTable, Failures, Locations, Program<'source>),
+    (origins, failures, locations, program): (
+        Shared<OriginTable, Global>,
+        Shared<Failures, Global>,
+        Shared<Locations, Global>,
+        Program<'source>,
+    ),
 ) -> Composed<'source>
 {
     Composed::Settled {
@@ -4459,6 +4507,7 @@ where
             };
             let composed = match admitted {
                 Ok(kernel) => {
+                    let positions = positions.map(Shared::new);
                     let mut composed: Vec<_> = projected
                         .earlier
                         .into_iter()
@@ -4482,10 +4531,13 @@ where
                     );
                     composed
                 },
-                Err(fault) => members
-                    .iter()
-                    .map(|_| Err(ComposeFault::Readmission(fault.clone())))
-                    .collect(),
+                Err(fault) => {
+                    let fault = Shared::new(fault);
+                    members
+                        .iter()
+                        .map(|_| Err(ComposeFault::Readmission(fault.clone())))
+                        .collect()
+                },
             };
             (composed, kept)
         },
@@ -4787,7 +4839,7 @@ where
         before.saturating_add(1)
     } && match *ret {
         Ok(Composed::Refused(refusal)) => refusal.classify() != FailureClass::EngineFault,
-        Err(ComposeFault::Lowering(refusal)) => refusal.classify() == FailureClass::EngineFault,
+        Err(ComposeFault::Lowering(ref refusal)) => refusal.classify() == FailureClass::EngineFault,
         Ok(Composed::Settled { .. })
             | Err(ComposeFault::Parse(_) | ComposeFault::Readmission(_) | ComposeFault::Settle(_)) => true,
     },
@@ -6029,6 +6081,7 @@ mod tests
     use gandr_core_term::Value;
     use gandr_core_term::equal_certificate_syntax;
     use gandr_core_term::equal_type_syntax;
+    use gandr_kernel_data::Shared;
     use gandr_surface_diagnostics::constant_names;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::built_in;
@@ -6320,7 +6373,8 @@ mod tests
             ),
             "the bridge refused its dangling ids"
         );
-        let rendered = crate::SourceFault::Compose(ComposeFault::Readmission(fault)).to_string();
+        let rendered =
+            crate::SourceFault::Compose(ComposeFault::Readmission(Shared::new(fault))).to_string();
         let positions = rendered
             .split(|character: char| !character.is_ascii_digit())
             .filter(|part| !part.is_empty())

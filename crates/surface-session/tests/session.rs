@@ -12,6 +12,7 @@ use gandr_core_incremental::Adoption;
 use gandr_core_incremental::ItemCount;
 use gandr_core_incremental::SynthesisEvent;
 use gandr_core_incremental::Typing;
+use gandr_kernel_data::Shared;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_corpus::DeclarationReport;
@@ -1883,7 +1884,6 @@ fn an_importer_lowers_its_closure_once_1033()
     use gandr_surface_dispatcher::lay_out;
     use gandr_surface_dispatcher::lower_closure;
     use gandr_surface_dispatcher::lower_onto_closure;
-    use gandr_surface_lowering::OriginTable;
     use gandr_surface_session::ClosureSlot;
     use gandr_surface_session::Led;
     use gandr_surface_session::Session;
@@ -2027,7 +2027,7 @@ fn an_importer_lowers_its_closure_once_1033()
                 report,
                 exercised,
                 unstatable,
-                origins: OriginTable::default(),
+                origins: Shared::default(),
                 spellings,
                 failures,
                 locations,

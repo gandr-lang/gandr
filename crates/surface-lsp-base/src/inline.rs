@@ -1451,6 +1451,9 @@ fn trailing(parts: &[Part]) -> Trailing
 /// - hypothesis: L3 — as [`candidates`] and [`slot_of`].
 /// - witness: `inline::tests::the_defect_rows_answer_as_wanted`
 /// - witness: `inline::tests::each_category_is_named_where_its_hole_stands`
+///
+/// # Cost
+/// - allocation: the material of each closing, growth within the closings
 #[spec(ensures: |ret| ret.iter().all(|material| material.starts_with(pending)))]
 fn closing_materials(
     grammar: &Pbg,

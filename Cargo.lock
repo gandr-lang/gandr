@@ -1912,6 +1912,7 @@ dependencies = [
  "gandr-core-term",
  "gandr-kernel-check-memo",
  "gandr-kernel-core",
+ "gandr-kernel-data",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-runtime-emitter",
@@ -2252,6 +2253,7 @@ version = "0.0.0"
 dependencies = [
  "blake3",
  "expect-test",
+ "gandr-kernel-data",
  "gandr-surface-diagnostics",
  "gandr-surface-grammar",
  "gandr-surface-lowering",
@@ -2302,6 +2304,7 @@ version = "0.0.0"
 dependencies = [
  "gandr-core-fork",
  "gandr-core-incremental",
+ "gandr-kernel-data",
  "gandr-kernel-term",
  "gandr-storage-records",
  "gandr-surface-corpus",

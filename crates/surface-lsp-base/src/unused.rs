@@ -19,12 +19,14 @@
 //! as a quick fix, and every hinted import of the document at once when it
 //! holds several.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::ThinShared;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_syntax::ByteSpan;
@@ -167,6 +169,10 @@ pub fn unreached(
 ///   range elsewhere is offered none; a document hinting two imports is offered
 ///   their removal at once besides.
 /// - witness: `gandr-surface-lsp::server::tests::an_unused_import_is_offered_its_removal_1116`
+///
+/// # Cost
+/// - allocation: the actions, their edits and their shared lists of
+///   diagnostics, growth within the hints
 #[spec(ensures: |ret| ret.iter().all(|action| action.kind == "quickfix"
     && action.edit.changes.as_ref().is_some_and(|changes| changes.len() == 1)))]
 #[must_use]
@@ -183,7 +189,7 @@ pub fn removals(
         .iter()
         .filter(|hint| hint.code.as_deref() == Some(UNUSED_IMPORT))
         .collect();
-    let answered = |ranges: &[Range]| -> Vec<Value> {
+    let answered = |ranges: &[Range]| -> ThinShared<(), Value, Global> {
         diagnostics
             .iter()
             .filter(|diagnostic| {

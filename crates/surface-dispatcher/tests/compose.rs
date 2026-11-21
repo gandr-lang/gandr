@@ -18,6 +18,7 @@ use gandr_core_checker::worlds::WorldName;
 use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
 use gandr_core_term::TrackingIssue;
+use gandr_kernel_data::Shared;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::KernelImage;
@@ -1083,10 +1084,10 @@ fn a_judged_module_renders_before_its_admission()
             report,
             exercised,
             unstatable,
-            origins: module.into_origins(),
-            spellings,
-            failures,
-            locations,
+            origins: Shared::new(module.into_origins()),
+            spellings: Shared::new(spellings),
+            failures: Shared::new(failures),
+            locations: Shared::new(locations),
             shadowed,
             inferred,
             runs,
@@ -2307,6 +2308,96 @@ fn each_source_of_a_component_reports_its_own_share()
             ),
         ],
         "each source reports its own declarations, debts and shadowed builtins"
+    );
+}
+
+/// The sources of a component judged once share one copy of each table of
+/// the unit: the origin table, the spellings, the failures and the
+/// locations.
+#[test]
+fn the_sources_of_a_component_share_its_unit_wide_tables_8294()
+{
+    use gandr_kernel_data::Identity;
+    use gandr_surface_dispatcher::SpellingCount;
+    use gandr_surface_dispatcher::fixture::Keeping;
+    use gandr_surface_dispatcher::fixture::Member;
+    use gandr_surface_dispatcher::fixture::judge_component;
+    use gandr_surface_dispatcher::lower_parsed_unit;
+    use gandr_surface_syntax::ByteOffset;
+
+    let grammar = grammar();
+    let first = "def one : Integer ;";
+    let second = include_str!(
+        "compose/unformatted/each-source-of-a-component-reports-its-own-share-second.gandr"
+    );
+    // A component joins its sources with a newline, as the walk lays them.
+    let text = format!(
+        include_str!("compose/unformatted/each-source-of-a-component-reports-its-own-share.gandr"),
+        first = first,
+        second = second
+    );
+    let base = ByteOffset::from(first.len().saturating_add(1_usize));
+    let members = [
+        Member {
+            start: ByteOffset::from(0_usize),
+            end: ByteOffset::from(first.len()),
+            root: CorpusRoot::Fixture,
+        },
+        Member {
+            start: base,
+            end: ByteOffset::from(text.len()),
+            root: CorpusRoot::Fixture,
+        },
+    ];
+    let lowering = lower_parsed_unit(
+        &grammar,
+        parse(&grammar, SourceText::from(text.as_str())).expect("the component parses"),
+        &pair(base),
+        &mut LoweringCount::default(),
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
+    )
+    .expect("the component lowers");
+    let composed = judge_component::<Evaluator>(
+        (lowering, SourceText::from(text.as_str())),
+        (
+            &HostGrant::UNBOUNDED,
+            gandr_surface_dispatcher::Checking::Whole,
+        ),
+        (&members, &mut SpellingCount::default()),
+        (
+            Keeping::Composed,
+            gandr_surface_dispatcher::Positioning::Unpositioned,
+        ),
+    )
+    .0;
+    let [
+        Ok(Composed::Settled {
+            origins: ref first_origins,
+            spellings: ref first_spellings,
+            failures: ref first_failures,
+            locations: ref first_locations,
+            ..
+        }),
+        Ok(Composed::Settled {
+            ref origins,
+            ref spellings,
+            ref failures,
+            ref locations,
+            ..
+        }),
+    ] = *composed.as_slice()
+    else {
+        panic!("each source settles: {composed:?}");
+    };
+    assert_eq!(
+        [
+            Shared::ptr_eq(first_origins, origins),
+            Shared::ptr_eq(first_spellings, spellings),
+            Shared::ptr_eq(first_failures, failures),
+            Shared::ptr_eq(first_locations, locations),
+        ],
+        [Identity::Same; 4],
+        "the two sources hold one block of each table of the unit"
     );
 }
 

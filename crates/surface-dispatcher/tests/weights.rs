@@ -25,12 +25,14 @@
 //!
 //! Each search reads at most [`BUDGET`] candidates for a block.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 use std::path::Path;
 use std::path::PathBuf;
 
+use gandr_kernel_data::Shared;
 use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::lower_source;
@@ -247,8 +249,8 @@ enum Verdict
 #[derive(Debug)]
 struct Row
 {
-    /// The source that writes the block.
-    path: PathBuf,
+    /// The source that writes the block, shared by each row of the source.
+    path: Shared<PathBuf, Global>,
     /// The first line of the block.
     header: String,
     /// The rules the path order orients.
@@ -450,6 +452,7 @@ fn probe() -> Vec<Row>
         if !text.contains("rule ") {
             continue;
         }
+        let path = Shared::new(path);
         let Lowered::Module { module, .. } =
             lower_source(&grammar, SourceText::from(text.as_str()), &mut lowerings)
                 .unwrap_or_else(|fault| panic!("{}: {fault}", path.display()))

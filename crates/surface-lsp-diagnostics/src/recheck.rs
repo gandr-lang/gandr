@@ -159,6 +159,7 @@ use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::ContentKey;
 use gandr_core_incremental::DiscardingCheckpointStore;
 use gandr_core_incremental::ResumeCensus;
+use gandr_kernel_data::Shared;
 use gandr_kernel_term::ConstantIndex;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_corpus::Declined;
@@ -808,14 +809,12 @@ where
             (retirement, sink),
         ),
         Maybe::Absent(_) => session.judge_reading_retiring(text, read, (retirement, sink)),
-    };
+    }
+    .map_err(|fault| fault.to_string());
     let mut submission = match outcome {
         Ok(Polled::Whole(submission)) => submission,
         Ok(Polled::Retired(retired, ())) => return Polled::Retired(retired, ()),
-        Err(fault) => {
-            let fault = fault.to_string();
-            return unchecked(Diagnostic::at_origin(fault), named, laid);
-        },
+        Err(fault) => return unchecked(Diagnostic::at_origin(fault), named, laid),
     };
     // What the judgement's parse read of the document's own imports: the
     // session's reading of its text alone, or, when it parsed the document
@@ -1413,7 +1412,8 @@ pub fn settle(
                 )]);
                 (
                     Maybe::Present(Diagnostic::at_origin(
-                        SessionFault::Compose(ComposeFault::Readmission(disagreement)).to_string(),
+                        SessionFault::Compose(ComposeFault::Readmission(Shared::new(disagreement)))
+                            .to_string(),
                     )),
                     Maybe::Absent(admitted::Absent::Disagreed),
                     Vec::new(),
@@ -1490,6 +1490,8 @@ pub struct Tried
 /// # Cost
 /// - allocation: each candidate's lay-out and its diagnostics, growth within
 ///   the candidates
+/// - allocation: the one diagnostic of each candidate when the built-in grammar
+///   faults, error path
 #[spec(ensures: |ret| ret.len() == candidates.len()
     && ret.is_sorted_by_key(|tried| tried.reached)
     && ret.iter().all(|tried| usize::from(tried.candidate) < candidates.len()))]
@@ -1507,13 +1509,15 @@ where
     let session = match *session {
         Ok(ref session) => session,
         Err(fault) => {
-            let diagnostic =
-                Diagnostic::at_origin(format!("the built-in grammar did not build: {fault}"));
+            // The grammar faults on no input, so each candidate builds the
+            // one diagnostic it owns.
             return (0_usize .. candidates.len())
                 .map(|index| Tried {
                     candidate: CandidateIndex::from(index),
                     reached: Reached::Faulted,
-                    diagnostics: vec![diagnostic.clone()],
+                    diagnostics: vec![Diagnostic::at_origin(format!(
+                        "the built-in grammar did not build: {fault}"
+                    ))],
                 })
                 .collect();
         },

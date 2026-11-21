@@ -1287,7 +1287,7 @@ fn a_refusal_keeps_its_failure_and_spells_its_types()
         panic!("the clean source settles");
     };
     assert_eq!(
-        *failures,
+        **failures,
         Failures::default(),
         "a module that refuses nothing keeps no failure"
     );

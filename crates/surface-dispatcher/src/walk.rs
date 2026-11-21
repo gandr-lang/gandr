@@ -93,6 +93,7 @@ use std::sync::OnceLock;
 
 use anodized::spec;
 use gandr_core_checker::HostGrant;
+use gandr_kernel_data::Shared;
 use gandr_runtime_emitter::regions;
 use gandr_runtime_emitter::regions::Charge;
 use gandr_runtime_emitter::regions::Memory;
@@ -1714,6 +1715,11 @@ fn settled<'step>(
 /// - witness: `tests::walk::an_importer_is_judged_over_its_sibling`
 /// - witness: `tests::walk::an_import_its_parse_does_not_read_is_grouped_again`
 /// - witness: `tests::walk::an_import_parses_its_importer_once_617`
+///
+/// # Cost
+/// - allocation: the tree and the lowering of the component, growth within its
+///   text
+/// - allocation: the shared fault of a parse, error path
 #[spec(ensures: |ref ret| usize::from(ret.lowerings) <= component.members.len()
     && usize::from(ret.parsed) <= component.text.len())]
 fn lower<'text, E>(
@@ -1746,7 +1752,7 @@ where
         },
         Ok(_) => None,
         Err(_) if component.reading == Reading::ImportForms => None,
-        Err(error) => Some(Err(ComposeFault::Parse(error))),
+        Err(error) => Some(Err(ComposeFault::Parse(Shared::new(error)))),
     };
     Job {
         lowering,

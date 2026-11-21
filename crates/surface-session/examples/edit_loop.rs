@@ -63,6 +63,7 @@ use anodized::spec;
 use gandr_core_fork::Fork as _;
 use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::MemoryCheckpointStore;
+use gandr_kernel_data::Shared;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::LoweringCount;
@@ -496,10 +497,11 @@ fn rows(
                     .map_err(|fault| fault.to_string().into())
             },
             |session| {
-                session
-                    .admit()
-                    .map(drop)
-                    .map_err(|fault| ComposeFault::Readmission(fault).to_string().into())
+                session.admit().map(drop).map_err(|fault| {
+                    ComposeFault::Readmission(Shared::new(fault))
+                        .to_string()
+                        .into()
+                })
             },
         )?;
         let whole = whole(

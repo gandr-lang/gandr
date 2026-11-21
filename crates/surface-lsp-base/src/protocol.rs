@@ -6,6 +6,7 @@
 //! a client sends is ignored, as the protocol requires of a field a server
 //! does not know.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use core::fmt;
 use core::mem;
@@ -14,6 +15,8 @@ use core::time::TryFromFloatSecsError;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::ThinShared;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_lowering::Visibility;
 use gandr_surface_pretty::Form;
@@ -21,6 +24,7 @@ use gandr_surface_pretty::Spelling;
 use gandr_surface_render_remote::Glyph;
 use gandr_surface_render_remote::Warrant;
 use serde::Deserialize;
+use serde::Deserializer;
 use serde::Serialize;
 use serde::Serializer;
 use serde::ser;
@@ -59,11 +63,44 @@ const PATH_ESCAPED: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
 /// The name every diagnostic's `source` and the server's `serverInfo` carry.
 const SOURCE: &str = "gandr";
 
-/// A document's URI, as the client spells it.
+/// A document's URI, as the client spells it. Each copy of a URI shares the
+/// one text, so a loop that names one document in each of its items copies no
+/// text.
 #[repr(transparent)]
-#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(transparent)]
-pub struct DocumentUri(String);
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct DocumentUri(Shared<String, Global>);
+
+impl Serialize for DocumentUri
+{
+    /// Writes the URI as the client spelled it, as a JSON string.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn serialize<S: Serializer>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for DocumentUri
+{
+    /// Reads the URI from a JSON string, as the client spells it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the text and its holder, durable by the URI
+    #[inline]
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error>
+    {
+        String::deserialize(deserializer).map(|uri| Self(Shared::new(uri)))
+    }
+}
 
 impl From<&str> for DocumentUri
 {
@@ -71,10 +108,13 @@ impl From<&str> for DocumentUri
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the text and its holder, durable by the URI
     #[inline]
     fn from(uri: &str) -> Self
     {
-        Self(uri.to_owned())
+        Self(Shared::new(uri.to_owned()))
     }
 }
 
@@ -84,10 +124,13 @@ impl From<&DocumentUri> for gandr_surface_render_remote::DocumentUri
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the render bus's own text, durable by its name
     #[inline]
     fn from(uri: &DocumentUri) -> Self
     {
-        Self::from(uri.0.clone())
+        Self::from(String::clone(&uri.0))
     }
 }
 
@@ -125,6 +168,9 @@ impl DocumentUri
     ///   escape decoding to bytes that are not UTF-8, each asserted at its
     ///   exact path.
     /// - witness: `protocol::tests::a_file_uri_names_its_decoded_path`
+    ///
+    /// # Cost
+    /// - allocation: the decoded path, growth within the URI
     #[spec(ensures: |ret| match self.0.strip_prefix(FILE_SCHEME)
         .and_then(|rest| rest.get(rest.find('/')?..)) {
         Some(path) if !path.contains('%') => ret == std::path::Path::new(path),
@@ -167,6 +213,9 @@ impl DocumentUri
     ///   non-ASCII letter, and a relative path, each asserted at its exact URI
     ///   or none.
     /// - witness: `protocol::tests::a_path_names_the_file_uri_that_reads_back_to_it`
+    ///
+    /// # Cost
+    /// - allocation: the escaped text and its holder, durable by the URI
     #[spec(ensures: |ret| ret.as_ref().is_none_or(|uri| uri.path() == path))]
     #[inline]
     #[must_use]
@@ -176,10 +225,10 @@ impl DocumentUri
         if !spelled.starts_with('/') {
             return None;
         }
-        Some(Self(format!(
+        Some(Self(Shared::new(format!(
             "{FILE_SCHEME}{}",
             percent_encoding::utf8_percent_encode(spelled, PATH_ESCAPED)
-        )))
+        ))))
     }
 
     /// The `file` URI of the document whose syntax tree this URI names: the
@@ -202,6 +251,10 @@ impl DocumentUri
     ///   escaped path, a host, a `file` URI, another scheme and a tree URI with
     ///   no path, each asserted at its exact document or none.
     /// - witness: `protocol::tests::a_tree_uri_names_the_document_it_views`
+    ///
+    /// # Cost
+    /// - allocation: the text of the `file` URI and its holder, durable by the
+    ///   URI
     #[spec(ensures: |ret| ret.as_ref().is_none_or(|source| source.0.starts_with(FILE_SCHEME)
         && source.0.get(FILE_SCHEME.len() ..) == self.0.get(TREE_SCHEME.len().saturating_add(1) ..)
             .map(|rest| rest.strip_prefix("//").unwrap_or(rest))))]
@@ -211,10 +264,10 @@ impl DocumentUri
     {
         let rest = self.0.strip_prefix(TREE_SCHEME)?.strip_prefix(':')?;
         if rest.starts_with("//") {
-            Some(Self(format!("file:{rest}")))
+            Some(Self(Shared::new(format!("file:{rest}"))))
         }
         else if rest.starts_with('/') {
-            Some(Self(format!("{FILE_SCHEME}{rest}")))
+            Some(Self(Shared::new(format!("{FILE_SCHEME}{rest}"))))
         }
         else {
             None
@@ -4124,15 +4177,31 @@ pub struct CodeAction
     pub title: String,
     /// Its kind, `quickfix`.
     pub kind: &'static str,
-    /// The diagnostics it answers, each as the client sent it.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub diagnostics: Vec<Value>,
+    /// The diagnostics it answers, each as the client sent it. The actions
+    /// that answer one list share it.
+    #[serde(
+        skip_serializing_if = "<[Value]>::is_empty",
+        serialize_with = "answered"
+    )]
+    pub diagnostics: ThinShared<(), Value, Global>,
     /// Whether it is the fix the client applies when its user asks for the
     /// preferred one.
     #[serde(skip_serializing_if = "core::ops::Not::not")]
     pub is_preferred: bool,
     /// The edit it applies.
     pub edit: WorkspaceEdit,
+}
+
+/// Writes the diagnostics a code action answers, as a JSON array.
+///
+/// # Specification
+/// trivial.
+fn answered<S: Serializer>(
+    diagnostics: &ThinShared<(), Value, Global>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+{
+    serializer.collect_seq(diagnostics.iter())
 }
 
 /// Edits to several documents: by URI, or, for a client that takes them so,

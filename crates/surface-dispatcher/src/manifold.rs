@@ -94,6 +94,7 @@
 //!   linking design, § dynamic-linking-policy: a policy off by default, refused
 //!   at check time.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
@@ -111,6 +112,7 @@ use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::EffectSig;
 use gandr_core_term::effect::host::HostSignatures;
 use gandr_core_term::effect::host::declared;
+use gandr_kernel_data::Shared;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::StringLiteral;
 use gandr_runtime_net::Lookup;
@@ -405,13 +407,14 @@ impl Site
 #[derive(Clone, Debug)]
 pub struct Manifold
 {
-    /// The manifold's own file.
-    file: PathBuf,
-    /// The program's source, its path joined to the manifold's directory.
-    artifact: PathBuf,
+    /// The manifold's own file, shared by each refusal that names it.
+    file: Shared<PathBuf, Global>,
+    /// The program's source, its path joined to the manifold's directory,
+    /// shared by each refusal that names it.
+    artifact: Shared<PathBuf, Global>,
     /// Each world placed, with the key of the site it is placed at, in the
     /// order `placements` lists them.
-    placed: Vec<(WorldName, NodeId)>,
+    placed: Vec<(Shared<WorldName, Global>, NodeId)>,
     /// Each world placed, bound to its site.
     bindings: WorldBindings,
     /// How a runner finds the sites: by multicast DNS when a site names no
@@ -494,6 +497,11 @@ impl Manifold
     /// - witness: `tests::manifold::a_site_and_a_manifold_read_from_their_files_3374`
     /// - witness: `tests::manifold::a_field_that_does_not_read_is_refused_by_name_3374`
     /// - witness: `tests::manifold::an_offer_is_admitted_through_a_translation_by_the_manifold_s_policy_3461`
+    ///
+    /// # Cost
+    /// - allocation: the paths, the placements and the bindings of the
+    ///   manifold, setup
+    /// - allocation: the refusal and its text, error path
     #[inline]
     pub fn read<E>(file: &Path) -> Result<Self, Undeployed>
     where
@@ -570,11 +578,11 @@ impl Manifold
                 world.clone(),
                 sockets.into_iter().fold(Peer::new(key), Peer::at),
             ));
-            worlds.push((world, key));
+            worlds.push((Shared::new(world), key));
         }
         Ok(Self {
-            file: file.to_path_buf(),
-            artifact,
+            file: Shared::new(file.to_path_buf()),
+            artifact: Shared::new(artifact),
             placed: worlds,
             bindings: bindings.into_iter().collect(),
             lookup,
@@ -602,6 +610,9 @@ impl Manifold
     /// - hypothesis: L3 — the corpus manifold deploys the migration model and
     ///   refuses its one-process sibling.
     /// - witness: `tests::manifold::a_site_and_a_manifold_read_from_their_files_3374`
+    ///
+    /// # Cost
+    /// - allocation: the canonical paths and the refusal, error path
     #[inline]
     pub fn deploying(
         &self,
@@ -688,17 +699,21 @@ impl Manifold
     ///   interface it lists are each refused naming the entry, and a world the
     ///   program lacks is refused by name.
     /// - witness: `tests::manifold::a_world_s_row_is_judged_against_its_site_s_offer_3523`
+    ///
+    /// # Cost
+    /// - allocation: the program's text, its worlds and the sites, setup
+    /// - allocation: the refusals and their texts, growth within the placements
     #[inline]
     #[must_use]
     pub fn judged<E>(&self) -> Vec<Undeployed>
     where
         E: Engine,
     {
-        let text = match std::fs::read_to_string(&self.artifact) {
+        let text = match std::fs::read_to_string(self.artifact.as_path()) {
             Ok(text) => text,
             Err(error) => {
                 return Vec::from([Undeployed::Unread {
-                    file: self.artifact.clone(),
+                    file: PathBuf::clone(&self.artifact),
                     message: error.to_string(),
                 }]);
             },
@@ -709,7 +724,10 @@ impl Manifold
             Err(unran) => return Vec::from([Undeployed::of(&self.artifact, unran)]),
         };
         let required = self.placed.iter().any(|&(ref world, _)| {
-            matches!(worlds.get(world), Some(&Declared::World(Maybe::Present(_))))
+            matches!(
+                worlds.get(&**world),
+                Some(&Declared::World(Maybe::Present(_)))
+            )
         });
         let sites = if required {
             self.sites::<E>()
@@ -719,7 +737,7 @@ impl Manifold
         };
         let mut refused = Vec::new();
         for &(ref world, key) in &self.placed {
-            let refusal = match worlds.get(world) {
+            let refusal = match worlds.get(&**world) {
                 Some(&Declared::World(Maybe::Absent(_))) => continue,
                 Some(&Declared::World(Maybe::Present(ref entries))) => {
                     let Some(site) = sites.get(&key)
@@ -776,6 +794,9 @@ impl Manifold
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::judged`].
     /// - witness: `tests::manifold::a_world_s_row_is_judged_against_its_site_s_offer_3523`
+    ///
+    /// # Cost
+    /// - allocation: the map of the sites and their paths, setup
     fn sites<E>(&self) -> BTreeMap<NodeId, PathBuf>
     where
         E: Engine,
@@ -1025,7 +1046,7 @@ pub enum Undeployed
     Elsewhere
     {
         /// The program's path, as the manifold resolves it.
-        artifact: PathBuf,
+        artifact: Shared<PathBuf, Global>,
         /// The source given.
         program: PathBuf,
     },
@@ -1063,19 +1084,19 @@ pub enum Undeployed
     Unworlded
     {
         /// The manifold's file.
-        manifold: PathBuf,
+        manifold: Shared<PathBuf, Global>,
         /// The program it deploys.
-        artifact: PathBuf,
+        artifact: Shared<PathBuf, Global>,
         /// The world placed.
-        world: WorldName,
+        world: Shared<WorldName, Global>,
     },
     /// A placement names a declaration of the program the lowering refused.
     Misworlded
     {
         /// The program.
-        artifact: PathBuf,
+        artifact: Shared<PathBuf, Global>,
         /// The world placed.
-        world: WorldName,
+        world: Shared<WorldName, Global>,
         /// The refusal, spelled.
         why: String,
     },
@@ -1084,9 +1105,9 @@ pub enum Undeployed
     Unsited
     {
         /// The manifold's file.
-        manifold: PathBuf,
+        manifold: Shared<PathBuf, Global>,
         /// The world placed.
-        world: WorldName,
+        world: Shared<WorldName, Global>,
         /// The key the placement's site proves.
         key: NodeId,
     },
@@ -1097,7 +1118,7 @@ pub enum Undeployed
         /// The site's file.
         site: PathBuf,
         /// The world placed.
-        world: WorldName,
+        world: Shared<WorldName, Global>,
         /// The entry refused: a theory's label, or a host interface's name.
         entry: String,
         /// Why the site's offer does not answer it, spelled.
@@ -1118,7 +1139,7 @@ pub enum Undeployed
         /// The site's file.
         site: PathBuf,
         /// The world placed.
-        world: WorldName,
+        world: Shared<WorldName, Global>,
         /// The label refused.
         entry: String,
         /// The manifold's policy.
@@ -1263,8 +1284,9 @@ impl fmt::Display for Undeployed
                 ref world,
             } => write!(
                 f,
-                "`{}` places `{world}`, a world `{}` does not declare: place one of its worlds",
+                "`{}` places `{}`, a world `{}` does not declare: place one of its worlds",
                 manifold.display(),
+                **world,
                 artifact.display()
             ),
             Self::Misworlded {
@@ -1273,7 +1295,8 @@ impl fmt::Display for Undeployed
                 ref why,
             } => write!(
                 f,
-                "the world `{world}` of `{}` is refused: {why}",
+                "the world `{}` of `{}` is refused: {why}",
+                **world,
                 artifact.display()
             ),
             Self::Unsited {
@@ -1282,9 +1305,10 @@ impl fmt::Display for Undeployed
                 key,
             } => write!(
                 f,
-                "`{}` places `{world}` at the site {key}, which no file it imports states: \
+                "`{}` places `{}` at the site {key}, which no file it imports states: \
                  import the site's file",
-                manifold.display()
+                manifold.display(),
+                **world
             ),
             Self::Unoffered {
                 ref site,
@@ -1293,7 +1317,8 @@ impl fmt::Display for Undeployed
                 ref why,
             } => write!(
                 f,
-                "`{world}` requires `{entry}`, and the site `{}` does not answer it: {why}",
+                "`{}` requires `{entry}`, and the site `{}` does not answer it: {why}",
+                **world,
                 site.display()
             ),
             Self::Untranslatable { ref file, ref came } => write!(
@@ -1309,8 +1334,9 @@ impl fmt::Display for Undeployed
                 ref why,
             } => write!(
                 f,
-                "`{world}` requires `{entry}`, and the manifold's `translation`, `{policy}`, \
+                "`{}` requires `{entry}`, and the manifold's `translation`, `{policy}`, \
                  refuses how the site `{}` answers it: {why}",
+                **world,
                 site.display()
             ),
         }
@@ -1800,7 +1826,7 @@ struct Offering<'judged>
     /// The program's text.
     program: SourceText<'judged>,
     /// The world placed.
-    world: &'judged WorldName,
+    world: &'judged Shared<WorldName, Global>,
     /// The row the world requires, its entries as the program writes them.
     entries: &'judged [Entry],
     /// The file of the site it is placed at.
@@ -1843,6 +1869,10 @@ impl Offering<'_>
     /// - hypothesis: L3 — as [`Manifold::judged`].
     /// - witness: `tests::manifold::a_world_s_row_is_judged_against_its_site_s_offer_3523`
     /// - witness: `tests::manifold::an_offer_is_admitted_through_a_translation_by_the_manifold_s_policy_3461`
+    ///
+    /// # Cost
+    /// - allocation: the listed and the bound entries, the offer and the
+    ///   refusals with their texts, growth within the entries of the row
     fn judged<E>(self) -> Vec<Undeployed>
     where
         E: Engine,

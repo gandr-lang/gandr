@@ -320,7 +320,7 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
                 && unlisted.contains("does not list it")
                 && store == "store"
                 && typed.contains("expected `String`, found `Integer`")
-                && nowhere.as_ref() == "nowhere"
+                && AsRef::<str>::as_ref(&**nowhere) == "nowhere"
         ),
         "an interface the offer leaves out, a label bound at other sorts, and a world the \
          program lacks are each refused by name: {refused:?}"
@@ -390,7 +390,7 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
                 && unbound.contains("binds no module to it")
                 && net == "std.net.Eff"
                 && unheld.contains("CapabilityAmplified")
-                && lost.as_ref() == "lost"
+                && AsRef::<str>::as_ref(&**lost) == "lost"
         ),
         "a row answered whole holds; a label bound at other sorts is refused naming both \
          types, an offer leaving an entry out is refused at each, an interface the site's \

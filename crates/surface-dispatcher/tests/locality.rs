@@ -69,10 +69,10 @@ fn closure(
 }
 
 /// One item of a sub-closure whose checkpoint differs from its fresh check's.
-struct Differs
+struct Differs<'roots>
 {
     /// The closure's root.
-    closure: PathBuf,
+    closure: &'roots Path,
     /// The sub-closure's root.
     sub: PathBuf,
     /// The item's ordinal in the sub-closure.
@@ -81,7 +81,7 @@ struct Differs
     how: How,
 }
 
-impl core::fmt::Display for Differs
+impl core::fmt::Display for Differs<'_>
 {
     /// How the item differs, at its ordinal in the sub-closure under the
     /// closure.
@@ -304,8 +304,8 @@ mod sweeps
         let (mut restricts, mut unkeyed) = (0_usize, 0_usize);
         let (mut items, mut keyless) = (0_usize, 0_usize);
         let mut differs = Vec::new();
-        for root in roots {
-            let Some((paths, mut whole_program, whole_sources)) = closure(&grammar, &root)
+        for root in &roots {
+            let Some((paths, mut whole_program, whole_sources)) = closure(&grammar, root)
             else {
                 continue;
             };
@@ -335,7 +335,7 @@ mod sweeps
                 };
                 pairs = pairs.saturating_add(1);
                 let differ = |ordinal: usize, how: How| Differs {
-                    closure: root.clone(),
+                    closure: root,
                     sub: sub.clone(),
                     ordinal,
                     how,

@@ -86,6 +86,7 @@ gandr-core-sequent.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-check-memo.workspace = true
 gandr-kernel-core.workspace = true
+gandr-kernel-data.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-runtime-emitter.workspace = true

@@ -23,6 +23,7 @@ publish.workspace = true
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
+gandr-kernel-data.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lowering.workspace = true

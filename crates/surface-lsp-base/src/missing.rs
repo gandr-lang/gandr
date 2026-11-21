@@ -12,12 +12,14 @@
 //! written in ([`unimported_as`]), so a name written as a type finds a family
 //! and a name written as a value finds a value or a constructor.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::ThinShared;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_syntax::SourceText;
@@ -71,7 +73,8 @@ pub const UNRESOLVED_NAME: &str = "UnresolvedName";
 /// - witness: `gandr-surface-lsp-core::search::tests::an_unresolved_name_is_offered_the_import_declaring_it`
 ///
 /// # Cost
-/// - allocation: the actions and the line index, growth within the refusals
+/// - allocation: the actions, the line index and the shared list of the
+///   diagnostics each refusal answers, growth within the refusals
 #[spec(ensures: |ret| ret.iter().all(|action| action.kind == "quickfix"
     && action.edit.changes.as_ref().is_some_and(|changes| changes.len() == 1)))]
 #[must_use]
@@ -91,7 +94,6 @@ where
     let index = LineIndex::new(written.into());
     let whole = Labeled::new(text);
     let mut offered = Vec::new();
-    let mut answered: Vec<Value> = Vec::new();
     let mut declaring: Vec<&Unimported<'_>> = Vec::new();
     for refusal in published.iter().filter(|refusal| {
         refusal.code.as_deref() == Some(UNRESOLVED_NAME) && meets(refusal.range, asked)
@@ -106,19 +108,18 @@ where
         else {
             continue;
         };
-        answered.clear();
-        answered.extend(
-            diagnostics
-                .iter()
-                .filter(|diagnostic| {
-                    diagnostic.get("code").and_then(Value::as_str) == Some(UNRESOLVED_NAME)
-                        && diagnostic
-                            .get("range")
-                            .and_then(|range| Range::deserialize(range).ok())
-                            .is_some_and(|range| meets(range, refusal.range))
-                })
-                .cloned(),
-        );
+        // Each action for this refusal answers one list, so they share it.
+        let answered: ThinShared<(), Value, Global> = diagnostics
+            .iter()
+            .filter(|diagnostic| {
+                diagnostic.get("code").and_then(Value::as_str) == Some(UNRESOLVED_NAME)
+                    && diagnostic
+                        .get("range")
+                        .and_then(|range| Range::deserialize(range).ok())
+                        .is_some_and(|range| meets(range, refusal.range))
+            })
+            .cloned()
+            .collect();
         declaring.clear();
         declaring.extend(elsewhere.sources.iter().filter(|source| {
             source.names.iter().any(|declared| {

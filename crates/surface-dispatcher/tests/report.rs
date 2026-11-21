@@ -8,6 +8,7 @@ use gandr_core_checker::bridge;
 use gandr_core_checker::check_module;
 use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
+use gandr_kernel_data::Shared;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::settle;
 use gandr_surface_dispatcher::Composed;
@@ -177,10 +178,10 @@ fn each_count_decides_its_verdict()
         kernel: quenchant_shape::shape::Maybe::Present(kernel),
         keys,
         positions: quenchant_shape::shape::Maybe::Absent(positioned::Absent::Unasked),
-        origins: module.into_origins(),
-        spellings: gandr_surface_diagnostics::TypeSpellings::default(),
-        failures: gandr_surface_diagnostics::Failures::default(),
-        locations: gandr_surface_diagnostics::Locations::default(),
+        origins: Shared::new(module.into_origins()),
+        spellings: Shared::default(),
+        failures: Shared::default(),
+        locations: Shared::default(),
         shadowed: Vec::new(),
         inferred: Vec::new(),
         runs: Vec::new(),

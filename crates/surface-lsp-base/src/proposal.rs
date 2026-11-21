@@ -379,6 +379,10 @@ pub fn applied(
 ///   elsewhere offers nothing.
 /// - witness: `gandr-surface-lsp::server::tests::kept_proposals_reach_every_editor_surface`
 /// - witness: `gandr-surface-lsp::server::tests::a_fill_that_settles_its_document_is_the_preferred_fix`
+///
+/// # Cost
+/// - allocation: the actions, their titles, their edits and their shared lists
+///   of diagnostics, growth within the proposals
 #[spec(ensures: |ret| ret.len() <= proposals.len()
     && ret.iter().all(|action| action.kind == "quickfix"
         && action.diagnostics.len() <= diagnostics.len()

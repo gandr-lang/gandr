@@ -349,6 +349,7 @@ use gandr_core_incremental::submitted;
 #[cfg(feature = "instrument")]
 use gandr_core_term::ArenaWatermark;
 use gandr_core_term::CoreArena;
+use gandr_kernel_data::Shared;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DecodedArtifact;
 use gandr_kernel_term::EncodedArtifact;
@@ -2453,7 +2454,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         let pool = Arc::<Pool>::default();
         let (parsed, _census) = forms
             .parse(&grammar, revision, &*pool)
-            .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
+            .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(Shared::new(fault))))?;
         let lowering = lower_parsed(&grammar, parsed, &mut lowerings, &mut decisions)
             .map_err(SessionFault::Compose)?;
         let (imports, snapshot, (documentation, deprecations), restored) =
@@ -2727,7 +2728,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     {
         if let Maybe::Present(admitted) = self
             .admit()
-            .map_err(|fault| SessionFault::Compose(ComposeFault::Readmission(fault)))?
+            .map_err(|fault| SessionFault::Compose(ComposeFault::Readmission(Shared::new(fault))))?
         {
             let Admitted {
                 kernel,
@@ -2737,9 +2738,10 @@ impl<Store, Blocks> Session<Store, Blocks>
                 checkpoint,
                 ..
             } = admitted;
-            submission.composed = submission
-                .composed
-                .admitted(kernel, keys, positions, &declined);
+            submission.composed =
+                submission
+                    .composed
+                    .admitted(kernel, keys, positions.map(Shared::new), &declined);
             submission.kernel = Maybe::Present(checkpoint);
         }
         Ok(submission)
@@ -3182,7 +3184,8 @@ impl<Store, Blocks> Session<Store, Blocks>
     {
         let own = SourceIndex::from(unit.sources().len().saturating_sub(1_usize));
         self.admission = Maybe::Absent(admission::Absent::Idle);
-        let parse_fault = |fault| SessionFault::Compose(ComposeFault::Parse(fault));
+        let parse_fault =
+            |fault: MeldError| SessionFault::Compose(ComposeFault::Parse(Shared::new(fault)));
         let held = slot.and_then(|slot| match self.closure_lowering(revision, unit, base) {
             Held::Lowered(lowered) => {
                 let held = slot.0.get_or_init(|| Arc::clone(&lowered));
@@ -3436,7 +3439,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 Err(fault) => {
                     return Err(SessionFault::Compose(match admission.admit() {
                         Ok(_) => ComposeFault::Settle(fault),
-                        Err(disagreement) => ComposeFault::Readmission(disagreement),
+                        Err(disagreement) => ComposeFault::Readmission(Shared::new(disagreement)),
                     }));
                 },
             };
@@ -5071,7 +5074,7 @@ where
     };
     let (parsed, census, _closure) =
         parse_held_laid(grammar, forms, candidate, laid_out, None, fork)
-            .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
+            .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(Shared::new(fault))))?;
     let lowering = match laying {
         Laying::Alone => lower_parsed(
             grammar,
@@ -5108,7 +5111,7 @@ where
             let composed = settled.map_err(|fault| {
                 SessionFault::Compose(match admission.admit() {
                     Ok(_) => ComposeFault::Settle(fault),
-                    Err(disagreement) => ComposeFault::Readmission(disagreement),
+                    Err(disagreement) => ComposeFault::Readmission(Shared::new(disagreement)),
                 })
             })?;
             (composed, Maybe::Absent(admitted::Absent::Pending))

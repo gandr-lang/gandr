@@ -310,6 +310,7 @@ digraph crates {
   "surface-dispatcher" -> "core-term";
   "surface-dispatcher" -> "kernel-check-memo";
   "surface-dispatcher" -> "kernel-core";
+  "surface-dispatcher" -> "kernel-data";
   "surface-dispatcher" -> "kernel-strata";
   "surface-dispatcher" -> "kernel-term";
   "surface-dispatcher" -> "runtime-emitter";
@@ -482,6 +483,7 @@ digraph crates {
   "surface-lsp" -> "surface-render-remote";
   "surface-lsp" -> "surface-session";
   "surface-lsp" -> "surface-syntax";
+  "surface-lsp-base" -> "kernel-data";
   "surface-lsp-base" -> "surface-diagnostics";
   "surface-lsp-base" -> "surface-grammar";
   "surface-lsp-base" -> "surface-lowering";
@@ -505,6 +507,7 @@ digraph crates {
   "surface-lsp-core" -> "surface-syntax";
   "surface-lsp-diagnostics" -> "core-fork";
   "surface-lsp-diagnostics" -> "core-incremental";
+  "surface-lsp-diagnostics" -> "kernel-data";
   "surface-lsp-diagnostics" -> "kernel-term";
   "surface-lsp-diagnostics" -> "storage-records";
   "surface-lsp-diagnostics" -> "surface-corpus";

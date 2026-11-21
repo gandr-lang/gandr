@@ -155,6 +155,7 @@ use gandr_core_term::session::Step;
 use gandr_core_term::shift_value;
 use gandr_core_term::shift_value_type_under;
 use gandr_core_term::strengthen_value_type;
+use gandr_kernel_data::Shared;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -1813,6 +1814,10 @@ impl TypeTable
     /// - witness: `typed::tests::a_declaration_refused_as_shadowing_answers_at_no_site_677`
     /// - witness: `typed::tests::a_source_refused_with_its_signature_answers_at_no_site`
     /// - witness: `typed::tests::the_table_keeps_each_source_s_own_documentation_1365`
+    ///
+    /// # Cost
+    /// - allocation: the tree and the table of types, growth within the source
+    /// - allocation: the shared fault of a parse, error path
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|table| table.entries.iter().all(|entry|
         usize::from(entry.span.end())
             <= <&str>::from(source).len().saturating_sub(usize::from(base))))
@@ -1825,7 +1830,8 @@ impl TypeTable
         base: ByteOffset,
     ) -> Result<Self, ComposeFault<'source>>
     {
-        let parsed = parse(grammar, source).map_err(ComposeFault::Parse)?;
+        let parsed =
+            parse(grammar, source).map_err(|fault| ComposeFault::Parse(Shared::new(fault)))?;
         Self::of_parsed_unit(grammar, parsed, unit, base)
     }
 

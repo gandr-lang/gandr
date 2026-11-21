@@ -464,17 +464,19 @@ fn a_source_given_twice_answers_twice_from_one_judgement()
             "walk/fixtures/a-source-given-twice-answers-twice-from-one-judgement.gandr"
         )),
     );
-    let [base, importer] =
-        ["base.gandr", "importer.gandr"].map(|file| scratch.0.join("fixture").join(file));
-    let paths = vec![
-        importer.clone(),
-        base.clone(),
-        importer.clone(),
-        base.clone(),
-    ];
+    // The walk owns the paths it is given, so each pass builds its own.
+    let fixture = |file: &str| scratch.0.join("fixture").join(file);
     for width in core::iter::once(Width::SERIAL).chain(widths()) {
-        let (_, once) = visited(&scratch.0, vec![importer.clone(), base.clone()], width);
-        let (seen, report) = visited(&scratch.0, paths.clone(), width);
+        let once = ["importer.gandr", "base.gandr"].map(fixture);
+        let (_, once) = visited(&scratch.0, Vec::from(once), width);
+        let twice = [
+            "importer.gandr",
+            "base.gandr",
+            "importer.gandr",
+            "base.gandr",
+        ]
+        .map(fixture);
+        let (seen, report) = visited(&scratch.0, Vec::from(twice), width);
         assert_eq!(
             seen,
             rows(&[

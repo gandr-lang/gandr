@@ -2183,7 +2183,7 @@ mod sweeps
         let mut minted: BTreeMap<Sort, usize> = BTreeMap::new();
         let mut refused: BTreeMap<seating::Absent, usize> = BTreeMap::new();
         let mut differing = Vec::new();
-        for source in visited {
+        for source in &visited {
             let Some(mut checked) = lowered_program(&grammar, &source.path)
             else {
                 continue;
@@ -2196,6 +2196,7 @@ mod sweeps
             for item in resume.checkpoints().items() {
                 items = items.saturating_add(1);
                 let content = item.content();
+                let mut roots = Vec::new();
                 for (root, sort) in content.declaration().iter() {
                     let table = content.rooted(root);
                     match gandr_core_incremental::mint_in(&table, &mut fresh) {
@@ -2203,11 +2204,7 @@ mod sweeps
                             let count = minted.entry(sort).or_default();
                             *count = count.saturating_add(1);
                             if gandr_core_incremental::of_node(&fresh, node) != table {
-                                differing.push((
-                                    source.path.clone(),
-                                    content.reference().clone(),
-                                    root,
-                                ));
+                                roots.push(root);
                             }
                         },
                         Maybe::Absent(reason) => {
@@ -2215,6 +2212,9 @@ mod sweeps
                             *count = count.saturating_add(1);
                         },
                     }
+                }
+                if !roots.is_empty() {
+                    differing.push((source.path.as_path(), content.reference().clone(), roots));
                 }
             }
         }
@@ -2337,7 +2337,7 @@ mod sweeps
         let mut minted: BTreeMap<&str, usize> = BTreeMap::new();
         let mut unseated: BTreeMap<seating::Absent, usize> = BTreeMap::new();
         let mut differing = Vec::new();
-        for source in visited {
+        for source in &visited {
             let path = source.path.as_path();
             let own = std::fs::read_to_string(path).expect("a corpus source reads");
             let root = classify(path);
@@ -2416,7 +2416,7 @@ mod sweeps
                 if judged == Some(Entered::Elaborated) {
                     whole = whole.saturating_add(1);
                     if item.entered() == Entered::AsWritten {
-                        apart.push((source.path.clone(), reference.clone()));
+                        apart.push((path, reference.clone()));
                     }
                 }
                 if item.entered() == Entered::AsWritten {
@@ -2430,7 +2430,7 @@ mod sweeps
                         continue;
                     },
                     Maybe::Absent(elaborated::Absent::AsWritten) => {
-                        differing.push((source.path.clone(), reference, "no parts kept"));
+                        differing.push((path, reference, "no parts kept"));
                         continue;
                     },
                 };
@@ -2448,7 +2448,7 @@ mod sweeps
                 if let Some(ref read) = read
                     && read.items().get(ordinal).map(|back| back.entry()) != Some(item.entry())
                 {
-                    differing.push((source.path.clone(), reference.clone(), "read back"));
+                    differing.push((path, reference.clone(), "read back"));
                 }
                 let seated = match entry.seat_in(&mut fresh) {
                     Maybe::Present(seated) => seated,
@@ -2474,7 +2474,7 @@ mod sweeps
                     let count = minted.entry(part).or_default();
                     *count = count.saturating_add(1);
                     if gandr_core_incremental::of_node(&fresh, node) != *content {
-                        differing.push((source.path.clone(), reference.clone(), part));
+                        differing.push((path, reference.clone(), part));
                     }
                 }
             }
@@ -2874,7 +2874,7 @@ mod sweeps
         let mut compared = 0_usize;
         let mut refused_by_the_pass = Vec::new();
         let mut admitted_by_the_pass = Vec::new();
-        for source in visited {
+        for source in &visited {
             let path = source.path.as_path();
             let own = std::fs::read_to_string(path).expect("a corpus source reads");
             let root = classify(path);
@@ -2936,13 +2936,13 @@ mod sweeps
                 if refused.contains(&constant) {
                     compared = compared.saturating_add(1);
                     if !pass_refuses {
-                        admitted_by_the_pass.push((source.path.clone(), constant));
+                        admitted_by_the_pass.push((source.path.as_path(), constant));
                     }
                 }
                 else if admitted.contains(&constant) {
                     compared = compared.saturating_add(1);
                     if pass_refuses {
-                        refused_by_the_pass.push((source.path.clone(), constant));
+                        refused_by_the_pass.push((source.path.as_path(), constant));
                     }
                 }
             }

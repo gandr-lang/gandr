@@ -18,12 +18,14 @@
 
 extern crate alloc;
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use std::io::Write as _;
 use std::path::Path;
 use std::path::PathBuf;
 
+use gandr_kernel_data::Shared;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::RuleName;
@@ -74,8 +76,9 @@ impl core::fmt::Debug for Failure
 #[derive(Clone, Debug)]
 struct Seed
 {
-    /// Where it was cut from, as `path:line`.
-    origin: String,
+    /// Where it was cut from, as `path:line`, shared by each seed of the
+    /// form.
+    origin: Shared<String, Global>,
     /// The text.
     text: String,
 }
@@ -173,7 +176,7 @@ fn written(
         .map_err(|error| Failure::Io(directory.to_path_buf(), error))?;
     for (key, seed) in seeds {
         let path = directory.join(format!("{key}.gandr"));
-        let text = format!("// seed: {}\n{}\n", seed.origin, seed.text);
+        let text = format!("// seed: {}\n{}\n", *seed.origin, seed.text);
         std::fs::write(&path, text).map_err(|error| Failure::Io(path, error))?;
     }
     Ok(())
@@ -200,7 +203,6 @@ fn main() -> Result<(), Failure>
     let mut syntax: BTreeMap<String, Seed> = BTreeMap::new();
     let mut attributes: BTreeMap<String, Seed> = BTreeMap::new();
     let mut skipped = 0_usize;
-    let mut origin = String::new();
     for path in sources(&corpus)? {
         let text =
             std::fs::read_to_string(&path).map_err(|error| Failure::Io(path.clone(), error))?;
@@ -225,10 +227,7 @@ fn main() -> Result<(), Failure>
                 .get(.. start)
                 .map_or(0, |before| before.matches('\n').count())
                 .saturating_add(1);
-            origin.clear();
-            // Formatting into a `String` cannot fail.
-            let _written =
-                core::fmt::Write::write_fmt(&mut origin, format_args!("{}:{line}", path.display()));
+            let origin = Shared::new(format!("{}:{line}", path.display()));
             let form_text = <&str>::from(fragment);
             for rule in rules_under(&pbg, tree, form) {
                 Seed::keep(&mut syntax, rule.0.to_owned(), Seed {
