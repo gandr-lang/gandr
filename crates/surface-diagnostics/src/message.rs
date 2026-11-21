@@ -297,8 +297,8 @@ fn lowered(
             StagedFault::Unread(_) => "the reader gives no body for the function",
             StagedFault::Outside(_) => "the staged body is outside the fragment",
             StagedFault::NotExpr => "the type of a staged signature is no `Expr` of an item type",
-            StagedFault::Unmapped { .. } => "a staged call names a path that the item mark does not state",
-            StagedFault::ItemMark => "a text of the item mark names no path and constructor of the type",
+            StagedFault::Unmapped { .. } => "a staged call names a path that no item mark states",
+            StagedFault::ItemMark => "an item mark states no path, or a path of another constructor",
         }),
         LoweringRefusal::UnresolvedDocLink { name, .. } => {
             write!(
@@ -631,6 +631,9 @@ fn lowered(
             written,
             ..
         } => write!(f, "the attribute `{name}` takes {expected}, not {written}"),
+        LoweringRefusal::MisplacedAttribute {
+            name, place, takes, ..
+        } => write!(f, "the attribute `{name}` stands on {takes}, not on {place}"),
         LoweringRefusal::ForwardMemberReference { name, .. } => {
             write!(f, "the member `{name}` is used before it is declared")
         },
@@ -1825,6 +1828,7 @@ pub mod tests
     use gandr_surface_corpus::RefusalName;
     use gandr_surface_corpus::RefusalOf;
     use gandr_surface_lowering::AscriptionForm;
+    use gandr_surface_lowering::AttributePlace;
     use gandr_surface_lowering::AttributeRegistry;
     use gandr_surface_lowering::AttributeSchema;
     use gandr_surface_lowering::CandidateCount;
@@ -2086,6 +2090,12 @@ pub mod tests
                 name: registered,
                 expected: AttributeSchema::Integer,
                 written: PayloadForm::Text,
+            },
+            LoweringRefusal::MisplacedAttribute {
+                span,
+                name: registered,
+                place: AttributePlace::Declaration,
+                takes: AttributePlace::Constructor,
             },
             LoweringRefusal::ForwardMemberReference {
                 span,

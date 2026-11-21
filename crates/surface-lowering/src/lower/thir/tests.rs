@@ -112,11 +112,59 @@ fn a_staged_body_lowers_to_its_constructors_8117()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// #8119: an attribute block before a constructor arm stands on that
+/// constructor, after the arm's doc or before it. A staged call reads as the
+/// constructor whose mark states its path, and an arm with no mark keeps its
+/// type.
+#[test]
+fn an_attribute_before_a_constructor_arm_stands_on_it_8119()
+{
+    let at = NodeIndex::from;
+    let call = |callee: &str, argument| Node::Call {
+        callee: callee.into(),
+        argument,
+    };
+    let text = include_str!(
+        "tests/unformatted/an-attribute-before-a-constructor-arm-stands-on-it-8119.gandr"
+    );
+    let unit = homed(Vec::from([Staged {
+        file: Arc::from("a.rs"),
+        function: "both".into(),
+        staging: Ok(Staging::Staged(Body {
+            nodes: Vec::from([
+                Node::Parameter,
+                call("example", at(0_u32)),
+                call("identity", at(1_u32)),
+                Node::Return(at(2_u32)),
+            ]),
+        })),
+    }]));
+    let mut arena = CoreArena::new();
+    let module = preluded(SourceText::from(text), &unit, &mut arena);
+    assert!(
+        matches!(
+            outcome_of(&module, SurfaceName::from("staged")),
+            DeclarationOutcome::Completed { .. }
+        ),
+        "`staged` reads each call through the mark of its constructor"
+    );
+    assert_eq!(
+        equal_certificate_syntax(
+            &arena,
+            body_named(&module, SurfaceName::from("staged")),
+            body_named(&module, SurfaceName::from("written")),
+        ),
+        CertificateEquality::Equal,
+        "the staged body is the body written by hand"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// #8117: each fault of a `thir` mark is refused by name at the mark. The
 /// signature has a body; no staged answer matches the mark; no reader is
 /// installed; the reader read no body; the body is outside the fragment; the
-/// type is no `Expr`; a call names a path that the item mark does not state;
-/// the item mark names no constructor of its type.
+/// type is no `Expr`; a call names a path that no item mark states; two
+/// item marks state one path.
 #[test]
 fn each_fault_of_a_thir_mark_is_refused_by_name_8117()
 {

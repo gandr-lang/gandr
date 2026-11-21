@@ -176,7 +176,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             StagedFault::Unread(_) => "a function that the reader does not read",
             StagedFault::Outside(_) => "a body outside the fragment",
             StagedFault::NotExpr => "a type that is no `Expr`",
-            StagedFault::Unmapped { .. } => "a call that the item mark does not map",
+            StagedFault::Unmapped { .. } => "a call that no item mark maps",
             StagedFault::ItemMark => "an item mark of the wrong shape",
         },
         LoweringRefusal::UnresolvedDocLink { .. } => "links to no declared name",
@@ -290,6 +290,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::MissingPayload { .. } => "takes a payload",
         LoweringRefusal::NonValuePayload { .. } => "a payload that is not a value",
         LoweringRefusal::IllTypedPayload { .. } => "a payload of another schema",
+        LoweringRefusal::MisplacedAttribute { .. } => "an attribute at another place",
         LoweringRefusal::ForwardMemberReference { .. } => "named before it is declared",
         LoweringRefusal::PhaseDependence { .. } => "a value a type depends on",
         LoweringRefusal::InertRead { .. } => "an inert read",
@@ -665,6 +666,7 @@ mod tests
 {
     use gandr_surface_corpus::Refusal;
     use gandr_surface_lowering::AscriptionForm;
+    use gandr_surface_lowering::AttributePlace;
     use gandr_surface_lowering::AttributeSchema;
     use gandr_surface_lowering::BuiltinFault;
     use gandr_surface_lowering::CandidateCount;
@@ -769,7 +771,7 @@ mod tests
                 StagedFault::Unread(_) => "a function that the reader does not read",
                 StagedFault::Outside(_) => "a body outside the fragment",
                 StagedFault::NotExpr => "a type that is no `Expr`",
-                StagedFault::Unmapped { .. } => "a call that the item mark does not map",
+                StagedFault::Unmapped { .. } => "a call that no item mark maps",
                 StagedFault::ItemMark => "an item mark of the wrong shape",
             },
             LoweringRefusal::UnresolvedDocLink { .. } => "links to no declared name",
@@ -893,6 +895,7 @@ mod tests
             LoweringRefusal::MissingPayload { .. } => "takes a payload",
             LoweringRefusal::NonValuePayload { .. } => "a payload that is not a value",
             LoweringRefusal::IllTypedPayload { .. } => "a payload of another schema",
+            LoweringRefusal::MisplacedAttribute { .. } => "an attribute at another place",
             LoweringRefusal::ForwardMemberReference { .. } => "named before it is declared",
             LoweringRefusal::PhaseDependence { .. } => "a value a type depends on",
             LoweringRefusal::InertRead { .. } => "an inert read",
@@ -1170,6 +1173,12 @@ mod tests
                 name: RegisteredAttribute::DOC,
                 expected: AttributeSchema::Marker,
                 written: PayloadForm::Integer,
+            },
+            LoweringRefusal::MisplacedAttribute {
+                span: at,
+                name: RegisteredAttribute::ITEM,
+                place: AttributePlace::Declaration,
+                takes: AttributePlace::Constructor,
             },
             LoweringRefusal::ForwardMemberReference {
                 span: at,

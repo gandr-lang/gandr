@@ -144,7 +144,8 @@ pub fn digest(text: Text<'_>) -> String
 /// The members of a `module` or `rec` block are items judged the same way,
 /// and the members of a `data`, `codata` or `theory` block (a constructor,
 /// an observation, a sort, an operation, a rule) are commented by a comment
-/// immediately before them. A member's line is `file:block.member:digest`,
+/// immediately before them or before the attribute block that leads them. A
+/// member's line is `file:block.member:digest`,
 /// the block named by its path from the top level.
 ///
 /// # Specification
@@ -178,6 +179,7 @@ pub fn digest(text: Text<'_>) -> String
 /// - witness: `tests::comments::judge::tests::a_body_inherits_its_signatures_comment`
 /// - witness: `tests::comments::judge::tests::the_key_is_the_items_content`
 /// - witness: `tests::comments::judge::tests::every_tile_member_owes_its_own_comment`
+/// - witness: `tests::comments::judge::tests::a_comment_before_an_arms_attribute_block_comments_the_arm_8119`
 /// - witness: `tests::comments::judge::tests::every_item_member_owes_its_own_comment`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|finding| finding.line.starts_with(file.0) && finding.line.contains(':'))))]
 #[inline]
@@ -597,7 +599,9 @@ impl Walk<'_, '_>
     /// opening the next member; a member a bar opens also ends before an
     /// `oper`, `op` or `rule`, which writes no bar. The bar is no part of the
     /// member it opens, and a comment after the last tile of the member before
-    /// it comments the member after it.
+    /// it comments the member after it. An attribute block stands before the
+    /// member after it: it ends a member that a bar opened, the bar after it
+    /// opens no new member, and a comment before it comments that member.
     ///
     /// # Specification
     /// trivial.
@@ -612,6 +616,8 @@ impl Walk<'_, '_>
         let mut member: Vec<NodeIndex> = Vec::new();
         let mut commented = false;
         let mut barred = false;
+        // Whether the member so far is attribute blocks alone.
+        let mut leading = false;
         let mut depth = 0_usize;
         for &child in body {
             let Some(node) = self.tree.node(child)
@@ -626,12 +632,22 @@ impl Walk<'_, '_>
                 continue;
             }
             let label = self.tile_label(child)?.map(|held| held.0);
-            let opens = label == Some("arm_bar");
-            if depth == 0 && (opens || barred && matches!(label, Some("oper" | "op" | "rule"))) {
-                if !member.is_empty() && !commented {
+            let attribute = depth == 0 && self.attribute_block(child)?.0;
+            if attribute && barred && !member.is_empty() && !leading {
+                if !commented {
                     self.tile_member(&member, block, found)?;
                 }
                 member.clear();
+                barred = false;
+            }
+            let opens = label == Some("arm_bar");
+            if depth == 0 && (opens || barred && matches!(label, Some("oper" | "op" | "rule"))) {
+                if !leading || member.is_empty() {
+                    if !member.is_empty() && !commented {
+                        self.tile_member(&member, block, found)?;
+                    }
+                    member.clear();
+                }
                 barred = opens;
                 if opens {
                     continue;
@@ -639,13 +655,20 @@ impl Walk<'_, '_>
             }
             if member.is_empty() {
                 let start = usize::from(node.span().start());
-                commented = comment_end.is_some_and(|end| {
-                    !blank(self.source, Span {
-                        start: end,
-                        end: start,
-                    })
-                    .0
-                });
+                // A comment before an attribute block is the block's own
+                // first child, as it is an item's.
+                commented = attribute && self.leading(child).0
+                    || comment_end.is_some_and(|end| {
+                        !blank(self.source, Span {
+                            start: end,
+                            end: start,
+                        })
+                        .0
+                    });
+                leading = attribute;
+            }
+            else {
+                leading = leading && attribute;
             }
             comment_end = None;
             member.push(child);
@@ -673,6 +696,27 @@ impl Walk<'_, '_>
             self.tile_member(&member, block, found)?;
         }
         Ok(())
+    }
+
+    /// Whether the node at `at` is an attribute block.
+    ///
+    /// # Specification
+    /// trivial.
+    fn attribute_block(
+        &self,
+        at: NodeIndex,
+    ) -> Result<Yes, CommentError>
+    {
+        let Some(NodeLabel::Meld(mold) | NodeLabel::Tile(mold)) =
+            self.tree.node(at).map(gandr_surface_syntax::Node::label)
+        else {
+            return Ok(Yes(false));
+        };
+        let kind = self
+            .pbg
+            .named_kind(mold)
+            .map_err(|error| self.unresolved(error.to_string()))?;
+        Ok(Yes(kind.0 == "attribute_block"))
     }
 
     /// The finding of the uncommented member of `block` whose nodes are
@@ -1233,6 +1277,19 @@ mod tests
             owed, expected,
             "a module's members are items named under it, by their own name and text rather \
              than their attribute's, and a block inside a block names its members by the path"
+        );
+    }
+
+    /// #8119: an attribute block before a constructor arm leads that arm. A
+    /// comment before the block comments the arm, and the block ends the arm
+    /// before it.
+    #[test]
+    fn a_comment_before_an_arms_attribute_block_comments_the_arm_8119()
+    {
+        assert_eq!(
+            lines(Text(include_str!("judge/fixtures/arm-attributes.gandr"))),
+            [key(Text("Item.Two"), Text("@[item(\"two\")] | Two : Item"))],
+            "an arm owes a comment before its attribute block, and the block is no member"
         );
     }
 }

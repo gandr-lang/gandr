@@ -240,6 +240,7 @@ use crate::module::Payload;
 use crate::module::ReceiverMode;
 use crate::module::SealedComponent;
 use crate::module::SlotIndex;
+use crate::module::Standing;
 use crate::module::Stratum;
 use crate::module::StructureIndex;
 use crate::module::TERMS;
@@ -19223,6 +19224,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// # Errors
     /// As [`Self::attribute`].
     ///
+    /// # Cost
+    /// - allocation: the name, span and standing of each attribute in a
+    ///   module's seen list, growth within the module's attributes
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a decorated module of two members and an undecorated
     ///   declaration after it, the attribute reaching the members only; a
@@ -19250,7 +19255,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         arena: &CoreArena,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let mut seen: Vec<(RegisteredAttribute, ByteSpan)> = Vec::new();
+        let mut seen: Vec<(RegisteredAttribute, ByteSpan, Standing)> = Vec::new();
         for module in decorated {
             seen.clear();
             for written in &module.attributes {
@@ -19311,6 +19316,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// # Errors
     /// As [`Self::attribute`].
     ///
+    /// # Cost
+    /// - allocation: the name, span and standing of each attribute in a slot's
+    ///   seen list, growth within the slot's attributes
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — each written attribute spends one step, successful
     ///   entries append under their declaration key, and schema errors do not
@@ -19350,7 +19359,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         arena: &CoreArena,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let mut seen: Vec<(RegisteredAttribute, ByteSpan)> = Vec::new();
+        let mut seen: Vec<(RegisteredAttribute, ByteSpan, Standing)> = Vec::new();
         for (index, slot) in slots.iter_mut().enumerate() {
             seen.clear();
             for written in core::mem::take(&mut slot.attributes) {
@@ -19932,10 +19941,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - provides: the per-attribute half of the attribute pass.
     /// - fails: yields the retired-spelling refusal for the attribute `native`
     ///   and for a `builtin` mark whose payload is a bare word, the
-    ///   unknown-attribute refusal with its bounded suggestion, the duplicate
-    ///   refusal naming the first spelling for a name other than `traces`
-    ///   written again, the non-value-payload refusal, the missing-payload
-    ///   refusal, or the ill-typed-payload refusal.
+    ///   unknown-attribute refusal with its bounded suggestion, the
+    ///   misplaced-attribute refusal for a name at a place the registry does
+    ///   not let it stand, the duplicate refusal naming the first spelling for
+    ///   a name other than `traces` written again at one standing, the
+    ///   non-value-payload refusal, the missing-payload refusal, or the
+    ///   ill-typed-payload refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -19951,10 +19962,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a filed entry adds exactly one recognized name and
-    ///   keeps its schema, payload and span; duplicate, unknown and ill-typed
-    ///   attributes leave the per-declaration seen list unchanged.
+    ///   keeps its schema, payload and span; duplicate, unknown, misplaced and
+    ///   ill-typed attributes leave the per-declaration seen list unchanged.
     /// - witness: `gandr-surface-lowering::lower::tests::an_attribute_written_twice_for_one_name_is_refused`
     /// - witness: `gandr-surface-lowering::lower::tests::an_unknown_attribute_is_refused_with_its_suggestion`
+    /// - witness: `gandr-surface-lowering::lower::tests::an_attribute_at_another_place_is_refused_by_name_and_place_8119`
     /// - witness: `gandr-surface-lowering::lower::tests::a_payload_of_the_wrong_form_is_refused`
     /// - witness: `gandr-surface-lowering::lower::tests::a_form_payload_is_read_as_one_of_its_words`
     /// - witness: `gandr-surface-lowering::lower::tests::an_attribute_is_filed_under_its_declaration_key`
@@ -19968,7 +19980,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
         ensures: |ret| match ret.as_ref() {
             | Ok(&Filing::Filed { ref entry, ref named, ref members, ref spelled }) => {
                 seen.len() == before.saturating_add(1_usize)
-                    && seen.last() == Some(&(entry.name(), written.span))
+                    && seen.last() == Some(&(entry.name(), written.span, written.standing))
                     && entry.span() == written.span
                     && AttributeRegistry::lookup(written.name)
                         == Maybe::Present((entry.name(), entry.schema()))
@@ -20003,7 +20015,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     fn read_attribute(
         &self,
         written: &WrittenAttribute<'source>,
-        seen: &mut Vec<(RegisteredAttribute, ByteSpan)>,
+        seen: &mut Vec<(RegisteredAttribute, ByteSpan, Standing)>,
         arena: &CoreArena,
     ) -> Result<Filing, LoweringRefusal<'source>>
     {
@@ -20022,11 +20034,22 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                 suggestion: AttributeRegistry::suggestion(written.name),
             });
         };
-        // `traces` states one channel an entry, so it alone is written again.
-        if let Some(&(_held, first)) = seen
-            .iter()
-            .find(|&&(held, _first)| held == name && name != RegisteredAttribute::TRACES)
+        if let Maybe::Present(takes) =
+            AttributeRegistry::places(name).refusing(written.standing.place())
         {
+            return Err(LoweringRefusal::MisplacedAttribute {
+                span: written.span,
+                name,
+                place: written.standing.place(),
+                takes,
+            });
+        }
+        // `traces` states one channel an entry, so it alone is written again.
+        // Each constructor holds its own attributes, so one name on two
+        // constructors is no repeat.
+        if let Some(&(_held, first, _standing)) = seen.iter().find(|&&(held, _first, standing)| {
+            held == name && standing == written.standing && name != RegisteredAttribute::TRACES
+        }) {
             return Err(LoweringRefusal::DuplicateAttribute {
                 span: written.span,
                 name: written.name,
@@ -20183,7 +20206,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                 (Maybe::Present(value), named, members)
             },
         };
-        seen.push((name, written.span));
+        seen.push((name, written.span, written.standing));
 
         Ok(Filing::Filed {
             entry: AttributeEntry::new(name, schema, value, written.span),

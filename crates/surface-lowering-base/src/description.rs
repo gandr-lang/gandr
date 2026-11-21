@@ -1363,7 +1363,8 @@ impl Reader<'_, '_>
         Ok(read.pieces)
     }
 
-    /// `member` past the attribute blocks written before it.
+    /// `member` without the attribute blocks written before it, and without
+    /// those at its end, which stand before the next member.
     ///
     /// # Specification
     /// trivial.
@@ -1372,25 +1373,27 @@ impl Reader<'_, '_>
         member: &'member [Piece],
     ) -> &'member [Piece]
     {
-        let unattributed = member
-            .iter()
-            .position(|piece| {
-                let &Piece::Operand(operand) = piece
-                else {
-                    return true;
-                };
-                !self.tree.node(operand.node).is_some_and(|node| {
-                    matches!(
-                        shape_of(self.grammar, node),
-                        Ok(Shape::Form {
-                            former: crate::form::Former::AttributeBlock,
-                            ..
-                        })
-                    )
-                })
+        let written = |piece: &Piece| {
+            let &Piece::Operand(operand) = piece
+            else {
+                return true;
+            };
+            !self.tree.node(operand.node).is_some_and(|node| {
+                matches!(
+                    shape_of(self.grammar, node),
+                    Ok(Shape::Form {
+                        former: crate::form::Former::AttributeBlock,
+                        ..
+                    })
+                )
             })
-            .unwrap_or(member.len());
-        member.get(unattributed ..).unwrap_or_default()
+        };
+        let start = member.iter().position(written).unwrap_or(member.len());
+        let end = member
+            .iter()
+            .rposition(written)
+            .map_or(start, |last| last.saturating_add(1_usize));
+        member.get(start .. end).unwrap_or_default()
     }
 
     /// Read a family head and every member independently.

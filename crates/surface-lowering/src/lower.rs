@@ -8399,6 +8399,55 @@ mod tests
         );
     }
 
+    /// #8119: an attribute at a place that the registry does not let it
+    /// stand is refused by its name, its place and the place it takes. The
+    /// mark `item` before a definition stands on a declaration, and
+    /// `deprecated` before the second arm stands on a constructor.
+    #[test]
+    fn an_attribute_at_another_place_is_refused_by_name_and_place_8119()
+    {
+        use crate::attribute::AttributePlace;
+        for (text, name, written, place, takes) in [
+            (
+                include_str!("lower/fixtures/an-item-mark-on-a-definition-is-refused-8119.gandr"),
+                "item",
+                "item(\"identity\")",
+                AttributePlace::Declaration,
+                AttributePlace::Constructor,
+            ),
+            (
+                include_str!(
+                    "lower/fixtures/a-declaration-attribute-before-an-arm-is-refused-8119.gandr"
+                ),
+                "deprecated",
+                "deprecated",
+                AttributePlace::Constructor,
+                AttributePlace::Declaration,
+            ),
+        ] {
+            let start = text.find(written).unwrap_or_default();
+            let refused = refusal(SourceText::from(text));
+            assert_eq!(
+                refused,
+                LoweringRefusal::MisplacedAttribute {
+                    span: span(
+                        ByteOffset::from(start),
+                        ByteOffset::from(start.saturating_add(written.len()))
+                    ),
+                    name: registered(SurfaceName::from(name)),
+                    place,
+                    takes,
+                },
+                "`{name}` at {place} is refused by its place"
+            );
+            assert_eq!(
+                refused.classify(),
+                FailureClass::MalformedSource,
+                "a misplaced attribute is the author's mistake"
+            );
+        }
+    }
+
     #[test]
     fn a_schema_taking_a_payload_refuses_an_absent_one()
     {

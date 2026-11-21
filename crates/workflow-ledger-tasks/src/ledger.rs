@@ -151,6 +151,7 @@ use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::Sym;
 use gandr_surface_grammar::TREE_SITTER_NAMED_KINDS;
 use gandr_surface_grammar::built_in;
+use gandr_surface_lowering::AttributePlaces;
 use gandr_surface_lowering::AttributeRegistry;
 use gandr_surface_lowering::AttributeSchema;
 use gandr_surface_lowering::DeclarationOutcome;
@@ -636,6 +637,8 @@ struct AttributeRow
     name: String,
     /// The payload its schema admits.
     schema: AttributeSchema,
+    /// The places where it stands.
+    places: AttributePlaces,
 }
 
 /// One old spelling, as the ledger reads it off an adaptation record: one
@@ -782,9 +785,10 @@ impl SyntaxLedger
             .map(|registered| {
                 let name = registered.as_ref();
                 match AttributeRegistry::lookup(SurfaceName::from(name)) {
-                    Maybe::Present((_, schema)) => Ok(AttributeRow {
+                    Maybe::Present((registered, schema)) => Ok(AttributeRow {
                         name: name.to_owned(),
                         schema,
+                        places: AttributeRegistry::places(registered),
                     }),
                     Maybe::Absent(_) => Err(LedgerFault::Attribute {
                         name: name.to_owned(),
@@ -1035,14 +1039,15 @@ impl SyntaxLedger
             count: self.attributes.len(),
             noun: "attribute"
         })?;
-        out.push_str("Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes, linking its exemplar, which the exemplar gate lowers and checks the attribute is filed.\n\n");
-        out.push_str("| Attribute | Payload |\n");
-        out.push_str("| --------- | ------- |\n");
+        out.push_str("Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes and the places where it stands, linking its exemplar, which the exemplar gate lowers and checks the attribute is filed.\n\n");
+        out.push_str("| Attribute | Payload | Stands on |\n");
+        out.push_str("| --------- | ------- | --------- |\n");
         for row in &self.attributes {
             writeln!(
                 out,
-                "| [`{name}`](../corpus/ledger/attributes/{name}.gandr) | {} |",
+                "| [`{name}`](../corpus/ledger/attributes/{name}.gandr) | {} | {} |",
                 row.schema,
+                row.places,
                 name = row.name
             )?;
         }
@@ -1446,6 +1451,10 @@ fn rule_json(row: &RuleRow) -> Value
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the JSON object of the row, its payload and its texts, growth
+///   within the registry's attributes
 fn attribute_json(row: &AttributeRow) -> Value
 {
     let payload = match row.schema {
@@ -1466,6 +1475,7 @@ fn attribute_json(row: &AttributeRow) -> Value
         "name": row.name,
         "payload": payload,
         "reads": row.schema.to_string(),
+        "stands_on": row.places.to_string(),
         "exemplar": format!("../corpus/ledger/attributes/{}.gandr", row.name),
     })
 }

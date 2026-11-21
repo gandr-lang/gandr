@@ -448,6 +448,8 @@ use gandr_surface_lowering_base::written_import;
 pub use gandr_theory_levitation::WfKind;
 
 pub use crate::attribute::AttributeEntry;
+pub use crate::attribute::AttributePlace;
+pub use crate::attribute::AttributePlaces;
 pub use crate::attribute::AttributeRegistry;
 pub use crate::attribute::AttributeSchema;
 pub use crate::attribute::AttributeTable;

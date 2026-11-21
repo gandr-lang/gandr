@@ -1273,6 +1273,39 @@ pub struct WrittenAttribute<'source>
     pub key: Option<Placed>,
     /// The declaration form the attribute decorates.
     pub decorates: NodeIndex,
+    /// Where the attribute stands: before the declaration, or before one of
+    /// its constructor arms.
+    pub standing: Standing,
+}
+
+/// Where a written attribute stands.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Standing
+{
+    /// Before the declaration that it decorates.
+    Declaration,
+    /// Before the constructor arm whose name tile this is.
+    Constructor(Placed),
+}
+
+impl Standing
+{
+    /// The place of the registry that this standing is.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn place(self) -> crate::attribute::AttributePlace
+    {
+        match self {
+            Self::Declaration => crate::attribute::AttributePlace::Declaration,
+            Self::Constructor(_) => crate::attribute::AttributePlace::Constructor,
+        }
+    }
 }
 
 /// One piece of documentation a declaration form wrote before itself: a run
@@ -5209,9 +5242,11 @@ impl<'source> Collector<'_, 'source>
     ///   report order, introduced by the attribute block written before the
     ///   member the diagnostic lies in when one is, the first such slot of a
     ///   member holding that block's attributes; nothing for a child the
-    ///   description route did not describe. An attribute block before a member
-    ///   no held slot reads refuses the family's own slot as a misplaced tile
-    ///   at the block.
+    ///   description route did not describe. An attribute block before a
+    ///   constructor arm that no held slot reads is read into the family's own
+    ///   slot, each attribute standing on that constructor; a block before any
+    ///   other member that no held slot reads refuses the family's own slot as
+    ///   a misplaced tile at the block.
     /// - provides: member-local refusal beside native admission: a declined
     ///   member leaves its family and its siblings standing, a family whose
     ///   rules part is refused whole, a fault both readings see — a generator
@@ -5227,12 +5262,18 @@ impl<'source> Collector<'_, 'source>
     ///   after it lowers; an unended data or codata family is refused once, at
     ///   its missing close, whatever its members would refuse; a family two of
     ///   whose rules rewrite one term apart is refused under its own name; a
-    ///   held rule reads the attribute block before it, and a block before a
-    ///   member that is not held apart refuses the family.
+    ///   held rule reads the attribute block before it, a block before a
+    ///   constructor arm stands on that constructor, and a block before a
+    ///   member that is neither refuses the family.
     /// - witness: `gandr-surface-lowering::tests::description::member_refusals_keep_their_spans_and_other_declarations`
     /// - witness: `gandr-surface-lowering::tests::description::an_unended_family_is_refused_once_at_its_close`
     /// - witness: `gandr-surface-lowering::tests::coincide::two_rules_rewriting_one_term_apart_refuse_the_block`
     /// - witness: `gandr-surface-lowering::tests::description::a_held_member_states_its_own_expectation_1462`
+    /// - witness: `gandr-surface-lowering::lower::thir::tests::an_attribute_before_a_constructor_arm_stands_on_it_8119`
+    ///
+    /// # Cost
+    /// - allocation: the attributes before the constructor arms, durable by the
+    ///   slot
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() >= before,
@@ -5248,14 +5289,36 @@ impl<'source> Collector<'_, 'source>
             .remove(&child.node)
             .unwrap_or_default();
         self.hold_members(child, &mut members);
-        let unread = members
-            .iter()
-            .find_map(|member| member.blocks.first().copied());
-        if let Some(block) = unread
-            && let Maybe::Present(owner) = self.collected.owner_of(child.node)
-            && let Some(slot) = self.collected.slots.get_mut(usize::from(owner))
-        {
-            slot.refuse(block.node, misplaced_in(FormName::DATA, block.span));
+        let Maybe::Present(owner) = self.collected.owner_of(child.node)
+        else {
+            return;
+        };
+        let mut marks = Vec::new();
+        let mut refused = None;
+        for member in &members {
+            let Some(&block) = member.blocks.first()
+            else {
+                continue;
+            };
+            let Maybe::Present(constructor) = member.constructor
+            else {
+                refused = refused
+                    .or_else(|| Some((block.node, misplaced_in(FormName::DATA, block.span))));
+                continue;
+            };
+            let start = marks.len();
+            if let Err(fault) = self.decorations(&member.blocks, child.node, &mut marks) {
+                refused = refused.or(Some(fault));
+            }
+            for mark in marks.iter_mut().skip(start) {
+                mark.standing = Standing::Constructor(constructor);
+            }
+        }
+        if let Some(slot) = self.collected.slots.get_mut(usize::from(owner)) {
+            slot.attributes.append(&mut marks);
+            if let Some((node, refusal)) = refused {
+                slot.refuse(node, refusal);
+            }
         }
     }
 
@@ -6518,6 +6581,7 @@ impl<'source> Collector<'_, 'source>
             payload: Payload::Unwritten,
             key: None,
             decorates: declaration,
+            standing: Standing::Declaration,
         };
         if let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN) {
             written.payload = match cursor.operands() {

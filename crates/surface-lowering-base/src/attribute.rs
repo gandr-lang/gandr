@@ -554,10 +554,9 @@ impl RegisteredAttribute
     /// staged THIR of a Rust function. The payload names the Rust file beside
     /// the source and the function's path inside that crate, both texts.
     pub const THIR: Self = Self("thir");
-    /// `item`: the data type it decorates stands for Rust items. Each text
-    /// of its payload is the path of a Rust item, a space, and the name of
-    /// the constructor that stands for that item, so a staged call of the
-    /// item is that constructor.
+    /// `item`: the constructor it stands on stands for a Rust item. The text
+    /// of its payload is the path of that item, so a staged call of the item
+    /// is that constructor.
     pub const ITEM: Self = Self("item");
     /// `traces`: the run of the declaration it decorates is recorded, and the
     /// payload states the web one channel's play decomposes to. It is the one
@@ -681,6 +680,115 @@ impl fmt::Display for AttributeSchema
     }
 }
 
+/// Where an attribute block stands: before a declaration, or before a
+/// constructor arm of a data declaration.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AttributePlace
+{
+    /// Before a declaration.
+    Declaration,
+    /// Before a constructor arm of a data declaration.
+    Constructor,
+}
+
+impl fmt::Display for AttributePlace
+{
+    /// Writes the place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Declaration => "a declaration",
+            Self::Constructor => "a constructor",
+        })
+    }
+}
+
+/// The places where a registered attribute stands.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AttributePlaces
+{
+    /// Before a declaration alone.
+    Declaration,
+    /// Before a constructor arm alone.
+    Constructor,
+    /// Before a declaration or before a constructor arm.
+    Both,
+}
+
+impl AttributePlaces
+{
+    /// The place that an attribute of these places takes where it does not
+    /// take `place`, or the absence when it takes `place`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn refusing(
+        self,
+        place: AttributePlace,
+    ) -> Maybe<AttributePlace, placed::Absent>
+    {
+        match (self, place) {
+            (Self::Declaration, AttributePlace::Constructor) => {
+                Maybe::Present(AttributePlace::Declaration)
+            },
+            (Self::Constructor, AttributePlace::Declaration) => {
+                Maybe::Present(AttributePlace::Constructor)
+            },
+            (Self::Declaration, AttributePlace::Declaration)
+            | (Self::Constructor, AttributePlace::Constructor)
+            | (Self::Both, AttributePlace::Declaration | AttributePlace::Constructor) => {
+                Maybe::Absent(placed::Absent::Taken)
+            },
+        }
+    }
+}
+
+impl fmt::Display for AttributePlaces
+{
+    /// Writes the places.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Declaration => "a declaration",
+            Self::Constructor => "a constructor",
+            Self::Both => "a declaration or a constructor",
+        })
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an attribute stands where it is written.
+    pub mod placed {
+        /// The reason the place is no refusal.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The attribute takes the place where it stands.
+            Taken,
+        }
+    }
+}
+
 /// What an attribute's payload was written as.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PayloadForm
@@ -781,41 +889,113 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 22_usize] = [
-    ("checks", AttributeSchema::Marker),
-    ("owes", AttributeSchema::Integer),
-    ("refuses", AttributeSchema::Text),
-    ("runs", AttributeSchema::Text),
-    ("normalizes", AttributeSchema::Text),
-    ("decomposes", AttributeSchema::Spelled),
-    (RegisteredAttribute::TRACES.0, AttributeSchema::Spelled),
-    (RegisteredAttribute::READS.0, AttributeSchema::Spelled),
-    (RegisteredAttribute::DISTRIBUTES.0, AttributeSchema::Texts),
-    (RegisteredAttribute::DOC.0, AttributeSchema::Text),
+const REGISTRY: [(&str, AttributeSchema, AttributePlaces); 22_usize] = [
+    (
+        "checks",
+        AttributeSchema::Marker,
+        AttributePlaces::Declaration,
+    ),
+    (
+        "owes",
+        AttributeSchema::Integer,
+        AttributePlaces::Declaration,
+    ),
+    (
+        "refuses",
+        AttributeSchema::Text,
+        AttributePlaces::Declaration,
+    ),
+    ("runs", AttributeSchema::Text, AttributePlaces::Declaration),
+    (
+        "normalizes",
+        AttributeSchema::Text,
+        AttributePlaces::Declaration,
+    ),
+    (
+        "decomposes",
+        AttributeSchema::Spelled,
+        AttributePlaces::Declaration,
+    ),
+    (
+        RegisteredAttribute::TRACES.0,
+        AttributeSchema::Spelled,
+        AttributePlaces::Declaration,
+    ),
+    (
+        RegisteredAttribute::READS.0,
+        AttributeSchema::Spelled,
+        AttributePlaces::Declaration,
+    ),
+    (
+        RegisteredAttribute::DISTRIBUTES.0,
+        AttributeSchema::Texts,
+        AttributePlaces::Declaration,
+    ),
+    (
+        RegisteredAttribute::DOC.0,
+        AttributeSchema::Text,
+        AttributePlaces::Both,
+    ),
     (
         RegisteredAttribute::EXPLICIT_EXITS.0,
         AttributeSchema::Marker,
+        AttributePlaces::Declaration,
     ),
     (
         RegisteredAttribute::EXPLICIT_RUNS.0,
         AttributeSchema::MarkerOr(RegisteredAttribute::EFFECTS),
+        AttributePlaces::Declaration,
     ),
-    (RegisteredAttribute::RESPECTS.0, AttributeSchema::Names),
-    (RegisteredAttribute::ENTRY.0, AttributeSchema::Names),
+    (
+        RegisteredAttribute::RESPECTS.0,
+        AttributeSchema::Names,
+        AttributePlaces::Declaration,
+    ),
+    (
+        RegisteredAttribute::ENTRY.0,
+        AttributeSchema::Names,
+        AttributePlaces::Declaration,
+    ),
     (
         RegisteredAttribute::FORM.0,
         AttributeSchema::Word(RegisteredAttribute::FORMS),
+        AttributePlaces::Declaration,
     ),
-    (RegisteredAttribute::IDENTITY.0, AttributeSchema::Interface),
+    (
+        RegisteredAttribute::IDENTITY.0,
+        AttributeSchema::Interface,
+        AttributePlaces::Declaration,
+    ),
     (
         RegisteredAttribute::DEPRECATED.0,
         AttributeSchema::MarkerOrRecord(RegisteredAttribute::DEPRECATION_FIELDS),
+        AttributePlaces::Declaration,
     ),
-    (RegisteredAttribute::BOUNDARY.0, AttributeSchema::Names),
-    (RegisteredAttribute::BUILTIN.0, AttributeSchema::Text),
-    (RegisteredAttribute::THIR.0, AttributeSchema::Texts),
-    (RegisteredAttribute::ITEM.0, AttributeSchema::Texts),
-    (RegisteredAttribute::INERT.0, AttributeSchema::Marker),
+    (
+        RegisteredAttribute::BOUNDARY.0,
+        AttributeSchema::Names,
+        AttributePlaces::Declaration,
+    ),
+    (
+        RegisteredAttribute::BUILTIN.0,
+        AttributeSchema::Text,
+        AttributePlaces::Declaration,
+    ),
+    (
+        RegisteredAttribute::THIR.0,
+        AttributeSchema::Texts,
+        AttributePlaces::Declaration,
+    ),
+    (
+        RegisteredAttribute::ITEM.0,
+        AttributeSchema::Text,
+        AttributePlaces::Constructor,
+    ),
+    (
+        RegisteredAttribute::INERT.0,
+        AttributeSchema::Marker,
+        AttributePlaces::Declaration,
+    ),
 ];
 
 impl AttributeRegistry
@@ -841,7 +1021,7 @@ impl AttributeRegistry
                 && ret
                     .iter()
                     .zip(REGISTRY)
-                    .all(|(name, (spelling, _))| name.0 == spelling)
+                    .all(|(name, (spelling, _, _))| name.0 == spelling)
         },
     )]
     #[inline]
@@ -850,7 +1030,7 @@ impl AttributeRegistry
     {
         REGISTRY
             .into_iter()
-            .map(|(spelling, _schema)| RegisteredAttribute(spelling))
+            .map(|(spelling, _schema, _places)| RegisteredAttribute(spelling))
             .collect()
     }
 
@@ -881,11 +1061,11 @@ impl AttributeRegistry
                 registered.0 == name.as_ref()
                     && REGISTRY
                         .iter()
-                        .any(|&(spelled, expected)| spelled == registered.0 && expected == schema)
+                        .any(|&(spelled, expected, _)| spelled == registered.0 && expected == schema)
             },
             | Maybe::Absent(registry::Absent::Unregistered) => REGISTRY
                 .iter()
-                .all(|&(spelled, _)| spelled != name.as_ref()),
+                .all(|&(spelled, _, _)| spelled != name.as_ref()),
         },
     )]
     #[inline]
@@ -894,7 +1074,7 @@ impl AttributeRegistry
     ) -> Maybe<(RegisteredAttribute, AttributeSchema), registry::Absent>
     {
         let spelled: &str = name.as_ref();
-        for (entry, schema) in REGISTRY {
+        for (entry, schema, _places) in REGISTRY {
             if entry == spelled {
                 return Maybe::Present((RegisteredAttribute(entry), schema));
             }
@@ -934,7 +1114,7 @@ impl AttributeRegistry
             let spelled: &str = name.as_ref();
             match ret {
                 | Maybe::Present(registered) => {
-                    REGISTRY.iter().any(|&(entry, _)| entry == registered.0)
+                    REGISTRY.iter().any(|&(entry, _, _)| entry == registered.0)
                         && spelled
                             .chars()
                             .count()
@@ -942,10 +1122,10 @@ impl AttributeRegistry
                             <= SUGGESTION_BOUND.0
                         && REGISTRY
                             .iter()
-                            .all(|&(entry, _)| entry != spelled || registered.0 == spelled)
+                            .all(|&(entry, _, _)| entry != spelled || registered.0 == spelled)
                 },
                 | Maybe::Absent(suggestion::Absent::BeyondBound) => {
-                    REGISTRY.iter().all(|&(entry, _)| entry != spelled)
+                    REGISTRY.iter().all(|&(entry, _, _)| entry != spelled)
                 },
             }
         },
@@ -955,7 +1135,7 @@ impl AttributeRegistry
     {
         let mut best: Maybe<(EditDistance, RegisteredAttribute), suggestion::Absent> =
             Maybe::Absent(suggestion::Absent::BeyondBound);
-        for (spelling, _schema) in REGISTRY {
+        for (spelling, _schema, _places) in REGISTRY {
             let candidate = RegisteredAttribute(spelling);
             let distance = edit_distance(LabelText(name.as_ref()), LabelText(candidate.as_ref()));
             if distance > SUGGESTION_BOUND {
@@ -971,6 +1151,31 @@ impl AttributeRegistry
         }
 
         best.map(|(_distance, candidate)| candidate)
+    }
+
+    /// The places where the registered attribute `name` stands.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the places of the registry row that `name` spells. A name
+    ///   that no row spells cannot be built outside this module, and it stands
+    ///   before a declaration alone.
+    /// - panics: none.
+    /// - executable: none — the answer is the row's own column, which a
+    ///   predicate would read again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `item` stands before a constructor alone, `doc`
+    ///   before both, and `checks` before a declaration alone.
+    /// - witness: `attribute::tests::each_registered_attribute_states_its_places_8119`
+    #[inline]
+    #[must_use]
+    pub fn places(name: RegisteredAttribute) -> AttributePlaces
+    {
+        REGISTRY
+            .iter()
+            .find(|&&(spelled, ..)| spelled == name.0)
+            .map_or(AttributePlaces::Declaration, |&(_, _, places)| places)
     }
 }
 
@@ -1882,6 +2087,8 @@ mod tests
     use quenchant_shape::shape::Maybe;
 
     use super::AttributeEntry;
+    use super::AttributePlace;
+    use super::AttributePlaces;
     use super::AttributeRegistry;
     use super::AttributeSchema;
     use super::AttributeTable;
@@ -1987,7 +2194,7 @@ mod tests
             ("boundary", AttributeSchema::Names),
             ("builtin", AttributeSchema::Text),
             ("thir", AttributeSchema::Texts),
-            ("item", AttributeSchema::Texts),
+            ("item", AttributeSchema::Text),
             ("inert", AttributeSchema::Marker),
         ];
 
@@ -2010,6 +2217,31 @@ mod tests
             AttributeRegistry::names().len(),
             expected.len(),
             "the pinned table covers the whole registry"
+        );
+    }
+
+    #[test]
+    fn each_registered_attribute_states_its_places_8119()
+    {
+        let places = |spelling: &str| match AttributeRegistry::lookup(SurfaceName::from(spelling)) {
+            Maybe::Present((name, _schema)) => AttributeRegistry::places(name),
+            Maybe::Absent(_) => panic!("{spelling} is registered"),
+        };
+        assert_eq!(places("item"), AttributePlaces::Constructor);
+        assert_eq!(places("doc"), AttributePlaces::Both);
+        assert_eq!(places("checks"), AttributePlaces::Declaration);
+        assert_eq!(places("thir"), AttributePlaces::Declaration);
+        assert_eq!(
+            places("item").refusing(AttributePlace::Declaration),
+            Maybe::Present(AttributePlace::Constructor)
+        );
+        assert_eq!(
+            places("checks").refusing(AttributePlace::Constructor),
+            Maybe::Present(AttributePlace::Declaration)
+        );
+        assert_eq!(
+            places("doc").refusing(AttributePlace::Constructor),
+            Maybe::Absent(super::placed::Absent::Taken)
         );
     }
 

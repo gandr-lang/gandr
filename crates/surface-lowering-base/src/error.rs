@@ -569,8 +569,8 @@ pub enum StagedFault
     Outside(crate::unit::MarkIndex),
     /// The declared type is not `Expr` of `std.thir` at a data type.
     NotExpr,
-    /// A staged call names a path that no text of the item type's mark
-    /// states.
+    /// A staged call names a path that no item mark of a constructor of the
+    /// item type states.
     Unmapped
     {
         /// The mark whose body holds the call.
@@ -578,8 +578,8 @@ pub enum StagedFault
         /// The call's place in the body.
         node: gandr_runtime_rust_record::NodeIndex,
     },
-    /// A text of the item type's mark is no path and constructor, names no
-    /// constructor of the type, or states a path or a constructor again.
+    /// An item mark states an empty path, stands on a constructor with
+    /// fields, or states a path that another constructor's mark states.
     ItemMark,
 }
 
@@ -1319,6 +1319,21 @@ pub enum LoweringRefusal<'source>
         expected: AttributeSchema,
         /// The form the payload was written as.
         written: PayloadForm,
+    },
+
+    /// An attribute written at a place that the registry does not let it
+    /// stand: before a declaration where it takes a constructor, or the
+    /// reverse.
+    MisplacedAttribute
+    {
+        /// The bytes the attribute covers.
+        span: ByteSpan,
+        /// The registered name written at the wrong place.
+        name: RegisteredAttribute,
+        /// The place where it is written.
+        place: crate::attribute::AttributePlace,
+        /// The place that it takes.
+        takes: crate::attribute::AttributePlace,
     },
 
     /// A module member named at or after the position of the member that
@@ -2366,6 +2381,9 @@ impl fmt::Display for LoweringRefusal<'_>
                 written,
                 ..
             } => write!(f, "`{name}` takes {expected} and was given {written}"),
+            Self::MisplacedAttribute {
+                name, place, takes, ..
+            } => write!(f, "`{name}` stands on {takes}, and here it stands on {place}"),
             Self::ForwardMemberReference { name, .. } => write!(
                 f,
                 "the member `{name}` is declared at or after the member naming it; a member \
@@ -2765,11 +2783,11 @@ impl fmt::Display for LoweringRefusal<'_>
                     "the type of a staged signature is `Expr` of `std.thir` at an item type"
                 },
                 StagedFault::Unmapped { .. } => {
-                    "a staged call names a path that the item mark does not state"
+                    "a staged call names a path that no item mark states"
                 },
                 StagedFault::ItemMark => {
-                    "each text of an item mark is a Rust path and a constructor of the type, \
-                     each one time"
+                    "each item mark states a Rust path, on a constructor with no fields, \
+                     each path one time"
                 },
             }),
         }
@@ -2936,6 +2954,7 @@ impl LoweringRefusal<'_>
             | Self::MissingPayload { span, .. }
             | Self::NonValuePayload { span, .. }
             | Self::IllTypedPayload { span, .. }
+            | Self::MisplacedAttribute { span, .. }
             | Self::ForwardMemberReference { span, .. }
             | Self::PhaseDependence { span, .. }
             | Self::InertRead { span, .. }
