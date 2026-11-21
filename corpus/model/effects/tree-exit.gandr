@@ -1,0 +1,37 @@
+// This source writes exit handlers as explicit folds.
+//
+// The tree is the free model of `std.process.Exit.Eff`.
+//
+// Each fold implements one handler clause.
+// A deep handler reinstalls itself in the continuation. So a clause resumes
+// by a fold of what the continuation answers.
+//
+// - see: `exit.gandr` — native handlers
+
+/// `ProcTree` holds a result or an exit continuation.
+data ProcTree(a : Type) : Type where
+  | Return : (x : a) --> ProcTree a
+  | Exit : (code : Integer, k : Unit -> ProcTree a) --> ProcTree a
+
+/// `exitThenOne` exits with five and then returns one.
+def exitThenOne : ProcTree Integer = Exit 5 (fun (_u) { (Return 1 : ProcTree Integer) });
+
+/// `resuming` adds one hundred and resumes the continuation.
+def rec resuming(p : ProcTree Integer) -> Integer =
+  match p where
+    | Return(x) => x + 100
+    | Exit(_code, k) => resuming[<] (k *{})
+
+/// `resumedByFold` runs `resuming`.
+@[runs("101")]
+def resumedByFold() -> Integer = resuming exitThenOne;
+
+/// `discarding` returns nine and drops the continuation.
+def rec discarding(p : ProcTree Integer) -> Integer =
+  match p where
+    | Return(x) => x + 100
+    | Exit(_code, _k) => 9
+
+/// `discardedByFold` runs `discarding`.
+@[runs("9")]
+def discardedByFold() -> Integer = discarding exitThenOne;

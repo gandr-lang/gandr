@@ -1,0 +1,16 @@
+{
+  "owners": {
+    "landing-checks": "fixer",
+    "nightly-sweeps": "fixer",
+    "landing-integration-cycle": "fixer",
+    "nightly-riscv64-tests": "fixer",
+    "tracker-check-labels": "fixer"
+  },
+  "workflows": [
+    "landing-checks",
+    "nightly-sweeps",
+    "landing-integration-cycle",
+    "nightly-riscv64-tests",
+    "tracker-check-labels"
+  ]
+}

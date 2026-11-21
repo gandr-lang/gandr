@@ -1,0 +1,14095 @@
+//! The melder: a resumable, first-order push machine over the checked PBG.
+//!
+//! `push` is the primary API and is **total**: every molded tile drives exactly
+//! one of the three push rules of Moon et al., "Syntactic Completions with
+//! Material Obligations" (PACMPL 9, OOPSLA2, 2025), Fig. 29 —
+//!
+//! * **Shift** (head `⋖`/`≐` τ): push τ; it enters the exposed slot.
+//! * **Reduce** (head `⋗` τ): reduce the handle into a meld, propagate up,
+//!   retry.
+//! * **Degrout** (incomparable): complete-and-reduce the head level with grout,
+//!   deferring the comparison down the slope; guaranteed to conclude at Shift
+//!   because grout sits at `⊥`, comparable to everything.
+//!
+//! Incomparable precedences **within one sort** classify as
+//! [`Oblig::AmbiguousPrec`] at maximum severity
+//! (ambiguity is an error, but the tree stays total — parse totally,
+//! classify, let lowering decide). Cross-sort transitions route through grout.
+//!
+//! The stack is a single `Vec`-backed slope of terraces with O(1) access at
+//! both ends (`Vec::first`/`Vec::last`/`push`/`pop`) and no ambient state — the
+//! edit-state readiness constraint. Emission is an **append-only log**
+//! replayed into the `gandr-surface-syntax` [`TreeBuilder`] at `commit`; a
+//! [`Checkpoint`] records the log length and the (small, first-order) slope, so
+//! rollback is log truncation and checkpoints are cheap and serializable.
+//!
+//! # A closer with a required operand after it is a mid tile
+//!
+//! A tile with a same-form predecessor and no same-form successor ends its form
+//! in the paper's classification. The `]` of `+U[ω] C` and of `package [ T ] C`
+//! cannot: the grammar requires an operand after it. The melder classifies such
+//! a tile as a mid tile, so the form stays open until its operand arrives and
+//! closes around it; a closing bracket with nothing required after it, the `]`
+//! of `Type[+, 1]`, still ends its form. Read as an end, the bracket would
+//! close the bridge at its grade, and a parenthesised operand after it would
+//! become a juxtaposed sibling that the lowering refuses as a malformed form.
+//!
+//! The completion query and the molder follow. `finalize` charges no tile to a
+//! required-tail frontier whose operand is written or already opened, because
+//! the commit's force-close mints none there. The lookahead window settles and
+//! bounds each token at its declaration as the stream does, so a tied opener is
+//! judged on the frontier the stream would leave. Without them, the mid-tile
+//! bracket made `package [ T ] Integer;` followed by another declaration rank
+//! the package reading below an instantiation of a type variable named
+//! `package`.
+//!
+//! The alternative was a grammar change: spell the graded bridge as a prefix
+//! operator whose operand is its argument, keeping the three-way
+//! classification. It splits one form into two and moves the grade off the
+//! bridge's tile, and `package [ T ]` would need the same split. Reversal: if a
+//! grammar form ever needs a closing bracket that ends it while an operand
+//! still follows, the tail moves into an enclosing form and this case becomes a
+//! grammar check.
+//!
+//! # A required tail runs as far as its group yields
+//!
+//! A form whose last symbol is a required sort hole — the session
+//! types, the recursive protocol `rec a => S`, `+U[r] C`, `package [ T ] C` —
+//! has no tile to end it, so the melder decides where its tail stops.
+//! It stops where a prefix operator at the form's own group would stop: the
+//! form closes once its tail is a whole operand run of the hole's sort, every
+//! operator in it holding the operands it wants, and the next tile does not
+//! continue that run. An infix or postfix operator, or a left-absorbing form
+//! start, of the hole's sort continues the run exactly when the form's group
+//! yields to it. So `rec a => a * b` recurses over the product, `rec a => -F
+//! a` keeps the returner in the protocol, `rec a => a -> b` keeps the arrow of
+//! its own right-associative group, and `+U[1] C * D` closes the bridge before
+//! the product, its group being tighter. The decision runs twice: before a
+//! token is gathered, against every mold its labels may take, so the frontier
+//! the molder ranks against is the one the stream will leave; and again as the
+//! chosen tile is pushed.
+//!
+//! The alternatives were closing the tail at its first operand, which reads
+//! `rec a => a * b` as a product of a protocol and cannot read `rec a => -F
+//! a` at all, a prefix operator's operand being a run rather than one
+//! operand; and a closing tile for each binder form, `rec a => { S }`, which
+//! spends a bracket on every binder. Reversal: if a form needs a tail tighter
+//! than its own group, that tail gets its own group in the precedence table.
+//!
+//! # The tree the melder commits
+//!
+//! `commit` replays the emission log into a `gandr-surface-syntax`
+//! `TreeBuilder`. A completed form is a `NodeLabel::Meld` named by the mold of
+//! the tile that opened it; an operator form is named by its operator's mold; a
+//! written tile is a `NodeLabel::Tile` with its mold. A missing operand is
+//! convex grout of the slot's sort; a missing closer is a
+//! `NodeLabel::GhostClose` when the grammar says every completion of the form
+//! ends at one family of closer, and postfix grout otherwise. A token no
+//! candidate molds is convex `Item` grout covering that token's bytes, so the
+//! tree stays lossless and the bytes reach its form's digest. Layout is a
+//! `NodeLabel::Space` leaf. The form a node realises is the grammar's answer
+//! for its mold (`Pbg::named_kind`), so this crate restates no list of forms.
+//!
+//! ### A comment belongs to the node it describes
+//!
+//! The parser decides once which node owns each comment, and every reader
+//! inherits the decision from the tree: a formatter, a refactoring or a
+//! comment-aware check finds a comment among its owner's children instead of
+//! guessing ownership from positions. The rule is the fixed one Roslyn,
+//! rust-analyzer and Biome use, read against the innermost form whose span
+//! contains the comment (the root when none does) and that form's children on
+//! either side of it:
+//!
+//! | Comment position | Owner |
+//! | ---------------- | ----- |
+//! | Own line(s) directly above a node, no blank line between | that node, leading |
+//! | Same line, after a node | that node, trailing |
+//! | Inside an empty block or bracket | the block, dangling |
+//! | Separated by a blank line | the enclosing node, standalone |
+//!
+//! A leaf holds no children, so a comment written against an identifier, a
+//! number or one of a form's own tiles belongs to that form. Only `//` and `/*
+//! */` comments and documentation (§ Documentation is a node no digest reads)
+//! move; whitespace and a shebang stay root children. Nothing else changes: the
+//! content digest skips layout, so the root digest, every cache key and every
+//! identity are those the tree had with its comments at the root, and the
+//! leaves, read in offset order, still spell the source byte for byte. The
+//! commit stages every leaf first, since an owner can be reduced before a
+//! comment that trails it is pushed, then every interior whose children are all
+//! leaves, which a documentation node grouped at commit is, then the remaining
+//! interiors in emission order.
+//!
+//! The consumers that read a form's children were audited for forms holding
+//! layout. The lowering skips `NodeLabel::Space` wherever it reads a form's
+//! pieces, operands and repairs (`read_pieces`, `shape_of`, the repair and
+//! nesting walks); its ownership, scope and payload marks visit every child
+//! whatever its label, and its minting plans nothing for a layout leaf, so a
+//! comment inside a declaration is visited and left alone. The highlighter
+//! classifies every position whatever its parent and sorts its spans, so
+//! semantic tokens and the terminal face are unchanged. The session, the
+//! language server and the REPL reach the tree only through those two. No
+//! consumer assumed layout-free forms, so none needed a change.
+//!
+//! ### Documentation is a node no digest reads
+//!
+//! Documentation is written two ways, a run of `///` lines and a `doc("…")`
+//! attribute entry, and both become one `NodeLabel::Doc` interior holding the
+//! material it was written with. `Doc` is insignificant, like
+//! `NodeLabel::Space`: no digest reads it, so documenting a declaration,
+//! rewording its documentation or moving between the spellings re-keys nothing,
+//! and the leaves still spell the source.
+//!
+//! - **An entry.** When a form closes, each attribute entry that is exactly
+//!   `doc` with one string literal for its payload is grouped with its
+//!   separating comma into a `Doc`: an entry before the block's first other
+//!   entry takes the comma after it, a later one the comma before it. A block
+//!   holding only such entries is grouped whole, `@[` and `]` included, and
+//!   stands for its form as a `Doc`. An entry that becomes the block's first
+//!   takes the tile labels of the entry grouped away before it, since a tile's
+//!   mold depends on its position in the block, and a form whose first child
+//!   became a `Doc` is named by the mold of its first remaining tile. `doc`,
+//!   `doc()`, `doc(1)` and `doc("a", "b")` stay attributes, for the lowering to
+//!   refuse.
+//! - **A run.** At commit, `///` lines separated only by one line break each (a
+//!   `////` line is an ordinary comment) are grouped into a `Doc` with the
+//!   whitespace between them. A run documents the form below it, never the one
+//!   before it, even when it starts on that form's last line; a blank line
+//!   between a run and the form below leaves it at the root.
+//! - **An inner run.** `//!` lines group the same way, a line of the other kind
+//!   ending either run, and document what they stand in rather than what
+//!   follows: the form enclosing them, or the root, where they are the source's
+//!   own documentation.
+//!
+//! The alternative was reading `///` and `doc` as ordinary attribute material,
+//! which keys the declaration by its prose: every documentation edit would
+//! re-key it and everything its digest addresses. Reversal: when documentation
+//! must be content-addressed, `Doc` becomes significant and its digest folds
+//! the text it spells.
+//!
+//! # Checkpoints
+//!
+//! A `Checkpoint` is the melder's whole state: the grammar fingerprint, the
+//! assembled source, the emission log, the slope, the buffered obligations and
+//! the layout tokens. `to_bytes` writes it little-endian with every
+//! variable-width field length-prefixed; a node label is written as its pinned
+//! digest tag and its payload, so the checkpoint and the digest share one
+//! numbering and reordering the label enum changes neither. A minted close's
+//! family byte is checked on read, and an unknown family is refused rather than
+//! defaulted, because pairing a ghost against the wrong family is worse than
+//! not pairing it. `resume` rebuilds the slope-head caches from the slope, and
+//! a resumed run equals the uninterrupted one, obligations and root digest
+//! included.
+//!
+//! A `Mark` is the cheap transaction beside it: the source, log, obligation and
+//! space lengths, and the length of a trail of slope edits — a push, an
+//! overwritten cell, a splice with the cells it removed — recorded only while a
+//! mark is live. `rollback_to` undoes the trail back to the mark, newest first,
+//! and rebuilds the head caches from the lowest position an edit touched, which
+//! is what the molder's per-candidate dry-run uses. Marks nest; the trail
+//! empties when the outermost rolls back.
+//!
+//! # Repair stops at the declaration boundary
+//!
+//! When a token's candidates include a declaration head, none of them continues
+//! the open form, and the innermost open form is not an item form — an unclosed
+//! `(` in a definition's value, say — the melder force-closes the open forms
+//! back to the nearest declaration before molding the head, so the repair's
+//! minted closes and obligations stay inside the damaged declaration and the
+//! next one parses whole. The boundary is any declaration head, not the `def`
+//! keyword alone.
+//!
+//! An item form of one tile at the start of a line, as `pub`, stands before
+//! the head of a top-level declaration. No container holds a declaration at the
+//! margin. So the molder closes every open form at that prefix, as the end of
+//! the input closes them, when the head after it bounds the open declaration
+//! ([`MeldState::settle_top_level_boundary`]). At the head, the close comes one
+//! token late, and the prefix costs an obligation in the reading that closes
+//! the damaged declaration (#6101).
+//!
+//! A separator can also end a declaration that lacks a tile, as a `def`
+//! without its `=` does. The molder finds that end: a `;` or a layout
+//! separator, and the head of a next top-level declaration after it. There, no
+//! candidate can continue the open form, and the declaration can be the
+//! innermost open form. Then the separator closes the declaration as its last
+//! tile, and the close flags one missing tile at the open frontier
+//! ([`MeldState::close_at_separator`]). Read as it stands, the separator is an
+//! operator of the sort of an expression. Against a body that reads as a type,
+//! its reduction crosses sorts, and the lookahead then takes a misreading of
+//! the body (#5747).
+//!
+//! A missing tile can also split one form in two. In `(rem = r, .quot = q)`,
+//! the missing `.` leaves the positional group `(rem` open. No open frontier
+//! takes the `=` after it, so the `=` starts a fragment of the branch with
+//! labels, and the head of that fragment is absent. Both branches of the group
+//! open with `(`, so the fragment and the open group are one form. The closer
+//! that ends the fragment also ends the open group. So the split costs only
+//! the missing tile at the head of the fragment, and the `=` of the `let` after
+//! the group continues the `let` (#5795).
+//!
+//! Known bound: a container whose own member carries the damage — `module M {
+//! def bad = ( 1 ; def good = 2; }` — force-closes the container too, so `good`
+//! becomes a sibling of `M` rather than its member. Telling a container apart
+//! from a declaration needs the rule a mold was numbered for, which the grammar
+//! reads back (`Pbg::rule_of`) and this repair does not consult. Both
+//! declarations survive as distinct items; what the repair does not preserve is
+//! which one owns the later declaration. Reversal: when a consumer needs the
+//! member kept in its container, the boundary consults the rule.
+
+use alloc::boxed::Box;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::error::Error;
+use core::fmt;
+
+use anodized::spec;
+use gandr_surface_grammar::LabelId;
+use gandr_surface_grammar::LabelText;
+use gandr_surface_grammar::LeftOperand;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::Sort;
+use gandr_surface_grammar::StepSym;
+use gandr_surface_grammar::TileKind;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::CloseReach;
+use gandr_surface_syntax::ClosingClass;
+use gandr_surface_syntax::DelimSpelling;
+use gandr_surface_syntax::GrammarFingerprint;
+use gandr_surface_syntax::GroutShape;
+use gandr_surface_syntax::GroutSort;
+use gandr_surface_syntax::MoldId;
+use gandr_surface_syntax::NodeLabel;
+use gandr_surface_syntax::SourceText;
+use gandr_surface_syntax::StagedId;
+use gandr_surface_syntax::SyntaxError;
+use gandr_surface_syntax::SyntaxTree;
+use gandr_surface_syntax::TreeBuilder;
+use gandr_theory_graphs::Assoc;
+use gandr_theory_graphs::Dir;
+use gandr_theory_graphs::Prec;
+use gandr_theory_graphs::PrecIndex;
+use gandr_theory_spec_combinators::Holds;
+use gandr_theory_spec_combinators::sorted_around;
+
+use crate::closing::Closing;
+use crate::closing::ClosingLimit;
+use crate::closing::LeadingSlot;
+use crate::closing::Step;
+use crate::closing::push_closing;
+use crate::label::Lexeme;
+use crate::label::Token;
+use crate::mold::TokenRun;
+use crate::mold::TokenText;
+use crate::mold::candidate_labels;
+use crate::oblig::Delta;
+use crate::oblig::Oblig;
+use crate::oblig::ObligationInstance;
+use crate::spec::indexed_from;
+
+/// Define a transparent copyable newtype over a primitive payload.
+///
+/// The generated struct derives the standard value-semantics traits and
+/// converts freely both ways with the payload, plus `Not` for boolean-shaped
+/// flags; construction stays literal so constant tables can name the wrapper.
+macro_rules! primitive_copy_wrapper {
+    ($(#[$meta:meta])* $vis:vis struct $name:ident($inner:ty);) => {
+        $(#[$meta])*
+        #[repr(transparent)]
+        #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        $vis struct $name($inner);
+
+        impl From<$inner> for $name
+        {
+            /// Wrap the payload.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn from(value: $inner) -> Self
+            {
+                Self(value)
+            }
+        }
+
+        impl From<$name> for $inner
+        {
+            /// Read the payload back.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn from(value: $name) -> Self
+            {
+                value.0
+            }
+        }
+
+        impl core::ops::Not for $name
+        {
+            type Output = Self;
+
+            /// Negate the payload.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn not(self) -> Self::Output
+            {
+                Self(!self.0)
+            }
+        }
+    };
+}
+pub(crate) use primitive_copy_wrapper;
+
+/// Define a transparent newtype over borrowed source text.
+///
+/// The generated struct carries a `&'text str`, derives the standard
+/// value-semantics traits, and converts freely both ways with the borrowed
+/// text so lexing code can pass either shape without re-slicing.
+macro_rules! borrowed_str_wrapper {
+    ($(#[$meta:meta])* $vis:vis struct $name:ident;) => {
+        $(#[$meta])*
+        #[repr(transparent)]
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        $vis struct $name<'text>(&'text str);
+
+        impl<'text> From<&'text str> for $name<'text>
+        {
+            /// Adopt borrowed text.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn from(value: &'text str) -> Self
+            {
+                Self(value)
+            }
+        }
+
+        impl<'text> From<$name<'text>> for &'text str
+        {
+            /// Read the borrowed text back.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn from(value: $name<'text>) -> Self
+            {
+                value.0
+            }
+        }
+
+        impl AsRef<str> for $name<'_>
+        {
+            /// Borrow the text.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn as_ref(&self) -> &str
+            {
+                self.0
+            }
+        }
+    };
+}
+
+borrowed_str_wrapper!(
+    /// Borrowed surface text for a molded tile.
+    pub struct TileText;
+);
+borrowed_str_wrapper!(
+    /// Borrowed layout text recorded as lossless space.
+    pub struct SpaceText;
+);
+borrowed_str_wrapper!(
+    /// Borrowed text appended to the assembled source buffer.
+    struct SourceFragment;
+);
+
+impl<'text> From<TileText<'text>> for SourceFragment<'text>
+{
+    /// View a tile's text as text the source buffer appends.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: TileText<'text>) -> Self
+    {
+        Self(<&str>::from(value))
+    }
+}
+
+impl<'text> From<SpaceText<'text>> for SourceFragment<'text>
+{
+    /// View layout text as text the source buffer appends.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: SpaceText<'text>) -> Self
+    {
+        Self(<&str>::from(value))
+    }
+}
+
+/// Borrowed candidate-label set for the next lexical token: its declared
+/// labels, by number.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CandidateLabels<'labels>(&'labels [LabelId]);
+
+impl<'labels> From<&'labels [LabelId]> for CandidateLabels<'labels>
+{
+    /// Adopt a borrowed slice of label numbers as a candidate set.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: &'labels [LabelId]) -> Self
+    {
+        Self(value)
+    }
+}
+
+impl<'labels> From<CandidateLabels<'labels>> for &'labels [LabelId]
+{
+    /// Read the slice of label numbers back.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: CandidateLabels<'labels>) -> Self
+    {
+        value.0
+    }
+}
+
+primitive_copy_wrapper!(
+    /// Source-buffer byte offset.
+    struct SourceOffset(u32);
+);
+
+impl SourceOffset
+{
+    /// The same offset in the tree's byte frame.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the offset's value, widened; a host whose pointer is narrower
+    ///   than 32 bits saturates rather than wraps.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, an ordinary offset and the wire ceiling expose
+    ///   widened byte positions; truncation or wrap changes the endpoints.
+    /// - witness: `meld::tests::coordinate_conversions_cover_empty_inverted_and_ceiling`
+    #[inline]
+    #[spec(ensures: |ret| usize::from(ret) == usize::try_from(self.0).unwrap_or(usize::MAX))]
+    fn byte_offset(self) -> ByteOffset
+    {
+        ByteOffset::from(usize::try_from(self.0).unwrap_or(usize::MAX))
+    }
+}
+
+/// Source-buffer span with an inclusive start and exclusive end.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SourceSpan
+{
+    /// First byte of the span.
+    start: SourceOffset,
+    /// One past the last byte of the span.
+    end: SourceOffset,
+}
+
+impl SourceSpan
+{
+    /// Build the half-open span `[start, end)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn new(
+        start: SourceOffset,
+        end: SourceOffset,
+    ) -> Self
+    {
+        Self { start, end }
+    }
+
+    /// Build the empty span at `offset`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn point(offset: SourceOffset) -> Self
+    {
+        Self {
+            start: offset,
+            end: offset,
+        }
+    }
+
+    /// The same span in the tree's byte frame.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the span with the same endpoints.
+    /// - fails: an inverted span, which the melder never builds.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`SyntaxError::InvertedSpan`] when `start` lies past `end`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, ordered, inverted and wire-ceiling spans
+    ///   expose exact endpoints or the inverted-span payload. Swapping
+    ///   endpoints or clamping an inversion into an empty success changes the
+    ///   result.
+    /// - witness: `meld::tests::coordinate_conversions_cover_empty_inverted_and_ceiling`
+    #[inline]
+    #[spec(ensures: |ret| match ret { Ok(span) => span.start() == self.start.byte_offset() && span.end() == self.end.byte_offset(), Err(SyntaxError::InvertedSpan { start, end }) => start == self.start.byte_offset() && end == self.end.byte_offset() && start > end, _ => false })]
+    fn byte_span(self) -> Result<ByteSpan, SyntaxError>
+    {
+        ByteSpan::new(self.start.byte_offset(), self.end.byte_offset())
+    }
+}
+
+/// A tile the source left out or misspelt, written into a copy of the source
+/// so the copy molds without a repair, and read back over the source.
+///
+/// The copy holds the tile's bytes over `at .. after`, with the space it is
+/// written with to stand as a token of its own. A tile the source left out
+/// replaces nothing and reads back as the close the melder mints. A tile the
+/// source misspelt replaces the `over` bytes of the misspelt word and reads
+/// back as itself over them. [`Splices`] reads a copy that holds one or more
+/// such tiles.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Splice
+{
+    /// Where the tile stands in the copy.
+    at: SourceOffset,
+    /// One past the tile's last byte in the copy.
+    after: SourceOffset,
+    /// How many source bytes the tile replaces: none for a tile left out.
+    over: u32,
+    /// The minted close a tile left out is read back as.
+    ghost: NodeLabel,
+}
+
+impl Splice
+{
+    /// The splice of `tile` written at `at` of the copy, read back as `ghost`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the splice over `at .. at + tile.len()` that replaces no
+    ///   source byte; `None` when that end lies past the wire's ceiling.
+    /// - panics: none.
+    /// - executable: none — the clause restates the construction.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`MeldState::commit_spliced`].
+    /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+    #[must_use]
+    pub(crate) fn new(
+        at: ByteOffset,
+        tile: SourceText<'_>,
+        ghost: NodeLabel,
+    ) -> Option<Self>
+    {
+        let start = u32::try_from(usize::from(at)).ok()?;
+        let width = u32::try_from(<&str>::from(tile).len()).ok()?;
+        Some(Self {
+            at: SourceOffset(start),
+            after: SourceOffset(start.checked_add(width)?),
+            over: 0,
+            ghost,
+        })
+    }
+
+    /// The splice of `tile` written at `at` of the copy in place of the bytes
+    /// of `word`. A misspelt word's bytes read back as the tile over them. An
+    /// empty `word` is a tile left out, an empty postfix grout until
+    /// [`read_as`](Self::read_as) names its minted tile.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the splice over `at .. at + tile.len()` that replaces
+    ///   `word.len()` source bytes; `None` when that end or that length lies
+    ///   past the wire's ceiling.
+    /// - panics: none.
+    /// - executable: none — the clause restates the construction.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`MeldState::commit_spliced`].
+    /// - witness: `parse::gap::tests::a_misspelt_keyword_owes_its_word_5433`
+    /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
+    #[must_use]
+    pub(crate) fn replacing(
+        at: ByteOffset,
+        tile: SourceText<'_>,
+        word: SourceText<'_>,
+    ) -> Option<Self>
+    {
+        let splice = Self::new(at, tile, NodeLabel::Space)?;
+        Some(Self {
+            over: u32::try_from(<&str>::from(word).len()).ok()?,
+            ..splice
+        })
+    }
+
+    /// How many bytes the tile takes in the copy.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn width(self) -> SourceOffset
+    {
+        SourceOffset(self.after.0.saturating_sub(self.at.0))
+    }
+
+    /// What the tile stands for in the source.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn stands(self) -> Stands
+    {
+        if self.over > 0 {
+            Stands::Misspelt
+        }
+        else {
+            Stands::LeftOut
+        }
+    }
+
+    /// The bytes the splice writes, read from its `copy`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn tile(
+        self,
+        copy: SourceText<'_>,
+    ) -> Option<SourceText<'_>>
+    {
+        <&str>::from(copy)
+            .get(usize::try_from(self.at.0).ok()? .. usize::try_from(self.after.0).ok()?)
+            .map(SourceText::from)
+    }
+
+    /// The same splice, its tile read back as `ghost`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn read_as(
+        self,
+        ghost: NodeLabel,
+    ) -> Self
+    {
+        Self { ghost, ..self }
+    }
+}
+
+/// What a splice's tile stands for in the source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Stands
+{
+    /// A tile the source left out, which replaces no byte.
+    LeftOut,
+    /// A keyword the source misspelt, which replaces the word's bytes.
+    Misspelt,
+}
+
+/// The tiles a copy of a source holds that the source left out or misspelt,
+/// in copy order: the copy's offsets read back as the source's.
+///
+/// Each splice's `at .. after` is a range of the copy, and no two overlap.
+/// Every other byte of the copy is the source's, those past a tile shifted by
+/// the width of each tile before them less the bytes it replaces.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Splices<'splices>(&'splices [Splice]);
+
+impl<'splices> From<&'splices [Splice]> for Splices<'splices>
+{
+    /// The splices `splices` holds, in copy order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(splices: &'splices [Splice]) -> Self
+    {
+        Self(splices)
+    }
+}
+
+impl Splices<'static>
+{
+    /// No tile written in: the copy is the source.
+    pub(crate) const NONE: Self = Self(&[]);
+}
+
+impl Splices<'_>
+{
+    /// The source offset of the copy's `offset`: past a tile, shifted back
+    /// over it and every tile before it, less the bytes each replaces; within
+    /// one, the tile's own place.
+    ///
+    /// # Specification
+    /// trivial.
+    fn offset(
+        self,
+        offset: SourceOffset,
+    ) -> SourceOffset
+    {
+        let mut written = 0_u32;
+        let mut replaced = 0_u32;
+        for splice in self.0 {
+            if offset.0 >= splice.after.0 {
+                written = written.saturating_add(splice.width().0);
+                replaced = replaced.saturating_add(splice.over);
+            }
+            else if offset.0 > splice.at.0 {
+                return SourceOffset(splice.at.0.saturating_sub(written).saturating_add(replaced));
+            }
+            else {
+                break;
+            }
+        }
+        SourceOffset(offset.0.saturating_sub(written).saturating_add(replaced))
+    }
+
+    /// The source span of the copy's `span`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn span(
+        self,
+        span: SourceSpan,
+    ) -> SourceSpan
+    {
+        SourceSpan::new(self.offset(span.start), self.offset(span.end))
+    }
+
+    /// The splice whose tile holds the copy's `span`, if one does.
+    ///
+    /// # Specification
+    /// trivial.
+    fn holding(
+        self,
+        span: SourceSpan,
+    ) -> Option<Splice>
+    {
+        self.0
+            .iter()
+            .find(|splice| splice.at.0 <= span.start.0 && span.end.0 <= splice.after.0)
+            .copied()
+    }
+
+    /// The source leaf the copy's leaf `label` over `span` reads as: a tile a
+    /// splice writes is that splice's minted tile. A tile written in place of
+    /// nothing stands empty at its place, and one written in place of a
+    /// misspelt word stands over the word. A written tile has bytes, so an
+    /// empty tile at a splice's place, as the application tile before a
+    /// written `(` of a juxtaposed operand, is itself. Any other leaf is
+    /// itself, shifted.
+    ///
+    /// # Specification
+    /// trivial.
+    fn leaf(
+        self,
+        label: NodeLabel,
+        span: SourceSpan,
+    ) -> (NodeLabel, SourceSpan)
+    {
+        let written = matches!(label, NodeLabel::Tile(_)) && span.start.0 < span.end.0;
+        match self.holding(span) {
+            Some(splice) if written && splice.over == 0 => (
+                splice.ghost,
+                SourceSpan::point(self.offset(SourceOffset(splice.at.0))),
+            ),
+            Some(splice) if written => (splice.ghost, self.span(span)),
+            Some(_) | None => (label, self.span(span)),
+        }
+    }
+
+    /// Whether the copy's leaf `label` over `span` is layout the copy wrote
+    /// with a tile — the space around it — which the source never had.
+    ///
+    /// # Specification
+    /// trivial.
+    fn written_layout(
+        self,
+        label: NodeLabel,
+        span: SourceSpan,
+    ) -> WrittenLayout
+    {
+        WrittenLayout(
+            matches!(label, NodeLabel::Space)
+                && span.start.0 < span.end.0
+                && self.holding(span).is_some(),
+        )
+    }
+
+    /// The source obligation of the copy's `obligation`: its span read back as
+    /// any other span of the copy is.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the obligation of the same class over `obligation`'s span
+    ///   with each end shifted back over the tiles; an end past the wire's
+    ///   ceiling keeps the span as it was.
+    /// - panics: none.
+    /// - executable: none — the clause restates the shift.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`MeldState::commit_spliced`].
+    /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+    pub(crate) fn obligation(
+        self,
+        obligation: ObligationInstance,
+    ) -> ObligationInstance
+    {
+        let shifted = |offset: ByteOffset| {
+            u32::try_from(usize::from(offset))
+                .ok()
+                .map(|offset| self.offset(SourceOffset(offset)).byte_offset())
+        };
+        let span = shifted(obligation.span.start())
+            .zip(shifted(obligation.span.end()))
+            .and_then(|(start, end)| ByteSpan::new(start, end).ok())
+            .unwrap_or(obligation.span);
+        ObligationInstance {
+            class: obligation.class,
+            span,
+        }
+    }
+
+    /// Refuse a `copy` that is not `source` with each splice's bytes written
+    /// in, each in place of the source bytes it replaces.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Ok` exactly when `copy` without the bytes of each splice is
+    ///   `source` without the bytes each splice replaces.
+    /// - fails: [`MeldError::SourceMismatch`] otherwise.
+    /// - panics: none.
+    /// - executable: none — the clause restates the comparison.
+    ///
+    /// # Errors
+    /// [`MeldError::SourceMismatch`] when `copy` is not such a copy.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`MeldState::commit_spliced`].
+    /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+    fn copied(
+        self,
+        source: SourceText<'_>,
+        copy: SourceText<'_>,
+    ) -> Result<(), MeldError>
+    {
+        let (source, copy) = (
+            <&str>::from(source).as_bytes(),
+            <&str>::from(copy).as_bytes(),
+        );
+        let mut kept = 0_usize;
+        let mut from = 0_usize;
+        for splice in self.0 {
+            let at = usize::try_from(splice.at.0).map_err(|_error| MeldError::SourceMismatch)?;
+            let after =
+                usize::try_from(splice.after.0).map_err(|_error| MeldError::SourceMismatch)?;
+            let piece = copy.get(from .. at).ok_or(MeldError::SourceMismatch)?;
+            let end = kept
+                .checked_add(piece.len())
+                .ok_or(MeldError::SourceMismatch)?;
+            if source.get(kept .. end) != Some(piece) {
+                return Err(MeldError::SourceMismatch);
+            }
+            let over = usize::try_from(splice.over).map_err(|_error| MeldError::SourceMismatch)?;
+            kept = end.checked_add(over).ok_or(MeldError::SourceMismatch)?;
+            from = after;
+        }
+        if copy.get(from ..) == source.get(kept ..) {
+            Ok(())
+        }
+        else {
+            Err(MeldError::SourceMismatch)
+        }
+    }
+}
+
+primitive_copy_wrapper!(
+    /// Whether a leaf of a splice's copy is layout the copy wrote with its
+    /// tile, which the source never had.
+    struct WrittenLayout(bool);
+);
+primitive_copy_wrapper!(
+    /// Index into the melder slope stack.
+    struct StackIndex(usize);
+);
+primitive_copy_wrapper!(
+    /// Lowest stack index a collapse pass may reduce.
+    struct StackFloor(usize);
+);
+primitive_copy_wrapper!(
+    /// Index of an open form frontier.
+    struct FrontierIndex(usize);
+);
+primitive_copy_wrapper!(
+    /// Index of an operator cell.
+    struct OperatorIndex(usize);
+);
+primitive_copy_wrapper!(
+    /// How many cells a slope holds: the index the next pushed cell takes.
+    pub struct SlopeHeight(usize);
+);
+primitive_copy_wrapper!(
+    /// Whether a push can reach an open frontier below the nearest.
+    pub struct ChainReach(bool);
+);
+
+impl From<StackIndex> for StackFloor
+{
+    /// Take a slope index as a collapse floor.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: StackIndex) -> Self
+    {
+        Self(usize::from(value))
+    }
+}
+
+impl From<FrontierIndex> for StackIndex
+{
+    /// View a frontier position as a slope index.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: FrontierIndex) -> Self
+    {
+        Self(usize::from(value))
+    }
+}
+
+impl From<StackIndex> for FrontierIndex
+{
+    /// Name a slope index as a form frontier.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: StackIndex) -> Self
+    {
+        Self(usize::from(value))
+    }
+}
+
+impl From<OperatorIndex> for StackIndex
+{
+    /// View an operator position as a slope index.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: OperatorIndex) -> Self
+    {
+        Self(usize::from(value))
+    }
+}
+
+impl From<StackIndex> for OperatorIndex
+{
+    /// Name a slope index as an operator position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: StackIndex) -> Self
+    {
+        Self(usize::from(value))
+    }
+}
+
+impl StackIndex
+{
+    /// Return the index above this one, or `None` at the `usize` ceiling.
+    ///
+    /// # Specification
+    /// - ensures: returns the successor index when it is representable.
+    /// - fails: returns `None` on `usize::MAX` overflow rather than panicking.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, one below the host ceiling and the ceiling
+    ///   expose exact successor or absence. Wrapping, saturating into a
+    ///   duplicate index or rejecting the last representable successor changes
+    ///   the result.
+    /// - witness: `meld::tests::coordinate_conversions_cover_empty_inverted_and_ceiling`
+    #[inline]
+    #[spec(ensures: |ret| ret.map(usize::from) == self.0.checked_add(1))]
+    fn next(self) -> Option<Self>
+    {
+        usize::from(self).checked_add(1).map(Self::from)
+    }
+
+    /// Return the collapse floor above this index, or `None` at the ceiling.
+    ///
+    /// # Specification
+    /// - ensures: returns the [`StackFloor`] above this index when the
+    ///   successor is representable.
+    /// - fails: returns `None` on `usize::MAX` overflow rather than panicking.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, one below the host ceiling and the ceiling
+    ///   expose exact successor or absence. Wrapping, saturating into a
+    ///   duplicate index or rejecting the last representable successor changes
+    ///   the result.
+    /// - witness: `meld::tests::coordinate_conversions_cover_empty_inverted_and_ceiling`
+    #[inline]
+    #[spec(ensures: |ret| ret.map(usize::from) == self.0.checked_add(1))]
+    fn floor_after(self) -> Option<StackFloor>
+    {
+        self.next().map(StackFloor::from)
+    }
+}
+
+/// Half-open stack range `[low, high_exclusive)`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct StackRange
+{
+    /// First stack index in the range.
+    low: StackIndex,
+    /// One past the last stack index in the range.
+    high_exclusive: StackIndex,
+}
+
+impl StackRange
+{
+    /// Build the half-open stack range `[low, high_exclusive)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn new(
+        low: StackIndex,
+        high_exclusive: StackIndex,
+    ) -> Self
+    {
+        Self {
+            low,
+            high_exclusive,
+        }
+    }
+}
+
+primitive_copy_wrapper!(
+    /// Whether a form tile is open.
+    struct FormOpen(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a form-start absorbs the operand to its left.
+    struct AbsorbsLeft(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a form continuation tile is a form end.
+    struct FormEndTile(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a mold has a same-form predecessor.
+    struct MoldHasPredecessor(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a mold has a same-form successor.
+    struct MoldHasSuccessor(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a mold can start a form.
+    struct FormFirstMembership(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a mold can finish a nullable-tail form.
+    struct FormLastMembership(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a required-tail frontier's tail is one form already under way.
+    struct TailUnderWay(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether an incoming tile continues a required-tail form's tail.
+    struct TailExtension(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether an incoming tile continues a required-tail form after its tail.
+    struct TailContinuation(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a required-tail frontier's tail is a whole operand run.
+    struct TailWhole(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a mold would continue the nearest open form.
+    pub struct FormContinuation(bool);
+);
+primitive_copy_wrapper!(
+    /// The byte where the layout opener of a layout block starts.
+    pub struct LayoutOpener(u32);
+);
+primitive_copy_wrapper!(
+    /// Whether a separator closes the open declaration as its last tile.
+    pub struct SeparatorTaken(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a declaration head closes the open declaration before it.
+    pub struct DeclarationBound(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a melder weighs a repair: an obligation, or an ended
+    /// application that the molder weighs as one.
+    pub struct RepairWeighed(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a mold is admissible at the current frontier.
+    pub struct MoldAdmissibility(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a closer reaches an open partner below the innermost form.
+    pub struct CloserReach(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether the slope has an open form.
+    pub struct OpenFormPresence(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a mold extends the head operand.
+    pub struct OperandContinuation(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether the stack head is an operand.
+    pub struct HeadOperandPresence(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a space stands before the upcoming token.
+    pub struct SpacedBefore(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether the stack head is the nearest open form's frontier tile, so the
+    /// slot that tile opens holds nothing yet.
+    pub struct HeadFrontier(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether no slot is open at the slope head: the top level, where an
+    /// item begins.
+    pub struct BoundarySlot(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a mold's sort fits the expected slot.
+    struct SortAdmissibility(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether two molds are same-form adjacent.
+    struct SameFormAdjacency(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a form tile's same-form successor continues it past the
+    /// operand at the slope head.
+    pub struct PastOperand(bool);
+);
+
+/// Whether `next` continues the form tile of `open` past an operand of sort
+/// `head` at the slope head. It does, save where `next` opens a group, `open`
+/// offers both `next` and a hole of sort `head` directly after it, the operand
+/// fills that hole, and a mold of `next`'s label opens an argument that the
+/// operand applies to by juxtaposition. An observation's `:` takes its
+/// parameter list's `(` or its type, so after `tail : Twisted` the `(` opens
+/// the type's argument. A successor reached across a hole, as a data block's
+/// next member after a constructor's type, continues the form. So does a
+/// successor after an operand that fills no hole of `open`, as a projection's
+/// field after a stray literal, a successor that opens no group, and one that
+/// opens no argument.
+///
+/// # Specification
+/// - ensures: false exactly when both molds are known, `next`'s label opens a
+///   group, `open`'s right steps cross `next`'s label and a hole of sort
+///   `head`, `next`'s left steps cross no sort, `head` has an application tile,
+///   and a mold of `next`'s label is an operand or a non-absorbing form start
+///   of sort `head`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — after `tail : Twisted` a `(` reads as the type's
+///   argument, not the parameter list the `:` opens, a data block's `oper`
+///   after a constructor's type continues the block, a projection's field after
+///   a stray literal ends the projection, a row's entry after a stray type
+///   keeps its repair, and an access's `as` after a stray index continues the
+///   access: reading `next`'s left steps alone refuses the `oper`, reading
+///   adjacency alone admits the `(`, reading no hole refuses the field, reading
+///   no group refuses the entry, and reading no argument refuses the `as`.
+/// - witness: `tests::grammar::an_observation_s_type_applies_a_parenthesized_argument_6093`
+/// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+/// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
+#[spec(ensures: |ret| bool::from(ret) != (pbg.mold(open).is_ok_and(|left| pbg.mold(next).is_ok_and(|right| ClosingClass::opening(DelimSpelling::from(right.label)).is_some() && pbg.step(left.rctx, Dir::Right).is_ok_and(|steps| steps.iter().any(|step| step.crossed == StepSym::Tile(right.label)) && steps.iter().any(|step| step.crossed == StepSym::Sort(head))) && !pbg.step(right.rctx, Dir::Left).is_ok_and(|steps| steps.iter().any(|step| matches!(step.crossed, StepSym::Sort(_)))))) && pbg.application_in(head).is_some() && pbg.mold_label(next).is_some_and(|label| pbg.label_candidates(label).iter().any(|&tile| pbg.mold(tile).is_ok_and(|def| def.sort == head) && matches!(pbg.tile_kind(tile), Ok(TileKind::Operand | TileKind::Start))))))]
+pub fn continues_past_operand(
+    pbg: &Pbg,
+    open: MoldId,
+    next: MoldId,
+    head: Sort,
+) -> PastOperand
+{
+    let (Ok(left), Ok(right)) = (pbg.mold(open), pbg.mold(next))
+    else {
+        return PastOperand::from(true);
+    };
+    let offered = ClosingClass::opening(DelimSpelling::from(right.label)).is_some()
+        && pbg.step(left.rctx, Dir::Right).is_ok_and(|steps| {
+            steps
+                .iter()
+                .any(|step| step.crossed == StepSym::Tile(right.label))
+                && steps.iter().any(|step| step.crossed == StepSym::Sort(head))
+        });
+    let after_hole = pbg.step(right.rctx, Dir::Left).is_ok_and(|steps| {
+        steps
+            .iter()
+            .any(|step| matches!(step.crossed, StepSym::Sort(_)))
+    });
+    if !offered || after_hole || pbg.application_in(head).is_none() {
+        return PastOperand::from(true);
+    }
+    let argument = pbg.mold_label(next).is_some_and(|label| {
+        pbg.label_candidates(label).iter().any(|&tile| {
+            pbg.mold(tile).is_ok_and(|def| def.sort == head)
+                && matches!(pbg.tile_kind(tile), Ok(TileKind::Operand | TileKind::Start))
+        })
+    });
+    PastOperand::from(!argument)
+}
+primitive_copy_wrapper!(
+    /// Whether a successor mold has one of the candidate token labels.
+    struct SuccessorLabelPresence(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a grammar sort is an item position.
+    struct ItemPosition(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a token opens a value and no type: a keyword that heads a
+    /// term form, a literal or a brace with no type sigil.
+    struct ValueOpener(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a mold can open an item-position declaration at a fresh slot.
+    pub struct DeclarationStart(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a stack cell is an operand.
+    struct OperandPresence(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a completion is empty.
+    pub struct CompletionStatus(bool);
+);
+
+/// The most tiles of an open form a statement keyword's close pushes over no
+/// text to reach the tile the keyword continues.
+const STATEMENT_REACH: usize = 3;
+
+/// The mid tiles of an open form a statement close owes, the first `length`
+/// of `tiles`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct StatementChain
+{
+    /// The tiles, the first `length` of them owed.
+    tiles: [MoldId; STATEMENT_REACH],
+    /// How many of `tiles` are owed.
+    length: usize,
+}
+
+/// The close of the open statement a statement keyword stands in: the
+/// frontier at stack `index` stays open, everything above it closes, and
+/// `chain`'s tiles are owed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StatementClose
+{
+    /// The stack index of the frontier kept open.
+    index: usize,
+    /// The tiles owed after it.
+    chain: StatementChain,
+}
+
+/// One reducible head action selected by the collapse worklist.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CollapseStep
+{
+    /// Reduce an unsaturated operator cell.
+    ReduceOperator(OperatorIndex),
+    /// Force-close an open form frontier.
+    ForceCloseForm(FrontierIndex),
+}
+
+/// One thing a commit from the current slope would have to supply, found by
+/// [`MeldState::shortfalls`] from the slope head down.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Shortfall
+{
+    /// The open form frontier `mold`, spanning `frontier`, awaits its
+    /// `≐`-continuation.
+    Continuation
+    {
+        /// The frontier's mold.
+        mold: MoldId,
+        /// The frontier tile's bytes.
+        frontier: SourceSpan,
+        /// Whether anything stands above the frontier already.
+        leading: LeadingSlot,
+    },
+    /// An operator of `sort` misses its right operand, owed at `at`.
+    RightOperand
+    {
+        /// The operator's mold.
+        operator: MoldId,
+        /// The operand's sort.
+        sort: Sort,
+        /// The empty span right after the operator.
+        at: SourceSpan,
+        /// Whether a form is under way where the operand goes.
+        pending: PendingOperand,
+    },
+    /// An operator misses its left operand, owed at `at`.
+    LeftOperand
+    {
+        /// The empty span right before the operator.
+        at: SourceSpan,
+    },
+}
+
+/// What stands where an operator's missing right operand goes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PendingOperand
+{
+    /// Nothing: the operand is still to be written.
+    Absent,
+    /// A form opened there and is still open: closing it supplies the
+    /// operand.
+    UnderWay,
+}
+
+/// The operand slot open at the slope head.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OpenSlot
+{
+    /// A hole of this sort: the right operand an operator lacks, or the hole
+    /// an open form faces.
+    Hole(Sort),
+    /// An open form that faces a tile, as the `.` of a type path faces its
+    /// name. No hole stands below the head, and the slot reads as the slot
+    /// of an expression for want of one.
+    Tile,
+}
+
+impl OpenSlot
+{
+    /// The sort the slot expects: the sort of a hole, and an expression's for
+    /// a tile.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn sort(self) -> Sort
+    {
+        match self {
+            Self::Hole(sort) => sort,
+            Self::Tile => Sort::Expression,
+        }
+    }
+}
+
+/// One slope edit made while a [`Mark`] is live, undone by
+/// [`MeldState::rollback_to`] in reverse order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SlopeEdit
+{
+    /// A cell was pushed on top of the slope.
+    Pushed,
+    /// The cell at `index` was overwritten; `cell` is what it held.
+    Overwritten
+    {
+        /// The overwritten slope position.
+        index: usize,
+        /// The cell it held before.
+        cell: Cell,
+    },
+    /// One cell replaced the cells from `low`; the last `removed` cells of the
+    /// removed-cell log are the cells it replaced, in slope order.
+    Spliced
+    {
+        /// Where the replacement landed.
+        low: usize,
+        /// How many cells it replaced.
+        removed: usize,
+    },
+}
+
+/// What arrives after a required-tail form's tail: the tile being pushed,
+/// or a token whose mold the molder has yet to choose.
+#[derive(Clone, Copy, Debug)]
+enum Incoming<'labels>
+{
+    /// The molded tile `push` is about to place.
+    Tile(MoldId),
+    /// The labels of the token the molder is about to gather.
+    Token(CandidateLabels<'labels>),
+}
+primitive_copy_wrapper!(
+    /// One checkpoint wire byte.
+    struct WireByte(u8);
+);
+primitive_copy_wrapper!(
+    /// Checkpoint wire `u16`.
+    struct WireU16(u16);
+);
+primitive_copy_wrapper!(
+    /// Checkpoint wire `u32`.
+    struct WireU32(u32);
+);
+primitive_copy_wrapper!(
+    /// Checkpoint wire `u64`.
+    struct WireU64(u64);
+);
+primitive_copy_wrapper!(
+    /// Count encoded in a checkpoint.
+    struct CheckpointCount(usize);
+);
+primitive_copy_wrapper!(
+    /// Count of bytes read from a checkpoint.
+    struct ByteCount(usize);
+);
+
+/// Owned checkpoint byte stream.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CheckpointBytes
+{
+    /// Encoded checkpoint payload, laid out per the checkpoint wire format.
+    bytes: Vec<u8>,
+}
+
+impl From<Vec<u8>> for CheckpointBytes
+{
+    /// Adopt a serialized checkpoint buffer.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: Vec<u8>) -> Self
+    {
+        Self { bytes: value }
+    }
+}
+
+impl From<CheckpointBytes> for Vec<u8>
+{
+    /// Release the serialized buffer.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: CheckpointBytes) -> Self
+    {
+        value.bytes
+    }
+}
+
+impl AsRef<[u8]> for CheckpointBytes
+{
+    /// Borrow the serialized bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &[u8]
+    {
+        &self.bytes
+    }
+}
+
+/// Borrowed checkpoint byte stream.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CheckpointBytesRef<'bytes>(&'bytes [u8]);
+
+impl<'bytes> From<&'bytes [u8]> for CheckpointBytesRef<'bytes>
+{
+    /// Borrow serialized bytes for decoding.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: &'bytes [u8]) -> Self
+    {
+        Self(value)
+    }
+}
+
+impl<'bytes> From<&'bytes CheckpointBytes> for CheckpointBytesRef<'bytes>
+{
+    /// Borrow an owned checkpoint buffer for decoding.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: &'bytes CheckpointBytes) -> Self
+    {
+        Self(value.as_ref())
+    }
+}
+
+impl AsRef<[u8]> for CheckpointBytesRef<'_>
+{
+    /// Borrow the serialized bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &[u8]
+    {
+        self.0
+    }
+}
+
+/// Borrowed bytes returned by the checkpoint reader.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ByteChunk<'bytes>(&'bytes [u8]);
+
+impl<'bytes> From<&'bytes [u8]> for ByteChunk<'bytes>
+{
+    /// Wrap a borrowed wire chunk.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: &'bytes [u8]) -> Self
+    {
+        Self(value)
+    }
+}
+
+impl<'bytes> From<ByteChunk<'bytes>> for &'bytes [u8]
+{
+    /// Read the borrowed chunk back.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: ByteChunk<'bytes>) -> Self
+    {
+        value.0
+    }
+}
+
+impl AsRef<[u8]> for ByteChunk<'_>
+{
+    /// Borrow the chunk's bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &[u8]
+    {
+        self.0
+    }
+}
+
+/// A tile that has already been assigned a mold, ready to push.
+///
+/// The molder produces these from labeled tokens; a caller driving the melder
+/// directly synthesizes them from the real PBG mold table. The tile carries
+/// its interned
+/// [`MoldId`] and its surface text; the melder appends the text to its
+/// assembled source buffer and records the span.
+///
+/// # Specification
+/// - requires: `mold` indexes the mold table of the grammar the [`MeldState`]
+///   was built over; `text` is the tile's exact surface bytes.
+/// - ensures: preserves `mold` and `text` exactly.
+/// - provides: the unit of input to [`MeldState::push`].
+/// - fails: never; an out-of-range `mold` is handled totally by `push` as an
+///   [`Oblig::UnmoldedTok`].
+/// - panics: none.
+///
+/// - executable: none — this data type has no call boundary; its construction,
+///   observers and transitions carry the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — caller text survives ownership and source-span
+///   construction across empty, Unicode and unknown-mold pushes. Dropping bytes
+///   or changing the chosen mold changes the committed labels and
+///   reconstruction.
+/// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
+/// - witness: `meld::tests::single_atom_commits_to_one_token`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MoldedTile
+{
+    /// The interned mold assigned to the tile.
+    mold: MoldId,
+    /// The tile's exact surface text.
+    text: Box<str>,
+}
+
+impl MoldedTile
+{
+    /// Construct a molded tile from its mold and surface text.
+    ///
+    /// # Specification
+    /// - requires: `mold` indexes the melder's grammar; `text` is the surface.
+    /// - ensures: preserves both exactly.
+    /// - provides: the caller's tile constructor.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and multibyte text, embedded NUL and an unknown
+    ///   mold expose exact retained bytes and identity at push. Trimming, UTF-8
+    ///   byte miscount or substituting a mold changes spans or repairs.
+    /// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.mold == mold && ret.text.as_ref() == <&str>::from(text))]
+    pub fn new(
+        mold: MoldId,
+        text: TileText<'_>,
+    ) -> Self
+    {
+        Self {
+            mold,
+            text: Box::from(<&str>::from(text)),
+        }
+    }
+
+    /// Return the tile's mold.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn mold(&self) -> MoldId
+    {
+        self.mold
+    }
+
+    /// Return the tile's surface text.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn text(&self) -> TileText<'_>
+    {
+        TileText::from(self.text.as_ref())
+    }
+}
+
+/// A dense id into the melder's append-only emission log.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct EmitId(u32);
+
+/// One append-only emission-log entry (replayed into the tree at commit).
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum EmitOp
+{
+    /// A leaf: a tile, a grout, a minted close, or layout space.
+    Token
+    {
+        /// What the leaf is.
+        label: NodeLabel,
+        /// Inclusive source start.
+        start: u32,
+        /// Exclusive source end.
+        end: u32,
+    },
+    /// An interior node owning already-emitted children: a meld or the root.
+    Interior
+    {
+        /// What the interior is.
+        label: NodeLabel,
+        /// Inclusive source start.
+        start: u32,
+        /// Exclusive source end.
+        end: u32,
+        /// The interior's children, in source order.
+        children: Vec<EmitId>,
+    },
+}
+
+/// What the layout between two nodes holds, as comment placement reads it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Gap
+{
+    /// No line break: the two stand on one line.
+    Inline,
+    /// Line breaks, but no blank line.
+    Lines,
+    /// A blank line.
+    Blank,
+}
+
+/// Which neighbours a piece of layout may belong to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reach
+{
+    /// A comment: the form before it on its line, or the form after it.
+    Either,
+    /// Documentation: the form after it only, since it describes what follows.
+    Leading,
+    /// Inner documentation: the node enclosing it, since it describes what it
+    /// stands in.
+    Inner,
+}
+
+/// Which documentation a line writes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DocLine
+{
+    /// `///`: the form after it.
+    Outer,
+    /// `//!`: the node it stands in, a source's root included.
+    Inner,
+}
+
+/// The attribute whose entries are documentation.
+const DOC_ATTRIBUTE: &str = "doc";
+
+/// The tile opening an attribute block.
+const ATTRIBUTE_OPEN: &str = "@[";
+
+/// The tile closing an attribute block.
+const ATTRIBUTE_CLOSE: &str = "]";
+
+/// The tile opening an attribute's payload.
+const PAYLOAD_OPEN: &str = "(";
+
+/// The tile closing an attribute's payload.
+const PAYLOAD_CLOSE: &str = ")";
+
+/// The tile separating the entries of an attribute block.
+const SEPARATOR: &str = ",";
+
+/// The named kind of a string literal, the one payload documentation takes.
+const STRING_FORM: &str = "string";
+
+/// The opening of a documentation line, `///`, not followed by a fourth `/`.
+const DOC_LINE: &str = "///";
+
+/// The opening of an inner documentation line, `//!`.
+const INNER_DOC_LINE: &str = "//!";
+
+/// The rule of a type at a mode variable, `m T`, which no type application
+/// takes as its argument (#5326).
+pub const MODED_TYPE: &str = "moded_type";
+
+/// The operator shape of a shifted tile, derived from its precedence bounds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OpShape
+{
+    /// Faces a sort hole on the right only (e.g. unary `-`, `if`).
+    Prefix,
+    /// Faces a sort hole on both sides (an infix operator).
+    Infix,
+    /// Faces a sort hole on the left only (e.g. a projection tail).
+    Postfix,
+}
+
+/// The role of a stack cell in the slope.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Role
+{
+    /// A completed subtree filling a slot (a "kid").
+    Operand,
+    /// A shifted tile of a multi-tile form, joined to its neighbours by the
+    /// same-form `≐` adjacency (paper Fig. 15's equal face). Brackets are the
+    /// special case where the opener and closer are directly `≐`-adjacent.
+    FormTile
+    {
+        /// The tile's mold, for `≐`-successor lookup.
+        mold: MoldId,
+        /// The producing form's sort.
+        sort: Sort,
+        /// Whether this is the form's open frontier (awaiting a continuation).
+        open: bool,
+        /// Whether this tile opened the form (a form-start).
+        start: bool,
+        /// Whether a form-start absorbs the preceding operand (a left-bounded
+        /// start such as a call `(` or a projection `.`).
+        absorb_left: bool,
+    },
+    /// A shifted operator awaiting completion.
+    Operator
+    {
+        /// The operator's mold.
+        mold: MoldId,
+        /// The operator's form-group precedence.
+        prec: Prec,
+        /// The producing form's sort.
+        sort: Sort,
+        /// The operator's shape.
+        shape: OpShape,
+    },
+}
+
+/// One terrace of the slope: an emitted subtree plus its role.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Cell
+{
+    /// The emission-log id of this cell's subtree or tile.
+    emit: EmitId,
+    /// Inclusive source start.
+    start: u32,
+    /// Exclusive source end.
+    end: u32,
+    /// The subtree's sort.
+    sort: Sort,
+    /// The cell's slope role.
+    role: Role,
+}
+
+/// The classification of an incoming molded tile.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Kind
+{
+    /// A complete operand (no holes on either side, no `≐` neighbours).
+    Operand,
+    /// An operator of the given shape (single-tile form, no `≐` neighbours).
+    Operator(OpShape),
+    /// The opening tile of a multi-tile form (`≐`-successor, no predecessor).
+    FormStart
+    {
+        /// Whether the start absorbs the preceding operand (left-bounded).
+        absorb_left: bool,
+    },
+    /// A middle tile of a multi-tile form (`≐`-predecessor and successor).
+    FormMid,
+    /// The closing tile of a multi-tile form (`≐`-predecessor, no successor).
+    FormEnd,
+}
+
+/// The operator-precedence relation between the stack head and an incoming
+/// tile.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Rel
+{
+    /// `head ⋖ τ`: shift (τ enters the head's open slot).
+    Yields,
+    /// `head ≐ τ`: shift (same-form continuation).
+    Match,
+    /// `head ⋗ τ`: reduce the head handle.
+    Takes,
+    /// Same-sort, precedence-incomparable: `AmbiguousPrec` at maximum severity.
+    Ambiguous,
+    /// Different sorts: route through grout (Degrout).
+    CrossSort,
+}
+
+/// The precomputed same-form `≐`-membership table, derived from `Pbg`
+/// The form-membership queries over the checked PBG's `≐` relation.
+///
+/// A tile mold participates in a multi-tile form when it has a `≐`-predecessor,
+/// a `≐`-successor, or both (paper Fig. 15's equal face; `Pbg::adjacencies`).
+/// The four roles fall out of the pair of flags: a **start** has a successor
+/// but no predecessor (`def`, `(`, an opening `"`); an **end** has a
+/// predecessor but no successor (`;`, `)`, a closing `"`); a **middle** has
+/// both (`=`, `else`, a repeated `,`); and everything else is a single-tile
+/// operator or a bare operand. The actual `≐` between two molds is checked
+/// against the sorted adjacency relation directly ([`MeldState::adjacent`]).
+///
+/// Membership itself lives in the grammar: [`Pbg::mold_has_predecessor`] and
+/// [`Pbg::mold_has_successor`] read dense flags derived at table build, and
+/// the form-first/form-last tests binary-search the stored sorted lists. This
+/// facade carries no state — the per-parse (and per-restore) rebuild of four
+/// `BTreeSet<MoldId>` membership sets it replaced cost O(adjacencies) tree
+/// inserts on every parse.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct FormTable;
+
+impl FormTable
+{
+    /// Return whether `mold` has a same-form `≐`-successor.
+    ///
+    /// # Specification
+    /// trivial.
+    fn has_succ(
+        pbg: &Pbg,
+        mold: MoldId,
+    ) -> MoldHasSuccessor
+    {
+        MoldHasSuccessor::from(bool::from(pbg.mold_has_successor(mold)))
+    }
+
+    /// Return whether `mold` can be a form's first tile (its FIRST set).
+    ///
+    /// # Specification
+    /// trivial.
+    fn is_form_first(
+        pbg: &Pbg,
+        mold: MoldId,
+    ) -> FormFirstMembership
+    {
+        FormFirstMembership::from(bool::from(pbg.mold_is_form_first(mold)))
+    }
+
+    /// Return whether `mold` can be a form's last tile (its LAST set) — a
+    /// completable frontier whose remaining form tail is nullable.
+    ///
+    /// # Specification
+    /// trivial.
+    fn is_form_last(
+        pbg: &Pbg,
+        mold: MoldId,
+    ) -> FormLastMembership
+    {
+        FormLastMembership::from(bool::from(pbg.mold_is_form_last(mold)))
+    }
+}
+
+/// Return whether `sort` is an **item position** — a slot whose residents are
+/// declarations rather than values.
+///
+/// Two sorts qualify, and the second is why this is a function rather than an
+/// equality. [`Sort::Item`] is the file's own top level. [`Sort::ModuleMember`]
+/// is a module body, which holds its members *by reference* so that nesting
+/// costs one rule instead of one copy per admitted level — members are forms in
+/// their own right there, not tiles of the enclosing declaration.
+///
+/// Both are positions where an open form legitimately reaches past a fresh
+/// declaration head and takes it as a member, which is exactly the case a
+/// boundary repair must not fire on.
+///
+/// # Specification
+/// - ensures: exactly item and module-member sorts are declaration positions.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all seven sorts distinguish declaration positions from
+///   value and instantiation slots. Omitting module members or accepting a
+///   value sort changes whether declaration-boundary repair can cross it.
+/// - witness: `meld::tests::declaration_positions_are_exactly_item_and_module_member`
+#[inline]
+#[must_use]
+#[spec(ensures: |ret| ret.0 == matches!(sort, Sort::Item | Sort::ModuleMember))]
+const fn is_item_position(sort: Sort) -> ItemPosition
+{
+    ItemPosition(matches!(sort, Sort::Item | Sort::ModuleMember))
+}
+
+/// Return whether `mold` can open an item-position declaration at a fresh
+/// slot of `pbg`.
+///
+/// Three conditions, each excluding a distinct near-miss. [`Sort::Item`] is
+/// the item position itself. Membership in the grammar's FIRST set is what
+/// `admits_at` already means by "opens at a fresh slot", and it excludes a
+/// head inlined as a container's member tile — a module body's `def` is a
+/// tile of `module_declaration`, never a form of its own. Having a
+/// `≐`-successor excludes the bare `;` of `expression_statement`: holes are
+/// tile-transparent when the FIRST set is computed, so that `;` is the rule's
+/// first tile and is item-sorted, yet it terminates a statement rather than
+/// opening one.
+///
+/// # Specification
+/// - ensures: recognizes exactly item-position first molds that also have a
+///   same-form successor; missing molds are false.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — declaration heads, inlined members and a terminating
+///   semicolon differ at sort, FIRST and successor boundaries. Their repair
+///   behavior exposes admitting a terminator or rejecting a real head.
+/// - witness: `tests::acceptance::an_unclosed_delimiter_yields_to_every_declaration_family`
+#[spec(ensures: |ret| bool::from(ret) == pbg.mold(mold).is_ok_and(|def| matches!(def.sort, Sort::Item | Sort::ModuleMember) && bool::from(pbg.mold_is_form_first(mold)) && bool::from(pbg.mold_has_successor(mold))))]
+#[inline]
+#[must_use]
+pub fn declaration_head(
+    pbg: &Pbg,
+    mold: MoldId,
+) -> DeclarationStart
+{
+    let Ok(def) = pbg.mold(mold)
+    else {
+        return DeclarationStart::from(false);
+    };
+    DeclarationStart::from(
+        bool::from(is_item_position(def.sort))
+            && bool::from(FormTable::is_form_first(pbg, mold))
+            && bool::from(FormTable::has_succ(pbg, mold)),
+    )
+}
+
+/// A resumable, first-order push machine over a checked PBG.
+///
+/// See the module docs for the three push rules and the append-only emission
+/// model. `MeldState` holds no ambient state: the slope, the emission log, the
+/// obligation buffer, and the assembled source are the whole state (P2), so a
+/// [`Checkpoint`] is a faithful, serializable snapshot.
+///
+/// # Specification
+/// - requires: `pbg` outlives the state; all pushed [`MoldedTile`] molds index
+///   `pbg`'s table (out-of-range molds are handled totally).
+/// - ensures: [`push`](MeldState::push) is total and never panics; the slope
+///   stays well-formed; [`commit`](MeldState::commit) yields a well-formed
+///   [`SyntaxTree`] recording `pbg`'s fingerprint.
+/// - provides: the streaming push surface plus non-destructive
+///   [`finalize`](MeldState::finalize) and
+///   [`obligations`](MeldState::obligations) queries and
+///   [`checkpoint`](MeldState::checkpoint)/[`resume`](MeldState::resume).
+/// - fails: only [`commit`](MeldState::commit) is fallible, returning
+///   [`MeldError`] for an arena-construction failure.
+/// - panics: none.
+/// - intension: the slope is a `Vec` processed with checked arithmetic;
+///   emission is append-only; obligations accumulate in buffer order.
+///
+/// - executable: none — this data type has no call boundary; its construction,
+///   observers and transitions carry the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — complete and partial streams, marked candidates and
+///   serialized continuations expose exact trees, source and obligations.
+///   Losing a buffer, crossing a form barrier or retaining stale caches changes
+///   continuation.
+/// - witness: `meld::tests::checkpoint_resume_is_equivalent`
+/// - witness: `meld::tests::mark_rollback_restores_state_exactly`
+/// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+pub struct MeldState<'pbg>
+{
+    /// The grammar this state melds against.
+    pbg: &'pbg Pbg,
+    /// The assembled source buffer (grows as tiles are pushed).
+    source: String,
+    /// The append-only emission log, replayed at commit.
+    emit: Vec<EmitOp>,
+    /// The slope: a `Vec`-backed sequence of terraces, base at index zero.
+    stack: Vec<Cell>,
+    /// Ascending indices of the OPEN form-frontier cells on the slope
+    /// (`Role::FormTile { open: true }`), the top of a monotone index cache.
+    ///
+    /// The three index caches (`frontiers` / `operators` / `barriers`) keep the
+    /// per-token head queries O(1) instead of O(content-region): a form can
+    /// accumulate a long run of operand cells above its open frontier, so a
+    /// top-down role scan would cost O(atoms) per token — O(atoms²) per form.
+    /// Every
+    /// slope mutation is a top push, a top-reaching splice, or a
+    /// frontier-flag flip, so each cache maintains itself with amortized
+    /// O(1) pushes/pops and no rescans.
+    frontiers: Vec<usize>,
+    /// Ascending indices of the operator cells (`Role::Operator`) on the slope.
+    operators: Vec<usize>,
+    /// Ascending indices of ALL form-tile cells (`Role::FormTile`, open or
+    /// closed) on the slope — the scan barriers the operator query stops at.
+    barriers: Vec<usize>,
+    /// The obligation buffer, in accumulation order.
+    obligations: Vec<ObligationInstance>,
+    /// Floating layout-space tokens: root children at commit for losslessness,
+    /// save a comment, which joins the node it describes (space is skipped by
+    /// the merkle hash, so tree position is not identity-bearing).
+    spaces: Vec<EmitId>,
+    /// The slope edits made while a [`Mark`] is live, oldest first.
+    edits: Vec<SlopeEdit>,
+    /// The cells [`SlopeEdit::Spliced`] edits replaced, in edit order.
+    removed: Vec<Cell>,
+    /// How many marks are live; edits are recorded only while one is.
+    live_marks: usize,
+    /// The lowest slope position any splice or frontier flip has touched,
+    /// dry-runs included; `usize::MAX` while none has. A form unit's
+    /// boundary operand sits at position zero, so this is what says whether
+    /// the unit's fold ever reached past its own forms.
+    low_water: usize,
+    /// How many left operands a reduce found missing. Only a difference
+    /// against a [`Mark`] is read, so a restored state starts it at zero.
+    left_shortfalls: usize,
+    /// How many juxtaposed type applications reduced before the `;` or the
+    /// item tile that ends their form ([`Self::reduce_toward`]). The parse owes
+    /// no obligation for them, and the molder counts each as an
+    /// [`Oblig::InconMeld`] when it compares readings. Only a difference
+    /// against a [`Mark`] is read, so a restored state starts it at zero.
+    ended_applications: usize,
+    /// Whether a closer reaches an open partner below the innermost form
+    /// (#6323). The molder turns it off while it molds a lookahead window,
+    /// and back on for the stream. A window scores eight tokens, and a reach
+    /// that a window takes can make a reading look cheap whose cost comes
+    /// after the window. The flag is transient: no mark or checkpoint holds it.
+    reach: CloserReach,
+}
+
+impl<'pbg> MeldState<'pbg>
+{
+    /// Create an empty melder at the base boundary `⊣` over `pbg`.
+    ///
+    /// # Specification
+    /// - requires: `pbg` is a checked PBG.
+    /// - ensures: returns a state with an empty slope, empty log, empty source,
+    ///   and no obligations; the bracket table is precomputed from `pbg`.
+    /// - provides: the streaming entry point (`⊣` at the base).
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the empty state commits to a Wald root over the
+    ///   requested grammar with no source or repairs. Seeded cells, stale
+    ///   buffers or the wrong grammar change the tree or its fingerprint.
+    /// - witness: `meld::tests::empty_state_commits_to_a_root`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.source.is_empty() && ret.emit.is_empty() && ret.stack.is_empty() && ret.frontiers.is_empty() && ret.operators.is_empty() && ret.barriers.is_empty() && ret.obligations.is_empty() && ret.spaces.is_empty() && ret.edits.is_empty() && ret.removed.is_empty() && ret.live_marks == 0 && ret.low_water == usize::MAX && ret.left_shortfalls == 0 && ret.ended_applications == 0 && ret.pbg.fingerprint() == pbg.fingerprint())]
+    pub fn new(pbg: &'pbg Pbg) -> Self
+    {
+        Self {
+            pbg,
+            source: String::new(),
+            emit: Vec::new(),
+            stack: Vec::new(),
+            frontiers: Vec::new(),
+            operators: Vec::new(),
+            barriers: Vec::new(),
+            obligations: Vec::new(),
+            spaces: Vec::new(),
+            edits: Vec::new(),
+            removed: Vec::new(),
+            live_marks: 0,
+            low_water: usize::MAX,
+            left_shortfalls: 0,
+            ended_applications: 0,
+            reach: CloserReach::from(true),
+        }
+    }
+
+    /// Make room for the molding of `tokens`: their source bytes in the
+    /// source buffer, and twice their count in the emission log.
+    ///
+    /// The molding emits one leaf for each token and one interior node for
+    /// each form, and a form holds at least two children, so a molding that
+    /// mints few tiles emits fewer than twice its tokens. Over the corpus and
+    /// the library, a molding emits at most 1.56 entries for each token, and
+    /// 1.20 on average. A fresh state's log and source then grow once, at the
+    /// start, and not by doubling as tiles are pushed (#5229). A state that
+    /// already holds a molding grows by the amortized rule, so runs molded one
+    /// after another into one state copy the log a logarithmic number of
+    /// times.
+    ///
+    /// # Specification
+    /// - requires: `tokens` are ascending and tile one span of the source.
+    /// - ensures: the source buffer can take the bytes `tokens` span, and the
+    ///   log can take twice as many entries as `tokens` holds, beyond what each
+    ///   holds now; nothing that the state holds changes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the hotpath series measure the allocations of the
+    ///   molding with and without the reservation; every molding of the corpus
+    ///   commits the same tree as before.
+    /// - witness: `parse::tests::parse_is_lossless_and_hash_stable`
+    #[spec(
+        captures: before = (self.source.len(), self.emit.len()),
+        ensures: |()| self.source.len() == before.0 && self.emit.len() == before.1
+            && self.emit.capacity() >= before.1.saturating_add(tokens.len().saturating_mul(2)),
+    )]
+    pub(crate) fn reserve_for(
+        &mut self,
+        tokens: &[Token],
+    )
+    {
+        let bytes = match (tokens.first(), tokens.last()) {
+            (Some(first), Some(last)) => last.end.saturating_sub(first.start),
+            _ => 0,
+        };
+        self.source
+            .reserve(usize::try_from(bytes).unwrap_or_default());
+        self.emit.reserve(tokens.len().saturating_mul(2));
+    }
+
+    /// Push one molded tile through the machine (Shift / Reduce / Degrout).
+    ///
+    /// This is the unit of totality and of cost accounting: the Shift happy
+    /// path performs no per-push heap allocation beyond amortized log/slope
+    /// growth, uses interned `u32`
+    /// ids throughout, and never compares strings. Reduce and Degrout
+    /// amortize buffer reuse.
+    ///
+    /// # Specification
+    /// - requires: none; `tile.mold` may be arbitrary.
+    /// - ensures: exactly one push rule fires per tile; the slope stays
+    ///   well-formed; any inserted grout records an [`ObligationInstance`]; an
+    ///   out-of-range mold is buffered as [`Oblig::UnmoldedTok`].
+    /// - provides: the primary streaming input operation; batch parse is the
+    ///   derived fold of `push` followed by [`commit`](MeldState::commit).
+    /// - fails: never; totally defined on every input.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — valid atoms and operators, ambiguous precedence,
+    ///   unknown molds, empty text and multibyte source expose exact tree spans
+    ///   and repair classes. Dropped bytes, a wrong reduction or an unreported
+    ///   fallback changes the source, structure or obligations.
+    /// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
+    /// - witness: `meld::tests::infix_reduces_after_precedence`
+    /// - witness: `meld::tests::degrout_flags_one_ambiguous_prec_at_the_smallest_span`
+    #[inline]
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.get(before ..) == Some(tile.text.as_ref()) && (self.pbg.mold(tile.mold).is_ok() || self.obligations.last().is_some_and(|obligation| obligation.class == Oblig::UnmoldedTok)))]
+    pub fn push(
+        &mut self,
+        tile: &MoldedTile,
+    )
+    {
+        self.push_text(tile.mold, tile.text());
+    }
+
+    /// [`push`](Self::push) a tile of `mold` over `text`, borrowing the text:
+    /// the molder's dry-runs push without owning a [`MoldedTile`]. An
+    /// expression operand right after an expression operand is applied to it,
+    /// `f x`: the application tile no lexeme spells is pushed first.
+    ///
+    /// # Specification
+    /// - requires: none; `mold` may be arbitrary.
+    /// - ensures: the state [`push`](Self::push) of a tile of `mold` and `text`
+    ///   reaches, after the application tile [`Self::juxtaposed`] names.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every [`push`](Self::push) witness runs through this
+    ///   body, and the molder's dry-runs and committed tiles push here, so a
+    ///   drift between the two changes the corpus trees.
+    /// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    /// - witness: `tests::grammar::juxtaposition_applies_between_operands_4853`
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.get(before ..) == Some(<&str>::from(text)) && (self.pbg.mold(mold).is_ok() || self.obligations.last().is_some_and(|obligation| obligation.class == Oblig::UnmoldedTok)))]
+    pub(crate) fn push_text(
+        &mut self,
+        mold: MoldId,
+        text: TileText<'_>,
+    )
+    {
+        if let Ok(def) = self.pbg.mold(mold) {
+            // An operand of the sort that a type spine's head states, as an
+            // expression after `Path`, takes the type's application tile
+            // (#5750).
+            let spine = if self.spine_operands() == Some(def.sort) {
+                Sort::Type
+            }
+            else {
+                def.sort
+            };
+            if let Some(application) = self.juxtaposed(mold, spine) {
+                self.push_molded(application, TileText::from(""));
+            }
+        }
+        self.push_molded(mold, text);
+    }
+
+    /// Push `text`, a reserved word the molder reads as a name, as a tile of
+    /// `mold`, and owe the word.
+    ///
+    /// # Specification
+    /// - requires: none; `mold` is the name tile the molder chose.
+    /// - ensures: the state [`push_text`](Self::push_text) reaches, then one
+    ///   more obligation, [`Oblig::ReservedKeyword`], over the bytes of `text`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a reserved word in a name slot owes one obligation at
+    ///   its own bytes; flagging the span before the push, or a point, moves
+    ///   it.
+    /// - witness: `tests::acceptance::a_reserved_word_where_a_name_stands_owes_one_obligation_6266`
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.get(before ..).is_some_and(|pushed| pushed.ends_with(<&str>::from(text))) && self.obligations.last().is_some_and(|obligation| obligation.class == Oblig::ReservedKeyword && usize::from(obligation.span.end()) == self.source.len() && usize::from(obligation.span.start()) == self.source.len().saturating_sub(<&str>::from(text).len())))]
+    pub(crate) fn push_reserved_name(
+        &mut self,
+        mold: MoldId,
+        text: TileText<'_>,
+    )
+    {
+        self.push_text(mold, text);
+        let end = self.source.len();
+        let span = SourceSpan::new(
+            Self::wire_len(CheckpointCount::from(
+                end.saturating_sub(<&str>::from(text).len()),
+            )),
+            Self::wire_len(CheckpointCount::from(end)),
+        );
+        self.flag(Oblig::ReservedKeyword, span);
+    }
+
+    /// Push one tile of `mold` over `text` through the machine: Shift,
+    /// Reduce or Degrout.
+    ///
+    /// # Specification
+    /// - requires: none; `mold` may be arbitrary.
+    /// - ensures: `text` is appended to the source; a mold `pbg` holds is
+    ///   pushed as its kind decides, and any other is buffered as
+    ///   [`Oblig::UnmoldedTok`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::push_text`], which pushes every tile here.
+    /// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.get(before ..) == Some(<&str>::from(text)) && (self.pbg.mold(mold).is_ok() || self.obligations.last().is_some_and(|obligation| obligation.class == Oblig::UnmoldedTok)))]
+    fn push_molded(
+        &mut self,
+        mold: MoldId,
+        text: TileText<'_>,
+    )
+    {
+        let def = match self.pbg.mold(mold) {
+            Ok(def) => *def,
+            Err(_error) => {
+                self.push_unmolded(SourceFragment::from(text));
+                return;
+            },
+        };
+        // Settle any completable open frontier (a bare `?` hole) the incoming
+        // tile does not continue, so it stands as a complete operand and the
+        // incoming tile is a flat sibling, not absorbed into the hole meld.
+        self.settle_completable(mold);
+        // A prefix form may have an optional tile-bearing branch followed by a
+        // required sort hole. It cannot close before that operand arrives, but
+        // once its tail is whole it is a complete form even without a terminal
+        // tile, unless this tile continues the tail.
+        self.settle_filled_required_tail(Incoming::Tile(mold));
+        let span = self.append_source(SourceFragment::from(text));
+        let tile_emit = self.emit_token(NodeLabel::Tile(mold), span);
+        let cell = Cell {
+            emit: tile_emit,
+            start: u32::from(span.start),
+            end: u32::from(span.end),
+            sort: def.sort,
+            role: Role::Operand,
+        };
+        // A value opener ends a juxtaposed type before it, as a `)` ends the
+        // call it replaces (#6101). So `-> Prog e a match` closes `Prog e a`
+        // at `match`, and the type stays closed under the body.
+        if def.sort != Sort::Type
+            && self.applies_next_in(Sort::Type).is_some()
+            && bool::from(self.opens_value_only(mold, text))
+        {
+            self.end_type_application();
+        }
+
+        match self.classify(mold) {
+            Kind::FormStart { absorb_left } => {
+                if absorb_left {
+                    self.reduce_call_form(def.sort, def.prec);
+                }
+                self.open_form(mold, def.sort, cell, AbsorbsLeft::from(absorb_left));
+            },
+            Kind::FormMid => {
+                self.continue_form(mold, def.sort, cell, FormEndTile::from(false));
+            },
+            Kind::FormEnd => {
+                self.continue_form(mold, def.sort, cell, FormEndTile::from(true));
+            },
+            Kind::Operand => {
+                self.reduce_toward(def.sort, def.prec, mold, span);
+                self.push_cell(cell);
+            },
+            Kind::Operator(shape) => {
+                self.reduce_toward(def.sort, def.prec, mold, span);
+                self.push_cell(Cell {
+                    role: Role::Operator {
+                        mold,
+                        prec: def.prec,
+                        sort: def.sort,
+                        shape,
+                    },
+                    ..cell
+                });
+            },
+        }
+    }
+
+    /// The application tile to push before a tile of `mold` and `sort`, when
+    /// the tile opens an operand right after one of its sort: `f x` in an
+    /// expression, `Maybe A` in a type.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the grammar's application mold in `sort` exactly when `mold`
+    ///   is no application, the grammar has an application tile in `sort`,
+    ///   `mold` starts an operand by itself, the slope's top is a complete
+    ///   operand of `sort` whose source does not end in `}` or opens with a
+    ///   connective's opener `*{`, `+{`, `&{` or `#{`, and a form is open.
+    ///   `None` otherwise.
+    /// - panics: none.
+    /// - bound: a few comparisons and three byte reads. No string is compared.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `f x y` applies twice, `if c { a } else { b } x`
+    ///   stays two statements, a braced value `*{}` or `+{.l = a}` takes the
+    ///   next argument, a call `f(x)` stays a call, and two stray words at the
+    ///   root stay strays. `Vec A n` in a type applies twice, and `-F Maybe A`
+    ///   returns the application.
+    /// - witness: `tests::grammar::juxtaposition_applies_between_operands_4853`
+    /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
+    #[spec(ensures: |ret| ret.is_none_or(|application| Some(application) == self.pbg.application_in(sort) && application != mold))]
+    fn juxtaposed(
+        &self,
+        mold: MoldId,
+        sort: Sort,
+    ) -> Option<MoldId>
+    {
+        let application = self.pbg.application_in(sort)?;
+        if mold == application {
+            return None;
+        }
+        if !matches!(
+            self.classify(mold),
+            Kind::Operand
+                | Kind::FormStart { absorb_left: false }
+                | Kind::Operator(OpShape::Prefix)
+        ) {
+            return None;
+        }
+        self.applies_next_in(sort)
+    }
+
+    /// The application tile an expression operand opening next would take:
+    /// the slope's top is the head or an argument of a spine, `f x`, and the
+    /// next operand is one more argument (#5197).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the grammar's application mold exactly when the slope's top
+    ///   is a complete expression operand whose source does not end in `}` or
+    ///   opens with a connective's opener `*{`, `+{`, `&{` or `#{`, and a form
+    ///   is open. `None` otherwise.
+    /// - provides: the slot a completion reads after an operand and a space.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::juxtaposed`], and a completion after `f p
+    ///   ` offers a value slot.
+    /// - witness: `tests::grammar::juxtaposition_applies_between_operands_4853`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.is_none_or(|application| Some(application) == self.pbg.application()))]
+    pub fn applies_next(&self) -> Option<MoldId>
+    {
+        self.applies_next_in(Sort::Expression)
+    }
+
+    /// The sort of the operands that the spine at the slope's top takes, where
+    /// its head's rule states it: `Path[.A = T] a` takes expressions, though
+    /// the spine is a type.
+    ///
+    /// # Specification
+    /// - ensures: the [`Rule::operands`](gandr_surface_grammar::Rule::operands)
+    ///   of the head of the spine at the slope's top. The spine is the left
+    ///   operand of a pending type application below the top operand, else the
+    ///   top when it is a complete operand of [`Sort::Type`]. The head is read
+    ///   through each type application meld's first child. `None` otherwise.
+    /// - panics: none.
+    /// - bound: one read of the emission log for each application of the spine;
+    ///   a path's spine holds at most two.
+    /// - executable: none — the head's rule is a read of the grammar, and a
+    ///   predicate restates the walk of the spine.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Path a b` reads both endpoints as expressions, and
+    ///   `Maybe A` keeps its type argument: reading no head leaves the second
+    ///   endpoint a type, and reading every spine's head reads `A` as a term.
+    /// - witness: `tests::grammar::a_path_type_reads_its_endpoints_juxtaposed_5750`
+    fn spine_operands(&self) -> Option<Sort>
+    {
+        let application = self.pbg.application_in(Sort::Type)?;
+        let (top, rest) = self.stack.split_last()?;
+        if top.role != Role::Operand {
+            return None;
+        }
+        // An endpoint that a pending type application holds on its right, as
+        // `a` in `Path a`, reads the spine on the application's left.
+        let spine = match *rest {
+            [
+                ..,
+                ref left,
+                Cell {
+                    role: Role::Operator { mold, .. },
+                    ..
+                },
+            ] if mold == application => left,
+            _ if top.sort == Sort::Type => top,
+            _ => return None,
+        };
+        self.operands_of(spine)
+    }
+
+    /// The sort of the operands that the type spine `spine` takes, where the
+    /// rule of its head states it.
+    ///
+    /// # Specification
+    /// - ensures: the [`Rule::operands`](gandr_surface_grammar::Rule::operands)
+    ///   of the head of `spine`, read through each type application meld's
+    ///   first child, when `spine` is an operand; [`Sort::Type`] instead when
+    ///   the head is a form whose own tiles write the universe `Type` as its
+    ///   carrier, `Path[.A = Type] A B`, as the form's endpoint list reads
+    ///   types after that carrier. `None` otherwise.
+    /// - panics: none.
+    /// - bound: one read of the emission log for each application of the spine;
+    ///   a path's spine holds at most two. One read for each direct child of
+    ///   the head's form, at most eight for a carried path.
+    /// - executable: none — the head's rule is a read of the grammar, and a
+    ///   predicate restates the walk of the spine.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::spine_operands`]; `Path[.A = Type] (Bool *
+    ///   List Bool) Int` reads both endpoints as types, as the list form
+    ///   `Path[.A = Type](Bool * List Bool, Int)` reads them, and a term
+    ///   endpoint after any other carrier stays a term.
+    /// - witness: `tests::grammar::a_path_type_reads_its_endpoints_juxtaposed_5750`
+    ///
+    /// # Clause cost
+    /// - bound: one read of the emission log for each application of the spine,
+    ///   at most two, and one read for each direct child of the head's form, at
+    ///   most eight.
+    fn operands_of(
+        &self,
+        spine: &Cell,
+    ) -> Option<Sort>
+    {
+        if spine.role != Role::Operand {
+            return None;
+        }
+        let application = self.pbg.application_in(Sort::Type)?;
+        let mut at = spine.emit;
+        let (mold, universe) = loop {
+            match *self.emit.get(usize::try_from(at.0).ok()?)? {
+                EmitOp::Interior {
+                    label: NodeLabel::Meld(mold),
+                    ref children,
+                    ..
+                } => {
+                    if mold != application {
+                        // The carrier slot holds the universe as the form's own
+                        // tile; any other carrier is a child form.
+                        let universe = children.iter().any(|child| {
+                            usize::try_from(child.0)
+                                .ok()
+                                .and_then(|index| self.emit.get(index))
+                                .is_some_and(|op| {
+                                    matches!(*op, EmitOp::Token { label: NodeLabel::Tile(tile), .. }
+                                    if self.pbg.mold(tile).is_ok_and(|def| def.label == "Type"))
+                                })
+                        });
+                        break (mold, universe);
+                    }
+                    at = *children.first()?;
+                },
+                EmitOp::Token {
+                    label: NodeLabel::Tile(mold),
+                    ..
+                } => break (mold, false),
+                EmitOp::Interior { .. } | EmitOp::Token { .. } => return None,
+            }
+        };
+        let operands = self.pbg.rule_of(mold).ok()?.operands()?;
+        Some(if universe { Sort::Type } else { operands })
+    }
+
+    /// The application tile an operand of `sort` opening next would take: the
+    /// slope's top is the head or an argument of a spine of that sort, `f x` or
+    /// `Vec A n` (#5326).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the application mold of `sort` exactly when the slope's top
+    ///   is a complete operand of `sort`, and the rest holds as
+    ///   [`Self::applies_next`] states. `None` otherwise.
+    /// - provides: the one test of whether a juxtaposition continues a spine.
+    /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: at most two reads of the emission log for the spine and eight
+    ///   reads of the head's direct children, as [`Self::operands_of`] states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::juxtaposed`].
+    /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
+    #[spec(ensures: |ret| ret.is_none_or(|application| Some(application) == self.pbg.application_in(sort)))]
+    fn applies_next_in(
+        &self,
+        sort: Sort,
+    ) -> Option<MoldId>
+    {
+        let application = self.pbg.application_in(sort)?;
+        let top = self.stack.last()?;
+        // An endpoint of a spine whose head states its operands' sort, as
+        // `a` in `Path a`, continues the type spine (#5750).
+        if top.role != Role::Operand
+            || (top.sort != sort
+                && !(sort == Sort::Type && self.spine_operands() == Some(top.sort)))
+        {
+            return None;
+        }
+        // A block-like statement ends at its brace, as Rust's does: `if c { a }
+        // else { b } x` is two statements. A braced value opens with its
+        // connective's sign, and no statement does.
+        let bytes = self.source.as_bytes();
+        let last = usize::try_from(top.end).ok()?.checked_sub(1)?;
+        let start = usize::try_from(top.start).ok()?;
+        let braced_value = matches!(
+            bytes.get(start .. start.saturating_add(2)),
+            Some(&[b'*' | b'+' | b'&', b'{'])
+        );
+        if bytes.get(last) == Some(&b'}') && !braced_value {
+            return None;
+        }
+        // The root holds declarations alone, so two words side by side there
+        // are strays, never an application.
+        self.open_form_mold()?;
+
+        Some(application)
+    }
+
+    /// Whether a tile of `mold` over `text` opens a value and no type: the
+    /// tile is a word, a literal or a `{`, it opens an operand of a term sort,
+    /// and no label of its token opens a type operand (#6101).
+    ///
+    /// A keyword that heads a term form, a literal and a brace with no type
+    /// sigil open values only. A name is no value opener, since its token is
+    /// also a type variable or a type name. A declaration keyword is no value
+    /// opener, since the type before it ends as the item ends. A separator or
+    /// an operator is no value opener either, since the melder already weighs
+    /// the type it ends. The test reads one menu of at most eight labels, each
+    /// with one table read, and allocates nothing.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when `mold` is a mold of `pbg`, `text` starts
+    ///   with a letter, an `_`, a digit, a `'` or a `"`, or is `{`, the sort of
+    ///   `mold` is [`Sort::Expression`], [`Sort::Pattern`] or [`Sort::Block`],
+    ///   it opens an operand, and no candidate label of the token `text` spells
+    ///   has a type mold that opens an operand. A word's labels are its menu,
+    ///   [`candidate_labels`]. Any other token's label is the label of `mold`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `match` after a juxtaposed result type opens a value,
+    ///   and a name there stays a type variable.
+    /// - witness: `tests::acceptance::a_value_opener_ends_a_juxtaposed_type_6101`
+    #[spec(ensures: |ret| !bool::from(ret) || self.pbg.mold(mold).is_ok_and(|def| def.sort != Sort::Type))]
+    fn opens_value_only(
+        &self,
+        mold: MoldId,
+        text: TileText<'_>,
+    ) -> ValueOpener
+    {
+        let opens = |candidate: MoldId| {
+            matches!(
+                self.classify(candidate),
+                Kind::Operand
+                    | Kind::FormStart { absorb_left: false }
+                    | Kind::Operator(OpShape::Prefix)
+            )
+        };
+        let Ok(def) = self.pbg.mold(mold)
+        else {
+            return ValueOpener(false);
+        };
+        if !matches!(def.sort, Sort::Expression | Sort::Pattern | Sort::Block) || !opens(mold) {
+            return ValueOpener(false);
+        }
+        let opens_type = |label: &str| {
+            self.pbg.label_id(LabelText(label)).is_some_and(|id| {
+                self.pbg.label_candidates(id).iter().any(|&candidate| {
+                    self.pbg
+                        .mold(candidate)
+                        .is_ok_and(|found| found.sort == Sort::Type)
+                        && opens(candidate)
+                })
+            })
+        };
+        let text = <&str>::from(text);
+        let lexeme = match text.chars().next() {
+            Some(lead) if lead.is_uppercase() => Some(Lexeme::UpperWord),
+            Some(lead) if lead.is_alphabetic() || lead == '_' => Some(Lexeme::LowerWord),
+            Some(lead) if lead.is_ascii_digit() || lead == '\'' || lead == '"' || text == "{" => {
+                None
+            },
+            Some(_) | None => return ValueOpener(false),
+        };
+        let typed = lexeme.map_or_else(
+            || opens_type(def.label),
+            |lexeme| {
+                candidate_labels(lexeme, TokenText::from(text))
+                    .iter()
+                    .any(|&label| opens_type(<&str>::from(label)))
+            },
+        );
+        ValueOpener(!typed)
+    }
+
+    /// Reduce each juxtaposed type application at the slope's head, so the
+    /// type it spells closes before a value opener (#6101). Each reduction
+    /// lowers the operator count.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: no operator above the nearest barrier is the type application
+    ///   at the slope's head; source is unchanged, and no obligation is
+    ///   flagged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::opens_value_only`].
+    /// - witness: `tests::acceptance::a_value_opener_ends_a_juxtaposed_type_6101`
+    #[spec(captures: before = (self.source.len(), self.obligations.len()), ensures: |()| self.source.len() == before.0 && self.obligations.len() == before.1)]
+    fn end_type_application(&mut self)
+    {
+        let Some(application) = self.pbg.application_in(Sort::Type)
+        else {
+            return;
+        };
+        // Bounded by the operator count, which each reduction lowers.
+        while let Some(head) = self.topmost_operator_index()
+            && self
+                .operator_at(head)
+                .is_some_and(|(found, _prec, _sort)| found == application)
+        {
+            self.reduce_operator(head);
+        }
+    }
+
+    /// Reduce the slope's top application when its argument is a group
+    /// written straight after the operand before it, before a form of `sort`
+    /// and `prec` that takes the operand before it opens. A call in call form,
+    /// `f(x)`, is thus the target of the postfix form after it: `f(x).l` reads
+    /// as `(f x).l` (#5665). A group after a space is an argument of its own,
+    /// so `f (x).l` reads as `f ((x).l)`, and `f x.l` reads as `f (x.l)`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the slope's topmost operator is reduced exactly when it is
+    ///   the expression application, `sort` is the expression sort, `prec`
+    ///   binds tighter than the application, the top cell is an operand that
+    ///   opens with `(` and closes with `)`, and the cell below the application
+    ///   is an operand that ends where that one starts. The slope is unchanged
+    ///   otherwise. The source is unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `f(x).l` projects the call, `f (x).l` and `f x.l`
+    ///   project the argument, `g f(x).l` projects the whole spine, `a +
+    ///   f(x).l` leaves the `+` to take the projection, and each of the other
+    ///   postfix forms takes the call too. Reading the group without its glue
+    ///   reads `f (x).l` as the call's projection.
+    /// - witness: `tests::grammar::a_postfix_form_after_a_call_in_call_form_takes_the_call_5665`
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before)]
+    fn reduce_call_form(
+        &mut self,
+        sort: Sort,
+        prec: Prec,
+    )
+    {
+        let Some(application) = self.pbg.application()
+        else {
+            return;
+        };
+        let Ok(applied) = self.pbg.mold(application)
+        else {
+            return;
+        };
+        if sort != applied.sort || !bool::from(self.pbg.dag().lt(applied.prec, prec, Assoc::Right))
+        {
+            return;
+        }
+        let Some(operator) = self.topmost_operator_index()
+        else {
+            return;
+        };
+        if self
+            .operator_at(operator)
+            .is_none_or(|(mold, ..)| mold != application)
+        {
+            return;
+        }
+        let at = usize::from(operator);
+        let (Some(head), Some(argument)) = (
+            at.checked_sub(1).and_then(|below| self.stack.get(below)),
+            self.stack.get(at.saturating_add(1)),
+        )
+        else {
+            return;
+        };
+        if self.stack.len() != at.saturating_add(2)
+            || head.role != Role::Operand
+            || argument.role != Role::Operand
+            || head.end != argument.start
+        {
+            return;
+        }
+        let bytes = self.source.as_bytes();
+        let (Ok(start), Ok(end)) = (
+            usize::try_from(argument.start),
+            usize::try_from(argument.end),
+        )
+        else {
+            return;
+        };
+        let grouped = bytes.get(start) == Some(&b'(')
+            && end.checked_sub(1).and_then(|last| bytes.get(last)) == Some(&b')');
+        if grouped {
+            self.reduce_operator(operator);
+        }
+    }
+
+    /// Push a tile of `mold` over no text, owed as a missing tile at the
+    /// place the source omits it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn push_missing(
+        &mut self,
+        mold: MoldId,
+    )
+    {
+        let at = SourceOffset::from(u32::try_from(self.source.len()).unwrap_or(u32::MAX));
+        self.push_text(mold, TileText::from(""));
+        self.flag(Oblig::MissingTile, SourceSpan { start: at, end: at });
+    }
+
+    /// The close a statement keyword that continues no open form offers.
+    ///
+    /// Each open frontier from which one to [`STATEMENT_REACH`] mid tiles of
+    /// its form reach one that a mold of `candidates` continues can close
+    /// over the fewest such tiles. The innermost such frontier is the
+    /// close, unless one further out needs at least two tiles fewer: the
+    /// first of those, innermost first, is. A frontier the keyword continues
+    /// with no tile between is no close: continuing it would read the forms
+    /// above it as standing before its first statement.
+    ///
+    /// # Specification
+    /// - requires: `candidates` are sorted molds of this state's PBG.
+    /// - ensures: `None` exactly when no open frontier reaches a candidate
+    ///   within [`STATEMENT_REACH`] mid tiles; otherwise a close at an open
+    ///   frontier whose first `length` chain tiles, each a mid tile, lead to a
+    ///   tile a candidate continues; leaves `self` unchanged.
+    /// - provides: the statement close the molder weighs.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a statement that lost its `<-` before the next
+    ///   statement keyword exposes the close: taking no close reads the keyword
+    ///   inside the broken statement and owes the next statement's tiles, and
+    ///   closing at the block's brace reads the broken statement before the
+    ///   block's first.
+    /// - witness: `tests::acceptance::a_statement_keyword_starts_the_next_statement_1090`
+    #[spec(ensures: |ret| ret.is_none_or(|close| (1 ..= STATEMENT_REACH).contains(&close.chain.length)))]
+    pub(crate) fn statement_close(
+        &self,
+        candidates: &[MoldId],
+    ) -> Option<StatementClose>
+    {
+        let mut innermost: Option<StatementClose> = None;
+        for &index in self.frontiers.iter().rev() {
+            let Some(&Cell {
+                role: Role::FormTile {
+                    mold, open: true, ..
+                },
+                ..
+            }) = self.stack.get(index)
+            else {
+                continue;
+            };
+            let Some(chain) = self.statement_chain(mold, candidates)
+            else {
+                continue;
+            };
+            let close = StatementClose { index, chain };
+            match innermost {
+                None => innermost = Some(close),
+                Some(first) if chain.length.saturating_add(2) <= first.chain.length => {
+                    return Some(close);
+                },
+                Some(_) => {},
+            }
+        }
+        innermost
+    }
+
+    /// The close a layout close takes when it continues no open form: the
+    /// open frontier of the block that the layout opener at byte `opener`
+    /// opened, which a mold of `candidates` continues next to it or past one
+    /// to [`STATEMENT_REACH`] mid tiles.
+    ///
+    /// The layout pass writes a close only for a block that it opened. So the
+    /// close ends the block of its own opener, and a form above that block
+    /// stands open only for a fault inside it. The close never takes the
+    /// frontier of another block.
+    ///
+    /// # Specification
+    /// - requires: `candidates` are sorted molds of this state's PBG.
+    /// - ensures: `None` when no open frontier's form holds a tile that starts
+    ///   at `opener`, or when no candidate continues that frontier within
+    ///   [`STATEMENT_REACH`] mid tiles; otherwise a close at that frontier, its
+    ///   chain empty when a candidate continues the frontier next to it; leaves
+    ///   `self` unchanged.
+    /// - provides: the layout close the molder applies.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an arm that lost its `=>` before the close of its
+    ///   block exposes the close: read as a stray end, each close owes a
+    ///   missing opener at one byte; closed at its block, the arm owes its `=>`
+    ///   once.
+    /// - witness: `tests::acceptance::a_layout_close_closes_its_own_block_7902`
+    #[spec(ensures: |ret| ret.is_none_or(|close| close.chain.length <= STATEMENT_REACH))]
+    pub(crate) fn layout_close(
+        &self,
+        opener: LayoutOpener,
+        candidates: &[MoldId],
+    ) -> Option<StatementClose>
+    {
+        let index = self.frontiers.iter().rev().copied().find(|&index| {
+            self.form_start_index(StackIndex::from(index))
+                .is_some_and(|start| {
+                    self.barriers
+                        .iter()
+                        .filter(|&&tile| (usize::from(start) ..= index).contains(&tile))
+                        .any(|&tile| {
+                            self.stack
+                                .get(tile)
+                                .is_some_and(|cell| cell.start == u32::from(opener))
+                        })
+                })
+        })?;
+        let Some(&Cell {
+            role: Role::FormTile {
+                mold, open: true, ..
+            },
+            ..
+        }) = self.stack.get(index)
+        else {
+            return None;
+        };
+        if candidates
+            .iter()
+            .any(|&candidate| bool::from(self.adjacent(mold, candidate)))
+        {
+            return Some(StatementClose {
+                index,
+                chain: StatementChain {
+                    tiles: [MoldId::from(0_u32); STATEMENT_REACH],
+                    length: 0,
+                },
+            });
+        }
+        self.statement_chain(mold, candidates)
+            .map(|chain| StatementClose { index, chain })
+    }
+
+    /// Apply `close`: every form and operator above its frontier closes,
+    /// and its tiles are pushed over no text, each owed as a missing tile.
+    ///
+    /// # Specification
+    /// - requires: `close` came from [`statement_close`](Self::statement_close)
+    ///   on this state, unchanged since.
+    /// - ensures: every form and operator above the kept frontier is closed and
+    ///   the pushed tiles continue its form; consumes no source and owes one
+    ///   missing tile per pushed tile.
+    /// - provides: the statement close's application.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the close of a statement that lost its `<-` owes
+    ///   exactly its missing tiles at the next statement's keyword; closing
+    ///   below the frontier or pushing no tiles moves the obligations into the
+    ///   next statement.
+    /// - witness: `tests::acceptance::a_statement_keyword_starts_the_next_statement_1090`
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before)]
+    pub(crate) fn close_statement(
+        &mut self,
+        close: StatementClose,
+    )
+    {
+        self.collapse(StackFloor::from(StackIndex::from(
+            close.index.saturating_add(1),
+        )));
+        for &tile in close
+            .chain
+            .tiles
+            .get(.. close.chain.length)
+            .unwrap_or_default()
+        {
+            self.push_missing(tile);
+        }
+    }
+
+    /// The fewest mid tiles of `from`'s form, one to [`STATEMENT_REACH`],
+    /// that lead from `from` to a tile one of `candidates` continues.
+    ///
+    /// A depth-first walk of the form's `≐`-successors under an explicit
+    /// frame per depth, run once per length from one up, so the first chain
+    /// found is a shortest.
+    ///
+    /// # Specification
+    /// trivial.
+    fn statement_chain(
+        &self,
+        from: MoldId,
+        candidates: &[MoldId],
+    ) -> Option<StatementChain>
+    {
+        let adjacencies = self.pbg.adjacencies();
+        let successors = |mold: MoldId| {
+            (
+                adjacencies.partition_point(|&(left, _)| left < mold),
+                adjacencies.partition_point(|&(left, _)| left <= mold),
+            )
+        };
+        for length in 1 ..= STATEMENT_REACH {
+            let mut tiles = [MoldId::from(0_u32); STATEMENT_REACH];
+            // Each depth's frame: the next successor to try and the end of
+            // its successors.
+            let mut frames = [(0_usize, 0_usize); STATEMENT_REACH];
+            if let Some(frame) = frames.first_mut() {
+                *frame = successors(from);
+            }
+            let mut depth = 0_usize;
+            while let Some(frame) = frames.get_mut(depth) {
+                let (cursor, end) = *frame;
+                if cursor >= end {
+                    let Some(above) = depth.checked_sub(1)
+                    else {
+                        break;
+                    };
+                    depth = above;
+                    continue;
+                }
+                frame.0 = cursor.saturating_add(1);
+                let Some(&(_, next)) = adjacencies.get(cursor)
+                else {
+                    break;
+                };
+                if !matches!(self.classify(next), Kind::FormMid) {
+                    continue;
+                }
+                if let Some(slot) = tiles.get_mut(depth) {
+                    *slot = next;
+                }
+                let below = depth.saturating_add(1);
+                if below == length {
+                    if candidates
+                        .iter()
+                        .any(|&mold| bool::from(self.adjacent(next, mold)))
+                    {
+                        return Some(StatementChain { tiles, length });
+                    }
+                    continue;
+                }
+                if let Some(frame) = frames.get_mut(below) {
+                    *frame = successors(next);
+                }
+                depth = below;
+            }
+        }
+        None
+    }
+
+    /// Return whether `mold` would `≐`-continue the topmost open form frontier.
+    ///
+    /// The molder prefers a continuing tile over a fresh atom/form when their
+    /// obligation deltas tie: continuation keeps the open form progressing
+    /// toward its end, which a bare atom in the same slot does not
+    /// (minimization). A pure query — it never mutates the slope.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: returns `true` exactly when a top open frontier exists and
+    ///   `(frontier_mold, mold)` is a `≐` adjacency; leaves `self` unchanged.
+    /// - provides: the molder's continuation-preference key.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty slope, an open bracket and its closer versus
+    ///   an unrelated atom expose continuation. Selecting an outer or closed
+    ///   frontier, or ignoring the grammar adjacency, flips a boundary
+    ///   decision. Every mutation proves the frontier cache exact against the
+    ///   stack; the predicate reads the topmost frontier from the cache, checks
+    ///   its cell is an open form, and searches the whole adjacency list.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| bool::from(ret) == self.frontiers.last().and_then(|&index| match self.stack.get(index)?.role { Role::FormTile { mold, open: true, .. } => Some(mold), Role::Operand | Role::FormTile { .. } | Role::Operator { .. } => None }).is_some_and(|open| self.pbg.adjacencies().binary_search(&(open, mold)).is_ok()))]
+    pub fn would_continue_form(
+        &self,
+        mold: MoldId,
+    ) -> FormContinuation
+    {
+        let Some(frontier) = self.nearest_open_form()
+        else {
+            return FormContinuation::from(false);
+        };
+        let Some(Role::FormTile {
+            mold: head_mold, ..
+        }) = self
+            .stack
+            .get(usize::from(StackIndex::from(frontier)))
+            .map(|cell| cell.role)
+        else {
+            return FormContinuation::from(false);
+        };
+        FormContinuation::from(bool::from(self.adjacent(head_mold, mold)))
+    }
+
+    /// The molds of the slope's open form frontiers, nearest first.
+    ///
+    /// A push consults these, nearest first, for whether the incoming tile
+    /// continues each: [`settle_completable`](Self::settle_completable)
+    /// passes the completable ones it does not continue, and
+    /// [`settle_filled_required_tail`](Self::settle_filled_required_tail) the
+    /// whole required tails, before the tile meets the next.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: yields the mold of each open frontier in the frontier cache,
+    ///   from the top of the slope down; leaves `self` unchanged.
+    /// - panics: none.
+    /// - executable: none — the specification macro cannot name this opaque
+    ///   iterator return; the caller owns its cursor.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — through the molder's push classes: a frontier skipped
+    ///   or read out of order groups candidates that one of the frontiers a
+    ///   push consults tells apart, which the differential witness reads as a
+    ///   verdict the dry runs do not reach.
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
+    #[inline]
+    pub(crate) fn open_frontier_molds(&self) -> impl Iterator<Item = MoldId> + '_
+    {
+        self.frontiers
+            .iter()
+            .rev()
+            .filter_map(|&index| match self.stack.get(index)?.role {
+                Role::FormTile { mold, .. } => Some(mold),
+                Role::Operand | Role::Operator { .. } => None,
+            })
+    }
+
+    /// How many cells the slope holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn slope_height(&self) -> SlopeHeight
+    {
+        SlopeHeight(self.stack.len())
+    }
+
+    /// How the slope ends, as a form-boundary unit's seam asks of the state it
+    /// joins: settled when no operator and no form tile is on the slope and
+    /// the top cell has [`BOUNDARY_SORT`].
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`UnitEnding::Settled`] exactly when the operator and barrier
+    ///   caches are empty and the top cell has the boundary sort;
+    ///   [`UnitEnding::Open`] on an empty slope.
+    /// - provides: the condition under which a unit joined after this state
+    ///   keeps its own molding, and a collapse of this state does nothing.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause restates the three reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parked unit of a closed declaration ends settled
+    ///   and one of a declaration left open does not; a store that took up an
+    ///   unsettled unit as a block changes a committed tree.
+    /// - witness: `meld::tests::a_parked_unit_keeps_whether_it_ends_settled`
+    /// - witness: `parse::tests::a_laid_join_parses_as_the_whole_source`
+    #[inline]
+    pub(crate) fn ending(&self) -> UnitEnding
+    {
+        if self.operators.is_empty()
+            && self.barriers.is_empty()
+            && self
+                .stack
+                .last()
+                .is_some_and(|top| top.sort == BOUNDARY_SORT)
+        {
+            UnitEnding::Settled
+        }
+        else {
+            UnitEnding::Open
+        }
+    }
+
+    /// The lowest slope position a splice or a frontier flip touched since
+    /// the last reading, which this reading forgets.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the position the low-water mark held, `usize::MAX` when
+    ///   nothing was touched; the mark then holds `usize::MAX`.
+    /// - provides: how far down a join or a commit reached, so a caller knows
+    ///   which cells kept the molding they had.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a laid join reads each unit's reach and takes up as a
+    ///   block only forms no later fold touched; a reading that kept the mark
+    ///   or lost it changes a committed tree.
+    /// - witness: `parse::tests::a_laid_join_parses_as_the_whole_source`
+    #[inline]
+    #[spec(captures: before = self.low_water, ensures: |ret| usize::from(ret) == before && self.low_water == usize::MAX)]
+    pub(crate) fn take_low_water(&mut self) -> SlopeHeight
+    {
+        SlopeHeight(core::mem::replace(&mut self.low_water, usize::MAX))
+    }
+
+    /// Whether a push that continues none of the open frontiers it meets can
+    /// reach, below the nearest, an open frontier at or above `floor`.
+    ///
+    /// A push meets the nearest frontier, and passes it to the next when it
+    /// can close it on the way: a completable frontier
+    /// ([`settle_completable`](Self::settle_completable)) or a required tail
+    /// ([`settle_filled_required_tail`](Self::settle_filled_required_tail)).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when, walking the open frontiers from the
+    ///   nearest while each is completable or a required tail, a frontier after
+    ///   the nearest stands at or above `floor`; leaves `self` unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — through the molder's window classes: a reach that
+    ///   stops short shares a window whose tokens meet a member's own
+    ///   successors, which the differential witness reads as a window verdict
+    ///   the dry runs do not reach.
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: when the body answers yes it has walked the open frontiers from the nearest to one at or above `floor`; the check walks the same frontiers to the same one"
+        )
+    )]
+    #[spec(ensures: |ret| !bool::from(ret) || self.frontiers.iter().rev().skip(1).any(|&index| index >= floor.0))]
+    pub(crate) fn settles_into(
+        &self,
+        floor: SlopeHeight,
+    ) -> ChainReach
+    {
+        for (position, &index) in self.frontiers.iter().rev().enumerate() {
+            if position > 0 && index >= floor.0 {
+                return ChainReach(true);
+            }
+            let Some(Role::FormTile { mold, .. }) = self.stack.get(index).map(|cell| cell.role)
+            else {
+                return ChainReach(false);
+            };
+            if !bool::from(FormTable::is_form_last(self.pbg, mold))
+                && !bool::from(self.pbg.mold_has_required_tail(mold))
+            {
+                return ChainReach(false);
+            }
+        }
+        ChainReach(false)
+    }
+
+    /// Return whether pushing `mold` is structurally admissible at the head.
+    ///
+    /// This is the candidate pre-filter: the molder discards inadmissible
+    /// candidates **before** any dry-run, so the wide identifier / quote menus
+    /// collapse to a handful and
+    /// the greedy molder never commits a form-continuation tile (a closing `"`,
+    /// a stray `=`/`;`/`)`) that has no matching open frontier. Admissibility
+    /// mirrors what [`push`](MeldState::push) would do:
+    ///
+    /// * A form-end (`≐`-closing tile) is admissible only when it `≐`-continues
+    ///   the nearest open form frontier — otherwise `push` would flag a
+    ///   [`Oblig::MissingTile`] (a stray end with no opener).
+    /// * A form-mid is admissible when it `≐`-continues the nearest open
+    ///   frontier **or** it can be a form's first tile ([`Pbg::form_first`])
+    ///   and no form is open at all — a form-mid whose only predecessor is a
+    ///   nullable prefix (a tile behind a form's leading repetition) is a
+    ///   legitimate form-start at a fresh position, which `push`'s stray-mid
+    ///   path opens without an obligation; a genuine mid (`=`, `,`) — or a
+    ///   deep-nested tile like an `extern` body's `def`, which is not in any
+    ///   form's FIRST set — stays rejected where it cannot continue an open
+    ///   frontier.
+    /// * With an operand at the head, a form-end or a form-mid continues the
+    ///   frontier save where [`continues_past_operand`] refuses it: the `(` of
+    ///   an observation's parameter list follows its `:` alone, so after `tail
+    ///   : Twisted` a `(` opens the type's argument, `Twisted (Twisted a)`.
+    /// * A left-bounded form-start (a call `(`, a projection `.`) and an infix
+    ///   / postfix operator are admissible only with a left operand at the head
+    ///   — otherwise `push` would flag a [`Oblig::MissingMeld`].
+    /// * A fresh atom, a non-absorbing form-start, and a prefix operator are
+    ///   always admissible; sort disagreement is a ranking, not an
+    ///   admissibility, concern (see
+    ///   [`expected_operand_sort`](MeldState::expected_operand_sort)).
+    ///
+    /// A pure query — it never mutates the slope. An out-of-range mold is
+    /// admissible (it takes `push`'s total unmolded path), so the pre-filter
+    /// never removes the last resort.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: returns whether `push`ing `mold` avoids an immediately-forced
+    ///   structural obligation; leaves `self` unchanged.
+    /// - provides: the molder's per-candidate admissibility gate.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — arbitrary missing molds remain available as the total
+    ///   fallback, while a closer at an empty slope is rejected and becomes
+    ///   admissible only inside its matching form. Reversing either gate
+    ///   changes it.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    /// - witness: `meld::tests::admits_rejects_a_stray_closer`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| (self.pbg.mold(mold).is_ok() || bool::from(ret)) && (self.open_form_mold().is_some() || !matches!(self.classify(mold), Kind::FormEnd) || !bool::from(ret)))]
+    pub fn admits(
+        &self,
+        mold: MoldId,
+    ) -> MoldAdmissibility
+    {
+        self.admits_at(mold, &self.admissibility_frontier())
+    }
+
+    /// Return the nearest open form frontier's mold, if any.
+    ///
+    /// The molder gathers the open form's `≐`-successors alongside the
+    /// fresh-slot menu, so an identifier filling a hole inside an open
+    /// block still gathers its two atoms (not the ~130-mold full menu)
+    /// while the form's own next tile stays reachable.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: returns the nearest open form frontier's mold; leaves `self`
+    ///   unchanged.
+    /// - provides: the molder's open-form successor source.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — no frontier, an open bracket and its completed form
+    ///   expose the optional mold; stale caches or selecting a closed frontier
+    ///   change the answer. The clause reads the frontier cache's top, which
+    ///   every cache mutation's clause proves exact from the position it
+    ///   touched.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.is_some() != self.frontiers.is_empty() && ret.is_none_or(|mold| self.frontiers.last().and_then(|&index| self.stack.get(index)).is_some_and(|cell| matches!(cell.role, Role::FormTile { mold: open, open: true, .. } if open == mold))))]
+    pub fn open_form_mold(&self) -> Option<MoldId>
+    {
+        let index = self.nearest_open_form()?;
+        match self.stack.get(usize::from(index)).map(|cell| cell.role) {
+            Some(Role::FormTile { mold, .. }) => Some(mold),
+            _ => None,
+        }
+    }
+
+    /// The head context the pre-filter reads: the nearest open form frontier's
+    /// mold and whether the slope head is an operand.
+    ///
+    /// Both are `O(slope depth)` to compute but constant across a whole token's
+    /// candidate menu, so the molder computes this **once** and reuses it for
+    /// every candidate ([`admits_at`](MeldState::admits_at)) — the difference
+    /// between an `O(menu × depth)` and an `O(menu + depth)` per-token cost
+    /// that keeps a wide (125-candidate `identifier`) menu inside the batch
+    /// budget.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: returns the nearest open frontier mold (if any), the
+    ///   head-is-operand flag, the head operand sort, the expected slot sort,
+    ///   the sort a juxtaposed argument takes and whether the slot is the top
+    ///   level's; leaves `self` unchanged.
+    /// - provides: the hoisted admissibility context.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, open-form, operand and operator heads expose
+    ///   all six snapshot fields before and after each push. A stale flag,
+    ///   wrong head sort or frontier from the preceding state changes the
+    ///   snapshot.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.open == self.open_form_mold() && bool::from(ret.head_operand) == self.stack.last().is_some_and(|cell| matches!(cell.role, Role::Operand)) && ret.head_sort == self.stack.last().filter(|cell| matches!(cell.role, Role::Operand)).map(|cell| cell.sort) && ret.expected == self.expected_operand_sort() && ret.argument == ret.head_sort.filter(|&sort| self.open_slot() == Some(OpenSlot::Tile) && self.applies_next_in(sort).is_some()) && ret.endpoint == self.spine_operands() && bool::from(ret.boundary) == self.open_slot().is_none())]
+    pub fn admissibility_frontier(&self) -> Frontier
+    {
+        let open = self.open_form_mold();
+        let slot = self.open_slot();
+        let head_sort = self.head_operand_sort();
+        Frontier {
+            open,
+            head_operand: self.head_is_operand(),
+            head_sort,
+            expected: slot.map_or(Sort::Expression, OpenSlot::sort),
+            argument: head_sort.filter(|&sort| {
+                slot == Some(OpenSlot::Tile) && self.applies_next_in(sort).is_some()
+            }),
+            endpoint: self.spine_operands(),
+            boundary: BoundarySlot::from(slot.is_none()),
+        }
+    }
+
+    /// Return whether any form is open on the slope (a form frontier awaiting a
+    /// continuation).
+    ///
+    /// The molder gathers only the fresh-slot candidate menu
+    /// ([`Pbg::fresh_candidates`](gandr_surface_grammar::Pbg::fresh_candidates)) when
+    /// no form is open — the overwhelmingly common case — collapsing the
+    /// wide `identifier` menu to its atoms before the admissibility loop
+    /// even runs.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: returns whether the slope has an open form frontier; leaves
+    ///   `self` unchanged.
+    /// - provides: the molder's fresh-menu gate.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — fresh, opened and closed bracket states expose the
+    ///   presence flag. Counting closed form tiles or missing an open frontier
+    ///   changes it. The clause reads the frontier cache's top, which every
+    ///   cache mutation's clause proves exact from the position it touched.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| bool::from(ret) == self.frontiers.last().is_some_and(|&index| self.stack.get(index).is_some_and(|cell| matches!(cell.role, Role::FormTile { open: true, .. }))))]
+    pub fn has_open_form(&self) -> OpenFormPresence
+    {
+        OpenFormPresence::from(self.nearest_open_form().is_some())
+    }
+    /// Close an unfinished declaration before a fresh declaration head is
+    /// pushed.
+    ///
+    /// The damage this settles is an **unclosed value or type delimiter** — the
+    /// `def bad = ( 1 ;` shape — whose ghost end would otherwise be appended
+    /// wherever the form finally closes, at end of input, swallowing every
+    /// later declaration into the one that opened the delimiter. Collapsing at
+    /// the boundary puts the ghost inside the damaged declaration instead, so
+    /// the next declaration is a distinct item and the obligation stays local.
+    ///
+    /// The trigger is a **declaration head**, not the `def` keyword: any mold
+    /// that can open an item-position form at a fresh slot
+    /// ([`Self::opens_declaration`]) marks the boundary, so `data`, `codata`,
+    /// `module`, `theory`, `import`, `op`, `rec`, `extern`, the `@` attribute
+    /// block, and the keyword-led statement heads all bound a repair exactly as
+    /// `def` does. The damaged declaration and the surviving one need not be
+    /// the same family.
+    ///
+    /// Three guards keep the widened trigger from firing on well-formed source,
+    /// and all are load-bearing:
+    ///
+    /// - **No candidate may continue the open frontier.** The molder gathers
+    ///   every mold sharing the token's label, across every rule context, and
+    ///   only one of them will be chosen — so a decision taken per candidate
+    ///   acts on readings that lose. A `theory` block's `rule c : ( … data x :
+    ///   Nat … )` member holds a `data` tile inside an open `(`, where the
+    ///   *declaration* `data` mold continues nothing and the *member* `data`
+    ///   mold continues the `(` frontier. Sixteen corpus files depend on the
+    ///   member reading, so the whole candidate set has to agree that nothing
+    ///   continues before anything is force-closed.
+    /// - **No candidate may open a form of the open slot's own sort.** Such a
+    ///   candidate fills the slot rather than ending the declaration: `run`
+    ///   opens an inline run, and inside `Succ(run f(x))` it is the run.
+    /// - **The innermost open form must not be [`Sort::Item`].** An open item
+    ///   form legitimately reaches past this point: a container (`module`,
+    ///   `data`, `theory`) holds the next head as a **member** of its own rule,
+    ///   and a declaration whose own frontier is innermost has no interior
+    ///   damage to bound. Only a non-item frontier is unfinished value syntax.
+    ///
+    /// The floor is the nearest open frontier whose form **starts** at a
+    /// declaration head, so a declaration opened inside an enclosing form's
+    /// content region closes without closing that form; with no such frontier
+    /// the floor is the slope base.
+    ///
+    /// Known bound: a container whose own member carries the damage — the
+    /// `module M where { def bad = ( 1 ; def good = 2; }` shape — force-closes
+    /// the container too, so `good` is emitted as a sibling of `M` rather
+    /// than a member of it. The member is tiles of the container's rule
+    /// rather than a form of its own, so there is no member-level ghost to
+    /// close it with, and telling a container apart from a declaration
+    /// needs the rule a mold was numbered for — which the grammar reads
+    /// back ([`Pbg::rule_of`](gandr_surface_grammar::Pbg::rule_of)) but
+    /// this repair does not yet consult. Both declarations survive as
+    /// distinct items; what the repair does not preserve is which one owns
+    /// the later declaration.
+    ///
+    /// # Specification
+    /// - requires: `candidates` are molds of this state's PBG.
+    /// - ensures: when some candidate opens a declaration, no candidate
+    ///   continues the open frontier or opens a non-item form of the open
+    ///   slot's sort, and the innermost open form is non-item, force-closes
+    ///   every form at or above the nearest declaration-started frontier (the
+    ///   slope base when there is none); the state is untouched otherwise, and
+    ///   at most one collapse runs per token.
+    /// - provides: declaration-bounded ghost repair.
+    /// - fails: never; invalid molds are ignored.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — damaged delimiters before a new declaration and
+    ///   well-formed container members expose source-preserving repair and
+    ///   separate items. Swallowing a sibling, closing a legitimate member or
+    ///   inserting phantom source bytes changes the reconstructed tree; an
+    ///   inline run in an argument list that closed its declaration would leave
+    ///   the run's call unmolded.
+    /// - witness: `tests::acceptance::unclosed_definition_delimiter_does_not_absorb_following_definition`
+    /// - witness: `tests::acceptance::run_reads_as_an_inline_run_wherever_it_stands`
+    /// - witness: `tests::acceptance::an_unclosed_delimiter_yields_to_every_declaration_family`
+    /// - witness: `tests::contracts::declaration_boundary_stays_stable_under_layout`
+    #[inline]
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before)]
+    pub fn settle_declaration_boundary(
+        &mut self,
+        candidates: &[MoldId],
+    )
+    {
+        if !bool::from(self.bounds_declaration(candidates)) {
+            return;
+        }
+        let floor = self
+            .open_declaration_frontier()
+            .map_or_else(|| StackIndex::from(0), StackIndex::from);
+        self.collapse(StackFloor::from(floor));
+    }
+
+    /// Close every open form before a declaration that starts at the margin,
+    /// as the end of the input closes them.
+    ///
+    /// An item form of one tile at the start of a line, as `pub`, stands
+    /// before the head of a top-level declaration. No container holds a
+    /// declaration at the margin, so the boundary closes every form left open,
+    /// a container's too, and the prefix starts the next item. The close at
+    /// the head ([`settle_declaration_boundary`](Self::settle_declaration_boundary))
+    /// comes one token late: the prefix meets a closed operand there and costs
+    /// an [`Oblig::InconMeld`], or an open form takes it and the next item
+    /// nests in a member of the damaged one.
+    ///
+    /// # Specification
+    /// - requires: `candidates` are the molds gathered for the head that the
+    ///   prefix stands before, at this state.
+    /// - ensures: when [`bounds_top_level`](Self::bounds_top_level) holds for
+    ///   `candidates`, force-closes every form on the slope; the state is
+    ///   untouched otherwise.
+    /// - provides: the top-level boundary at a prefix.
+    /// - fails: never; invalid molds are ignored.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `def` whose type stays open before `pub def`, and a
+    ///   member left open before `pub module` in the dropped rows of
+    ///   `pathological/worlds/offered`, separate the close at the margin from
+    ///   the close at the head. Closing at the nearest declaration frontier
+    ///   nests the module in the open member; no close lets the window prefer
+    ///   the open type.
+    /// - witness: `tests::acceptance::a_pub_at_the_margin_closes_the_open_declaration_6101`
+    /// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
+    #[inline]
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before)]
+    pub fn settle_top_level_boundary(
+        &mut self,
+        candidates: &[MoldId],
+    )
+    {
+        if bool::from(self.bounds_top_level(candidates)) {
+            self.collapse(StackFloor::from(StackIndex::from(0)));
+        }
+    }
+
+    /// Return whether a declaration head among `candidates` closes the open
+    /// declaration at this state: the three guards of
+    /// [`settle_declaration_boundary`](Self::settle_declaration_boundary).
+    ///
+    /// # Specification
+    /// - requires: `candidates` are molds of this state's PBG.
+    /// - ensures: true exactly when some candidate opens a declaration, no
+    ///   candidate continues the open frontier or opens a non-item form of the
+    ///   open slot's sort, and the innermost open form is non-item; leaves
+    ///   `self` unchanged.
+    /// - provides: the shared test of the two boundary closes.
+    /// - fails: never; invalid molds are ignored.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as
+    ///   [`settle_declaration_boundary`](Self::settle_declaration_boundary).
+    /// - witness: `tests::acceptance::an_unclosed_delimiter_yields_to_every_declaration_family`
+    /// - witness: `tests::acceptance::a_pub_at_the_margin_closes_the_open_declaration_6101`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| !bool::from(ret) || bool::from(self.has_open_form()))]
+    pub fn bounds_declaration(
+        &self,
+        candidates: &[MoldId],
+    ) -> DeclarationBound
+    {
+        // Every candidate is consulted before anything is force-closed: one
+        // that continues the open frontier is a live reading of this token, and
+        // acting on a losing candidate would close a form the winner needs.
+        let mut saw_declaration_head = false;
+        let expected = self.expected_operand_sort();
+        for &mold in candidates {
+            if bool::from(self.would_continue_form(mold)) {
+                return DeclarationBound::from(false);
+            }
+            let fills_slot =
+                self.pbg.mold(mold).is_ok_and(|def| {
+                    def.sort == expected && !bool::from(is_item_position(def.sort))
+                }) && bool::from(FormTable::is_form_first(self.pbg, mold));
+            if fills_slot {
+                return DeclarationBound::from(false);
+            }
+            saw_declaration_head = saw_declaration_head || bool::from(self.opens_declaration(mold));
+        }
+        DeclarationBound::from(
+            saw_declaration_head
+                && self
+                    .nearest_open_form()
+                    .and_then(|index| self.stack.get(usize::from(index)))
+                    .is_some_and(
+                        |cell| matches!(cell.role, Role::FormTile { sort, .. } if !bool::from(is_item_position(sort))),
+                    ),
+        )
+    }
+
+    /// Return whether a declaration head among `candidates`, after a prefix at
+    /// the margin, closes every open form at this state.
+    ///
+    /// A prefix at the margin, as `pub`, starts an item and nothing else, so
+    /// none of the guards of [`bounds_declaration`](Self::bounds_declaration)
+    /// binds there. A form that the head would continue is a form the dropped
+    /// token broke: a module whose head lost `sort` reads its `with` clause as
+    /// a view, and the view takes `module` as its own tile. An open item form
+    /// is a container whose member the dropped token broke.
+    ///
+    /// The stream weighs this close against the window read as it stands
+    /// (`Molder::settle_before_prefixed_head`). A window that only looks ahead
+    /// keeps the guards of the head's close, so a reading that leaves a
+    /// declaration open costs no less there than it does without this close.
+    ///
+    /// # Specification
+    /// - requires: `candidates` are molds of this state's PBG.
+    /// - ensures: true exactly when some candidate opens a declaration and some
+    ///   form is open; leaves `self` unchanged.
+    /// - provides: the test of the close at the margin.
+    /// - fails: never; invalid molds are ignored.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a theory whose member lost a token, and a module
+    ///   whose head lost one, each close at the next `pub` at the margin, and a
+    ///   whole source does not; the head's guards here leave both open past the
+    ///   next declaration.
+    /// - witness: `tests::acceptance::a_pub_at_the_margin_closes_a_broken_container_6323`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| bool::from(ret) == (candidates.iter().any(|&mold| bool::from(self.opens_declaration(mold))) && bool::from(self.has_open_form())))]
+    pub fn bounds_top_level(
+        &self,
+        candidates: &[MoldId],
+    ) -> DeclarationBound
+    {
+        DeclarationBound::from(
+            candidates
+                .iter()
+                .any(|&mold| bool::from(self.opens_declaration(mold)))
+                && bool::from(self.has_open_form()),
+        )
+    }
+
+    /// Close the open declaration at a separator that ends it unfinished, with
+    /// the separator as the declaration's last tile.
+    ///
+    /// A declaration that lacks a tile before its end, as a `def` without its
+    /// `=`, cannot take the separator as its own end. Pushed as it stands, the
+    /// separator reads as an operator of the sort of an expression. Its
+    /// reduction against an operand of another sort, as the type that the body
+    /// of that `def` reads as, costs an [`Oblig::InconMeld`]. The close charges
+    /// instead what the end of the input charges: the ghost end and one missing
+    /// tile at the open declaration ([`mint_ghost_end`](Self::mint_ghost_end)).
+    /// A reader of the tree, as the lowering, then sees the repair. The
+    /// separator follows the ghost as the declaration's last tile, so it makes
+    /// no item of its own. The head of the next declaration closes an open
+    /// declaration in the same way, in
+    /// [`settle_declaration_boundary`](Self::settle_declaration_boundary).
+    ///
+    /// # Specification
+    /// - requires: `candidates` are the molds gathered for a separator that
+    ///   ends a top-level declaration, `labels` are its labels, and `text` is
+    ///   its text.
+    /// - ensures: when no candidate continues the nearest open form, the
+    ///   nearest open frontier is the nearest declaration-started one, that
+    ///   frontier is not one whose every completion ends at a closer and whose
+    ///   next tile can close a `(` or a `[`, and one of the labels' declared
+    ///   molds ends a form of the declaration's rule, mints the ghost end and
+    ///   flags one [`Oblig::MissingTile`] at the frontier, pushes `text` as
+    ///   that mold, closes the declaration with it and returns true; leaves the
+    ///   state untouched and returns false otherwise, as when a bracket inside
+    ///   the declaration is still open.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `def` without its `=`, whose body nests
+    ///   applications, recovers with the obligations it has at the end of the
+    ///   input only when the separator before the next declaration closes it. A
+    ///   well-formed declaration takes its `;` as its own end, and a close
+    ///   there would charge a corpus source an obligation. A separator inside
+    ///   an unclosed bracket of the declaration stays inside it. So does one
+    ///   after a frontier inside the parameters of a `def rec` that lost their
+    ///   `)`: the repair at the end of the declaration places the `)` where the
+    ///   rest parses, and the declaration recovers as on the parent of the
+    ///   close (#5911). A `def` without that `)`, whose end the close takes,
+    ///   recovers no better at the end of the input either.
+    /// - witness: `tests::acceptance::a_def_without_its_closer_keeps_its_reading_5911`
+    /// - witness: `tests::acceptance::a_declaration_recovers_as_at_the_end_whatever_follows_5747`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    /// - witness: `tests::acceptance::an_unclosed_delimiter_yields_to_every_declaration_family`
+    #[inline]
+    #[spec(captures: before = self.source.len(), ensures: |ret| (bool::from(ret) && self.source.get(before ..) == Some(<&str>::from(text))) || (!bool::from(ret) && self.source.len() == before))]
+    pub fn close_at_separator(
+        &mut self,
+        candidates: &[MoldId],
+        labels: &[LabelId],
+        text: TileText<'_>,
+    ) -> SeparatorTaken
+    {
+        if candidates
+            .iter()
+            .any(|&mold| bool::from(self.would_continue_form(mold)))
+        {
+            return SeparatorTaken::from(false);
+        }
+        let Some(frontier) = self.open_declaration_frontier()
+        else {
+            return SeparatorTaken::from(false);
+        };
+        if self.frontiers.iter().any(|&index| {
+            index > frontier.0
+                && self.stack.get(index).is_some_and(|cell| {
+                    matches!(cell.role, Role::FormTile { mold, open: true, .. } if self.pbg.closing_class(mold).is_some())
+                })
+        }) {
+            return SeparatorTaken::from(false);
+        }
+        let Some(frontier_cell) = self.stack.get(usize::from(frontier)).copied()
+        else {
+            return SeparatorTaken::from(false);
+        };
+        let Role::FormTile {
+            mold: frontier_mold,
+            ..
+        } = frontier_cell.role
+        else {
+            return SeparatorTaken::from(false);
+        };
+        let Ok(rule) = self.pbg.rule_of(frontier_mold).map(|rule| rule.name)
+        else {
+            return SeparatorTaken::from(false);
+        };
+        // A declaration whose every completion ends at a closer, as a `def
+        // rec` ends at the `}` of its block, does not end at a separator. When
+        // its frontier stands inside a `(` or a `[`, as a parameter whose `)`
+        // the source left out, the next tile the frontier takes may be that
+        // closer, and the repair at the end of the declaration places it where
+        // the rest parses. The separator then stays in the declaration.
+        if self.pbg.closing_class(frontier_mold).is_some()
+            && self
+                .pbg
+                .mold_successors(frontier_mold)
+                .iter()
+                .any(|&(_, next)| {
+                    self.pbg.mold(next).is_ok_and(|def| {
+                        matches!(
+                            ClosingClass::closing(DelimSpelling::from(def.label)),
+                            Some(ClosingClass::Paren | ClosingClass::Bracket)
+                        )
+                    })
+                })
+        {
+            return SeparatorTaken::from(false);
+        }
+        let terminator = labels
+            .iter()
+            .flat_map(|&label| self.pbg.label_candidates(label))
+            .copied()
+            .find(|&mold| {
+                self.pbg.rule_of(mold).is_ok_and(|other| other.name == rule)
+                    && matches!(self.classify(mold), Kind::FormEnd)
+            });
+        let Some((terminator, sort)) =
+            terminator.and_then(|mold| self.pbg.mold(mold).ok().map(|def| (mold, def.sort)))
+        else {
+            return SeparatorTaken::from(false);
+        };
+        let Some(content_floor) = StackIndex::from(frontier).floor_after()
+        else {
+            return SeparatorTaken::from(false);
+        };
+        self.collapse(content_floor);
+        self.mint_ghost_end(frontier, frontier_cell);
+        let span = self.append_source(SourceFragment::from(text));
+        let emit = self.emit_token(NodeLabel::Tile(terminator), span);
+        self.push_cell(Cell {
+            emit,
+            start: u32::from(span.start),
+            end: u32::from(span.end),
+            sort,
+            role: Role::FormTile {
+                mold: terminator,
+                sort,
+                open: false,
+                start: false,
+                absorb_left: false,
+            },
+        });
+        if let Some(top) = self.stack.len().checked_sub(1) {
+            self.close_form(StackIndex::from(top));
+        }
+        SeparatorTaken::from(true)
+    }
+
+    /// Return whether `mold` can open an item-position declaration at a fresh
+    /// slot of this state's grammar: [`declaration_head`].
+    ///
+    /// # Specification
+    /// - ensures: [`declaration_head`] over this state's grammar.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — declaration heads, inlined members and a terminating
+    ///   semicolon differ at sort, FIRST and successor boundaries. Their repair
+    ///   behavior exposes admitting a terminator or rejecting a real head.
+    /// - witness: `tests::acceptance::an_unclosed_delimiter_yields_to_every_declaration_family`
+    #[spec(ensures: |ret| ret == declaration_head(self.pbg, mold))]
+    fn opens_declaration(
+        &self,
+        mold: MoldId,
+    ) -> DeclarationStart
+    {
+        declaration_head(self.pbg, mold)
+    }
+
+    /// Return the nearest open frontier whose form starts at a declaration
+    /// head.
+    ///
+    /// A frontier cell carries the mold of its form's **most recent** tile, not
+    /// its first: `continue_form` advances the frontier onto each continuing
+    /// tile, so an open `def id = …` sits on the `=` tile. The search therefore
+    /// resolves every frontier down to its form-start before testing it, and
+    /// testing the frontier's own mold would find a declaration-started form
+    /// only in the degenerate `def def` case.
+    ///
+    /// # Specification
+    /// - ensures: returns the nearest open frontier whose original form start
+    ///   opens a declaration, or none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration already advanced beyond its head, with
+    ///   nested damaged value syntax, exposes the repair floor. Looking only at
+    ///   the current tile instead of its form start absorbs following siblings.
+    /// - witness: `tests::acceptance::unclosed_definition_delimiter_does_not_absorb_following_definition`
+    #[spec(ensures: |ret| ret.is_none_or(|index| self.frontiers.binary_search(&index.0).is_ok() && self.form_start_index(StackIndex::from(index)).and_then(|start| self.stack.get(start.0)).is_some_and(|cell| matches!(cell.role, Role::FormTile { mold, .. } if bool::from(self.opens_declaration(mold))))))]
+    fn open_declaration_frontier(&self) -> Option<FrontierIndex>
+    {
+        self.frontiers.iter().rev().find_map(|&index| {
+            let start = self.form_start_index(StackIndex::from(index))?;
+            let role = self.stack.get(usize::from(start)).map(|cell| cell.role)?;
+            let Role::FormTile { mold, .. } = role
+            else {
+                return None;
+            };
+            bool::from(self.opens_declaration(mold)).then_some(FrontierIndex::from(index))
+        })
+    }
+
+    /// Return whether pushing `mold` is admissible given a precomputed
+    /// [`Frontier`] — the per-candidate hot path of
+    /// [`admits`](MeldState::admits).
+    ///
+    /// # Specification
+    /// - requires: `frontier` came from [`MeldState::admissibility_frontier`]
+    ///   on this state, with no intervening mutation.
+    /// - ensures: equals [`admits`](MeldState::admits) for `mold`; leaves
+    ///   `self` unchanged.
+    /// - provides: the constant-context admissibility check.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — fresh, open-form and operand snapshots distinguish a
+    ///   closer, a form-first mid and a binary operator. Stale context,
+    ///   removing the unknown fallback or admitting a stray closer changes the
+    ///   decision. The precondition rechecks the context's open frontier and
+    ///   head fields; the expected sort is the scan the context hoists out of
+    ///   the candidate loop, checked once per token by
+    ///   [`admissibility_frontier`](Self::admissibility_frontier)'s clause.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    /// - witness: `meld::tests::admits_a_form_first_mid_at_a_fresh_slot`
+    /// - witness: `tests::grammar::an_observation_s_type_applies_a_parenthesized_argument_6093`
+    #[inline]
+    #[must_use]
+    #[spec(requires: frontier.open == self.open_form_mold() && bool::from(frontier.head_operand) == bool::from(self.head_is_operand()) && frontier.head_sort == self.head_operand_sort(), ensures: |ret| (self.pbg.mold(mold).is_ok() || bool::from(ret)) && (frontier.open.is_some() || !matches!(self.classify(mold), Kind::FormEnd) || !bool::from(ret)))]
+    pub fn admits_at(
+        &self,
+        mold: MoldId,
+        frontier: &Frontier,
+    ) -> MoldAdmissibility
+    {
+        if self.pbg.mold(mold).is_err() {
+            // An out-of-range mold takes push's total unmolded path; never
+            // filtered, so the molder always has a last resort.
+            return MoldAdmissibility::from(true);
+        }
+        // An item-form `(` is a declaration/telescope opener, never a
+        // continuation of an expression operand. Keeping Item forms exempt
+        // from sort filtering at a fresh slot is necessary for top-level
+        // declarations, but that exemption must not steal a call's argument
+        // opener after an expression head.
+        if bool::from(frontier.head_operand)
+            && frontier.expected == Sort::Expression
+            && self
+                .pbg
+                .mold(mold)
+                .is_ok_and(|def| def.sort == Sort::Item && def.label == "(")
+        {
+            return MoldAdmissibility::from(false);
+        }
+        // Past an operand, a form's next tile continues the frontier save
+        // where the token opens the operand's argument instead.
+        let past = frontier
+            .head_sort
+            .filter(|_| bool::from(frontier.head_operand));
+        let continues = |open: MoldId| {
+            bool::from(self.adjacent(open, mold))
+                && past.is_none_or(|head| {
+                    bool::from(continues_past_operand(self.pbg, open, mold, head))
+                })
+        };
+        let admissible = match self.classify(mold) {
+            Kind::FormEnd => frontier.open.is_some_and(continues),
+            Kind::FormMid => {
+                frontier.open.is_some_and(continues)
+                    || (frontier.open.is_none()
+                        && bool::from(FormTable::is_form_first(self.pbg, mold)))
+            },
+            // A left-absorbing form-start (a call `(`, an instantiation `[`)
+            // continues the head operand and is gated on it; the operand-
+            // continuation tiebreak, not the sort, settles it. A fresh form-start
+            // (a list `[`, a `*{` record, a parenthesised `(`) fills the open slot
+            // directly, so the hole-sort check discards a wrong-sort one — a
+            // Pattern `[` at an expression slot, an Expression `*{` at a type slot
+            // — before any dry-run, collapsing the `[` / `(` / `*{` sort families
+            // to their context-correct reading (Item form-starts stay exempt, so a
+            // top-level `def` survives the Expression-defaulted slot).
+            Kind::FormStart { absorb_left } => {
+                if absorb_left {
+                    // The absorbing start applies only to a head operand of its
+                    // own sort — never a top-level `def` item's Item-sorted
+                    // head — and only to a name where its rule states one.
+                    bool::from(frontier.head_operand)
+                        && self.pbg.mold(mold).is_ok_and(|def| {
+                            frontier.head_sort == Some(def.sort) || def.sort == Sort::Item
+                        })
+                        && bool::from(self.left_admits(mold))
+                }
+                else {
+                    bool::from(self.sort_admits(mold, frontier.expected))
+                        || bool::from(self.juxtaposes_head(mold, frontier))
+                }
+            },
+            Kind::Operator(OpShape::Infix | OpShape::Postfix) => bool::from(frontier.head_operand),
+            // An operand fills the open slot directly: the hole-sort check
+            // discards one whose sort mismatches the expected slot, so a
+            // lowercase word's expression-atom and pattern-atom molds
+            // no longer both survive at every position — the matching-sort one is
+            // usually the lone admissible candidate, taken with no dry-run.
+            // An operand of the head's own sort also stands, when that sort
+            // applies by juxtaposition: `-F Maybe A` inside an expression
+            // applies the type `Maybe` to the type `A` (#5326).
+            Kind::Operand => {
+                bool::from(self.sort_admits(mold, frontier.expected))
+                    || bool::from(self.juxtaposes_head(mold, frontier))
+            },
+            // A moded type, `m T`, opens on a prefix tile and binds at the
+            // arrow's band, so it is no argument of a type application.
+            Kind::Operator(OpShape::Prefix) => bool::from(self.prefix_admits(mold, frontier)),
+        };
+        MoldAdmissibility::from(admissible)
+    }
+
+    /// Return whether the head operand is a left side that `mold`'s rule
+    /// takes: any whole operand, or a name where the rule states
+    /// [`LeftOperand::Name`]. A name is a lone tile, or the rule's own form
+    /// over a name, `M.N.T`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when `mold`'s rule states [`LeftOperand::Any`],
+    ///   or the slope's top is a token or a form of `mold`'s own rule; leaves
+    ///   `self` unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the rule's statement is a read of the grammar, and
+    ///   a predicate restates the gate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `M.T` and `M.N.T` read as qualified types, and a lone
+    ///   `Path` before `.` takes no `type_path`; a gate that ignores the rule's
+    ///   statement or refuses a chain changes one of them.
+    /// - witness: `tests::grammar::a_path_type_reads_its_endpoints_juxtaposed_5750`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    fn left_admits(
+        &self,
+        mold: MoldId,
+    ) -> MoldAdmissibility
+    {
+        let Ok(rule) = self.pbg.rule_of(mold)
+        else {
+            return MoldAdmissibility::from(true);
+        };
+        if rule.left() == LeftOperand::Any {
+            return MoldAdmissibility::from(true);
+        }
+        let name = rule.name();
+        MoldAdmissibility::from(self.stack.last().is_some_and(|cell| {
+            match self
+                .emit
+                .get(usize::try_from(cell.emit.0).unwrap_or(usize::MAX))
+            {
+                Some(&EmitOp::Token { .. }) => true,
+                Some(&EmitOp::Interior {
+                    label: NodeLabel::Meld(form),
+                    ..
+                }) => self.pbg.rule_of(form).is_ok_and(|own| own.name() == name),
+                Some(&EmitOp::Interior { .. }) | None => false,
+            }
+        }))
+    }
+
+    /// Return whether an operand `mold`'s sort fills the expected slot sort.
+    ///
+    /// Item-sort operands are never sort-filtered: the top-level slot defaults
+    /// to [`Sort::Expression`] yet legitimately admits a bare-expression
+    /// item, so an Item operand there must not be discarded (the filter is
+    /// a soundness-safe narrowing, never a rejection of a real reading).
+    ///
+    /// # Specification
+    /// - ensures: admits the expected sort and item-sort molds; a missing mold
+    ///   uses the item fallback.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — expression versus pattern slots and an item fallback
+    ///   expose sort filtering. Treating all sorts alike or rejecting the item
+    ///   exception changes admitted candidates and committed forms.
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| bool::from(ret) == self.pbg.mold(mold).map_or(true, |def| def.sort == expected || def.sort == Sort::Item))]
+    fn sort_admits(
+        &self,
+        mold: MoldId,
+        expected: Sort,
+    ) -> SortAdmissibility
+    {
+        let sort = self.pbg.mold(mold).map_or(Sort::Item, |def| def.sort);
+        SortAdmissibility::from(sort == expected || sort == Sort::Item)
+    }
+
+    /// Whether a fresh operand `mold` stands as the argument the head operand
+    /// applies by juxtaposition: the head is an operand, its sort has an
+    /// application tile, and `mold` is of that sort (#5326), or of the sort
+    /// that the head's rule states for its operands, as an expression at
+    /// `Path a`.
+    ///
+    /// # Specification
+    /// - ensures: admitted exactly when `frontier`'s head is an operand whose
+    ///   sort the grammar applies by juxtaposition and `mold` is of that sort
+    ///   or of `frontier`'s argument sort.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `-F Maybe A` inside an expression reads `A` as a
+    ///   type, and `f x` keeps `x` an expression: dropping the head sort reads
+    ///   `A` as an expression constructor beside the type. `Path (f x) y` reads
+    ///   its endpoints as expressions.
+    /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
+    /// - witness: `tests::grammar::a_path_type_reads_its_endpoints_juxtaposed_5750`
+    #[spec(ensures: |ret| bool::from(ret) == (bool::from(frontier.head_operand) && frontier.head_sort.is_some_and(|head| self.pbg.application_in(head).is_some() && self.pbg.mold(mold).is_ok_and(|def| def.sort == head || frontier.endpoint == Some(def.sort)))))]
+    fn juxtaposes_head(
+        &self,
+        mold: MoldId,
+        frontier: &Frontier,
+    ) -> SortAdmissibility
+    {
+        SortAdmissibility::from(
+            bool::from(frontier.head_operand)
+                && frontier.head_sort.is_some_and(|head| {
+                    self.pbg.application_in(head).is_some()
+                        && self.pbg.mold(mold).is_ok_and(|def| {
+                            def.sort == head || frontier.endpoint == Some(def.sort)
+                        })
+                }),
+        )
+    }
+
+    /// Whether a prefix `mold` is admitted where it stands. A moded type, `m
+    /// T`, opens on a prefix tile and binds at the arrow's band, looser than an
+    /// application, so it is no argument of a type operand before it (#5326):
+    /// `Vec a n` applies `Vec` to `a` and `n`. Until #5330 settles the moded
+    /// type beside the application, a type variable at the head still opens
+    /// one, `self : m T`.
+    ///
+    /// # Specification
+    /// - ensures: refused exactly when `frontier`'s head is a type operand, the
+    ///   grammar applies a type by juxtaposition, and `mold` belongs to the
+    ///   rule `moded_type`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Vec a n` reads two arguments, and `self : m T` keeps
+    ///   its moded type: admitting the moded type as an argument reads `Vec (a
+    ///   n)`.
+    /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
+    #[spec(ensures: |ret| bool::from(ret) != (bool::from(frontier.head_operand) && frontier.head_sort == Some(Sort::Type) && self.pbg.application_in(Sort::Type).is_some() && self.pbg.rule_of(mold).is_ok_and(|rule| rule.name().0 == MODED_TYPE)))]
+    fn prefix_admits(
+        &self,
+        mold: MoldId,
+        frontier: &Frontier,
+    ) -> MoldAdmissibility
+    {
+        let moded = bool::from(frontier.head_operand)
+            && frontier.head_sort == Some(Sort::Type)
+            && self.pbg.application_in(Sort::Type).is_some()
+            && self
+                .pbg
+                .rule_of(mold)
+                .is_ok_and(|rule| rule.name().0 == MODED_TYPE);
+        MoldAdmissibility::from(!moded)
+    }
+
+    /// Return whether `mold` extends the head operand rather than starting a
+    /// fresh juxtaposed one: a left-absorbing form-start (a call `(`, a
+    /// projection `.`, an instantiation `[`) or an infix / postfix operator.
+    ///
+    /// With the head an operand, such a mold and a competing fresh atom /
+    /// non-absorbing form-start over the same lexeme (a call `(` versus a
+    /// parenthesised `(`) tie on the local `(Delta, continuation, sort)` key.
+    /// Extending the operand is the reading gandr's expression grammar always
+    /// intends after an operand, so the molder prefers it — settling the tie
+    /// with no lookahead window.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: returns whether `mold` continues the head operand; leaves
+    ///   `self` unchanged.
+    /// - provides: the molder's operand-continuation tiebreak key.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a binary operator versus an atom and fresh
+    ///   parenthesis exposes the continuation rank. Admitting an atom or a
+    ///   prefix operator as a left continuation changes disambiguation.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| bool::from(ret) == matches!(self.classify(mold), Kind::FormStart { absorb_left: true } | Kind::Operator(OpShape::Infix | OpShape::Postfix)))]
+    pub fn continues_operand(
+        &self,
+        mold: MoldId,
+    ) -> OperandContinuation
+    {
+        OperandContinuation::from(matches!(
+            self.classify(mold),
+            Kind::FormStart { absorb_left: true }
+                | Kind::Operator(OpShape::Infix | OpShape::Postfix)
+        ))
+    }
+
+    /// Return whether the topmost slope cell is a completed operand.
+    ///
+    /// # Specification
+    /// - ensures: reports whether the final slope cell is an operand; an empty
+    ///   slope is false.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, open-form, operator and completed-operand
+    ///   heads expose admission and expected-sort transitions. Mistaking a
+    ///   frontier or operator for an operand changes those public queries.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    #[inline]
+    #[spec(ensures: |ret| bool::from(ret) == self.stack.last().is_some_and(|cell| matches!(cell.role, Role::Operand)))]
+    fn head_is_operand(&self) -> HeadOperandPresence
+    {
+        HeadOperandPresence::from(matches!(
+            self.stack.last().map(|cell| cell.role),
+            Some(Role::Operand)
+        ))
+    }
+
+    /// Return whether the topmost slope cell is the nearest open form's
+    /// frontier tile: nothing stands yet in the slot that tile opens.
+    ///
+    /// # Specification
+    /// - ensures: reports whether a form is open and its frontier cell is the
+    ///   last slope cell; an empty slope is false.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration's name slot, empty after its head tile,
+    ///   separates a keyword written there from one written after a name.
+    /// - witness: `tests::acceptance::a_reserved_word_where_a_name_stands_owes_one_obligation_6266`
+    #[inline]
+    #[spec(ensures: |ret| bool::from(ret) == self.nearest_open_form().is_some_and(|frontier| usize::from(frontier).checked_add(1) == Some(self.stack.len())))]
+    pub(crate) fn head_is_frontier(&self) -> HeadFrontier
+    {
+        HeadFrontier::from(
+            self.nearest_open_form().is_some_and(|frontier| {
+                usize::from(frontier).checked_add(1) == Some(self.stack.len())
+            }),
+        )
+    }
+
+    /// Return the sort of the head operand cell, if the head is an operand.
+    ///
+    /// A left-absorbing form-start (a call `(`, an instantiation `[`) only
+    /// applies to an operand of its own sort: instantiating a top-level `def`
+    /// item, whose head cell is [`Sort::Item`], is unsound, so the pre-filter
+    /// requires the head operand's sort to match before admitting the absorbing
+    /// start (and before the operand-continuation tiebreak can prefer it).
+    ///
+    /// # Specification
+    /// - ensures: returns the head cell sort only when the head is an operand;
+    ///   empty and operator heads yield none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, operand and operator heads expose the optional
+    ///   sort. Reading below the head or returning an operator sort changes
+    ///   which left-absorbing forms are admitted.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    #[inline]
+    #[spec(ensures: |ret| ret == self.stack.last().filter(|cell| matches!(cell.role, Role::Operand)).map(|cell| cell.sort))]
+    fn head_operand_sort(&self) -> Option<Sort>
+    {
+        let cell = self.stack.last()?;
+        match cell.role {
+            Role::Operand => Some(cell.sort),
+            Role::FormTile { .. } | Role::Operator { .. } => None,
+        }
+    }
+
+    /// Return the sort of the operand slot the slope head expects next.
+    ///
+    /// The molder ranks a fresh atom / form-start candidate by whether its sort
+    /// matches this expectation, so `"hi"` reads as the expression string at an
+    /// expression slot and the pattern string in a `let`/`match` pattern slot,
+    /// without a completion traversal. The expectation is the nearest
+    /// unsaturated operator's right-hole sort, or the nearest open form
+    /// frontier's right-hole sort, defaulting to [`Sort::Expression`] at the
+    /// top level, where no slot is open.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: returns the head's expected operand sort; leaves `self`
+    ///   unchanged; defaults to [`Sort::Expression`] when no slot is open.
+    /// - provides: the molder's sort-compatibility ranking key.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty slope and unsaturated operator or form slots
+    ///   expose expected sorts; the expression default and a pattern boundary
+    ///   distinguish wrong defaults from reading the wrong open hole.
+    /// - witness: `meld::tests::expected_sort_reads_the_open_slot`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| !self.stack.is_empty() || ret == Sort::Expression)]
+    pub fn expected_operand_sort(&self) -> Sort
+    {
+        self.open_slot().map_or(Sort::Expression, OpenSlot::sort)
+    }
+
+    /// The operand slot open at the slope head: the nearest unsaturated
+    /// operator's right hole, or the nearest open form frontier's right hole
+    /// or the tile it faces; none at the top level, where no slot is open.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: the open slot, an open frontier facing no hole reading as
+    ///   [`OpenSlot::Tile`]; none when neither an operator nor a frontier is
+    ///   open; leaves `self` unchanged.
+    /// - provides: [`Self::expected_operand_sort`], and the top-level flag and
+    ///   the argument sort of [`Self::admissibility_frontier`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty slope reads no slot, and unsaturated
+    ///   operator and form slots their own sorts.
+    /// - witness: `meld::tests::expected_sort_reads_the_open_slot`
+    /// - witness: `tests::acceptance::a_token_left_out_before_a_juxtaposed_type_s_group_owes_what_its_call_owes_6102`
+    #[spec(ensures: |ret| !self.stack.is_empty() || ret.is_none())]
+    fn open_slot(&self) -> Option<OpenSlot>
+    {
+        // The scan's Operand arm is a no-op, so it starts at the topmost
+        // non-operand cell (the higher of the operator / form-tile cache tops)
+        // rather than walking the whole top operand run (the sibling scan).
+        let top_non_operand = match (self.operators.last(), self.barriers.last()) {
+            (Some(&op), Some(&tile)) => op.max(tile),
+            (Some(&op), None) => op,
+            (None, Some(&tile)) => tile,
+            (None, None) => return None,
+        };
+        let limit = top_non_operand.checked_add(1)?;
+        let mut index = limit.min(self.stack.len());
+        while let Some(next_index) = index.checked_sub(1) {
+            index = next_index;
+            match self.stack.get(index).map(|cell| cell.role) {
+                Some(Role::Operator { sort, shape, .. }) => {
+                    let wants_right = matches!(shape, OpShape::Infix | OpShape::Prefix);
+                    let right_filled = index
+                        .checked_add(1)
+                        .is_some_and(|next| bool::from(self.is_operand_at(StackIndex::from(next))));
+                    if wants_right && !right_filled {
+                        return Some(OpenSlot::Hole(sort));
+                    }
+                },
+                Some(Role::FormTile {
+                    mold, open: true, ..
+                }) => {
+                    return Some(
+                        self.frontier_hole_sort(mold)
+                            .map_or(OpenSlot::Tile, OpenSlot::Hole),
+                    );
+                },
+                Some(Role::FormTile { open: false, .. } | Role::Operand) => {},
+                None => break,
+            }
+        }
+        None
+    }
+
+    /// Return the sort of the recursive hole an open form frontier faces on its
+    /// right, if any (the first `≐`-successor step that crosses a sort).
+    ///
+    /// # Specification
+    /// - ensures: returns the first right-crossed recursive sort, or none for
+    ///   no sort or a missing mold.
+    /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: reads one mold's right step list from the grammar, whose length
+    ///   the grammar fixes; the slope is never read.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a missing mold and open expression versus pattern
+    ///   slots expose absence and the expected hole sort. Inventing a default
+    ///   for a missing mold or crossing the wrong side changes the query or
+    ///   molding.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[spec(ensures: |ret| ret.is_none() || self.pbg.mold(mold).is_ok())]
+    fn frontier_hole_sort(
+        &self,
+        mold: MoldId,
+    ) -> Option<Sort>
+    {
+        let def = self.pbg.mold(mold).ok()?;
+        for step in self.pbg.step(def.rctx, Dir::Right).ok()? {
+            if let StepSym::Sort(sort) = step.crossed {
+                return Some(sort);
+            }
+        }
+        None
+    }
+
+    /// Clean-close every topmost completable open frontier the incoming tile
+    /// does not `≐`-continue.
+    ///
+    /// A **completable** frontier is a form-start / mid whose remaining form
+    /// tail is nullable — its mold is in the grammar's LAST set
+    /// ([`FormTable::is_form_last`]) — so the form is already a complete shape
+    /// at that tile (a bare `?` hole before its optional `hole_name`). When
+    /// the incoming tile continues the frontier (`?`'s `hole_name`), it
+    /// stays open for the successor; otherwise the frontier is reduced into
+    /// its meld **cleanly** — no ghost end, no obligation — before the
+    /// incoming tile is classified. That keeps a bare hole a complete
+    /// operand and leaves the following terminator / closer / operator a
+    /// flat sibling, rather than the hole's open frontier shadowing an
+    /// enclosing form (so a `}` closes the block, not the hole) or
+    /// force-closing with a spurious [`Oblig::MissingTile`].
+    ///
+    /// A genuinely incomplete form (a `{` with no `}`, mold not in the LAST
+    /// set) is left open, to force-close with its obligation at commit —
+    /// the repair path for real incompleteness is unchanged.
+    ///
+    /// # Specification
+    /// - ensures: closes complete non-continuing frontiers without consuming
+    ///   source or adding repairs; a required tail or continuing tile keeps its
+    ///   form open.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bare completable hole, a named hole and an
+    ///   enclosing closer expose the exact clean tree. Closing before a name,
+    ///   absorbing the enclosing delimiter or minting an unnecessary repair
+    ///   changes it.
+    /// - witness: `meld::tests::completable_hole_closes_without_obligation`
+    /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
+    #[spec(captures: before = (self.source.len(), self.obligations.len(), self.frontiers.len()), ensures: |_| self.source.len() == before.0 && self.obligations.len() == before.1 && self.frontiers.len() <= before.2)]
+    fn settle_completable(
+        &mut self,
+        incoming: MoldId,
+    )
+    {
+        // Each iteration reduces one frontier into an operand, strictly
+        // shrinking the open-frontier count, so the loop terminates.
+        while let Some(frontier) = self.nearest_open_form() {
+            let Some(Role::FormTile {
+                mold: head_mold, ..
+            }) = self.stack.get(usize::from(frontier)).map(|cell| cell.role)
+            else {
+                break;
+            };
+            // The incoming tile continues this form: keep it open for the
+            // successor (a `?` awaiting its `hole_name`).
+            if bool::from(self.adjacent(head_mold, incoming)) {
+                break;
+            }
+            // A regex-LAST prefix with a required recursive-sort tail is not
+            // complete until its operand arrives.
+            if bool::from(self.pbg.mold_has_required_tail(head_mold)) {
+                break;
+            }
+            // Only a completable frontier closes here; a form still awaiting a
+            // required tile stays open for the force-close repair path.
+            if !bool::from(FormTable::is_form_last(self.pbg, head_mold)) {
+                break;
+            }
+            self.close_form(StackIndex::from(frontier));
+        }
+    }
+    /// Clean-close each required-tail form whose tail is whole and which the
+    /// incoming tile does not continue.
+    ///
+    /// A form ending in a required sort hole — `rec a => S`, `+U[r] C` — has
+    /// no tile to end it. It closes once its tail is whole, every
+    /// operator above the frontier holding the operands it wants, and the
+    /// incoming tile does not continue that tail: an infix or postfix
+    /// operator, or a left-absorbing form start, of the hole's sort continues
+    /// it exactly when the form's own group yields to the tile, the precedence
+    /// a prefix operator at that group would give it. So `rec a => a * b` and
+    /// `rec a => -F a` keep the product and the returner inside the protocol,
+    /// while `+U[r] C * D` closes the bridge before the product. Unlike
+    /// [`settle_completable`](Self::settle_completable), this path is
+    /// stateful: the form's LAST tile is not completable while its required
+    /// operand is absent.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: closes, innermost first, every open required-tail frontier
+    ///   whose tail is whole and which `incoming` does not continue, reducing
+    ///   the tail's operators into one operand first; stops at the first
+    ///   frontier that is not; flags no obligation and preserves source.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tail ending in a prefix operator's operand, a tail
+    ///   an operator tighter than the form continues, and a tail a looser
+    ///   operator follows separate the settlement, each observed through the
+    ///   form the commit builds. Absent and nested tails distinguish premature
+    ///   closure from a completed operand.
+    /// - witness: `meld::tests::a_required_tail_runs_as_far_as_its_group_yields`
+    /// - witness: `tests::grammar::every_type_operator_spelling_reads_cleanly`
+    /// - witness: `meld::tests::a_bracket_before_a_required_tail_keeps_its_form_open`
+    /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
+    ///
+    /// # Termination
+    /// Each pass closes the nearest open frontier, which drops it from the
+    /// frontier cache, or stops; the inner loop reduces one operator above
+    /// the frontier per step.
+    #[spec(captures: before = (self.source.len(), self.obligations.len()), ensures: |_| self.source.len() == before.0 && self.obligations.len() == before.1)]
+    fn settle_filled_required_tail(
+        &mut self,
+        incoming: Incoming<'_>,
+    )
+    {
+        while let Some(frontier) = self.nearest_open_form() {
+            if !bool::from(self.tail_is_whole(frontier))
+                || bool::from(self.extends_tail(frontier, incoming))
+                || bool::from(self.continues_frontier(frontier, incoming))
+            {
+                break;
+            }
+            // The frontier tile is a barrier, so only the tail's operators are
+            // reduced, topmost first.
+            while let Some(operator) = self.topmost_operator_index() {
+                self.reduce_operator(operator);
+            }
+            let Some(end) = self.required_tail_operand(frontier)
+            else {
+                break;
+            };
+            self.close_form(end);
+        }
+    }
+
+    /// Whether `incoming` — the tile, or any mold a label of the token may
+    /// take — `≐`-continues the form whose frontier is at `frontier`: the
+    /// next tile of that form after its filled tail, as an access's `unwind`
+    /// after its block.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when the frontier is a form tile and one of
+    ///   `incoming`'s molds is adjacent to it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — through
+    ///   [`settle_filled_required_tail`](Self::settle_filled_required_tail): an
+    ///   access whose block is followed by `unwind` keeps its form open, and
+    ///   one followed by `;` closes; dropping the test closes the first.
+    /// - witness: `meld::tests::a_filled_tail_keeps_its_form_open_for_the_next_tile`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same candidate menu of the token's labels"
+        )
+    )]
+    #[spec(ensures: |ret| bool::from(ret) == self.stack.get(usize::from(frontier)).is_some_and(|cell| match cell.role {
+        Role::FormTile { mold, .. } => match incoming {
+            Incoming::Tile(tile) => bool::from(self.adjacent(mold, tile)),
+            Incoming::Token(labels) => <&[LabelId]>::from(labels).iter().flat_map(|&label| self.pbg.label_candidates(label).iter().copied()).any(|tile| bool::from(self.adjacent(mold, tile))),
+        },
+        Role::Operand | Role::Operator { .. } => false,
+    }))]
+    fn continues_frontier(
+        &self,
+        frontier: FrontierIndex,
+        incoming: Incoming<'_>,
+    ) -> TailContinuation
+    {
+        let Some(Role::FormTile { mold, .. }) =
+            self.stack.get(usize::from(frontier)).map(|cell| cell.role)
+        else {
+            return TailContinuation::from(false);
+        };
+        TailContinuation::from(match incoming {
+            Incoming::Tile(tile) => bool::from(self.adjacent(mold, tile)),
+            Incoming::Token(labels) => <&[LabelId]>::from(labels).iter().any(|&label| {
+                self.pbg
+                    .label_candidates(label)
+                    .iter()
+                    .any(|&tile| bool::from(self.adjacent(mold, tile)))
+            }),
+        })
+    }
+
+    /// Whether the open frontier at `frontier` carries a required tail that
+    /// is whole: a run of its hole's sort of prefix operators, operands,
+    /// postfix and infix operators, each operator holding the operands it
+    /// wants, ending in an operand.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when the frontier's mold carries a required tail
+    ///   with a known hole sort, every cell above the frontier is an operand or
+    ///   an operator of that sort, no operand stands beside another and no
+    ///   operator lacks an operand it wants, and the run is non-empty.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — through
+    ///   [`settle_filled_required_tail`](Self::settle_filled_required_tail): a
+    ///   prefix operator with its operand is whole, one without it is not.
+    ///   First/last roles and adjacent-role compatibility give an independent
+    ///   predicate for the scan state; changing operand alternation, sort or
+    ///   empty-tail handling changes it. Invalid frontiers return false.
+    /// - witness: `meld::tests::a_required_tail_runs_as_far_as_its_group_yields`
+    /// - witness: `meld::tests::frontier_flags_and_successor_labels_handle_boundary_positions`
+    ///
+    /// # Termination
+    /// One step per cell above the frontier.
+    #[spec(ensures: |ret| {
+        let index = usize::from(frontier);
+        let expected = self.stack.get(index).and_then(|cell| match cell.role {
+            Role::FormTile { mold, .. } if bool::from(self.pbg.mold_has_required_tail(mold)) => self.frontier_hole_sort(mold),
+            Role::Operand | Role::Operator { .. } | Role::FormTile { .. } => None,
+        });
+        let tail = index.checked_add(1).and_then(|start| self.stack.get(start ..)).unwrap_or(&[]);
+        bool::from(ret) == expected.is_some_and(|sort| {
+            tail.first().is_some_and(|cell| matches!(cell.role, Role::Operand | Role::Operator { shape: OpShape::Prefix, .. }))
+                && tail.last().is_some_and(|cell| matches!(cell.role, Role::Operand | Role::Operator { shape: OpShape::Postfix, .. }))
+                && tail.iter().all(|cell| cell.sort == sort && !matches!(cell.role, Role::FormTile { .. }))
+                && tail.iter().zip(tail.iter().skip(1)).all(|(left, right)| {
+                    matches!(left.role, Role::Operand | Role::Operator { shape: OpShape::Postfix, .. })
+                        != matches!(right.role, Role::Operand | Role::Operator { shape: OpShape::Prefix, .. })
+                })
+        })
+    })]
+    fn tail_is_whole(
+        &self,
+        frontier: FrontierIndex,
+    ) -> TailWhole
+    {
+        let frontier_index = usize::from(frontier);
+        let Some(Role::FormTile { mold, .. }) =
+            self.stack.get(frontier_index).map(|cell| cell.role)
+        else {
+            return TailWhole::from(false);
+        };
+        let Some(expected) = self
+            .frontier_hole_sort(mold)
+            .filter(|_sort| bool::from(self.pbg.mold_has_required_tail(mold)))
+        else {
+            return TailWhole::from(false);
+        };
+        let tail = frontier_index
+            .checked_add(1)
+            .and_then(|start| self.stack.get(start ..))
+            .unwrap_or(&[]);
+        let mut wants_operand = true;
+        for cell in tail {
+            if cell.sort != expected {
+                return TailWhole::from(false);
+            }
+            let fits = match cell.role {
+                Role::Operand
+                | Role::Operator {
+                    shape: OpShape::Prefix,
+                    ..
+                } => wants_operand,
+                Role::Operator {
+                    shape: OpShape::Infix | OpShape::Postfix,
+                    ..
+                } => !wants_operand,
+                Role::FormTile { .. } => false,
+            };
+            if !fits {
+                return TailWhole::from(false);
+            }
+            wants_operand = matches!(cell.role, Role::Operator {
+                shape: OpShape::Prefix | OpShape::Infix,
+                ..
+            });
+        }
+        TailWhole::from(!tail.is_empty() && !wants_operand)
+    }
+
+    /// Whether `incoming` continues the tail of the required-tail form whose
+    /// frontier is at `frontier`. A juxtaposed operand continues it through the
+    /// application tile the melder pushes before it, where that tile continues
+    /// the tail. In a tail of another sort than its form, `pack M at Model T`
+    /// packs at the type `Model T`. A tail of the form's own sort joins the
+    /// application where the application's band is tighter than the form's
+    /// band, whatever tile precedes the tail (the ruling on #6130). So `+U T
+    /// Integer` thunks `T Integer`, and `-F [Partial] Maybe Integer` returns
+    /// `Maybe Integer`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when the frontier's hole sort is known and
+    ///   `incoming` — the tile, or any mold a label of the token may take — is
+    ///   an infix or postfix operator or a left-absorbing form start of that
+    ///   sort whose group the form's group yields to, or an operand or a
+    ///   non-absorbing form start of that sort while the slope's top takes the
+    ///   application tile of that sort as such an operator.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — through
+    ///   [`settle_filled_required_tail`](Self::settle_filled_required_tail): an
+    ///   operator tighter than the form and one looser separate the answer
+    ///   through committed type trees, a type operand after a packed model's
+    ///   type applies that type, and a type operand after the operand of `+U`
+    ///   applies that operand. Prefix-only shapes, wrong sorts and absent
+    ///   frontiers cannot extend a completed operand; token menus use
+    ///   existential rather than universal candidate choice.
+    /// - witness: `meld::tests::a_required_tail_runs_as_far_as_its_group_yields`
+    /// - witness: `meld::tests::frontier_flags_and_successor_labels_handle_boundary_positions`
+    /// - witness: `tests::grammar::a_packed_model_s_type_applies_by_juxtaposition_6093`
+    /// - witness: `tests::grammar::a_type_form_s_last_hole_takes_a_juxtaposed_application_6130`
+    ///
+    /// # Termination
+    /// One step per mold a label of the token may take.
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same candidate menu of the token's labels"
+        )
+    )]
+    #[spec(ensures: |ret| {
+        let context = self.stack.get(usize::from(frontier)).and_then(|cell| match cell.role {
+            Role::FormTile { mold, .. } => Some((self.pbg.mold(mold).ok()?.prec, self.pbg.mold(mold).ok()?.sort, self.frontier_hole_sort(mold)?)),
+            Role::Operand | Role::Operator { .. } => None,
+        });
+        bool::from(ret) == context.is_some_and(|(form, sort, hole)| {
+            let application = self.pbg.application_in(hole);
+            let qualifying = |tile| self.pbg.mold(tile).is_ok_and(|definition| {
+                definition.sort == hole
+                    && matches!(self.classify(tile), Kind::Operator(OpShape::Infix | OpShape::Postfix) | Kind::FormStart { absorb_left: true })
+                    && (bool::from(self.pbg.dag().lt(form, definition.prec, Assoc::Right)) || (sort != hole && Some(tile) == application))
+            });
+            let juxtaposed = |tile| self.applies_next_in(hole).is_some_and(&qualifying)
+                && self.pbg.mold(tile).is_ok_and(|definition| definition.sort == hole)
+                && matches!(self.classify(tile), Kind::Operand | Kind::FormStart { absorb_left: false });
+            match incoming {
+                Incoming::Tile(tile) => qualifying(tile) || juxtaposed(tile),
+                Incoming::Token(labels) => <&[LabelId]>::from(labels).iter()
+                    .flat_map(|&label| self.pbg.label_candidates(label).iter().copied())
+                    .any(|tile| qualifying(tile) || juxtaposed(tile)),
+            }
+        })
+    })]
+    fn extends_tail(
+        &self,
+        frontier: FrontierIndex,
+        incoming: Incoming<'_>,
+    ) -> TailExtension
+    {
+        let Some((form, sort, hole)) = self
+            .stack
+            .get(usize::from(frontier))
+            .and_then(|cell| match cell.role {
+                Role::FormTile { mold, .. } => Some(mold),
+                Role::Operand | Role::Operator { .. } => None,
+            })
+            .and_then(|mold| {
+                let def = self.pbg.mold(mold).ok()?;
+                Some((def.prec, def.sort, self.frontier_hole_sort(mold)?))
+            })
+        else {
+            return TailExtension::from(false);
+        };
+        // A form of another sort than its tail's, `pack M at Model T`, has no
+        // band that the tail's application compares with, and no application
+        // of the tail's sort takes the form as its operand, so that
+        // application stays in the tail.
+        let application = self.pbg.application_in(hole);
+        let continues = |tile: MoldId| {
+            self.pbg.mold(tile).is_ok_and(|def| {
+                def.sort == hole
+                    && matches!(
+                        self.classify(tile),
+                        Kind::Operator(OpShape::Infix | OpShape::Postfix)
+                            | Kind::FormStart { absorb_left: true }
+                    )
+                    && (bool::from(self.pbg.dag().lt(form, def.prec, Assoc::Right))
+                        || (sort != hole && Some(tile) == application))
+            })
+        };
+        // A juxtaposed operand joins the tail's head through the application
+        // tile the melder pushes before it, so it extends the tail when that
+        // tile does, as `juxtaposed` reads the slope's top. In a tail of the
+        // form's sort, the band of that tile must be tighter than the form's.
+        let joined = self.applies_next_in(hole).is_some_and(&continues);
+        let joins = |tile: MoldId| {
+            joined
+                && self.pbg.mold(tile).is_ok_and(|def| def.sort == hole)
+                && matches!(
+                    self.classify(tile),
+                    Kind::Operand | Kind::FormStart { absorb_left: false }
+                )
+        };
+        TailExtension::from(match incoming {
+            Incoming::Tile(tile) => continues(tile) || joins(tile),
+            Incoming::Token(labels) => <&[LabelId]>::from(labels).iter().any(|&label| {
+                self.pbg
+                    .label_candidates(label)
+                    .iter()
+                    .any(|&tile| continues(tile) || joins(tile))
+            }),
+        })
+    }
+
+    /// Return the trailing operand index when an open required-tail form has
+    /// exactly one matching operand above its frontier.
+    ///
+    /// # Specification
+    /// - ensures: returns the sole completed, correctly sorted operand
+    ///   immediately above a required-tail frontier; otherwise none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an absent operand, one completed operand and an
+    ///   opened nested operand expose closure and completion charges. Accepting
+    ///   an unfinished or nonadjacent cell prematurely closes the parent form.
+    /// - witness: `meld::tests::a_bracket_before_a_required_tail_keeps_its_form_open`
+    /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
+    #[spec(ensures: |ret| ret.is_none_or(|index| Some(index.0) == frontier.0.checked_add(1) && index.0.checked_add(1) == Some(self.stack.len()) && self.stack.get(index.0).is_some_and(|cell| matches!(cell.role, Role::Operand))))]
+    fn required_tail_operand(
+        &self,
+        frontier: FrontierIndex,
+    ) -> Option<StackIndex>
+    {
+        let frontier_index = usize::from(frontier);
+        let Some(Role::FormTile { mold, .. }) =
+            self.stack.get(frontier_index).map(|cell| cell.role)
+        else {
+            return None;
+        };
+        if !bool::from(self.pbg.mold_has_required_tail(mold)) {
+            return None;
+        }
+        let expected = self.frontier_hole_sort(mold)?;
+        let content_index = frontier_index.checked_add(1)?;
+        let content = self.stack.get(content_index)?;
+        (self.stack.len() == content_index.saturating_add(1)
+            && matches!(content.role, Role::Operand)
+            && content.sort == expected)
+            .then_some(StackIndex::from(content_index))
+    }
+
+    /// Whether the open required-tail frontier at `frontier`, of mold `mold`,
+    /// has its tail under way as one form of the hole's sort: a single operand
+    /// above it, or an inner form starting right above it, whose whole run a
+    /// commit collapses into that one operand before closing the frontier.
+    ///
+    /// # Specification
+    /// - requires: `mold` is the mold of the frontier cell at `frontier`.
+    /// - ensures: true exactly when `mold` carries a required tail, the hole's
+    ///   sort is known, and the cell above the frontier is either the last cell
+    ///   and an operand of that sort or the start tile of a form of that sort;
+    ///   false otherwise.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — absent, completed and newly opened operands expose
+    ///   the exact missing-tile count. Treating a nested opener as absent or a
+    ///   non-operand as a filled tail changes the completion penalty.
+    /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
+    #[spec(ensures: |ret| !bool::from(ret) || (bool::from(self.pbg.mold_has_required_tail(mold)) && self.stack.get(frontier.0.saturating_add(1)).is_some_and(|cell| matches!(cell.role, Role::Operand | Role::FormTile { start: true, .. }))))]
+    fn tail_is_under_way(
+        &self,
+        frontier: FrontierIndex,
+        mold: MoldId,
+    ) -> TailUnderWay
+    {
+        let frontier_index = usize::from(frontier);
+        let under_way = bool::from(self.pbg.mold_has_required_tail(mold))
+            && self.frontier_hole_sort(mold).is_some_and(|expected| {
+                let content_index = frontier_index.saturating_add(1);
+                self.stack
+                    .get(content_index)
+                    .is_some_and(|content| match content.role {
+                        Role::Operand => {
+                            self.stack.len() == content_index.saturating_add(1)
+                                && content.sort == expected
+                        },
+                        Role::FormTile {
+                            start: true, sort, ..
+                        } => sort == expected,
+                        Role::FormTile { start: false, .. } | Role::Operator { .. } => false,
+                    })
+            });
+        TailUnderWay::from(under_way)
+    }
+
+    /// Clean-close every topmost completable frontier the **upcoming** token —
+    /// with candidate labels `labels` — cannot `≐`-continue, before that token
+    /// is molded.
+    ///
+    /// This is the molder's eager companion of
+    /// [`settle_completable`](Self::settle_completable): where the latter runs
+    /// inside [`push`](Self::push) on the tile actually chosen, this runs on
+    /// the **real** state *before* gather/choose so a bare `?` hole never
+    /// shadows an enclosing form in the molder's frontier queries —
+    /// admissibility, the gathered candidate menu, the expected operand
+    /// sort, the continuation rank. With the hole settled, the enclosing
+    /// form's closer (the `;` closing a `def` whose value is a bare hole)
+    /// molds against the correct frontier. A completable frontier whose
+    /// `≐`-successor shares a label with the upcoming token (a `?` before a
+    /// `hole_name` word) stays open so the name still attaches. A required
+    /// tail a closed hole leaves whole (`x @ ?` before an arm's `=>`) settles
+    /// too, so the enclosing form, not the tail, meets the token. A list
+    /// continues a completable form only at a glued `(`: after a space the
+    /// `(` opens a group that the closed form applies, so
+    /// `Path[.A = T] (e) (e)` reads two juxtaposed endpoints.
+    ///
+    /// # Specification
+    /// - requires: `labels` are the upcoming token's candidate labels, and
+    ///   `spaced` tells whether a space stands before that token.
+    /// - ensures: reduces to a clean operand meld every topmost completable
+    ///   frontier none of whose successors carries a label in `labels`, or
+    ///   whose only such successors are labelled `(` when `spaced` holds, the
+    ///   frontier's tile is the top of the slope and its sort has an
+    ///   application tile, and every required tail so left whole that the token
+    ///   does not extend, in turn until neither closes a frontier; stops at the
+    ///   first non-completable or token-continuable frontier; introduces no
+    ///   obligation.
+    /// - provides: the molder's pre-gather hole-settling pass.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bare hole before its enclosing closer versus a hole
+    ///   with its own name exposes clean sibling structure, and a glued list
+    ///   versus a spaced group after a path carrier exposes the close.
+    ///   Premature closure, absorbing the outer delimiter or adding
+    ///   source/repair material changes it.
+    /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    /// - witness: `tests::grammar::a_path_type_reads_its_endpoints_juxtaposed_5750`
+    #[inline]
+    #[spec(captures: before = (self.source.len(), self.obligations.len(), self.frontiers.len()), ensures: |_| self.source.len() == before.0 && self.obligations.len() == before.1 && self.frontiers.len() <= before.2)]
+    pub fn settle_shadowing_frontiers(
+        &mut self,
+        labels: CandidateLabels<'_>,
+        spaced: SpacedBefore,
+    )
+    {
+        // Closing a completable hole can leave a required tail whole beneath
+        // it (`x @ ?` before `=>`), and settling that tail can expose another
+        // completable frontier, so the two settle in turn until neither
+        // closes a frontier.
+        loop {
+            self.settle_filled_required_tail(Incoming::Token(labels));
+            let before = self.frontiers.len();
+            while let Some(frontier) = self.nearest_open_form() {
+                let Some(Role::FormTile {
+                    mold: head_mold, ..
+                }) = self.stack.get(usize::from(frontier)).map(|cell| cell.role)
+                else {
+                    break;
+                };
+                if bool::from(self.pbg.mold_has_required_tail(head_mold)) {
+                    break;
+                }
+                if !bool::from(FormTable::is_form_last(self.pbg, head_mold)) {
+                    break;
+                }
+                // Keep the frontier open when the upcoming token could be its
+                // `≐`-successor (a `?` before a `hole_name` word), so the name
+                // still attaches to the hole. A spaced `(` continues no list
+                // of the form whose tile it follows, where the form's sort
+                // applies by juxtaposition: the group is then an argument.
+                let follows = usize::from(frontier).saturating_add(1) == self.stack.len()
+                    && self
+                        .pbg
+                        .mold(head_mold)
+                        .is_ok_and(|own| self.pbg.application_in(own.sort).is_some());
+                let spaced = SpacedBefore::from(bool::from(spaced) && follows);
+                if bool::from(self.successor_label_in(head_mold, labels, spaced)) {
+                    break;
+                }
+                self.close_form(StackIndex::from(frontier));
+            }
+            if self.frontiers.len() == before {
+                break;
+            }
+        }
+    }
+
+    /// Return whether any `≐`-successor of `mold` carries a label in `labels`,
+    /// leaving out a `(` successor when `spaced` holds.
+    ///
+    /// # Specification
+    /// - ensures: recognizes a same-form successor whose grammar label is in
+    ///   the supplied set and is no `(` after a space; empty and absent sets
+    ///   are false.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — matching, absent and empty labels at a live form
+    ///   frontier expose continuation. Crossing to another form or accepting
+    ///   any label with the same prefix changes whether the hole remains open.
+    /// - witness: `meld::tests::frontier_flags_and_successor_labels_handle_boundary_positions`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "bounded: walks the grammar's candidate menus of `labels`, which the grammar fixes; the slope is never read"
+        )
+    )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `labels` holds one token's candidate labels, which the labeler caps"
+        )
+    )]
+    #[spec(ensures: |ret| bool::from(ret) == <&[LabelId]>::from(labels).iter().any(|&label| self.pbg.label_candidates(label).iter().any(|&right| self.pbg.adjacencies().binary_search(&(mold, right)).is_ok() && !(bool::from(spaced) && self.pbg.mold(right).is_ok_and(|def| def.label == "(")))))]
+    fn successor_label_in(
+        &self,
+        mold: MoldId,
+        labels: CandidateLabels<'_>,
+        spaced: SpacedBefore,
+    ) -> SuccessorLabelPresence
+    {
+        let labels = <&[LabelId]>::from(labels);
+        let opener = |right: MoldId| {
+            bool::from(spaced) && self.pbg.mold(right).is_ok_and(|def| def.label == "(")
+        };
+        SuccessorLabelPresence::from(self.pbg.mold_successors(mold).iter().any(|&(_, right)| {
+            !opener(right)
+                && self
+                    .pbg
+                    .mold_label(right)
+                    .is_some_and(|label| labels.contains(&label))
+        }))
+    }
+
+    /// Open a new multi-tile form with `mold` as its start frontier.
+    ///
+    /// The form-start becomes the open frontier; its `≐`-successors extend it,
+    /// its interior sort-holes fill with operands, and its form-end reduces it
+    /// (`close_form`). A left-bounded start (`absorb_left`) absorbs the operand
+    /// below it at close (a call `(`, a projection `.`).
+    ///
+    /// # Specification
+    /// - ensures: appends a start cell carrying the supplied mold, sort and
+    ///   absorption flag; it is open exactly when a successor exists.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — opening brackets and left-absorbing forms expose the
+    ///   initial frontier and final child order. Losing the start flag, wrong
+    ///   identity or ignoring absorption changes closure and source spans.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[spec(captures: before = self.stack.len(), ensures: |_| self.stack.len() == before.saturating_add(1) && self.stack.last().is_some_and(|last| last.emit == cell.emit && matches!(last.role, Role::FormTile { mold: actual, sort: actual_sort, open, start: true, absorb_left: actual_absorb } if actual == mold && actual_sort == sort && open == bool::from(self.pbg.mold_has_successor(mold)) && actual_absorb == bool::from(absorb_left))))]
+    fn open_form(
+        &mut self,
+        mold: MoldId,
+        sort: Sort,
+        cell: Cell,
+        absorb_left: AbsorbsLeft,
+    )
+    {
+        self.push_cell(Cell {
+            role: Role::FormTile {
+                mold,
+                sort,
+                open: bool::from(FormTable::has_succ(self.pbg, mold)),
+                start: true,
+                absorb_left: bool::from(absorb_left),
+            },
+            ..cell
+        });
+    }
+
+    /// Continue (or, on `is_end`, close) the topmost open form with `mold`.
+    ///
+    /// When `mold` is the `≐`-successor of the open frontier, the intervening
+    /// content is collapsed to operands (its hole-fills), the frontier advances
+    /// to `mold`, and a form-end reduces the whole run into a meld. When no
+    /// open frontier accepts `mold`, a stray end flags a ghost opener
+    /// ([`Oblig::MissingTile`]) and a stray mid opens a fresh partial form;
+    /// a mid that cannot begin its form flags its missing head the same way,
+    /// so a token standing where its form's earlier tiles are absent is never
+    /// read as complete. An end tile that closes such a partial form can also
+    /// close the open form around it
+    /// ([`close_split_form`](Self::close_split_form)).
+    ///
+    /// # Specification
+    /// - ensures: advances a matching frontier and closes an end tile; an
+    ///   unmatched end records a missing opener, while a mid starts a partial
+    ///   form and records a missing head unless it can be its form's first
+    ///   tile.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — matched brackets, a stray closer, a stray mid whose
+    ///   form's head is absent and nested complete holes expose exact structure
+    ///   and repair classes. Closing the wrong frontier, dropping the closer,
+    ///   reading the headless mid as clean or inventing source text changes
+    ///   them.
+    /// - witness: `meld::tests::brackets_close_on_the_matching_delimiter`
+    /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
+    /// - witness: `tests::acceptance::malformed_programs_repair_predictably`
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before)]
+    fn continue_form(
+        &mut self,
+        mold: MoldId,
+        sort: Sort,
+        cell: Cell,
+        is_end: FormEndTile,
+    )
+    {
+        let nearest = self.nearest_open_form().filter(|&frontier| {
+            matches!(
+                self.stack.get(usize::from(frontier)).map(|c| c.role),
+                Some(Role::FormTile { mold: head_mold, .. }) if bool::from(self.adjacent(head_mold, mold))
+            )
+        });
+        if let Some(frontier) = nearest.or_else(|| {
+            bool::from(self.reach)
+                .then(|| self.reach_partner(mold))
+                .flatten()
+        }) && let Some(Role::FormTile {
+            mold: head_mold, ..
+        }) = self.stack.get(usize::from(frontier)).map(|c| c.role)
+        {
+            // The tile continues this form: the innermost open form, or the
+            // open partner below it that the tile reaches (#6323). Collapse
+            // the content region above the frontier, which force-closes each
+            // form on the way with its own ghost end, then advance the
+            // frontier.
+            let Some(content_floor) = StackIndex::from(frontier).floor_after()
+            else {
+                return;
+            };
+            self.collapse(content_floor);
+            self.set_form_open(StackIndex::from(frontier), FormOpen::from(false));
+            self.push_cell(Cell {
+                role: Role::FormTile {
+                    mold,
+                    sort,
+                    open: !bool::from(is_end),
+                    start: false,
+                    absorb_left: false,
+                },
+                ..cell
+            });
+            if bool::from(is_end)
+                && let Some(top) = self.stack.len().checked_sub(1)
+                && let Some(opener) = self.close_form(StackIndex::from(top))
+            {
+                self.close_split_form(opener, head_mold);
+            }
+            return;
+        }
+
+        if bool::from(is_end) {
+            // A form-end with no matching open frontier: an absent opener.
+            self.flag(
+                Oblig::MissingTile,
+                SourceSpan::new(SourceOffset::from(cell.start), SourceOffset::from(cell.end)),
+            );
+            self.push_cell(cell);
+        }
+        else {
+            // A form-mid with no matching frontier: open a fresh partial form.
+            // Unless the mid can begin its form, the tiles before it are
+            // absent, as an unmatched end's opener is.
+            if !bool::from(FormTable::is_form_first(self.pbg, mold)) {
+                self.flag(
+                    Oblig::MissingTile,
+                    SourceSpan::new(SourceOffset::from(cell.start), SourceOffset::from(cell.end)),
+                );
+            }
+            self.push_cell(Cell {
+                role: Role::FormTile {
+                    mold,
+                    sort,
+                    open: bool::from(FormTable::has_succ(self.pbg, mold)),
+                    start: true,
+                    absorb_left: false,
+                },
+                ..cell
+            });
+        }
+    }
+
+    /// Turn the reach of a closer on or off, and return its setting before
+    /// ([`reach`](Self::reach), #6323).
+    ///
+    /// # Specification
+    /// - ensures: the reach is `on`; returns the setting before the call.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a window that reaches reads a reading cheaper than
+    ///   the stream pays for it.
+    /// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
+    #[spec(captures: before = self.reach, ensures: |ret| ret == before && self.reach == on)]
+    pub(crate) fn set_reach(
+        &mut self,
+        on: CloserReach,
+    ) -> CloserReach
+    {
+        core::mem::replace(&mut self.reach, on)
+    }
+
+    /// Whether the closer `mold` reaches an open partner below the innermost
+    /// form on this state: the reach is on and
+    /// [`reach_partner`](Self::reach_partner) finds the partner (#6323,
+    /// #7032).
+    ///
+    /// A push class reads the frontiers of its settle chain, and that chain
+    /// ends at a free innermost form, so a partner below it is outside the
+    /// class. The molder keys a closer that reaches by itself.
+    ///
+    /// # Specification
+    /// - ensures: true exactly when the reach is on and `reach_partner(mold)`
+    ///   is some frontier.
+    /// - panics: none.
+    /// - executable: none — the clause restates the body, and `reach_partner`
+    ///   walks the frontiers.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two closers of one push class, of which one reaches
+    ///   its partner and one stays stray, flag different obligations; the
+    ///   differential witness and the keystroke sweep read the disagreement.
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
+    pub(crate) fn reaches(
+        &self,
+        mold: MoldId,
+    ) -> CloserReach
+    {
+        CloserReach::from(bool::from(self.reach) && self.reach_partner(mold).is_some())
+    }
+
+    /// Return the open frontier directly below the innermost one, when a
+    /// closer `mold` reaches it across the innermost form (#6323).
+    ///
+    /// In `fork (c : Ring.) {` the `)` finds the `type_path` of `Ring.` open
+    /// and continues no tile of it, but the `(` of the fork is open directly
+    /// below. The `)` reaches it: the collapse closes the `type_path`, as
+    /// [`collapse`](Self::collapse) does, and the `)` then continues the
+    /// fork. The reach crosses one form, and that form is free: it has no
+    /// closer of its own. A reach across more forms, or across a bracketed
+    /// form, makes a reading look cheap whose cost comes later, so the
+    /// recovery sweep reads it worse. Only a tile that spells a closing
+    /// delimiter reaches. A form whose start opens a declaration is never
+    /// crossed, since the close of an item is the margin's.
+    ///
+    /// A bracketed form of the closer's family that is open further down,
+    /// and that another closer mold continues, stops the reach. That form
+    /// owns the closer by the menu's collapse at one minted closer: in
+    /// `(forget[sort R = Integer](x at Model C)`, the last `)` belongs to the
+    /// outer group, not to the `(` of `forget`.
+    ///
+    /// # Specification
+    /// - ensures: returns the frontier below the innermost open one when `mold`
+    ///   spells a closing delimiter, the innermost form is neither bracketed
+    ///   nor an item, the frontier below continues with `mold`, and no
+    ///   bracketed form of the closer's family that does not continue with
+    ///   `mold` is open below it before an item; `None` otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the binder of a fork whose type path has no name
+    ///   after its `.` reaches its `(`; a closer whose partner lies across a
+    ///   bracketed form, across two forms, or above an outer group of its
+    ///   family stays stray. The recovery sweep's rows read the change.
+    /// - witness: `tests::acceptance::a_closer_reaches_its_open_partner_6323`
+    /// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
+    #[spec(ensures: |ret| ret.is_none_or(|index| self.frontiers.len().checked_sub(2).and_then(|at| self.frontiers.get(at)) == Some(&index.0)))]
+    fn reach_partner(
+        &self,
+        mold: MoldId,
+    ) -> Option<FrontierIndex>
+    {
+        let role = |index: usize| self.stack.get(index).map(|cell| cell.role);
+        let item = |index: usize| {
+            self.form_start_index(StackIndex::from(FrontierIndex::from(index)))
+                .and_then(|start| self.stack.get(usize::from(start)))
+                .is_some_and(|cell| {
+                    matches!(cell.role, Role::FormTile { mold, .. } if bool::from(self.opens_declaration(mold)))
+                })
+        };
+        let family = self
+            .pbg
+            .mold(mold)
+            .ok()
+            .and_then(|def| ClosingClass::closing(DelimSpelling::from(def.label)))?;
+        let [ref outer @ .., partner, innermost] = *self.frontiers.as_slice()
+        else {
+            return None;
+        };
+        let innermost_free = matches!(role(innermost), Some(Role::FormTile { mold: open, .. }) if self.pbg.closing_class(open).is_none());
+        let continues = matches!(role(partner), Some(Role::FormTile { mold: open, .. }) if bool::from(self.adjacent(open, mold)));
+        if item(innermost) || !innermost_free || !continues {
+            return None;
+        }
+        let owned = outer.iter().rev().take_while(|&&low| !item(low)).any(|&low| {
+            matches!(role(low), Some(Role::FormTile { mold: open, .. })
+                if self.pbg.closing_class(open) == Some(family) && !bool::from(self.adjacent(open, mold)))
+        });
+        (!owned).then_some(FrontierIndex::from(partner))
+    }
+
+    /// Close the open form around a fragment that a missing tile splits off
+    /// it, once the end tile of the fragment closes the fragment.
+    ///
+    /// A mid tile that no open frontier takes opens a fresh partial form,
+    /// and the tiles before it are absent
+    /// ([`continue_form`](Self::continue_form)). A rule can have two branches
+    /// that open with one tile. When the open form reads that tile as one
+    /// branch and the mid comes from the other, the fragment and the open
+    /// form are one form that the missing tile splits.
+    /// In `(rem = r, .quot = q)`, the missing `.` leaves the positional group
+    /// `(rem` open, and the `=` starts the entry with a label. The closer that
+    /// ends the fragment then ends the open form too: the form closes with no
+    /// ghost, and the tiles after it continue the form around the group. The
+    /// absent head of the fragment is the one obligation that the split
+    /// leaves.
+    ///
+    /// # Specification
+    /// - requires: `opener` opens the form that
+    ///   [`close_form`](Self::close_form) closes last, and `continued` is the
+    ///   frontier that its end tile continues.
+    /// - ensures: closes the nearest open form exactly when `opener` is a mid
+    ///   that cannot begin its form, the open form opens on another branch of
+    ///   the rule of `opener` with a start tile of the label that starts the
+    ///   branch of `opener`, and the completions of `continued` and of the open
+    ///   frontier end at one paired closer class; source is unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a group whose first label has no dot leaves one
+    ///   obligation, and the `let` after the group stays whole. A close of a
+    ///   form of another rule, of a form on the branch of the fragment, or of a
+    ///   form that ends at another closer changes the tree of a corpus source
+    ///   that molds whole.
+    /// - witness: `tests::acceptance::a_split_group_closes_at_its_written_closer_5795`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before)]
+    fn close_split_form(
+        &mut self,
+        opener: MoldId,
+        continued: MoldId,
+    )
+    {
+        if !matches!(self.classify(opener), Kind::FormMid)
+            || bool::from(FormTable::is_form_first(self.pbg, opener))
+        {
+            return;
+        }
+        let Some(frontier) = self.nearest_open_form()
+        else {
+            return;
+        };
+        let Some(Role::FormTile { mold: open, .. }) =
+            self.stack.get(usize::from(frontier)).map(|cell| cell.role)
+        else {
+            return;
+        };
+        let rule = |mold: MoldId| self.pbg.rule_of(mold).ok().map(|rule| rule.name);
+        let closer = self.pbg.closing_class(continued);
+        if rule(opener).is_none()
+            || rule(opener) != rule(open)
+            || closer.is_none()
+            || closer != self.pbg.closing_class(open)
+        {
+            return;
+        }
+        // The open form reads the shared opening tile as one branch, and the
+        // fragment comes from another branch. Molds are numbered in the order
+        // of their rule, so the branch of `opener` starts at the greatest form
+        // start of its rule at or below it.
+        let Some(around) = self
+            .form_start_index(StackIndex::from(frontier))
+            .and_then(|start| self.stack.get(usize::from(start)))
+            .and_then(|cell| match cell.role {
+                Role::FormTile { mold, .. } => Some(mold),
+                Role::Operand | Role::Operator { .. } => None,
+            })
+        else {
+            return;
+        };
+        let branch = (0 ..= u32::from(opener))
+            .rev()
+            .map(MoldId::from)
+            .take_while(|&mold| rule(mold) == rule(opener))
+            .find(|&mold| matches!(self.classify(mold), Kind::FormStart { .. }));
+        let label = |mold: MoldId| self.pbg.mold(mold).ok().map(|def| def.label);
+        if branch.is_none_or(|start| start == around || label(start) != label(around)) {
+            return;
+        }
+        let Some(content_floor) = StackIndex::from(frontier).floor_after()
+        else {
+            return;
+        };
+        self.collapse(content_floor);
+        self.set_form_open(StackIndex::from(frontier), FormOpen::from(false));
+        if let Some(top) = self.stack.len().checked_sub(1) {
+            let _opener = self.close_form(StackIndex::from(top));
+        }
+    }
+
+    /// Return the index of the topmost open form frontier, or `None` if none
+    /// is open above the base.
+    ///
+    /// The topmost `open` frontier is the innermost active form; its content is
+    /// collapsed to hole-fills by the caller before the frontier advances.
+    /// O(1): the `frontiers` cache top — never a scan of the content region.
+    ///
+    /// # Specification
+    /// - ensures: returns the highest stack position carrying an open form, or
+    ///   none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — no forms, nested forms and reopening an older
+    ///   frontier expose the exact nearest position. A stale cache, wrong
+    ///   insertion order or counting a closed tile changes it. Every mutation
+    ///   proves the cache exact against the stack; the predicate checks that
+    ///   the returned position holds an open form.
+    /// - witness: `meld::tests::frontier_flags_and_successor_labels_handle_boundary_positions`
+    #[spec(ensures: |ret| ret.is_none_or(|frontier| self.stack.get(usize::from(frontier)).is_some_and(|cell| matches!(cell.role, Role::FormTile { open: true, .. }))))]
+    fn nearest_open_form(&self) -> Option<FrontierIndex>
+    {
+        self.frontiers.last().copied().map(FrontierIndex::from)
+    }
+
+    /// Clear or set the open frontier flag of the form tile at `index`.
+    ///
+    /// # Specification
+    /// - ensures: updates a form cell flag when present and keeps the sorted
+    ///   frontier cache exact; other cells and absent indices are unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — closing and reopening nearest and older frontiers,
+    ///   repeated flags and an absent index expose role bits and nearest
+    ///   positions. Duplicate cache entries, lost older entries or an unsorted
+    ///   reinsert changes subsequent queries. The clause checks the flipped
+    ///   cell, the cache's length, and the flipped position's membership and
+    ///   order among its neighbours; the entries it leaves rest on the clauses
+    ///   of the mutations that wrote them.
+    /// - witness: `meld::tests::frontier_flags_and_successor_labels_handle_boundary_positions`
+    #[spec(captures: before = (self.frontiers.len(), self.stack.get(index.0).and_then(|cell| match cell.role { Role::FormTile { open: was, .. } => Some(was), Role::Operand | Role::Operator { .. } => None })),
+        ensures: |_| before.1.map_or_else(|| self.frontiers.len() == before.0, |was| {
+            let open = bool::from(open);
+            self.frontiers.len() == before.0.saturating_add(usize::from(open && !was)).saturating_sub(usize::from(was && !open))
+                && self.stack.get(index.0).is_some_and(|cell| matches!(cell.role, Role::FormTile { open: actual, .. } if actual == open))
+                && self.frontiers.binary_search(&index.0).map_or_else(|_| !open, |at| open && bool::from(sorted_around(&self.frontiers, gandr_theory_spec_combinators::Mark::from(at))))
+        }))]
+    fn set_form_open(
+        &mut self,
+        index: StackIndex,
+        open: FormOpen,
+    )
+    {
+        let index = usize::from(index);
+        let open = bool::from(open);
+        if self.live_marks > 0
+            && let Some(&before) = self.stack.get(index)
+            && matches!(before.role, Role::FormTile { open: was_open, .. } if was_open != open)
+        {
+            self.edits.push(SlopeEdit::Overwritten {
+                index,
+                cell: before,
+            });
+        }
+        if let Some(cell) = self.stack.get_mut(index)
+            && let Role::FormTile {
+                open: ref mut flag, ..
+            } = cell.role
+        {
+            let was_open = *flag;
+            *flag = open;
+            self.low_water = self.low_water.min(index);
+            // Maintain the open-frontier cache. Both callers flip the NEAREST
+            // open frontier (`continue_form` / `force_close_form` act on
+            // `nearest_open_form`), so closing pops the cache top; the sorted
+            // fallbacks keep the cache exact on any other flip.
+            if was_open && !open {
+                if self.frontiers.last() == Some(&index) {
+                    self.frontiers.pop();
+                }
+                else {
+                    self.frontiers.retain(|&frontier| frontier != index);
+                }
+            }
+            else if !was_open && open {
+                if self.frontiers.last().is_none_or(|&last| last < index) {
+                    self.frontiers.push(index);
+                }
+                else if let Err(slot) = self.frontiers.binary_search(&index) {
+                    self.frontiers.insert(slot, index);
+                }
+            }
+        }
+    }
+
+    /// Reduce the multi-tile form whose closing frontier is at `end_index`.
+    ///
+    /// Collects the form run from its start (absorbing the preceding operand
+    /// for a left-bounded start) up to and including `end_index`, reducing
+    /// any interior operators first, and wraps the run in a meld operand. It
+    /// returns the mold of the tile that opens the form.
+    ///
+    /// # Specification
+    /// - ensures: replaces the form span, including an absorbed left operand,
+    ///   with one operand named by its opening mold, its documentation grouped
+    ///   as [`documented`](Self::documented) groups it, and returns that mold;
+    ///   returns `None`, the slope as it is, when no form start stands at or
+    ///   below `end_index`; source is unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — complete brackets, an optional one-tile hole and a
+    ///   hole nested inside a group expose exact meld identity and child order.
+    ///   Naming the form by its closer, absorbing a sibling or losing a child
+    ///   changes it.
+    /// - witness: `meld::tests::brackets_close_on_the_matching_delimiter`
+    /// - witness: `meld::tests::completable_hole_closes_without_obligation`
+    /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
+    #[spec(captures: before = (self.source.len(), self.stack.len()), ensures: |ret| self.source.len() == before.0 && self.stack.len() <= before.1 && (ret.is_some() || self.stack.len() == before.1))]
+    fn close_form(
+        &mut self,
+        end_index: StackIndex,
+    ) -> Option<MoldId>
+    {
+        let end_index = usize::from(end_index);
+        let start_index = usize::from(self.form_start_index(StackIndex::from(end_index))?);
+        let start_cell = self.stack.get(start_index).copied()?;
+        // A left-bounded start absorbs the operand immediately below it.
+        let low = match start_cell.role {
+            Role::FormTile {
+                absorb_left: true, ..
+            } => start_index
+                .checked_sub(1)
+                .filter(|&below| bool::from(self.is_operand_at(StackIndex::from(below))))
+                .unwrap_or(start_index),
+            Role::Operand | Role::FormTile { .. } | Role::Operator { .. } => start_index,
+        };
+        let high_exclusive = end_index.checked_add(1)?;
+
+        let mut children: Vec<EmitId> = Vec::new();
+        let mut span_start = start_cell.start;
+        let mut span_end = start_cell.end;
+        for slot in low .. high_exclusive {
+            if let Some(cell) = self.stack.get(slot) {
+                children.push(cell.emit);
+                span_start = span_start.min(cell.start);
+                span_end = span_end.max(cell.end);
+            }
+        }
+
+        // The form is named by the mold of the tile that opened it; the
+        // grammar resolves that mold to the form's rule and named kind.
+        let Role::FormTile { mold, .. } = start_cell.role
+        else {
+            return None;
+        };
+        let span = SourceSpan::new(SourceOffset::from(span_start), SourceOffset::from(span_end));
+        let (label, children) = self.documented(mold, children);
+        let meld = self.emit_interior(label, span, children);
+        self.replace_range(
+            StackRange::new(StackIndex::from(low), StackIndex::from(high_exclusive)),
+            Cell {
+                emit: meld,
+                start: span_start,
+                end: span_end,
+                sort: start_cell.sort,
+                role: Role::Operand,
+            },
+        );
+        Some(mold)
+    }
+
+    /// Group the documentation among a closing form's `children`, and name the
+    /// form it leaves.
+    ///
+    /// # Specification
+    /// - requires: `children` are the form's children in source order and
+    ///   `mold` is the mold of the tile that opened it.
+    /// - ensures: every range [`doc_entries`](Self::doc_entries) finds becomes
+    ///   one [`NodeLabel::Doc`] interior over exactly those children, in place;
+    ///   no other child moves. A form whose children are one such range is
+    ///   documentation itself, its children unchanged. Any other form is a
+    ///   [`NodeLabel::Meld`]: named by `mold` when its first child is not
+    ///   documentation, and otherwise by the mold of its first tile outside
+    ///   documentation, so a declaration opened by a documentation block is
+    ///   named as it is without one.
+    /// - provides: documentation that reaches no digest, whichever spelling
+    ///   wrote it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `doc` entries alone, first, last and between other
+    ///   attributes, in a block of their own before a definition and before a
+    ///   data declaration, each leave the declaration's digest equal to the one
+    ///   it has without them. Grouping a separator twice, keeping the opening
+    ///   mold or losing a child changes a digest or the reconstructed source.
+    /// - witness: `meld::tests::documentation_reaches_no_digest`
+    #[spec(captures: before = children.len(), ensures: |ret| ret.1.len() <= before && ret.1.is_empty() != (before > 0))]
+    fn documented(
+        &mut self,
+        mold: MoldId,
+        children: Vec<EmitId>,
+    ) -> (NodeLabel, Vec<EmitId>)
+    {
+        let mut relabels: Vec<(EmitId, EmitId)> = Vec::new();
+        let entries = self.doc_entries(&children, &mut relabels);
+        if entries.is_empty() {
+            return (NodeLabel::Meld(mold), children);
+        }
+        if let [(first, last)] = *entries.as_slice()
+            && children.first() == Some(&first)
+            && children.last() == Some(&last)
+        {
+            return (NodeLabel::Doc, children);
+        }
+        for (target, template) in relabels {
+            let Some(taken) = self.label_of(template)
+            else {
+                continue;
+            };
+            if let Some(&mut EmitOp::Token { ref mut label, .. }) = usize::try_from(target.0)
+                .ok()
+                .and_then(|position| self.emit.get_mut(position))
+            {
+                *label = taken;
+            }
+        }
+        let mut grouped: Vec<EmitId> = Vec::with_capacity(children.len());
+        let mut held: Vec<EmitId> = Vec::new();
+        let mut pending = entries.iter().copied().peekable();
+        for child in children {
+            let Some(&(first, last)) = pending.peek()
+            else {
+                grouped.push(child);
+                continue;
+            };
+            if child != first && held.is_empty() {
+                grouped.push(child);
+                continue;
+            }
+            held.push(child);
+            if child == last {
+                let _taken = pending.next();
+                let span = SourceSpan::new(self.emit_span(first).start, self.emit_span(last).end);
+                let doc = self.emit_interior(NodeLabel::Doc, span, core::mem::take(&mut held));
+                grouped.push(doc);
+            }
+        }
+        grouped.append(&mut held);
+        let opened_by_documentation = grouped
+            .first()
+            .is_some_and(|&child| self.label_of(child) == Some(NodeLabel::Doc));
+        let named = if opened_by_documentation {
+            grouped
+                .iter()
+                .find_map(|&child| match self.emit_op(child) {
+                    Some(&EmitOp::Token {
+                        label: NodeLabel::Tile(tile),
+                        ..
+                    }) => Some(tile),
+                    Some(_) | None => None,
+                })
+                .unwrap_or(mold)
+        }
+        else {
+            mold
+        };
+
+        (NodeLabel::Meld(named), grouped)
+    }
+
+    /// The `doc("…")` entries of the attribute blocks among `children`, each as
+    /// the first and last child of the range that groups it, and in `relabels`
+    /// each tile that must take another tile's label for the block left to
+    /// read as one written without them.
+    ///
+    /// # Specification
+    /// - requires: `children` are a form's children in source order.
+    /// - ensures: an attribute block is a `@[` tile, entries separated by `,`
+    ///   tiles, an optional trailing `,` and a `]` tile, each entry a name tile
+    ///   and optionally a `(` tile, the payload and the first `)` tile after
+    ///   it; a run that is not one is no block. A documentation entry is named
+    ///   `doc` and has exactly one payload child, a string form. A block of
+    ///   documentation entries alone answers one range from its `@[` to its
+    ///   `]`. In any other block each documentation entry answers its own
+    ///   range, which takes the separator after the entry when the entry
+    ///   precedes the block's first other entry and the separator before it
+    ///   otherwise, so no separator is taken twice and the block left reads as
+    ///   one written without the entry. The first other entry then stands
+    ///   first, where the grammar molds an entry's tiles apart from a later
+    ///   entry's, so its name, `(` and `)` tiles are pushed onto `relabels`
+    ///   beside the first documentation entry's, whose labels they take. Ranges
+    ///   are disjoint and in source order.
+    /// - provides: the syntactic recognition of documentation written as an
+    ///   attribute, which the lowering then reads.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`documented`](Self::documented); an empty
+    ///   payload, a payload of another form and a block missing its `]` group
+    ///   nothing.
+    /// - witness: `meld::tests::documentation_reaches_no_digest`
+    /// - witness: `meld::tests::a_malformed_doc_entry_stays_an_attribute`
+    #[spec(captures: before = relabels.len(), ensures: |ret| ret.iter().all(|&(first, last)| children.contains(&first) && children.contains(&last)) && relabels.get(before ..).is_some_and(|since| since.iter().all(|&(target, template)| children.contains(&target) && children.contains(&template))))]
+    fn doc_entries(
+        &self,
+        children: &[EmitId],
+        relabels: &mut Vec<(EmitId, EmitId)>,
+    ) -> Vec<(EmitId, EmitId)>
+    {
+        let source = self.source.as_str();
+        let tile = |position: usize| match children.get(position).and_then(|&id| self.emit_op(id)) {
+            Some(&EmitOp::Token {
+                label: NodeLabel::Tile(_),
+                start,
+                end,
+            }) => source.get(
+                usize::try_from(start).unwrap_or(usize::MAX)
+                    .. usize::try_from(end).unwrap_or(usize::MAX),
+            ),
+            Some(_) | None => None,
+        };
+        let string = |position: usize| {
+            matches!(
+                children.get(position).and_then(|&id| self.emit_op(id)),
+                Some(&EmitOp::Interior { label: NodeLabel::Meld(form), .. })
+                    if self.pbg.named_kind(form).is_ok_and(|kind| kind.0 == STRING_FORM)
+            )
+        };
+        let child = |position: usize| children.get(position).copied();
+        let mut ranges: Vec<(EmitId, EmitId)> = Vec::new();
+        // Each entry of the block being read: its first and last position and
+        // whether it is documentation.
+        let mut entries: Vec<(usize, usize, bool)> = Vec::new();
+        let mut at = 0_usize;
+        while at < children.len() {
+            if tile(at) != Some(ATTRIBUTE_OPEN) {
+                at = at.saturating_add(1);
+                continue;
+            }
+            let open = at;
+            entries.clear();
+            let mut next = open.saturating_add(1);
+            let close = loop {
+                let Some(name) = tile(next)
+                else {
+                    break None;
+                };
+                let mut last = next;
+                let mut documentation = false;
+                if tile(next.saturating_add(1)) == Some(PAYLOAD_OPEN) {
+                    let payload = next.saturating_add(2);
+                    let Some(shut) = (payload .. children.len())
+                        .find(|&position| tile(position) == Some(PAYLOAD_CLOSE))
+                    else {
+                        break None;
+                    };
+                    documentation = name == DOC_ATTRIBUTE
+                        && shut == payload.saturating_add(1)
+                        && string(payload);
+                    last = shut;
+                }
+                entries.push((next, last, documentation));
+                let after = last.saturating_add(1);
+                match tile(after) {
+                    Some(SEPARATOR) if tile(after.saturating_add(1)) == Some(ATTRIBUTE_CLOSE) => {
+                        break Some(after.saturating_add(1));
+                    },
+                    Some(SEPARATOR) => next = after.saturating_add(1),
+                    Some(ATTRIBUTE_CLOSE) => break Some(after),
+                    Some(_) | None => break None,
+                }
+            };
+            let Some(close) = close
+            else {
+                at = open.saturating_add(1);
+                continue;
+            };
+            at = close.saturating_add(1);
+            let Some(anchor) = entries
+                .iter()
+                .position(|&(_, _, documentation)| !documentation)
+            else {
+                if let (Some(first), Some(last)) = (child(open), child(close)) {
+                    ranges.push((first, last));
+                }
+                continue;
+            };
+            if let (Some(&(template_name, template_close, _)), Some(&(name, close, _))) =
+                (entries.first(), entries.get(anchor))
+                && anchor > 0
+            {
+                let mut pairs = alloc::vec![(name, template_name)];
+                if close > name {
+                    pairs.push((name.saturating_add(1), template_name.saturating_add(1)));
+                    pairs.push((close, template_close));
+                }
+                for (target, template) in pairs {
+                    if let (Some(target), Some(template)) = (child(target), child(template)) {
+                        relabels.push((target, template));
+                    }
+                }
+            }
+            let mut previous_last = open;
+            for (index, &(first, last, documentation)) in entries.iter().enumerate() {
+                if documentation {
+                    let (from, to) = if index < anchor {
+                        (first, last.saturating_add(1))
+                    }
+                    else {
+                        (previous_last.saturating_add(1), last)
+                    };
+                    if let (Some(from), Some(to)) = (child(from), child(to)) {
+                        ranges.push((from, to));
+                    }
+                }
+                previous_last = last;
+            }
+        }
+
+        ranges
+    }
+
+    /// The emission `id` names, if the log holds it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn emit_op(
+        &self,
+        id: EmitId,
+    ) -> Option<&EmitOp>
+    {
+        let index = usize::try_from(id.0).ok()?;
+        self.emit.get(index)
+    }
+
+    /// The label of the emission `id` names, if the log holds it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn label_of(
+        &self,
+        id: EmitId,
+    ) -> Option<NodeLabel>
+    {
+        self.emit_op(id)
+            .map(|&(EmitOp::Token { label, .. } | EmitOp::Interior { label, .. })| label)
+    }
+
+    /// Return the start index of the form whose frontier is at `end_index`,
+    /// scanning down to the nearest form-start tile.
+    ///
+    /// The scan walks the `barriers` cache (form tiles only) instead of every
+    /// slope cell, so interleaved operand content costs nothing.
+    ///
+    /// # Specification
+    /// - ensures: returns the highest form-start position at or below the
+    ///   supplied end, or none.
+    /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: reads the barrier cache from `end_index` down to the nearest
+    ///   form start, the entries the body walks.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested form starts, the base boundary and a closed
+    ///   inner form expose the repair floor and final sibling ownership.
+    ///   Selecting an outer start or skipping the boundary index changes child
+    ///   order. The clause reads the barrier cache between the start and
+    ///   `end_index`, the entries the body walks.
+    /// - witness: `meld::tests::brackets_close_on_the_matching_delimiter`
+    /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
+    #[spec(ensures: |ret| {
+        let upto = self.barriers.partition_point(|&index| index <= end_index.0);
+        let from = ret.map_or(0, |start| self.barriers.partition_point(|&index| index <= start.0));
+        ret.is_none_or(|start| start.0 <= end_index.0 && self.stack.get(start.0).is_some_and(|cell| matches!(cell.role, Role::FormTile { start: true, .. })))
+            && self.barriers.get(from .. upto).is_some_and(|between| between.iter().all(|&index| self.stack.get(index).is_some_and(|cell| matches!(cell.role, Role::FormTile { start: false, .. }))))
+    })]
+    fn form_start_index(
+        &self,
+        end_index: StackIndex,
+    ) -> Option<StackIndex>
+    {
+        let end_index = usize::from(end_index);
+        for &index in self.barriers.iter().rev() {
+            if index > end_index {
+                continue;
+            }
+            if matches!(
+                self.stack.get(index).map(|cell| cell.role),
+                Some(Role::FormTile { start: true, .. })
+            ) {
+                return Some(StackIndex::from(index));
+            }
+        }
+        None
+    }
+
+    /// The reduce/degrout loop: reduce the head handle while it takes
+    /// precedence.
+    ///
+    /// # Specification
+    /// - ensures: reduces taking, ambiguous and cross-sort operator heads until
+    ///   the incoming tile can shift; source is unchanged and ambiguity is
+    ///   flagged at its span. A cross-sort head is flagged at the span of the
+    ///   incoming tile, save a juxtaposed type application before a `;` or a
+    ///   tile that opens an item, which is counted as an ended application.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — taking and yielding precedence, incomparable
+    ///   operators and cross-sort boundaries expose tree nesting and exact
+    ///   repair spans. Reversing comparison or flagging the head instead of the
+    ///   incoming tile changes those observations.
+    /// - witness: `meld::tests::infix_reduces_after_precedence`
+    /// - witness: `meld::tests::degrout_flags_one_ambiguous_prec_at_the_smallest_span`
+    /// - witness: `meld::tests::precedence_comparison_preserves_relation_priority`
+    #[spec(captures: before = (self.source.len(), self.operators.len()), ensures: |_| self.source.len() == before.0 && self.operators.len() <= before.1)]
+    fn reduce_toward(
+        &mut self,
+        tau_sort: Sort,
+        tau_prec: Prec,
+        tau_mold: MoldId,
+        tau_span: SourceSpan,
+    )
+    {
+        // Bounded by the operator count, which strictly decreases each reducing
+        // iteration, so the loop always terminates.
+        while let Some(head_index) = self.topmost_operator_index() {
+            let Some((head_mold, head_prec, head_sort)) = self.operator_at(head_index)
+            else {
+                break;
+            };
+            match self.compare(
+                head_mold, head_prec, head_sort, tau_mold, tau_prec, tau_sort,
+            ) {
+                Rel::Yields | Rel::Match => break,
+                Rel::Takes => self.reduce_operator(head_index),
+                Rel::Ambiguous => {
+                    // Route through the completion path: flag the ambiguity at
+                    // the smallest responsible span (the incoming tile) and
+                    // reduce the head level so the parse stays total.
+                    self.flag(Oblig::AmbiguousPrec, tau_span);
+                    self.reduce_operator(head_index);
+                },
+                Rel::CrossSort => {
+                    // An endpoint of the sort that the spine's head states
+                    // fills the type application's right hole, as `a` in
+                    // `Path a` (#5750).
+                    if Some(head_mold) == self.pbg.application_in(Sort::Type)
+                        && usize::from(head_index)
+                            .checked_sub(1)
+                            .and_then(|left| self.stack.get(left))
+                            .and_then(|left| self.operands_of(left))
+                            == Some(tau_sort)
+                    {
+                        break;
+                    }
+                    // A juxtaposed type application spells the call it
+                    // replaces, `Stream a` for `Stream(a)`. The `)` of the
+                    // call closes it before the `;` or the item tile that
+                    // ends its form, so it owes no obligation there, as the
+                    // call does not. The molder still counts the meeting as
+                    // an inconsistent meld when it compares readings. Thus a
+                    // reading that meets such a tile with the type open
+                    // stays more costly than a reading that closes the type.
+                    let ends = self.pbg.mold(tau_mold).is_ok_and(|def| {
+                        def.label == ";"
+                            || (bool::from(is_item_position(def.sort))
+                                && bool::from(FormTable::is_form_first(self.pbg, tau_mold)))
+                    });
+                    if ends && Some(head_mold) == self.pbg.application_in(Sort::Type) {
+                        self.ended_applications = self.ended_applications.saturating_add(1);
+                    }
+                    else {
+                        self.flag(Oblig::InconMeld, tau_span);
+                    }
+                    self.reduce_operator(head_index);
+                },
+            }
+        }
+    }
+
+    /// Return the operator-precedence relation between a head operator and τ.
+    ///
+    /// # Specification
+    /// - ensures: same-form adjacency wins before sort disagreement; otherwise
+    ///   left-taking precedes right-yielding, with incomparable precedence
+    ///   ambiguous.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — adjacent molds with disagreeing sorts, equal-
+    ///   precedence left association, higher/lower precedence and
+    ///   incomparability expose every relation. Reordering priority or swapping
+    ///   direction changes the selected reduction.
+    /// - witness: `meld::tests::precedence_comparison_preserves_relation_priority`
+    #[spec(ensures: |ret| ret == if self.pbg.adjacencies().binary_search(&(head_mold, tau_mold)).is_ok() { Rel::Match } else if head_sort != tau_sort { Rel::CrossSort } else if bool::from(self.pbg.dag().gt(head_prec, tau_prec, Assoc::Left)) { Rel::Takes } else if bool::from(self.pbg.dag().lt(head_prec, tau_prec, Assoc::Right)) { Rel::Yields } else { Rel::Ambiguous })]
+    fn compare(
+        &self,
+        head_mold: MoldId,
+        head_prec: Prec,
+        head_sort: Sort,
+        tau_mold: MoldId,
+        tau_prec: Prec,
+        tau_sort: Sort,
+    ) -> Rel
+    {
+        if bool::from(self.adjacent(head_mold, tau_mold)) {
+            return Rel::Match;
+        }
+        if head_sort != tau_sort {
+            return Rel::CrossSort;
+        }
+        let dag = self.pbg.dag();
+        if bool::from(dag.gt(head_prec, tau_prec, Assoc::Left)) {
+            return Rel::Takes;
+        }
+        if bool::from(dag.lt(head_prec, tau_prec, Assoc::Right)) {
+            return Rel::Yields;
+        }
+        Rel::Ambiguous
+    }
+
+    /// Return whether `(left, right)` is a same-form `≐` adjacency.
+    ///
+    /// # Specification
+    /// - ensures: recognizes exactly the ordered pair in the grammar adjacency
+    ///   relation.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an opener/closer pair, its reverse and an absent mold
+    ///   expose directed membership. Reversing the pair or using undirected
+    ///   membership changes form continuation.
+    /// - witness: `meld::tests::precedence_comparison_preserves_relation_priority`
+    #[spec(ensures: |ret| bool::from(ret) == self.pbg.adjacencies().binary_search(&(left, right)).is_ok())]
+    fn adjacent(
+        &self,
+        left: MoldId,
+        right: MoldId,
+    ) -> SameFormAdjacency
+    {
+        SameFormAdjacency::from(bool::from(self.pbg.molds_adjacent(left, right)))
+    }
+
+    /// Classify an incoming tile by its `≐`-membership and precedence bounds.
+    ///
+    /// A tile that participates in the same-form `≐` relation is a form tile
+    /// (start / mid / end); otherwise its precedence bounds give a bare operand
+    /// or a single-tile prefix / infix / postfix operator. A tile with a
+    /// `≐`-predecessor and no `≐`-successor ends its form only when nothing
+    /// is required after it: one followed by a required sort hole — the `]`
+    /// of `+U[r] C` — is a mid tile, and the form closes once its trailing
+    /// operand arrives.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a form tile with a successor is a start or a mid by whether
+    ///   it has a predecessor; a form tile with a predecessor and no successor
+    ///   is a mid when its mold carries a required tail and an end otherwise;
+    ///   any other tile is an operand or an operator by its bounds.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unknown molds, atoms, unary/binary operators, form
+    ///   boundaries and required-tail brackets expose the tile kind and final
+    ///   child ownership. Wrong arity or treating a required operand as a
+    ///   closed form changes repairs and spans.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    /// - witness: `meld::tests::operator_shapes_preserve_uncaptured_neighbors`
+    /// - witness: `meld::tests::a_bracket_before_a_required_tail_keeps_its_form_open`
+    #[spec(ensures: |ret| self.pbg.mold(mold).is_ok() || ret == Kind::Operand)]
+    fn classify(
+        &self,
+        mold: MoldId,
+    ) -> Kind
+    {
+        // The grammar derives each mold's kind once, from the same neighbour
+        // flags, required tail and bounds; an id past the table is an operand,
+        // which push routes to the unmolded path before classifying.
+        match self.pbg.tile_kind(mold) {
+            Ok(TileKind::Start) => Kind::FormStart { absorb_left: false },
+            Ok(TileKind::AbsorbingStart) => Kind::FormStart { absorb_left: true },
+            Ok(TileKind::Mid) => Kind::FormMid,
+            Ok(TileKind::End) => Kind::FormEnd,
+            Ok(TileKind::Prefix) => Kind::Operator(OpShape::Prefix),
+            Ok(TileKind::Postfix) => Kind::Operator(OpShape::Postfix),
+            Ok(TileKind::Infix) => Kind::Operator(OpShape::Infix),
+            Ok(TileKind::Operand) | Err(_) => Kind::Operand,
+        }
+    }
+
+    /// Return the index of the topmost reducible operator, or `None` if the top
+    /// region reaches a form tile (a precedence floor) or the base.
+    ///
+    /// O(1): the topmost non-operand cell is the higher of the `operators` and
+    /// `barriers` cache tops; an operator there is reducible, a form tile is
+    /// the floor — never a scan of the operand run above it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operator below and above a form barrier and a
+    ///   completed operand expose the reducible head position. Crossing a
+    ///   barrier or skipping the top operator changes reduction and child
+    ///   ownership. The clause reads the operator and barrier cache tops and
+    ///   the cell they name.
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    #[spec(ensures: |ret| ret.map_or_else(|| self.operators.last().is_none_or(|&operator| self.barriers.last().is_some_and(|&barrier| barrier > operator)), |operator| self.operators.last() == Some(&usize::from(operator)) && self.barriers.last().is_none_or(|&barrier| barrier < usize::from(operator)) && self.stack.get(usize::from(operator)).is_some_and(|cell| matches!(cell.role, Role::Operator { .. }))))]
+    fn topmost_operator_index(&self) -> Option<OperatorIndex>
+    {
+        let operator = self.operators.last().copied()?;
+        match self.barriers.last() {
+            Some(&barrier) if barrier > operator => None,
+            _ => Some(OperatorIndex::from(operator)),
+        }
+    }
+
+    /// Return the `(mold, prec, sort)` of the operator at `index`, if any.
+    ///
+    /// # Specification
+    /// - ensures: returns the exact operator payload at the index; absent and
+    ///   non-operator cells yield none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operator, adjacent operands and an absent index
+    ///   expose the optional mold/precedence/sort payload. Reading a neighbor
+    ///   or returning an operand as an operator changes the reduction key.
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    #[spec(ensures: |ret| ret == self.stack.get(index.0).and_then(|cell| match cell.role { Role::Operator { mold, prec, sort, .. } => Some((mold, prec, sort)), Role::Operand | Role::FormTile { .. } => None }))]
+    fn operator_at(
+        &self,
+        index: OperatorIndex,
+    ) -> Option<(MoldId, Prec, Sort)>
+    {
+        match self.stack.get(usize::from(index)).map(|cell| cell.role) {
+            Some(Role::Operator {
+                mold, prec, sort, ..
+            }) => Some((mold, prec, sort)),
+            _ => None,
+        }
+    }
+
+    /// Reduce the operator at `index` into a meld, filling its slots.
+    ///
+    /// This is `fill` (paper Fig. 27): the operator's grammatically required
+    /// operands are drawn from the adjacent operand cells; a missing required
+    /// operand inserts a convex grout child ([`Oblig::MissingMeld`]).
+    ///
+    /// # Specification
+    /// - ensures: replaces an operator and only its shape-required operands
+    ///   with a meld; absent operands become zero-width grout and missing-meld
+    ///   obligations.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — prefix, postfix and infix shapes with complete and
+    ///   absent operands expose child order, retained neighbors and zero-width
+    ///   repair spans. Capturing an unneeded neighbor or dropping a required
+    ///   operand changes the tree and source.
+    /// - witness: `meld::tests::operator_shapes_preserve_uncaptured_neighbors`
+    /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
+    #[spec(captures: before = (self.source.len(), self.stack.len()), ensures: |_| self.source.len() == before.0 && self.stack.len() <= before.1)]
+    fn reduce_operator(
+        &mut self,
+        index: OperatorIndex,
+    )
+    {
+        let index = usize::from(index);
+        let Some(cell) = self.stack.get(index).copied()
+        else {
+            return;
+        };
+        let Role::Operator {
+            mold, sort, shape, ..
+        } = cell.role
+        else {
+            return;
+        };
+        let wants_left = matches!(shape, OpShape::Infix | OpShape::Postfix);
+        let wants_right = matches!(shape, OpShape::Infix | OpShape::Prefix);
+
+        // Gate operand capture on the operator's shape: a captured cell is
+        // removed from the slope and must appear as a child of the meld, so a
+        // non-captured neighbour (e.g. a postfix's right operand) is left in
+        // place rather than dropped (which would orphan its emitted node).
+        let right_index = if wants_right {
+            index
+                .checked_add(1)
+                .filter(|&next| bool::from(self.is_operand_at(StackIndex::from(next))))
+        }
+        else {
+            None
+        };
+        let left_index = if wants_left {
+            index
+                .checked_sub(1)
+                .filter(|&prev| bool::from(self.is_operand_at(StackIndex::from(prev))))
+        }
+        else {
+            None
+        };
+
+        let low = left_index.unwrap_or(index);
+        let high = right_index.unwrap_or(index);
+        let Some(high_exclusive) = high.checked_add(1)
+        else {
+            return;
+        };
+
+        let mut children: Vec<EmitId> = Vec::new();
+        let mut span_start = cell.start;
+        let mut span_end = cell.end;
+
+        if wants_left {
+            if let Some(left_cell) = left_index.and_then(|left| self.stack.get(left)) {
+                children.push(left_cell.emit);
+                span_start = left_cell.start;
+            }
+            else {
+                let span = SourceSpan::point(SourceOffset::from(cell.start));
+                let grout = self.emit_token(
+                    NodeLabel::Grout {
+                        sort: sort.grout_sort(),
+                        shape: GroutShape::Convex,
+                    },
+                    span,
+                );
+                children.push(grout);
+                self.flag(Oblig::MissingMeld, span);
+                self.left_shortfalls = self.left_shortfalls.saturating_add(1);
+            }
+        }
+
+        children.push(cell.emit);
+
+        if wants_right {
+            if let Some(right_cell) = right_index.and_then(|right| self.stack.get(right)) {
+                children.push(right_cell.emit);
+                span_end = right_cell.end;
+            }
+            else {
+                let span = SourceSpan::point(SourceOffset::from(cell.end));
+                let grout = self.emit_token(
+                    NodeLabel::Grout {
+                        sort: sort.grout_sort(),
+                        shape: GroutShape::Convex,
+                    },
+                    span,
+                );
+                children.push(grout);
+                self.flag(Oblig::MissingMeld, span);
+            }
+        }
+
+        let span = SourceSpan::new(SourceOffset::from(span_start), SourceOffset::from(span_end));
+        let meld = self.emit_interior(NodeLabel::Meld(mold), span, children);
+        self.replace_range(
+            StackRange::new(StackIndex::from(low), StackIndex::from(high_exclusive)),
+            Cell {
+                emit: meld,
+                start: span_start,
+                end: span_end,
+                sort,
+                role: Role::Operand,
+            },
+        );
+    }
+
+    /// Reduce every operator, force-close every open form and close every
+    /// fragment at or above `floor`, leaving only operand cells there.
+    ///
+    /// Each step removes one operator, open frontier or fragment, the highest
+    /// first, so a form's content is reduced before the form is force-closed
+    /// and the loop ends. A fragment is a form whose start stands above every
+    /// operator and open frontier: no frontier carries it, so it can take no
+    /// tile. Its run ends at the top of the slope, or before the first
+    /// declaration head above its start
+    /// ([`fragment_above`](Self::fragment_above)). A mid that no frontier
+    /// takes opens one ([`continue_form`](Self::continue_form)). It closes
+    /// before the step below it, so the end that the step pushes or mints
+    /// pairs with the start of its own form. In `[.A = Rung]` read as an
+    /// effect row, the `=` opens a fragment. The `]` then closes the row, and
+    /// the fragment `= Rung` is one operand of it. A stray closer at the root
+    /// opens a fragment that ends before the next declaration, so the
+    /// declaration stays an item of the root.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: no operator, no open form frontier and no fragment remains at
+    ///   or above `floor`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested operators and open forms above a floor, plus
+    ///   an already-complete region, expose exact final child order and repair
+    ///   material. Reducing below the floor, skipping a head or adding written
+    ///   bytes changes the committed tree. A fragment above a group that its
+    ///   closer dropped keeps the group's ghost end in the group, so the
+    ///   placement finds the group's closer.
+    /// - witness: `meld::tests::infix_reduces_after_precedence`
+    /// - witness: `meld::tests::brackets_close_on_the_matching_delimiter`
+    /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
+    /// - witness: `tests::acceptance::a_torn_group_stays_the_operand_of_its_juxtaposition_6029`
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before && self.highest_reducible(floor).is_none() && self.fragment_above(floor, None).is_none())]
+    fn collapse(
+        &mut self,
+        floor: StackFloor,
+    )
+    {
+        // Each iteration removes one operator, open form frontier or fragment.
+        // The highest-index selector makes nested form content reduce before
+        // the enclosing frontier is force-closed, so no recursive caller-input
+        // path is needed.
+        loop {
+            let step = self.highest_reducible(floor);
+            if let Some(top) = self.fragment_above(floor, step)
+                && self.close_form(top).is_some()
+            {
+                continue;
+            }
+            match step {
+                Some(CollapseStep::ForceCloseForm(frontier)) => self.force_close_form(frontier),
+                Some(CollapseStep::ReduceOperator(operator)) => self.reduce_operator(operator),
+                None => break,
+            }
+        }
+    }
+
+    /// Return the last cell of the fragment that the form start nearest below
+    /// the top of the slope opens, when that start lies above `step` and at
+    /// or above `floor`.
+    ///
+    /// `step` is the highest operator or open frontier at or above `floor`
+    /// ([`highest_reducible`](Self::highest_reducible)). A form start above it
+    /// has no open frontier in its run, since every frontier lies at or below
+    /// `step`. The start and the cells above it are then one form. Its run
+    /// ends at the top, or before the first cell of item sort above the
+    /// start. That cell is the head of a declaration, and a declaration is an
+    /// item of the root that no fragment holds. Thus a stray closer at the
+    /// root takes no later declaration into a form of its own.
+    ///
+    /// # Specification
+    /// - ensures: present exactly when the nearest form start at or below the
+    ///   top lies at or above `floor` and above the index `step` names; then
+    ///   the cell before the first cell of item sort above that start, or the
+    ///   top when no such cell stands there.
+    /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: one [`form_start_index`](Self::form_start_index) walk from the
+    ///   top of the slope down to the nearest form start, and one pass over the
+    ///   cells above that start.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fragment above a group, a fragment above an
+    ///   operator, a form start below an open frontier and a stray closer at
+    ///   the root before a declaration expose the selected end. Selecting a
+    ///   start below the step or below the floor, or an end past a declaration
+    ///   head, changes the committed tree.
+    /// - witness: `tests::acceptance::a_torn_group_stays_the_operand_of_its_juxtaposition_6029`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[spec(ensures: |ret| {
+        let lowest = step.map_or(floor.0, |step| match step { CollapseStep::ForceCloseForm(index) => usize::from(index).saturating_add(1), CollapseStep::ReduceOperator(index) => usize::from(index).saturating_add(1) }).max(floor.0);
+        let top = self.stack.len().checked_sub(1);
+        let start = top.and_then(|top| self.form_start_index(StackIndex::from(top))).filter(|start| start.0 >= lowest);
+        ret == start.zip(top).map(|(start, top)| StackIndex::from(self.stack.get(start.0.saturating_add(1) ..= top).and_then(|run| run.iter().position(|cell| cell.sort == Sort::Item)).map_or(top, |at| start.0.saturating_add(at))))
+    })]
+    fn fragment_above(
+        &self,
+        floor: StackFloor,
+        step: Option<CollapseStep>,
+    ) -> Option<StackIndex>
+    {
+        let lowest = step
+            .map_or(floor.0, |step| match step {
+                CollapseStep::ForceCloseForm(index) => usize::from(index).saturating_add(1),
+                CollapseStep::ReduceOperator(index) => usize::from(index).saturating_add(1),
+            })
+            .max(floor.0);
+        let top = self.stack.len().checked_sub(1)?;
+        let start = usize::from(self.form_start_index(StackIndex::from(top))?);
+        if start < lowest {
+            return None;
+        }
+        // The run stops before the first declaration head above the start.
+        let end = self
+            .stack
+            .get(start.saturating_add(1) ..= top)
+            .and_then(|run| run.iter().position(|cell| cell.sort == Sort::Item))
+            .map_or(top, |at| start.saturating_add(at));
+        Some(StackIndex::from(end))
+    }
+
+    /// Return the highest index at or above `floor` holding an operator or an
+    /// open form frontier, with a flag marking which (form when `true`).
+    ///
+    /// O(1): the higher of the `operators` and `frontiers` cache tops at or
+    /// above `floor` — never a scan of the content region.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a floor at, below and above nested reducible heads
+    ///   exposes the selected action and index. Reversing priority, including a
+    ///   closed form or using a strict floor comparison changes the action. The
+    ///   clause reads the operator and frontier cache tops at or above the
+    ///   floor and the cell the answer names.
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    #[spec(ensures: |ret| {
+        let operator = self.operators.last().copied().filter(|&index| index >= floor.0);
+        let frontier = self.frontiers.last().copied().filter(|&index| index >= floor.0);
+        ret.map_or_else(|| operator.is_none() && frontier.is_none(), |step| match step {
+            CollapseStep::ReduceOperator(index) => operator == Some(usize::from(index)) && frontier.is_none_or(|open| open < usize::from(index)) && self.stack.get(usize::from(index)).is_some_and(|cell| matches!(cell.role, Role::Operator { .. })),
+            CollapseStep::ForceCloseForm(index) => frontier == Some(usize::from(index)) && operator.is_none_or(|reducible| reducible < usize::from(index)) && self.stack.get(usize::from(index)).is_some_and(|cell| matches!(cell.role, Role::FormTile { open: true, .. })),
+        })
+    })]
+    fn highest_reducible(
+        &self,
+        floor: StackFloor,
+    ) -> Option<CollapseStep>
+    {
+        let floor = usize::from(floor);
+        let operator = self
+            .operators
+            .last()
+            .copied()
+            .filter(|&index| index >= floor);
+        let frontier = self
+            .frontiers
+            .last()
+            .copied()
+            .filter(|&index| index >= floor);
+        match (operator, frontier) {
+            (Some(op), Some(fr)) => {
+                if fr > op {
+                    Some(CollapseStep::ForceCloseForm(FrontierIndex::from(fr)))
+                }
+                else {
+                    Some(CollapseStep::ReduceOperator(OperatorIndex::from(op)))
+                }
+            },
+            (None, Some(fr)) => Some(CollapseStep::ForceCloseForm(FrontierIndex::from(fr))),
+            (Some(op), None) => Some(CollapseStep::ReduceOperator(OperatorIndex::from(op))),
+            (None, None) => None,
+        }
+    }
+
+    /// Force-close an incomplete open form whose frontier is at `frontier`.
+    ///
+    /// The form never reached its end tile, so its absent closer is a ghost:
+    /// the content above the frontier is collapsed to operands, a ghost end
+    /// grout is appended, the run from the form-start is reduced into a meld,
+    /// and the missing delimiter is flagged ([`Oblig::MissingTile`]).
+    ///
+    /// # Specification
+    /// - requires: every cell above `frontier` is an operand, which
+    ///   [`collapse`](Self::collapse)'s highest-first order guarantees.
+    /// - ensures: the form at `frontier` is closed; a form that never reached a
+    ///   last tile gains a ghost end and one [`Oblig::MissingTile`] over the
+    ///   frontier tile's span.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — complete optional tails, missing required tails and
+    ///   paired versus unclassed closers expose exact minted labels and repair
+    ///   counts. Minting a ghost for a complete form or writing ghost text
+    ///   changes the committed structure or preserved source.
+    /// - witness: `meld::tests::completable_hole_closes_without_obligation`
+    /// - witness: `meld::tests::minted_close_round_trips_and_refuses_unknown_class`
+    /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before)]
+    fn force_close_form(
+        &mut self,
+        frontier: FrontierIndex,
+    )
+    {
+        let frontier_index = usize::from(frontier);
+        // A required-tail form is complete once its trailing operand has
+        // arrived, even though no terminal tile advances the frontier.
+        if let Some(end) = self.required_tail_operand(frontier) {
+            self.close_form(end);
+            return;
+        }
+        // A regex-LAST prefix with a missing required tail must force-close,
+        // not take the ordinary clean LAST path below.
+        let required_tail = self
+            .stack
+            .get(frontier_index)
+            .and_then(|cell| match cell.role {
+                Role::FormTile { mold, .. } => {
+                    Some(bool::from(self.pbg.mold_has_required_tail(mold)))
+                },
+                Role::Operand | Role::Operator { .. } => None,
+            })
+            .unwrap_or(false);
+        // A completable frontier (its mold in the grammar's LAST set) is
+        // already a complete form: close it cleanly with no ghost end
+        // and no obligation — a bare `?` hole at end of input is a
+        // whole hole, not an incomplete form. Content above it stays a
+        // sibling.
+        if !required_tail
+            && let Some(Role::FormTile { mold, .. }) =
+                self.stack.get(frontier_index).map(|cell| cell.role)
+            && bool::from(FormTable::is_form_last(self.pbg, mold))
+        {
+            self.close_form(StackIndex::from(frontier));
+            return;
+        }
+        // A form that a stray mid opened, and that no tile continued, already
+        // owes its absent opener at that mid (`continue_form`). It closes as
+        // it stands, with no ghost end: the writer left out the tiles before
+        // the mid, and no tile after it.
+        if let Some(Role::FormTile {
+            mold, start: true, ..
+        }) = self.stack.get(frontier_index).map(|cell| cell.role)
+            && !bool::from(FormTable::is_form_first(self.pbg, mold))
+        {
+            self.close_form(StackIndex::from(frontier));
+            return;
+        }
+
+        let Some(frontier_cell) = self.stack.get(frontier_index).copied()
+        else {
+            return;
+        };
+        self.mint_ghost_end(frontier, frontier_cell);
+        if let Some(top) = self.stack.len().checked_sub(1) {
+            self.close_form(StackIndex::from(top));
+        }
+    }
+
+    /// Append the ghost end of the open form at `frontier`, whose cell is
+    /// `frontier_cell`, mark the form closed, and flag its missing tile.
+    ///
+    /// The ghost is a minted close of the frontier's closing class when the
+    /// grammar names one, and a postfix grout otherwise. The form stays on the
+    /// stack, so the caller closes it after any tile that it adds.
+    ///
+    /// # Specification
+    /// - requires: `frontier_cell` is the cell at `frontier`, and every cell
+    ///   above it is an operand.
+    /// - ensures: pushes one ghost cell over an empty span, marks the form at
+    ///   `frontier` closed, flags one [`Oblig::MissingTile`] over the frontier
+    ///   tile's span, and appends no source.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lowering reads a repair only from a ghost in the
+    ///   form. A close at a separator without the ghost lowers an unfinished
+    ///   `import` as a whole one.
+    /// - witness: `meld::tests::minted_close_round_trips_and_refuses_unknown_class`
+    /// - witness: `tests::acceptance::a_declaration_recovers_as_at_the_end_whatever_follows_5747`
+    #[spec(captures: before = (self.source.len(), self.stack.len()), ensures: |_| self.source.len() == before.0 && self.stack.len() == before.1.saturating_add(1))]
+    fn mint_ghost_end(
+        &mut self,
+        frontier: FrontierIndex,
+        frontier_cell: Cell,
+    )
+    {
+        let sort = frontier_cell.sort;
+        let frontier_mold = match frontier_cell.role {
+            Role::FormTile { mold, .. } => mold,
+            Role::Operand | Role::Operator { .. } => MoldId::from(u32::MAX),
+        };
+
+        // Append a ghost end tile so the form reads as a completed shape.
+        //
+        // When the grammar says every completion of this frontier ends at a
+        // paired closer of one class, the ghost carries that class and becomes
+        // a minted close a later consumer can pair against the closer the
+        // author actually wrote. When it says nothing — the completions
+        // disagree, or end at something that closes nothing, as `def x = E ;`
+        // does at its `;` — the ghost stays ordinary grout, byte-identical to
+        // what it has always been. That asymmetry is deliberate: an unclassed
+        // ghost pairs with nothing, so the failure mode is a suppression not
+        // applied rather than one applied to the wrong declaration.
+        //
+        // A paired closer's ghost follows every operand above the frontier, so
+        // it stands where the last of them ends: past the body a `{` opened,
+        // not at the `{`. An unclassed ghost keeps the frontier's end, where
+        // the form's own last written tile stops.
+        let class = self.pbg.closing_class(frontier_mold);
+        let ghost_end = match class {
+            Some(_) => self
+                .stack
+                .last()
+                .map_or(frontier_cell.end, |top| top.end.max(frontier_cell.end)),
+            None => frontier_cell.end,
+        };
+        let ghost_span = SourceSpan::point(SourceOffset::from(ghost_end));
+        let label = class.map_or_else(
+            || NodeLabel::Grout {
+                sort: sort.grout_sort(),
+                shape: GroutShape::Postfix,
+            },
+            |class| NodeLabel::GhostClose {
+                sort: sort.grout_sort(),
+                class,
+                reach: CloseReach::NONE,
+            },
+        );
+        let ghost = self.emit_token(label, ghost_span);
+        self.push_cell(Cell {
+            emit: ghost,
+            start: ghost_end,
+            end: ghost_end,
+            sort,
+            role: Role::FormTile {
+                mold: frontier_mold,
+                sort,
+                open: false,
+                start: false,
+                absorb_left: false,
+            },
+        });
+        self.set_form_open(StackIndex::from(frontier), FormOpen::from(false));
+        self.flag(
+            Oblig::MissingTile,
+            SourceSpan::new(
+                SourceOffset::from(frontier_cell.start),
+                SourceOffset::from(frontier_cell.end),
+            ),
+        );
+    }
+
+    /// Return whether the cell at `index` is an operand.
+    ///
+    /// # Specification
+    /// - ensures: reports whether the addressed cell is an operand; absent
+    ///   indices are false.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both sides of unary/binary operators, absent edge
+    ///   operands and form barriers expose exact repair spans and captured
+    ///   children. Accepting a form/operator cell or reading a neighboring
+    ///   index changes the tree.
+    /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
+    /// - witness: `meld::tests::operator_shapes_preserve_uncaptured_neighbors`
+    #[spec(ensures: |ret| bool::from(ret) == self.stack.get(index.0).is_some_and(|cell| matches!(cell.role, Role::Operand)))]
+    fn is_operand_at(
+        &self,
+        index: StackIndex,
+    ) -> OperandPresence
+    {
+        OperandPresence::from(matches!(
+            self.stack.get(usize::from(index)).map(|cell| cell.role),
+            Some(Role::Operand)
+        ))
+    }
+
+    /// Push a cell onto the top of the slope, maintaining the head caches.
+    ///
+    /// # Specification
+    /// - ensures: appends the supplied cell unchanged and keeps all role caches
+    ///   exact.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — operand, operator and open/closed form pushes expose
+    ///   exact head queries before and after splices. A missing index, wrong
+    ///   role cache or shifted identity changes the selected reduction.
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    #[spec(captures: before = self.stack.len(), ensures: |_| self.stack.len() == before.saturating_add(1) && self.stack.last() == Some(&cell) && bool::from(self.caches_exact_from(StackFloor::from(StackIndex::from(before)))))]
+    fn push_cell(
+        &mut self,
+        cell: Cell,
+    )
+    {
+        if self.live_marks > 0 {
+            self.edits.push(SlopeEdit::Pushed);
+        }
+        self.index_cell(StackIndex::from(self.stack.len()), &cell);
+        self.stack.push(cell);
+    }
+
+    /// Record `cell`'s role in the monotone index caches at slope index
+    /// `index` (which must be the current top — pushes only).
+    ///
+    /// # Specification
+    /// - requires: the index follows every existing entry in each applicable
+    ///   cache.
+    /// - ensures: records an operator once, a form barrier once and an open
+    ///   frontier once; operands add nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all three role classes, open versus closed form flags
+    ///   and shifted survivors expose exact cache positions. Recording a role
+    ///   in the wrong cache, duplicating an entry or losing an open flag
+    ///   changes subsequent head queries.
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    #[spec(captures: before = (self.frontiers.len(), self.operators.len(), self.barriers.len()), ensures: |_| self.frontiers.len() == before.0.saturating_add(usize::from(matches!(cell.role, Role::FormTile { open: true, .. }))) && self.operators.len() == before.1.saturating_add(usize::from(matches!(cell.role, Role::Operator { .. }))) && self.barriers.len() == before.2.saturating_add(usize::from(matches!(cell.role, Role::FormTile { .. }))))]
+    fn index_cell(
+        &mut self,
+        index: StackIndex,
+        cell: &Cell,
+    )
+    {
+        let index = usize::from(index);
+        match cell.role {
+            Role::FormTile { open, .. } => {
+                self.barriers.push(index);
+                if open {
+                    self.frontiers.push(index);
+                }
+            },
+            Role::Operator { .. } => self.operators.push(index),
+            Role::Operand => {},
+        }
+    }
+
+    /// Drop every cached index at or above `floor` (the cells a top-reaching
+    /// splice removes). Amortized O(1): each index is pushed once and popped
+    /// at most once.
+    ///
+    /// # Specification
+    /// - ensures: removes exactly cached indices at or above the floor,
+    ///   retaining lower prefixes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — top and middle splices and floors at retained indices
+    ///   expose exact lower prefixes and shifted survivor caches. Removing the
+    ///   cell below the floor or retaining the boundary entry changes a query.
+    ///   The caches ascend, so a top below the floor bounds every entry.
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    #[spec(captures: before = (self.frontiers.partition_point(|index| *index < floor.0), self.operators.partition_point(|index| *index < floor.0), self.barriers.partition_point(|index| *index < floor.0)), ensures: |_| self.frontiers.len() == before.0 && self.operators.len() == before.1 && self.barriers.len() == before.2 && self.frontiers.last().is_none_or(|index| *index < floor.0) && self.operators.last().is_none_or(|index| *index < floor.0) && self.barriers.last().is_none_or(|index| *index < floor.0))]
+    fn unindex_from(
+        &mut self,
+        floor: StackFloor,
+    )
+    {
+        let floor = usize::from(floor);
+        while self.frontiers.last().is_some_and(|&index| index >= floor) {
+            self.frontiers.pop();
+        }
+        while self.operators.last().is_some_and(|&index| index >= floor) {
+            self.operators.pop();
+        }
+        while self.barriers.last().is_some_and(|&index| index >= floor) {
+            self.barriers.pop();
+        }
+    }
+
+    /// Rebuild the head caches from the slope (checkpoint resume and the
+    /// defensive middle splice — every other mutation maintains them
+    /// incrementally).
+    ///
+    /// # Specification
+    /// - ensures: replaces every cache with the exact ascending role indices of
+    ///   the current stack.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — mixed-role streams, middle splices and resumed
+    ///   checkpoints expose exact role indices. Missing, duplicate or stale
+    ///   shifted entries change the nearest frontier or reducible operator.
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    #[spec(ensures: |_| bool::from(self.caches_exact_from(StackFloor::from(StackIndex::from(0)))))]
+    fn rebuild_head_caches(&mut self)
+    {
+        self.reindex_from(StackFloor::from(StackIndex::from(0)));
+    }
+
+    /// Re-derive the head caches for the slope at and above `floor`, the cache
+    /// entries below it already exact.
+    ///
+    /// # Specification
+    /// - requires: the cache entries below `floor` are exactly the role indices
+    ///   of the cells below it.
+    /// - ensures: every cache holds the exact ascending role indices of the
+    ///   current stack.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — rollbacks undoing pushes, deep splices and older
+    ///   frontier flips, and resumed checkpoints, rebuild from floors at the
+    ///   top, in the middle and at the base; a floor one too high leaves a
+    ///   stale entry and changes the nearest frontier or reducible operator.
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    /// - witness: `meld::tests::mark_rollback_restores_state_exactly`
+    #[spec(ensures: |_| bool::from(self.caches_exact_from(floor)))]
+    fn reindex_from(
+        &mut self,
+        floor: StackFloor,
+    )
+    {
+        self.unindex_from(floor);
+        for index in usize::from(floor) .. self.stack.len() {
+            if let Some(cell) = self.stack.get(index).copied() {
+                self.index_cell(StackIndex::from(index), &cell);
+            }
+        }
+    }
+
+    /// Whether the head caches list exactly the role positions of the slope's
+    /// cells at or above `floor`.
+    ///
+    /// # Specification
+    /// - requires: each cache ascends.
+    /// - ensures: holds exactly when, at or above `floor`, the frontier cache
+    ///   lists the open form tiles, the operator cache the operators and the
+    ///   barrier cache every form tile; when it holds, each cache's top at or
+    ///   above `floor` names a cell of its role.
+    /// - provides: the exactness claim a cache mutation's clause makes from the
+    ///   lowest slope position it touched; the entries below it rest on the
+    ///   clauses of the mutations that wrote them.
+    /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: three [`indexed_from`] checks: three binary searches, then each
+    ///   cell at or above `floor` read once per cache, with the cache entries
+    ///   at or above `floor` when their clauses are checked.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — pushes of every role, splices at the top and in the
+    ///   middle, frontier flips, rollbacks and resumed checkpoints check the
+    ///   caches from the position each touched; a missing, stale or shifted
+    ///   entry fails the mutation's clause and changes a head query.
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    #[spec(ensures: |ret| !bool::from(ret) || (self.frontiers.last().filter(|&&top| top >= floor.0).is_none_or(|&top| self.stack.get(top).is_some_and(|cell| matches!(cell.role, Role::FormTile { open: true, .. })))
+        && self.operators.last().filter(|&&top| top >= floor.0).is_none_or(|&top| self.stack.get(top).is_some_and(|cell| matches!(cell.role, Role::Operator { .. })))
+        && self.barriers.last().filter(|&&top| top >= floor.0).is_none_or(|&top| self.stack.get(top).is_some_and(|cell| matches!(cell.role, Role::FormTile { .. })))))]
+    fn caches_exact_from(
+        &self,
+        floor: StackFloor,
+    ) -> Holds
+    {
+        let floor = gandr_theory_spec_combinators::Mark::from(usize::from(floor));
+        Holds::from(
+            bool::from(indexed_from(&self.stack, &self.frontiers, floor, |cell| {
+                Holds::from(matches!(cell.role, Role::FormTile { open: true, .. }))
+            })) && bool::from(indexed_from(&self.stack, &self.operators, floor, |cell| {
+                Holds::from(matches!(cell.role, Role::Operator { .. }))
+            })) && bool::from(indexed_from(&self.stack, &self.barriers, floor, |cell| {
+                Holds::from(matches!(cell.role, Role::FormTile { .. }))
+            })),
+        )
+    }
+
+    /// TEST ONLY: assert the incremental head caches equal a fresh role scan
+    /// of the slope (the caches' exactness invariant).
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: panics unless `frontiers` / `operators` / `barriers` are
+    ///   exactly the ascending indices of the open-frontier / operator /
+    ///   form-tile cells; leaves `self` unchanged.
+    /// - provides: the head-cache adequacy witness hook.
+    /// - fails: never (test-only assertion).
+    /// - panics: on any cache/scan divergence (the test failure signal).
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — mixed-role streams, middle splices and resumed
+    ///   checkpoints expose exact role indices. Missing, duplicate or stale
+    ///   shifted entries change the nearest frontier or reducible operator.
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    #[cfg(test)]
+    #[spec(ensures: |_| bool::from(self.caches_exact_from(StackFloor::from(StackIndex::from(0)))))]
+    fn assert_head_caches_exact(&self)
+    {
+        let mut frontiers = Vec::new();
+        let mut operators = Vec::new();
+        let mut barriers = Vec::new();
+        for (index, cell) in self.stack.iter().enumerate() {
+            match cell.role {
+                Role::FormTile { open, .. } => {
+                    barriers.push(index);
+                    if open {
+                        frontiers.push(index);
+                    }
+                },
+                Role::Operator { .. } => operators.push(index),
+                Role::Operand => {},
+            }
+        }
+        assert_eq!(self.frontiers, frontiers, "open-frontier cache is exact");
+        assert_eq!(self.operators, operators, "operator cache is exact");
+        assert_eq!(self.barriers, barriers, "form-tile cache is exact");
+    }
+
+    /// Replace the slope range `[low, high)` with a single cell.
+    ///
+    /// Every caller reduces a top region (`high == stack.len()`), so the head
+    /// caches are maintained by dropping the removed range's indices and
+    /// re-indexing the replacement at `low`.
+    ///
+    /// # Specification
+    /// - ensures: replaces a valid nonempty range by one cell and keeps shifted
+    ///   survivors indexed; invalid ranges append the cell defensively.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a top replacement, a middle splice retaining upper
+    ///   cells, an empty range and an out-of-range end expose exact cell order
+    ///   and cached positions. Dropping shifted survivors, off-by-one drains or
+    ///   rejecting instead of appending changes the resulting stack.
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    #[spec(captures: before = self.stack.len(), ensures: |_| self.stack.len() == if range.low.0 >= range.high_exclusive.0 || range.high_exclusive.0 > before { before.saturating_add(1) } else { before.saturating_sub(range.high_exclusive.0.saturating_sub(range.low.0)).saturating_add(1) }
+        && bool::from(self.caches_exact_from(StackFloor::from(if range.low.0 >= range.high_exclusive.0 || range.high_exclusive.0 > before { StackIndex::from(before) } else { range.low }))))]
+    fn replace_range(
+        &mut self,
+        range: StackRange,
+        cell: Cell,
+    )
+    {
+        let low = usize::from(range.low);
+        let high = usize::from(range.high_exclusive);
+        if low >= high || high > self.stack.len() {
+            // Defensive: never touched on the well-formed path; keep total.
+            self.push_cell(cell);
+            return;
+        }
+        self.low_water = self.low_water.min(low);
+        self.unindex_from(StackFloor::from(range.low));
+        // While a mark is live the replaced cells go to the removed-cell log
+        // for rollback; otherwise finishing the splice just places `cell`.
+        let replaced = self.stack.splice(low .. high, core::iter::once(cell));
+        if self.live_marks > 0 {
+            self.removed.extend(replaced);
+            self.edits.push(SlopeEdit::Spliced {
+                low,
+                removed: high.saturating_sub(low),
+            });
+        }
+        else {
+            replaced.for_each(|_removed| ());
+        }
+        // The replacement landed at `low`; cells above `high` shifted down,
+        // but every caller splices a top region, so none exist. Defensive:
+        // if any survived, rebuild rather than corrupt the caches.
+        if low.checked_add(1) == Some(self.stack.len()) {
+            if let Some(replacement) = self.stack.get(low).copied() {
+                self.index_cell(StackIndex::from(low), &replacement);
+            }
+        }
+        else {
+            self.rebuild_head_caches();
+        }
+    }
+
+    /// Push an unmolded token: a total fallback for an out-of-range mold.
+    ///
+    /// # Specification
+    /// - ensures: appends all text as item-sort convex grout, records one
+    ///   unmolded-token obligation and pushes an operand spanning those bytes.
+    /// - panics: buffer counts above the wire ceiling assert in debug builds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, multibyte, NUL and consecutive unknown tiles
+    ///   expose exact source bytes, spans and one obligation per push. Dropping
+    ///   empty tiles, counting characters as bytes or misclassifying grout
+    ///   changes the committed tree and obligation multiplicity.
+    /// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
+    #[spec(captures: before = (self.source.len(), self.obligations.len(), self.stack.len()), ensures: |_| self.source.get(before.0 ..) == Some(<&str>::from(text)) && self.obligations.len() == before.1.saturating_add(1) && self.obligations.last().is_some_and(|obligation| obligation.class == Oblig::UnmoldedTok) && self.stack.len() == before.2.saturating_add(1) && self.stack.last().is_some_and(|cell| cell.sort == Sort::Item && matches!(cell.role, Role::Operand)))]
+    fn push_unmolded(
+        &mut self,
+        text: SourceFragment<'_>,
+    )
+    {
+        let span = self.append_source(text);
+        let emit = self.emit_token(
+            NodeLabel::Grout {
+                sort: Sort::Item.grout_sort(),
+                shape: GroutShape::Convex,
+            },
+            span,
+        );
+        self.flag(Oblig::UnmoldedTok, span);
+        self.push_cell(Cell {
+            emit,
+            start: u32::from(span.start),
+            end: u32::from(span.end),
+            sort: Sort::Item,
+            role: Role::Operand,
+        });
+    }
+
+    /// Convert a parser buffer count to its `u32` wire offset.
+    ///
+    /// # Specification
+    /// - ensures: returns `count` exactly when it fits the `u32` wire ceiling;
+    ///   saturates at `u32::MAX` beyond it (parser buffers never approach 4
+    ///   GiB; a `debug_assert` records the invariant).
+    /// - panics: a count above `u32::MAX` in debug builds.
+    /// - executable: none — the generic output exposes only construction
+    ///   through `From<u32>`, not equality or an inverse; checking it would
+    ///   require a new bound or repeating an arbitrary conversion.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero and the wire ceiling are observed as concrete
+    ///   offsets and emission identities. Narrowing or signed conversion
+    ///   changes these endpoints; the debug guard beyond the ceiling is not an
+    ///   unconditional no-panic guarantee.
+    /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
+    fn wire_len<T>(count: CheckpointCount) -> T
+    where
+        T: From<u32>,
+    {
+        let len = usize::from(count);
+        debug_assert!(
+            u32::try_from(len).is_ok(),
+            "parser buffer length exceeds the u32 wire ceiling"
+        );
+        T::from(u32::try_from(len).unwrap_or(u32::MAX))
+    }
+
+    /// Append `text` to the source buffer and return its span.
+    ///
+    /// # Specification
+    /// - ensures: appends the supplied bytes and returns their half-open wire
+    ///   span; an empty fragment has a point span.
+    /// - panics: buffer counts above the wire ceiling assert in debug builds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and multibyte fragments at successive positions
+    ///   expose exact byte offsets and preserved text. Character counting,
+    ///   inclusive endpoints or replacement instead of append changes the span.
+    /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
+    #[spec(captures: before = self.source.len(), ensures: |ret| self.source.get(before ..) == Some(<&str>::from(text)) && u32::from(ret.start) == u32::try_from(before).unwrap_or(u32::MAX) && u32::from(ret.end) == u32::try_from(self.source.len()).unwrap_or(u32::MAX))]
+    fn append_source(
+        &mut self,
+        text: SourceFragment<'_>,
+    ) -> SourceSpan
+    {
+        let start = Self::wire_len(CheckpointCount::from(self.source.len()));
+        self.source.push_str(<&str>::from(text));
+        let end = Self::wire_len(CheckpointCount::from(self.source.len()));
+        SourceSpan::new(start, end)
+    }
+
+    /// Append a leaf to the emission log and return its id.
+    ///
+    /// # Specification
+    /// - ensures: appends one token operation with the supplied label and
+    ///   endpoints, returning its zero-based wire identity.
+    /// - panics: buffer counts above the wire ceiling assert in debug builds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — consecutive token emissions with unequal UTF-8 widths
+    ///   expose exact identity, label and endpoints through a built tree. A
+    ///   one-based identity or swapped span changes children or rejects the
+    ///   tree.
+    /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
+    #[spec(captures: before = self.emit.len(), ensures: |ret| ret.0 == u32::try_from(before).unwrap_or(u32::MAX) && self.emit.len() == before.saturating_add(1) && self.emit.last() == Some(&EmitOp::Token { label, start: u32::from(span.start), end: u32::from(span.end) }))]
+    fn emit_token(
+        &mut self,
+        label: NodeLabel,
+        span: SourceSpan,
+    ) -> EmitId
+    {
+        let id = EmitId(Self::wire_len(CheckpointCount::from(self.emit.len())));
+        self.emit.push(EmitOp::Token {
+            label,
+            start: u32::from(span.start),
+            end: u32::from(span.end),
+        });
+        id
+    }
+
+    /// Append an interior node to the emission log and return its id.
+    ///
+    /// # Specification
+    /// - ensures: appends one interior operation with the supplied label,
+    ///   endpoints and ordered children, returning its zero-based wire
+    ///   identity.
+    /// - panics: buffer counts above the wire ceiling assert in debug builds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — reversed child/source order and a forward child
+    ///   reference expose exact ordered payloads and typed rejection. Sorting
+    ///   children by source or accepting an unavailable identity changes the
+    ///   tree or error.
+    /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
+    #[spec(captures: before = (self.emit.len(), children.len()), ensures: |ret| ret.0 == u32::try_from(before.0).unwrap_or(u32::MAX) && self.emit.len() == before.0.saturating_add(1) && self.emit.last().is_some_and(|op| matches!(op, EmitOp::Interior { label: actual, start, end, children } if *actual == label && *start == u32::from(span.start) && *end == u32::from(span.end) && children.len() == before.1)))]
+    fn emit_interior(
+        &mut self,
+        label: NodeLabel,
+        span: SourceSpan,
+        children: Vec<EmitId>,
+    ) -> EmitId
+    {
+        let id = EmitId(Self::wire_len(CheckpointCount::from(self.emit.len())));
+        self.emit.push(EmitOp::Interior {
+            label,
+            start: u32::from(span.start),
+            end: u32::from(span.end),
+            children,
+        });
+        id
+    }
+
+    /// Record an obligation instance at a source span.
+    ///
+    /// # Specification
+    /// - ensures: appends exactly the supplied class and checked span; inverted
+    ///   spans leave the obligation buffer unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — valid empty/nonempty and inverted spans expose exact
+    ///   class, endpoints and retained multiplicity. Accepting an inverted span
+    ///   or overwriting the previous flag changes buffered completion
+    ///   obligations.
+    /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
+    #[spec(captures: before = self.obligations.len(), ensures: |_| match span.byte_span() { Ok(checked) => self.obligations.len() == before.saturating_add(1) && self.obligations.last() == Some(&ObligationInstance::new(class, checked)), Err(_) => self.obligations.len() == before })]
+    fn flag(
+        &mut self,
+        class: Oblig,
+        span: SourceSpan,
+    )
+    {
+        if let Ok(span) = span.byte_span() {
+            self.obligations.push(ObligationInstance::new(class, span));
+        }
+    }
+
+    /// Return the buffered obligations, in accumulation order.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: returns every obligation the melder has buffered so far, in
+    ///   the order flagged.
+    /// - provides: the query-surface data.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — mixed classes and repeated flags expose the borrowed
+    ///   accumulation-order buffer. Filtering, sorting or substituting a copy
+    ///   changes its identity or observed class/span sequence.
+    /// - witness: `meld::tests::degrout_flags_one_ambiguous_prec_at_the_smallest_span`
+    /// - witness: `meld::tests::delta_reflects_the_buffered_obligations`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| core::ptr::eq(&raw const *ret, &raw const *self.obligations.as_slice()))]
+    pub fn obligations(&self) -> &[ObligationInstance]
+    {
+        &self.obligations
+    }
+
+    /// Return whether the melder weighs a repair: an obligation it has
+    /// buffered, or an application it ended, which the molder weighs as an
+    /// [`Oblig::InconMeld`] ([`Self::reduce_toward`]).
+    ///
+    /// A search that keeps a copy only where the copy molds with no repair
+    /// reads this, so it refuses each copy whose readings the molder's
+    /// comparison weighs as a repair.
+    ///
+    /// # Specification
+    /// - requires: the state was not restored from a [`Checkpoint`], which
+    ///   starts the count of ended applications at zero.
+    /// - ensures: true exactly when an obligation is buffered or an application
+    ///   ended since the state was made.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `)` left out before a juxtaposed type that a `;`
+    ///   then meets. A search that reads only the buffer keeps the copy with
+    ///   the `)` after the `;`, and the `;` then reads inside the bracket.
+    /// - witness: `parse::place::tests::a_try_stopped_at_its_first_repair_answers_as_a_whole_parse`
+    /// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| bool::from(ret) == (!self.obligations.is_empty() || self.ended_applications > 0))]
+    pub(crate) fn weighs_repair(&self) -> RepairWeighed
+    {
+        RepairWeighed::from(!self.obligations.is_empty() || self.ended_applications > 0)
+    }
+
+    /// Return the cumulative obligation [`Delta`] of the buffered obligations.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: returns a delta whose per-class inserted counts equal the
+    ///   buffered obligation counts (the melder only inserts obligations).
+    /// - provides: the minimization key over the committed prefix.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — buffered obligations in several classes, including
+    ///   repetitions, expose independent per-class inserted counts and zero
+    ///   absent classes. Skipping a flag or merging classes changes the delta.
+    /// - witness: `meld::tests::delta_reflects_the_buffered_obligations`
+    /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
+    #[inline]
+    #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same obligation buffer"
+        )
+    )]
+    #[spec(ensures: |ret| Oblig::all().into_iter().all(|class| u32::from(ret.inserted(class)) == u32::try_from(self.obligations.iter().filter(|obligation| obligation.class == class).count()).unwrap_or(u32::MAX)))]
+    pub fn delta(&self) -> Delta
+    {
+        let mut delta = Delta::empty();
+        for obligation in &self.obligations {
+            delta.insert(obligation.class);
+        }
+        delta
+    }
+
+    /// Return the completion to `⊢` the melder would insert if input ended
+    /// here.
+    ///
+    /// This is `finalize` as a **query**: it computes the expected material
+    /// (each open form's cheapest closing tiles with the holes between them,
+    /// holes for operators missing an operand) and the obligations closing
+    /// would introduce, **without mutating** the committed parse. The scan
+    /// reads each cell of the slope head as it stands, so its obligations are
+    /// a bound rather than a replay: an operator whose operand is a form
+    /// still open counts a missing operand, which the commit's force-close
+    /// then supplies by closing that form into the operand. The material
+    /// omits that operand's hole, since closing the form supplies it.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: returns the expected material and would-introduce obligations
+    ///   for the current slope; every obligation a commit from this state
+    ///   inserts beyond the buffered ones is among them, and their only excess
+    ///   is [`Oblig::MissingMeld`]; leaves `self` unchanged. The material runs
+    ///   from the slope head down: for each open frontier the closing material
+    ///   `push_closing` states, its first hole omitted when anything stands
+    ///   above the frontier; for each operator missing its right operand a hole
+    ///   of its sort, unless a form is open where the operand goes. The
+    ///   innermost material ends after the first frontier's closing material
+    ///   that is not empty, or is the whole material when there is none.
+    /// - provides: the REPL/TUI/LSP "expected next" surface, and the
+    ///   obligations the molder's per-candidate completion cost counts.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty stacks, missing unary/binary operands, open
+    ///   forms, completable optional tails and occupied required tails expose
+    ///   exact expected material and repair spans without changing the
+    ///   checkpoint. Charging a completed tail, omitting a missing side,
+    ///   reporting the hole of an operand whose form is under way, naming a
+    ///   frontier's first successor rather than its closer, or advancing the
+    ///   machine changes these observations.
+    /// - witness: `meld::tests::finalize_is_non_destructive`
+    /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
+    /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
+    /// - witness: `meld::tests::finalize_closes_each_frontier_at_its_innermost_material`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.innermost <= ret.expected.len() && ret.obligations.len() <= self.stack.len().saturating_mul(2) && ret.obligations.iter().all(|obligation| match obligation.class { Oblig::MissingMeld => obligation.span.start() == obligation.span.end(), Oblig::MissingTile => true, Oblig::IncompleteTile | Oblig::UnmoldedTok | Oblig::InconMeld | Oblig::ExtraMeld | Oblig::ReservedKeyword | Oblig::AmbiguousPrec => false }))]
+    pub fn finalize(&self) -> Completion
+    {
+        let mut expected: Vec<Expected> = Vec::new();
+        let mut obligations: Vec<ObligationInstance> = Vec::new();
+        let mut innermost: Vec<usize> = Vec::with_capacity(1);
+        self.shortfalls(|shortfall| match shortfall {
+            Shortfall::Continuation {
+                mold,
+                frontier,
+                leading,
+            } => {
+                let before = expected.len();
+                // An unreachable end pushes no material: the frontier's mold
+                // is then not the grammar's, and its obligation still stands.
+                let _reach = push_closing(self.pbg, mold, leading, &mut expected);
+                if innermost.is_empty() && expected.len() > before {
+                    innermost.push(expected.len());
+                }
+                if let Ok(span) = frontier.byte_span() {
+                    obligations.push(ObligationInstance::new(Oblig::MissingTile, span));
+                }
+            },
+            Shortfall::RightOperand {
+                sort, at, pending, ..
+            } => {
+                if pending == PendingOperand::Absent {
+                    expected.push(Expected::Hole(sort));
+                }
+                if let Ok(span) = at.byte_span() {
+                    obligations.push(ObligationInstance::new(Oblig::MissingMeld, span));
+                }
+            },
+            Shortfall::LeftOperand { at } => {
+                if let Ok(span) = at.byte_span() {
+                    obligations.push(ObligationInstance::new(Oblig::MissingMeld, span));
+                }
+            },
+        });
+        Completion {
+            innermost: innermost.first().copied().unwrap_or(expected.len()),
+            expected,
+            obligations,
+        }
+    }
+
+    /// `base` with every obligation [`finalize`](Self::finalize) reports
+    /// inserted, counted without building the completion.
+    ///
+    /// # Specification
+    /// - ensures: equals `base` after inserting the class of every obligation
+    ///   of [`finalize`](Self::finalize); leaves `self` unchanged; allocates
+    ///   nothing.
+    /// - panics: none.
+    /// - executable: none — the clause is parity with `finalize`, and running
+    ///   `finalize` to check it walked and allocated the whole completion on
+    ///   every candidate of every lookahead window: a re-finalise per
+    ///   keystroke, quadratic in the source under enforcement (the editor's
+    ///   random-edit scenario over the corpus: 74 s enforcing with the clause,
+    ///   29 s without; one long looped source alone added 160 s). The parity is
+    ///   held by the witness below over the states that distinguish the two
+    ///   walks.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the molder's completion tiebreak and window ends read
+    ///   this delta on every corpus source and malformed variant, so a class
+    ///   counted that `finalize` drops, or one missed, changes a chosen mold
+    ///   and the committed tree; the parity witness folds `finalize`'s
+    ///   obligations over missing operands, open forms, filled and absent
+    ///   required tails and an empty slope.
+    /// - witness: `meld::tests::completion_delta_agrees_with_finalize`
+    /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[must_use]
+    pub(crate) fn completion_delta(
+        &self,
+        base: Delta,
+    ) -> Delta
+    {
+        let mut delta = base;
+        self.shortfalls(|shortfall| {
+            let (class, span) = match shortfall {
+                Shortfall::Continuation { frontier, .. } => (Oblig::MissingTile, frontier),
+                Shortfall::RightOperand { at, .. } | Shortfall::LeftOperand { at } => {
+                    (Oblig::MissingMeld, at)
+                },
+            };
+            if span.byte_span().is_ok() {
+                delta.insert(class);
+            }
+        });
+        delta
+    }
+
+    /// Visit what a commit from the current slope would have to supply, from
+    /// the slope head down: each open frontier's continuation, and each
+    /// operator's missing right then left operand.
+    ///
+    /// The scan reads each cell as it stands, so it is a bound rather than a
+    /// replay (see [`finalize`](Self::finalize)).
+    ///
+    /// # Specification
+    /// - ensures: calls `visit` once per shortfall, cells from the head down, a
+    ///   cell's right operand before its left; leaves `self` unchanged.
+    /// - panics: none.
+    /// - executable: none — `visit` is a write-only sink; what it is handed is
+    ///   observed by the callers' witnesses, which read
+    ///   [`finalize`](Self::finalize) and the completion delta.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty stacks, missing unary and binary operands, open
+    ///   forms, completable optional tails and occupied required tails expose
+    ///   each shortfall through [`finalize`](Self::finalize)'s exact expected
+    ///   material and repair spans.
+    /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
+    /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
+    fn shortfalls(
+        &self,
+        mut visit: impl FnMut(Shortfall),
+    )
+    {
+        let mut index = self.stack.len();
+        while let Some(next_index) = index.checked_sub(1) {
+            index = next_index;
+            let Some(cell) = self.stack.get(index).copied()
+            else {
+                break;
+            };
+            match cell.role {
+                Role::FormTile {
+                    mold,
+                    open: true,
+                    start,
+                    ..
+                } => {
+                    // A completable frontier (a `?` hole before its optional
+                    // `hole_name`, mold in the grammar's LAST set) is already a
+                    // complete form: commit closes it cleanly, so `finalize`
+                    // reports neither an expected tile nor an obligation for it
+                    // — mirroring `force_close_form`.
+                    if bool::from(FormTable::is_form_last(self.pbg, mold)) {
+                        continue;
+                    }
+                    // A form that a stray mid opened, and that no tile
+                    // continued, closes with no ghost and owes nothing more:
+                    // its absent opener is already owed, mirroring
+                    // `force_close_form`.
+                    if start && !bool::from(FormTable::is_form_first(self.pbg, mold)) {
+                        continue;
+                    }
+                    // A required-tail frontier whose tail is one form already
+                    // under way — a single operand, or an inner form starting
+                    // right above it — closes cleanly once commit has collapsed
+                    // that form: no tile is expected and no obligation is its
+                    // own, mirroring `force_close_form`.
+                    if bool::from(self.tail_is_under_way(FrontierIndex::from(index), mold)) {
+                        continue;
+                    }
+                    // An open form frontier expects its `≐`-continuation;
+                    // commit force-closes it with a ghost
+                    // end and a MissingTile.
+                    let above = index.checked_add(1).and_then(|next| self.stack.get(next));
+                    visit(Shortfall::Continuation {
+                        mold,
+                        frontier: SourceSpan::new(
+                            SourceOffset::from(cell.start),
+                            SourceOffset::from(cell.end),
+                        ),
+                        leading: if above.is_some() {
+                            LeadingSlot::Occupied
+                        }
+                        else {
+                            LeadingSlot::Empty
+                        },
+                    });
+                },
+                Role::Operator {
+                    mold, sort, shape, ..
+                } => {
+                    let wants_right = matches!(shape, OpShape::Infix | OpShape::Prefix);
+                    let above = index.checked_add(1).and_then(|next| self.stack.get(next));
+                    let right_filled = above.is_some_and(|next| matches!(next.role, Role::Operand));
+                    if wants_right && !right_filled {
+                        visit(Shortfall::RightOperand {
+                            operator: mold,
+                            sort,
+                            at: SourceSpan::point(SourceOffset::from(cell.end)),
+                            pending: if above.is_some_and(|next| {
+                                matches!(next.role, Role::FormTile { start: true, .. })
+                            }) {
+                                PendingOperand::UnderWay
+                            }
+                            else {
+                                PendingOperand::Absent
+                            },
+                        });
+                    }
+                    // An infix / postfix operator with no left operand is a
+                    // completion obligation too — this is the signal that lets
+                    // the molder read `-` at expression start as prefix (which
+                    // needs no left) rather than infix (which does).
+                    let wants_left = matches!(shape, OpShape::Infix | OpShape::Postfix);
+                    let left_filled = index
+                        .checked_sub(1)
+                        .is_some_and(|prev| bool::from(self.is_operand_at(StackIndex::from(prev))));
+                    if wants_left && !left_filled {
+                        visit(Shortfall::LeftOperand {
+                            at: SourceSpan::point(SourceOffset::from(cell.start)),
+                        });
+                    }
+                },
+                Role::FormTile { open: false, .. } | Role::Operand => {},
+            }
+        }
+    }
+
+    /// Return the ordered completion to `⊢` — "what is expected here".
+    ///
+    /// This is the interaction-surface name for
+    /// [`finalize`](MeldState::finalize): the ordered material (tiles / holes
+    /// with sorts) that would close the input at this prefix, with the
+    /// obligations that closing would introduce. It is a non-destructive query
+    /// over the slope — the open frontiers and unsaturated operators — never
+    /// the emission log, so its cost does not grow with the text already
+    /// closed: the REPL/TUI/LSP "expected next" surface.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: returns exactly [`finalize`](MeldState::finalize)'s
+    ///   completion; leaves `self` unchanged.
+    /// - provides: the completion query, bounding what a commit inserts as
+    ///   [`finalize`](MeldState::finalize) states.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty stacks, missing unary/binary operands, open
+    ///   forms, completable optional tails and occupied required tails expose
+    ///   exact expected material and repair spans without changing the
+    ///   checkpoint. Charging a completed tail, omitting a missing side or
+    ///   advancing the machine changes these observations.
+    /// - witness: `meld::tests::finalize_is_non_destructive`
+    /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
+    /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.innermost <= ret.expected.len() && ret.obligations.len() <= self.stack.len().saturating_mul(2) && ret.obligations.iter().all(|obligation| match obligation.class { Oblig::MissingMeld => obligation.span.start() == obligation.span.end(), Oblig::MissingTile => true, Oblig::IncompleteTile | Oblig::UnmoldedTok | Oblig::InconMeld | Oblig::ExtraMeld | Oblig::ReservedKeyword | Oblig::AmbiguousPrec => false }))]
+    pub fn expected(&self) -> Completion
+    {
+        self.finalize()
+    }
+
+    /// Return what may follow the slope head: the hole the head's operator
+    /// owes, then each of the `limit` cheapest ways to close the innermost open
+    /// form.
+    ///
+    /// This is the menu form of [`expected`](Self::expected)'s innermost
+    /// material: where that names one closing as labels and sorts, this names
+    /// up to `limit`, each step by its mold and each hole by the mold whose
+    /// right context faces it, so a consumer can tell a value position from
+    /// a computation position and spell each tile as the grammar writes it.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: `pending` holds the hole of the operator nearest the slope
+    ///   head that misses its right operand with nothing under way there, named
+    ///   by that operator, when no open form frontier stands above it; it is
+    ///   empty otherwise. `head` is the innermost open form frontier the
+    ///   completion query would close, with whether anything stands above it,
+    ///   or [`HeadForm::Closed`] when there is none. `closings` are
+    ///   [`closings`](crate::closings) of that frontier, empty when it is
+    ///   closed. Leaves `self` unchanged.
+    /// - provides: the syntactic tier of inline completion.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one scan of the slope head down to the innermost open
+    ///   frontier, then one bounded walk of that frontier's form.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty slope, a binary operator under an open
+    ///   definition, a prefix operator chain, an open bracket with and without
+    ///   content and an operator whose operand is a form under way each expose
+    ///   their exact pending hole, head and first closing. Reporting a lower
+    ///   operator's hole, naming the frontier rather than the operator, or
+    ///   reading the leading slot from the wrong cell changes them.
+    /// - witness: `meld::tests::continuations_name_the_pending_hole_and_the_frontier`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.pending.len() <= 1 && ret.closings.len() <= usize::from(limit) && (ret.head != HeadForm::Closed || ret.closings.is_empty()))]
+    pub fn continuations(
+        &self,
+        limit: ClosingLimit,
+    ) -> Continuations
+    {
+        let mut pending: Vec<Step> = Vec::with_capacity(1);
+        let mut head = HeadForm::Closed;
+        let mut operated = false;
+        self.shortfalls(|shortfall| {
+            if head != HeadForm::Closed {
+                return;
+            }
+            match shortfall {
+                Shortfall::Continuation { mold, leading, .. } => {
+                    head = HeadForm::Open { mold, leading };
+                },
+                Shortfall::RightOperand {
+                    operator,
+                    sort,
+                    pending: under_way,
+                    ..
+                } => {
+                    // Only the operator nearest the head owes a hole: the
+                    // operand of each one below it is that operator's chain.
+                    if !operated && under_way == PendingOperand::Absent {
+                        pending.push(Step::Hole {
+                            sort,
+                            after: operator,
+                        });
+                    }
+                    operated = true;
+                },
+                Shortfall::LeftOperand { .. } => {},
+            }
+        });
+        let closings = match head {
+            HeadForm::Open { mold, leading } => {
+                crate::closing::closings(self.pbg, mold, leading, limit)
+            },
+            HeadForm::Closed => Vec::new(),
+        };
+        Continuations {
+            pending,
+            head,
+            closings,
+        }
+    }
+
+    /// Commit the parse: close the input and build the molded
+    /// [`SyntaxTree`] over `source`.
+    ///
+    /// `commit` is the destructive companion of
+    /// [`finalize`](MeldState::finalize): it collapses the slope to `⊢`
+    /// (reducing every operator, force-closing every open delimiter with
+    /// grout) and wraps the top-level operands in a single root, then
+    /// replays the append-only emission log into a [`TreeBuilder`] recording
+    /// the grammar fingerprint.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: returns a well-formed [`SyntaxTree`] over `source` whose root
+    ///   spans it and whose grammar is the melder's grammar fingerprint.
+    /// - provides: the batch tree — the derived fold's final step.
+    /// - fails: when `source` is not the text the melder assembled from its
+    ///   pushes, or for an arena-construction failure.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`MeldError::SourceMismatch`] when `source` differs from the assembled
+    /// text; [`MeldError::Build`] when the flat arena cannot be assembled.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, complete and partial streams plus a foreign
+    ///   source expose the root, source identity, ordered children and exact
+    ///   completion repairs. Accepting different source bytes, losing grammar
+    ///   identity or dropping a missing operand changes the returned tree or
+    ///   typed error.
+    /// - witness: `meld::tests::a_foreign_source_is_refused_at_commit`
+    /// - witness: `meld::tests::empty_state_commits_to_a_root`
+    /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
+    #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body compares the same assembled source against `source` before it commits"
+        )
+    )]
+    #[spec(captures: before = (self.source.as_str() == <&str>::from(source), self.pbg.fingerprint()), ensures: |ret| match ret.as_ref() { Ok(tree) => before.0 && tree.source() == source && tree.grammar() == before.1 && tree.node(tree.root()).is_some_and(|node| node.label() == NodeLabel::Wald), Err(error) => before.0 || matches!(error, MeldError::SourceMismatch) })]
+    pub fn commit(
+        self,
+        source: SourceText<'_>,
+    ) -> Result<SyntaxTree<'_>, MeldError>
+    {
+        let (tree, _obligations) = self.commit_with_obligations(source)?;
+        Ok(tree)
+    }
+
+    /// Commit the parse and return the tree alongside the final obligations.
+    ///
+    /// Closing the input flags the completion's repairs — force-closing an
+    /// unfinished form ([`Oblig::MissingTile`]), filling a saturated operator's
+    /// missing operand ([`Oblig::MissingMeld`]) — so those obligations exist
+    /// only after `collapse`. [`commit`](MeldState::commit) alone drops them
+    /// (it consumes `self`); the batch driver reads them here so the
+    /// [`crate::ParseResult`] carries the whole obligation set, streaming plus
+    /// completion.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: returns the well-formed [`SyntaxTree`] over `source` and the
+    ///   obligation buffer after closing the input (streaming obligations plus
+    ///   the completion's).
+    /// - provides: the obligation-complete batch commit.
+    /// - fails: as [`commit`](MeldState::commit).
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`commit`](MeldState::commit).
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, complete and partial streams plus a foreign
+    ///   source expose the root, source identity, ordered children and exact
+    ///   completion repairs. Accepting different source bytes, losing grammar
+    ///   identity or dropping a missing operand changes the returned tree or
+    ///   typed error.
+    /// - witness: `meld::tests::a_foreign_source_is_refused_at_commit`
+    /// - witness: `meld::tests::empty_state_commits_to_a_root`
+    /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
+    #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body compares the same assembled source against `source` before it commits"
+        )
+    )]
+    #[spec(captures: before = (self.source.as_str() == <&str>::from(source), self.pbg.fingerprint()), ensures: |ret| match ret.as_ref() { Ok(pair) => before.0 && pair.0.source() == source && pair.0.grammar() == before.1 && pair.0.node(pair.0.root()).is_some_and(|node| node.label() == NodeLabel::Wald), Err(error) => before.0 || matches!(error, MeldError::SourceMismatch) })]
+    pub fn commit_with_obligations(
+        mut self,
+        source: SourceText<'_>,
+    ) -> Result<(SyntaxTree<'_>, Vec<ObligationInstance>), MeldError>
+    {
+        if <&str>::from(source) != self.source.as_str() {
+            return Err(MeldError::SourceMismatch);
+        }
+        self.collapse(StackFloor::from(StackIndex::from(0)));
+        let obligations = self.obligations.clone();
+        let root = self.wrap_root();
+        self.attach_comments(root);
+        let tree = self.build_tree(source, root, Splices::NONE)?;
+        Ok((tree, obligations))
+    }
+
+    /// Commit as [`commit_with_obligations`](Self::commit_with_obligations)
+    /// does, and say how far down the slope the closing collapse reached.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: the tree and the obligations
+    ///   [`commit_with_obligations`](Self::commit_with_obligations) answers,
+    ///   beside the lowest slope position the collapse touched, or `usize::MAX`
+    ///   when it touched none.
+    /// - provides: the reach a laid join reads to know which forms kept the
+    ///   molding their own units gave them.
+    /// - fails: as [`commit`](MeldState::commit).
+    /// - panics: none.
+    /// - executable: none — the clause restates the commit.
+    ///
+    /// # Errors
+    /// As [`commit`](MeldState::commit).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source and the hostile sources commit
+    ///   through a laid join to the whole parse; a commit whose collapse closed
+    ///   a form taken up as a block changes the tree.
+    /// - witness: `parse::tests::a_laid_join_parses_as_the_whole_source`
+    pub(crate) fn commit_reached(
+        mut self,
+        source: SourceText<'_>,
+    ) -> Result<(SyntaxTree<'_>, Vec<ObligationInstance>, SlopeHeight), MeldError>
+    {
+        if <&str>::from(source) != self.source.as_str() {
+            return Err(MeldError::SourceMismatch);
+        }
+        let _before = self.take_low_water();
+        self.collapse(StackFloor::from(StackIndex::from(0)));
+        let reached = self.take_low_water();
+        let obligations = core::mem::take(&mut self.obligations);
+        let root = self.wrap_root();
+        self.attach_comments(root);
+        let tree = self.build_tree(source, root, Splices::NONE)?;
+        Ok((tree, obligations, reached))
+    }
+
+    /// Commit a state molded over a copy of `source` with tiles written in,
+    /// as `source`'s tree: each written tile read back as the minted tile its
+    /// splice names, every other span shifted back over the tiles.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: the tree over `source` whose leaves are the copy's, each
+    ///   written tile an empty minted tile at its place, beside the copy's
+    ///   obligations after closing the input.
+    /// - fails: [`MeldError::SourceMismatch`] when the state's source is not
+    ///   `source` with the tiles written in; otherwise as
+    ///   [`commit`](MeldState::commit).
+    /// - panics: none.
+    /// - executable: none — the clause restates the replay.
+    ///
+    /// # Errors
+    /// [`MeldError::SourceMismatch`] for a state over another text; otherwise
+    /// as [`commit`](MeldState::commit).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parameter list's `)` left out is minted where the
+    ///   copy wrote it, and a `)` and a `,` left out before the next line of a
+    ///   record type are minted at the end of the line they leave; each tree
+    ///   reconstructs the source.
+    /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+    /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
+    pub(crate) fn commit_spliced<'source>(
+        mut self,
+        source: SourceText<'source>,
+        splices: Splices<'_>,
+    ) -> Result<(SyntaxTree<'source>, Vec<ObligationInstance>), MeldError>
+    {
+        splices.copied(source, SourceText::from(self.source.as_str()))?;
+        self.collapse(StackFloor::from(StackIndex::from(0)));
+        let obligations = self.obligations.clone();
+        let root = self.wrap_root();
+        self.attach_comments(root);
+        let tree = self.build_tree(source, root, splices)?;
+        Ok((tree, obligations))
+    }
+
+    /// The obligations a commit of this state owes, its completion's
+    /// included, with no tree built.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: the obligations
+    ///   [`commit_with_obligations`](Self::commit_with_obligations) answers.
+    /// - panics: none.
+    /// - executable: none — the clause restates the collapse.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the gap search's copies.
+    /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
+    pub(crate) fn owed(mut self) -> Vec<ObligationInstance>
+    {
+        self.collapse(StackFloor::from(StackIndex::from(0)));
+        self.obligations
+    }
+
+    /// The mold of the tile this state pushed over exactly `span`.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: the mold of an emitted [`NodeLabel::Tile`] token over `span`;
+    ///   `None` when no tile token spans it.
+    /// - panics: none.
+    /// - executable: none — the clause restates the scan.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the gap search's copies.
+    /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
+    pub(crate) fn tile_spanning(
+        &self,
+        span: ByteSpan,
+    ) -> Option<MoldId>
+    {
+        let start = u32::try_from(usize::from(span.start())).ok()?;
+        let end = u32::try_from(usize::from(span.end())).ok()?;
+        self.emit.iter().find_map(|op| match *op {
+            EmitOp::Token {
+                label: NodeLabel::Tile(mold),
+                start: at,
+                end: after,
+            } if at == start && after == end => Some(mold),
+            EmitOp::Token { .. } | EmitOp::Interior { .. } => None,
+        })
+    }
+
+    /// Wrap the fully collapsed slope's operands into a single root interior.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty streams, unequal-width fragments and layout
+    ///   interleaved with top-level operands expose a Wald covering the source
+    ///   and stable source-order children. Missing layout, a short root span or
+    ///   an incorrect child order changes source reconstruction.
+    /// - witness: `meld::tests::empty_state_commits_to_a_root`
+    /// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same slope and layout list to order the root's children"
+        )
+    )]
+    #[spec(captures: before = self.emit.len(), ensures: |ret| ret.0 == u32::try_from(before).unwrap_or(u32::MAX) && self.emit.last().is_some_and(|op| matches!(op, EmitOp::Interior { label: NodeLabel::Wald, start: 0, end, children } if *end == u32::try_from(self.source.len()).unwrap_or(u32::MAX).max(self.stack.iter().map(|cell| cell.end).max().unwrap_or(0)) && children.len() == self.stack.len().saturating_add(self.spaces.len()) && children.windows(2).all(|pair| matches!(pair, &[left, right] if self.emit_start(left) <= self.emit_start(right))))))]
+    fn wrap_root(&mut self) -> EmitId
+    {
+        // Collect the top-level operands and the floating layout-space tokens,
+        // ordered by source start so the root children reconstruct the source
+        // in order (layout is digest-skipped, so ordering is a losslessness,
+        // not an identity, concern).
+        let mut ordered: Vec<(SourceOffset, EmitId)> = Vec::with_capacity(self.stack.len());
+        let mut span_end = SourceOffset::from(0);
+        for cell in &self.stack {
+            let start = SourceOffset::from(cell.start);
+            ordered.push((start, cell.emit));
+            span_end = span_end.max(SourceOffset::from(cell.end));
+        }
+        for &space in &self.spaces {
+            let start = self.emit_start(space);
+            ordered.push((start, space));
+        }
+        ordered.sort_by_key(|&(start, _)| start);
+        let children: Vec<EmitId> = ordered.into_iter().map(|(_, emit)| emit).collect();
+        let source_end: SourceOffset = Self::wire_len(CheckpointCount::from(self.source.len()));
+        self.emit_interior(
+            NodeLabel::Wald,
+            SourceSpan::new(SourceOffset::from(0), source_end.max(span_end)),
+            children,
+        )
+    }
+
+    /// Return the source start of an emission-log entry (0 if out of range).
+    ///
+    /// # Specification
+    /// - ensures: returns the stored start of either emission variant; an
+    ///   unavailable identity yields zero.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nonzero token start, an interior start and an
+    ///   unavailable identity expose exact offsets and the fallback. Reading
+    ///   end instead of start or indexing unchecked changes ordering or panics.
+    /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
+    #[spec(ensures: |ret| u32::from(ret) == usize::try_from(id.0).ok().and_then(|index| self.emit.get(index)).map_or(0, |op| match *op { EmitOp::Token { start, .. } | EmitOp::Interior { start, .. } => start }))]
+    fn emit_start(
+        &self,
+        id: EmitId,
+    ) -> SourceOffset
+    {
+        let Ok(index) = usize::try_from(id.0)
+        else {
+            return SourceOffset::from(0);
+        };
+        match self.emit.get(index) {
+            Some(&EmitOp::Token { start, .. } | &EmitOp::Interior { start, .. }) => {
+                SourceOffset::from(start)
+            },
+            None => SourceOffset::from(0),
+        }
+    }
+
+    /// Return the source span of an emission-log entry (the empty span at
+    /// zero if out of range).
+    ///
+    /// # Specification
+    /// trivial.
+    fn emit_span(
+        &self,
+        id: EmitId,
+    ) -> SourceSpan
+    {
+        let entry = usize::try_from(id.0)
+            .ok()
+            .and_then(|index| self.emit.get(index));
+        match entry {
+            Some(&EmitOp::Token { start, end, .. } | &EmitOp::Interior { start, end, .. }) => {
+                SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end))
+            },
+            None => SourceSpan::point(SourceOffset::from(0)),
+        }
+    }
+
+    /// Return the children of an interior emission (none for a leaf or an
+    /// unavailable identity).
+    ///
+    /// # Specification
+    /// trivial.
+    fn emit_children(
+        &self,
+        id: EmitId,
+    ) -> &[EmitId]
+    {
+        match usize::try_from(id.0)
+            .ok()
+            .and_then(|index| self.emit.get(index))
+        {
+            Some(&EmitOp::Interior { ref children, .. }) => children,
+            Some(&EmitOp::Token { .. }) | None => &[],
+        }
+    }
+
+    /// Move each comment among `root`'s children into the node that owns it,
+    /// as [`comment_owner`](Self::comment_owner) decides, after grouping each
+    /// run of documentation lines into one [`NodeLabel::Doc`] interior.
+    ///
+    /// # Specification
+    /// - requires: `root` is the interior [`wrap_root`](Self::wrap_root) just
+    ///   emitted, whose children are in source order.
+    /// - ensures: every emission stays the child of exactly one interior. A run
+    ///   of `///` lines, or of `//!` lines, each separated from the next by
+    ///   whitespace holding one line break, becomes one documentation interior
+    ///   over the lines and the whitespace between them; a line of the other
+    ///   kind ends a run. A `///` run, and every documentation interior
+    ///   standing at the root, belongs to the form after it, as a leading
+    ///   comment does; a `//!` run belongs to the node enclosing it, the root
+    ///   when no form does. A comment owned by a node other than the root
+    ///   leaves the root's children and joins its owner's at its source
+    ///   position; whitespace, shebangs and the root's own comments and
+    ///   documentation stay at the root, in source order. No digest changes,
+    ///   since neither layout nor documentation reaches one.
+    /// - provides: the comment and documentation placement every tree reader
+    ///   inherits.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one pass over the root's children, descending only into the
+    ///   forms that contain a comment.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a leading, a trailing, a dangling and a standalone
+    ///   comment are asserted under their owners, with reconstruction and every
+    ///   digest unchanged over the corpus; a run of documentation lines is one
+    ///   interior under the form after it, a blank line ends a run, and a `//!`
+    ///   run stays with the root or the form it stands in. Leaving a comment at
+    ///   the root, inserting it out of order, joining lines across a blank line
+    ///   or across kinds, or losing one changes an owner or the reconstructed
+    ///   source.
+    /// - witness: `meld::tests::each_comment_is_owned_by_the_node_it_describes`
+    /// - witness: `meld::tests::documentation_reaches_no_digest`
+    /// - witness: `meld::tests::an_inner_run_documents_what_it_stands_in_1365`
+    /// - witness: `tests::acceptance::comments_reach_no_digest_and_lose_no_byte`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "bounded: runs once per commit, which then replays the whole emission log to build the tree; the clause's two passes over the log add a constant factor to that replay"
+        )
+    )]
+    #[spec(captures: before = (self.emit.iter().map(|op| match *op { EmitOp::Token { .. } => 0, EmitOp::Interior { ref children, .. } => children.len() }).sum::<usize>(), self.emit.len()),
+        ensures: |_| self.emit.iter().map(|op| match *op { EmitOp::Token { .. } => 0, EmitOp::Interior { ref children, .. } => children.len() }).sum::<usize>() == before.0.saturating_add(self.emit.len().saturating_sub(before.1)))]
+    fn attach_comments(
+        &mut self,
+        root: EmitId,
+    )
+    {
+        let mut layout: Vec<EmitId> = Vec::new();
+        let mut top: Vec<EmitId> = Vec::new();
+        let mut standing: Vec<EmitId> = Vec::new();
+        for &child in self.emit_children(root) {
+            match self.label_of(child) {
+                Some(NodeLabel::Space) => layout.push(child),
+                Some(NodeLabel::Doc) => standing.push(child),
+                Some(_) | None => top.push(child),
+            }
+        }
+        let written = |id: EmitId| {
+            let span = self.emit_span(id);
+            let start = usize::try_from(span.start.0).unwrap_or(usize::MAX);
+            let end = usize::try_from(span.end.0).unwrap_or(usize::MAX);
+            self.source.get(start .. end).unwrap_or_default()
+        };
+        let is_comment = |id: EmitId| {
+            let text = written(id);
+            text.starts_with("//") || text.starts_with("/*")
+        };
+        let doc_line = |id: EmitId| {
+            let text = written(id);
+            if text
+                .strip_prefix(DOC_LINE)
+                .is_some_and(|rest| !rest.starts_with('/'))
+            {
+                Some(DocLine::Outer)
+            }
+            else if text.starts_with(INNER_DOC_LINE) {
+                Some(DocLine::Inner)
+            }
+            else {
+                None
+            }
+        };
+        if standing.is_empty() && !layout.iter().any(|&space| is_comment(space)) {
+            return;
+        }
+        let mut runs: Vec<(DocLine, Vec<EmitId>)> = Vec::new();
+        let mut index = 0_usize;
+        while let Some(&space) = layout.get(index) {
+            index = index.saturating_add(1);
+            let Some(kind) = doc_line(space)
+            else {
+                continue;
+            };
+            let mut run = alloc::vec![space];
+            while let (Some(&between), Some(&line)) =
+                (layout.get(index), layout.get(index.saturating_add(1)))
+            {
+                let joined = run
+                    .last()
+                    .is_some_and(|&last| self.emit_span(last).end == self.emit_span(between).start)
+                    && self.emit_span(between).end == self.emit_span(line).start
+                    && written(between).trim().is_empty()
+                    && written(between)
+                        .split_once('\n')
+                        .is_some_and(|(_, after)| !after.contains('\n'))
+                    && doc_line(line) == Some(kind);
+                if !joined {
+                    break;
+                }
+                run.push(between);
+                run.push(line);
+                index = index.saturating_add(2);
+            }
+            runs.push((kind, run));
+        }
+        let lone: Vec<EmitId> = layout
+            .iter()
+            .copied()
+            .filter(|&space| is_comment(space) && doc_line(space).is_none())
+            .collect();
+        let mut units: Vec<(EmitId, Reach)> = Vec::new();
+        let mut leaving: Vec<EmitId> = Vec::new();
+        for (kind, run) in runs {
+            let (Some(&first), Some(&last)) = (run.first(), run.last())
+            else {
+                continue;
+            };
+            let span = SourceSpan::new(self.emit_span(first).start, self.emit_span(last).end);
+            leaving.extend_from_slice(&run);
+            let doc = self.emit_interior(NodeLabel::Doc, span, run);
+            units.push((doc, match kind {
+                DocLine::Outer => Reach::Leading,
+                DocLine::Inner => Reach::Inner,
+            }));
+        }
+        units.extend(standing.iter().map(|&doc| (doc, Reach::Leading)));
+        units.extend(lone.iter().map(|&comment| (comment, Reach::Either)));
+        let moves: Vec<(EmitId, EmitId)> = units
+            .iter()
+            .map(|&(unit, reach)| (self.comment_owner(root, &top, &layout, unit, reach), unit))
+            .collect();
+        leaving.extend(moves.iter().map(|&(_, unit)| unit));
+        leaving.sort_unstable();
+        if let Some(&mut EmitOp::Interior {
+            ref mut children, ..
+        }) = usize::try_from(root.0)
+            .ok()
+            .and_then(|position| self.emit.get_mut(position))
+        {
+            children.retain(|child| leaving.binary_search(child).is_err());
+        }
+        for &(owner, unit) in &moves {
+            let at = self.emit_start(unit);
+            let position = self
+                .emit_children(owner)
+                .partition_point(|&child| self.emit_start(child) <= at);
+            if let Some(&mut EmitOp::Interior {
+                ref mut children, ..
+            }) = usize::try_from(owner.0)
+                .ok()
+                .and_then(|slot| self.emit.get_mut(slot))
+            {
+                children.insert(position, unit);
+            }
+        }
+    }
+
+    /// The node that owns `comment`: the form it is written against, or the
+    /// innermost form enclosing it.
+    ///
+    /// `top` holds `root`'s children other than layout and documentation, and
+    /// `layout` its layout, each in source order.
+    ///
+    /// # Specification
+    /// - requires: `top` and `layout` are drawn from `root`'s children in
+    ///   source order.
+    /// - ensures: with the enclosing node the innermost interior whose span
+    ///   contains the comment (the root when none does), and its neighbours the
+    ///   children of that node that end before the comment and start after it:
+    ///   under [`Reach::Either`], the neighbour before when nothing but spaces
+    ///   separates it from the comment on its line (trailing); otherwise the
+    ///   neighbour after when no blank line separates the comment from it
+    ///   (leading); otherwise the enclosing node, which also owns a comment in
+    ///   an empty block or bracket (dangling) and one set apart by a blank line
+    ///   (standalone). Under [`Reach::Leading`] the trailing case is never
+    ///   taken, and under [`Reach::Inner`] the enclosing node owns it whatever
+    ///   its neighbours. A neighbour that is a leaf holds no children and
+    ///   documentation documents no comment, so the enclosing node owns a
+    ///   comment written against either.
+    /// - provides: the owner [`attach_comments`](Self::attach_comments) moves a
+    ///   comment to.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the four cases and a comment beside a leaf are each
+    ///   asserted at their owner, and documentation after a form on its line
+    ///   goes to the form after it. Reading the neighbour on the wrong side,
+    ///   treating a blank line as a line break or attaching to a leaf changes
+    ///   an owner; a `//!` run before a form stays with the root.
+    /// - witness: `meld::tests::each_comment_is_owned_by_the_node_it_describes`
+    /// - witness: `meld::tests::documentation_reaches_no_digest`
+    /// - witness: `meld::tests::an_inner_run_documents_what_it_stands_in_1365`
+    #[spec(ensures: |ret| ret == root || matches!(usize::try_from(ret.0).ok().and_then(|index| self.emit.get(index)), Some(EmitOp::Interior { .. })))]
+    fn comment_owner(
+        &self,
+        root: EmitId,
+        top: &[EmitId],
+        layout: &[EmitId],
+        comment: EmitId,
+        reach: Reach,
+    ) -> EmitId
+    {
+        let span = self.emit_span(comment);
+        let is_interior = |id: EmitId| {
+            matches!(
+                usize::try_from(id.0)
+                    .ok()
+                    .and_then(|index| self.emit.get(index)),
+                Some(EmitOp::Interior { .. })
+            )
+        };
+        let mut enclosing = root;
+        let mut siblings = top;
+        let mut next = siblings.partition_point(|&child| self.emit_span(child).end <= span.start);
+        while let Some(&candidate) = siblings.get(next) {
+            let around = self.emit_span(candidate);
+            if !is_interior(candidate) || around.start > span.start || around.end < span.end {
+                break;
+            }
+            enclosing = candidate;
+            siblings = self.emit_children(candidate);
+            next = siblings.partition_point(|&child| self.emit_span(child).end <= span.start);
+        }
+        if reach == Reach::Inner {
+            return enclosing;
+        }
+        let gap = |from: SourceOffset, to: SourceOffset| {
+            let first = layout.partition_point(|&space| self.emit_start(space) < from);
+            let mut seen = Gap::Inline;
+            for &space in layout.get(first ..).unwrap_or_default() {
+                let within = self.emit_span(space);
+                if within.start >= to {
+                    break;
+                }
+                let start = usize::try_from(within.start.0).unwrap_or(usize::MAX);
+                let end = usize::try_from(within.end.0).unwrap_or(usize::MAX);
+                let written = self.source.get(start .. end).unwrap_or_default();
+                let breaks = written.matches('\n').count();
+                let blank = breaks > 1 && written.trim().is_empty();
+                seen = match (seen, breaks, blank) {
+                    (Gap::Blank, ..) | (_, _, true) => Gap::Blank,
+                    (Gap::Inline, 0, false) => Gap::Inline,
+                    (Gap::Inline | Gap::Lines, ..) => Gap::Lines,
+                };
+            }
+            seen
+        };
+        let owner = |neighbour: EmitId| {
+            if is_interior(neighbour) && self.label_of(neighbour) != Some(NodeLabel::Doc) {
+                neighbour
+            }
+            else {
+                enclosing
+            }
+        };
+        if reach == Reach::Either
+            && let Some(&before) = next.checked_sub(1).and_then(|index| siblings.get(index))
+            && gap(self.emit_span(before).end, span.start) == Gap::Inline
+        {
+            return owner(before);
+        }
+        if let Some(&after) = siblings.get(next)
+            && gap(span.end, self.emit_span(after).start) != Gap::Blank
+        {
+            return owner(after);
+        }
+        enclosing
+    }
+
+    /// Replay the emission log into a checked [`TreeBuilder`] over `source`
+    /// and finish at `root`, reading each span through `splices` when the log
+    /// was molded over a copy with tiles written in.
+    ///
+    /// Every leaf is staged before any interior, so an interior may own a leaf
+    /// logged after it, as a comment its owner was reduced before is. Every
+    /// interior over leaves alone is staged next, so an interior may own one
+    /// logged after it, as the documentation the commit groups is; any other
+    /// interior owns only interiors logged before it.
+    ///
+    /// # Specification
+    /// - requires: `source` is the assembled text, or with `splices` the text
+    ///   their copy was made from, which [`commit`](Self::commit) and
+    ///   [`commit_spliced`](Self::commit_spliced) check first.
+    /// - ensures: the tree's root is `root`'s node, and every log entry
+    ///   reachable from it is a node of the tree, its span and each written
+    ///   tile's label read through `splices`.
+    /// - fails: the builder refuses a node, or the log names an id outside
+    ///   itself or an interior over other interiors not yet logged.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`MeldError::Build`] when the tree builder refuses a node.
+    /// - [`MeldError::Corrupt`] when the log names an id outside itself or an
+    ///   interior over other interiors not yet logged.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — child order deliberately differing from source order,
+    ///   a forward child, an invalid root and an inverted span expose the
+    ///   borrowed source and precise build/corruption errors; a comment logged
+    ///   after its owner reaches the tree under it, as documentation grouped
+    ///   after its owner does. Sorting edges, accepting a forward interior or
+    ///   losing span validation changes the tree or error.
+    /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
+    /// - witness: `meld::tests::each_comment_is_owned_by_the_node_it_describes`
+    /// - witness: `meld::tests::documentation_reaches_no_digest`
+    /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |tree| tree.source() == source && tree.grammar() == self.pbg.fingerprint() && tree.node(tree.root()).is_some()))]
+    fn build_tree<'source>(
+        &self,
+        source: SourceText<'source>,
+        root: EmitId,
+        splices: Splices<'_>,
+    ) -> Result<SyntaxTree<'source>, MeldError>
+    {
+        let mut builder = TreeBuilder::new(source, self.pbg.fingerprint())?;
+        let mut mapping: Vec<Option<StagedId>> = alloc::vec![None; self.emit.len()];
+        let mut written = alloc::vec![false; self.emit.len()];
+        for ((op, slot), dropped) in self
+            .emit
+            .iter()
+            .zip(mapping.iter_mut())
+            .zip(written.iter_mut())
+        {
+            if let EmitOp::Token { label, start, end } = *op {
+                let span = SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end));
+                if bool::from(splices.written_layout(label, span)) {
+                    *dropped = true;
+                    continue;
+                }
+                let (label, span) = splices.leaf(label, span);
+                *slot = Some(builder.node(label, span.byte_span()?, &[])?);
+            }
+        }
+        let mut child_nodes: Vec<StagedId> = Vec::new();
+        let over_leaves = |children: &[EmitId]| {
+            children
+                .iter()
+                .all(|&child| matches!(self.emit_op(child), Some(&EmitOp::Token { .. })))
+        };
+        for leaves_only in [true, false] {
+            for (position, op) in self.emit.iter().enumerate() {
+                let EmitOp::Interior {
+                    label,
+                    start,
+                    end,
+                    ref children,
+                } = *op
+                else {
+                    continue;
+                };
+                let staged = mapping.get(position).copied().flatten().is_some();
+                if staged || (leaves_only && !over_leaves(children)) {
+                    continue;
+                }
+                child_nodes.clear();
+                for child in children {
+                    let index = usize::try_from(child.0).map_err(|_error| MeldError::Corrupt)?;
+                    if written.get(index).copied().unwrap_or(false) {
+                        continue;
+                    }
+                    let mapped = mapping
+                        .get(index)
+                        .copied()
+                        .flatten()
+                        .ok_or(MeldError::Corrupt)?;
+                    child_nodes.push(mapped);
+                }
+                let span = SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end));
+                let span = splices.span(span).byte_span()?;
+                let node = builder.node(label, span, &child_nodes)?;
+                if let Some(slot) = mapping.get_mut(position) {
+                    *slot = Some(node);
+                }
+            }
+        }
+        let root_index = usize::try_from(root.0).map_err(|_error| MeldError::Corrupt)?;
+        let root_node = mapping
+            .get(root_index)
+            .copied()
+            .flatten()
+            .ok_or(MeldError::Corrupt)?;
+        let tree = builder.finish(root_node)?;
+        Ok(tree)
+    }
+
+    /// Capture a serializable snapshot of the current state.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: returns a first-order snapshot of the slope, emission log,
+    ///   source, obligations, and grammar fingerprint; leaves `self` unchanged.
+    /// - provides: the REPL/streaming continuation and prefix-acceptance probe
+    ///   state; the append-only log makes it cheap.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a partial form with layout and repair material
+    ///   round-trips through bytes and resumes to the uninterrupted final
+    ///   digest and obligations. Omitting a buffer or retaining only its length
+    ///   changes continuation.
+    /// - witness: `meld::tests::checkpoint_resume_is_equivalent`
+    /// - witness: `meld::tests::checkpoint_bytes_round_trip`
+    #[inline]
+    #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies the same buffers the clause compares"
+        )
+    )]
+    #[spec(ensures: |ret| ret.fingerprint == self.pbg.fingerprint() && ret.source == self.source && ret.emit == self.emit && ret.stack == self.stack && ret.obligations == self.obligations && ret.spaces == self.spaces)]
+    pub fn checkpoint(&self) -> Checkpoint
+    {
+        Checkpoint {
+            fingerprint: self.pbg.fingerprint(),
+            source: self.source.clone(),
+            emit: self.emit.clone(),
+            stack: self.stack.clone(),
+            obligations: self.obligations.clone(),
+            spaces: self.spaces.clone(),
+        }
+    }
+
+    /// Resume a melder from a checkpoint over `pbg`, an identical continuation.
+    ///
+    /// # Specification
+    /// - requires: `cp` was captured over a grammar with `pbg`'s fingerprint.
+    /// - ensures: returns a state whose subsequent pushes are identical to the
+    ///   run the checkpoint was taken from; the bracket table is rebuilt from
+    ///   `pbg`.
+    /// - provides: the resume side of the streaming continuation.
+    /// - fails: never; a fingerprint mismatch yields a state over `pbg`'s table
+    ///   (the caller's responsibility to pair correctly — see
+    ///   [`Checkpoint::fingerprint`]).
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — partial nested forms and operators resume to the
+    ///   uninterrupted tree, obligations and head queries. Restoring a stale
+    ///   cache or losing source/layout changes the next admission or final
+    ///   tree; grammar identity is the stated caller precondition.
+    /// - witness: `meld::tests::checkpoint_resume_is_equivalent`
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    #[inline]
+    #[must_use]
+    #[spec(requires: cp.fingerprint == pbg.fingerprint(), ensures: |ret| ret.pbg.fingerprint() == pbg.fingerprint()
+        && ret.source == cp.source
+        && ret.emit == cp.emit
+        && ret.stack == cp.stack
+        && ret.obligations == cp.obligations
+        && ret.spaces == cp.spaces
+        && {
+            let mut frontiers = ret.frontiers.iter();
+            let mut operators = ret.operators.iter();
+            let mut barriers = ret.barriers.iter();
+            ret.stack.iter().enumerate().all(|(index, cell)| match cell.role {
+                Role::FormTile { open, .. } => barriers.next() == Some(&index) && (!open || frontiers.next() == Some(&index)),
+                Role::Operator { .. } => operators.next() == Some(&index),
+                Role::Operand => true,
+            }) && frontiers.next().is_none() && operators.next().is_none() && barriers.next().is_none()
+        })]
+    pub fn resume(
+        pbg: &'pbg Pbg,
+        cp: &Checkpoint,
+    ) -> Self
+    {
+        let mut state = Self {
+            pbg,
+            source: cp.source.clone(),
+            emit: cp.emit.clone(),
+            stack: cp.stack.clone(),
+            frontiers: Vec::new(),
+            operators: Vec::new(),
+            barriers: Vec::new(),
+            obligations: cp.obligations.clone(),
+            spaces: cp.spaces.clone(),
+            edits: Vec::new(),
+            removed: Vec::new(),
+            live_marks: 0,
+            low_water: usize::MAX,
+            left_shortfalls: 0,
+            ended_applications: 0,
+            reach: CloserReach::from(true),
+        };
+        state.rebuild_head_caches();
+        state
+    }
+
+    /// Join `unit` to the forms this state has molded when the seam between
+    /// them holds; otherwise leave this state as it was and say why.
+    ///
+    /// A source-start unit joins only a state that has molded nothing, and
+    /// becomes it. A form-boundary unit was molded over a stand-in item
+    /// operand; it joins when this state ends where the stand-in stands —
+    /// every slope cell a completed operand, the topmost of the boundary
+    /// sort — and the unit's fold, dry-runs included, never touched the
+    /// stand-in. Then the unit's source, emissions, slope cells above the
+    /// stand-in, obligations and spaces are appended after this state's own,
+    /// shifted past them, and the stand-in is dropped.
+    ///
+    /// # Specification
+    /// - requires: no mark is live on this state; `unit` was molded over this
+    ///   state's grammar.
+    /// - ensures: on [`UnitSeam::Joined`] the source is this state's followed
+    ///   by the unit's; on [`UnitSeam::Broken`] the state is unchanged.
+    /// - panics: none.
+    /// - economy: the executable check reads this state's buffer lengths and
+    ///   the unit's source, never a copy of this state, so a join costs the
+    ///   unit and not the forms joined before it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source and 400 hostile sources of one to
+    ///   four fragments, split at every predicted boundary, join to the whole
+    ///   parse's tree and obligations; a seam held over an open form, a missed
+    ///   shift or a kept stand-in changes a joined tree.
+    /// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+    /// - witness: `parse::tests::a_source_splits_before_each_declaration_head`
+    /// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
+    #[inline]
+    #[spec(requires: self.live_marks == 0, captures: before = (self.source.len(), self.emit.len(), self.stack.len(), self.obligations.len(), self.spaces.len(), unit.state.source.clone()), ensures: |ret| match ret { UnitSeam::Broken(_) => (self.source.len(), self.emit.len(), self.stack.len(), self.obligations.len(), self.spaces.len()) == (before.0, before.1, before.2, before.3, before.4), UnitSeam::Joined => self.source.len() == before.0.saturating_add(before.5.len()) && self.source.ends_with(before.5.as_str()) })]
+    pub fn join_unit(
+        &mut self,
+        unit: FormUnit<'pbg>,
+    ) -> UnitSeam
+    {
+        let FormUnit {
+            base, state: unit, ..
+        } = unit;
+        match base {
+            UnitBase::SourceStart => {
+                if !self.emit.is_empty() || !self.source.is_empty() {
+                    return UnitSeam::Broken(SeamBreak::NotAtStart);
+                }
+                *self = unit;
+            },
+            UnitBase::FormBoundary => {
+                let Some(top) = self.stack.last()
+                else {
+                    return UnitSeam::Broken(SeamBreak::NoForm);
+                };
+                if !self.barriers.is_empty() || !self.operators.is_empty() {
+                    return UnitSeam::Broken(SeamBreak::OpenSlope);
+                }
+                if top.sort != BOUNDARY_SORT {
+                    return UnitSeam::Broken(SeamBreak::SortMismatch);
+                }
+                if unit.low_water == 0 {
+                    return UnitSeam::Broken(SeamBreak::Reached);
+                }
+                self.append_past_stand_in(unit);
+            },
+        }
+        UnitSeam::Joined
+    }
+
+    /// Append a form-boundary unit's state after this one's, dropping its
+    /// stand-in.
+    ///
+    /// Unit emission id `k` lands at this log's length plus `k - 1`; unit
+    /// offsets land past this state's source.
+    ///
+    /// # Specification
+    /// - requires: no mark is live on either state; `unit`'s stand-in sits at
+    ///   emission id and slope position zero, untouched.
+    /// - ensures: source, emissions, slope cells, obligations and spaces are
+    ///   this state's followed by the unit's past the stand-in, ids and offsets
+    ///   shifted; the head caches cover the appended cells.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source and 400 hostile sources of one to
+    ///   four fragments, split and joined, commit the whole parse's tree, spans
+    ///   and obligations; an id or offset off by the stand-in changes a node.
+    /// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+    /// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
+    #[spec(captures: before = (self.source.len(), self.emit.len(), self.stack.len(), unit.emit.len(), unit.stack.len()), ensures: |_| self.emit.len() == before.1.saturating_add(before.3).saturating_sub(1) && self.stack.len() == before.2.saturating_add(before.4).saturating_sub(1))]
+    fn append_past_stand_in(
+        &mut self,
+        unit: Self,
+    )
+    {
+        let Self {
+            source,
+            emit,
+            stack,
+            obligations,
+            spaces,
+            ..
+        } = unit;
+        let byte_offset = self.source.len();
+        let offset = u32::try_from(byte_offset).unwrap_or(u32::MAX);
+        let base = u32::try_from(self.emit.len()).unwrap_or(u32::MAX);
+        let land = |id: EmitId| EmitId(base.saturating_add(id.0).saturating_sub(1));
+        self.source.push_str(&source);
+        self.emit
+            .extend(emit.into_iter().skip(1).map(|op| match op {
+                EmitOp::Token { label, start, end } => EmitOp::Token {
+                    label,
+                    start: start.saturating_add(offset),
+                    end: end.saturating_add(offset),
+                },
+                EmitOp::Interior {
+                    label,
+                    start,
+                    end,
+                    mut children,
+                } => {
+                    for child in &mut children {
+                        *child = land(*child);
+                    }
+                    EmitOp::Interior {
+                        label,
+                        start: start.saturating_add(offset),
+                        end: end.saturating_add(offset),
+                        children,
+                    }
+                },
+            }));
+        for cell in stack.into_iter().skip(1) {
+            self.push_cell(Cell {
+                emit: land(cell.emit),
+                start: cell.start.saturating_add(offset),
+                end: cell.end.saturating_add(offset),
+                ..cell
+            });
+        }
+        self.obligations
+            .extend(obligations.into_iter().map(|obligation| {
+                let span = ByteSpan::new(
+                    ByteOffset::from(
+                        usize::from(obligation.span.start()).saturating_add(byte_offset),
+                    ),
+                    ByteOffset::from(
+                        usize::from(obligation.span.end()).saturating_add(byte_offset),
+                    ),
+                )
+                .unwrap_or(obligation.span);
+                ObligationInstance::new(obligation.class, span)
+            }));
+        self.spaces.extend(spaces.into_iter().map(land));
+    }
+
+    /// Record a layout-space token for losslessness.
+    ///
+    /// Trivia (whitespace, comments, shebangs) carry no syntactic weight — the
+    /// content digest skips [`NodeLabel::Space`] — but the batch driver records
+    /// them so the committed [`SyntaxTree`] reconstructs the source
+    /// byte-for-byte. Space tokens float free of the slope; at
+    /// [`commit`](MeldState::commit) whitespace and shebangs become root
+    /// children and each comment a child of the node it describes.
+    ///
+    /// # Specification
+    /// - requires: `text` is the trivia's exact surface bytes, in source order.
+    /// - ensures: appends a space token to the emission log; the slope,
+    ///   obligations, and digest are unchanged.
+    /// - provides: the losslessness seam for the labeler's [`Lexeme::Space`]
+    ///   tokens.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — whitespace and comments interleaved with syntax
+    ///   expose exact source reconstruction and equal content digests to the
+    ///   trivia-free form. Dropping bytes, pushing trivia onto the slope or
+    ///   charging completion obligations changes these observations.
+    /// - witness: `parse::tests::parse_is_lossless_and_hash_stable`
+    #[inline]
+    #[spec(captures: before = (self.source.len(), self.emit.len(), self.spaces.len(), self.stack.len(), self.obligations.len()), ensures: |_| self.source.get(before.0 ..) == Some(<&str>::from(text)) && self.emit.len() == before.1.saturating_add(1) && self.spaces.len() == before.2.saturating_add(1) && self.spaces.last().is_some_and(|id| id.0 == u32::try_from(before.1).unwrap_or(u32::MAX)) && self.stack.len() == before.3 && self.obligations.len() == before.4)]
+    pub fn space(
+        &mut self,
+        text: SpaceText<'_>,
+    )
+    {
+        let span = self.append_source(SourceFragment::from(text));
+        let emit = self.emit_token(NodeLabel::Space, span);
+        self.spaces.push(emit);
+    }
+
+    /// Open a lightweight in-place transaction over the current state.
+    ///
+    /// A [`Mark`] records the append-only log lengths (source, emission,
+    /// obligations, spaces) and the position in the slope-edit trail; while it
+    /// is live every slope edit — a push, a reduction's splice, a frontier
+    /// flip — is recorded, so [`rollback_to`](MeldState::rollback_to) truncates
+    /// the appended tails and undoes just those edits, copying neither the
+    /// emission log (as [`checkpoint`](MeldState::checkpoint) does) nor the
+    /// slope. This is the molder's per-candidate transaction: it marks,
+    /// dry-runs a candidate push, reads the obligations the candidate causes,
+    /// [`caused_delta_since`](MeldState::caused_delta_since), and rolls back.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: returns the log lengths, the count of missing left operands,
+    ///   the trail position and the number of live marks; counts the new mark
+    ///   live; leaves the parse unchanged.
+    /// - provides: the open side of the candidate dry-run transaction.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — marks before and after dry-run pushes, nested marks
+    ///   and nested form changes expose exact rollback and subsequent
+    ///   continuation. Missing a length or an edit recorded outside a live mark
+    ///   changes the restored checkpoint.
+    /// - witness: `meld::tests::mark_rollback_restores_state_exactly`
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    /// - witness: `mold::tests::dry_runs_restore_exact_state`
+    #[inline]
+    #[must_use]
+    #[spec(captures: before = (self.live_marks, self.edits.len(), self.removed.len()), ensures: |ret| ret.source_len == self.source.len() && ret.emit_len == self.emit.len() && ret.oblig_len == self.obligations.len() && ret.spaces_len == self.spaces.len() && ret.left_shortfalls == self.left_shortfalls && ret.ended_applications == self.ended_applications && ret.edits_len == before.1 && ret.removed_len == before.2 && ret.depth == before.0 && self.live_marks == before.0.saturating_add(1))]
+    pub fn mark(&mut self) -> Mark
+    {
+        let mark = Mark {
+            source_len: self.source.len(),
+            emit_len: self.emit.len(),
+            oblig_len: self.obligations.len(),
+            spaces_len: self.spaces.len(),
+            left_shortfalls: self.left_shortfalls,
+            ended_applications: self.ended_applications,
+            edits_len: self.edits.len(),
+            removed_len: self.removed.len(),
+            depth: self.live_marks,
+        };
+        self.live_marks = self.live_marks.saturating_add(1);
+        mark
+    }
+
+    /// Roll the state back to `mark`, discarding everything since.
+    ///
+    /// # Specification
+    /// - requires: `mark` was taken from this same state and is the latest live
+    ///   mark.
+    /// - ensures: truncates the source, emission log, obligation buffer and
+    ///   space list to their marked lengths, restores the marked counts of
+    ///   missing left operands and of ended applications and undoes every slope
+    ///   edit made since, newest first, so the state is bytewise identical to
+    ///   the mark; the head caches are exact; the marks live before `mark` stay
+    ///   live, and with none left the trail is empty.
+    /// - provides: the close side of the candidate dry-run transaction.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a marked candidate which changes emissions, source,
+    ///   slope and obligations is rolled back before another candidate, and
+    ///   nested marks roll back inside an outer one. Exact checkpoint and
+    ///   continuation equality detect a forgotten buffer, a missed edit or a
+    ///   stale cache; same-state provenance remains a caller obligation beyond
+    ///   the checked lengths and UTF-8 boundary. The clause checks the caches
+    ///   from the lowest position an overwrite or splice since the mark
+    ///   touched, or from the restored top, the region the body re-indexes.
+    /// - witness: `meld::tests::mark_rollback_restores_state_exactly`
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    #[inline]
+    #[spec(requires: mark.source_len <= self.source.len() && self.source.is_char_boundary(mark.source_len) && mark.emit_len <= self.emit.len() && mark.oblig_len <= self.obligations.len() && mark.spaces_len <= self.spaces.len() && mark.edits_len <= self.edits.len() && mark.removed_len <= self.removed.len(),
+        captures: marked = (mark.source_len, mark.emit_len, mark.oblig_len, mark.spaces_len, mark.depth, self.edits.get(mark.edits_len ..).map_or(usize::MAX, |since| since.iter().filter_map(|edit| match *edit { SlopeEdit::Overwritten { index, .. } => Some(index), SlopeEdit::Spliced { low, .. } => Some(low), SlopeEdit::Pushed => None }).min().unwrap_or(usize::MAX)), mark.left_shortfalls, mark.ended_applications),
+        ensures: |_| marked.0 == self.source.len() && marked.1 == self.emit.len() && marked.2 == self.obligations.len() && marked.3 == self.spaces.len() && marked.6 == self.left_shortfalls && marked.7 == self.ended_applications && self.live_marks == marked.4 && (marked.4 > 0 || (self.edits.is_empty() && self.removed.is_empty()))
+            && bool::from(self.caches_exact_from(StackFloor::from(StackIndex::from(marked.5.min(self.stack.len()))))))]
+    pub fn rollback_to(
+        &mut self,
+        mark: &Mark,
+    )
+    {
+        self.source.truncate(mark.source_len);
+        self.emit.truncate(mark.emit_len);
+        self.obligations.truncate(mark.oblig_len);
+        self.spaces.truncate(mark.spaces_len);
+        self.left_shortfalls = mark.left_shortfalls;
+        self.ended_applications = mark.ended_applications;
+        // Undo the slope edits made since the mark, newest first; the lowest
+        // slope position any of them touched bounds the cache rebuild.
+        let mut floor = self.stack.len();
+        while self.edits.len() > mark.edits_len {
+            let Some(edit) = self.edits.pop()
+            else {
+                break;
+            };
+            match edit {
+                SlopeEdit::Pushed => {
+                    self.stack.pop();
+                    floor = floor.min(self.stack.len());
+                },
+                SlopeEdit::Overwritten { index, cell } => {
+                    if let Some(slot) = self.stack.get_mut(index) {
+                        *slot = cell;
+                    }
+                    floor = floor.min(index);
+                },
+                SlopeEdit::Spliced { low, removed } => {
+                    let from = self.removed.len().saturating_sub(removed);
+                    let end = low.saturating_add(1).min(self.stack.len());
+                    self.stack
+                        .splice(low.min(end) .. end, self.removed.drain(from ..))
+                        .for_each(|_replacement| ());
+                    floor = floor.min(low);
+                },
+            }
+        }
+        self.reindex_from(StackFloor::from(StackIndex::from(floor)));
+        self.live_marks = mark.depth;
+        if self.live_marks == 0 {
+            self.edits.clear();
+            self.removed.clear();
+        }
+    }
+
+    /// Return the obligation [`Delta`] accumulated since `mark`.
+    ///
+    /// This is the candidate's own obligation change — the minimization key the
+    /// molder compares across candidates — read from the obligation buffer tail
+    /// appended since the mark, never a whole-buffer traversal. Each
+    /// application ended since the mark counts as one [`Oblig::InconMeld`]
+    /// more ([`Self::reduce_toward`]).
+    ///
+    /// # Specification
+    /// - requires: `mark` was taken from this state and no rollback has
+    ///   occurred since (the read happens between the dry-run push and its
+    ///   rollback).
+    /// - ensures: returns a delta whose per-class inserted counts equal the
+    ///   obligations flagged since `mark`, with the applications ended since
+    ///   `mark` in the `InconMeld` class.
+    /// - provides: the molder's per-candidate minimization key.
+    /// - fails: never; a stale mark (buffer already shorter) yields the empty
+    ///   delta.
+    /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: reads only the obligations flagged since `mark`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nonempty prefix, a candidate adding two repair
+    ///   classes, an empty candidate tail and a mark beyond the current buffer
+    ///   expose per-class tail counts. Including the prefix, confusing classes
+    ///   or reading a stale suffix changes candidate minimization.
+    /// - witness: `meld::tests::delta_since_reads_only_the_candidate_tail`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| Oblig::all().into_iter().all(|class| {
+        let flagged = self.obligations.get(mark.oblig_len ..).map_or(0, |since| since.iter().filter(|obligation| obligation.class == class).count());
+        let weighed = if class == Oblig::InconMeld { flagged.saturating_add(self.ended_applications.saturating_sub(mark.ended_applications)) } else { flagged };
+        u32::from(ret.inserted(class)) == u32::try_from(weighed).unwrap_or(u32::MAX)
+    }))]
+    pub fn delta_since(
+        &self,
+        mark: &Mark,
+    ) -> Delta
+    {
+        let mut delta = Delta::empty();
+        if let Some(tail) = self.obligations.get(mark.oblig_len ..) {
+            for obligation in tail {
+                delta.insert(obligation.class);
+            }
+        }
+        for _ended in mark.ended_applications .. self.ended_applications {
+            delta.insert(Oblig::InconMeld);
+        }
+        delta
+    }
+
+    /// Return the obligation [`Delta`] that the pushes since `mark` cause.
+    ///
+    /// This is [`delta_since`](Self::delta_since) less each missing left
+    /// operand that a reduce since `mark` found. An operator stays on the slope
+    /// above its left neighbour, so that neighbour cannot change before the
+    /// operator reduces. When a push reduces an operator that the slope held
+    /// before `mark`, every other reading owes the same left operand later, at
+    /// a later reduce or at `finalize`. The molder keys the push of a form's
+    /// end tile by this delta (`Molder::push_delta`). A lookahead window can
+    /// push the operator itself, so a window reads
+    /// [`delta_since`](Self::delta_since).
+    ///
+    /// # Specification
+    /// - requires: `mark` was taken from this state and no rollback has
+    ///   occurred since.
+    /// - ensures: the per-class inserted counts equal the obligations flagged
+    ///   since `mark`, less the missing left operands counted since `mark` in
+    ///   the `MissingMeld` class, with the applications ended since `mark` in
+    ///   the `InconMeld` class.
+    /// - provides: the molder's minimization key for a form's end tile.
+    /// - fails: never; a stale mark yields the empty delta.
+    /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: reads only the obligations flagged since `mark`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `;` that closes a member over an operator with no
+    ///   left operand, beside a `;` that leaves the operator open. A key that
+    ///   counts the left operand makes the open reading the least, and the next
+    ///   member then nests in the expression.
+    /// - witness: `parse::gap::tests::a_semicolon_after_a_missing_left_operand_ends_the_member_5502`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| Oblig::all().into_iter().all(|class| {
+        let flagged = self.obligations.get(mark.oblig_len ..).map_or(0, |since| since.iter().filter(|obligation| obligation.class == class).count());
+        let caused = if class == Oblig::MissingMeld { flagged.saturating_sub(self.left_shortfalls.saturating_sub(mark.left_shortfalls)) } else if class == Oblig::InconMeld { flagged.saturating_add(self.ended_applications.saturating_sub(mark.ended_applications)) } else { flagged };
+        u32::from(ret.inserted(class)) == u32::try_from(caused).unwrap_or(u32::MAX)
+    }))]
+    pub fn caused_delta_since(
+        &self,
+        mark: &Mark,
+    ) -> Delta
+    {
+        let mut owed = self.left_shortfalls.saturating_sub(mark.left_shortfalls);
+        let mut delta = Delta::empty();
+        if let Some(tail) = self.obligations.get(mark.oblig_len ..) {
+            for obligation in tail {
+                if obligation.class == Oblig::MissingMeld && owed > 0 {
+                    owed = owed.saturating_sub(1);
+                    continue;
+                }
+                delta.insert(obligation.class);
+            }
+        }
+        for _ended in mark.ended_applications .. self.ended_applications {
+            delta.insert(Oblig::InconMeld);
+        }
+        delta
+    }
+}
+
+/// The head context the candidate pre-filter reads, hoisted out of the
+/// per-candidate loop.
+///
+/// Computed once per token by
+/// [`admissibility_frontier`](MeldState::admissibility_frontier) and consumed
+/// by [`admits_at`](MeldState::admits_at) for every candidate, so the wide
+/// identifier menu costs `O(menu + depth)` rather than `O(menu × depth)`.
+///
+/// # Specification
+/// - requires: paired with the [`MeldState`] it was computed from, before any
+///   mutation.
+/// - ensures: carries the nearest open form frontier mold and the
+///   head-is-operand flag exactly.
+/// - provides: the constant admissibility context.
+/// - fails: never.
+/// - panics: none.
+///
+/// - executable: none — this data type has no call boundary; its construction,
+///   observers and transitions carry the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, open-form, operand and operator contexts expose
+///   cached admission against the current machine. A stale open mold or lost
+///   head sort changes candidate admission; same-state freshness is a caller
+///   condition.
+/// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Frontier
+{
+    /// The nearest open form frontier's mold, if any.
+    pub open: Option<MoldId>,
+    /// Whether the slope head is a completed operand.
+    pub head_operand: HeadOperandPresence,
+    /// The sort of the head operand cell, if the head is an operand — the sort
+    /// a left-absorbing form-start (a call, an instantiation) must match to
+    /// apply.
+    pub head_sort: Option<Sort>,
+    /// The sort the head's open operand slot expects (the hole-sort check): an
+    /// operand candidate of a different sort would fill a hole of the wrong
+    /// sort (a local `InconMeld`), so the pre-filter discards it before any
+    /// dry-run.
+    pub expected: Sort,
+    /// The sort of the head operand, when no hole stands below the head and
+    /// an operand that opens next stands as the argument the head applies by
+    /// juxtaposition. The slot sort is then only the expression default, and
+    /// the head's sort ranks the argument instead. Thus `Run (…)` reads its
+    /// group as a type where a broken binder leaves the `.` of a type path
+    /// open below `Run` (#6102).
+    pub argument: Option<Sort>,
+    /// The sort of the operands that the spine at the head takes, where the
+    /// rule of the spine's head states it: an expression after `Path`.
+    /// It ranks an operand that opens next before the slot sort and the head's
+    /// sort, wherever a hole stands below the head.
+    pub endpoint: Option<Sort>,
+    /// Whether no slot is open at the head: the top level, whose slot is an
+    /// item, an expression standing there only as an expression statement.
+    pub boundary: BoundarySlot,
+}
+
+/// A lightweight in-place transaction over a [`MeldState`].
+///
+/// A `Mark` records the append-only log lengths and the position in the
+/// state's slope-edit trail at [`mark`](MeldState::mark) time;
+/// [`rollback_to`](MeldState::rollback_to) truncates the logs and undoes the
+/// slope edits made since. Unlike a [`Checkpoint`] it copies nothing: a dry-run
+/// costs the edits it makes, not the depth of the slope.
+///
+/// # Specification
+/// - requires: used only against the state it was marked from; marks nest, the
+///   latest live mark rolled back first.
+/// - ensures: carries exactly the marked source, emission, obligation and space
+///   lengths, the marked trail position and the number of marks live before it.
+/// - provides: the candidate dry-run transaction token.
+/// - fails: never.
+/// - panics: none.
+///
+/// - executable: none — this data type has no call boundary; its construction,
+///   observers and transitions carry the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — source, emissions, layout, obligations, slope and role
+///   caches changed by candidate pushes, reductions and frontier flips are
+///   restored to their marked state. A lost length or a missed edit changes
+///   exact checkpoint and subsequent continuation.
+/// - witness: `meld::tests::mark_rollback_restores_state_exactly`
+/// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+#[derive(Debug, Eq, PartialEq)]
+pub struct Mark
+{
+    /// Assembled source length at mark time.
+    source_len: usize,
+    /// Emission-log length at mark time.
+    emit_len: usize,
+    /// Obligation-buffer length at mark time.
+    oblig_len: usize,
+    /// Floating-space-list length at mark time.
+    spaces_len: usize,
+    /// Count of missing left operands at mark time.
+    left_shortfalls: usize,
+    /// Count of ended applications at mark time.
+    ended_applications: usize,
+    /// Slope-edit trail length at mark time.
+    edits_len: usize,
+    /// Removed-cell log length at mark time.
+    removed_len: usize,
+    /// Marks live before this one.
+    depth: usize,
+}
+
+/// The sort of the completed form a [`FormUnit`]'s stand-in operand stands
+/// for: every top-level declaration is item-sorted.
+pub const BOUNDARY_SORT: Sort = Sort::Item;
+
+/// Where a [`FormUnit`]'s slope began.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnitBase
+{
+    /// The source's start: the empty slope every parse begins from.
+    SourceStart,
+    /// A top-level form boundary: the stand-in of
+    /// [`Checkpoint::form_boundary`].
+    FormBoundary,
+}
+
+/// Why a [`FormUnit`] could not join the state before it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SeamBreak
+{
+    /// A source-start unit met a state that had already molded tokens.
+    NotAtStart,
+    /// The state holds no completed form for the stand-in to stand for.
+    NoForm,
+    /// A form tile or an operator remains on the state's slope: a form is
+    /// still open, or closed but not yet reduced.
+    OpenSlope,
+    /// The state's topmost form is not of the boundary sort.
+    SortMismatch,
+    /// The unit's fold, dry-runs included, touched its stand-in.
+    Reached,
+}
+
+/// How a [`FormUnit`] met the state before it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnitSeam
+{
+    /// The seam held: the unit's forms were appended as molded.
+    Joined,
+    /// The seam broke: the state is as it was, and the unit's run is to be
+    /// molded onto it.
+    Broken(SeamBreak),
+}
+
+/// A run of tokens molded apart from the forms before it.
+///
+/// A run that starts the stream molds from the empty slope, as
+/// [`parse`](fn@crate::parse) does. A later run starts at a predicted
+/// top-level form boundary and molds from [`Checkpoint::form_boundary`]: one
+/// completed item operand standing in for every form before the boundary,
+/// which is all a parse's next token can see of those forms when the
+/// boundary is real. [`MeldState::join_unit`] appends the unit's forms to the
+/// state the earlier runs left once it has checked that the boundary was
+/// real and the unit never reached past its stand-in; otherwise the run is
+/// molded onto that state instead. Units are independent until they join,
+/// so they mold in parallel.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the melder holds the unit's base — the empty slope, or the
+///   stand-in at slope position and emission id zero — and every token molded
+///   into it since.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; its constructor
+///   and the join carry the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every corpus source and 400 hostile sources of one to
+///   four fragments, split at every predicted boundary, mold unit by unit and
+///   join to the whole parse; a unit on the wrong base or a join that kept the
+///   stand-in changes a joined tree.
+/// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+/// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
+pub struct FormUnit<'pbg>
+{
+    /// Where the unit's slope began.
+    base: UnitBase,
+    /// The tokens the unit molds.
+    run: TokenRun,
+    /// The melder the unit molds into.
+    state: MeldState<'pbg>,
+}
+
+impl<'pbg> FormUnit<'pbg>
+{
+    /// Begin the unit for `run` over `pbg`: from the empty slope when `run`
+    /// starts the stream, from [`Checkpoint::form_boundary`] otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a [`UnitBase::SourceStart`] unit over an empty state when
+    ///   `run` starts at position zero; a [`UnitBase::FormBoundary`] unit
+    ///   resumed from the boundary checkpoint otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a split source's first and later runs begin on the
+    ///   two bases and join to the whole parse; swapping the bases changes the
+    ///   first form or every later one.
+    /// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.run == run && (ret.base == UnitBase::SourceStart) == (usize::from(run.start()) == 0) && ret.state.stack.len() == usize::from(ret.base == UnitBase::FormBoundary))]
+    pub fn new(
+        pbg: &'pbg Pbg,
+        run: TokenRun,
+    ) -> Self
+    {
+        if usize::from(run.start()) == 0 {
+            Self {
+                base: UnitBase::SourceStart,
+                run,
+                state: MeldState::new(pbg),
+            }
+        }
+        else {
+            Self {
+                base: UnitBase::FormBoundary,
+                run,
+                state: MeldState::resume(pbg, &Checkpoint::form_boundary(pbg)),
+            }
+        }
+    }
+
+    /// The tokens the unit molds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn run(&self) -> TokenRun
+    {
+        self.run
+    }
+
+    /// Where the unit's slope began.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn base(&self) -> UnitBase
+    {
+        self.base
+    }
+
+    /// The melder the unit molds into.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn state_mut(&mut self) -> &mut MeldState<'pbg>
+    {
+        &mut self.state
+    }
+
+    /// Set the unit aside, borrowing no grammar, so a later revision whose
+    /// run has the same identity takes it up instead of molding the run
+    /// again.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the parked unit holds the unit's base, the checkpoint of its
+    ///   melder, whether its fold touched its stand-in, and whether its slope
+    ///   ends settled.
+    /// - provides: the store side of reusing a form's molding across revisions.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source's units, parked and taken up
+    ///   again, join to the whole parse with the seams the fresh units met; a
+    ///   unit whose fold touched its stand-in still breaks its seam once taken
+    ///   up, and a unit that ends open is never taken up as a block. Dropping
+    ///   the reach, the ending, the base or a checkpoint buffer changes a seam
+    ///   or the joined tree.
+    /// - witness: `parse::tests::a_parked_unit_joins_as_the_unit_it_parked`
+    /// - witness: `meld::tests::a_parked_unit_keeps_whether_it_reached_its_stand_in`
+    /// - witness: `meld::tests::a_parked_unit_keeps_whether_it_ends_settled`
+    #[inline]
+    #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body takes the same checkpoint the clause compares"
+        )
+    )]
+    #[spec(ensures: |ret| ret.base == self.base && ret.checkpoint == self.state.checkpoint()
+        && (ret.reach == StandInReach::Reached) == (self.state.low_water == 0)
+        && ret.ending == self.state.ending())]
+    pub fn park(&self) -> ParkedUnit
+    {
+        ParkedUnit {
+            base: self.base,
+            reach: if self.state.low_water == 0 {
+                StandInReach::Reached
+            }
+            else {
+                StandInReach::Untouched
+            },
+            ending: self.state.ending(),
+            checkpoint: self.state.checkpoint(),
+        }
+    }
+
+    /// Take `parked` up again over `pbg` as the unit for `run`, the run its
+    /// tokens hold in the revision now being parsed.
+    ///
+    /// # Specification
+    /// - requires: `parked` was parked over a grammar with `pbg`'s fingerprint,
+    ///   from a unit whose run had the identity
+    ///   ([`FormSplit::identity`](crate::FormSplit::identity)) `run` has.
+    /// - ensures: a unit for `run` on the parked base whose melder resumes the
+    ///   parked checkpoint, and has touched its stand-in exactly when the
+    ///   parked unit had; joining it is joining the unit that was parked.
+    /// - provides: the reuse side of a form's molding across revisions.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source's units, parked and taken up
+    ///   again, join to the whole parse with the seams the fresh units met;
+    ///   over edited corpus sources, a run whose identity a parked unit carries
+    ///   molds to that unit. A reach reset on resume would join a unit whose
+    ///   fold reached past its boundary.
+    /// - witness: `parse::tests::a_parked_unit_joins_as_the_unit_it_parked`
+    /// - witness: `parse::tests::an_equal_identity_molds_an_equal_unit`
+    /// - witness: `meld::tests::a_parked_unit_keeps_whether_it_reached_its_stand_in`
+    #[inline]
+    #[must_use]
+    #[spec(requires: parked.checkpoint.fingerprint == pbg.fingerprint(),
+        ensures: |ret| ret.run == run && ret.base == parked.base && ret.state.checkpoint() == parked.checkpoint
+            && (ret.state.low_water == 0) == (parked.reach == StandInReach::Reached))]
+    pub fn resume(
+        pbg: &'pbg Pbg,
+        run: TokenRun,
+        parked: &ParkedUnit,
+    ) -> Self
+    {
+        let mut state = MeldState::resume(pbg, &parked.checkpoint);
+        if parked.reach == StandInReach::Reached {
+            state.low_water = 0;
+        }
+        Self {
+            base: parked.base,
+            run,
+            state,
+        }
+    }
+}
+
+/// Whether a [`FormUnit`]'s fold, dry-runs included, touched its stand-in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StandInReach
+{
+    /// The fold never touched the stand-in: the seam may hold.
+    Untouched,
+    /// The fold touched the stand-in: the seam breaks.
+    Reached,
+}
+
+/// How a [`FormUnit`]'s slope ends ([`MeldState::ending`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnitEnding
+{
+    /// No operator and no form tile on the slope, and a top cell of
+    /// [`BOUNDARY_SORT`]: the next unit's seam holds against it.
+    Settled,
+    /// The slope ends otherwise: the next unit's seam breaks.
+    Open,
+}
+
+/// Whether a [`ParkedUnit`] is clean ([`ParkedUnit::cleanness`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnitCleanness
+{
+    /// The unit starts the source or never touched its stand-in, and ends
+    /// settled: a laid join may take it up as a block.
+    Clean,
+    /// The unit's fold touched its stand-in, or its slope ends open.
+    Unclean,
+}
+
+/// A [`FormUnit`] set aside between revisions: its base, its melder's
+/// checkpoint, whether its fold touched its stand-in, and whether it ends
+/// settled.
+///
+/// A parked unit borrows no grammar and names no token position, so it
+/// outlives the revision it was molded in. [`FormUnit::resume`] takes it up
+/// for whichever run of a later revision has the identity its run had.
+///
+/// # Specification
+/// - requires: constructed by [`FormUnit::park`].
+/// - ensures: holds exactly what joining the unit reads besides its run.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; parking and
+///   resuming carry the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every corpus source's units, parked and taken up again,
+///   join to the whole parse; a parked unit that kept less changes a seam or
+///   the joined tree.
+/// - witness: `parse::tests::a_parked_unit_joins_as_the_unit_it_parked`
+/// - witness: `meld::tests::a_parked_unit_keeps_whether_it_reached_its_stand_in`
+/// - witness: `meld::tests::a_parked_unit_keeps_whether_it_ends_settled`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParkedUnit
+{
+    /// Where the unit's slope began.
+    base: UnitBase,
+    /// Whether the unit's fold touched its stand-in.
+    reach: StandInReach,
+    /// Whether the unit's slope ends settled.
+    ending: UnitEnding,
+    /// The unit's melder.
+    checkpoint: Checkpoint,
+}
+
+impl ParkedUnit
+{
+    /// Where the unit's slope began.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn base(&self) -> UnitBase
+    {
+        self.base
+    }
+
+    /// The fingerprint of the grammar the unit was molded over.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn fingerprint(&self) -> GrammarFingerprint
+    {
+        self.checkpoint.fingerprint
+    }
+
+    /// Whether the unit is clean: its fold never touched its stand-in, or it
+    /// starts the source and has none, and its slope ends settled. A clean
+    /// unit's seam holds against a settled state, and a collapse after it
+    /// leaves its forms as they are.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`UnitCleanness::Clean`] exactly when the unit starts the
+    ///   source or never touched its stand-in, and ends settled.
+    /// - provides: the condition a laid join asks of a unit before it takes the
+    ///   unit's forms up as a block.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closed declaration's parked unit is clean and an
+    ///   open one's is not; a join that took up an unclean unit as a block
+    ///   changes a committed tree.
+    /// - witness: `meld::tests::a_parked_unit_keeps_whether_it_ends_settled`
+    /// - witness: `parse::tests::a_laid_join_parses_as_the_whole_source`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| (ret == UnitCleanness::Clean) == ((self.base == UnitBase::SourceStart || self.reach == StandInReach::Untouched) && self.ending == UnitEnding::Settled))]
+    pub(crate) fn cleanness(&self) -> UnitCleanness
+    {
+        if (self.base == UnitBase::SourceStart || self.reach == StandInReach::Untouched)
+            && self.ending == UnitEnding::Settled
+        {
+            UnitCleanness::Clean
+        }
+        else {
+            UnitCleanness::Unclean
+        }
+    }
+
+    /// The unit's melder.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn checkpoint(&self) -> &Checkpoint
+    {
+        &self.checkpoint
+    }
+}
+
+/// One expected item in a completion to `⊢`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Expected
+{
+    /// An expected literal tile, named by its label.
+    Tile(&'static str),
+    /// An expected recursive-sort hole.
+    Hole(Sort),
+    /// An expected grout of the given shape.
+    Grout(GroutShape),
+}
+
+/// The completion the melder would insert to close the input at a prefix.
+///
+/// # Specification
+/// - requires: none.
+/// - ensures: preserves the expected material and would-introduce obligations
+///   computed by [`MeldState::finalize`].
+/// - provides: the "expected next" query result; it is non-empty exactly when
+///   the input is not yet complete.
+/// - fails: never.
+/// - panics: none.
+///
+/// - executable: none — this data type has no call boundary; its construction,
+///   observers and transitions carry the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — missing operator sides and required/optional form tails
+///   expose expected future input separately from zero-width or frontier
+///   repairs. A missing side, wrong span or charged complete tail changes the
+///   query.
+/// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
+/// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Completion
+{
+    /// The expected material to reach `⊢`, from the head down.
+    expected: Vec<Expected>,
+    /// How much of [`expected`](Self::expected) closes the innermost open
+    /// form: the material up to and including its last tile.
+    innermost: usize,
+    /// The obligations closing the input would introduce.
+    obligations: Vec<ObligationInstance>,
+}
+
+impl Completion
+{
+    /// Return the expected material to close the input.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn expected(&self) -> &[Expected]
+    {
+        &self.expected
+    }
+
+    /// Return the expected material up to and including the closing of the
+    /// innermost open form: the holes of the operators above it, then its
+    /// own closing material. With no form open, the whole material.
+    ///
+    /// # Specification
+    /// - ensures: a prefix of [`expected`](Self::expected), as
+    ///   [`MeldState::finalize`] bounds it; empty exactly when the input is
+    ///   complete.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operator under an open form, nested open forms and
+    ///   an operator alone each split at their exact prefix. Returning the
+    ///   whole material, or cutting before the innermost closer, changes the
+    ///   prefix.
+    /// - witness: `meld::tests::finalize_closes_each_frontier_at_its_innermost_material`
+    #[spec(ensures: |ret| self.expected.starts_with(ret) && (ret.is_empty() == self.expected.is_empty()))]
+    #[inline]
+    #[must_use]
+    pub fn innermost(&self) -> &[Expected]
+    {
+        self.expected
+            .get(.. self.innermost)
+            .unwrap_or(&self.expected)
+    }
+
+    /// Return the obligations closing the input would introduce.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn obligations(&self) -> &[ObligationInstance]
+    {
+        &self.obligations
+    }
+
+    /// Return whether the input is already complete (no expected material).
+    ///
+    /// # Specification
+    /// - ensures: reports whether no future material is expected, independently
+    ///   of already-reported missing left operands.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operator lacking its right operand versus one with
+    ///   only a missing left operand exposes future expectation separately from
+    ///   repairs. Conflating buffered repairs with expected input changes the
+    ///   status.
+    /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| bool::from(ret) == self.expected.is_empty())]
+    pub fn is_complete(&self) -> CompletionStatus
+    {
+        CompletionStatus::from(self.expected.is_empty())
+    }
+}
+
+/// The open form at the slope head, as the completion query reads it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HeadForm
+{
+    /// The innermost open form's frontier.
+    Open
+    {
+        /// The frontier's mold.
+        mold: MoldId,
+        /// Whether anything stands after the frontier.
+        leading: LeadingSlot,
+    },
+    /// No form is open at the head.
+    Closed,
+}
+
+/// What may follow the slope head, from [`MeldState::continuations`].
+///
+/// # Specification
+/// - requires: none.
+/// - ensures: preserves the pending hole, the head form and the closings
+///   [`MeldState::continuations`] computed.
+/// - provides: the menu an inline completion ranks.
+/// - fails: never.
+/// - panics: none.
+///
+/// - executable: none — this data type has no call boundary; its construction
+///   carries the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the continuations witness reads each field back at its
+///   exact value.
+/// - witness: `meld::tests::continuations_name_the_pending_hole_and_the_frontier`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Continuations
+{
+    /// The hole the operator nearest the head owes, before any closing.
+    pending: Vec<Step>,
+    /// The innermost open form.
+    head: HeadForm,
+    /// The cheapest ways to close it, cheapest first.
+    closings: Vec<Closing>,
+}
+
+impl Continuations
+{
+    /// The hole the operator nearest the head owes: empty, or one hole.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn pending(&self) -> &[Step]
+    {
+        &self.pending
+    }
+
+    /// The innermost open form at the head.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn head(&self) -> HeadForm
+    {
+        self.head
+    }
+
+    /// The ways to close the innermost open form, cheapest first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn closings(&self) -> &[Closing]
+    {
+        &self.closings
+    }
+}
+
+/// A failure while committing the melder to a [`SyntaxTree`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MeldError
+{
+    /// The flat arena could not be assembled.
+    Build(SyntaxError),
+    /// The source offered at commit is not the text the melder assembled
+    /// from its pushes.
+    SourceMismatch,
+    /// The emission log referenced an id outside itself (never on the
+    /// well-formed path).
+    Corrupt,
+}
+
+impl fmt::Display for MeldError
+{
+    /// Describe the commit failure in prose.
+    ///
+    /// # Specification
+    /// - ensures: formats the failure variant and its contextual payload,
+    ///   propagating a formatter-sink failure.
+    /// - panics: none.
+    /// - executable: none — `Formatter` exposes neither the emitted bytes nor
+    ///   sink state; replaying formatting would write to the sink again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — failures produced by commit and decoding expose
+    ///   distinct descriptions, numeric context and refusal by a failing sink.
+    ///   Losing a tag/span or swallowing a sink error changes those
+    ///   observations without pinning the prose.
+    /// - witness: `meld::tests::public_errors_preserve_context_and_sink_failures`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Build(ref error) => fmt::Display::fmt(error, f),
+            Self::SourceMismatch => {
+                f.write_str("the source offered at commit is not the text the melder assembled")
+            },
+            Self::Corrupt => f.write_str("emission log referenced an out-of-range id"),
+        }
+    }
+}
+
+impl Error for MeldError
+{
+    /// Return the tree builder's error when it caused the failure.
+    ///
+    /// # Specification
+    /// - ensures: only a builder failure exposes its original typed cause;
+    ///   mismatch and corruption have no underlying source.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — public commits of foreign source and malformed
+    ///   checkpoint images expose source mismatch, corruption and the original
+    ///   inverted span cause. Erasing the cause, swapping its endpoints or
+    ///   attaching one to a structural error changes consumer error-chain
+    ///   inspection.
+    /// - witness: `meld::tests::public_errors_preserve_context_and_sink_failures`
+    #[inline]
+    #[spec(ensures: |ret| match *self { Self::Build(ref error) => ret.and_then(|cause| cause.downcast_ref::<SyntaxError>()).is_some_and(|actual| core::ptr::eq(&raw const *actual, &raw const *error)), Self::SourceMismatch | Self::Corrupt => ret.is_none() })]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            trait_object,
+            reason = "signature: `Error::source` returns the trait object that `core`'s own signature fixes"
+        )
+    )]
+    fn source(&self) -> Option<&(dyn Error + 'static)>
+    {
+        match *self {
+            Self::Build(ref error) => Some(error),
+            Self::SourceMismatch | Self::Corrupt => None,
+        }
+    }
+}
+
+impl From<SyntaxError> for MeldError
+{
+    /// Wrap a tree builder refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: SyntaxError) -> Self
+    {
+        Self::Build(value)
+    }
+}
+
+/// A failure while decoding a serialized [`Checkpoint`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckpointError
+{
+    /// The byte stream ended before a field was fully read.
+    Truncated,
+    /// A discriminant tag was outside its closed vocabulary.
+    BadTag
+    {
+        /// The offending tag byte.
+        tag: u8,
+    },
+    /// A decoded value violated a structural invariant (e.g. a text range).
+    Malformed,
+}
+
+impl fmt::Display for CheckpointError
+{
+    /// Describe the decoding failure in prose.
+    ///
+    /// # Specification
+    /// - ensures: formats the failure variant and its contextual payload,
+    ///   propagating a formatter-sink failure.
+    /// - panics: none.
+    /// - executable: none — `Formatter` exposes neither the emitted bytes nor
+    ///   sink state; replaying formatting would write to the sink again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — failures produced by commit and decoding expose
+    ///   distinct descriptions, numeric context and refusal by a failing sink.
+    ///   Losing a tag/span or swallowing a sink error changes those
+    ///   observations without pinning the prose.
+    /// - witness: `meld::tests::public_errors_preserve_context_and_sink_failures`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Truncated => f.write_str("checkpoint byte stream is truncated"),
+            Self::BadTag { tag } => write!(f, "checkpoint has an unknown discriminant tag {tag}"),
+            Self::Malformed => f.write_str("checkpoint content is malformed"),
+        }
+    }
+}
+
+impl Error for CheckpointError
+{
+}
+
+/// A serializable, first-order snapshot of a [`MeldState`].
+///
+/// The snapshot holds the assembled source, the append-only emission log, the
+/// slope, the buffered obligations, and the grammar fingerprint — everything
+/// except the borrowed `Pbg`. [`Checkpoint::to_bytes`] /
+/// [`Checkpoint::from_bytes`] give a self-contained binary encoding without a
+/// serialization dependency, so a REPL can persist and restore session state.
+///
+/// # Specification
+/// - requires: [`from_bytes`](Checkpoint::from_bytes) input came from
+///   [`to_bytes`](Checkpoint::to_bytes).
+/// - ensures: `from_bytes(to_bytes(c)) == c`; the fingerprint identifies the
+///   grammar the snapshot is valid against.
+/// - provides: the persistable continuation state.
+/// - fails: [`from_bytes`](Checkpoint::from_bytes) returns [`CheckpointError`]
+///   for truncated, mis-tagged, or malformed input.
+/// - panics: none.
+///
+/// - executable: none — this data type has no call boundary; its construction,
+///   observers and transitions carry the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty and mixed-role snapshots, exact wire vocabularies
+///   and truncated records expose restored continuation and typed errors.
+///   Losing a field, changing tags or endpoint order changes golden bytes or
+///   the resumed parse; unbounded hostile allocation lengths are not proved
+///   safe.
+/// - witness: `meld::tests::checkpoint_resume_is_equivalent`
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+/// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Checkpoint
+{
+    /// The grammar fingerprint the snapshot is valid against.
+    fingerprint: GrammarFingerprint,
+    /// The assembled source buffer.
+    source: String,
+    /// The append-only emission log.
+    emit: Vec<EmitOp>,
+    /// The slope of terraces.
+    stack: Vec<Cell>,
+    /// The buffered obligations.
+    obligations: Vec<ObligationInstance>,
+    /// The floating layout-space tokens (root children at commit).
+    spaces: Vec<EmitId>,
+}
+
+impl Checkpoint
+{
+    /// Return the grammar fingerprint this snapshot is valid against.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn fingerprint(&self) -> GrammarFingerprint
+    {
+        self.fingerprint
+    }
+
+    /// The checkpoint every parse of `pbg` holds at a top-level form
+    /// boundary, up to the forms before it: one completed operand of the
+    /// boundary sort, standing in for those forms, on an otherwise empty
+    /// slope with no source, obligations or spaces.
+    ///
+    /// The stand-in occupies emission id zero and slope position zero and
+    /// covers no source. It is never committed: a [`FormUnit`] resumed from
+    /// this checkpoint only ever joins a real state, which drops the
+    /// stand-in.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the stand-in is the only emission and the only slope cell, a
+    ///   zero-width operand of [`BOUNDARY_SORT`]; source, obligations and
+    ///   spaces are empty; the fingerprint is `pbg`'s.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source and 400 hostile sources of one to
+    ///   four fragments, split at every predicted boundary, join to the whole
+    ///   parse; a stand-in of another sort or role changes a unit's choices at
+    ///   its first token.
+    /// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+    /// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
+    #[must_use]
+    #[spec(ensures: |ret| ret.fingerprint == pbg.fingerprint() && ret.source.is_empty() && ret.emit.len() == 1 && ret.stack == [Cell { emit: EmitId(0), start: 0, end: 0, sort: BOUNDARY_SORT, role: Role::Operand }] && ret.obligations.is_empty() && ret.spaces.is_empty())]
+    pub(crate) fn form_boundary(pbg: &Pbg) -> Self
+    {
+        Self {
+            fingerprint: pbg.fingerprint(),
+            source: String::new(),
+            emit: Vec::from([EmitOp::Interior {
+                label: NodeLabel::Wald,
+                start: 0,
+                end: 0,
+                children: Vec::new(),
+            }]),
+            stack: Vec::from([Cell {
+                emit: EmitId(0),
+                start: 0,
+                end: 0,
+                sort: BOUNDARY_SORT,
+                role: Role::Operand,
+            }]),
+            obligations: Vec::new(),
+            spaces: Vec::new(),
+        }
+    }
+
+    /// Encode the checkpoint as a self-contained little-endian byte stream.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: returns a byte stream that
+    ///   [`from_bytes`](Checkpoint::from_bytes) decodes back to an equal
+    ///   checkpoint.
+    /// - provides: the serialization side of the round trip (no serde
+    ///   dependency).
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and mixed-role checkpoints round-trip and
+    ///   resume with exact source, grammar, obligations and child order. The
+    ///   fixed-width golden stream and closed-tag matrix distinguish a
+    ///   coordinated encoder/decoder endian or tag change which a round trip
+    ///   alone would miss.
+    /// - witness: `meld::tests::checkpoint_bytes_round_trip`
+    /// - witness: `meld::tests::checkpoint_resume_is_equivalent`
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    /// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.as_ref().get(.. 8) == Some(u64::from(self.fingerprint).to_le_bytes().as_slice()) && ret.as_ref().get(8 .. 16) == Some(u64::try_from(self.source.len()).unwrap_or(u64::MAX).to_le_bytes().as_slice()) && ret.as_ref().get(16 .. 16_usize.saturating_add(self.source.len())) == Some(self.source.as_bytes()))]
+    pub fn to_bytes(&self) -> CheckpointBytes
+    {
+        let mut writer = Writer { bytes: Vec::new() };
+        writer.u64(WireU64::from(u64::from(self.fingerprint)));
+        writer.blob(ByteChunk::from(self.source.as_bytes()));
+        writer.len(CheckpointCount::from(self.emit.len()));
+        for op in &self.emit {
+            write_emit_op(&mut writer, op);
+        }
+        writer.len(CheckpointCount::from(self.stack.len()));
+        for cell in &self.stack {
+            write_cell(&mut writer, *cell);
+        }
+        writer.len(CheckpointCount::from(self.obligations.len()));
+        for obligation in &self.obligations {
+            write_obligation(&mut writer, *obligation);
+        }
+        writer.len(CheckpointCount::from(self.spaces.len()));
+        for space in &self.spaces {
+            writer.u32(WireU32::from(space.0));
+        }
+        CheckpointBytes::from(writer.bytes)
+    }
+
+    /// Decode a checkpoint from a byte stream produced by
+    /// [`to_bytes`](Checkpoint::to_bytes).
+    ///
+    /// # Specification
+    /// - requires: `bytes` came from [`to_bytes`](Checkpoint::to_bytes) for the
+    ///   same crate revision.
+    /// - ensures: returns the encoded checkpoint on well-formed input.
+    /// - provides: the deserialization side of the round trip.
+    /// - fails: returns [`CheckpointError`] for truncated, mis-tagged, or
+    ///   malformed input.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`CheckpointError::Truncated`], [`CheckpointError::BadTag`], or
+    /// [`CheckpointError::Malformed`] for an ill-formed stream.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — valid snapshots, truncation at field boundaries,
+    ///   invalid UTF-8 and every closed tag expose restored fields and precise
+    ///   decoder errors. Wrong endian, accepted unknown tags or lost payloads
+    ///   change these observations. Resource-exhausting lengths and cross-field
+    ///   semantic validity are not established by the round-trip witnesses.
+    /// - witness: `meld::tests::checkpoint_bytes_round_trip`
+    /// - witness: `meld::tests::checkpoint_resume_is_equivalent`
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    /// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+    #[inline]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |checkpoint| bytes.as_ref().get(.. 8) == Some(u64::from(checkpoint.fingerprint).to_le_bytes().as_slice()) && bytes.as_ref().get(8 .. 16) == Some(u64::try_from(checkpoint.source.len()).unwrap_or(u64::MAX).to_le_bytes().as_slice()) && bytes.as_ref().get(16 .. 16_usize.saturating_add(checkpoint.source.len())) == Some(checkpoint.source.as_bytes())))]
+    pub fn from_bytes(bytes: CheckpointBytesRef<'_>) -> Result<Self, CheckpointError>
+    {
+        let mut reader = Reader { bytes, pos: 0 };
+        let wire_fingerprint = reader.u64()?;
+        let fingerprint = GrammarFingerprint::from(u64::from(wire_fingerprint));
+        let source_bytes = reader.blob()?;
+        let source = String::from_utf8(source_bytes.as_ref().to_vec())
+            .map_err(|_error| CheckpointError::Malformed)?;
+        let wire_emit_len = reader.len()?;
+        let emit_len = usize::from(wire_emit_len);
+        let mut emit = Vec::with_capacity(emit_len);
+        for _ in 0 .. emit_len {
+            let op = read_emit_op(&mut reader)?;
+            emit.push(op);
+        }
+        let wire_stack_len = reader.len()?;
+        let stack_len = usize::from(wire_stack_len);
+        let mut stack = Vec::with_capacity(stack_len);
+        for _ in 0 .. stack_len {
+            let cell = read_cell(&mut reader)?;
+            stack.push(cell);
+        }
+        let wire_oblig_len = reader.len()?;
+        let oblig_len = usize::from(wire_oblig_len);
+        let mut obligations = Vec::with_capacity(oblig_len);
+        for _ in 0 .. oblig_len {
+            let obligation = read_obligation(&mut reader)?;
+            obligations.push(obligation);
+        }
+        let wire_spaces_len = reader.len()?;
+        let spaces_len = usize::from(wire_spaces_len);
+        let mut spaces = Vec::with_capacity(spaces_len);
+        for _ in 0 .. spaces_len {
+            let space = reader.u32()?;
+            spaces.push(EmitId(u32::from(space)));
+        }
+        Ok(Self {
+            fingerprint,
+            source,
+            emit,
+            stack,
+            obligations,
+            spaces,
+        })
+    }
+}
+
+/// A little-endian byte-stream writer for checkpoint serialization.
+#[repr(transparent)]
+struct Writer
+{
+    /// The accumulated bytes.
+    bytes: Vec<u8>,
+}
+
+impl Writer
+{
+    /// Write one byte.
+    ///
+    /// # Specification
+    /// - ensures: appends exactly the little-endian bytes of the supplied
+    ///   scalar, without changing the existing prefix.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unequal bytes in each scalar width, a retained prefix
+    ///   and zero/maximum values expose the exact encoded stream. Reversing
+    ///   endian, truncating high bytes or replacing the prefix changes the
+    ///   golden bytes.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[spec(captures: before = self.bytes.len(), ensures: |_| self.bytes.get(before ..) == Some(u8::from(value).to_le_bytes().as_slice()))]
+    fn u8(
+        &mut self,
+        value: WireByte,
+    )
+    {
+        self.bytes.push(u8::from(value));
+    }
+
+    /// Write a little-endian `u16`.
+    ///
+    /// # Specification
+    /// - ensures: appends exactly the little-endian bytes of the supplied
+    ///   scalar, without changing the existing prefix.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unequal bytes in each scalar width, a retained prefix
+    ///   and zero/maximum values expose the exact encoded stream. Reversing
+    ///   endian, truncating high bytes or replacing the prefix changes the
+    ///   golden bytes.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[spec(captures: before = self.bytes.len(), ensures: |_| self.bytes.get(before ..) == Some(u16::from(value).to_le_bytes().as_slice()))]
+    fn u16(
+        &mut self,
+        value: WireU16,
+    )
+    {
+        self.bytes
+            .extend_from_slice(&u16::from(value).to_le_bytes());
+    }
+
+    /// Write a little-endian `u32`.
+    ///
+    /// # Specification
+    /// - ensures: appends exactly the little-endian bytes of the supplied
+    ///   scalar, without changing the existing prefix.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unequal bytes in each scalar width, a retained prefix
+    ///   and zero/maximum values expose the exact encoded stream. Reversing
+    ///   endian, truncating high bytes or replacing the prefix changes the
+    ///   golden bytes.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[spec(captures: before = self.bytes.len(), ensures: |_| self.bytes.get(before ..) == Some(u32::from(value).to_le_bytes().as_slice()))]
+    fn u32(
+        &mut self,
+        value: WireU32,
+    )
+    {
+        self.bytes
+            .extend_from_slice(&u32::from(value).to_le_bytes());
+    }
+
+    /// Write a little-endian `u64`.
+    ///
+    /// # Specification
+    /// - ensures: appends exactly the little-endian bytes of the supplied
+    ///   scalar, without changing the existing prefix.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unequal bytes in each scalar width, a retained prefix
+    ///   and zero/maximum values expose the exact encoded stream. Reversing
+    ///   endian, truncating high bytes or replacing the prefix changes the
+    ///   golden bytes.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[spec(captures: before = self.bytes.len(), ensures: |_| self.bytes.get(before ..) == Some(u64::from(value).to_le_bytes().as_slice()))]
+    fn u64(
+        &mut self,
+        value: WireU64,
+    )
+    {
+        self.bytes
+            .extend_from_slice(&u64::from(value).to_le_bytes());
+    }
+
+    /// Write a length as a `u64`.
+    ///
+    /// # Specification
+    /// - ensures: appends the count as eight little-endian bytes, saturating
+    ///   only if the host count exceeds the wire width.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nonzero count and the host ceiling expose all eight
+    ///   wire bytes and cursor continuation. Encoding the host-width integer or
+    ///   a big-endian length changes the golden stream; hosts wider than u64
+    ///   are outside the exercised configurations.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[spec(captures: before = self.bytes.len(), ensures: |_| self.bytes.get(before ..) == Some(u64::try_from(usize::from(value)).unwrap_or(u64::MAX).to_le_bytes().as_slice()))]
+    fn len(
+        &mut self,
+        value: CheckpointCount,
+    )
+    {
+        let value = u64::try_from(usize::from(value)).unwrap_or(u64::MAX);
+        self.u64(WireU64::from(value));
+    }
+
+    /// Write a length-prefixed byte blob.
+    ///
+    /// # Specification
+    /// - ensures: appends an eight-byte little-endian length followed by the
+    ///   exact payload, including empty or non-UTF-8 bytes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, multibyte and non-text payloads after a
+    ///   retained prefix expose the encoded length and exact bytes. Character
+    ///   counting, a dropped empty prefix or payload rewriting changes the wire
+    ///   stream.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[spec(captures: before = self.bytes.len(), ensures: |_| self.bytes.get(before .. before.saturating_add(8)) == Some(u64::try_from(value.as_ref().len()).unwrap_or(u64::MAX).to_le_bytes().as_slice()) && self.bytes.get(before.saturating_add(8) ..) == Some(value.as_ref()))]
+    fn blob(
+        &mut self,
+        value: ByteChunk<'_>,
+    )
+    {
+        let bytes = value.as_ref();
+        self.len(CheckpointCount::from(bytes.len()));
+        self.bytes.extend_from_slice(bytes);
+    }
+}
+
+/// A little-endian byte-stream reader for checkpoint deserialization.
+struct Reader<'bytes>
+{
+    /// The underlying byte stream.
+    bytes: CheckpointBytesRef<'bytes>,
+    /// The current read cursor.
+    pos: usize,
+}
+
+impl Reader<'_>
+{
+    /// Read `count` bytes, advancing the cursor.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the cursor sits past exactly `count` bytes on success and is
+    ///   unmoved on failure.
+    /// - fails: fewer than `count` bytes remain.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckpointError::Truncated`] when the stream ends early.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact, short and empty ranges, exhausted input and
+    ///   overflowing cursor arithmetic expose returned bytes and cursor
+    ///   position. Partial advancement or copied/substituted chunks change
+    ///   these observations; the returned borrow prevents a postcondition from
+    ///   borrowing the reader again, so cursor framing is observed after
+    ///   releasing the chunk.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[spec(captures: before = (self.pos, self.bytes), ensures: |ret| before.0.checked_add(usize::from(count)).and_then(|end| before.1.as_ref().get(before.0 .. end)).map_or_else(|| matches!(ret, Err(CheckpointError::Truncated)), |expected| ret.as_ref().is_ok_and(|chunk| core::ptr::eq(&raw const *chunk.as_ref(), &raw const *expected))))]
+    fn take(
+        &mut self,
+        count: ByteCount,
+    ) -> Result<ByteChunk<'_>, CheckpointError>
+    {
+        let count = usize::from(count);
+        let end = self
+            .pos
+            .checked_add(count)
+            .ok_or(CheckpointError::Truncated)?;
+        let slice = self
+            .bytes
+            .as_ref()
+            .get(self.pos .. end)
+            .ok_or(CheckpointError::Truncated)?;
+        self.pos = end;
+        Ok(ByteChunk::from(slice))
+    }
+
+    /// Read one byte.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the cursor sits past the value on success and is unmoved on
+    ///   failure.
+    /// - fails: the stream ends before the value does.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckpointError::Truncated`] when the stream ends early.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fixed unequal-byte scalar and every shorter input
+    ///   expose exact decoded value and success/failure cursor position. Wrong
+    ///   endian, short-input acceptance or partial advancement changes the
+    ///   result or the next field; maximum values detect narrowing.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[spec(captures: before = (self.pos, self.pos.checked_add(1).and_then(|end| self.bytes.as_ref().get(self.pos .. end)).and_then(|bytes| <[u8; 1]>::try_from(bytes).ok()).map(u8::from_le_bytes)), ensures: |ret| ret.map(u8::from) == before.1.ok_or(CheckpointError::Truncated) && self.pos == if before.1.is_some() { before.0.saturating_add(1) } else { before.0 })]
+    fn u8(&mut self) -> Result<WireByte, CheckpointError>
+    {
+        let bytes = self.take(ByteCount::from(1))?;
+        bytes
+            .as_ref()
+            .first()
+            .copied()
+            .map(WireByte::from)
+            .ok_or(CheckpointError::Truncated)
+    }
+
+    /// Read a little-endian `u16`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the cursor sits past the value on success and is unmoved on
+    ///   failure.
+    /// - fails: the stream ends before the value does.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckpointError::Truncated`] when the stream ends early.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fixed unequal-byte scalar and every shorter input
+    ///   expose exact decoded value and success/failure cursor position. Wrong
+    ///   endian, short-input acceptance or partial advancement changes the
+    ///   result or the next field; maximum values detect narrowing.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[spec(captures: before = (self.pos, self.pos.checked_add(2).and_then(|end| self.bytes.as_ref().get(self.pos .. end)).and_then(|bytes| <[u8; 2]>::try_from(bytes).ok()).map(u16::from_le_bytes)), ensures: |ret| ret.map(u16::from) == before.1.ok_or(CheckpointError::Truncated) && self.pos == if before.1.is_some() { before.0.saturating_add(2) } else { before.0 })]
+    fn u16(&mut self) -> Result<WireU16, CheckpointError>
+    {
+        let slice = self.take(ByteCount::from(2))?;
+        let array: [u8; 2] = slice
+            .as_ref()
+            .try_into()
+            .map_err(|_error| CheckpointError::Truncated)?;
+        Ok(WireU16::from(u16::from_le_bytes(array)))
+    }
+
+    /// Read a little-endian `u32`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the cursor sits past the value on success and is unmoved on
+    ///   failure.
+    /// - fails: the stream ends before the value does.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckpointError::Truncated`] when the stream ends early.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fixed unequal-byte scalar and every shorter input
+    ///   expose exact decoded value and success/failure cursor position. Wrong
+    ///   endian, short-input acceptance or partial advancement changes the
+    ///   result or the next field; maximum values detect narrowing.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[spec(captures: before = (self.pos, self.pos.checked_add(4).and_then(|end| self.bytes.as_ref().get(self.pos .. end)).and_then(|bytes| <[u8; 4]>::try_from(bytes).ok()).map(u32::from_le_bytes)), ensures: |ret| ret.map(u32::from) == before.1.ok_or(CheckpointError::Truncated) && self.pos == if before.1.is_some() { before.0.saturating_add(4) } else { before.0 })]
+    fn u32(&mut self) -> Result<WireU32, CheckpointError>
+    {
+        let slice = self.take(ByteCount::from(4))?;
+        let array: [u8; 4] = slice
+            .as_ref()
+            .try_into()
+            .map_err(|_error| CheckpointError::Truncated)?;
+        Ok(WireU32::from(u32::from_le_bytes(array)))
+    }
+
+    /// Read a little-endian `u64`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the cursor sits past the value on success and is unmoved on
+    ///   failure.
+    /// - fails: the stream ends before the value does.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckpointError::Truncated`] when the stream ends early.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fixed unequal-byte scalar and every shorter input
+    ///   expose exact decoded value and success/failure cursor position. Wrong
+    ///   endian, short-input acceptance or partial advancement changes the
+    ///   result or the next field; maximum values detect narrowing.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[spec(captures: before = (self.pos, self.pos.checked_add(8).and_then(|end| self.bytes.as_ref().get(self.pos .. end)).and_then(|bytes| <[u8; 8]>::try_from(bytes).ok()).map(u64::from_le_bytes)), ensures: |ret| ret.map(u64::from) == before.1.ok_or(CheckpointError::Truncated) && self.pos == if before.1.is_some() { before.0.saturating_add(8) } else { before.0 })]
+    fn u64(&mut self) -> Result<WireU64, CheckpointError>
+    {
+        let slice = self.take(ByteCount::from(8))?;
+        let array: [u8; 8] = slice
+            .as_ref()
+            .try_into()
+            .map_err(|_error| CheckpointError::Truncated)?;
+        Ok(WireU64::from(u64::from_le_bytes(array)))
+    }
+
+    /// Read a length written as a `u64`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the cursor sits past the decoded value.
+    /// - fails: the stream ends early or carries a tag or length no well-formed
+    ///   checkpoint holds.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckpointError`] for a truncated or ill-formed stream.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordinary and maximum wire counts plus a short length
+    ///   field expose host conversion and cursor position. Narrowing a length
+    ///   or rewinding after a complete but unrepresentable value changes the
+    ///   result; the conversion-failure branch depends on the target pointer
+    ///   width.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[spec(captures: before = (self.pos, self.pos.checked_add(8).and_then(|end| self.bytes.as_ref().get(self.pos .. end)).and_then(|bytes| <[u8; 8]>::try_from(bytes).ok()).map(u64::from_le_bytes)), ensures: |ret| ret.map(usize::from) == before.1.ok_or(CheckpointError::Truncated).and_then(|value| usize::try_from(value).map_err(|_error| CheckpointError::Malformed)) && self.pos == if before.1.is_some() { before.0.saturating_add(8) } else { before.0 })]
+    fn len(&mut self) -> Result<CheckpointCount, CheckpointError>
+    {
+        let wire_value = self.u64()?;
+        let value = u64::from(wire_value);
+        usize::try_from(value)
+            .map(CheckpointCount::from)
+            .map_err(|_error| CheckpointError::Malformed)
+    }
+
+    /// Read a length-prefixed byte blob.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the cursor sits past the decoded value.
+    /// - fails: the stream ends early or carries a tag or length no well-formed
+    ///   checkpoint holds.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckpointError`] for a truncated or ill-formed stream.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and arbitrary-byte payloads, a truncated length
+    ///   and a truncated payload expose exact bytes and cursor framing. An
+    ///   incorrect prefix width, partial payload consumption or a substituted
+    ///   buffer changes these observations; cursor state is inspected after the
+    ///   result borrow ends.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[spec(captures: before = (self.pos, self.bytes), ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, CheckpointError::Truncated | CheckpointError::Malformed), |chunk| before.1.as_ref().get(before.0 .. before.0.saturating_add(8)) == Some(u64::try_from(chunk.as_ref().len()).unwrap_or(u64::MAX).to_le_bytes().as_slice()) && before.0.checked_add(8).and_then(|start| { let end = start.checked_add(chunk.as_ref().len())?; before.1.as_ref().get(start .. end) }).is_some_and(|expected| core::ptr::eq(&raw const *chunk.as_ref(), &raw const *expected))))]
+    fn blob(&mut self) -> Result<ByteChunk<'_>, CheckpointError>
+    {
+        let count = self.len()?;
+        self.take(ByteCount::from(usize::from(count)))
+    }
+}
+
+/// Read an emission-log entry.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the cursor sits past the decoded value.
+/// - fails: the stream ends early or carries a tag or length no well-formed
+///   checkpoint holds.
+/// - panics: none.
+///
+/// # Errors
+/// [`CheckpointError`] for a truncated or ill-formed stream.
+///
+/// # Adequacy
+/// - hypothesis: L3 — token/interior golden records and each strict record
+///   prefix expose exact labels, endpoints, child order and error boundaries. A
+///   changed discriminant or length interpretation changes the decoded
+///   structure; resource-exhausting child counts are outside this bounded
+///   matrix.
+/// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
+#[spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| reader.pos >= before.0
+    && ret.as_ref().map_or_else(|error| before.1.map_or_else(|| *error == CheckpointError::Truncated, |tag| tag <= 1 || *error == CheckpointError::BadTag { tag }), |op| before.1 == Some(match *op { EmitOp::Token { .. } => 0, EmitOp::Interior { .. } => 1 })
+    && reader.pos == before.0.saturating_add(match *op { EmitOp::Token { label, .. } => (match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(9), EmitOp::Interior { label, ref children, .. } => (match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(17).saturating_add(children.len().saturating_mul(4)) })))]
+fn read_emit_op(reader: &mut Reader<'_>) -> Result<EmitOp, CheckpointError>
+{
+    let wire_tag = reader.u8()?;
+    match u8::from(wire_tag) {
+        0 => {
+            let label = read_label(reader)?;
+            let wire_start = reader.u32()?;
+            let start = u32::from(wire_start);
+            let wire_end = reader.u32()?;
+            let end = u32::from(wire_end);
+            Ok(EmitOp::Token { label, start, end })
+        },
+        1 => {
+            let label = read_label(reader)?;
+            let wire_start = reader.u32()?;
+            let start = u32::from(wire_start);
+            let wire_end = reader.u32()?;
+            let end = u32::from(wire_end);
+            let wire_count = reader.len()?;
+            let count = usize::from(wire_count);
+            let mut children = Vec::with_capacity(count);
+            for _ in 0 .. count {
+                let wire_child = reader.u32()?;
+                let child = u32::from(wire_child);
+                children.push(EmitId(child));
+            }
+            Ok(EmitOp::Interior {
+                label,
+                start,
+                end,
+                children,
+            })
+        },
+        tag => Err(CheckpointError::BadTag { tag }),
+    }
+}
+
+/// Write an emission-log entry.
+///
+/// # Specification
+/// - ensures: appends the token/interior discriminant, label, endpoints and,
+///   for interiors, the ordered length-prefixed child identities.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — token and interior records, empty and ordered children
+///   and maximum identities expose exact byte payloads and decoded order.
+///   Swapping endpoints, dropping a child or reversing its order changes the
+///   golden record.
+/// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
+#[spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before) == Some(&match *op { EmitOp::Token { .. } => 0, EmitOp::Interior { .. } => 1 })
+    && writer.bytes.len() == before.saturating_add(match *op { EmitOp::Token { label, .. } => (match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(9), EmitOp::Interior { label, ref children, .. } => (match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(17).saturating_add(children.len().saturating_mul(4)) }))]
+fn write_emit_op(
+    writer: &mut Writer,
+    op: &EmitOp,
+)
+{
+    match *op {
+        EmitOp::Token { label, start, end } => {
+            writer.u8(WireByte::from(0));
+            write_label(writer, label);
+            writer.u32(WireU32::from(start));
+            writer.u32(WireU32::from(end));
+        },
+        EmitOp::Interior {
+            label,
+            start,
+            end,
+            ref children,
+        } => {
+            writer.u8(WireByte::from(1));
+            write_label(writer, label);
+            writer.u32(WireU32::from(start));
+            writer.u32(WireU32::from(end));
+            writer.len(CheckpointCount::from(children.len()));
+            for child in children {
+                writer.u32(WireU32::from(child.0));
+            }
+        },
+    }
+}
+
+/// Read a node label: the label's pinned digest tag, then its payload.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the cursor sits past the decoded value.
+/// - fails: the stream ends early or carries a tag or length no well-formed
+///   checkpoint holds.
+/// - panics: none.
+///
+/// # Errors
+/// [`CheckpointError`] for a truncated or ill-formed stream.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each golden label payload, each strict record prefix and
+///   unknown outer/nested discriminants expose exact values, consumed width and
+///   typed errors. Wrong payload order, over-consumption or acceptance of
+///   unknown tags changes these observations.
+/// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
+#[spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| reader.pos >= before.0 && ret.as_ref().map_or_else(|error| before.1.map_or_else(|| *error == CheckpointError::Truncated, |tag| (1 ..= 7).contains(&tag) || *error == CheckpointError::BadTag { tag }), |label| before.1 == Some(u8::from(label.tag())) && reader.pos == before.0.saturating_add(match *label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } => 4, NodeLabel::GhostClose { .. } => 8 })))]
+fn read_label(reader: &mut Reader<'_>) -> Result<NodeLabel, CheckpointError>
+{
+    let wire_tag = reader.u8()?;
+    match u8::from(wire_tag) {
+        0x01 => Ok(NodeLabel::Wald),
+        0x02 => {
+            let wire_mold = reader.u32()?;
+            Ok(NodeLabel::Meld(MoldId::from(u32::from(wire_mold))))
+        },
+        0x03 => {
+            let wire_mold = reader.u32()?;
+            Ok(NodeLabel::Tile(MoldId::from(u32::from(wire_mold))))
+        },
+        0x04 => {
+            let wire_sort = reader.u16()?;
+            let sort = GroutSort::from(u16::from(wire_sort));
+            let shape = read_shape(reader)?;
+            Ok(NodeLabel::Grout { sort, shape })
+        },
+        0x05 => {
+            let wire_sort = reader.u16()?;
+            let sort = GroutSort::from(u16::from(wire_sort));
+            let wire_reach = reader.u32()?;
+            let reach = CloseReach::from(u32::from(wire_reach));
+            let class = read_class(reader)?;
+            Ok(NodeLabel::GhostClose { sort, class, reach })
+        },
+        0x06 => Ok(NodeLabel::Space),
+        0x07 => Ok(NodeLabel::Doc),
+        tag => Err(CheckpointError::BadTag { tag }),
+    }
+}
+
+/// Write a node label: its pinned digest tag, then its payload.
+///
+/// # Specification
+/// - ensures: appends the pinned label tag and its little-endian payload;
+///   payload-free labels occupy one byte, molds five, grout four and minted
+///   closes eight: the sort, the reach, then the class.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every label family with unequal-byte mold and sort
+///   payloads and all nested shape/class tags exposes exact golden bytes.
+///   Swapping a tag, losing payload bytes or writing an extra payload changes
+///   the wire form and cursor.
+/// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
+#[spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before) == Some(&u8::from(label.tag())) && writer.bytes.len() == before.saturating_add(match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } => 4, NodeLabel::GhostClose { .. } => 8 }))]
+fn write_label(
+    writer: &mut Writer,
+    label: NodeLabel,
+)
+{
+    writer.u8(WireByte::from(u8::from(label.tag())));
+    match label {
+        NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => {},
+        NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
+            writer.u32(WireU32::from(u32::from(mold)));
+        },
+        NodeLabel::Grout { sort, shape } => {
+            writer.u16(WireU16::from(u16::from(sort)));
+            write_shape(writer, shape);
+        },
+        NodeLabel::GhostClose { sort, class, reach } => {
+            writer.u16(WireU16::from(u16::from(sort)));
+            writer.u32(WireU32::from(u32::from(reach)));
+            write_class(writer, class);
+        },
+    }
+}
+
+/// Write a grout-shape tag.
+///
+/// # Specification
+/// - ensures: appends the vocabulary's single-byte tag, preserving the prior
+///   bytes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every declared variant has an independent golden tag; the
+///   full byte domain distinguishes unknown discriminants. Swapping two
+///   variants, changing the tag width or clobbering a prefix changes the bytes
+///   or typed error.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before ..) == Some([match shape { GroutShape::Convex => 0, GroutShape::Prefix => 1, GroutShape::Postfix => 2, GroutShape::Infix => 3 }].as_slice()))]
+fn write_shape(
+    writer: &mut Writer,
+    shape: GroutShape,
+)
+{
+    writer.u8(WireByte::from(match shape {
+        GroutShape::Convex => 0,
+        GroutShape::Prefix => 1,
+        GroutShape::Postfix => 2,
+        GroutShape::Infix => 3,
+    }));
+}
+
+/// Read a grout-shape tag.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the cursor sits past the decoded value.
+/// - fails: the stream ends early or carries a tag or length no well-formed
+///   checkpoint holds.
+/// - panics: none.
+///
+/// # Errors
+/// [`CheckpointError`] for a truncated or ill-formed stream.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all 256 byte values and empty input expose the closed
+///   variant mapping, offending tag and exact cursor. Accepting an unknown tag,
+///   swapping variants or advancing on truncation changes these observations.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| ret == before.1.ok_or(CheckpointError::Truncated).and_then(|tag| [GroutShape::Convex, GroutShape::Prefix, GroutShape::Postfix, GroutShape::Infix].get(usize::from(tag)).copied().ok_or(CheckpointError::BadTag { tag })) && reader.pos == before.0.saturating_add(usize::from(before.1.is_some())))]
+fn read_shape(reader: &mut Reader<'_>) -> Result<GroutShape, CheckpointError>
+{
+    let wire_tag = reader.u8()?;
+    match u8::from(wire_tag) {
+        0 => Ok(GroutShape::Convex),
+        1 => Ok(GroutShape::Prefix),
+        2 => Ok(GroutShape::Postfix),
+        3 => Ok(GroutShape::Infix),
+        tag => Err(CheckpointError::BadTag { tag }),
+    }
+}
+
+/// Write a closing-class tag.
+///
+/// # Specification
+/// - ensures: appends the vocabulary's single-byte tag, preserving the prior
+///   bytes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every declared variant has an independent golden tag; the
+///   full byte domain distinguishes unknown discriminants. Swapping two
+///   variants, changing the tag width or clobbering a prefix changes the bytes
+///   or typed error.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before ..) == Some([match class { ClosingClass::Paren => 0, ClosingClass::Bracket => 1, ClosingClass::Brace => 2 }].as_slice()))]
+fn write_class(
+    writer: &mut Writer,
+    class: ClosingClass,
+)
+{
+    writer.u8(WireByte::from(match class {
+        ClosingClass::Paren => 0,
+        ClosingClass::Bracket => 1,
+        ClosingClass::Brace => 2,
+    }));
+}
+
+/// Read a closing-class tag.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the cursor sits past the decoded value.
+/// - fails: the stream ends early or carries a tag or length no well-formed
+///   checkpoint holds.
+/// - panics: none.
+///
+/// # Errors
+/// [`CheckpointError`] for a truncated or ill-formed stream.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all 256 byte values and empty input expose the closed
+///   variant mapping, offending tag and exact cursor. Accepting an unknown tag,
+///   swapping variants or advancing on truncation changes these observations.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| ret == before.1.ok_or(CheckpointError::Truncated).and_then(|tag| [ClosingClass::Paren, ClosingClass::Bracket, ClosingClass::Brace].get(usize::from(tag)).copied().ok_or(CheckpointError::BadTag { tag })) && reader.pos == before.0.saturating_add(usize::from(before.1.is_some())))]
+fn read_class(reader: &mut Reader<'_>) -> Result<ClosingClass, CheckpointError>
+{
+    let wire_tag = reader.u8()?;
+    match u8::from(wire_tag) {
+        0 => Ok(ClosingClass::Paren),
+        1 => Ok(ClosingClass::Bracket),
+        2 => Ok(ClosingClass::Brace),
+        tag => Err(CheckpointError::BadTag { tag }),
+    }
+}
+
+/// Read a slope cell.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the cursor sits past the decoded value.
+/// - fails: the stream ends early or carries a tag or length no well-formed
+///   checkpoint holds.
+/// - panics: none.
+///
+/// # Errors
+/// [`CheckpointError`] for a truncated or ill-formed stream.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all role layouts and form flags, every strict record
+///   prefix and unknown role/sort/shape tags expose fields, cursor and error
+///   kind. Reordering payloads, losing flag independence or accepting a bad tag
+///   changes the decoded cell; reference validity is checked when building a
+///   tree.
+/// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
+#[spec(captures: before = reader.pos, ensures: |ret| reader.pos >= before
+    && ret.as_ref().map_or(true, |cell| reader.pos == before.saturating_add(match cell.role { Role::Operand => 15_usize, Role::FormTile { .. } | Role::Operator { .. } => 24 })
+    && reader.bytes.as_ref().get(before .. before.saturating_add(4)) == Some(cell.emit.0.to_le_bytes().as_slice())
+    && reader.bytes.as_ref().get(before.saturating_add(4) .. before.saturating_add(8)) == Some(cell.start.to_le_bytes().as_slice())
+    && reader.bytes.as_ref().get(before.saturating_add(8) .. before.saturating_add(12)) == Some(cell.end.to_le_bytes().as_slice())
+    && reader.bytes.as_ref().get(before.saturating_add(14)) == Some(&(match cell.role { Role::Operand => 0, Role::FormTile { .. } => 1, Role::Operator { .. } => 2 }))))]
+fn read_cell(reader: &mut Reader<'_>) -> Result<Cell, CheckpointError>
+{
+    let wire_emit_id = reader.u32()?;
+    let emit_id = u32::from(wire_emit_id);
+    let emit = EmitId(emit_id);
+    let wire_start = reader.u32()?;
+    let start = u32::from(wire_start);
+    let wire_end = reader.u32()?;
+    let end = u32::from(wire_end);
+    let sort = read_sort(reader)?;
+    let wire_role = reader.u8()?;
+    let role = match u8::from(wire_role) {
+        0 => Role::Operand,
+        1 => {
+            let wire_mold_id = reader.u32()?;
+            let mold_id = u32::from(wire_mold_id);
+            let mold = MoldId::from(mold_id);
+            let form_sort = read_sort(reader)?;
+            let wire_open = reader.u8()?;
+            let open = u8::from(wire_open) != 0;
+            let wire_is_start = reader.u8()?;
+            let is_start = u8::from(wire_is_start) != 0;
+            let wire_absorb_left = reader.u8()?;
+            let absorb_left = u8::from(wire_absorb_left) != 0;
+            Role::FormTile {
+                mold,
+                sort: form_sort,
+                open,
+                start: is_start,
+                absorb_left,
+            }
+        },
+        2 => {
+            let wire_mold_id = reader.u32()?;
+            let mold_id = u32::from(wire_mold_id);
+            let mold = MoldId::from(mold_id);
+            let wire_prec_index = reader.u16()?;
+            let prec_index = PrecIndex::from(u16::from(wire_prec_index));
+            let prec = Prec::new(prec_index);
+            let operator_sort = read_sort(reader)?;
+            let shape = read_shape_op(reader)?;
+            Role::Operator {
+                mold,
+                prec,
+                sort: operator_sort,
+                shape,
+            }
+        },
+        tag => return Err(CheckpointError::BadTag { tag }),
+    };
+    Ok(Cell {
+        emit,
+        start,
+        end,
+        sort,
+        role,
+    })
+}
+
+/// Read a grammar sort tag.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the cursor sits past the decoded value.
+/// - fails: the stream ends early or carries a tag or length no well-formed
+///   checkpoint holds.
+/// - panics: none.
+///
+/// # Errors
+/// [`CheckpointError`] for a truncated or ill-formed stream.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the full u16 tag domain and both truncated widths expose
+///   the closed sort vocabulary and cursor position. Ignoring the high byte,
+///   accepting an unknown sort or advancing on truncation changes the result.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[spec(captures: before = (reader.pos, reader.pos.checked_add(2).and_then(|end| reader.bytes.as_ref().get(reader.pos .. end)).and_then(|bytes| <[u8; 2]>::try_from(bytes).ok()).map(u16::from_le_bytes)), ensures: |ret| ret == before.1.ok_or(CheckpointError::Truncated).and_then(|tag| [Sort::Item, Sort::Pattern, Sort::Expression, Sort::Type, Sort::Instantiation, Sort::ModuleMember, Sort::Block].get(usize::from(tag)).copied().ok_or(CheckpointError::Malformed)) && reader.pos == if before.1.is_some() { before.0.saturating_add(2) } else { before.0 })]
+fn read_sort(reader: &mut Reader<'_>) -> Result<Sort, CheckpointError>
+{
+    let wire_tag = reader.u16()?;
+    let tag = GroutSort::from(u16::from(wire_tag));
+    Sort::try_from_tag(tag).map_err(|_error| CheckpointError::Malformed)
+}
+
+/// Write an obligation instance.
+///
+/// # Specification
+/// - ensures: appends the class and two little-endian endpoints, saturating
+///   offsets at the u32 wire ceiling.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a nonempty obligation and the host offset ceiling expose
+///   exact class, endpoint order and saturated wire values. Swapping endpoints,
+///   changing class or narrowing modulo the ceiling changes the bytes.
+/// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
+#[spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.len() == before.saturating_add(9) && writer.bytes.get(before) == Some(&u8::from(obligation.class.index())) && writer.bytes.get(before.saturating_add(1) .. before.saturating_add(5)) == Some(u32::try_from(usize::from(obligation.span.start())).unwrap_or(u32::MAX).to_le_bytes().as_slice()) && writer.bytes.get(before.saturating_add(5) .. before.saturating_add(9)) == Some(u32::try_from(usize::from(obligation.span.end())).unwrap_or(u32::MAX).to_le_bytes().as_slice()))]
+fn write_obligation(
+    writer: &mut Writer,
+    obligation: ObligationInstance,
+)
+{
+    write_oblig(writer, obligation.class);
+    let start = u32::try_from(usize::from(obligation.span.start())).unwrap_or(u32::MAX);
+    let end = u32::try_from(usize::from(obligation.span.end())).unwrap_or(u32::MAX);
+    writer.u32(WireU32::from(start));
+    writer.u32(WireU32::from(end));
+}
+
+/// Write an obligation class tag.
+///
+/// # Specification
+/// - ensures: appends the vocabulary's single-byte tag, preserving the prior
+///   bytes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every declared variant has an independent golden tag; the
+///   full byte domain distinguishes unknown discriminants. Swapping two
+///   variants, changing the tag width or clobbering a prefix changes the bytes
+///   or typed error.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before ..) == Some([match class { Oblig::MissingMeld => 0, Oblig::MissingTile => 1, Oblig::IncompleteTile => 2, Oblig::UnmoldedTok => 3, Oblig::InconMeld => 4, Oblig::ExtraMeld => 5, Oblig::ReservedKeyword => 6, Oblig::AmbiguousPrec => 7 }].as_slice()))]
+fn write_oblig(
+    writer: &mut Writer,
+    class: Oblig,
+)
+{
+    writer.u8(WireByte::from(u8::from(class.index())));
+}
+
+/// Read an obligation instance.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the cursor sits past the decoded value.
+/// - fails: the stream ends early or carries a tag or length no well-formed
+///   checkpoint holds.
+/// - panics: none.
+///
+/// # Errors
+/// [`CheckpointError`] for a truncated or ill-formed stream.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact nonempty and ceiling spans, each strict record
+///   prefix, an unknown class and an inverted span expose values, cursor and
+///   typed errors. Swapping endpoints or accepting inversion changes the
+///   result.
+/// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
+#[spec(captures: before = reader.pos, ensures: |ret| reader.pos >= before
+    && reader.pos <= before.saturating_add(9)
+    && ret.as_ref().map_or(true, |obligation| reader.pos == before.saturating_add(9)
+    && reader.bytes.as_ref().get(before) == Some(&u8::from(obligation.class.index()))
+    && reader.bytes.as_ref().get(before.saturating_add(1) .. before.saturating_add(5)) == Some(u32::try_from(usize::from(obligation.span.start())).unwrap_or(u32::MAX).to_le_bytes().as_slice())
+    && reader.bytes.as_ref().get(before.saturating_add(5) .. before.saturating_add(9)) == Some(u32::try_from(usize::from(obligation.span.end())).unwrap_or(u32::MAX).to_le_bytes().as_slice())))]
+fn read_obligation(reader: &mut Reader<'_>) -> Result<ObligationInstance, CheckpointError>
+{
+    let class = read_oblig(reader)?;
+    let wire_start = reader.u32()?;
+    let start = u32::from(wire_start);
+    let wire_end = reader.u32()?;
+    let end = u32::from(wire_end);
+    let span = SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end))
+        .byte_span()
+        .map_err(|_error| CheckpointError::Malformed)?;
+    Ok(ObligationInstance::new(class, span))
+}
+
+/// Read an obligation class tag.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the cursor sits past the decoded value.
+/// - fails: the stream ends early or carries a tag or length no well-formed
+///   checkpoint holds.
+/// - panics: none.
+///
+/// # Errors
+/// [`CheckpointError`] for a truncated or ill-formed stream.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all 256 byte values and empty input expose the closed
+///   variant mapping, offending tag and exact cursor. Accepting an unknown tag,
+///   swapping variants or advancing on truncation changes these observations.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| ret == before.1.ok_or(CheckpointError::Truncated).and_then(|tag| [Oblig::MissingMeld, Oblig::MissingTile, Oblig::IncompleteTile, Oblig::UnmoldedTok, Oblig::InconMeld, Oblig::ExtraMeld, Oblig::ReservedKeyword, Oblig::AmbiguousPrec].get(usize::from(tag)).copied().ok_or(CheckpointError::BadTag { tag })) && reader.pos == before.0.saturating_add(usize::from(before.1.is_some())))]
+fn read_oblig(reader: &mut Reader<'_>) -> Result<Oblig, CheckpointError>
+{
+    let wire_tag = reader.u8()?;
+    match u8::from(wire_tag) {
+        0 => Ok(Oblig::MissingMeld),
+        1 => Ok(Oblig::MissingTile),
+        2 => Ok(Oblig::IncompleteTile),
+        3 => Ok(Oblig::UnmoldedTok),
+        4 => Ok(Oblig::InconMeld),
+        5 => Ok(Oblig::ExtraMeld),
+        6 => Ok(Oblig::ReservedKeyword),
+        7 => Ok(Oblig::AmbiguousPrec),
+        tag => Err(CheckpointError::BadTag { tag }),
+    }
+}
+
+/// Write a slope cell.
+///
+/// # Specification
+/// - ensures: appends identity, endpoints, sort and role with the role-specific
+///   payload; form flags are canonical zero/one bytes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — operand, operator and every form-flag combination with
+///   unequal payloads expose exact field order and round-trip values. Swapping
+///   span endpoints or role fields, losing a flag or changing width alters the
+///   golden record.
+/// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
+#[spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.len() == before.saturating_add(match cell.role { Role::Operand => 15_usize, Role::FormTile { .. } | Role::Operator { .. } => 24 })
+    && writer.bytes.get(before .. before.saturating_add(4)) == Some(cell.emit.0.to_le_bytes().as_slice())
+    && writer.bytes.get(before.saturating_add(4) .. before.saturating_add(8)) == Some(cell.start.to_le_bytes().as_slice())
+    && writer.bytes.get(before.saturating_add(8) .. before.saturating_add(12)) == Some(cell.end.to_le_bytes().as_slice())
+    && writer.bytes.get(before.saturating_add(14)) == Some(&(match cell.role { Role::Operand => 0, Role::FormTile { .. } => 1, Role::Operator { .. } => 2 })))]
+fn write_cell(
+    writer: &mut Writer,
+    cell: Cell,
+)
+{
+    writer.u32(WireU32::from(cell.emit.0));
+    writer.u32(WireU32::from(cell.start));
+    writer.u32(WireU32::from(cell.end));
+    write_sort(writer, cell.sort);
+    match cell.role {
+        Role::Operand => writer.u8(WireByte::from(0)),
+        Role::FormTile {
+            mold,
+            sort,
+            open,
+            start,
+            absorb_left,
+        } => {
+            writer.u8(WireByte::from(1));
+            writer.u32(WireU32::from(u32::from(mold)));
+            write_sort(writer, sort);
+            writer.u8(WireByte::from(u8::from(open)));
+            writer.u8(WireByte::from(u8::from(start)));
+            writer.u8(WireByte::from(u8::from(absorb_left)));
+        },
+        Role::Operator {
+            mold,
+            prec,
+            sort,
+            shape,
+        } => {
+            writer.u8(WireByte::from(2));
+            writer.u32(WireU32::from(u32::from(mold)));
+            writer.u16(WireU16::from(u16::from(prec.index())));
+            write_sort(writer, sort);
+            write_shape_op(writer, shape);
+        },
+    }
+}
+
+/// Write a grammar sort tag.
+///
+/// # Specification
+/// - ensures: appends the sort's two-byte little-endian grout tag, preserving
+///   the prior bytes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all six sort tags, a retained prefix and a following
+///   field expose the two-byte vocabulary. A one-byte encoding or changed
+///   variant assignment changes the golden stream.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before ..) == Some(u16::from(sort.grout_sort()).to_le_bytes().as_slice()))]
+fn write_sort(
+    writer: &mut Writer,
+    sort: Sort,
+)
+{
+    writer.u16(WireU16::from(u16::from(sort.grout_sort())));
+}
+
+/// Write an operator shape tag.
+///
+/// # Specification
+/// - ensures: appends the vocabulary's single-byte tag, preserving the prior
+///   bytes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every declared variant has an independent golden tag; the
+///   full byte domain distinguishes unknown discriminants. Swapping two
+///   variants, changing the tag width or clobbering a prefix changes the bytes
+///   or typed error.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before ..) == Some([match shape { OpShape::Prefix => 0, OpShape::Infix => 1, OpShape::Postfix => 2 }].as_slice()))]
+fn write_shape_op(
+    writer: &mut Writer,
+    shape: OpShape,
+)
+{
+    writer.u8(WireByte::from(match shape {
+        OpShape::Prefix => 0,
+        OpShape::Infix => 1,
+        OpShape::Postfix => 2,
+    }));
+}
+
+/// Read an operator shape tag.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the cursor sits past the decoded value.
+/// - fails: the stream ends early or carries a tag or length no well-formed
+///   checkpoint holds.
+/// - panics: none.
+///
+/// # Errors
+/// [`CheckpointError`] for a truncated or ill-formed stream.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all 256 byte values and empty input expose the closed
+///   variant mapping, offending tag and exact cursor. Accepting an unknown tag,
+///   swapping variants or advancing on truncation changes these observations.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| ret == before.1.ok_or(CheckpointError::Truncated).and_then(|tag| [OpShape::Prefix, OpShape::Infix, OpShape::Postfix].get(usize::from(tag)).copied().ok_or(CheckpointError::BadTag { tag })) && reader.pos == before.0.saturating_add(usize::from(before.1.is_some())))]
+fn read_shape_op(reader: &mut Reader<'_>) -> Result<OpShape, CheckpointError>
+{
+    let wire_tag = reader.u8()?;
+    match u8::from(wire_tag) {
+        0 => Ok(OpShape::Prefix),
+        1 => Ok(OpShape::Infix),
+        2 => Ok(OpShape::Postfix),
+        tag => Err(CheckpointError::BadTag { tag }),
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::borrow::ToOwned as _;
+    use alloc::format;
+    use alloc::string::String;
+    use alloc::vec;
+    use alloc::vec::Vec;
+    use core::error::Error as _;
+
+    use anodized::spec;
+    use gandr_surface_grammar::LabelId;
+    use gandr_surface_grammar::LabelText;
+    use gandr_surface_grammar::Pbg;
+    use gandr_surface_grammar::Regex;
+    use gandr_surface_grammar::Rule;
+    use gandr_surface_grammar::RuleName;
+    use gandr_surface_grammar::Sort;
+    use gandr_surface_grammar::TileLabel;
+    use gandr_surface_grammar::built_in;
+    use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::CloseReach;
+    use gandr_surface_syntax::ClosingClass;
+    use gandr_surface_syntax::GroutShape;
+    use gandr_surface_syntax::GroutSort;
+    use gandr_surface_syntax::MoldId;
+    use gandr_surface_syntax::NodeLabel;
+    use gandr_surface_syntax::SourceFragment;
+    use gandr_surface_syntax::SourceText;
+    use gandr_theory_graphs::Assoc;
+    use gandr_theory_graphs::PrecDag;
+    use gandr_theory_graphs::PrecSpec;
+
+    use super::Checkpoint;
+    use super::CheckpointBytesRef;
+    use super::CheckpointError;
+    use super::Expected;
+    use super::FormUnit;
+    use super::Kind;
+    use super::MeldError;
+    use super::MeldState;
+    use super::MoldedTile;
+    use super::SeamBreak;
+    use super::SpaceText;
+    use super::StandInReach;
+    use super::TileText;
+    use super::UnitBase;
+    use super::UnitCleanness;
+    use super::UnitEnding;
+    use super::UnitSeam;
+    use crate::failure::Failure;
+    use crate::label::Lexeme;
+    use crate::oblig::Delta;
+    use crate::oblig::Oblig;
+    use crate::testing::children;
+    use crate::testing::label;
+    use crate::testing::root_digest;
+    use crate::testing::tile_texts;
+
+    #[test]
+    fn public_errors_preserve_context_and_sink_failures() -> Result<(), Failure>
+    {
+        let pbg = paren_pbg()?;
+        let mismatch = MeldState::new(&pbg)
+            .commit(SourceText::from("foreign"))
+            .unwrap_err();
+        assert!(matches!(mismatch, super::MeldError::SourceMismatch));
+        assert!(mismatch.source().is_none());
+        let mut state = MeldState::new(&pbg);
+        state.emit_interior(
+            NodeLabel::Wald,
+            super::SourceSpan::point(super::SourceOffset::from(0)),
+            vec![super::EmitId(u32::MAX)],
+        );
+        let bytes = state.checkpoint().to_bytes();
+        let checkpoint = Checkpoint::from_bytes(CheckpointBytesRef::from(&bytes))?;
+        let corrupt = MeldState::resume(&pbg, &checkpoint)
+            .commit(SourceText::from(""))
+            .unwrap_err();
+        assert!(matches!(corrupt, super::MeldError::Corrupt));
+        assert!(corrupt.source().is_none());
+        let mut state = MeldState::new(&pbg);
+        state.append_source(super::SourceFragment::from("abc"));
+        state.emit_token(
+            NodeLabel::Tile(only(&pbg, TileLabel("x"))),
+            super::SourceSpan::new(super::SourceOffset::from(3), super::SourceOffset::from(2)),
+        );
+        let bytes = state.checkpoint().to_bytes();
+        let checkpoint = Checkpoint::from_bytes(CheckpointBytesRef::from(&bytes))?;
+        let build = MeldState::resume(&pbg, &checkpoint)
+            .commit(SourceText::from("abc"))
+            .unwrap_err();
+        let cause = build
+            .source()
+            .and_then(|error| error.downcast_ref::<gandr_surface_syntax::SyntaxError>());
+        assert!(
+            matches!(cause, Some(gandr_surface_syntax::SyntaxError::InvertedSpan { start, end }) if usize::from(*start) == 3 && usize::from(*end) == 2)
+        );
+        let build_text = format!("{build}");
+        assert!(build_text.contains('3') && build_text.contains('2'));
+        let messages = [format!("{mismatch}"), format!("{corrupt}"), build_text];
+        for (index, message) in messages.iter().enumerate() {
+            assert!(
+                messages
+                    .iter()
+                    .skip(index + 1)
+                    .all(|other| other != message)
+            );
+        }
+        for error in [&mismatch, &corrupt, &build] {
+            assert_eq!(
+                core::fmt::Write::write_fmt(
+                    &mut crate::testing::RefusingSink,
+                    format_args!("{error}")
+                ),
+                Err(core::fmt::Error)
+            );
+        }
+        let truncated =
+            Checkpoint::from_bytes(CheckpointBytesRef::from([].as_slice())).unwrap_err();
+        assert_eq!(truncated, CheckpointError::Truncated);
+        let mut bad_tag = vec![0; 24];
+        bad_tag[16] = 1;
+        bad_tag.push(255);
+        let bad_tag =
+            Checkpoint::from_bytes(CheckpointBytesRef::from(bad_tag.as_slice())).unwrap_err();
+        assert_eq!(bad_tag, CheckpointError::BadTag { tag: 255 });
+        assert!(format!("{bad_tag}").contains("255"));
+        let mut invalid_utf8 = vec![0; 16];
+        invalid_utf8[8] = 1;
+        invalid_utf8.push(0xff);
+        let malformed =
+            Checkpoint::from_bytes(CheckpointBytesRef::from(invalid_utf8.as_slice())).unwrap_err();
+        assert_eq!(malformed, CheckpointError::Malformed);
+        let messages = [
+            format!("{truncated}"),
+            format!("{bad_tag}"),
+            format!("{malformed}"),
+        ];
+        for (index, message) in messages.iter().enumerate() {
+            assert!(
+                messages
+                    .iter()
+                    .skip(index + 1)
+                    .all(|other| other != message)
+            );
+        }
+        for error in [truncated, bad_tag, malformed] {
+            assert_eq!(
+                core::fmt::Write::write_fmt(
+                    &mut crate::testing::RefusingSink,
+                    format_args!("{error}")
+                ),
+                Err(core::fmt::Error)
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn declaration_positions_are_exactly_item_and_module_member()
+    {
+        for (sort, expected) in [
+            (Sort::Item, true),
+            (Sort::ModuleMember, true),
+            (Sort::Expression, false),
+            (Sort::Pattern, false),
+            (Sort::Type, false),
+            (Sort::Instantiation, false),
+            (Sort::Block, false),
+        ] {
+            assert_eq!(
+                bool::from(super::is_item_position(sort)),
+                expected,
+                "{sort:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn checkpoint_compound_records_preserve_payloads() -> Result<(), Failure>
+    {
+        let labels: &[(NodeLabel, &[u8])] = &[
+            (NodeLabel::Wald, &[1]),
+            (NodeLabel::Space, &[6]),
+            (NodeLabel::Doc, &[7]),
+            (NodeLabel::Meld(MoldId::from(0x0123_4567)), &[
+                2, 0x67, 0x45, 0x23, 1,
+            ]),
+            (NodeLabel::Tile(MoldId::from(0x89ab_cdef)), &[
+                3, 0xef, 0xcd, 0xab, 0x89,
+            ]),
+            (
+                NodeLabel::Grout {
+                    sort: GroutSort::from(0x1234),
+                    shape: GroutShape::Infix,
+                },
+                &[4, 0x34, 0x12, 3],
+            ),
+            (
+                NodeLabel::GhostClose {
+                    sort: GroutSort::from(0xabcd),
+                    class: ClosingClass::Brace,
+                    reach: CloseReach::from(0x0102_0304),
+                },
+                &[5, 0xcd, 0xab, 0x04, 0x03, 0x02, 0x01, 2],
+            ),
+        ];
+        for &(label, golden) in labels {
+            let mut writer = super::Writer { bytes: vec![0xee] };
+            super::write_label(&mut writer, label);
+            assert_eq!(writer.bytes.first(), Some(&0xee));
+            assert_eq!(&writer.bytes[1 ..], golden);
+            writer.bytes.push(0xdd);
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(writer.bytes.as_slice()),
+                pos: 1,
+            };
+            assert_eq!(super::read_label(&mut reader), Ok(label));
+            assert_eq!(reader.pos, golden.len() + 1);
+            assert_eq!(u8::from(reader.u8()?), 0xdd);
+            for cut in 1 .. golden.len() {
+                let mut reader = super::Reader {
+                    bytes: CheckpointBytesRef::from(&golden[.. cut]),
+                    pos: 0,
+                };
+                assert_eq!(
+                    super::read_label(&mut reader),
+                    Err(CheckpointError::Truncated)
+                );
+            }
+        }
+        for tag in 0_u8 ..= u8::MAX {
+            if !(1 ..= 7).contains(&tag) {
+                let bytes = [tag];
+                let mut reader = super::Reader {
+                    bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                    pos: 0,
+                };
+                assert_eq!(
+                    super::read_label(&mut reader),
+                    Err(CheckpointError::BadTag { tag })
+                );
+                assert_eq!(reader.pos, 1);
+            }
+            let shaped = [4, 0x34, 0x12, tag];
+            let closed = [5, 0x34, 0x12, 0, 0, 0, 0, tag];
+            for (bytes, limit) in [(shaped.as_slice(), 4), (closed.as_slice(), 3)] {
+                if tag >= limit {
+                    let mut reader = super::Reader {
+                        bytes: CheckpointBytesRef::from(bytes),
+                        pos: 0,
+                    };
+                    assert_eq!(
+                        super::read_label(&mut reader),
+                        Err(CheckpointError::BadTag { tag })
+                    );
+                    assert_eq!(reader.pos, bytes.len());
+                }
+            }
+        }
+        let emissions = [
+            (
+                super::EmitOp::Token {
+                    label: NodeLabel::Space,
+                    start: 0x0102_0304,
+                    end: 0xa1a2_a3a4,
+                },
+                vec![0, 6, 4, 3, 2, 1, 0xa4, 0xa3, 0xa2, 0xa1],
+            ),
+            (
+                super::EmitOp::Interior {
+                    label: NodeLabel::Wald,
+                    start: 0,
+                    end: 2,
+                    children: vec![super::EmitId(0x0102_0304), super::EmitId(u32::MAX)],
+                },
+                vec![
+                    1, 1, 0, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 4, 3, 2, 1, 0xff, 0xff,
+                    0xff, 0xff,
+                ],
+            ),
+            (
+                super::EmitOp::Interior {
+                    label: NodeLabel::Wald,
+                    start: 0,
+                    end: 0,
+                    children: Vec::new(),
+                },
+                vec![1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            ),
+        ];
+        for (op, golden) in emissions {
+            let mut writer = super::Writer { bytes: Vec::new() };
+            super::write_emit_op(&mut writer, &op);
+            assert_eq!(writer.bytes, golden);
+            writer.bytes.push(0xdd);
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(writer.bytes.as_slice()),
+                pos: 0,
+            };
+            assert_eq!(super::read_emit_op(&mut reader), Ok(op));
+            assert_eq!(reader.pos, golden.len());
+            assert_eq!(u8::from(reader.u8()?), 0xdd);
+            for cut in 0 .. golden.len() {
+                let mut reader = super::Reader {
+                    bytes: CheckpointBytesRef::from(&golden[.. cut]),
+                    pos: 0,
+                };
+                assert_eq!(
+                    super::read_emit_op(&mut reader),
+                    Err(CheckpointError::Truncated)
+                );
+            }
+        }
+        for tag in 2_u8 ..= u8::MAX {
+            let bytes = [tag];
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                pos: 0,
+            };
+            assert_eq!(
+                super::read_emit_op(&mut reader),
+                Err(CheckpointError::BadTag { tag })
+            );
+            assert_eq!(reader.pos, 1);
+        }
+        let mut roles = vec![(super::Role::Operand, vec![0])];
+        for (shape, tag) in [
+            (super::OpShape::Prefix, 0),
+            (super::OpShape::Infix, 1),
+            (super::OpShape::Postfix, 2),
+        ] {
+            roles.push((
+                super::Role::Operator {
+                    mold: MoldId::from(0x0123_4567),
+                    prec: super::Prec::new(super::PrecIndex::from(0x1234)),
+                    sort: Sort::Pattern,
+                    shape,
+                },
+                vec![2, 0x67, 0x45, 0x23, 1, 0x34, 0x12, 1, 0, tag],
+            ));
+        }
+        for open in [false, true] {
+            for start in [false, true] {
+                for absorb_left in [false, true] {
+                    roles.push((
+                        super::Role::FormTile {
+                            mold: MoldId::from(0x0123_4567),
+                            sort: Sort::ModuleMember,
+                            open,
+                            start,
+                            absorb_left,
+                        },
+                        vec![
+                            1,
+                            0x67,
+                            0x45,
+                            0x23,
+                            1,
+                            5,
+                            0,
+                            u8::from(open),
+                            u8::from(start),
+                            u8::from(absorb_left),
+                        ],
+                    ));
+                }
+            }
+        }
+        let mut golden = Vec::new();
+        for (role, suffix) in roles {
+            let cell = super::Cell {
+                emit: super::EmitId(0x0102_0304),
+                start: 0x1122_3344,
+                end: 0x5566_7788,
+                sort: Sort::Type,
+                role,
+            };
+            golden.clear();
+            golden.extend_from_slice(&[
+                4, 3, 2, 1, 0x44, 0x33, 0x22, 0x11, 0x88, 0x77, 0x66, 0x55, 3, 0,
+            ]);
+            golden.extend_from_slice(&suffix);
+            let mut writer = super::Writer { bytes: Vec::new() };
+            super::write_cell(&mut writer, cell);
+            assert_eq!(writer.bytes, golden);
+            writer.bytes.push(0xdd);
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(writer.bytes.as_slice()),
+                pos: 0,
+            };
+            assert_eq!(super::read_cell(&mut reader), Ok(cell));
+            assert_eq!(reader.pos, golden.len());
+            assert_eq!(u8::from(reader.u8()?), 0xdd);
+            let cuts = match role {
+                super::Role::Operand => 0 .. 15,
+                super::Role::Operator {
+                    shape: super::OpShape::Prefix,
+                    ..
+                }
+                | super::Role::FormTile {
+                    open: false,
+                    start: false,
+                    absorb_left: false,
+                    ..
+                } => 15 .. 24,
+                super::Role::FormTile { .. } | super::Role::Operator { .. } => 0 .. 0,
+            };
+            for cut in cuts {
+                let mut reader = super::Reader {
+                    bytes: CheckpointBytesRef::from(&golden[.. cut]),
+                    pos: 0,
+                };
+                assert_eq!(
+                    super::read_cell(&mut reader),
+                    Err(CheckpointError::Truncated)
+                );
+            }
+        }
+        for tag in 3_u8 ..= u8::MAX {
+            let mut bytes = vec![0; 14];
+            bytes.push(tag);
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                pos: 0,
+            };
+            assert_eq!(
+                super::read_cell(&mut reader),
+                Err(CheckpointError::BadTag { tag })
+            );
+            assert_eq!(reader.pos, 15);
+        }
+        for (bytes, error, consumed) in [
+            (
+                vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff],
+                CheckpointError::Malformed,
+                14,
+            ),
+            (
+                vec![
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0xff, 0xff, 0, 0, 0,
+                ],
+                CheckpointError::Malformed,
+                21,
+            ),
+            (
+                vec![
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 0,
+                ],
+                CheckpointError::Malformed,
+                23,
+            ),
+            (
+                vec![
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 3,
+                ],
+                CheckpointError::BadTag { tag: 3 },
+                24,
+            ),
+        ] {
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                pos: 0,
+            };
+            assert_eq!(super::read_cell(&mut reader), Err(error));
+            assert_eq!(reader.pos, consumed);
+        }
+        let obligation = super::ObligationInstance::new(
+            Oblig::AmbiguousPrec,
+            gandr_surface_syntax::ByteSpan::new(
+                ByteOffset::from(0x0102_0304),
+                ByteOffset::from(0x1122_3344),
+            )?,
+        );
+        let golden = [7, 4, 3, 2, 1, 0x44, 0x33, 0x22, 0x11];
+        let mut writer = super::Writer { bytes: Vec::new() };
+        super::write_obligation(&mut writer, obligation);
+        assert_eq!(writer.bytes, golden);
+        let mut reader = super::Reader {
+            bytes: CheckpointBytesRef::from(golden.as_slice()),
+            pos: 0,
+        };
+        assert_eq!(super::read_obligation(&mut reader), Ok(obligation));
+        assert_eq!(reader.pos, 9);
+        for cut in 0 .. golden.len() {
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(&golden[.. cut]),
+                pos: 0,
+            };
+            assert_eq!(
+                super::read_obligation(&mut reader),
+                Err(CheckpointError::Truncated)
+            );
+        }
+        let point = gandr_surface_syntax::ByteSpan::new(
+            ByteOffset::from(usize::MAX),
+            ByteOffset::from(usize::MAX),
+        )?;
+        let mut writer = super::Writer { bytes: Vec::new() };
+        super::write_obligation(
+            &mut writer,
+            super::ObligationInstance::new(Oblig::MissingMeld, point),
+        );
+        assert_eq!(writer.bytes, vec![
+            0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
+        ]);
+        let mut reader = super::Reader {
+            bytes: CheckpointBytesRef::from(writer.bytes.as_slice()),
+            pos: 0,
+        };
+        let decoded = super::read_obligation(&mut reader)?;
+        assert_eq!(
+            usize::from(decoded.span.start()),
+            usize::try_from(u32::MAX)?
+        );
+        assert_eq!(decoded.span.start(), decoded.span.end());
+        for (bytes, error, consumed) in [
+            (vec![8], CheckpointError::BadTag { tag: 8 }, 1),
+            (
+                vec![0, 2, 0, 0, 0, 1, 0, 0, 0],
+                CheckpointError::Malformed,
+                9,
+            ),
+        ] {
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                pos: 0,
+            };
+            assert_eq!(super::read_obligation(&mut reader), Err(error));
+            assert_eq!(reader.pos, consumed);
+        }
+        let pbg = paren_pbg()?;
+        let mut state = MeldState::new(&pbg);
+        for text in ["(", "x"] {
+            state.push(&MoldedTile::new(
+                only(&pbg, TileLabel(text)),
+                TileText::from(text),
+            ));
+        }
+        let checkpoint = state.checkpoint();
+        let bytes = checkpoint.to_bytes();
+        for cut in 0 .. bytes.as_ref().len() {
+            assert_eq!(
+                Checkpoint::from_bytes(CheckpointBytesRef::from(&bytes.as_ref()[.. cut])),
+                Err(CheckpointError::Truncated)
+            );
+        }
+        let mut malformed = super::Writer { bytes: Vec::new() };
+        malformed.u64(super::WireU64::from(0));
+        malformed.blob(super::ByteChunk::from(b"\xff".as_slice()));
+        assert_eq!(
+            Checkpoint::from_bytes(CheckpointBytesRef::from(malformed.bytes.as_slice())),
+            Err(CheckpointError::Malformed)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn checkpoint_tags_cover_closed_vocabularies() -> Result<(), Failure>
+    {
+        {
+            let variants = [
+                GroutShape::Convex,
+                GroutShape::Prefix,
+                GroutShape::Postfix,
+                GroutShape::Infix,
+            ];
+            for (index, &variant) in variants.iter().enumerate() {
+                let mut writer = super::Writer { bytes: vec![0xee] };
+                super::write_shape(&mut writer, variant);
+                assert_eq!(writer.bytes, vec![0xee, u8::try_from(index)?]);
+            }
+            for tag in 0_u8 ..= u8::MAX {
+                let bytes = [tag];
+                let mut reader = super::Reader {
+                    bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                    pos: 0,
+                };
+                assert_eq!(
+                    super::read_shape(&mut reader),
+                    variants
+                        .get(usize::from(tag))
+                        .copied()
+                        .ok_or(CheckpointError::BadTag { tag })
+                );
+                assert_eq!(reader.pos, 1);
+            }
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from([].as_slice()),
+                pos: 0,
+            };
+            assert_eq!(
+                super::read_shape(&mut reader),
+                Err(CheckpointError::Truncated)
+            );
+            assert_eq!(reader.pos, 0);
+        }
+        {
+            let variants = [
+                ClosingClass::Paren,
+                ClosingClass::Bracket,
+                ClosingClass::Brace,
+            ];
+            for (index, &variant) in variants.iter().enumerate() {
+                let mut writer = super::Writer { bytes: vec![0xee] };
+                super::write_class(&mut writer, variant);
+                assert_eq!(writer.bytes, vec![0xee, u8::try_from(index)?]);
+            }
+            for tag in 0_u8 ..= u8::MAX {
+                let bytes = [tag];
+                let mut reader = super::Reader {
+                    bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                    pos: 0,
+                };
+                assert_eq!(
+                    super::read_class(&mut reader),
+                    variants
+                        .get(usize::from(tag))
+                        .copied()
+                        .ok_or(CheckpointError::BadTag { tag })
+                );
+                assert_eq!(reader.pos, 1);
+            }
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from([].as_slice()),
+                pos: 0,
+            };
+            assert_eq!(
+                super::read_class(&mut reader),
+                Err(CheckpointError::Truncated)
+            );
+            assert_eq!(reader.pos, 0);
+        }
+        {
+            let variants = [
+                super::OpShape::Prefix,
+                super::OpShape::Infix,
+                super::OpShape::Postfix,
+            ];
+            for (index, &variant) in variants.iter().enumerate() {
+                let mut writer = super::Writer { bytes: vec![0xee] };
+                super::write_shape_op(&mut writer, variant);
+                assert_eq!(writer.bytes, vec![0xee, u8::try_from(index)?]);
+            }
+            for tag in 0_u8 ..= u8::MAX {
+                let bytes = [tag];
+                let mut reader = super::Reader {
+                    bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                    pos: 0,
+                };
+                assert_eq!(
+                    super::read_shape_op(&mut reader),
+                    variants
+                        .get(usize::from(tag))
+                        .copied()
+                        .ok_or(CheckpointError::BadTag { tag })
+                );
+                assert_eq!(reader.pos, 1);
+            }
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from([].as_slice()),
+                pos: 0,
+            };
+            assert_eq!(
+                super::read_shape_op(&mut reader),
+                Err(CheckpointError::Truncated)
+            );
+            assert_eq!(reader.pos, 0);
+        }
+        {
+            let variants = [
+                Oblig::MissingMeld,
+                Oblig::MissingTile,
+                Oblig::IncompleteTile,
+                Oblig::UnmoldedTok,
+                Oblig::InconMeld,
+                Oblig::ExtraMeld,
+                Oblig::ReservedKeyword,
+                Oblig::AmbiguousPrec,
+            ];
+            for (index, &variant) in variants.iter().enumerate() {
+                let mut writer = super::Writer { bytes: vec![0xee] };
+                super::write_oblig(&mut writer, variant);
+                assert_eq!(writer.bytes, vec![0xee, u8::try_from(index)?]);
+            }
+            for tag in 0_u8 ..= u8::MAX {
+                let bytes = [tag];
+                let mut reader = super::Reader {
+                    bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                    pos: 0,
+                };
+                assert_eq!(
+                    super::read_oblig(&mut reader),
+                    variants
+                        .get(usize::from(tag))
+                        .copied()
+                        .ok_or(CheckpointError::BadTag { tag })
+                );
+                assert_eq!(reader.pos, 1);
+            }
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from([].as_slice()),
+                pos: 0,
+            };
+            assert_eq!(
+                super::read_oblig(&mut reader),
+                Err(CheckpointError::Truncated)
+            );
+            assert_eq!(reader.pos, 0);
+        }
+        let variants = [
+            Sort::Item,
+            Sort::Pattern,
+            Sort::Expression,
+            Sort::Type,
+            Sort::Instantiation,
+            Sort::ModuleMember,
+            Sort::Block,
+        ];
+        for (index, &variant) in variants.iter().enumerate() {
+            let mut writer = super::Writer { bytes: vec![0xee] };
+            super::write_sort(&mut writer, variant);
+            assert_eq!(writer.bytes, vec![0xee, u8::try_from(index)?, 0]);
+        }
+        for tag in 0_u16 ..= u16::MAX {
+            let bytes = tag.to_le_bytes();
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                pos: 0,
+            };
+            assert_eq!(
+                super::read_sort(&mut reader),
+                variants
+                    .get(usize::from(tag))
+                    .copied()
+                    .ok_or(CheckpointError::Malformed)
+            );
+            assert_eq!(reader.pos, 2);
+        }
+        for bytes in [[].as_slice(), [0].as_slice()] {
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(bytes),
+                pos: 0,
+            };
+            assert_eq!(
+                super::read_sort(&mut reader),
+                Err(CheckpointError::Truncated)
+            );
+            assert_eq!(reader.pos, 0);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn wire_values_preserve_bytes_and_cursor_failure_boundaries() -> Result<(), Failure>
+    {
+        let mut writer = super::Writer { bytes: vec![0xaa] };
+        writer.u8(super::WireByte::from(0xab));
+        writer.u16(super::WireU16::from(0x1234));
+        writer.u32(super::WireU32::from(0x0123_4567));
+        writer.u64(super::WireU64::from(0x0123_4567_89ab_cdef));
+        writer.len(super::CheckpointCount::from(3));
+        writer.blob(super::ByteChunk::from("é\0".as_bytes()));
+        assert_eq!(writer.bytes, vec![
+            0xaa, 0xab, 0x34, 0x12, 0x67, 0x45, 0x23, 0x01, 0xef, 0xcd, 0xab, 0x89, 0x67, 0x45,
+            0x23, 0x01, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0xc3, 0xa9, 0
+        ]);
+        let mut reader = super::Reader {
+            bytes: super::CheckpointBytesRef::from(writer.bytes.as_slice()),
+            pos: 1,
+        };
+        assert_eq!(u8::from(reader.u8()?), 0xab);
+        assert_eq!(reader.pos, 2);
+        assert_eq!(u16::from(reader.u16()?), 0x1234);
+        assert_eq!(reader.pos, 4);
+        assert_eq!(u32::from(reader.u32()?), 0x0123_4567);
+        assert_eq!(reader.pos, 8);
+        assert_eq!(u64::from(reader.u64()?), 0x0123_4567_89ab_cdef);
+        assert_eq!(reader.pos, 16);
+        assert_eq!(usize::from(reader.len()?), 3);
+        assert_eq!(reader.pos, 24);
+        assert_eq!(reader.blob()?.as_ref(), "é\0".as_bytes());
+        assert_eq!(reader.pos, 35);
+        assert_eq!(reader.u8(), Err(super::CheckpointError::Truncated));
+        assert_eq!(reader.pos, 35);
+        assert_eq!(reader.take(super::ByteCount::from(0))?.as_ref(), []);
+        assert_eq!(reader.pos, 35);
+        assert_eq!(
+            reader.take(super::ByteCount::from(usize::MAX)),
+            Err(super::CheckpointError::Truncated)
+        );
+        assert_eq!(reader.pos, 35);
+        let data = [0xff; 8];
+        for length in 0 .. 8 {
+            let bytes = super::CheckpointBytesRef::from(&data[.. length]);
+            let mut reader = super::Reader { bytes, pos: 0 };
+            assert_eq!(reader.u64(), Err(super::CheckpointError::Truncated));
+            assert_eq!(reader.pos, 0);
+            assert_eq!(reader.len(), Err(super::CheckpointError::Truncated));
+            assert_eq!(reader.pos, 0);
+            assert_eq!(reader.blob(), Err(super::CheckpointError::Truncated));
+            assert_eq!(reader.pos, 0);
+            if length < 4 {
+                assert_eq!(reader.u32(), Err(super::CheckpointError::Truncated));
+                assert_eq!(reader.pos, 0);
+            }
+            if length < 2 {
+                assert_eq!(reader.u16(), Err(super::CheckpointError::Truncated));
+                assert_eq!(reader.pos, 0);
+            }
+        }
+        let mut reader = super::Reader {
+            bytes: super::CheckpointBytesRef::from(data.as_slice()),
+            pos: 0,
+        };
+        assert_eq!(
+            reader.len().map(usize::from),
+            usize::try_from(u64::MAX).map_err(|_error| super::CheckpointError::Malformed)
+        );
+        assert_eq!(reader.pos, 8);
+        let short_payload: &[u8] = &[4, 0, 0, 0, 0, 0, 0, 0, 1, 2];
+        let mut reader = super::Reader {
+            bytes: super::CheckpointBytesRef::from(short_payload),
+            pos: 0,
+        };
+        assert_eq!(reader.blob(), Err(super::CheckpointError::Truncated));
+        assert_eq!(reader.pos, 8);
+        let mut writer = super::Writer { bytes: Vec::new() };
+        for bytes in [b"".as_slice(), b"\xff\0".as_slice()] {
+            writer.blob(super::ByteChunk::from(bytes));
+        }
+        assert_eq!(writer.bytes, vec![
+            0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0xff, 0
+        ]);
+        let mut reader = super::Reader {
+            bytes: super::CheckpointBytesRef::from(writer.bytes.as_slice()),
+            pos: 0,
+        };
+        assert_eq!(reader.blob()?.as_ref(), []);
+        assert_eq!(reader.pos, 8);
+        assert_eq!(reader.blob()?.as_ref(), b"\xff\0");
+        assert_eq!(reader.pos, 18);
+        for byte in [0, 0xff] {
+            let mut writer = super::Writer { bytes: Vec::new() };
+            writer.u8(super::WireByte::from(byte));
+            writer.u16(super::WireU16::from(u16::from_le_bytes([byte; 2])));
+            writer.u32(super::WireU32::from(u32::from_le_bytes([byte; 4])));
+            writer.u64(super::WireU64::from(u64::from_le_bytes([byte; 8])));
+            assert_eq!(writer.bytes, vec![byte; 15]);
+            let mut reader = super::Reader {
+                bytes: super::CheckpointBytesRef::from(writer.bytes.as_slice()),
+                pos: 0,
+            };
+            assert_eq!(u8::from(reader.u8()?), byte);
+            assert_eq!(u16::from(reader.u16()?), u16::from_le_bytes([byte; 2]));
+            assert_eq!(u32::from(reader.u32()?), u32::from_le_bytes([byte; 4]));
+            assert_eq!(u64::from(reader.u64()?), u64::from_le_bytes([byte; 8]));
+            assert_eq!(reader.pos, 15);
+        }
+        let mut writer = super::Writer { bytes: Vec::new() };
+        writer.len(super::CheckpointCount::from(usize::MAX));
+        assert_eq!(writer.bytes, u64::try_from(usize::MAX)?.to_le_bytes());
+        Ok(())
+    }
+
+    #[test]
+    fn emission_preserves_byte_spans_child_order_and_errors() -> Result<(), Failure>
+    {
+        assert_eq!(
+            MeldState::wire_len::<u32>(super::CheckpointCount::from(0)),
+            0
+        );
+        assert_eq!(
+            MeldState::wire_len::<u32>(super::CheckpointCount::from(usize::try_from(u32::MAX)?)),
+            u32::MAX
+        );
+        let pbg = paren_pbg()?;
+        let atom = only(&pbg, TileLabel("x"));
+        let mut state = MeldState::new(&pbg);
+        let first = state.append_source(super::SourceFragment::from("é"));
+        let empty = state.append_source(super::SourceFragment::from(""));
+        let second = state.append_source(super::SourceFragment::from("x"));
+        assert_eq!(
+            first,
+            super::SourceSpan::new(super::SourceOffset::from(0), super::SourceOffset::from(2))
+        );
+        assert_eq!(
+            empty,
+            super::SourceSpan::point(super::SourceOffset::from(2))
+        );
+        assert_eq!(
+            second,
+            super::SourceSpan::new(super::SourceOffset::from(2), super::SourceOffset::from(3))
+        );
+        let left = state.emit_token(NodeLabel::Tile(atom), first);
+        let right = state.emit_token(NodeLabel::Tile(atom), second);
+        assert_eq!((left.0, right.0), (0, 1));
+        let root_span = super::SourceSpan::new(first.start, second.end);
+        let root = state.emit_interior(NodeLabel::Wald, root_span, vec![right, left]);
+        assert_eq!(root.0, 2);
+        assert_eq!(state.emit_start(right), second.start);
+        assert_eq!(state.emit_start(root), first.start);
+        assert_eq!(
+            state.emit_start(super::EmitId(u32::MAX)),
+            super::SourceOffset::from(0)
+        );
+        let source = SourceText::from("éx");
+        let tree = state.build_tree(source, root, super::Splices::NONE)?;
+        assert_eq!(tile_texts(&tree, tree.root()), vec!["x", "é"]);
+        assert_eq!(crate::testing::reconstruct(&tree), "éx");
+        state.flag(Oblig::UnmoldedTok, first);
+        state.flag(Oblig::InconMeld, empty);
+        let inverted = super::SourceSpan::new(second.end, second.start);
+        state.flag(Oblig::AmbiguousPrec, inverted);
+        assert_eq!(state.obligations, vec![
+            super::ObligationInstance::new(Oblig::UnmoldedTok, first.byte_span()?),
+            super::ObligationInstance::new(Oblig::InconMeld, empty.byte_span()?)
+        ]);
+        assert_eq!(u32::from(state.delta().inserted(Oblig::UnmoldedTok)), 1);
+        assert_eq!(u32::from(state.delta().inserted(Oblig::InconMeld)), 1);
+        assert_eq!(u32::from(state.delta().inserted(Oblig::AmbiguousPrec)), 0);
+        assert!(matches!(
+            state.build_tree(source, super::EmitId(u32::MAX), super::Splices::NONE),
+            Err(super::MeldError::Corrupt)
+        ));
+        let forward =
+            state.emit_interior(NodeLabel::Wald, root_span, vec![super::EmitId(u32::MAX)]);
+        assert!(matches!(
+            state.build_tree(source, forward, super::Splices::NONE),
+            Err(super::MeldError::Corrupt)
+        ));
+        let mut state = MeldState::new(&pbg);
+        let bad = state.emit_token(NodeLabel::Tile(atom), inverted);
+        assert!(matches!(
+            state.build_tree(source, bad, super::Splices::NONE),
+            Err(super::MeldError::Build(
+                gandr_surface_syntax::SyntaxError::InvertedSpan { .. }
+            ))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn precedence_comparison_preserves_relation_priority() -> Result<(), Failure>
+    {
+        let pbg = paren_pbg()?;
+        let state = MeldState::new(&pbg);
+        let open = only(&pbg, TileLabel("("));
+        let close = only(&pbg, TileLabel(")"));
+        let prec = pbg.mold(open)?.prec;
+        assert!(bool::from(state.adjacent(open, close)));
+        assert!(!bool::from(state.adjacent(close, open)));
+        assert_eq!(
+            state.compare(open, prec, Sort::Expression, close, prec, Sort::Pattern),
+            super::Rel::Match
+        );
+        let pbg = infix_pbg()?;
+        let state = MeldState::new(&pbg);
+        let atom = only(&pbg, TileLabel("x"));
+        let plus = only(&pbg, TileLabel("+"));
+        let atom_prec = pbg.mold(atom)?.prec;
+        let plus_prec = pbg.mold(plus)?.prec;
+        assert_eq!(
+            state.compare(
+                atom,
+                atom_prec,
+                Sort::Expression,
+                plus,
+                plus_prec,
+                Sort::Expression
+            ),
+            super::Rel::Takes
+        );
+        assert_eq!(
+            state.compare(
+                plus,
+                plus_prec,
+                Sort::Expression,
+                atom,
+                atom_prec,
+                Sort::Expression
+            ),
+            super::Rel::Yields
+        );
+        assert_eq!(
+            state.compare(
+                plus,
+                plus_prec,
+                Sort::Expression,
+                plus,
+                plus_prec,
+                Sort::Expression
+            ),
+            super::Rel::Takes
+        );
+        assert_eq!(
+            state.compare(
+                plus,
+                plus_prec,
+                Sort::Expression,
+                atom,
+                atom_prec,
+                Sort::Pattern
+            ),
+            super::Rel::CrossSort
+        );
+        let pbg = ambiguous_pbg()?;
+        let state = MeldState::new(&pbg);
+        let left = only(&pbg, TileLabel("@a"));
+        let right = only(&pbg, TileLabel("@b"));
+        assert_eq!(
+            state.compare(
+                left,
+                pbg.mold(left)?.prec,
+                Sort::Expression,
+                right,
+                pbg.mold(right)?.prec,
+                Sort::Expression
+            ),
+            super::Rel::Ambiguous
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn missing_operator_operands_are_zero_width_repairs() -> Result<(), Failure>
+    {
+        let pbg = infix_pbg()?;
+        let atom = only(&pbg, TileLabel("x"));
+        let plus = only(&pbg, TileLabel("+"));
+        let cases: &[(&str, &[usize])] =
+            &[("+", &[0, 1]), ("+x", &[0]), ("x+", &[2]), ("x+x", &[])];
+        let mut pending = Vec::new();
+        let mut expected_points = Vec::new();
+        for &(source, points) in cases {
+            let mut state = MeldState::new(&pbg);
+            for text in source.split("").filter(|part| !part.is_empty()) {
+                let mold = if text == "+" { plus } else { atom };
+                state.push(&MoldedTile::new(mold, TileText::from(text)));
+            }
+            let completion = state.expected();
+            let expected = if source.ends_with('+') {
+                vec![Expected::Hole(Sort::Expression)]
+            }
+            else {
+                Vec::new()
+            };
+            assert_eq!(completion.expected(), expected);
+            assert_eq!(bool::from(completion.is_complete()), !source.ends_with('+'));
+            pending.clear();
+            pending.extend(completion.obligations().iter().map(|obligation| {
+                (
+                    obligation.class,
+                    usize::from(obligation.span.start()),
+                    usize::from(obligation.span.end()),
+                )
+            }));
+            pending.sort_unstable();
+            expected_points.clear();
+            expected_points.extend(
+                points
+                    .iter()
+                    .map(|&point| (Oblig::MissingMeld, point, point)),
+            );
+            assert_eq!(pending, expected_points, "{source}");
+            let (tree, obligations) = state.commit_with_obligations(SourceText::from(source))?;
+            assert_eq!(crate::testing::reconstruct(&tree), source);
+            assert!(
+                obligations
+                    .iter()
+                    .map(|obligation| {
+                        (
+                            obligation.class,
+                            usize::from(obligation.span.start()),
+                            usize::from(obligation.span.end()),
+                        )
+                    })
+                    .eq(expected_points.iter().copied()),
+                "{source}: the committed obligations are {obligations:?}"
+            );
+            let grouts = tree
+                .positions()
+                .filter_map(|position| tree.node(position))
+                .filter(|node| {
+                    matches!(node.label(), NodeLabel::Grout {
+                        shape: GroutShape::Convex,
+                        ..
+                    })
+                })
+                .map(|node| {
+                    (
+                        usize::from(node.span().start()),
+                        usize::from(node.span().end()),
+                    )
+                });
+            assert!(
+                grouts.eq(points.iter().map(|&point| (point, point))),
+                "{source}: one convex grout at each missing operand"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn operator_shapes_preserve_uncaptured_neighbors() -> Result<(), Failure>
+    {
+        for (operator, expression, source, expected) in [
+            (
+                "~",
+                Regex::seq([Regex::tile(TileLabel("~")), Regex::sort(Sort::Expression)]),
+                "x~x",
+                vec![vec!["x"], vec!["~", "x"]],
+            ),
+            (
+                "!",
+                Regex::seq([Regex::sort(Sort::Expression), Regex::tile(TileLabel("!"))]),
+                "x!x",
+                vec![vec!["x", "!"], vec!["x"]],
+            ),
+        ] {
+            let mut spec = PrecSpec::new();
+            let atom_prec = spec.insert("atom", Assoc::Non)?;
+            let operator_prec = spec.insert("operator", Assoc::Left)?;
+            spec.add_edge(atom_prec, operator_prec)?;
+            let pbg = Pbg::build(PrecDag::build(&spec)?, vec![
+                Rule::new(
+                    RuleName("operator"),
+                    Sort::Expression,
+                    operator_prec,
+                    expression,
+                ),
+                Rule::new(
+                    RuleName("atom"),
+                    Sort::Expression,
+                    atom_prec,
+                    Regex::tile(TileLabel("x")),
+                ),
+            ])?;
+            let atom = only(&pbg, TileLabel("x"));
+            let operation = only(&pbg, TileLabel(operator));
+            let mut state = MeldState::new(&pbg);
+            for text in source.split("").filter(|part| !part.is_empty()) {
+                let mold = if text == "x" { atom } else { operation };
+                state.push(&MoldedTile::new(mold, TileText::from(text)));
+            }
+            let (tree, obligations) = state.commit_with_obligations(SourceText::from(source))?;
+            assert!(obligations.is_empty(), "{source}: {obligations:?}");
+            assert_eq!(crate::testing::reconstruct(&tree), source);
+            let observed: Vec<_> = tree
+                .children(tree.root())
+                .map(|child| tile_texts(&tree, child))
+                .collect();
+            assert_eq!(observed, expected, "{source}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn stack_splices_keep_shifted_cache_positions_exact() -> Result<(), Failure>
+    {
+        let mut spec = PrecSpec::new();
+        let atom = spec.insert("atom", Assoc::Non)?;
+        let multiply = spec.insert("multiply", Assoc::Left)?;
+        let add = spec.insert("add", Assoc::Left)?;
+        spec.add_edge(atom, multiply)?;
+        spec.add_edge(multiply, add)?;
+        let pbg = Pbg::build(PrecDag::build(&spec)?, vec![
+            Rule::new(
+                RuleName("atom"),
+                Sort::Expression,
+                atom,
+                Regex::tile(TileLabel("x")),
+            ),
+            Rule::new(
+                RuleName("group"),
+                Sort::Expression,
+                atom,
+                Regex::seq([
+                    Regex::tile(TileLabel("(")),
+                    Regex::sort(Sort::Expression),
+                    Regex::tile(TileLabel(")")),
+                ]),
+            ),
+            Rule::new(
+                RuleName("add"),
+                Sort::Expression,
+                add,
+                Regex::seq([
+                    Regex::sort(Sort::Expression),
+                    Regex::tile(TileLabel("+")),
+                    Regex::sort(Sort::Expression),
+                ]),
+            ),
+            Rule::new(
+                RuleName("multiply"),
+                Sort::Expression,
+                multiply,
+                Regex::seq([
+                    Regex::sort(Sort::Expression),
+                    Regex::tile(TileLabel("*")),
+                    Regex::sort(Sort::Expression),
+                ]),
+            ),
+        ])?;
+        let mut state = MeldState::new(&pbg);
+        for text in ["(", "x", "+", "x", "*"] {
+            state.push(&MoldedTile::new(
+                only(&pbg, TileLabel(text)),
+                TileText::from(text),
+            ));
+        }
+        let initial = state.stack.clone();
+        let replacement = initial[1];
+        assert_eq!(state.operators, vec![2, 4]);
+        state.replace_range(
+            super::StackRange::new(super::StackIndex::from(1), super::StackIndex::from(3)),
+            replacement,
+        );
+        assert_eq!(state.stack, vec![
+            initial[0],
+            replacement,
+            initial[3],
+            initial[4]
+        ]);
+        assert_eq!(state.frontiers, vec![0]);
+        assert_eq!(state.operators, vec![3]);
+        assert_eq!(
+            state.topmost_operator_index(),
+            Some(super::OperatorIndex::from(3))
+        );
+        assert_eq!(
+            state.highest_reducible(super::StackFloor::from(3)),
+            Some(super::CollapseStep::ReduceOperator(
+                super::OperatorIndex::from(3)
+            ))
+        );
+        assert_eq!(state.highest_reducible(super::StackFloor::from(4)), None);
+        assert_eq!(
+            state.operator_at(super::OperatorIndex::from(3)),
+            Some((only(&pbg, TileLabel("*")), multiply, Sort::Expression))
+        );
+        assert_eq!(state.operator_at(super::OperatorIndex::from(1)), None);
+        assert_eq!(
+            state.operator_at(super::OperatorIndex::from(usize::MAX)),
+            None
+        );
+        state.push_cell(initial[0]);
+        assert_eq!(state.topmost_operator_index(), None);
+        assert_eq!(
+            state.highest_reducible(super::StackFloor::from(0)),
+            Some(super::CollapseStep::ForceCloseForm(
+                super::FrontierIndex::from(4)
+            ))
+        );
+        let before = state.stack.clone();
+        for range in [
+            super::StackRange::new(super::StackIndex::from(2), super::StackIndex::from(2)),
+            super::StackRange::new(
+                super::StackIndex::from(0),
+                super::StackIndex::from(usize::MAX),
+            ),
+        ] {
+            state.replace_range(range, replacement);
+        }
+        let mut expected = before;
+        expected.extend_from_slice(&[replacement, replacement]);
+        assert_eq!(state.stack, expected);
+        assert_eq!(state.operators, vec![3]);
+        assert_eq!(state.frontiers, vec![0, 4]);
+        state.replace_range(
+            super::StackRange::new(super::StackIndex::from(5), super::StackIndex::from(7)),
+            replacement,
+        );
+        assert_eq!(state.stack, expected[.. 6]);
+        state.assert_head_caches_exact();
+        Ok(())
+    }
+
+    #[test]
+    fn frontier_flags_and_successor_labels_handle_boundary_positions() -> Result<(), Failure>
+    {
+        let pbg = paren_pbg()?;
+        let open = only(&pbg, TileLabel("("));
+        let mut state = MeldState::new(&pbg);
+        assert_eq!(state.nearest_open_form(), None);
+        assert_eq!(state.frontier_hole_sort(MoldId::from(u32::MAX)), None);
+        for index in [0_usize, usize::MAX] {
+            let frontier = super::FrontierIndex::from(index);
+            assert!(!bool::from(state.tail_is_whole(frontier)));
+            assert!(!bool::from(
+                state.extends_tail(frontier, super::Incoming::Tile(open))
+            ));
+        }
+        let label = |spelled: &str| pbg.label_id(LabelText(spelled)).ok_or("undeclared label");
+        // No label, and the opener's own label, which no same-form tile of
+        // the opener carries.
+        let absent_labels: [&[LabelId]; 2] = [&[], &[label("(")?]];
+        for labels in absent_labels {
+            assert!(!bool::from(state.successor_label_in(
+                open,
+                super::CandidateLabels::from(labels),
+                super::SpacedBefore::from(false)
+            )));
+        }
+        let closing = [label(")")?];
+        assert!(bool::from(state.successor_label_in(
+            open,
+            super::CandidateLabels::from(closing.as_slice()),
+            super::SpacedBefore::from(false)
+        )));
+        for _ in 0_u8 .. 2_u8 {
+            state.push(&MoldedTile::new(open, TileText::from("(")));
+        }
+        assert_eq!(state.frontiers, vec![0, 1]);
+        for (index, flag, expected) in [
+            (0_usize, false, vec![1_usize]),
+            (0, true, vec![0, 1]),
+            (1, false, vec![0]),
+            (1, true, vec![0, 1]),
+            (1, true, vec![0, 1]),
+        ] {
+            state.set_form_open(super::StackIndex::from(index), super::FormOpen::from(flag));
+            assert_eq!(state.frontiers, expected);
+            assert_eq!(
+                state.nearest_open_form().map(usize::from),
+                expected.last().copied()
+            );
+            state.assert_head_caches_exact();
+        }
+        let before = state.checkpoint().to_bytes();
+        state.set_form_open(
+            super::StackIndex::from(usize::MAX),
+            super::FormOpen::from(false),
+        );
+        assert_eq!(state.checkpoint().to_bytes(), before);
+        assert_eq!(state.frontiers, vec![0, 1]);
+        Ok(())
+    }
+
+    #[test]
+    fn coordinate_conversions_cover_empty_inverted_and_ceiling()
+    {
+        for raw in [0_u32, 7, u32::MAX] {
+            let observed = usize::from(super::SourceOffset::from(raw).byte_offset());
+            assert_eq!(
+                u64::try_from(observed).unwrap(),
+                u64::from(raw).min(u64::try_from(usize::MAX).unwrap_or(u64::MAX))
+            );
+        }
+        for (raw, next) in [
+            (0_usize, Some(1_usize)),
+            (usize::MAX.saturating_sub(1), Some(usize::MAX)),
+            (usize::MAX, None),
+        ] {
+            let index = super::StackIndex::from(raw);
+            assert_eq!(index.next().map(usize::from), next);
+            assert_eq!(index.floor_after().map(usize::from), next);
+        }
+        for (start, end) in [(0_u32, 0_u32), (2, 5), (u32::MAX, u32::MAX)] {
+            let span = super::SourceSpan::new(
+                super::SourceOffset::from(start),
+                super::SourceOffset::from(end),
+            )
+            .byte_span()
+            .unwrap();
+            assert_eq!(
+                usize::from(span.start()),
+                usize::try_from(start).unwrap_or(usize::MAX)
+            );
+            assert_eq!(
+                usize::from(span.end()),
+                usize::try_from(end).unwrap_or(usize::MAX)
+            );
+        }
+        assert!(matches!(
+            super::SourceSpan::new(super::SourceOffset::from(5), super::SourceOffset::from(2))
+                .byte_span(),
+            Err(gandr_surface_syntax::SyntaxError::InvertedSpan { .. })
+        ));
+    }
+
+    #[test]
+    fn push_preserves_unknown_and_multibyte_source() -> Result<(), Failure>
+    {
+        let pbg = infix_pbg()?;
+        let mut state = MeldState::new(&pbg);
+        let invalid = MoldId::from(u32::MAX);
+        let mut expected = String::new();
+        for text in ["", "é", "\0", "tail"] {
+            let start = expected.len();
+            let tile = MoldedTile::new(invalid, TileText::from(text));
+            assert_eq!(tile.mold(), invalid);
+            assert_eq!(<&str>::from(tile.text()), text);
+            state.push(&tile);
+            expected.push_str(text);
+            assert_eq!(state.source, expected);
+            let obligation = state.obligations().last().unwrap();
+            assert_eq!(obligation.class, Oblig::UnmoldedTok);
+            assert_eq!(usize::from(obligation.span.start()), start);
+            assert_eq!(usize::from(obligation.span.end()), expected.len());
+        }
+        let (tree, obligations) =
+            state.commit_with_obligations(SourceText::from(expected.as_str()))?;
+        assert_eq!(crate::testing::reconstruct(&tree), "é\0tail");
+        assert_eq!(
+            obligations
+                .iter()
+                .filter(|obligation| obligation.class == Oblig::UnmoldedTok)
+                .count(),
+            4
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn frontier_queries_follow_open_close_and_operand_transitions() -> Result<(), Failure>
+    {
+        let pbg = paren_pbg()?;
+        let open = only(&pbg, TileLabel("("));
+        let close = only(&pbg, TileLabel(")"));
+        let atom = only(&pbg, TileLabel("x"));
+        let mut state = MeldState::new(&pbg);
+        let invalid = MoldId::from(u32::MAX);
+        assert_eq!(state.open_form_mold(), None);
+        assert!(!bool::from(state.has_open_form()));
+        assert!(!bool::from(state.would_continue_form(close)));
+        assert!(!bool::from(state.admits(close)));
+        assert!(bool::from(state.admits(invalid)));
+        assert!(bool::from(state.sort_admits(invalid, Sort::Pattern)));
+        let frontier = state.admissibility_frontier();
+        assert_eq!(frontier.open, None);
+        assert_eq!(frontier.head_sort, None);
+        assert!(!bool::from(frontier.head_operand));
+        assert_eq!(frontier.expected, Sort::Expression);
+        state.push(&MoldedTile::new(open, TileText::from("(")));
+        assert_eq!(state.open_form_mold(), Some(open));
+        assert!(bool::from(state.has_open_form()));
+        assert!(bool::from(state.would_continue_form(close)));
+        assert!(!bool::from(state.would_continue_form(atom)));
+        assert!(bool::from(
+            state.admits_at(close, &state.admissibility_frontier())
+        ));
+        state.push(&MoldedTile::new(atom, TileText::from("x")));
+        assert_eq!(state.head_operand_sort(), Some(Sort::Expression));
+        assert!(bool::from(state.admissibility_frontier().head_operand));
+        state.push(&MoldedTile::new(close, TileText::from(")")));
+        assert_eq!(state.open_form_mold(), None);
+        assert!(!bool::from(state.has_open_form()));
+        assert_eq!(state.head_operand_sort(), Some(Sort::Expression));
+        let pbg = infix_pbg()?;
+        let plus = only(&pbg, TileLabel("+"));
+        let atom = only(&pbg, TileLabel("x"));
+        let mut state = MeldState::new(&pbg);
+        assert!(bool::from(state.continues_operand(plus)));
+        assert!(!bool::from(state.continues_operand(atom)));
+        assert!(!bool::from(state.admits(plus)));
+        state.push(&MoldedTile::new(atom, TileText::from("x")));
+        assert!(bool::from(state.admits(plus)));
+        state.push(&MoldedTile::new(plus, TileText::from("+")));
+        assert_eq!(state.head_operand_sort(), None);
+        assert!(!bool::from(state.admissibility_frontier().head_operand));
+        assert_eq!(state.expected_operand_sort(), Sort::Expression);
+        Ok(())
+    }
+
+    #[test]
+    fn empty_state_commits_to_a_root() -> Result<(), Failure>
+    {
+        let pbg = infix_pbg()?;
+        let state = MeldState::new(&pbg);
+        let tree = state.commit(SourceText::from(""))?;
+        assert_eq!(Some(NodeLabel::Wald), label(&tree, tree.root()));
+        assert_eq!(tree.grammar(), pbg.fingerprint());
+        Ok(())
+    }
+    #[test]
+    fn infix_reduces_after_precedence() -> Result<(), Failure>
+    {
+        let pbg = infix_pbg()?;
+        let x = only(&pbg, TileLabel("x"));
+        let plus = only(&pbg, TileLabel("+"));
+        let mut state = MeldState::new(&pbg);
+        for tile in [
+            MoldedTile::new(x, TileText::from("x")),
+            MoldedTile::new(plus, TileText::from("+")),
+            MoldedTile::new(x, TileText::from("x")),
+        ] {
+            state.push(&tile);
+        }
+        assert!(state.obligations().is_empty(), "`x + x` is complete");
+        let tree = state.commit(SourceText::from("x+x"))?;
+        // Root Wald -> one Meld named by its operator -> [x, +, x].
+        let root_children = children(&tree, tree.root());
+        assert_eq!(1, root_children.len());
+        assert_eq!(
+            Some(NodeLabel::Meld(plus)),
+            label(&tree, root_children[0]),
+            "an operator form is named by its operator's mold"
+        );
+        assert_eq!(3, children(&tree, root_children[0]).len());
+        Ok(())
+    }
+
+    #[test]
+    fn checkpoint_bytes_round_trip() -> Result<(), Failure>
+    {
+        let pbg = paren_pbg()?;
+        let open = only(&pbg, TileLabel("("));
+        let x = only(&pbg, TileLabel("x"));
+        let mut state = MeldState::new(&pbg);
+        // Leave an open bracket so the checkpoint carries slope + obligations.
+        state.push(&MoldedTile::new(open, TileText::from("(")));
+        state.push(&MoldedTile::new(x, TileText::from("x")));
+        let checkpoint = state.checkpoint();
+        let bytes = checkpoint.to_bytes();
+        let restored = Checkpoint::from_bytes(CheckpointBytesRef::from(&bytes))?;
+        assert_eq!(restored, checkpoint);
+
+        // Truncated input (short of the 8-byte fingerprint) fails closed.
+        let truncated = bytes.as_ref().get(.. 3).unwrap_or(&[]);
+        assert!(matches!(
+            Checkpoint::from_bytes(CheckpointBytesRef::from(truncated)),
+            Err(CheckpointError::Truncated | CheckpointError::Malformed)
+        ));
+        Ok(())
+    }
+
+    /// A minted close survives the checkpoint wire, and every way of getting it
+    /// wrong fails closed.
+    ///
+    /// A label carrying a class round-trips canonically. A stream truncated
+    /// inside its payload is refused rather than half-read — the class is the
+    /// last field written, so a stream that stops after the sort and the
+    /// reach is exactly the dangerous case. And a class byte the reader does
+    /// not know is refused rather than defaulted: guessing a class would pair
+    /// a ghost against a closer that never answered it, which is the one error
+    /// worse than not pairing at all.
+    #[test]
+    fn minted_close_round_trips_and_refuses_unknown_class() -> Result<(), Failure>
+    {
+        for class in [
+            ClosingClass::Paren,
+            ClosingClass::Bracket,
+            ClosingClass::Brace,
+        ] {
+            let ghost = NodeLabel::GhostClose {
+                sort: GroutSort::from(7),
+                class,
+                reach: CloseReach::from(5_u32),
+            };
+            let mut writer = super::Writer { bytes: Vec::new() };
+            super::write_label(&mut writer, ghost);
+            let encoded = writer.bytes;
+
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(encoded.as_slice()),
+                pos: 0,
+            };
+            assert_eq!(
+                ghost,
+                super::read_label(&mut reader)?,
+                "a minted close must round-trip canonically: {class:?}"
+            );
+
+            // Stopping short of the class byte must refuse, not default.
+            let short = encoded
+                .get(.. encoded.len().saturating_sub(1))
+                .unwrap_or(&[]);
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(short),
+                pos: 0,
+            };
+            assert!(
+                super::read_label(&mut reader).is_err(),
+                "a stream truncated before the class must fail closed: {class:?}"
+            );
+        }
+
+        // An unknown class byte is refused, never decoded as some other class.
+        let mut writer = super::Writer { bytes: Vec::new() };
+        super::write_label(&mut writer, NodeLabel::GhostClose {
+            sort: GroutSort::from(7),
+            class: ClosingClass::Paren,
+            reach: CloseReach::NONE,
+        });
+        let mut encoded = writer.bytes;
+        if let Some(last) = encoded.last_mut() {
+            *last = 200;
+        }
+        let mut reader = super::Reader {
+            bytes: CheckpointBytesRef::from(encoded.as_slice()),
+            pos: 0,
+        };
+        assert!(
+            matches!(
+                super::read_label(&mut reader),
+                Err(CheckpointError::BadTag { tag: 200 })
+            ),
+            "an unknown class byte must be refused, never defaulted"
+        );
+
+        // Every other label rides the same wire unchanged.
+        for other in [
+            NodeLabel::Wald,
+            NodeLabel::Meld(MoldId::from(9)),
+            NodeLabel::Tile(MoldId::from(9)),
+            NodeLabel::Grout {
+                sort: GroutSort::from(7),
+                shape: GroutShape::Postfix,
+            },
+            NodeLabel::Space,
+            NodeLabel::Doc,
+        ] {
+            let mut writer = super::Writer { bytes: Vec::new() };
+            super::write_label(&mut writer, other);
+            let encoded = writer.bytes;
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(encoded.as_slice()),
+                pos: 0,
+            };
+            assert_eq!(other, super::read_label(&mut reader)?);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn degrout_flags_one_ambiguous_prec_at_the_smallest_span() -> Result<(), Failure>
+    {
+        // `x @a x @b x`: `@a` and `@b` are precedence-incomparable within one
+        // sort, so the melder emits exactly one AmbiguousPrec at the smallest
+        // responsible span (the second operator `@b`) and the parse stays
+        // total.
+        let pbg = ambiguous_pbg()?;
+        let x = only(&pbg, TileLabel("x"));
+        let opa = only(&pbg, TileLabel("@a"));
+        let opb = only(&pbg, TileLabel("@b"));
+        let mut state = MeldState::new(&pbg);
+        let tiles = [
+            MoldedTile::new(x, TileText::from("x")),
+            MoldedTile::new(opa, TileText::from("@a")),
+            MoldedTile::new(x, TileText::from("x")),
+            MoldedTile::new(opb, TileText::from("@b")),
+            MoldedTile::new(x, TileText::from("x")),
+        ];
+        for tile in &tiles {
+            state.push(tile);
+        }
+
+        let ambiguities: Vec<_> = state
+            .obligations()
+            .iter()
+            .filter(|obligation| obligation.class == Oblig::AmbiguousPrec)
+            .collect();
+        assert_eq!(1, ambiguities.len(), "exactly one AmbiguousPrec");
+
+        // The smallest responsible span is the `@b` tile: source "x@ax@bx",
+        // `@b` occupies bytes 4..6.
+        let span = ambiguities[0].span;
+        assert_eq!(
+            (ByteOffset::from(4), ByteOffset::from(6)),
+            (span.start(), span.end())
+        );
+
+        // Minimization never selects AmbiguousPrec when an alternative exists.
+        let delta = state.delta();
+        assert_eq!(1, u32::from(delta.inserted(Oblig::AmbiguousPrec)));
+
+        // Totality: the parse still commits to a well-formed tree.
+        let tree = state.commit(SourceText::from("x@ax@bx"))?;
+        assert_eq!(Some(NodeLabel::Wald), label(&tree, tree.root()));
+        Ok(())
+    }
+
+    #[test]
+    fn single_atom_commits_to_one_token() -> Result<(), Failure>
+    {
+        let pbg = infix_pbg()?;
+        let x = only(&pbg, TileLabel("x"));
+        let mut state = MeldState::new(&pbg);
+        state.push(&MoldedTile::new(x, TileText::from("x")));
+        assert!(state.obligations().is_empty(), "a bare atom is complete");
+        let tree = state.commit(SourceText::from("x"))?;
+        assert_eq!(tile_texts(&tree, tree.root()), vec!["x".to_owned()]);
+        Ok(())
+    }
+    #[test]
+    fn brackets_close_on_the_matching_delimiter() -> Result<(), Failure>
+    {
+        let pbg = paren_pbg()?;
+        let open = only(&pbg, TileLabel("("));
+        let close = only(&pbg, TileLabel(")"));
+        let x = only(&pbg, TileLabel("x"));
+        let mut state = MeldState::new(&pbg);
+        for tile in [
+            MoldedTile::new(open, TileText::from("(")),
+            MoldedTile::new(x, TileText::from("x")),
+            MoldedTile::new(close, TileText::from(")")),
+        ] {
+            state.push(&tile);
+        }
+        assert!(state.obligations().is_empty(), "`( x )` is complete");
+        let tree = state.commit(SourceText::from("(x)"))?;
+        let root_children = children(&tree, tree.root());
+        assert_eq!(1, root_children.len());
+        assert_eq!(
+            Some(NodeLabel::Meld(open)),
+            label(&tree, root_children[0]),
+            "a bracket form is named by its opener's mold"
+        );
+        // `(`, `x`, `)`
+        assert_eq!(3, children(&tree, root_children[0]).len());
+        Ok(())
+    }
+    /// A synthetic PBG with a bracket `( E )` and a bare atom `x`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the grammar passes every construction check.
+    /// - fails: the grammar builder refuses the declaration.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The builder's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the checked fixture is consumed by a parser scenario
+    ///   asserting exact tree nesting, repair classes and spans. Omitting a
+    ///   terminal, duplicating its mold or changing the form/precedence
+    ///   relation changes those observations rather than merely the fixture
+    ///   shape.
+    /// - witness: `meld::tests::brackets_close_on_the_matching_delimiter`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["(", ")", "x"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1)))]
+    fn paren_pbg() -> Result<Pbg, Failure>
+    {
+        let mut spec = PrecSpec::new();
+        let atom = spec.insert("atom", Assoc::Non)?;
+        let dag = PrecDag::build(&spec)?;
+        let pbg = Pbg::build(dag, vec![
+            Rule::new(
+                RuleName("group"),
+                Sort::Expression,
+                atom,
+                Regex::seq([
+                    Regex::tile(TileLabel("(")),
+                    Regex::sort(Sort::Expression),
+                    Regex::tile(TileLabel(")")),
+                ]),
+            ),
+            Rule::new(
+                RuleName("atom"),
+                Sort::Expression,
+                atom,
+                Regex::tile(TileLabel("x")),
+            ),
+        ])?;
+        Ok(pbg)
+    }
+    #[test]
+    fn delta_reflects_the_buffered_obligations() -> Result<(), Failure>
+    {
+        let pbg = ambiguous_pbg()?;
+        let x = only(&pbg, TileLabel("x"));
+        let opa = only(&pbg, TileLabel("@a"));
+        let opb = only(&pbg, TileLabel("@b"));
+        let mut state = MeldState::new(&pbg);
+        for tile in [
+            MoldedTile::new(x, TileText::from("x")),
+            MoldedTile::new(opa, TileText::from("@a")),
+            MoldedTile::new(x, TileText::from("x")),
+            MoldedTile::new(opb, TileText::from("@b")),
+            MoldedTile::new(x, TileText::from("x")),
+        ] {
+            state.push(&tile);
+        }
+        let delta = state.delta();
+        let buffered = state
+            .obligations()
+            .iter()
+            .filter(|obligation| obligation.class == Oblig::AmbiguousPrec)
+            .count();
+        let inserted = usize::from(delta.inserted(Oblig::AmbiguousPrec));
+        assert_eq!(inserted, buffered);
+        Ok(())
+    }
+    #[test]
+    fn finalize_is_non_destructive() -> Result<(), Failure>
+    {
+        let pbg = infix_pbg()?;
+        let x = only(&pbg, TileLabel("x"));
+        let plus = only(&pbg, TileLabel("+"));
+
+        // An incomplete prefix `x +` expects a right-hand hole.
+        let mut probing = MeldState::new(&pbg);
+        probing.push(&MoldedTile::new(x, TileText::from("x")));
+        probing.push(&MoldedTile::new(plus, TileText::from("+")));
+        let completion = probing.finalize();
+        assert!(!bool::from(completion.is_complete()));
+        assert!(
+            completion
+                .expected()
+                .iter()
+                .any(|item| matches!(item, Expected::Hole(Sort::Expression))),
+            "an operator missing its right operand expects a hole"
+        );
+
+        // Querying finalize at every prefix leaves the committed parse
+        // unchanged.
+        let mut queried = MeldState::new(&pbg);
+        for tile in [
+            MoldedTile::new(x, TileText::from("x")),
+            MoldedTile::new(plus, TileText::from("+")),
+            MoldedTile::new(x, TileText::from("x")),
+        ] {
+            let _before = queried.finalize();
+            queried.push(&tile);
+            let _after = queried.finalize();
+        }
+        let queried_root = root_digest(&queried.commit(SourceText::from("x+x"))?);
+
+        let mut plain = MeldState::new(&pbg);
+        for tile in [
+            MoldedTile::new(x, TileText::from("x")),
+            MoldedTile::new(plus, TileText::from("+")),
+            MoldedTile::new(x, TileText::from("x")),
+        ] {
+            plain.push(&tile);
+        }
+        let plain_root = root_digest(&plain.commit(SourceText::from("x+x"))?);
+        assert_eq!(
+            queried_root, plain_root,
+            "finalize queries do not perturb the committed parse"
+        );
+        Ok(())
+    }
+    #[test]
+    fn checkpoint_resume_is_equivalent() -> Result<(), Failure>
+    {
+        let pbg = infix_pbg()?;
+        let x = only(&pbg, TileLabel("x"));
+        let plus = only(&pbg, TileLabel("+"));
+        let prefix = [
+            MoldedTile::new(x, TileText::from("x")),
+            MoldedTile::new(plus, TileText::from("+")),
+        ];
+        let suffix = [MoldedTile::new(x, TileText::from("x"))];
+
+        // Uninterrupted run.
+        let mut plain = MeldState::new(&pbg);
+        for tile in prefix.iter().chain(suffix.iter()) {
+            plain.push(tile);
+        }
+        let plain_obligations = plain.obligations().to_vec();
+        let plain_root = root_digest(&plain.commit(SourceText::from("x+x"))?);
+
+        // Checkpoint after the prefix, round-trip through bytes, resume.
+        let mut prefix_state = MeldState::new(&pbg);
+        for tile in &prefix {
+            prefix_state.push(tile);
+        }
+        let checkpoint = prefix_state.checkpoint();
+        let bytes = checkpoint.to_bytes();
+        let restored = Checkpoint::from_bytes(CheckpointBytesRef::from(&bytes))?;
+        assert_eq!(checkpoint, restored);
+        let mut resumed = MeldState::resume(&pbg, &restored);
+        for tile in &suffix {
+            resumed.push(tile);
+        }
+        let resumed_obligations = resumed.obligations().to_vec();
+        let resumed_root = root_digest(&resumed.commit(SourceText::from("x+x"))?);
+
+        assert_eq!(resumed_root, plain_root, "resume yields an identical parse");
+        assert_eq!(resumed_obligations, plain_obligations);
+        Ok(())
+    }
+
+    #[test]
+    fn a_parked_unit_keeps_whether_it_reached_its_stand_in() -> Result<(), Failure>
+    {
+        // A unit taken up again meets its seam as the parked unit would: one
+        // whose fold touched its stand-in still breaks, one whose fold did
+        // not still joins.
+        let pbg = built_in()?;
+        let source = SourceText::from(include_str!(
+            "meld/fixtures/a-parked-unit-keeps-whether-it-reached-its-stand-in.gandr"
+        ));
+        let mut molder = crate::Molder::new(&pbg);
+        let split = crate::FormSplit::new(&molder, source);
+        let &[first, second] = split.runs()
+        else {
+            return Err("the source splits into two runs".into());
+        };
+        for (reach, seam) in [
+            (StandInReach::Untouched, UnitSeam::Joined),
+            (StandInReach::Reached, UnitSeam::Broken(SeamBreak::Reached)),
+        ] {
+            let mut unit = split.mold(&mut molder, second);
+            assert_ne!(unit.state.low_water, 0, "a declaration never reaches back");
+            if reach == StandInReach::Reached {
+                unit.state_mut().low_water = 0;
+            }
+            let parked = unit.park();
+            assert_eq!(parked.reach, reach);
+            assert_eq!(parked.base(), UnitBase::FormBoundary);
+            assert_eq!(parked.fingerprint(), pbg.fingerprint());
+            let resumed = FormUnit::resume(&pbg, second, &parked);
+            assert_eq!(resumed.run(), second);
+            assert_eq!(resumed.park(), parked);
+            let mut whole = MeldState::new(&pbg);
+            assert_eq!(
+                whole.join_unit(split.mold(&mut molder, first)),
+                UnitSeam::Joined
+            );
+            assert_eq!(whole.join_unit(resumed), seam);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_parked_unit_keeps_whether_it_ends_settled() -> Result<(), Failure>
+    {
+        // A closed declaration's unit ends settled and is clean, so a laid join
+        // may take its forms up as a block; a declaration left open ends open,
+        // and the next unit's seam breaks against it.
+        let pbg = built_in()?;
+        let source = SourceText::from(include_str!(
+            "meld/fixtures/a-parked-unit-keeps-whether-it-ends-settled.gandr"
+        ));
+        let mut molder = crate::Molder::new(&pbg);
+        let split = crate::FormSplit::new(&molder, source);
+        let &[first, second] = split.runs()
+        else {
+            return Err("the source splits into two runs".into());
+        };
+        let closed = split.mold(&mut molder, first).park();
+        let open = split.mold(&mut molder, second).park();
+        assert_eq!(
+            (closed.ending, closed.cleanness()),
+            (UnitEnding::Settled, UnitCleanness::Clean)
+        );
+        assert_eq!(
+            (open.ending, open.cleanness()),
+            (UnitEnding::Open, UnitCleanness::Unclean)
+        );
+        assert_eq!(
+            FormUnit::resume(&pbg, second, &open).park(),
+            open,
+            "the ending survives a resume"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn mark_rollback_restores_state_exactly() -> Result<(), Failure>
+    {
+        // The molder's per-candidate transaction: mark, dry-run a two-tile
+        // push, roll back, and the state is bytewise identical to before —
+        // committing exactly as a run that never took the dry-run.
+        let pbg = infix_pbg()?;
+        let x = only(&pbg, TileLabel("x"));
+        let plus = only(&pbg, TileLabel("+"));
+
+        let mut state = MeldState::new(&pbg);
+        state.push(&MoldedTile::new(x, TileText::from("x")));
+        let mark = state.mark();
+        state.push(&MoldedTile::new(plus, TileText::from("+")));
+        state.push(&MoldedTile::new(x, TileText::from("x")));
+        state.rollback_to(&mark);
+        let rolled_obligations = state.obligations().to_vec();
+        let rolled_hash = root_digest(&state.commit(SourceText::from("x"))?);
+
+        let mut plain = MeldState::new(&pbg);
+        plain.push(&MoldedTile::new(x, TileText::from("x")));
+        let plain_obligations = plain.obligations().to_vec();
+        let plain_hash = root_digest(&plain.commit(SourceText::from("x"))?);
+
+        assert_eq!(rolled_obligations, plain_obligations);
+        assert_eq!(rolled_hash, plain_hash, "rollback restores the exact state");
+        Ok(())
+    }
+
+    #[test]
+    fn a_foreign_source_is_refused_at_commit() -> Result<(), Failure>
+    {
+        // The tree borrows the caller's source, so commit checks that it is the
+        // text the pushes assembled; any other text would mis-span every node.
+        let pbg = infix_pbg()?;
+        let x = only(&pbg, TileLabel("x"));
+        let mut state = MeldState::new(&pbg);
+        state.push(&MoldedTile::new(x, TileText::from("x")));
+        assert_eq!(
+            Some(MeldError::SourceMismatch),
+            state.commit(SourceText::from("y")).err()
+        );
+
+        Ok(())
+    }
+    /// A synthetic PBG with an infix `E + E` and a bare atom `x`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the grammar passes every construction check.
+    /// - fails: the grammar builder refuses the declaration.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The builder's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the checked fixture is consumed by a parser scenario
+    ///   asserting exact tree nesting, repair classes and spans. Omitting a
+    ///   terminal, duplicating its mold or changing the form/precedence
+    ///   relation changes those observations rather than merely the fixture
+    ///   shape.
+    /// - witness: `meld::tests::infix_reduces_after_precedence`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["+", "x"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1)))]
+    fn infix_pbg() -> Result<Pbg, Failure>
+    {
+        let mut spec = PrecSpec::new();
+        let atom = spec.insert("atom", Assoc::Non)?;
+        let add = spec.insert("add", Assoc::Left)?;
+        spec.add_edge(atom, add)?;
+        let dag = PrecDag::build(&spec)?;
+        let pbg = Pbg::build(dag, vec![
+            Rule::new(
+                RuleName("add"),
+                Sort::Expression,
+                add,
+                Regex::seq([
+                    Regex::sort(Sort::Expression),
+                    Regex::tile(TileLabel("+")),
+                    Regex::sort(Sort::Expression),
+                ]),
+            ),
+            Rule::new(
+                RuleName("atom"),
+                Sort::Expression,
+                atom,
+                Regex::tile(TileLabel("x")),
+            ),
+        ])?;
+        Ok(pbg)
+    }
+    #[test]
+    fn delta_since_reads_only_the_candidate_tail() -> Result<(), Failure>
+    {
+        // A candidate that introduces an ambiguity has a non-empty delta; one
+        // that appends a plain operand has an empty delta — the molder's
+        // per-candidate minimization key, read from the marked tail only.
+        let pbg = ambiguous_pbg()?;
+        let x = only(&pbg, TileLabel("x"));
+        let opa = only(&pbg, TileLabel("@a"));
+        let opb = only(&pbg, TileLabel("@b"));
+
+        let mut state = MeldState::new(&pbg);
+        for tile in [
+            MoldedTile::new(x, TileText::from("x")),
+            MoldedTile::new(opa, TileText::from("@a")),
+            MoldedTile::new(x, TileText::from("x")),
+        ] {
+            state.push(&tile);
+        }
+
+        // Candidate A: the incomparable `@b` introduces one AmbiguousPrec.
+        let mark = state.mark();
+        state.push(&MoldedTile::new(opb, TileText::from("@b")));
+        state.push(&MoldedTile::new(x, TileText::from("x")));
+        let ambiguous_delta = state.delta_since(&mark);
+        assert_eq!(1, u32::from(ambiguous_delta.inserted(Oblig::AmbiguousPrec)));
+        state.rollback_to(&mark);
+
+        // Candidate B over the same base: another operand adds no obligation.
+        let operand_mark = state.mark();
+        state.push(&MoldedTile::new(x, TileText::from("x")));
+        let operand_delta = state.delta_since(&operand_mark);
+        assert!(
+            bool::from(operand_delta.is_empty()),
+            "an operand push flags nothing"
+        );
+        state.rollback_to(&operand_mark);
+
+        // Candidate B is the obligation minimum.
+        assert!(operand_delta < ambiguous_delta);
+        Ok(())
+    }
+    /// A synthetic PBG with two precedence-incomparable infix operators.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the grammar passes every construction check.
+    /// - fails: the grammar builder refuses the declaration.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The builder's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the checked fixture is consumed by a parser scenario
+    ///   asserting exact tree nesting, repair classes and spans. Omitting a
+    ///   terminal, duplicating its mold or changing the form/precedence
+    ///   relation changes those observations rather than merely the fixture
+    ///   shape.
+    /// - witness: `meld::tests::degrout_flags_one_ambiguous_prec_at_the_smallest_span`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["@a", "@b", "x"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1)))]
+    fn ambiguous_pbg() -> Result<Pbg, Failure>
+    {
+        let mut spec = PrecSpec::new();
+        let atom = spec.insert("atom", Assoc::Non)?;
+        let pa = spec.insert("pa", Assoc::Non)?;
+        let pb = spec.insert("pb", Assoc::Non)?;
+        spec.add_edge(atom, pa)?;
+        spec.add_edge(atom, pb)?;
+        let dag = PrecDag::build(&spec)?;
+        let pbg = Pbg::build(dag, vec![
+            Rule::new(
+                RuleName("opa"),
+                Sort::Expression,
+                pa,
+                Regex::seq([
+                    Regex::sort(Sort::Expression),
+                    Regex::tile(TileLabel("@a")),
+                    Regex::sort(Sort::Expression),
+                ]),
+            ),
+            Rule::new(
+                RuleName("opb"),
+                Sort::Expression,
+                pb,
+                Regex::seq([
+                    Regex::sort(Sort::Expression),
+                    Regex::tile(TileLabel("@b")),
+                    Regex::sort(Sort::Expression),
+                ]),
+            ),
+            Rule::new(
+                RuleName("atom"),
+                Sort::Expression,
+                atom,
+                Regex::tile(TileLabel("x")),
+            ),
+        ])?;
+        Ok(pbg)
+    }
+
+    #[test]
+    fn admits_a_form_first_mid_at_a_fresh_slot() -> Result<(), Failure>
+    {
+        // The candidate pre-filter (`admits`): a form whose first symbol is a
+        // repetition gives its first tile a predecessor, the repeated prefix,
+        // so that tile is a form-mid that is also form-first and opens the form
+        // at the base; a stray `;` (a form-end closer) has no open form to
+        // close and is inadmissible.
+        let mut spec = PrecSpec::new();
+        let item = spec.insert("item", Assoc::Non)?;
+        let pbg = Pbg::build(PrecDag::build(&spec)?, vec![Rule::new(
+            RuleName("decorated"),
+            Sort::Item,
+            item,
+            Regex::seq([
+                Regex::repeat(Regex::tile(TileLabel("@"))),
+                Regex::tile(TileLabel("k")),
+                Regex::tile(TileLabel(";")),
+            ]),
+        )])?;
+        let state = MeldState::new(&pbg);
+        let head = *pbg.candidates(TileLabel("k")).first().ok_or("a `k` mold")?;
+        assert!(
+            pbg.adjacencies().iter().any(|&(_, right)| right == head),
+            "the repeated prefix precedes the head"
+        );
+        assert!(
+            bool::from(state.admits(head)),
+            "a form-first mid opens at a fresh slot"
+        );
+        let semi = *pbg.candidates(TileLabel(";")).first().ok_or("a `;` mold")?;
+        assert!(
+            !bool::from(state.admits(semi)),
+            "a stray `;` closer is inadmissible with no open form"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn admits_rejects_a_stray_closer() -> Result<(), Failure>
+    {
+        // A form-end closer (`)` / `;` / a closing `"`) is admissible only when
+        // it `≐`-continues an open form frontier: at the base none is open, so
+        // every closer is rejected (the pre-filter cannot pick a mold that
+        // would immediately flag a `MissingTile`).
+        let pbg = built_in()?;
+        let state = MeldState::new(&pbg);
+        for closer in [")", "}", "]", ";"] {
+            for &mold in pbg.candidates(TileLabel(closer)) {
+                if matches!(state.classify(mold), Kind::FormEnd) {
+                    assert!(
+                        !bool::from(state.admits(mold)),
+                        "a stray {closer:?} form-end is inadmissible at the base"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn expected_sort_reads_the_open_slot() -> Result<(), Failure>
+    {
+        // `expected_operand_sort` reads the head's expected operand slot: at
+        // the base it defaults to `Expression`, and after a `ret`
+        // prefix operator the unsaturated right hole is still
+        // `Expression`.
+        let pbg = built_in()?;
+        let mut state = MeldState::new(&pbg);
+        assert_eq!(Sort::Expression, state.expected_operand_sort());
+        let ret = *pbg
+            .candidates(TileLabel("pure"))
+            .first()
+            .expect("a `ret` mold");
+        state.push(&MoldedTile::new(ret, TileText::from("pure")));
+        assert_eq!(
+            Sort::Expression,
+            state.expected_operand_sort(),
+            "a `ret` operator's right hole expects an expression"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn head_caches_match_a_fresh_scan_across_streams() -> Result<(), Failure>
+    {
+        // The O(1) head caches (`frontiers` / `operators` / `barriers`) must
+        // equal a fresh role scan after EVERY mutation: pushes (every Kind),
+        // splice-reduces, form open/close flips, mark/rollback dry-runs, and
+        // checkpoint resume. The sources cross the mutation classes:
+        // juxtaposition (long operand runs over an open frontier), nested
+        // forms, operators, strings, data members (closed-tile runs), and
+        // malformed input (stray closers, force-closes at commit).
+        let pbg = built_in()?;
+        let sources = [
+            "def f = g a b c d e f h;",
+            "def f = g (h a b) #[c, d] e;",
+            "def f(x : Integer) -> -F Integer { return (x * x + 1) }",
+            "data Tree(a) where { Leaf, Node(l : Tree(a), v : a, r : Tree(a)) }",
+            "def s = \"a ${ f \"${x}\" } b\";",
+            "match v { Inl(x) => x, Inr(y) => y }",
+            "def f = g (a b c",
+            ") } ] stray closers",
+            "let p = (1, 2); if c { pure p } else { pure p }",
+        ];
+        for src in sources {
+            let mut molder = crate::Molder::new(&pbg);
+            let mut state = MeldState::new(&pbg);
+            let source = SourceFragment::from(src);
+            for token in crate::label(source) {
+                if token.lexeme == Lexeme::Space {
+                    let text = token.text(&source);
+                    state.space(SpaceText::from(AsRef::<str>::as_ref(&text)));
+                }
+                else {
+                    // A mark/rollback dry-run before the real push exercises
+                    // the slope undo and cache restore at every position.
+                    let before = state.checkpoint().to_bytes();
+                    let mark = state.mark();
+                    molder.mold(&mut state, token, SourceText::from(src));
+                    state.assert_head_caches_exact();
+                    state.rollback_to(&mark);
+                    assert_eq!(state.checkpoint().to_bytes(), before);
+                    state.assert_head_caches_exact();
+                    molder.mold(&mut state, token, SourceText::from(src));
+                }
+                state.assert_head_caches_exact();
+            }
+            // Checkpoint resume rebuilds the caches from the slope.
+            let resumed = MeldState::resume(&pbg, &state.checkpoint());
+            resumed.assert_head_caches_exact();
+            let _tree = state.commit(SourceText::from(src))?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn completable_hole_closes_without_obligation() -> Result<(), Failure>
+    {
+        // A bare `?` whose optional `name` tail never arrives is a
+        // *complete* form (its mold is in the grammar LAST set), so committing
+        // closes it cleanly — a one-tile hole meld, ZERO obligations — rather
+        // than force-closing an "incomplete" form with a ghost end and a
+        // spurious MissingTile. `finalize` agrees (it reports the input
+        // complete).
+        let pbg = completable_pbg()?;
+        let only = |label: &'static str| -> MoldId {
+            let molds = pbg.candidates(TileLabel(label));
+            assert_eq!(1, molds.len(), "one mold for {label}");
+            molds[0]
+        };
+        let mut state = MeldState::new(&pbg);
+        state.push(&MoldedTile::new(only("?"), TileText::from("?")));
+        // The completion query reports the input already complete: no expected
+        // material, no would-introduce obligation.
+        let completion = state.finalize();
+        assert!(
+            bool::from(completion.is_complete()),
+            "a bare `?` hole is a complete form, expecting nothing"
+        );
+        assert!(
+            completion.obligations().is_empty(),
+            "a bare `?` hole introduces no completion obligation"
+        );
+        let (tree, obligations) = state.commit_with_obligations(SourceText::from("?"))?;
+        assert!(
+            obligations.is_empty(),
+            "a bare `?` hole commits with zero obligations, got {:?}",
+            obligations.iter().map(|o| o.class).collect::<Vec<_>>()
+        );
+        // The hole is a one-tile Meld (so the pipeline recognizer sees a hole
+        // node, not a bare token), carrying just the `?`.
+        let root_children = children(&tree, tree.root());
+        assert_eq!(1, root_children.len(), "one top-level operand");
+        assert_eq!(
+            Some(NodeLabel::Meld(only("?"))),
+            label(&tree, root_children[0]),
+            "the hole is a meld named by its `?`"
+        );
+        assert_eq!(
+            1,
+            children(&tree, root_children[0]).len(),
+            "the hole meld carries just `?`"
+        );
+        Ok(())
+    }
+    #[test]
+    fn completable_hole_does_not_absorb_enclosing_closer() -> Result<(), Failure>
+    {
+        // An open completable `?` frontier does not shadow the
+        // enclosing form — pushing the group's `)` closes the *hole* cleanly
+        // and then the *group*, so the `)` is a sibling of the hole,
+        // never absorbed into its meld (which is what structurally
+        // broke block recovery).
+        let pbg = completable_pbg()?;
+        let only = |label: &'static str| -> MoldId {
+            let molds = pbg.candidates(TileLabel(label));
+            assert_eq!(1, molds.len(), "one mold for {label}");
+            molds[0]
+        };
+        let mut state = MeldState::new(&pbg);
+        for (label, text) in [("(", "("), ("?", "?"), (")", ")")] {
+            state.push(&MoldedTile::new(only(label), TileText::from(text)));
+            // The completable-hole clean-close mutates the slope through
+            // `close_form`; the head caches must stay exact across it (the
+            // shared invariant with
+            // `head_caches_match_a_fresh_scan_across_streams`).
+            state.assert_head_caches_exact();
+        }
+        let (tree, obligations) = state.commit_with_obligations(SourceText::from("(?)"))?;
+        assert!(
+            obligations.is_empty(),
+            "`( ? )` commits with zero obligations, got {:?}",
+            obligations.iter().map(|o| o.class).collect::<Vec<_>>()
+        );
+        // The group meld holds `(`, the hole meld, and `)` as three children;
+        // the hole meld holds ONLY `?` (the `)` is a group sibling, not
+        // absorbed).
+        let root_children = children(&tree, tree.root());
+        assert_eq!(1, root_children.len(), "one top-level group");
+        let group_children = children(&tree, root_children[0]);
+        assert_eq!(3, group_children.len(), "( hole )");
+        assert_eq!(
+            Some(NodeLabel::Meld(only("?"))),
+            label(&tree, group_children[1]),
+            "the middle child is the hole meld"
+        );
+        assert_eq!(
+            1,
+            children(&tree, group_children[1]).len(),
+            "the hole meld carries only `?`, not the enclosing `)`"
+        );
+        Ok(())
+    }
+
+    /// A closing bracket followed by a required operand is a mid tile: the
+    /// type after `+U[r]` is the bridge's operand, however it is spaced, and a
+    /// package's operand after `package [ T ]` stays the package's when a
+    /// declaration follows. A closing bracket that ends its form still ends it:
+    /// the arrow after a universe's `]` takes the universe as its domain.
+    #[test]
+    fn a_bracket_before_a_required_tail_keeps_its_form_open() -> Result<(), Failure>
+    {
+        let pbg = built_in()?;
+        let spans_of = |source: &'static str, kind: &str| -> Result<Vec<String>, Failure> {
+            let result = crate::parse::parse(&pbg, SourceText::from(source))?;
+            assert!(bool::from(result.is_clean()), "{source} reads cleanly");
+            let tree = result.into_tree();
+            let mut spans = Vec::new();
+            for position in tree.positions() {
+                if let Some(NodeLabel::Meld(mold)) = label(&tree, position)
+                    && pbg.named_kind(mold)?.0 == kind
+                    && let Some(text) = tree.fragment(position)
+                {
+                    spans.push(AsRef::<str>::as_ref(&text).to_owned());
+                }
+            }
+            Ok(spans)
+        };
+        for source in [
+            "def g : +U[ω] (-F Integer) ;",
+            "def g : +U[ω](-F Integer) ;",
+        ] {
+            let bridge = source.trim_start_matches("def g : ").trim_end_matches(" ;");
+            assert_eq!(
+                vec![bridge.to_owned()],
+                spans_of(source, "u_type")?,
+                "the bridge in {source} spans its operand"
+            );
+        }
+        assert_eq!(
+            vec!["+U[1] Integer -> -F Integer".to_owned()],
+            spans_of("def g : +U[1] Integer -> -F Integer ;", "function_type")?,
+            "an operand after the grade is the bridge's, below the arrow"
+        );
+        assert_eq!(
+            vec!["+U[1] Integer".to_owned()],
+            spans_of(include_str!("meld/fixtures/str-1.gandr"), "u_type")?,
+            "a bridge's operand stays its own when another declaration follows"
+        );
+        assert_eq!(
+            vec!["Type[+, 1] -> -F Integer".to_owned()],
+            spans_of("def g : +U (Type[+, 1] -> -F Integer) ;", "function_type")?,
+            "a universe's closing bracket ends it, so the arrow takes it as its domain"
+        );
+        Ok(())
+    }
+
+    /// A form ending in a required sort hole closes where a prefix operator at
+    /// its group would: an operator its group yields to stays inside the
+    /// tail, a prefix operator's operand completes it, and an operator its
+    /// group takes from stands outside.
+    #[test]
+    fn a_required_tail_runs_as_far_as_its_group_yields() -> Result<(), Failure>
+    {
+        let pbg = built_in()?;
+        let spans_of = |source: &'static str, kind: &str| -> Result<Vec<String>, Failure> {
+            let result = crate::parse::parse(&pbg, SourceText::from(source))?;
+            assert!(bool::from(result.is_clean()), "{source} reads cleanly");
+            let tree = result.into_tree();
+            let mut spans = Vec::new();
+            for position in tree.positions() {
+                if let Some(NodeLabel::Meld(mold)) = label(&tree, position)
+                    && pbg.named_kind(mold)?.0 == kind
+                    && let Some(text) = tree.fragment(position)
+                {
+                    spans.push(AsRef::<str>::as_ref(&text).to_owned());
+                }
+            }
+            Ok(spans)
+        };
+        assert_eq!(
+            vec!["rec a => a * b".to_owned()],
+            spans_of("def g : rec a => a * b ;", "mu_session_type")?,
+            "a product binds tighter than the protocol and stays in its body"
+        );
+        assert_eq!(
+            vec!["rec a => -F a".to_owned()],
+            spans_of("def g : rec a => -F a ;", "mu_session_type")?,
+            "a prefix operator's operand completes the body before the `;`"
+        );
+        assert_eq!(
+            vec![
+                "rec a => a -> rec b => b".to_owned(),
+                "rec b => b".to_owned()
+            ],
+            spans_of("def g : rec a => a -> rec b => b ;", "mu_session_type")?,
+            "an arrow of the protocol's own right-associative group stays in its body"
+        );
+        assert_eq!(
+            vec!["+U[1] C".to_owned()],
+            spans_of("def g : +U[1] C * D ;", "u_type")?,
+            "a bridge binds tighter than the product, which takes it as an operand"
+        );
+        Ok(())
+    }
+
+    /// A form whose filled tail its own next tile follows stays open for that
+    /// tile: an access's block followed by `unwind` is one access, and one
+    /// followed by `;` closes at its block.
+    #[test]
+    fn a_filled_tail_keeps_its_form_open_for_the_next_tile() -> Result<(), Failure>
+    {
+        let pbg = built_in()?;
+        let accesses = |source: &'static str| -> Result<Vec<String>, Failure> {
+            let result = crate::parse::parse(&pbg, SourceText::from(source))?;
+            assert!(bool::from(result.is_clean()), "{source} reads cleanly");
+            let tree = result.into_tree();
+            let mut spans = Vec::new();
+            for position in tree.positions() {
+                if let Some(NodeLabel::Meld(mold)) = label(&tree, position)
+                    && pbg.named_kind(mold)?.0 == "access_expression"
+                    && let Some(text) = tree.fragment(position)
+                {
+                    spans.push(AsRef::<str>::as_ref(&text).to_owned());
+                }
+            }
+            Ok(spans)
+        };
+        assert_eq!(
+            vec!["access c as v { abort v } unwind { pure *{} }".to_owned()],
+            accesses("def g() -> Integer { access c as v { abort v } unwind { pure *{} } }")?,
+            "the `unwind` clause continues the access after its block"
+        );
+        assert_eq!(
+            vec!["access c as v { resume v 1 }".to_owned()],
+            accesses("def g() -> Integer { access c as v { resume v 1 }; pure c }")?,
+            "a `;` after the block closes the access"
+        );
+        Ok(())
+    }
+
+    /// Each comment is a child of the node it describes: the form below it
+    /// with no blank line between, the form it trails on one line, the empty
+    /// bracket it stands in, the root when a blank line sets it apart, and
+    /// the form of a leaf it is written against.
+    #[test]
+    fn each_comment_is_owned_by_the_node_it_describes() -> Result<(), Failure>
+    {
+        let pbg = built_in()?;
+        let source =
+            include_str!("meld/unformatted/each-comment-is-owned-by-the-node-it-describes.gandr");
+        let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();
+        assert_eq!(crate::testing::reconstruct(&tree), source);
+        let owner_of = |comment: &str| -> Option<String> {
+            let at = tree.positions().find(|&position| {
+                label(&tree, position) == Some(NodeLabel::Space)
+                    && tree
+                        .fragment(position)
+                        .is_some_and(|text| <&str>::from(text) == comment)
+            })?;
+            let parent = tree
+                .positions()
+                .find(|&position| children(&tree, position).contains(&at))?;
+            match label(&tree, parent)? {
+                NodeLabel::Wald => Some("the root".to_owned()),
+                NodeLabel::Meld(_)
+                | NodeLabel::Tile(_)
+                | NodeLabel::Grout { .. }
+                | NodeLabel::GhostClose { .. }
+                | NodeLabel::Space
+                | NodeLabel::Doc => tree
+                    .fragment(parent)
+                    .map(|text| <&str>::from(text).to_owned()),
+            }
+        };
+        for (comment, owner, case) in [
+            ("// lead", "def x = 1;", "leading"),
+            ("// trail", "def x = 1;", "trailing"),
+            ("// alone", "the root", "standalone"),
+            ("// first", "def w = 2;", "leading, stacked"),
+            ("// second", "def w = 2;", "leading"),
+            ("// above", "return x", "leading, inside a block"),
+            ("/* empty */", "#[ /* empty */ ]", "dangling"),
+            ("/* one */", "def z = 1 /* one */;", "beside a leaf"),
+        ] {
+            assert_eq!(
+                Some(owner.to_owned()),
+                owner_of(comment),
+                "`{comment}` is {case}"
+            );
+        }
+        Ok(())
+    }
+
+    /// Documentation is grouped into `Doc` nodes that no digest reads: the
+    /// `///` and `doc` spellings, their mixtures and their order beside other
+    /// attributes key one declaration, and only the remaining attributes move
+    /// its digest.
+    #[test]
+    fn documentation_reaches_no_digest() -> Result<(), Failure>
+    {
+        let pbg = built_in()?;
+        let digest = |source: &'static str| -> Result<_, Failure> {
+            let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();
+            assert_eq!(crate::testing::reconstruct(&tree), source);
+            Ok(root_digest(&tree))
+        };
+        let groups: [&[&'static str]; 4] = [
+            &[
+                "def x = 1;\n",
+                "@[ doc(\"x\") ] def x = 1;\n",
+                include_str!("meld/fixtures/str-2.gandr"),
+                include_str!("meld/fixtures/str-3.gandr"),
+            ],
+            &[
+                "@[ checks ] def x = 1;\n",
+                "@[ doc(\"x\"), checks ] def x = 1;\n",
+                "@[ checks, doc(\"x\") ] def x = 1;\n",
+                "@[ doc(\"x\") ] @[ checks ] def x = 1;\n",
+                "@[ checks ] @[ doc(\"x\") ] def x = 1;\n",
+                include_str!("meld/fixtures/str-4.gandr"),
+            ],
+            &[
+                "data D : Type where { | A : D }\n",
+                "@[ doc(\"x\") ] data D : Type where { | A : D }\n",
+                include_str!("meld/fixtures/str-5.gandr"),
+            ],
+            &[
+                "@[ checks ] data D : Type where { | A : D }\n",
+                "@[ doc(\"x\"), checks ] data D : Type where { | A : D }\n",
+            ],
+        ];
+        let mut keys = Vec::new();
+        for group in groups {
+            let mut spellings = group.iter();
+            let first = digest(spellings.next().copied().ok_or("a group has a spelling")?)?;
+            for &source in spellings {
+                assert_eq!(digest(source)?, first, "`{source}` keys as its group");
+            }
+            assert!(
+                !keys.contains(&first),
+                "a remaining attribute moves the key"
+            );
+            keys.push(first);
+        }
+        Ok(())
+    }
+
+    /// A `///` run is one `Doc` node owned by the form after it: a blank line
+    /// ends the run, and a run after a form on its own line still describes
+    /// the next one.
+    #[test]
+    fn a_doc_run_documents_the_form_below_it() -> Result<(), Failure>
+    {
+        let pbg = built_in()?;
+        let source = include_str!("meld/fixtures/a-doc-run-documents-the-form-below-it.gandr");
+        let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();
+        assert_eq!(crate::testing::reconstruct(&tree), source);
+        let text = |position| -> String {
+            tree.fragment(position)
+                .map_or_else(String::new, |text| <&str>::from(text).to_owned())
+        };
+        let docs: Vec<(String, String)> = tree
+            .positions()
+            .filter(|&position| label(&tree, position) == Some(NodeLabel::Doc))
+            .map(|position| {
+                let owner = tree
+                    .positions()
+                    .find(|&parent| children(&tree, parent).contains(&position))
+                    .map_or_else(String::new, |parent| match label(&tree, parent) {
+                        Some(NodeLabel::Wald) => "the root".to_owned(),
+                        _ => text(parent),
+                    });
+                (text(position), owner)
+            })
+            .collect();
+        assert_eq!(docs, [
+            ("/// a".to_owned(), "the root".to_owned()),
+            ("/// b\n/// c".to_owned(), "def x = 1;".to_owned()),
+            ("/// d".to_owned(), "def y = 2;".to_owned()),
+        ]);
+        Ok(())
+    }
+
+    /// A `//!` run is one `Doc` node owned by what it stands in: the root
+    /// before any form, whatever follows it, and the form enclosing it inside
+    /// one. A `///` line ends the run and starts its own, which documents the
+    /// form below as before.
+    #[test]
+    fn an_inner_run_documents_what_it_stands_in_1365() -> Result<(), Failure>
+    {
+        let pbg = built_in()?;
+        let source =
+            include_str!("meld/fixtures/an-inner-run-documents-what-it-stands-in-1365.gandr");
+        let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();
+        assert_eq!(crate::testing::reconstruct(&tree), source);
+        let text = |position| -> String {
+            tree.fragment(position)
+                .map_or_else(String::new, |text| <&str>::from(text).to_owned())
+        };
+        let docs: Vec<(String, String)> = tree
+            .positions()
+            .filter(|&position| label(&tree, position) == Some(NodeLabel::Doc))
+            .map(|position| {
+                let owner = tree
+                    .positions()
+                    .find(|&parent| children(&tree, parent).contains(&position))
+                    .map_or_else(String::new, |parent| match label(&tree, parent) {
+                        Some(NodeLabel::Wald) => "the root".to_owned(),
+                        _ => text(parent),
+                    });
+                (text(position), owner)
+            })
+            .collect();
+        assert_eq!(docs, [
+            ("//! s\n//! t".to_owned(), "the root".to_owned()),
+            ("//! u".to_owned(), "the root".to_owned()),
+            ("/// a".to_owned(), "def x = 1;".to_owned()),
+            (
+                "//! inner".to_owned(),
+                "def f(x : Integer) -> -F Integer {\n  //! inner\n  return x\n}".to_owned()
+            ),
+        ]);
+        Ok(())
+    }
+
+    /// Only a `doc` entry with one string payload is documentation; any other
+    /// `doc` stays an attribute for lowering to refuse, and keys its form.
+    #[test]
+    fn a_malformed_doc_entry_stays_an_attribute() -> Result<(), Failure>
+    {
+        let pbg = built_in()?;
+        let parsed = |source: &'static str| -> Result<_, Failure> {
+            Ok(crate::parse::parse(&pbg, SourceText::from(source))?.into_tree())
+        };
+        let bare = root_digest(&parsed("def x = 1;\n")?);
+        for source in [
+            "@[ doc ] def x = 1;\n",
+            "@[ doc() ] def x = 1;\n",
+            "@[ doc(1) ] def x = 1;\n",
+            "@[ doc(\"x\", \"y\") ] def x = 1;\n",
+        ] {
+            let tree = parsed(source)?;
+            assert!(
+                tree.positions()
+                    .all(|position| label(&tree, position) != Some(NodeLabel::Doc)),
+                "`{source}` holds no documentation"
+            );
+            assert_ne!(root_digest(&tree), bare, "`{source}` keys its form");
+        }
+        Ok(())
+    }
+
+    /// `finalize` charges a required-tail frontier only when commit would:
+    /// against a bridge with no operand yet, one whose operand is a written
+    /// type owes one tile fewer, and one whose operand is an inner form already
+    /// opened owes the same — the parenthesis's closer replaces the tail.
+    #[test]
+    fn finalize_charges_a_required_tail_only_when_it_is_absent() -> Result<(), Failure>
+    {
+        let pbg = built_in()?;
+        let mold_of = |text: &'static str, kind: &str| -> Result<MoldId, Failure> {
+            let label = match text {
+                "g" => "identifier",
+                other => other,
+            };
+            pbg.candidates(TileLabel(label))
+                .iter()
+                .copied()
+                .find(|&mold| pbg.named_kind(mold).is_ok_and(|named| named.0 == kind))
+                .ok_or_else(|| format!("no {kind} mold for {text}").into())
+        };
+        let owed = |tiles: &[(&'static str, &'static str)]| -> Result<usize, Failure> {
+            let mut state = MeldState::new(&pbg);
+            for (position, &(text, kind)) in tiles.iter().enumerate() {
+                if position > 0 {
+                    state.space(SpaceText::from(" "));
+                }
+                state.push(&MoldedTile::new(mold_of(text, kind)?, TileText::from(text)));
+            }
+            Ok(state
+                .finalize()
+                .obligations()
+                .iter()
+                .filter(|obligation| obligation.class == Oblig::MissingTile)
+                .count())
+        };
+        let head = [
+            ("def", "def_value"),
+            ("g", "def_value"),
+            (":", "def_value"),
+            ("+U", "u_type"),
+            ("[", "u_type"),
+            ("ω", "u_type"),
+            ("]", "u_type"),
+        ];
+        let bare = owed(&head)?;
+        let with = |tail: (&'static str, &'static str)| {
+            let mut tiles = head.to_vec();
+            tiles.push(tail);
+            tiles
+        };
+        assert_eq!(
+            bare.saturating_sub(1),
+            owed(&with(("Integer", "primitive_type")))?,
+            "a written operand fills the tail, and the bridge owes nothing of its own"
+        );
+        assert_eq!(
+            bare,
+            owed(&with(("(", "parenthesized_type")))?,
+            "an opened operand fills the tail, and only its `)` is owed in its place"
+        );
+        Ok(())
+    }
+
+    /// `completion_delta` counts exactly the classes `finalize` reports, over
+    /// an empty slope, operators missing one or both operands, an open form
+    /// owing its required tail, and the tail filled by a written or an opened
+    /// operand — the states the two walks could diverge on.
+    #[test]
+    fn completion_delta_agrees_with_finalize() -> Result<(), Failure>
+    {
+        let folded = |state: &MeldState<'_>| {
+            let mut delta = Delta::empty();
+            for obligation in state.finalize().obligations() {
+                delta.insert(obligation.class);
+            }
+            delta
+        };
+        let infix = infix_pbg()?;
+        let atom = only(&infix, TileLabel("x"));
+        let plus = only(&infix, TileLabel("+"));
+        for source in ["", "+", "+x", "x+", "x+x", "x++x"] {
+            let mut state = MeldState::new(&infix);
+            for text in source.split("").filter(|part| !part.is_empty()) {
+                let mold = if text == "+" { plus } else { atom };
+                state.push(&MoldedTile::new(mold, TileText::from(text)));
+            }
+            assert_eq!(
+                state.completion_delta(Delta::empty()),
+                folded(&state),
+                "{source:?}"
+            );
+        }
+        let pbg = built_in()?;
+        let mold_of = |text: &'static str, kind: &str| -> Result<MoldId, Failure> {
+            let label = match text {
+                "g" => "identifier",
+                other => other,
+            };
+            pbg.candidates(TileLabel(label))
+                .iter()
+                .copied()
+                .find(|&mold| pbg.named_kind(mold).is_ok_and(|named| named.0 == kind))
+                .ok_or_else(|| format!("no {kind} mold for {text}").into())
+        };
+        let head = [
+            ("def", "def_value"),
+            ("g", "def_value"),
+            (":", "def_value"),
+            ("+U", "u_type"),
+            ("[", "u_type"),
+            ("ω", "u_type"),
+            ("]", "u_type"),
+        ];
+        let tails: [&[(&'static str, &'static str)]; 3] =
+            [&[], &[("Integer", "primitive_type")], &[(
+                "(",
+                "parenthesized_type",
+            )]];
+        for tail in tails {
+            let mut state = MeldState::new(&pbg);
+            for (position, &(text, kind)) in head.iter().chain(tail).enumerate() {
+                if position > 0 {
+                    state.space(SpaceText::from(" "));
+                }
+                state.push(&MoldedTile::new(mold_of(text, kind)?, TileText::from(text)));
+            }
+            let base = state.completion_delta(Delta::empty());
+            assert_eq!(base, folded(&state), "{tail:?}");
+            let mut seeded = Delta::empty();
+            seeded.insert(Oblig::MissingMeld);
+            let mut expected = folded(&state);
+            expected.insert(Oblig::MissingMeld);
+            assert_eq!(
+                state.completion_delta(seeded),
+                expected,
+                "{tail:?} over a seeded base"
+            );
+        }
+        Ok(())
+    }
+
+    /// `finalize` closes each open frontier at its cheapest material, omits
+    /// the hole of an operand whose form is under way, and marks where the
+    /// innermost form's closing ends.
+    #[test]
+    fn finalize_closes_each_frontier_at_its_innermost_material() -> Result<(), Failure>
+    {
+        let pbg = built_in()?;
+        let hole = Expected::Hole;
+        let tile = Expected::Tile;
+        for (source, expected, innermost) in [
+            ("( x", vec![tile(")")], 1_usize),
+            ("def x = 1 +", vec![hole(Sort::Expression), tile(";")], 2),
+            ("def x = 1 + (2", vec![tile(")"), tile(";")], 1),
+            ("def f = #[1, 2", vec![tile("]"), tile(";")], 1),
+            ("def f = \"abc", vec![tile("\""), tile(";")], 1),
+            ("def x = 1", vec![tile(";")], 1),
+            ("x", vec![], 0),
+        ] {
+            let mut molder = crate::Molder::new(&pbg);
+            let mut state = MeldState::new(&pbg);
+            let tokens = crate::label::label(gandr_surface_syntax::SourceFragment::from(source));
+            molder.mold_stream(&mut state, &tokens, SourceText::from(source));
+            let completion = state.finalize();
+            assert_eq!(completion.expected(), expected.as_slice(), "`{source}`");
+            assert_eq!(
+                completion.innermost(),
+                expected.get(.. innermost).unwrap_or_default(),
+                "`{source}`: the innermost form's closing"
+            );
+        }
+        Ok(())
+    }
+
+    /// `continuations` names the hole the operator nearest the head owes, by
+    /// that operator, then the innermost open frontier with whether its slot
+    /// is filled, and closes it cheapest first.
+    #[test]
+    fn continuations_name_the_pending_hole_and_the_frontier() -> Result<(), Failure>
+    {
+        let pbg = built_in()?;
+        let label = |mold: MoldId| pbg.mold(mold).map_or("?", |def| def.label);
+        let written = |steps: &[crate::Step]| {
+            steps
+                .iter()
+                .map(|&step| match step {
+                    crate::Step::Tile(mold) => label(mold).to_owned(),
+                    crate::Step::Hole { sort, after } => format!("<{sort:?}@{}>", label(after)),
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        for (source, pending, head, first) in [
+            ("", "", "closed", ""),
+            ("x", "", "closed", ""),
+            ("def x = 1 +", "<Expression@+>", "= Occupied", ";"),
+            // Only the operator nearest the head owes a hole.
+            ("def x = return -", "<Expression@->", "= Occupied", ";"),
+            ("def x = (", "", "( Empty", ")"),
+            ("def x = ( 1", "", "( Occupied", ")"),
+            // The open form above the operator is the head; its operand is
+            // under way.
+            ("def x = return thunk {", "", "{ Empty", "<Expression@{> }"),
+        ] {
+            let mut molder = crate::Molder::new(&pbg);
+            let mut state = MeldState::new(&pbg);
+            let tokens = crate::label::label(gandr_surface_syntax::SourceFragment::from(source));
+            molder.mold_stream(&mut state, &tokens, SourceText::from(source));
+            let menu = state.continuations(crate::ClosingLimit::from(2_usize));
+            let found_head = match menu.head() {
+                super::HeadForm::Open { mold, leading } => format!("{} {leading:?}", label(mold)),
+                super::HeadForm::Closed => "closed".to_owned(),
+            };
+            let found_first = menu
+                .closings()
+                .first()
+                .map_or_default(|closing| written(closing.steps()));
+            assert_eq!(
+                (pending.to_owned(), head.to_owned(), first.to_owned()),
+                (written(menu.pending()), found_head, found_first),
+                "`{source}`"
+            );
+            assert!(menu.closings().len() <= 2, "`{source}` keeps two at most");
+        }
+        Ok(())
+    }
+    /// A synthetic PBG whose `hole = ? name?` form has a nullable tail (so `?`
+    /// is in the LAST set — completable), nested inside a `group = ( E )`
+    /// bracket, with a bare atom `x`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the grammar passes every construction check.
+    /// - fails: the grammar builder refuses the declaration.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The builder's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the checked fixture is consumed by a parser scenario
+    ///   asserting exact tree nesting, repair classes and spans. Omitting a
+    ///   terminal, duplicating its mold or changing the form/precedence
+    ///   relation changes those observations rather than merely the fixture
+    ///   shape.
+    /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["?", "name", "(", ")", "x"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1)))]
+    fn completable_pbg() -> Result<Pbg, Failure>
+    {
+        let mut spec = PrecSpec::new();
+        let atom = spec.insert("atom", Assoc::Non)?;
+        let dag = PrecDag::build(&spec)?;
+        let pbg = Pbg::build(dag, vec![
+            Rule::new(
+                RuleName("hole"),
+                Sort::Expression,
+                atom,
+                Regex::seq([
+                    Regex::tile(TileLabel("?")),
+                    Regex::optional(Regex::tile(TileLabel("name"))),
+                ]),
+            ),
+            Rule::new(
+                RuleName("group"),
+                Sort::Expression,
+                atom,
+                Regex::seq([
+                    Regex::tile(TileLabel("(")),
+                    Regex::sort(Sort::Expression),
+                    Regex::tile(TileLabel(")")),
+                ]),
+            ),
+            Rule::new(
+                RuleName("atom"),
+                Sort::Expression,
+                atom,
+                Regex::tile(TileLabel("x")),
+            ),
+        ])?;
+        Ok(pbg)
+    }
+    /// The sole mold id declared for `label`.
+    ///
+    /// # Specification
+    /// - requires: `label` declares exactly one mold.
+    /// - ensures: that mold's id.
+    /// - panics: when `label` declares none or several.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unique terminals selected in the independent
+    ///   parenthesis and infix fixtures feed exact child-order and precedence
+    ///   witnesses. Selecting another label or a neighboring mold changes the
+    ///   resulting parse; non-singleton menus violate the assertion
+    ///   precondition.
+    /// - witness: `meld::tests::brackets_close_on_the_matching_delimiter`
+    /// - witness: `meld::tests::infix_reduces_after_precedence`
+    #[spec(requires: pbg.candidates(label).len() == 1, ensures: |ret| pbg.candidates(label).first() == Some(&ret))]
+    fn only(
+        pbg: &Pbg,
+        label: TileLabel,
+    ) -> MoldId
+    {
+        let molds = pbg.candidates(label);
+        assert_eq!(1, molds.len(), "label {} must have one mold", label.0);
+        molds[0]
+    }
+}
