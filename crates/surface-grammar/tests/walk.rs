@@ -89,8 +89,9 @@ use crate::failure::Failure;
 /// words, quotes, expansions and operators (#1057), then by a type signature
 /// with no body, `type T : K;` (#8073), then by the protocol steps `T >! S`
 /// and `T >? S` and the recursion `rec X => S`, then by the static bracket's
-/// face form `T[f ↦ v]` leaving the grammar (#8188).
-const BUILT_IN_FINGERPRINT: u64 = 0x53c7_63f0_bd91_f147;
+/// face form `T[f ↦ v]` leaving the grammar (#8188), then by a type path that
+/// ends at a bare value name, `M.f` (#8307).
+const BUILT_IN_FINGERPRINT: u64 = 0x9f3b_dc70_e316_5717;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
