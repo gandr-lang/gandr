@@ -1,0 +1,88 @@
+test: check::the_check_of_utf8_gives_the_first_fault
+package: gandr-boot-core
+command: mise run debug:test gandr-boot-core check::the_check_of_utf8_gives_the_first_fault --break check::check_utf8$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-boot-core/1460f0268c6045c6/out/tests-1460f0268c6045c6"
+Current executable set to 'target/debug-trace/debug/build/gandr-boot-core/1460f0268c6045c6/out/tests-1460f0268c6045c6' (x86_64).
+(lldb) settings set -- target.run-args  "check::the_check_of_utf8_gives_the_first_fault" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex check::check_utf8$
+Breakpoint 1: where = tests-1460f0268c6045c6`gandr_boot_core::check::check_utf8 + 14 at check.rs:37:26, address = 0x000000000003d94e
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-1460f0268c6045c6`__rustc::rust_panic + 8 at panicking.rs:883:16, address = 0x0000000000095518
+(lldb) run
+
+running 1 test
+test check::the_check_of_utf8_gives_the_first_fault ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 693413 launched: 'target/debug-trace/debug/build/gandr-boot-core/1460f0268c6045c6/out/tests-1460f0268c6045c6' (x86_64)
+Process 693413 stopped
+* thread #2, name = 'check::the_chec', stop reason = breakpoint 1.1
+       frame #0: 0x000055555559194e tests-1460f0268c6045c6`gandr_boot_core::check::check_utf8(range={base:"ab\xff", length:{0:3}}) at check.rs:37:26
+(lldb) bt 24
+* thread #2, name = 'check::the_chec', stop reason = breakpoint 1.1
+   * frame #0: 0x000055555559194e tests-1460f0268c6045c6`gandr_boot_core::check::check_utf8(range={base:"ab\xff", length:{0:3}}) at check.rs:37:26
+     frame #1: 0x000055555558f706 tests-1460f0268c6045c6`tests::check::the_check_of_utf8_gives_the_first_fault at check.rs:33:30
+     frame #2: 0x000055555558b1f7 tests-1460f0268c6045c6`tests::check::the_check_of_utf8_gives_the_first_fault::{closure#0}((null)={}) at check.rs:16:45
+     frame #3: 0x00005555555944b6 tests-1460f0268c6045c6`<tests::check::the_check_of_utf8_gives_the_first_fault::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x000055555559461b tests-1460f0268c6045c6`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #5: 0x0000555555594619 tests-1460f0268c6045c6`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:701:18
+     frame #6: 0x00005555555a17f5 tests-1460f0268c6045c6`test::run_test_in_process::{closure#0} at lib.rs:724:74 [inlined]
+     frame #7: 0x00005555555a17f0 tests-1460f0268c6045c6`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #8: 0x00005555555a17f0 tests-1460f0268c6045c6`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:573:43 [inlined]
+     frame #9: 0x00005555555a17db tests-1460f0268c6045c6`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #10: 0x00005555555a17db tests-1460f0268c6045c6`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #11: 0x00005555555a17db tests-1460f0268c6045c6`test::run_test_in_process at lib.rs:724:27 [inlined]
+     frame #12: 0x00005555555a17c6 tests-1460f0268c6045c6`test::run_test::{closure#0} at lib.rs:645:43
+     frame #13: 0x000055555559c1e4 tests-1460f0268c6045c6`test::run_test::{closure#1} at lib.rs:675:41 [inlined]
+     frame #14: 0x000055555559c169 tests-1460f0268c6045c6`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #15: 0x00005555555a4882 tests-1460f0268c6045c6`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #16: 0x00005555555a4873 tests-1460f0268c6045c6`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #17: 0x00005555555a4873 tests-1460f0268c6045c6`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:573:43 [inlined]
+     frame #18: 0x00005555555a4863 tests-1460f0268c6045c6`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #19: 0x00005555555a4863 tests-1460f0268c6045c6`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #20: 0x00005555555a4863 tests-1460f0268c6045c6`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #21: 0x00005555555a4854 tests-1460f0268c6045c6`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #22: 0x000055555560bdff tests-1460f0268c6045c6`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2314:9 [inlined]
+     frame #23: 0x000055555560bdf8 tests-1460f0268c6045c6`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:127:17
+(lldb) frame variable --depth 3
+(gandr_boot_core::Range) range = {base:"ab\xff", length:{0:3}}
+(lldb) up
+frame #1: 0x000055555558f706 tests-1460f0268c6045c6`tests::check::the_check_of_utf8_gives_the_first_fault at check.rs:33:30
+(lldb) frame variable --depth 3
+((&[u8], gandr_boot_core::Utf8)[9]) cases = {
+  [0] = (size=1, Valid)
+  [1] = (size=2, Valid)
+  [2] = (size=3, Valid)
+  [3] = (size=4, Valid)
+  [4] = (size=3, Fault({0:0}))
+  [5] = (size=3, Fault({0:1}))
+  [6] = (size=1, Fault({0:0}))
+  [7] = (size=3, Fault({0:0}))
+  [8] = (size=2, Fault({0:0}))
+}
+(core::slice::iter::Iter<tests::harness::Subject>) iter = {ptr:{pointer:{name:"crates/boot-core/tests/block.rs", copy:{}, move_bytes:{}, fill:{}, compare:{}, find_byte:{}, find_range:{}, check_utf8:{}, find_zero:{}}}, end_or_len:{name:"crates/boot-core/tests/block.rs", copy:{}, move_bytes:{}, fill:{}, compare:{}, find_byte:{}, find_range:{}, check_utf8:{}, find_zero:{}}, _marker:{}}
+(tests::harness::Subject *) subject = 0x0000555555629eb0 {name:"gandr-boot-core", copy:{}, move_bytes:{}, fill:{}, compare:{}, find_byte:{}, find_range:{}, check_utf8:{}, find_zero:{}}
+(&str) name = "gandr-boot-core" {
+  [0] = 'g'
+  [1] = 'a'
+  [2] = 'n'
+  [3] = 'd'
+  [4] = 'r'
+  [5] = '-'
+  [6] = 'b'
+  [7] = 'o'
+  [8] = 'o'
+  [9] = 't'
+  [10] = '-'
+  [11] = 'c'
+  [12] = 'o'
+  [13] = 'r'
+  [14] = 'e'
+}
+(unsigned char[3]) bytes = "ab\xff"

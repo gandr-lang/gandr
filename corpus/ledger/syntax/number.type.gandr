@@ -1,0 +1,5 @@
+/// `number.type`: a number in type position.
+data Ix(n : Integer) : Type where
+  | MkIx : Ix n
+def atOne(w : Ix 1) -> Ix 1 =
+  w
