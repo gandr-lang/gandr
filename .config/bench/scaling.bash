@@ -8,12 +8,12 @@
 #
 # The configuration and the memory live outside the tree, under the XDG
 # directories:
-#   $XDG_CONFIG_HOME/gandr/scaling.json   `{measure, widths, placement,
+#   $XDG_CONFIG_HOME/gandr-factory/scaling.json   `{measure, widths, placement,
 #       interval, share, page}`: the measure command's argument vector before
 #       its own arguments, the points of the curve and of the placement as
 #       `{threads, nodes}`, the seconds between passes, the share of a fall,
 #       and the page command's argument vector before the line;
-#   $XDG_STATE_HOME/gandr/scaling.json    `{paged}`: the keys of the pages
+#   $XDG_STATE_HOME/gandr-factory/scaling.json    `{paged}`: the keys of the pages
 #       already sent.
 #
 # The measure command takes `<head> curve <paths>`, `<head> <nodes> gandr
@@ -26,8 +26,8 @@
 # shellcheck disable=SC2154
 
 scaling_dir="$(git rev-parse --show-toplevel)/.config/bench"
-scaling_config="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/scaling.json"
-scaling_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/scaling.json"
+scaling_config="${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/scaling.json"
+scaling_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/scaling.json"
 scaling_title="perf: the scaling account of gandr check"
 # The roots that the curve checks: those of `check:corpus`.
 scaling_paths=(crates/surface-corpus/strict library/std)

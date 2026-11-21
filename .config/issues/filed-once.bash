@@ -49,10 +49,10 @@ for clone in a b; do
   git -C "$work/$clone" checkout --quiet --detach "$commit"
 done
 
-mkdir -p "$work/gh" "$work/config/gandr"
+mkdir -p "$work/gh" "$work/config/gandr-factory"
 ln -s "$here/filed-once-gh.bash" "$work/gh/gh"
 # `body:check` reads the private-names list; this one matches no case's text.
-echo '^no case writes this line$' > "$work/config/gandr/private-names"
+echo '^no case writes this line$' > "$work/config/gandr-factory/private-names"
 mise_config=${MISE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/mise}
 printf '## Observation\n\n|Kind|Where|Observation|\n|---|---|---|\n|generalise|`.config/reports/filing.jq`|two readers walk one board|\n\nfrom: #5\n' > "$work/body.md"
 jq -n '{state: "MERGED", headRefName: "triage-7-filed",

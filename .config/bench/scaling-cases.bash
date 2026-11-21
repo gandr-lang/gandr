@@ -62,7 +62,7 @@ for _ in 1 2; do
   pages=$(( pages + $(grep -c '^PAGE ' <<< "$out" || true) ))
 done
 (( pages == 1 )) || fail "two passes over a failed measure send $pages pages, not 1"
-jq -e --arg key "measure:$head" '.paged == [$key]' "$XDG_STATE_HOME/gandr/scaling.json" > /dev/null \
+jq -e --arg key "measure:$head" '.paged == [$key]' "$XDG_STATE_HOME/gandr-factory/scaling.json" > /dev/null \
   || fail "the memory does not hold the one key measure:$head"
 
 (( failed == 0 )) || exit 1

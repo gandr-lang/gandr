@@ -17,7 +17,8 @@ use crate::names::ProgramName;
 use crate::names::RemotePath;
 use crate::names::Target;
 
-/// The builder's configuration, `$XDG_CONFIG_HOME/gandr/host-tools.toml`.
+/// The builder's configuration,
+/// `$XDG_CONFIG_HOME/gandr-factory/host-tools.toml`.
 ///
 /// # Specification
 /// - provides: for each target, its linker and C tools; for each program a

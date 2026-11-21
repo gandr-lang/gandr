@@ -122,7 +122,7 @@ struct Inputs
     #[arg(long, default_value = "mise.lock")]
     lock: PathBuf,
     /// The builder's configuration;
-    /// `$XDG_CONFIG_HOME/gandr/host-tools.toml` when absent.
+    /// `$XDG_CONFIG_HOME/gandr-factory/host-tools.toml` when absent.
     #[arg(long)]
     host: Option<PathBuf>,
 }
@@ -209,10 +209,10 @@ fn main() -> ExitCode
 ///   they remove it. `check` prints `host-tools: <platform> <lack>` for each
 ///   tool that the host lacks, in the listing's order, and writes the same
 ///   lines without the prefix into
-///   `$XDG_STATE_HOME/gandr/host-tools-needs.txt`; with no lack, it removes
-///   that file. With a pin, it then prints the host's mise against the pin. The
-///   result is success when nothing failed and nothing lacks, and the refusal's
-///   code otherwise.
+///   `$XDG_STATE_HOME/gandr-factory/host-tools-needs.txt`; with no lack, it
+///   removes that file. With a pin, it then prints the host's mise against the
+///   pin. The result is success when nothing failed and nothing lacks, and the
+///   refusal's code otherwise.
 /// - provides: the whole subcommand.
 /// - fails: [`HostToolsError::Io`] or [`HostToolsError::Toml`] when the table,
 ///   the lock or the configuration cannot be read; every refusal of [`plan()`];
@@ -322,7 +322,9 @@ fn check(
             message: error.to_string(),
         })?;
     }
-    let needs_file = state_home().join("gandr").join("host-tools-needs.txt");
+    let needs_file = state_home()
+        .join("gandr-factory")
+        .join("host-tools-needs.txt");
     let io = |error: std::io::Error| HostToolsError::Io {
         path: needs_file.clone(),
         message: error.to_string(),
@@ -405,7 +407,7 @@ impl Read
         let lock = Lock::read(&Input::read(&inputs.lock)?)?;
         let host_path = inputs
             .host
-            .unwrap_or_else(|| config_home().join("gandr").join("host-tools.toml"));
+            .unwrap_or_else(|| config_home().join("gandr-factory").join("host-tools.toml"));
         let host = if host_path.is_file() {
             Host::read(&Input::read(&host_path)?)?
         }

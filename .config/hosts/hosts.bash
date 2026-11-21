@@ -13,7 +13,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 dry=false
 [[ ${1:-} == --dry-run ]] && dry=true
 repo=${GH_REPO:-gandr-lang/gandr}
-state=${HOSTS_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/gandr/hosts}
+state=${HOSTS_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/hosts}
 mkdir -p "$state"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -49,8 +49,8 @@ jq -c '.offline' "$tmp/out.json" > "$state/offline.json"
 stamp=$state/pages
 touch "$stamp"
 page=${GANDR_PAGE:-}
-if [[ -z $page && -x ${XDG_CONFIG_HOME:-$HOME/.config}/gandr/bin/page.sh ]]; then
-  page=${XDG_CONFIG_HOME:-$HOME/.config}/gandr/bin/page.sh
+if [[ -z $page && -x ${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/bin/page.sh ]]; then
+  page=${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/bin/page.sh
 fi
 while IFS= read -r row; do
   [[ -n $row ]] || continue

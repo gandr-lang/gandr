@@ -3,7 +3,7 @@
 # It changes with each session of the factory, so it lives in the factory's
 # directory and never in this tree. A change of the lanes needs no landing.
 #
-# The table is `lanes.toml` under `$XDG_CONFIG_HOME/gandr`: one `[lane]`
+# The table is `lanes.toml` under `$XDG_CONFIG_HOME/gandr-factory`: one `[lane]`
 # table, each key a lane and each value the list of its areas. `GANDR_LANES`
 # names another file; a check gives its fixture that way.
 #
@@ -12,7 +12,7 @@
 
 # lanes_file: the path of the lane table.
 lanes_file() {
-  printf '%s\n' "${GANDR_LANES:-${XDG_CONFIG_HOME:-$HOME/.config}/gandr/lanes.toml}"
+  printf '%s\n' "${GANDR_LANES:-${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/lanes.toml}"
 }
 
 # lanes_list: the lanes of the table, one on each line, none with no table.

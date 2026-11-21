@@ -294,7 +294,8 @@ fn a_host_that_lacks_a_tool_names_it_and_exits_two()
         )
     );
     assert_eq!(
-        std::fs::read_to_string(directory.join("state/gandr/host-tools-needs.txt")).unwrap(),
+        std::fs::read_to_string(directory.join("state/gandr-factory/host-tools-needs.txt"))
+            .unwrap(),
         format!("{platform} lacks github:a/absent 2.0.0\n")
     );
     std::fs::remove_dir_all(&directory).unwrap();
@@ -306,7 +307,7 @@ fn a_host_that_lacks_no_tool_exits_zero_and_clears_its_needs()
     let directory = scratch();
     program(&directory.join("fit"), "fit".as_ref(), "0".as_ref());
     fake_mise(&directory, &listing(&directory, "".as_ref()));
-    let needs = directory.join("state/gandr/host-tools-needs.txt");
+    let needs = directory.join("state/gandr-factory/host-tools-needs.txt");
     std::fs::create_dir_all(needs.parent().unwrap()).unwrap();
     std::fs::write(&needs, "an old need\n").unwrap();
     let output = check(&directory, "2026.11.4".as_ref());
