@@ -152,6 +152,10 @@ pub enum Termination
 /// - intension: one precedence, then one [`path_greater`] table per face,
 ///   stopping at the first unoriented one.
 ///
+/// # Cost
+/// - allocation: the precedence and the tables of the path order for each face,
+///   growth within the description's operations and the faces' terms
+///
 /// # Adequacy
 /// - hypothesis: L3 — the addition and two-output division families are
 ///   oriented as written, a call to a helper is oriented whichever of the two
@@ -201,6 +205,10 @@ pub fn orient_rules<G>(desc: &TheoryDesc<G>) -> Termination
 /// - panics: none.
 /// - intension: one precedence, then one [`path_greater`] table per rule,
 ///   stopping at the first unoriented one.
+///
+/// # Cost
+/// - allocation: the precedence and the tables of the path order for each rule,
+///   growth within the description's operations and the rules' terms
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a ranking rule calling an operation its head did not call
