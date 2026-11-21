@@ -2800,6 +2800,16 @@ name = "gandr-workflow-debt-ledger"
 version = "0.0.0"
 
 [[package]]
+name = "gandr-workflow-gate"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "gandr-workflow-github"
 version = "0.0.0"
 

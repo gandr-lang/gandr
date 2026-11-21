@@ -158,17 +158,27 @@ common() {
 # its row of `table.json`.
 digested() { jq -e --arg check "$1" '.checks[$check] | .inputs != null or .table == true' "$table" > /dev/null; }
 
+# The program `gate`, which reads its tables beside this script.
+# - see: `tool.bash`, `crates/workflow-gate/README.md`
+gate() { "$here/tool.bash" gandr-workflow-gate gate --tables "$here" "$@"; }
+
 # The key of <check>: the run's common part, the check, its profile and the
 # scope `GATE_SCOPE`. A check of inputs binds their digest at HEAD in place of
 # the tree, and their digest at `GATE_BASE` when it reads its base. Another
 # check binds the tree and the base `GATE_BASE`.
 key() {
-  local check=$1 tree=${2:-$(git rev-parse 'HEAD^{tree}')} scope=${GATE_SCOPE:---workspace} inputs='' base_inputs=''
+  local check=$1 tree=${2:-$(git rev-parse 'HEAD^{tree}')} scope=${GATE_SCOPE:---workspace} inputs='' base_inputs='' answer
+  local -a commits digests
   if digested "$check"; then
-    inputs=$("$here/inputs.bash" digest "$tree" "$scope" "$check")
+    commits=(--commit "$tree")
     if [[ -n ${GATE_BASE:-} ]] && jq -e --arg check "$check" '.checks[$check].base == true' "$table" > /dev/null; then
-      base_inputs=$("$here/inputs.bash" digest "$GATE_BASE" "$scope" "$check")
+      commits+=(--commit "$GATE_BASE")
     fi
+    # One run gives one line for each commit, in the order of the commits.
+    answer=$(gate inputs digest "${commits[@]}" --check "$check" "$scope")
+    mapfile -t digests <<< "$answer"
+    inputs=${digests[0]##*$'\t'}
+    if (( ${#digests[@]} > 1 )); then base_inputs=${digests[1]##*$'\t'}; fi
   fi
   jq -c -S --arg check "$check" --arg base "${GATE_BASE:-}" --arg scope "$scope" --arg inputs "$inputs" \
     --arg base_inputs "$base_inputs" --slurpfile table "$table" '
@@ -300,8 +310,8 @@ case ${1:-} in
     # The common part of the key holds for each check of this run, so the run
     # reads it once, and the allowed signers with it. A run whose checks all
     # hold by their base reads neither.
-    common_key='' allowed='' digests=''
-    trap 'rm -rf ${allowed:+"$allowed"} ${digests:+"$digests"}' EXIT
+    common_key='' allowed=''
+    trap 'rm -f ${allowed:+"$allowed"}' EXIT
     prepare() {
       if [[ -z $allowed ]]; then
         common_key=$(common "$tree")
@@ -311,24 +321,26 @@ case ${1:-} in
     }
     # A check with the inputs of its base needs no record. The base is a
     # commit of the trunk, so it holds a pass of the check on these inputs.
-    # The digests of each check at HEAD and at the base run at one time.
-    # - see: #8265
-    # economy: `inputs.bash` reads the task's definition from the worktree
-    # alone, so a change that holds a task file holds no check by its base.
+    # One run of `gate` gives the digests of each check at HEAD and at the
+    # base.
+    # - see: #8265, #8273
+    # economy: `gate` reads the task's definition from the worktree alone,
+    # so a change that holds a task file holds no check by its base.
     declare -A by_base=()
     if [[ -n ${GATE_BASE:-} ]] && on_trunk "$GATE_BASE" && git diff --quiet "$GATE_BASE" "$tree" -- .config/mise/tasks \
       && base_scope=${GATE_VERDICT_SCOPE:-$("$here/scope.bash" --lints 2> /dev/null)}; then
-      digests=$(mktemp -d)
+      checks=()
       for check in "$@"; do
-        digested "$check" || continue
-        name=$(ref_name "$check")
-        "$here/inputs.bash" digest "$tree" "$base_scope" "$check" > "$digests/$name.head" 2> /dev/null &
-        "$here/inputs.bash" digest "$GATE_BASE" "$base_scope" "$check" > "$digests/$name.base" 2> /dev/null &
+        if digested "$check"; then checks+=(--check "$check"); fi
       done
-      wait
+      declare -A at_head=() at_base=()
+      if (( ${#checks[@]} > 0 )); then
+        while IFS=$'\t' read -r commit check digest; do
+          if [[ $commit == "$tree" ]]; then at_head[$check]=$digest; else at_base[$check]=$digest; fi
+        done < <(gate inputs digest --commit "$tree" --commit "$GATE_BASE" "${checks[@]}" "$base_scope" 2> /dev/null)
+      fi
       for check in "$@"; do
-        name=$(ref_name "$check")
-        if [[ -s $digests/$name.head && $(< "$digests/$name.head") == "$(< "$digests/$name.base")" ]]; then by_base[$check]=1; fi
+        if [[ -n ${at_head[$check]:-} && ${at_head[$check]} == "${at_base[$check]:-}" ]]; then by_base[$check]=1; fi
       done
     fi
     missing=()

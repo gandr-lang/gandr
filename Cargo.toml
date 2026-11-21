@@ -95,6 +95,7 @@ members = [
   "crates/workflow-build-state",
   "crates/workflow-coverage-guard",
   "crates/workflow-debt-ledger",
+  "crates/workflow-gate",
   "crates/workflow-github",
   "crates/workflow-host-tools",
   "crates/workflow-hotpath-guard",
@@ -369,6 +370,7 @@ default-features = false
 # - surface-driver
 # - workflow-build-state
 # - workflow-coverage-guard
+# - workflow-gate
 # - workflow-host-tools
 # - workflow-hotpath-guard
 # - workflow-lane-budget
@@ -2164,6 +2166,7 @@ default-features = false
 # - surface-render-remote
 # - workflow-build-state
 # - workflow-coverage-guard
+# - workflow-gate
 # - workflow-host-tools
 # - workflow-hotpath-guard
 # - workflow-lane-budget
@@ -2196,6 +2199,7 @@ features = ["alloc", "derive"]
 # - surface-tui
 # - workflow-build-state
 # - workflow-coverage-guard
+# - workflow-gate
 # - workflow-host-tools
 # - workflow-hotpath-guard
 # - workflow-lane-budget
@@ -2207,6 +2211,13 @@ features = ["alloc", "derive"]
 version = "1.0.151"
 default-features = false
 features = ["alloc"]
+
+# SHA-256, for the digest of the inputs of a check, which the record of a
+# verdict binds.
+# - workflow-gate
+[workspace.dependencies.sha2]
+version = "0.11.1"
+default-features = false
 
 # Sockets with their options, as the uring crate's network tests open them.
 # features:
