@@ -6063,10 +6063,16 @@ where
     ///   decomposition may consume a leading `Decompose`; one owing
     ///   convertibility pushes every premise, and one owing a refutation also
     ///   consumes the `NegativeSubgoal` naming its selected premise. A refused
-    ///   negative subgoal leaves an already consumed `Decompose` consumed.
+    ///   negative subgoal leaves an already consumed `Decompose` consumed. A
+    ///   leading `DecomposeCrossed` is consumed only where the goal owes
+    ///   convertibility and [`Self::field_order`] is [`FieldOrder::Free`]: the
+    ///   two field premises are then pushed crossed, the first field of each
+    ///   side with the second field of the other. A refutation where the field
+    ///   order is free is refused as not authoritative.
     /// - provides: implicit structural rules and their optional trace marker.
-    /// - fails: a refusal on a leaf against the owed verdict, or a refutation
-    ///   without its negative subgoal.
+    /// - fails: a refusal on a leaf against the owed verdict, a refutation
+    ///   without its negative subgoal, a crossed decision at a goal with no
+    ///   symmetry, or a refutation at a goal with one.
     /// - panics: none.
     ///
     /// # Errors
@@ -6083,6 +6089,7 @@ where
     /// - witness: `path_universe::tests::it_computes_through_a_former`
     /// - witness: `flow_universe::tests::formation_boundaries_refuse`
     /// - witness: `replay::tests::a_refutation_at_a_presented_term_is_not_authoritative`
+    /// - witness: `replay::tests::a_crossed_pairing_is_replayed_only_under_a_symmetry_8311`
     #[spec(
         requires: rule(left, right) == Rule::Structural,
         captures: before = (goals.len(), self.position),

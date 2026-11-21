@@ -1999,6 +1999,7 @@ INSERT INTO purpose VALUES('kernel-term','presented::ConstructorCount','struct',
 INSERT INTO purpose VALUES('kernel-term','presented::Convergence','enum','Whether a presentation''s rules give every term one normal form.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::Exhausted','struct','A normalization ran out of fuel.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::FieldCount','struct','How many fields a constructor has, as rewriting counts its subterms.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','presented::FieldOrder','enum','How the two fields of one constructor stand under the rules of its type: in the written order only, or free by a symmetry.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::FreeCell','struct','A free invertible 1-cell of a presented type''s sort: a generator between two closed terms of the sort, each a side over the sort''s own constructor table holding no variable.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::FreeCells','struct','The free cells a type of words is minted over: the sort whose closed terms they join, by its admission position, how many times the point is wrapped in its reflexivity, and the cells, one generator each, in written order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::Normalized','enum','Whether a normalization rewrote anything.',NULL,'fits','sound',NULL);

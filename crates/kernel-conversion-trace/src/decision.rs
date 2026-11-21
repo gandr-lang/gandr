@@ -37,6 +37,13 @@
 //! refuses the decision at leaves and at goals requiring unfolding, force or
 //! eta.
 //!
+//! `DecomposeCrossed` selects the decomposition of two constructors that
+//! pairs their two fields crossed. A symmetry of a constructor states that the
+//! two orders of its fields are one term, so two pairings can join two terms.
+//! The producer finds the pairing, and the trace names it, so the consumer
+//! tries one pairing. The consumer reads the symmetry in its own rules, and it
+//! refuses the decision at each other goal.
+//!
 //! [`ConversionSide`] is a type. `Freeze` records which side froze,
 //! `EtaExpand` which side was applied to the fresh variable, and `ReturnEta`,
 //! `Reassociate` and `Discard` which side was rewritten; `ReduceLeft` and

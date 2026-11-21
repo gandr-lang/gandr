@@ -1521,15 +1521,20 @@ mod tests
                 );
             }
         }
-        for decision in [ConversionDecision::Evaluate, ConversionDecision::Admitted] {
+        for decision in [
+            ConversionDecision::Evaluate,
+            ConversionDecision::Admitted,
+            ConversionDecision::DecomposeCrossed,
+        ] {
             assert_eq!(
                 Ok(decision),
                 ConversionDecision::try_from(super::decision_word(decision)),
-                "an evaluation and an admitted result cross the wire as themselves"
+                "an evaluation, an admitted result and a crossed pairing cross the wire as \
+                 themselves"
             );
         }
         for word in [
-            0x17_u64,
+            0x18_u64,
             0xFF_u64,
             0x100_u64,
             0x0100_0000_000C_u64,

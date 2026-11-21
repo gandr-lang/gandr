@@ -1,0 +1,40 @@
+error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/desc/rule-symmetry-compared.gandr:31:25
+   │
+29 │    def apartInOne(x : Terms Tally, y : Terms Tally, z : Terms Tally) -> Path (Tally.meet
+   │ ┌──│──────────────┬────────────────┬────────────────┬─────────────────────────┘
+   │ │  │              │                │                │
+   │ │  │              │                │                checked against `(a : Terms Tally) -> -F (Path[.A = Terms Tally] (Tally.meet x y) (Tally.meet y a))`; while checking the body of this function; binds z : Terms Tally
+   │ │  │              │                checked; while checking the body of this function; binds y : Terms Tally
+   │ │┌─┘              checked; while checking the body of this function; binds x : Terms Tally
+   │ ││
+30 │ ││   x
+31 │ ││   y) (Tally.meet y z) = Path.here (Tally.meet x y);
+   │ │└───│───┬─────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━┘ checked; while checking the body of this thunk
+   │ │    │   │                 │
+   │ │    │   │                 not both endpoints of the path
+   │ └────┤   an endpoint the point does not convert to
+   │      an endpoint the point does not convert to
+   │
+   ├ note: `apartInOne` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
+
+error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/desc/rule-symmetry-compared.gandr:39:8
+   │
+37 │    def linkSwapped(x : Terms Chain, y : Terms Chain) -> Path (Chain.link x y) (Chain.link
+   │ ┌──│───────────────┬────────────────┬─────────────────────────┬────────────────┘
+   │ │  │               │                │                         │
+   │ │  │               │                │                         an endpoint the point does not convert to
+   │ │  │               │                checked against `(a : Terms Chain) -> -F (Path[.A = Terms Chain] (Chain.link x a) (Chain.link a x))`; while checking the body of this function; binds y : Terms Chain
+   │ │┌─┘               checked; while checking the body of this function; binds x : Terms Chain
+   │ ││
+38 │ ││   y
+39 │ ││   x) = Path.here (Chain.link x y);
+   │ │└───│────┯━━━━━━━━━━━━━━━━━━━━━━━━━┘ checked against `(a : Terms Chain, b : Terms Chain) -> Path[.A = Terms Chain] (Chain.link a b) (Chain.link b a)`; while checking the body of this thunk
+   │ │    │    │
+   │ └────┤    not both endpoints of the path
+   │      an endpoint the point does not convert to
+   │
+   ├ note: `linkSwapped` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
