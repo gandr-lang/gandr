@@ -55,6 +55,7 @@ use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::builtin::TypeAtom;
+use gandr_core_term::builtin::TypeFormer;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
@@ -275,7 +276,6 @@ use crate::resolve::ScopeId;
 use crate::resolve::Shadow;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
-use crate::resolve::TypeFormer;
 use crate::resolve::binder_site;
 use crate::resolve::binder_type;
 use crate::resolve::homed_atom;
@@ -6611,7 +6611,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             && let Maybe::Present(typed) = Native::new(self.host()).unwrapped(stated)?
             && typed.former == Former::TypeApplication
             && typed.keyword.is_some_and(|head| {
-                self.cx().former(self.cx().name_at(head)) == Maybe::Present(TypeFormer::List)
+                self.cx().former(self.cx().name_at(head), head) == Maybe::Present(TypeFormer::List)
             })
             && let [element_type] = typed.operands[..]
         {
@@ -10711,6 +10711,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             TypeMeaning::Manifest(defined) => Plan::Transparent(defined.node),
             TypeMeaning::Builtin(_) => match self.cx().builtin_atom(stated.held) {
                 Maybe::Present(atom) => Plan::Atom(atom),
+                // A former takes its argument, as a family does.
+                Maybe::Absent(_)
+                    if matches!(self.cx().builtin_former(stated.held), Maybe::Present(_)) =>
+                {
+                    return Err(site.out(FragmentBoundary::Arity(OperandCount::from(0_usize))));
+                },
                 Maybe::Absent(_) => {
                     return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::StatedType)));
                 },
@@ -12259,7 +12265,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         {
             return Identities::new(self.host()).relation_of(site, Relation::Isomorphism, written);
         }
-        let former = self.cx().former(name);
+        let former = self.cx().former(name, head);
         // The refusal marks the application it judged, head and arguments,
         // and names the head inside it. A near miss of a tile can turn
         // another form into this application, so the mistake can lie in the
@@ -12333,16 +12339,18 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
 {
     /// The type former `member` spells after `qualifier` at `site`, `l.List`
     /// or `std.list.List`, when `qualifier` is the alias or the module path of
-    /// a resolved import of the site's source whose module homes it.
+    /// a resolved import of the site's source whose source declares it or
+    /// whose module homes it.
     ///
     /// # Specification
     /// - requires: `qualifier` is the qualifier of the type path at `site` and
     ///   `member` its selected name.
-    /// - ensures: the former [`homed_former`] answers at the module path the
-    ///   import `qualifier` binds names, under `member`'s name, when that
-    ///   import resolved to a source, the import then reached; none when
-    ///   `qualifier` binds no import, its import names an address or did not
-    ///   resolve, or its module homes no such former.
+    /// - ensures: when the import `qualifier` binds resolved to a source, the
+    ///   former of the row of the public builtin type member that the top level
+    ///   of that source declares under `member`'s name, else the former
+    ///   [`homed_former`] answers at the import's module path under that name,
+    ///   the import then reached; none when `qualifier` binds no import, its
+    ///   import names an address or did not resolve, or neither answers.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clause restates the import's lookup.
@@ -12353,6 +12361,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   not home is an unknown member, and a module path no import binds is an
     ///   unresolved head.
     /// - witness: `gandr-surface-lowering::lower::tests::a_homed_former_reads_through_its_import_s_qualifier_4862`
+    ///
+    /// # Cost
+    /// - allocation: the text of the member's `builtin` key, setup
     fn qualified_former(
         &mut self,
         site: Site,
@@ -12370,14 +12381,28 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         else {
             return None;
         };
-        let (ImportResolution::Path(ImportTarget::Source(_)), Maybe::Present(home)) =
-            (import.resolution(), import.module())
+        let ImportResolution::Path(ImportTarget::Source(target)) = import.resolution()
         else {
             return None;
         };
-        let Maybe::Present(former) = homed_former(home, self.cx().name_at(member))
-        else {
-            return None;
+        let name = self.cx().name_at(member);
+        let collected = &self.cx().collected;
+        let declared = collected
+            .by_name
+            .get(&(Container::TopLevel(target), name))
+            .copied()
+            .filter(|&slot| collected.slot_visibility(slot) == Visibility::Public)
+            .map(|held| self.cx().builtin_former(held));
+        let former = match (declared, import.module()) {
+            (Some(Maybe::Present(former)), _) => former,
+            (Some(Maybe::Absent(_)) | None, Maybe::Present(home)) => {
+                let Maybe::Present(former) = homed_former(home, name)
+                else {
+                    return None;
+                };
+                former
+            },
+            (Some(Maybe::Absent(_)) | None, Maybe::Absent(_)) => return None,
         };
         let span = import.span();
         self.cx_mut().collected.reach(span);
@@ -12447,7 +12472,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             TERMS,
         ]
         .contains(&name.as_ref())
-            || matches!(self.cx().former(name), Maybe::Present(_));
+            || matches!(self.cx().former(name, head), Maybe::Present(_));
         if !spelled {
             return Ok(unformed);
         }
@@ -13057,7 +13082,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         }
         let _keyword = cursor.tile(label);
         let name = self.cx().name_at(at);
-        let Maybe::Present(former) = self.cx().former(name)
+        let Maybe::Present(former) = self.cx().former(name, at)
         else {
             return Err(LoweringRefusal::UnresolvedTypeHead {
                 span: at.span,

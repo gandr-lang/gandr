@@ -307,6 +307,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::builtin::TypeFormer;
 use gandr_core_term::compose::CellCount;
 use gandr_core_term::compose::Composite;
 use gandr_core_term::compose::Ends;
@@ -388,7 +389,6 @@ use crate::resolve::OperandCount;
 use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
-use crate::resolve::TypeFormer;
 use crate::resolve::type_former;
 use crate::unbuilt::Unbuilt;
 

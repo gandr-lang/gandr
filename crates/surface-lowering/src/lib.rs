@@ -421,6 +421,7 @@ mod lower;
 // public modules keep their paths here, and the private ones keep their
 // `crate::` paths.
 pub use gandr_core_term::builtin::TypeAtom;
+pub use gandr_core_term::builtin::TypeFormer;
 use gandr_surface_lowering_base::attribute;
 use gandr_surface_lowering_base::budget;
 pub use gandr_surface_lowering_base::circuit;
@@ -606,7 +607,6 @@ pub use crate::resolve::Scope;
 pub use crate::resolve::ScopeId;
 pub use crate::resolve::Shadow;
 pub use crate::resolve::SurfaceName;
-pub use crate::resolve::TypeFormer;
 pub use crate::resolve::binder_site;
 pub use crate::resolve::head_home;
 pub use crate::resolve::homed_formers;

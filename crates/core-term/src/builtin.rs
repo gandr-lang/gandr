@@ -9,6 +9,7 @@
 //! | ---- | ---- | --------- |
 //! | a native value | each row of [`PRELUDE`], keyed by its name | given: the toolchain gives the value, and the declaration is a signature with no body that states the row's type |
 //! | an atom | each nullary value type of [`TypeAtom::ALL`], keyed by its word | given: the toolchain gives the type, and the declaration is a type signature with no body that states its kind |
+//! | a former | each unary type former of [`TypeFormer::ROWS`], keyed by its word | given: the toolchain gives the former, and the declaration is a type signature with one parameter and no body |
 //! | a role | each role of [`Builtin`], keyed by its word | found: the library gives the declaration with its body, and a former of the core reads it by its role |
 //!
 //! A lookup reads the table in its order, so the work of one key is bounded by
@@ -143,6 +144,61 @@ impl TypeAtom
     }
 }
 
+/// A unary type head: a type former of the fragment.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TypeFormer
+{
+    /// `+U C`, the thunk of a computation type, which is a value type.
+    Thunk,
+    /// `-F A`, the returner over a value type, which is a computation type.
+    Returner,
+    /// `List(A)`, the native finite lists over a value type.
+    List,
+    /// `Run(S)`, the value type of the complete recorded runs of the session
+    /// code `S`, which is read as a value.
+    Run,
+    /// `Prefix(S)`, the value type of the recorded prefixes of the session
+    /// code `S`, closed or still open, which is read as a value.
+    Prefix,
+    /// `Dialogue(S)`, the value type of the complete dialogues over the
+    /// session code `S`, its left endpoint following `S` and its right the
+    /// dual, which is read as a value.
+    Dialogue,
+}
+
+impl TypeFormer
+{
+    /// Every former that a declaration of `std` binds, with the word that keys
+    /// its row, in the order of the table. `+U` and `-F` are operators of the
+    /// grammar, so no row holds them.
+    ///
+    /// # Specification
+    /// trivial.
+    pub const ROWS: [(&'static str, Self); 4_usize] = [
+        ("list", Self::List),
+        ("run", Self::Run),
+        ("prefix", Self::Prefix),
+        ("dialogue", Self::Dialogue),
+    ];
+
+    /// The key of the former's row, empty for an operator of the grammar.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn key(self) -> Key<'static>
+    {
+        Key(Self::ROWS
+            .iter()
+            .find_map(|&(word, former)| (former == self).then_some(word))
+            .unwrap_or(""))
+    }
+}
+
 /// What a row of the table is.
 ///
 /// # Specification
@@ -154,6 +210,8 @@ pub enum Kind
     Native,
     /// A nullary value type that the toolchain gives.
     Atom,
+    /// A unary type former that the toolchain gives.
+    Former,
     /// A role that a former of the core reads.
     Role,
 }
@@ -184,6 +242,8 @@ pub enum Row
     Native(Primitive),
     /// A nullary value type, which the toolchain gives with no body.
     Atom(TypeAtom),
+    /// A unary type former, which the toolchain gives with no body.
+    Former(TypeFormer),
     /// A role that a former of the core reads, which states the canonical form
     /// of its holder.
     Role(Builtin),
@@ -191,8 +251,8 @@ pub enum Row
 
 impl Row
 {
-    /// The text that names the row: a native value's name, an atom's word,
-    /// or a role's word.
+    /// The text that names the row: a native value's name, an atom's or a
+    /// former's word, or a role's word.
     ///
     /// # Specification
     /// trivial.
@@ -203,6 +263,7 @@ impl Row
         Key(match self {
             Self::Native(primitive) => primitive.name().into(),
             Self::Atom(atom) => atom.key().0,
+            Self::Former(former) => former.key().0,
             Self::Role(role) => role.word().0,
         })
     }
@@ -218,12 +279,13 @@ impl Row
         match self {
             Self::Native(_) => Kind::Native,
             Self::Atom(_) => Kind::Atom,
+            Self::Former(_) => Kind::Former,
             Self::Role(_) => Kind::Role,
         }
     }
 
-    /// Who gives the meaning of the row: the toolchain for a native value and
-    /// an atom, the library for a role.
+    /// Who gives the meaning of the row: the toolchain for a native value, an
+    /// atom and a former, the library for a role.
     ///
     /// # Specification
     /// trivial.
@@ -232,14 +294,15 @@ impl Row
     pub const fn direction(self) -> Direction
     {
         match self {
-            Self::Native(_) | Self::Atom(_) => Direction::Given,
+            Self::Native(_) | Self::Atom(_) | Self::Former(_) => Direction::Given,
             Self::Role(_) => Direction::Found,
         }
     }
 
     /// Every row of the table: the native values in the order of
-    /// [`PRELUDE`], then the atoms in the order of [`TypeAtom::ALL`], then
-    /// the roles in the order of [`Builtin::ALL`].
+    /// [`PRELUDE`], then the atoms in the order of [`TypeAtom::ALL`], then the
+    /// formers in the order of [`TypeFormer::ROWS`], then the roles in the
+    /// order of [`Builtin::ALL`].
     ///
     /// # Specification
     /// trivial.
@@ -251,6 +314,11 @@ impl Row
             .copied()
             .map(Self::Native)
             .chain(TypeAtom::ALL.into_iter().map(|(_, atom)| Self::Atom(atom)))
+            .chain(
+                TypeFormer::ROWS
+                    .into_iter()
+                    .map(|(_, former)| Self::Former(former)),
+            )
             .chain(Builtin::ALL.into_iter().map(Self::Role))
     }
 
@@ -307,6 +375,7 @@ mod tests
     use super::Kind;
     use super::Row;
     use super::TypeAtom;
+    use super::TypeFormer;
     use super::row;
     use crate::primitive::PRELUDE;
 
@@ -324,7 +393,7 @@ mod tests
         }
         assert_eq!(
             keys.len(),
-            PRELUDE.len() + TypeAtom::ALL.len() + Builtin::ALL.len()
+            PRELUDE.len() + TypeAtom::ALL.len() + TypeFormer::ROWS.len() + Builtin::ALL.len()
         );
         let append = Row::named(Key("string.append"));
         assert!(
@@ -337,6 +406,10 @@ mod tests
         assert_eq!(
             Row::named(Key("integer")),
             Maybe::Present(Row::Atom(TypeAtom::Integer))
+        );
+        assert_eq!(
+            Row::named(Key("list")),
+            Maybe::Present(Row::Former(TypeFormer::List))
         );
     }
 
@@ -355,6 +428,12 @@ mod tests
                     assert_eq!(
                         (row.kind(), row.direction()),
                         (Kind::Atom, Direction::Given)
+                    );
+                },
+                Row::Former(_) => {
+                    assert_eq!(
+                        (row.kind(), row.direction()),
+                        (Kind::Former, Direction::Given)
                     );
                 },
                 Row::Role(_) => {
@@ -378,6 +457,8 @@ mod tests
             "irElim",
             "Integer",
             "int",
+            "List",
+            "session",
         ] {
             assert_eq!(
                 Row::named(Key(key)),
@@ -416,6 +497,7 @@ mod tests
                 let kind = match row.kind() {
                     Kind::Native => "value",
                     Kind::Atom => "atom",
+                    Kind::Former => "former",
                     Kind::Role => "role",
                 };
                 let direction = match row.direction() {

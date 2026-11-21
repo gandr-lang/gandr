@@ -1628,6 +1628,10 @@ pub struct Collected<'source>
     /// The faces each record type member's faces block names, by the
     /// member's held slot.
     pub record_faces: BTreeMap<SlotIndex, RecordFaces<'source>>,
+    /// The parameters each builtin type signature binds, `type List(a : Type)
+    /// : Type ;`, by the member's held slot. A signature that binds none has
+    /// no entry.
+    pub builtin_parameters: BTreeMap<SlotIndex, Vec<FamilyParameter>>,
     /// The parameters of each manifest family component a signature writes,
     /// `type F(a : A, …) = τ`, in reading order.
     pub parameter_lists: Vec<Vec<FamilyParameter>>,
@@ -3862,6 +3866,7 @@ pub fn begin_collection<'source>(
         families: Vec::new(),
         top_types: Vec::new(),
         record_faces: BTreeMap::new(),
+        builtin_parameters: BTreeMap::new(),
         parameter_lists: Vec::new(),
         models: Layered::whole(BTreeMap::new()),
         model_theories: BTreeMap::new(),
@@ -14274,7 +14279,8 @@ impl<'source> LoweredModule<'source>
                     },
                     Maybe::Present(
                         gandr_core_term::builtin::Row::Native(_)
-                        | gandr_core_term::builtin::Row::Atom(_),
+                        | gandr_core_term::builtin::Row::Atom(_)
+                        | gandr_core_term::builtin::Row::Former(_),
                     )
                     | Maybe::Absent(_) => {
                         Maybe::Absent(gandr_kernel_term::builtin_role::Absent::Unnamed)

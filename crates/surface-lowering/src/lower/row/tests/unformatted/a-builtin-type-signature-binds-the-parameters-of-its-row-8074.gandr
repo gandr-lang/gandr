@@ -1,0 +1,9 @@
+/// A former's row binds one parameter, so a signature that binds none is not
+/// of the row's type.
+@[builtin("list")]
+pub type Bare : Type;
+
+/// An atom's row binds no parameter, so a signature that binds one is not of
+/// the row's type.
+@[builtin("u8")]
+pub type Wide(a : Type) : Type;

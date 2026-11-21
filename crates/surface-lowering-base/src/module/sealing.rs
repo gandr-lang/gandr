@@ -575,11 +575,11 @@ impl<'source> Collector<'_, 'source>
     ///   name in the same container is refused naming the first. A faces
     ///   block's faces are filed by the held slot, read over the record's
     ///   labels ([`Self::record_faces`]); a face it refuses refuses the slot,
-    ///   which keeps the member's attributes. A member reading `type T : K ;`
-    ///   is filed as [`super::TypeMeaning::Builtin`] when a `builtin`
-    ///   attribute, written in it or in `decorations`, marks it at the top
-    ///   level of a source with no parameters, and is refused at its `:`
-    ///   otherwise.
+    /// which keeps the member's attributes. A member reading `type T : K ;`
+    /// or `type T(a : A) : K ;` is filed as [`super::TypeMeaning::Builtin`]
+    /// when a `builtin` attribute, written in it or in `decorations`, marks
+    /// it at the top level of a source, its parameters filed by its held
+    /// slot, and is refused at its `:` otherwise.
     /// - provides: the type-member half of [`Self::member`] and of a source's
     ///   top level.
     /// - fails: a member out of shape, or with an attribute block out of shape,
@@ -655,15 +655,15 @@ impl<'source> Collector<'_, 'source>
         let parameters = Self::family_parameters(&mut cursor)?;
         // A signature with no body, `type T : K ;`, binds a row of the
         // toolchain, so `@[builtin]` alone admits it, at the top level of a
-        // source and with no parameters.
+        // source. A former's row binds its parameter, `type List(a : Type) :
+        // Type ;`, and the reading of the row checks their count.
         let (defined, written, builtin) = match cursor.tile(TileName::COLON) {
             Maybe::Present(colon) => {
                 let marked = attributes.iter().chain(decorations).any(|attribute| {
                     attribute.name.as_ref()
                         == crate::attribute::RegisteredAttribute::BUILTIN.as_ref()
                 });
-                if !marked || !parameters.is_empty() || !matches!(container, Container::TopLevel(_))
-                {
+                if !marked || !matches!(container, Container::TopLevel(_)) {
                     return Err(misplaced_in(FormName::MODULE, colon.span));
                 }
                 let kind = one_in(FormName::MODULE, cursor.operands())?;
@@ -730,6 +730,9 @@ impl<'source> Collector<'_, 'source>
             self.collected.own(parameter.classifier.node, held);
         }
         let meaning = if builtin {
+            if !parameters.is_empty() {
+                let _first = self.collected.builtin_parameters.insert(held, parameters);
+            }
             super::TypeMeaning::Builtin(defined)
         }
         else if parameters.is_empty() {

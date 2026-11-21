@@ -120,6 +120,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::builtin::TypeAtom;
+use gandr_core_term::builtin::TypeFormer;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -399,28 +400,6 @@ impl fmt::Display for HeadArity
             Self::Polyadic(count) => write!(f, "applied to {count} arguments"),
         }
     }
-}
-
-/// A unary type head: a type former of the fragment.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum TypeFormer
-{
-    /// `+U C`, the thunk of a computation type, which is a value type.
-    Thunk,
-    /// `-F A`, the returner over a value type, which is a computation type.
-    Returner,
-    /// `List(A)`, the native finite lists over a value type.
-    List,
-    /// `Run(S)`, the value type of the complete recorded runs of the session
-    /// code `S`, which is read as a value.
-    Run,
-    /// `Prefix(S)`, the value type of the recorded prefixes of the session
-    /// code `S`, closed or still open, which is read as a value.
-    Prefix,
-    /// `Dialogue(S)`, the value type of the complete dialogues over the
-    /// session code `S`, its left endpoint following `S` and its right the
-    /// dual, which is read as a value.
-    Dialogue,
 }
 
 /// The nullary type heads the ambient scope answers, with the spellings the

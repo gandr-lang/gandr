@@ -9,6 +9,7 @@ use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::builtin::TypeFormer;
 use gandr_core_term::effect::EffectName;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -58,7 +59,6 @@ use crate::module::WordsForm;
 use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::SurfaceName;
-use crate::resolve::TypeFormer;
 use crate::resolve::homed_former;
 use crate::resolve::type_former;
 use crate::resolve::type_head;
@@ -114,31 +114,31 @@ impl<'source> Context<'_, 'source>
         SurfaceName::from(self.text_at(placed))
     }
 
-    /// The atom of the row that the `builtin` attribute of the type member
-    /// held at `held` names.
+    /// The row that the `builtin` attribute of the slot `held` names.
     ///
     /// # Specification
-    /// - ensures: the atom of the row whose key the attribute's text spells;
+    /// - ensures: the row whose key the attribute's text spells;
     ///   [`gandr_core_term::builtin::row::Absent::Unkeyed`] when the slot holds
-    ///   no `builtin` attribute with a text, or its key names no atom.
+    ///   no `builtin` attribute with a text, or its key names no row.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a member under the key of an atom reads that atom in
-    ///   each direction and no other atom.
+    /// - hypothesis: L3 — as [`Self::builtin_atom`] and
+    ///   [`Self::builtin_former`].
     /// - witness: `gandr-surface-lowering::lower::row::tests::a_type_signature_under_builtin_reads_its_atom_8073`
+    ///
+    /// # Cost
+    /// - allocation: the text of the attribute's key, setup
     #[spec(ensures: |ret| match ret {
-        Maybe::Present(atom) => gandr_core_term::builtin::Row::named(atom.key())
-            == Maybe::Present(gandr_core_term::builtin::Row::Atom(atom)),
+        Maybe::Present(row) => gandr_core_term::builtin::Row::named(row.key()) == Maybe::Present(row),
         Maybe::Absent(_) => true,
     })]
     #[inline]
-    pub fn builtin_atom(
+    pub fn builtin_row(
         &self,
         held: crate::module::SlotIndex,
-    ) -> Maybe<gandr_core_term::builtin::TypeAtom, gandr_core_term::builtin::row::Absent>
+    ) -> Maybe<gandr_core_term::builtin::Row, gandr_core_term::builtin::row::Absent>
     {
-        use gandr_core_term::builtin::Row;
         let unkeyed = Maybe::Absent(gandr_core_term::builtin::row::Absent::Unkeyed);
         let Some(slot) = self.collected.slots.get(usize::from(held))
         else {
@@ -164,9 +164,78 @@ impl<'source> Context<'_, 'source>
         else {
             return unkeyed;
         };
-        match Row::named(gandr_core_term::builtin::Key(key.as_ref())) {
+        gandr_core_term::builtin::Row::named(gandr_core_term::builtin::Key(key.as_ref()))
+    }
+
+    /// The atom of the row that the `builtin` attribute of the type member
+    /// held at `held` names.
+    ///
+    /// # Specification
+    /// - ensures: the atom of the row whose key the attribute's text spells;
+    ///   [`gandr_core_term::builtin::row::Absent::Unkeyed`] when the slot holds
+    ///   no `builtin` attribute with a text, or its key names no atom.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a member under the key of an atom reads that atom in
+    ///   each direction and no other atom.
+    /// - witness: `gandr-surface-lowering::lower::row::tests::a_type_signature_under_builtin_reads_its_atom_8073`
+    ///
+    /// # Cost
+    /// - allocation: the text of the attribute's key, setup
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(atom) => gandr_core_term::builtin::Row::named(atom.key())
+            == Maybe::Present(gandr_core_term::builtin::Row::Atom(atom)),
+        Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn builtin_atom(
+        &self,
+        held: crate::module::SlotIndex,
+    ) -> Maybe<gandr_core_term::builtin::TypeAtom, gandr_core_term::builtin::row::Absent>
+    {
+        use gandr_core_term::builtin::Row;
+        match self.builtin_row(held) {
             Maybe::Present(Row::Atom(atom)) => Maybe::Present(atom),
-            Maybe::Present(Row::Native(_) | Row::Role(_)) | Maybe::Absent(_) => unkeyed,
+            Maybe::Present(Row::Native(_) | Row::Former(_) | Row::Role(_)) | Maybe::Absent(_) => {
+                Maybe::Absent(gandr_core_term::builtin::row::Absent::Unkeyed)
+            },
+        }
+    }
+
+    /// The former of the row that the `builtin` attribute of the type member
+    /// held at `held` names.
+    ///
+    /// # Specification
+    /// - ensures: the former of the row whose key the attribute's text spells;
+    ///   [`gandr_core_term::builtin::row::Absent::Unkeyed`] when the slot holds
+    ///   no `builtin` attribute with a text, or its key names no former.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a member under the key of a former applies that
+    ///   former, and a member under the key of an atom applies none.
+    /// - witness: `gandr-surface-lowering::lower::row::tests::a_type_signature_with_a_parameter_reads_its_former_8074`
+    ///
+    /// # Cost
+    /// - allocation: the text of the attribute's key, setup
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(former) => gandr_core_term::builtin::Row::named(former.key())
+            == Maybe::Present(gandr_core_term::builtin::Row::Former(former)),
+        Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn builtin_former(
+        &self,
+        held: crate::module::SlotIndex,
+    ) -> Maybe<TypeFormer, gandr_core_term::builtin::row::Absent>
+    {
+        use gandr_core_term::builtin::Row;
+        match self.builtin_row(held) {
+            Maybe::Present(Row::Former(former)) => Maybe::Present(former),
+            Maybe::Present(Row::Native(_) | Row::Atom(_) | Row::Role(_)) | Maybe::Absent(_) => {
+                Maybe::Absent(gandr_core_term::builtin::row::Absent::Unkeyed)
+            },
         }
     }
 
@@ -698,15 +767,19 @@ impl<'source> Context<'_, 'source>
         Ok(entries)
     }
 
-    /// The unary type former `name` spells in the source being lowered: an
-    /// ambient former, or one a listed import of its home binds,
-    /// `import std.list (List);` (#4520).
+    /// The unary type former `name` spells at `at`: an ambient former, the
+    /// former of the builtin type member that the scope of `at` binds `name`
+    /// to, or one a listed import of its home binds, `import std.list (List);`
+    /// (#4520).
     ///
     /// # Specification
     /// - requires: nothing — every identifier is admissible input.
     /// - ensures: the ambient table's answer when it has one; else the former
-    ///   that the home of a resolved listed import of the current source
-    ///   answers under `name`; else the absence.
+    ///   of the row of the type member that
+    ///   [`crate::module::Collected::scoped_type_member`] answers for `name` in
+    ///   the container that owns `at`, its source's top level for an unowned
+    ///   node; else the former that the home of a resolved listed import of the
+    ///   current source answers under `name`; else the absence.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -715,6 +788,10 @@ impl<'source> Context<'_, 'source>
     ///   `std.list` lowers to the native list, and one in a source that does
     ///   not is an unresolved head.
     /// - witness: `gandr-surface-lowering::lower::tests::a_list_type_resolves_only_through_its_listing_4520`
+    /// - witness: `gandr-surface-lowering::lower::row::tests::a_type_signature_with_a_parameter_reads_its_former_8074`
+    ///
+    /// # Cost
+    /// - allocation: the text of the member's `builtin` key, setup
     #[spec(
         ensures: |ret| match type_former(name) {
             | Maybe::Present(ambient) => ret == Maybe::Present(ambient),
@@ -725,14 +802,35 @@ impl<'source> Context<'_, 'source>
     pub fn former(
         &self,
         name: SurfaceName<'source>,
+        at: crate::form::Placed,
     ) -> Maybe<TypeFormer, type_head::Absent>
     {
         let ambient = type_former(name);
         if let Maybe::Present(_) = ambient {
             return ambient;
         }
-        self.listed_head(name, homed_former)
-            .map_or(ambient, Maybe::Present)
+        let container = match self.collected.owner_of(at.node) {
+            Maybe::Present(own) => self.collected.slots.get(usize::from(own)).map_or_else(
+                || self.collected.top(at.span.start()),
+                |slot| slot.container,
+            ),
+            Maybe::Absent(_) => self.collected.top(at.span.start()),
+        };
+        let declared = match self
+            .collected
+            .scoped_type_member(container, at.span.start(), name)
+        {
+            Ok(Maybe::Present(member)) => self.builtin_former(member.held),
+            Ok(Maybe::Absent(_)) | Err(_) => {
+                Maybe::Absent(gandr_core_term::builtin::row::Absent::Unkeyed)
+            },
+        };
+        match declared {
+            Maybe::Present(former) => Maybe::Present(former),
+            Maybe::Absent(_) => self
+                .listed_head(name, homed_former)
+                .map_or(ambient, Maybe::Present),
+        }
     }
 
     /// What `homed` answers for `name` at the module of the first resolved
