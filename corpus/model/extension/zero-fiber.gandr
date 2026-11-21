@@ -1,0 +1,30 @@
+//! `ZeroFiber` states an extension signature over the two points of `Two`.
+//!
+//! The signature fixes each `Val` cell to `zero` at `left`.
+//!
+//! The checker applies its boundary, β and η laws by conversion.
+//!
+//! - cites: [Zhang-2024-three_noncubical_applications_extension_types]
+//!
+//! [Zhang-2024-three_noncubical_applications_extension_types]: https://arxiv.org/abs/2311.05658 "Zhang, Three non-cubical applications of extension types"
+//!
+/// `ZeroFiber` states how `left` fixes `Val` cells to `zero` over `Two`.
+/// `ZeroFiber` uses its boundary, β and η laws for `c` and cells from `ins`.
+@[normalizes("cells(outp(c), outq(ins(one)), ins(outq(c))) ~> cells(zero, one, c)")]
+theory ZeroFiber where
+  boundary Two {p, q};
+  face left = {p};
+  sort Val : Type;
+  sort Ext : Type;
+
+  oper zero : Val;
+  oper one : Val;
+  oper c : Ext;
+  oper cells : (b : Val, v : Val, e : Ext) --> Val;
+  oper ins : (y : Val) --> Ext;
+  oper outp : (e : Ext) --> Val;
+  oper outq : (e : Ext) --> Val;
+
+  rule boundary : outp e ==> zero;
+  rule beta : outq (ins y) ==> y;
+  rule eta : ins (outq e) ==> e;

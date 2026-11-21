@@ -1,0 +1,31 @@
+# hotpath Cloud's judgement of the `conversion` series' allocation report
+# (crates/surface-driver/benches/conversion.rs) against its base's
+# (https://hotpath.rs/regression_policy).
+# `mise run ci:hotpath` uploads it; the series' wall-clock time is judged
+# apart, as `conversion-timing` (hotpath/conversion-timing-policy.toml).
+#
+# The series checks the conversion subject alone. In the `gandr` series its
+# conversions would make most of `decide`'s and `admit`'s allocations, and a
+# regression of the other workloads' decisions would read as a fraction of
+# itself there.
+#
+# Allocation counts of a fixed workload repeat to within 0.1%, so a 2% change
+# in any crate is a real one and fails the `hotpath / conversion` check, which
+# is never a required check: a regression lands red rather than blocks. The
+# comment is posted only when the comparison finds a change.
+
+pr_check = "fail"
+pr_comment = "on_change"
+
+[functions]
+min_percent_total = 1
+
+[functions.alloc]
+judged = true
+fail_check = true
+min_percent_change = 2
+metrics = ["avg", "total"]
+min_calls = 1
+
+[functions.timing]
+judged = false
