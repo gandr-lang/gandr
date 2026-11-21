@@ -3135,7 +3135,7 @@ impl<'source> Collected<'source>
         if let Maybe::Absent(_) = answered
             && let Some(prelude) = self.unit.prelude()
             && prelude != source
-            && !self.binds_written(source, name)
+            && self.binds_written(source, name) == Written(false)
             && let Some(found) = lookup(prelude, name)
             && let Ok(start) = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(0_usize))
         {
@@ -3149,11 +3149,12 @@ impl<'source> Collected<'source>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: true exactly when the top level of `source` declares a slot
-    ///   named `name`, or a written import of `source` that resolved to a
-    ///   source and opens `name` reaches a public slot of that name at its top
-    ///   level. The prelude then answers no lookup of `name`, so a source
-    ///   shadows a name of the prelude by the scope rule of each other name.
+    /// - ensures: `Written(true)` exactly when the top level of `source`
+    ///   declares a slot named `name`, or a written import of `source` that
+    ///   resolved to a source and opens `name` reaches a public slot of that
+    ///   name at its top level. The prelude then answers no lookup of `name`,
+    ///   so a source shadows a name of the prelude by the scope rule of each
+    ///   other name.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the answer is a search of the receiver's tables.
@@ -3162,26 +3163,29 @@ impl<'source> Collected<'source>
     /// - hypothesis: L3 — a data family that a listed import binds hides the
     ///   prelude's type member of its name, and a name that nothing written
     ///   binds still reads the prelude.
+    /// - witness: `gandr-surface-lowering::lower::row::tests::an_imported_row_hides_the_prelude_s_atom_8140`
     /// - witness: `gandr-surface-lowering::tests::namespace::the_prelude_answers_a_name_nothing_written_binds_2302`
     #[inline]
     fn binds_written(
         &self,
         source: SourceIndex,
         name: SurfaceName<'source>,
-    ) -> bool
+    ) -> Written
     {
-        self.by_name
-            .contains_key(&(Container::TopLevel(source), name))
-            || self.imports.of(source).any(|import| {
-                matches!(
-                    (import.resolution(), import.opens(name)),
-                    (ImportResolution::Path(ImportTarget::Source(target)), Opens(true))
-                        if self
-                            .by_name
-                            .get(&(Container::TopLevel(target), name))
-                            .is_some_and(|&slot| self.slot_visibility(slot) == Visibility::Public)
-                )
-            })
+        Written(
+            self.by_name
+                .contains_key(&(Container::TopLevel(source), name))
+                || self.imports.of(source).any(|import| {
+                    matches!(
+                        (import.resolution(), import.opens(name)),
+                        (ImportResolution::Path(ImportTarget::Source(target)), Opens(true))
+                            if self
+                                .by_name
+                                .get(&(Container::TopLevel(target), name))
+                                .is_some_and(|&slot| self.slot_visibility(slot) == Visibility::Public)
+                    )
+                }),
+        )
     }
 
     /// The import of `source` that makes the unit's theory code visible to
@@ -4562,6 +4566,12 @@ pub fn collect_source<'source>(
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Translates(pub bool);
+
+/// Whether a source binds a name itself or through one of its written
+/// imports, so that the prelude does not answer it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Written(bool);
 
 /// A root child that is no declaration, the refusal it raised, the attribute
 /// blocks written before it, the pieces of its line a doubled closer tore from
