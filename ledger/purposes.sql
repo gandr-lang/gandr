@@ -2009,6 +2009,7 @@ INSERT INTO purpose VALUES('kernel-term','presented::RewriteFuel','struct','The 
 INSERT INTO purpose VALUES('kernel-term','presented::RuleFault','enum','Why a rule does not present its type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::RuleIndex','struct','A rule''s position in its declaration''s written order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::RuleNode','enum','One node of a rule side, in pre-order.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','presented::RuleReading','enum','How the readers of a rule table read one rule: as a step, or as a symmetry of one constructor.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::RuleRefusal','struct','The first rule of a presentation that does not present its type, and why.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::RuleSlot','enum','Where a constructor field stands, as a rule side reads it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::RuleTerm','enum','One node of a constructor term flattened in pre-order for rewriting.',NULL,'fits','sound',NULL);
@@ -6034,6 +6035,7 @@ INSERT INTO purpose VALUES('theory-levitation','rule::FreeTerm','struct','Holds 
 INSERT INTO purpose VALUES('theory-levitation','rule::Freshness','struct','Holds a rule''s freshness condition, so the condition''s named atoms are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','rule::RowTail','enum','Names the tail of a rule''s row, so the tail''s form is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','rule::RuleFace','struct','Holds a 2-cell face, so the face''s two sides are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-levitation','rule::RuleReading','enum','How the readers of a rule table read one rule face: as a step, or as a symmetry of one operation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','rule::RuleVarMeta','struct','Holds the derived metadata of a rule-face pattern variable, so the metadata''s variance is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','rule::TermArgs','struct','Holds a term node''s arguments, so the arguments'' count is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','rule::TermNode','struct','Holds one node of a free term, so the node''s kind is read.',NULL,'fits','sound',NULL);

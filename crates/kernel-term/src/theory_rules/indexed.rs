@@ -1020,7 +1020,7 @@ impl<'arena> Reader<'arena>
         if self
             .rules
             .iter()
-            .any(|rule| rule.reading() == Reading::SecondOrder)
+            .any(|rule| rule.reading() != Reading::FirstOrder)
         {
             return None;
         }
