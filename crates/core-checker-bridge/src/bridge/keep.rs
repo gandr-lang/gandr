@@ -202,7 +202,7 @@ pub(super) const fn position_of(outcome: &Outcome) -> Maybe<ConstantIndex, entry
 #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || (!held.is_empty() && held.iter().all(Option::is_some)))]
 pub(super) fn unit_of(held: &[Option<&Readmitted>]) -> Maybe<ConstantIndex, entry::Absent>
 {
-    let mut first = None;
+    let mut first = Maybe::Absent(entry::Absent::Unadmitted);
     for (offset, entry) in held.iter().enumerate() {
         let Some(entry) = *entry
         else {
@@ -213,15 +213,18 @@ pub(super) fn unit_of(held: &[Option<&Readmitted>]) -> Maybe<ConstantIndex, entr
         else {
             return Maybe::Absent(entry::Absent::Unwhole);
         };
-        let start = *first.get_or_insert(position);
+        let start = match first {
+            Maybe::Present(start) => start,
+            Maybe::Absent(_) => {
+                first = Maybe::Present(position);
+                position
+            },
+        };
         if usize::from(position) != usize::from(start).saturating_add(offset) {
             return Maybe::Absent(entry::Absent::Unwhole);
         }
     }
-    match first {
-        Some(position) => Maybe::Present(position),
-        None => Maybe::Absent(entry::Absent::Unadmitted),
-    }
+    first
 }
 
 /// The entry of the declaration `judged`, kept in place from the record's

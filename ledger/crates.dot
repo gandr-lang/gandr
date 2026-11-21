@@ -416,6 +416,7 @@ digraph crates {
   "surface-lowering-base" -> "theory-spec-combinators";
   "surface-lowering-base" -> "theory-stone-duality";
   "surface-lowering-capability" -> "core-term";
+  "surface-lowering-capability" -> "kernel-data";
   "surface-lowering-capability" -> "kernel-term";
   "surface-lowering-capability" -> "surface-grammar";
   "surface-lowering-capability" -> "surface-lowering-base";
@@ -427,6 +428,7 @@ digraph crates {
   "surface-lowering-exits" -> "surface-lowering-base";
   "surface-lowering-exits" -> "surface-syntax";
   "surface-lowering-expression" -> "core-term";
+  "surface-lowering-expression" -> "kernel-data";
   "surface-lowering-expression" -> "kernel-strata";
   "surface-lowering-expression" -> "kernel-term";
   "surface-lowering-expression" -> "runtime-rust-record";
