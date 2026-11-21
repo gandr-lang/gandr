@@ -1,0 +1,6 @@
+/// T.
+theory T where {
+/// The state.
+  sort S : Type+;
+  oper get : (k : S) --> S;
+}
