@@ -3863,7 +3863,6 @@ where
     /// - witness: `environment::presented_tests::the_forced_loop_converts_circle_words_by_their_normal_forms`
     /// - witness: `replay::tests::a_returned_leaf_of_a_presented_term_reads_before_the_rules`
     /// - witness: `replay::tests::a_reflexivity_at_a_looped_point_presents_as_its_empty_word_6477`
-    /// - witness: `corpus/model/desc/rule-answers-a-stuck-call.gandr`
     /// - witness: `replay::tests::a_rule_answers_a_stuck_call_under_a_return_8278`
     #[spec(
         captures: before = self.spent,
