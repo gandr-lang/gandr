@@ -3,10 +3,10 @@
 # it by its `mint:`, the uuid a rename leaves alone. This reading is the one
 # place the two meet.
 
-# The vault checkout `$XDG_CONFIG_HOME/gandr/references` names (`vault
+# The vault checkout `$XDG_CONFIG_HOME/gandr-factory/references` names (`vault
 # <path>`), or nothing when none is configured or it does not exist.
 vault_checkout() {
-  local config=${XDG_CONFIG_HOME:-$HOME/.config}/gandr/references vault
+  local config=${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/references vault
   [[ -f $config ]] || return 0
   vault=$(awk '$1 == "vault" { sub(/^vault[[:space:]]+/, ""); print }' "$config")
   if [[ -n $vault && -d $vault ]]; then printf '%s\n' "$vault"; fi
@@ -42,6 +42,6 @@ vault_pages() {
 # the file has not been written, as in CI, so the pairing check
 # (`absorbing.jq`) reads nothing to pair.
 vault_absorption() {
-  local file=${XDG_CONFIG_HOME:-$HOME/.config}/gandr/absorption.json
+  local file=${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/absorption.json
   if [[ -f $file ]]; then jq -c . "$file"; else echo null; fi
 }

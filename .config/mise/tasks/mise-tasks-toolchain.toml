@@ -280,7 +280,7 @@ yq '.runs.steps[] | select(.uses // "" | test("^jdx/mise-action@")) | .with.vers
 # (#7008). `.config/host-tools/builds.toml` names them and how each builds,
 # and `crates/workflow-host-tools` builds them; a key that stands is kept.
 # The builder's linker, C tools and programs are its configuration,
-# `$XDG_CONFIG_HOME/gandr/host-tools.toml`, never the tree's.
+# `$XDG_CONFIG_HOME/gandr-factory/host-tools.toml`, never the tree's.
 ["tools:build"]
 description = "Cross-build each tool that publishes no binary for a target into a directory of keys, once for each version"
 usage = '''
@@ -321,7 +321,7 @@ cargo run --quiet --release --locked -p gandr-workflow-host-tools --bin host-too
 # lacks when mise holds no install of it, when its install holds no program,
 # or when a program of it is an ELF file of another machine. Each lack prints
 # one line with the tool, its version and the host's platform, and the lines
-# go into `$XDG_STATE_HOME/gandr/host-tools-needs.txt`, the need for the
+# go into `$XDG_STATE_HOME/gandr-factory/host-tools-needs.txt`, the need for the
 # builder. A tool whose backend needs a tool that the host disables stays out,
 # as `npm:` where `node` is off. The check also prints the host's mise against
 # the pin. A job on a host that receives keys runs it first.

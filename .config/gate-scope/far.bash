@@ -112,7 +112,7 @@ case ${1:-} in
     host_lock --fd 8 "gate-lane-$lane" 1 "gate:remote of $commit"
     export GANDR_GATE_LANE_LOCKED=$lane
     trap far_exit EXIT
-    clone=${XDG_STATE_HOME:-$HOME/.local/state}/gandr/gate-remote/$lane
+    clone=${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/gate-remote/$lane
     if [[ ! -d $clone/.git ]]; then
       mkdir -p "${clone%/*}"
       git clone --quiet --no-checkout "$(git rev-parse --path-format=absolute --git-common-dir)" "$clone"

@@ -8,7 +8,7 @@
 # Usage: remote.bash [host]
 #
 # The hosts are the factory's configuration, never the tree's:
-# `$XDG_CONFIG_HOME/gandr/gate-hosts.json`, or the file `GANDR_GATE_HOSTS`
+# `$XDG_CONFIG_HOME/gandr-factory/gate-hosts.json`, or the file `GANDR_GATE_HOSTS`
 # names. It is `{"reader": <account>, "hosts": {<name>: {"ssh":
 # [<argument>...], "checkout": <path>}}}`: the account whose token the far
 # gate reads with, and for each host the argument vector that reaches it and
@@ -35,7 +35,7 @@
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 root=$(git rev-parse --show-toplevel)
-config=${GANDR_GATE_HOSTS:-${XDG_CONFIG_HOME:-$HOME/.config}/gandr/gate-hosts.json}
+config=${GANDR_GATE_HOSTS:-${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/gate-hosts.json}
 named=${1:-}
 
 if [[ $("$here/passed.bash" tree) != "$(git rev-parse 'HEAD^{tree}')" ]]; then

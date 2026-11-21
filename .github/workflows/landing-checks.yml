@@ -2900,7 +2900,7 @@ jobs:
         shell: bash
         env:
           GANDR_DELETE_SIGNERS: ${{ vars.GANDR_DELETE_SIGNERS }}
-        run: install -D -m 644 /dev/stdin "${XDG_CONFIG_HOME:-$HOME/.config}/gandr/architects.txt" <<< "$GANDR_DELETE_SIGNERS"
+        run: install -D -m 644 /dev/stdin "${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/architects.txt" <<< "$GANDR_DELETE_SIGNERS"
       - name: read the bodies of the pull requests the change lands
         if: ${{ env.PROSE_BASE != '' }}
         shell: bash

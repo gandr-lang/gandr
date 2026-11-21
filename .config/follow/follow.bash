@@ -23,20 +23,20 @@
 #
 # The configuration and the follower's memory live outside the tree, under
 # the XDG directories:
-#   $XDG_CONFIG_HOME/gandr/follow.json   `{checkout, interval, page}`: the
+#   $XDG_CONFIG_HOME/gandr-factory/follow.json   `{checkout, interval, page}`: the
 #       main checkout it builds in, the seconds between readings, and the
 #       page command's argument vector before the line, each path under
 #       `$HOME` when it starts with `~/`;
-#   $XDG_CONFIG_HOME/gandr/host-tools.toml   the builder's configuration,
+#   $XDG_CONFIG_HOME/gandr-factory/host-tools.toml   the builder's configuration,
 #       on the builder only (`crates/workflow-host-tools`);
-#   $XDG_STATE_HOME/gandr/follow.json    `{deployed, previous, failed,
+#   $XDG_STATE_HOME/gandr-factory/follow.json    `{deployed, previous, failed,
 #       fetch_failures, indexed, warmed, pushed, paged}`: the commit
 #       deployed, the one deployed before it, the last commit whose build
 #       cargo refused, the failed fetches in a row, the commits the code
 #       index was last synced to, the gates' builds last warmed at and the
 #       host tools last pushed at, and the keys of the pages already sent;
-#   $XDG_STATE_HOME/gandr/follow-build.log   the output of the last build;
-#   $XDG_STATE_HOME/gandr/follow-tools.log   the output of the last push.
+#   $XDG_STATE_HOME/gandr-factory/follow-build.log   the output of the last build;
+#   $XDG_STATE_HOME/gandr-factory/follow-tools.log   the output of the last push.
 # The builds live in `$XDG_DATA_HOME/gandr/builds/<commit>/gandr`. The
 # toolchain `main` names the deployed build and is the default, and the
 # toolchain `previous` names the build before it, for a rollback by
@@ -47,11 +47,11 @@
 
 follow_dir="$(git rev-parse --show-toplevel)/.config/follow"
 source "$follow_dir/../toolchain/tree.bash"
-follow_config="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/follow.json"
-follow_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/follow.json"
-follow_build_log="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/follow-build.log"
-follow_host_tools="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/host-tools.toml"
-follow_tools_log="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/follow-tools.log"
+follow_config="${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/follow.json"
+follow_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/follow.json"
+follow_build_log="${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/follow-build.log"
+follow_host_tools="${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/host-tools.toml"
+follow_tools_log="${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/follow-tools.log"
 follow_builds="${XDG_DATA_HOME:-$HOME/.local/share}/gandr/builds"
 follow_toolchains="${XDG_DATA_HOME:-$HOME/.local/share}/gandr/toolchains"
 # The page command's argument vector before the line, the configuration's

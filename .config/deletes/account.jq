@@ -41,7 +41,7 @@ def covers($item; $thing):
 def segment: sub("^.*::"; "") | gsub("[<>]"; "");
 
 # Whether the comment `$c` comes from a login of the signers file,
-# `$XDG_CONFIG_HOME/gandr/architects.txt`, with the heading that the login's
+# `$XDG_CONFIG_HOME/gandr-factory/architects.txt`, with the heading that the login's
 # line asks of it.
 def signer($c; $architects):
   $architects[$c.author] as $heading | $heading != null and ($c.body | contains($heading));

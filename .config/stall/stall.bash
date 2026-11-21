@@ -5,7 +5,7 @@
 # The thresholds are `defaults.json`'s, each overridden by the configuration's
 # `thresholds`. The configuration and the detector's memory live outside the
 # tree, under the XDG directories:
-#   $XDG_CONFIG_HOME/gandr/stall.json   `{thresholds?, lanes?, page?}`;
+#   $XDG_CONFIG_HOME/gandr-factory/stall.json   `{thresholds?, lanes?, page?}`;
 #       `lanes` the lanes a finding is placed in (absent, every lane), and
 #       `page` `{command, triage, coordinator, seats?, check?, activity?,
 #       claim?, peek?}`: the page script's argument vector, then each target's
@@ -17,19 +17,19 @@
 #       `peek` the claim command and its dry run, each `{lane}` the lane's
 #       name: `claim` is named in a seat's idle page, and `peek` exits 0 and
 #       prints the work that `claim` would give;
-#   $XDG_CONFIG_HOME/gandr/hold         each held lane first on its line, or
+#   $XDG_CONFIG_HOME/gandr-factory/hold         each held lane first on its line, or
 #       `*` for every lane, then the reason: a held lane holds no seat for
 #       the reading, so it is never idle, and its pull requests are still read;
-#   $XDG_STATE_HOME/gandr/stall.json    `{seen, paged, stalled}`, `detect.jq`'s,
+#   $XDG_STATE_HOME/gandr-factory/stall.json    `{seen, paged, stalled}`, `detect.jq`'s,
 #       `gone`, `stall:watch`'s count of readings each seat was found
 #       without a live block, `activity` each seat's last activity record by
 #       its lane, and `read`, the time of its last reading.
 
 stall_dir="$(git rev-parse --show-toplevel)/.config/stall"
-stall_config="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/stall.json"
-stall_hold="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/hold"
-stall_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/stall.json"
-stall_home="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/stall-service"
+stall_config="${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/stall.json"
+stall_hold="${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/hold"
+stall_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/stall.json"
+stall_home="${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/stall-service"
 source "$stall_dir/../issues/deps.bash"
 source "$stall_dir/../claims/lanes.bash"
 source "$stall_dir/../service/service.bash"

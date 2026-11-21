@@ -46,7 +46,7 @@ case ${1:-} in
     host_lock --fd 8 "doc-targets-$lane" 1 "doc-targets of $commit"
     export GANDR_GATE_LANE_LOCKED=$lane
     trap far_exit EXIT
-    clone=${XDG_STATE_HOME:-$HOME/.local/state}/gandr/doc-targets/$lane
+    clone=${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/doc-targets/$lane
     if [[ ! -d $clone/.git ]]; then
       mkdir -p "${clone%/*}"
       git clone --quiet --no-checkout "$(git rev-parse --path-format=absolute --git-common-dir)" "$clone"

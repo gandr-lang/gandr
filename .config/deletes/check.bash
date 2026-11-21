@@ -33,7 +33,7 @@
 # each issue's comments: one REST read for each page of 100 comments. The
 # logins that sign, each with the heading its comment must hold, are the
 # factory's state and not the tree's, so they live outside it (#6962), in
-# `$XDG_CONFIG_HOME/gandr/architects.txt`: one login a line, then the heading
+# `$XDG_CONFIG_HOME/gandr-factory/architects.txt`: one login a line, then the heading
 # if any, and `#` starts a comment line. A host without the file refuses.
 #
 # Usage: check.bash [--rows-only [--head <rev>]] [--title <title>] <body> <base>
@@ -57,7 +57,7 @@ body=${1:?usage: check.bash [--rows-only [--head <rev>]] [--title <title>] <body
 base=$(git rev-parse --verify --quiet "${2:?usage: check.bash [--rows-only [--head <rev>]] [--title <title>] <body> <base>}^{commit}") \
   || { echo "check:deletes: $2 is no commit" >&2; exit 2; }
 head=$(git rev-parse --verify --quiet "$head^{commit}") || { echo "check:deletes: the head is no commit" >&2; exit 2; }
-architects="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/architects.txt"
+architects="${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/architects.txt"
 [[ -f $architects ]] || {
   echo "check:deletes: no signers at $architects: write each login that signs a \`deleted\` row there, one a line, then the heading its comment must hold (#6962)" >&2
   exit 2

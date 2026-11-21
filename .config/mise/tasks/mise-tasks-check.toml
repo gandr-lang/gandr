@@ -218,7 +218,7 @@ gate_ran=1
 # first (`mise run tools:check`, #7127): a lack stops the gate before its
 # build, with status 2. `pr:open` and `pr:land` read that record as a local
 # one. The hosts are the factory's configuration, `gate-hosts.json` under
-# `$XDG_CONFIG_HOME/gandr`. Its name keeps it out of the `check:*` glob, so
+# `$XDG_CONFIG_HOME/gandr-factory`. Its name keeps it out of the `check:*` glob, so
 # no gate runs it.
 ["gate:remote"]
 description = "The landing's gate of the branch's head on the host of ours with the least load for each core and a free gate slot, its pass recorded here"
@@ -237,7 +237,7 @@ exec .config/gate-scope/remote.bash ${usage_host:+"$usage_host"}
 # and `.config/gate-rows/report.bash` reads the rows of a window. It prints
 # the runs, the median and the 90th percentile of the seconds for each gate,
 # class, architecture and result, and it writes nothing. A host names its
-# class in `host.json` under `$XDG_CONFIG_HOME/gandr` as `{"class": "<name>"}`.
+# class in `host.json` under `$XDG_CONFIG_HOME/gandr-factory` as `{"class": "<name>"}`.
 ["report:gates"]
 description = "The medians of the gates on this host, from the row that each run of a gate leaves"
 tools.jq = "1.8.1"
@@ -2515,7 +2515,7 @@ echo "builtins check OK: $held names in $held_places places, each with its row; 
 # shape: a key line names a library citation key, or `vault:` and a vault
 # page's `mint:` uuid, with its role; a key has one role at a site; and a
 # crate's README lists under `## References` exactly the keys its modules
-# cite. When `$XDG_CONFIG_HOME/gandr/references` names the library's BibTeX
+# cite. When `$XDG_CONFIG_HOME/gandr-factory/references` names the library's BibTeX
 # file (`library <path>`) and the vault's checkout (`vault <path>`), each key
 # must be a citation key there or a page's `mint:`; without it, a key is read
 # for its shape alone. A site whose source has changed since its last reading
@@ -2615,7 +2615,7 @@ if ! cmp -s "$fresh/references.sql" ledger/references.sql; then
   echo 'ledger/references.sql is not the citations the documentation makes; write it with `mise run ledger:references`' >&2
   failed=1
 fi
-config=${XDG_CONFIG_HOME:-$HOME/.config}/gandr/references
+config=${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/references
 resolved='for their shape alone: no library and no vault are configured'
 unresolved=
 if [[ -f $config ]]; then
@@ -2631,7 +2631,7 @@ if [[ -f $config ]]; then
     sqlite3 -tabs "$db" "SELECT key FROM cite WHERE kind IN ('cite', 'mirror') AND key GLOB 'vault:*' EXCEPT SELECT key FROM known;" > "$fresh/unresolved-vault"
     references_vault_upstream "$vault" "$fresh/unresolved-vault" "$fresh/upstream-known" "$fresh/vault-state"
     sqlite3 -bail -tabs "$db" ".import $fresh/upstream-known upstream_known" ".import $fresh/vault-state vault_state"
-    resolved='against the library and the vault $XDG_CONFIG_HOME/gandr/references names'
+    resolved='against the library and the vault $XDG_CONFIG_HOME/gandr-factory/references names'
     unresolved="UNION ALL
 SELECT min(location) || ': ' || key || ' resolves in vault checkout ' || checkout || ', which is ' || behind || ' commit(s) behind ' || upstream || '; run git -C ' || checkout || ' merge --ff-only ' || upstream || ', then run mise run check:references again'
 FROM cite CROSS JOIN vault_state WHERE kind IN ('cite', 'mirror') AND key IN (SELECT key FROM upstream_known) GROUP BY key
@@ -4479,6 +4479,7 @@ description = "The parsed sentence rules, against the prose ledger, and over eac
 tools.python = "3.15.2"
 tools."github:astral-sh/uv" = "0.13.6"
 tools."pipx:spacy" = { version = "3.8.18", depends = ["python", "github:astral-sh/uv"], uvx_args = "--python 3.15.2 --with en_core_web_sm@https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85" }
+tools.jq = "1.8.1"
 usage = '''
 flag "--write" help="rewrite corpus/prose.ledger from the findings instead of comparing"
 flag "--prune" help="after the run, remove each kept parse that the head does not hold, and the cache's directories of another script or model"

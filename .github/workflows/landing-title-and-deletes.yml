@@ -77,7 +77,7 @@ jobs:
         shell: bash
         env:
           GANDR_DELETE_SIGNERS: ${{ vars.GANDR_DELETE_SIGNERS }}
-        run: install -D -m 644 /dev/stdin "${XDG_CONFIG_HOME:-$HOME/.config}/gandr/architects.txt" <<< "$GANDR_DELETE_SIGNERS"
+        run: install -D -m 644 /dev/stdin "${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/architects.txt" <<< "$GANDR_DELETE_SIGNERS"
 
   title:
     name: lint the pull request title

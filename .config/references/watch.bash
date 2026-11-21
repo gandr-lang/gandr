@@ -3,15 +3,15 @@
 # review issue. `watch.jq` reads the delta; this file gathers what it reads.
 #
 # The configuration lives under the XDG configuration directory:
-# `gandr/references` names the library (`library <path>`) and the vault's
-# checkout (`vault <path>`), and `gandr/paper-watch.toml` holds `repository`,
+# `gandr-factory/references` names the library (`library <path>`) and the vault's
+# checkout (`vault <path>`), and `gandr-factory/paper-watch.toml` holds `repository`,
 # the one taking the review issue, `threshold`, the library entries a journal
 # or a conference holds before its new works are read (a book series or an
 # ebook platform prints every subject, and a repository every preprint),
 # `mailto`, the contact address OpenAlex asks for, and an optional `api_key`,
 # which raises the daily budget a keyless run shares with its network. The
 # state lives under the XDG state
-# directory, `gandr/paper-watch/state.json`: `start`, the first run's earliest
+# directory, `gandr-factory/paper-watch/state.json`: `start`, the first run's earliest
 # day, `last`, the last run's day, and `reported`, every OpenAlex id filed.
 #
 # OpenAlex's free date filter is the publication day, which misses a work
@@ -88,9 +88,9 @@ watch_titled() {
 # issue and the state alone.
 references_watch() {
   local dry=$1 refs config state today start last from library vault repository threshold
-  refs=${XDG_CONFIG_HOME:-$HOME/.config}/gandr/references
-  config=${XDG_CONFIG_HOME:-$HOME/.config}/gandr/paper-watch.toml
-  state=${XDG_STATE_HOME:-$HOME/.local/state}/gandr/paper-watch/state.json
+  refs=${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/references
+  config=${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/paper-watch.toml
+  state=${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/paper-watch/state.json
   if [[ ! -f $refs || ! -f $config ]]; then
     echo "refs:watch: $refs names the library and the vault, and $config the repository, the threshold and the contact address; write both" >&2
     return 2

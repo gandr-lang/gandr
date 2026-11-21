@@ -9,14 +9,14 @@
 # the login's comments hold, as for a deletion. The signers are the factory's
 # state and not the tree's. So they live in the configuration directory. A
 # body with no override needs no signers and reads no comment.
-# - see: `.config/deletes/check.bash`, `$XDG_CONFIG_HOME/gandr/architects.txt`
+# - see: `.config/deletes/check.bash`, `$XDG_CONFIG_HOME/gandr-factory/architects.txt`
 #
 # Usage: signed.bash <body>...
 # Prints each override that no sign-off holds and exits 1. Exits 2 when it
 # cannot read the signers or the comments.
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
-architects="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/architects.txt"
+architects="${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/architects.txt"
 status=0
 # The signers and the comments go to jq in files: the comments have no
 # bound on their size.

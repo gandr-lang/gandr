@@ -50,11 +50,11 @@
 # the service never runs its own code from there.
 
 watch_dir="$(git rev-parse --show-toplevel)/.config/integration"
-watch_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/landing-watch.json"
-watch_tree="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch-landing"
-watch_home="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch-service"
-watch_records="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch-records"
-watch_fill_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/landing-fill.json"
+watch_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/landing-watch.json"
+watch_tree="${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/watch-landing"
+watch_home="${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/watch-service"
+watch_records="${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/watch-records"
+watch_fill_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/landing-fill.json"
 watch_limit=45
 watch_interval=60
 source "$watch_dir/../stall/stall.bash"
@@ -345,7 +345,7 @@ watch_gate() {
   fi
   git -C "$watch_tree" update-ref refs/remotes/origin/landing "$green"
   git -C "$watch_tree" update-ref refs/remotes/origin/main "$(git -C "$watch_tree" rev-parse refs/watch/main)"
-  log="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/landing-watch.log"
+  log="${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/landing-watch.log"
   watch_token
   SECONDS=0
   watch_run "$head" check "$log" && status=0 || status=$?
