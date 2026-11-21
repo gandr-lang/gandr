@@ -2525,6 +2525,12 @@ echo "builtins check OK: $held names in $held_places places, each with its row; 
 # and the phrases that the check refuses, and its cases pin them. The check
 # reads each tracked text file but the recorded debug transcripts and the
 # changelog, which tell what a run or a release saw.
+#
+# `.config/retired/record.txt` lists the files of the one record of a spelling
+# that the grammar still parses, each with the open issue that removes it. The
+# record's own phrase stands in those files alone. The check refuses a line
+# with no issue, and a file that holds no part of the record, so the list
+# cannot go stale.
 # - see: #8188
 #
 # The gate prints every finding before it fails.
@@ -2538,11 +2544,21 @@ failed=0
 .config/cases/run.bash 'retired' .config/retired/cases.json --program .config/retired/findings.jq || failed=1
 findings=$(git grep -n -I -i -P -e 'retired|\bold (spelling|form)' -- . \
   ':!.config/retired/' ':!**/tests/debug-traces/**' ':!CHANGELOG.md' \
-  | jq -R -s 'split("\n")' | jq -r -f .config/retired/findings.jq)
+  | jq -R -s 'split("\n")' \
+  | jq -r --rawfile record .config/retired/record.txt -f .config/retired/findings.jq)
 if [[ -n $findings ]]; then
   printf '%s\n' "$findings" >&2
   failed=1
 fi
+while IFS= read -r line; do
+  if [[ ! $line =~ ^([^ ]+)\ \#[0-9]+$ ]]; then
+    echo ".config/retired/record.txt: \`$line\` is no \`<path> #<issue>\` line; write the path and the open issue that removes the record" >&2
+    failed=1
+  elif ! git grep -q -i -P 'old\x20spelling|\bRemoval(Issue)?\b|superseded' -- "${BASH_REMATCH[1]}"; then
+    echo ".config/retired/record.txt: ${BASH_REMATCH[1]} holds no part of the record; take its line out" >&2
+    failed=1
+  fi
+done < .config/retired/record.txt
 if (( failed )); then
   echo 'retired check FAILED' >&2
   exit 1

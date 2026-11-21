@@ -107,7 +107,7 @@
 # `demand: <site>` line naming the corpus source or program that needs it.
 # It states its spelling too (#6876), since the owner's rule of 2026-11-11
 # admits one spelling for each form: `spelling: sole`, or `spelling: replaces
-# <old>, refused here` where the change refuses the old spelling, or
+# <old>, refused here` where the change refuses the spelling it replaces, or
 # `spelling: replaces <old>, refused by #n` where `#n` is an open issue.
 # The goldens `corpus:goldens` records there follow the corpus and ask for
 # none (#2756).
@@ -410,8 +410,8 @@ def golden:
   or test("^crates/surface-parser/tests/recovery/.+\\.recovery$");
 
 # The refusals of a change to the parser whose body states no surface form,
-# or a spelling in none of its three forms, or an old spelling whose unit
-# does not stand open (#6876).
+# or a spelling in none of its three forms, or a replaced spelling whose
+# unit does not stand open (#6876).
 def surface:
   (.surface // [] | map(select(golden | not))) as $paths
   | select($paths | length > 0)
@@ -434,7 +434,7 @@ def surface:
      | capture("^replaces\\s+\\S.*,\\s*refused\\s+by\\s+#(?<n>[0-9]+)\\b").n
      | tonumber
      | select(IN($open[]) | not)
-     | "the line `spelling: replaces …, refused by #\(.)` names #\(.), which does not stand open: name the open unit that refuses the old spelling, or refuse it in this change and write `refused here`, then run `pr:open` again");
+     | "the line `spelling: replaces …, refused by #\(.)` names #\(.), which does not stand open: name the open unit that refuses the replaced spelling, or refuse it in this change and write `refused here`, then run `pr:open` again");
 
 # The refusals of a body working a `collector` (#3326): closed by a keyword,
 # or advanced without `## Rows` naming its open rows.
