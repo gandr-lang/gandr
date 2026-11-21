@@ -11357,6 +11357,11 @@ impl Walk<'_, '_>
             } else {
                 return false;
             };
+            // The run of a definition of no input that writes no argument is
+            // its head alone, with no join.
+            if let [Task::Visit { admits: Admits::Value, depth: at, .. }] = *scheduled {
+                return at == depth;
+            }
             let Some((&Task::Join(join), visits)) = scheduled.split_first()
             else { return false; };
             let joined = if let Join::Apply(Arity(arity)) = join {
