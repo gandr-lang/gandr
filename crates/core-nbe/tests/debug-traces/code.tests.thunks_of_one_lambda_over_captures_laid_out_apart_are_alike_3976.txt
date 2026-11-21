@@ -1,0 +1,104 @@
+test: code::tests::thunks_of_one_lambda_over_captures_laid_out_apart_are_alike_3976
+package: gandr-core-nbe
+command: mise run debug:test gandr-core-nbe code::tests::thunks_of_one_lambda_over_captures_laid_out_apart_are_alike_3976 --break Walk>::held_thunks$
+
+(lldb) target create "target/debug-trace/debug/deps/gandr_core_nbe-3e6cc4910fb10f12"
+Current executable set to 'target/debug-trace/debug/deps/gandr_core_nbe-3e6cc4910fb10f12' (arm64).
+(lldb) settings set -- target.run-args  "code::tests::thunks_of_one_lambda_over_captures_laid_out_apart_are_alike_3976" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex Walk>::held_thunks$
+Breakpoint 1: where = gandr_core_nbe-3e6cc4910fb10f12`<gandr_core_nbe::code::Walk>::held_thunks + 80 at code.rs:2490:5, address = 0x00000001001546c4
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_core_nbe-3e6cc4910fb10f12`__rustc::rust_panic + 12 at panicking.rs:875:25, address = 0x0000000100bccc54
+(lldb) run
+
+running 1 test
+test code::tests::thunks_of_one_lambda_over_captures_laid_out_apart_are_alike_3976 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 11293 launched: 'target/debug-trace/debug/deps/gandr_core_nbe-3e6cc4910fb10f12' (arm64)
+Process 11293 stopped
+* thread #2, name = 'code::tests::thunks_of_one_lambda_over_captures_laid_out_apart_', stop reason = breakpoint 1.1
+       frame #0: 0x00000001001546c4 gandr_core_nbe-3e6cc4910fb10f12`<gandr_core_nbe::code::Walk>::held_thunks(self={core:{values:{frozen:None, own:size=8}, computations:{frozen:None, own:size=8}, value_types:{frozen:None, own:size=2}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None}, domain:{values:size=8, value_guards:size=8, computations:size=0, comp_guards:size=0, neutrals:size=3, neutral_guards:size=3, value_closures:size=2, comp_closures:size=5, levels:size=0, fields:size=0, branches:size=0}, constants:Read({chain:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{…}, _marker:{…}}, presentations:{root:None, length:0, alloc:{…}, _marker:{…}}, constructors:{root:None, length:0, alloc:{…}, _marker:{…}}, identities:{root:None, length:0, alloc:{…}, _marker:{…}}}, environment:{frames:size=1}, scope:{0:0}, endpoints:Run, constants:Unfold, recursion:Unrolled, returning:size=0}), links:size=0, next:{0:0}}, first={0:3}, second={0:4}, atoms=size=1) at code.rs:2490:5
+   2487	    ///   environment or another body.
+   2488	    /// - witness: `code::tests::motives_calling_thunks_written_apart_are_alike_3920`
+   2489	    /// - witness: `code::tests::thunks_of_one_lambda_over_captures_laid_out_apart_are_alike_3976`
+-> 2490	    #[spec(
+    	    ^
+   2491	        captures: [entry_atoms = atoms.len()],
+   2492	        ensures: |ret| match ret {
+   2493	            | Ok(Alike::Different) => atoms.len() == entry_atoms,
+(lldb) bt 24
+* thread #2, name = 'code::tests::thunks_of_one_lambda_over_captures_laid_out_apart_', stop reason = breakpoint 1.1
+   * frame #0: 0x00000001001546c4 gandr_core_nbe-3e6cc4910fb10f12`<gandr_core_nbe::code::Walk>::held_thunks(self={core:{values:{frozen:None, own:size=8}, computations:{frozen:None, own:size=8}, value_types:{frozen:None, own:size=2}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None}, domain:{values:size=8, value_guards:size=8, computations:size=0, comp_guards:size=0, neutrals:size=3, neutral_guards:size=3, value_closures:size=2, comp_closures:size=5, levels:size=0, fields:size=0, branches:size=0}, constants:Read({chain:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{…}, _marker:{…}}, presentations:{root:None, length:0, alloc:{…}, _marker:{…}}, constructors:{root:None, length:0, alloc:{…}, _marker:{…}}, identities:{root:None, length:0, alloc:{…}, _marker:{…}}}, environment:{frames:size=1}, scope:{0:0}, endpoints:Run, constants:Unfold, recursion:Unrolled, returning:size=0}), links:size=0, next:{0:0}}, first={0:3}, second={0:4}, atoms=size=1) at code.rs:2490:5
+     frame #1: 0x000000010013fbc4 gandr_core_nbe-3e6cc4910fb10f12`<gandr_core_nbe::code::Walk>::equal_atoms::{closure#0} at code.rs:2427:33
+     frame #2: 0x000000010021348c gandr_core_nbe-3e6cc4910fb10f12`anodized::__::eval_once::<core::result::Result<gandr_core_nbe::code::Alike, gandr_core_nbe::conv::ConversionFault>, <gandr_core_nbe::code::Walk>::equal_atoms::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #3: 0x0000000100154554 gandr_core_nbe-3e6cc4910fb10f12`<gandr_core_nbe::code::Walk>::equal_atoms(self={core:{values:{frozen:None, own:size=8}, computations:{frozen:None, own:size=8}, value_types:{frozen:None, own:size=2}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None}, domain:{values:size=8, value_guards:size=8, computations:size=0, comp_guards:size=0, neutrals:size=3, neutral_guards:size=3, value_closures:size=2, comp_closures:size=5, levels:size=0, fields:size=0, branches:size=0}, constants:Read({chain:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{…}, _marker:{…}}, presentations:{root:None, length:0, alloc:{…}, _marker:{…}}, constructors:{root:None, length:0, alloc:{…}, _marker:{…}}, identities:{root:None, length:0, alloc:{…}, _marker:{…}}}, environment:{frames:size=1}, scope:{0:0}, endpoints:Run, constants:Unfold, recursion:Unrolled, returning:size=0}), links:size=0, next:{0:0}}, left_atom=Quote({0:0}, {closure:{0:0}, chain:{0:0}}), right_atom=Quote({0:1}, {closure:{0:1}, chain:{0:0}})) at code.rs:2321:5
+     frame #4: 0x0000000100144e40 gandr_core_nbe-3e6cc4910fb10f12`<gandr_core_nbe::code::Walk>::equal::{closure#0} at code.rs:1094:14
+     frame #5: 0x0000000100213528 gandr_core_nbe-3e6cc4910fb10f12`anodized::__::eval_once::<core::result::Result<gandr_core_nbe::code::Alike, gandr_core_nbe::conv::ConversionFault>, <gandr_core_nbe::code::Walk>::equal::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #6: 0x0000000100154cf4 gandr_core_nbe-3e6cc4910fb10f12`<gandr_core_nbe::code::Walk>::equal(self={core:{values:{frozen:None, own:size=8}, computations:{frozen:None, own:size=8}, value_types:{frozen:None, own:size=2}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None}, domain:{values:size=8, value_guards:size=8, computations:size=0, comp_guards:size=0, neutrals:size=3, neutral_guards:size=3, value_closures:size=2, comp_closures:size=5, levels:size=0, fields:size=0, branches:size=0}, constants:Read({chain:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{…}, _marker:{…}}, presentations:{root:None, length:0, alloc:{…}, _marker:{…}}, constructors:{root:None, length:0, alloc:{…}, _marker:{…}}, identities:{root:None, length:0, alloc:{…}, _marker:{…}}}, environment:{frames:size=1}, scope:{0:0}, endpoints:Run, constants:Unfold, recursion:Unrolled, returning:size=0}), links:size=0, next:{0:0}}, left={0:0}, right={0:1}) at code.rs:1069:5
+     frame #7: 0x000000010014efd4 gandr_core_nbe-3e6cc4910fb10f12`gandr_core_nbe::code::compare_codes::{closure#0} at code.rs:2872:13
+     frame #8: 0x00000001002133a0 gandr_core_nbe-3e6cc4910fb10f12`anodized::__::eval_once::<core::result::Result<gandr_core_nbe::code::CodeComparison, gandr_core_nbe::conv::ConversionFault>, gandr_core_nbe::code::compare_codes::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #9: 0x000000010015803c gandr_core_nbe-3e6cc4910fb10f12`gandr_core_nbe::code::compare_codes(core={values:{frozen:None, own:size=8}, computations:{frozen:None, own:size=8}, value_types:{frozen:None, own:size=2}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None}, domain={values:size=8, value_guards:size=8, computations:size=0, comp_guards:size=0, neutrals:size=3, neutral_guards:size=3, value_closures:size=2, comp_closures:size=5, levels:size=0, fields:size=0, branches:size=0}, constants=Read({chain:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, constructors:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, environment:{frames:size=1}, scope:{0:0}, endpoints:Run, constants:Unfold, recursion:Unrolled, returning:size=0}), left={0:0}, right={0:1}) at code.rs:2841:1
+     frame #10: 0x0000000100317a20 gandr_core_nbe-3e6cc4910fb10f12`gandr_core_nbe::code::tests::compare_rigidly(core={values:{frozen:None, own:size=8}, computations:{frozen:None, own:size=8}, value_types:{frozen:None, own:size=2}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None}, domain={values:size=8, value_guards:size=8, computations:size=0, comp_guards:size=0, neutrals:size=3, neutral_guards:size=3, value_closures:size=2, comp_closures:size=5, levels:size=0, fields:size=0, branches:size=0}, left={0:0}, right={0:1}) at tests.rs:119:5
+     frame #11: 0x0000000100320964 gandr_core_nbe-3e6cc4910fb10f12`gandr_core_nbe::code::tests::thunks_of_one_lambda_over_captures_laid_out_apart_are_alike_3976 at tests.rs:805:13
+     frame #12: 0x00000001003057e8 gandr_core_nbe-3e6cc4910fb10f12`gandr_core_nbe::code::tests::thunks_of_one_lambda_over_captures_laid_out_apart_are_alike_3976::{closure#0}((null)={}) at tests.rs:747:70
+     frame #13: 0x00000001004fab64 gandr_core_nbe-3e6cc4910fb10f12`<gandr_core_nbe::code::tests::thunks_of_one_lambda_over_captures_laid_out_apart_are_alike_3976::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #14: 0x0000000100501580 gandr_core_nbe-3e6cc4910fb10f12`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #15: 0x0000000100501578 gandr_core_nbe-3e6cc4910fb10f12`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:724:18 [opt]
+     frame #16: 0x000000010050c834 gandr_core_nbe-3e6cc4910fb10f12`test::run_test_in_process::{closure#0} at lib.rs:747:74 [opt] [inlined]
+     frame #17: 0x000000010050c828 gandr_core_nbe-3e6cc4910fb10f12`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #18: 0x000000010050c828 gandr_core_nbe-3e6cc4910fb10f12`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:575:43 [opt] [inlined]
+     frame #19: 0x000000010050c824 gandr_core_nbe-3e6cc4910fb10f12`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:543:19 [opt] [inlined]
+     frame #20: 0x000000010050c824 gandr_core_nbe-3e6cc4910fb10f12`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #21: 0x000000010050c824 gandr_core_nbe-3e6cc4910fb10f12`test::run_test_in_process at lib.rs:747:27 [opt] [inlined]
+     frame #22: 0x000000010050c818 gandr_core_nbe-3e6cc4910fb10f12`test::run_test::{closure#0} at lib.rs:668:43 [opt]
+     frame #23: 0x00000001005076bc gandr_core_nbe-3e6cc4910fb10f12`test::run_test::{closure#1} at lib.rs:698:41 [opt] [inlined]
+(lldb) frame variable --depth 3
+(gandr_core_nbe::code::Walk *) self = 0x0000000170005c08 {core:{values:{frozen:None, own:size=8}, computations:{frozen:None, own:size=8}, value_types:{frozen:None, own:size=2}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None}, domain:{values:size=8, value_guards:size=8, computations:size=0, comp_guards:size=0, neutrals:size=3, neutral_guards:size=3, value_closures:size=2, comp_closures:size=5, levels:size=0, fields:size=0, branches:size=0}, constants:Read({chain:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{…}, _marker:{…}}, presentations:{root:None, length:0, alloc:{…}, _marker:{…}}, constructors:{root:None, length:0, alloc:{…}, _marker:{…}}, identities:{root:None, length:0, alloc:{…}, _marker:{…}}}, environment:{frames:size=1}, scope:{0:0}, endpoints:Run, constants:Unfold, recursion:Unrolled, returning:size=0}), links:size=0, next:{0:0}}
+(gandr_core_nbe::arena::DomainValueId) first = {0:3}
+(gandr_core_nbe::arena::DomainValueId) second = {0:4}
+(alloc::vec::Vec<(gandr_core_nbe::code::Atom, gandr_core_nbe::code::Atom), alloc::alloc::Global> *) atoms = 0x00000001700040f8 size=1
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x000000010013fbc4 gandr_core_nbe-3e6cc4910fb10f12`<gandr_core_nbe::code::Walk>::equal_atoms::{closure#0} at code.rs:2427:33
+   2424	                    (Atom::Other(Node::Held(first)), Atom::Other(Node::Held(second)))
+   2425	                        if first != second =>
+   2426	                    {
+-> 2427	                        if self.held_thunks(first, second, &mut atoms)? == Alike::Different {
+    	                                ^
+   2428	                            return Ok(Alike::Different);
+   2429	                        }
+   2430	                    },
+(lldb) frame variable --depth 3
+(gandr_core_nbe::code::Atom) left_atom = Quote({0:0}, {closure:{0:0}, chain:{0:0}}) {
+  0 = {0:0}
+  1 = {closure:{0:0}, chain:{0:0}}
+}
+(gandr_core_nbe::code::Atom) right_atom = Quote({0:1}, {closure:{0:1}, chain:{0:0}}) {
+  0 = {0:1}
+  1 = {closure:{0:1}, chain:{0:0}}
+}
+(gandr_core_nbe::code::Walk) self = {core:{values:{frozen:None, own:size=8}, computations:{frozen:None, own:size=8}, value_types:{frozen:None, own:size=2}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None}, domain:{values:size=8, value_guards:size=8, computations:size=0, comp_guards:size=0, neutrals:size=3, neutral_guards:size=3, value_closures:size=2, comp_closures:size=5, levels:size=0, fields:size=0, branches:size=0}, constants:Read({chain:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{…}, _marker:{…}}, presentations:{root:None, length:0, alloc:{…}, _marker:{…}}, constructors:{root:None, length:0, alloc:{…}, _marker:{…}}, identities:{root:None, length:0, alloc:{…}, _marker:{…}}}, environment:{frames:size=1}, scope:{0:0}, endpoints:Run, constants:Unfold, recursion:Unrolled, returning:size=0}), links:size=0, next:{0:0}}
+(alloc::vec::Vec<(gandr_core_nbe::code::Node, gandr_core_nbe::code::Node), alloc::alloc::Global>) pending = size=0
+(alloc::vec::Vec<(gandr_core_nbe::code::Atom, gandr_core_nbe::code::Atom), alloc::alloc::Global>) atoms = size=1 {
+  [0] = (Variable(Intuitionistic, {0:2}), Variable(Intuitionistic, {0:2}))
+}
+(gandr_core_nbe::code::Atom) one = Other(Held({0:3})) {
+  0 = Held({0:3}) {
+    0 = {0:3}
+  }
+}
+(gandr_core_nbe::code::Atom) other = Other(Held({0:4})) {
+  0 = Held({0:4}) {
+    0 = {0:4}
+  }
+}
+(gandr_core_nbe::arena::DomainValueId *) first = 0x00000001700042fc {__0:3}
+(gandr_core_nbe::arena::DomainValueId *) second = 0x000000017000432c {__0:4}
+(gandr_core_nbe::arena::DomainValueId) first = {0:3}
+(gandr_core_nbe::arena::DomainValueId) second = {0:4}

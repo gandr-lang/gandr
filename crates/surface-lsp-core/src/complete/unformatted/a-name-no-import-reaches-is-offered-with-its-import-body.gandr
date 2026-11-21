@@ -1,0 +1,4 @@
+def far : Integer ;
+def far = 1 ;
+def here : Integer ;
+def here = fa

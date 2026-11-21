@@ -1,0 +1,4 @@
+/// One.
+data One : Type where {
+  | It : One
+}
