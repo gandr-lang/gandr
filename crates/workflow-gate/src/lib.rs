@@ -14,6 +14,8 @@
 //!   each of its commits, as a [`Listed`].
 //! - [`List`] is the inputs of one check at one commit, and its [`Digest`] is
 //!   the name that a record binds.
+//! - [`keys`] gives the [`Key`] of the verdict of each check of a
+//!   [`KeyRequest`]: each input that the verdict reads, as one line.
 //! - [`Parts`] holds the count and the time of each call of a run, and
 //!   [`Elapsed`] writes a time.
 //! - [`GateError`] is each refusal of a run.
@@ -35,6 +37,7 @@ mod list;
 mod name;
 mod run;
 mod tables;
+mod verdict;
 
 pub use crate::call::Elapsed;
 pub use crate::call::Parts;
@@ -47,3 +50,6 @@ pub use crate::name::Commit;
 pub use crate::name::Scope;
 pub use crate::run::Request;
 pub use crate::run::lists;
+pub use crate::verdict::Key;
+pub use crate::verdict::KeyRequest;
+pub use crate::verdict::keys;

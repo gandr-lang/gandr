@@ -104,6 +104,79 @@ fn landing(
     Ok(out)
 }
 
+/// Where a run stands: the root of the worktree and its two tables.
+#[derive(Debug)]
+pub struct Ground
+{
+    /// The root of the worktree.
+    pub root: PathBuf,
+    /// The tables of the worktree.
+    pub tables: Tables,
+}
+
+impl Ground
+{
+    /// Reads the root and the tables of the worktree.
+    ///
+    /// # Specification
+    /// - requires: the working directory is in a worktree of git.
+    /// - ensures: the root that git names, and the tables of `request.tables`,
+    ///   or of `.config/gate-scope` of the worktree; `GATE_INPUTS_TABLE` names
+    ///   another `inputs.json`.
+    /// - provides: the one read of the tables for the lists and for the keys of
+    ///   a run.
+    /// - fails: [`GateError::Command`] when git fails, and [`GateError::Read`]
+    ///   when a table does not read.
+    /// - panics: none.
+    /// - executable: none — the outcome is the external process's.
+    ///
+    /// # Errors
+    /// As `fails` lists.
+    ///
+    /// # Cost
+    /// - allocation: the root and the tables, setup
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the lists of the script over the tables of a
+    ///   directory that the request names; the tables of the worktree in their
+    ///   place change each list.
+    /// - witness: `tests::cli::a_list_holds_each_input_of_its_scope`
+    #[inline]
+    pub fn read(
+        request: &Request,
+        parts: &Parts,
+    ) -> Result<Self, GateError>
+    {
+        let unread = |what: &Path, error: &std::io::Error| GateError::Read {
+            what: what.display().to_string(),
+            reason: error.to_string(),
+        };
+        let here = std::env::current_dir()
+            .map_err(|error| unread(Path::new("the working directory"), &error))?;
+        let top = Program {
+            part: Part::from("git rev-parse"),
+            name: "git",
+            arguments: &["rev-parse", "--show-toplevel"],
+            input: "",
+        }
+        .start(&here)?
+        .finish(parts)?;
+        let root = PathBuf::from(String::from_utf8_lossy(top.as_ref()).trim());
+        let config = request
+            .tables
+            .clone()
+            .unwrap_or_else(|| root.join(".config/gate-scope"));
+        let inputs = std::env::var_os("GATE_INPUTS_TABLE")
+            .map_or_else(|| config.join("inputs.json"), PathBuf::from);
+        let verdicts = config.join("verdicts.json");
+        let tables = Tables::read(
+            &Answer::from(std::fs::read(&inputs).map_err(|error| unread(&inputs, &error))?),
+            &Answer::from(std::fs::read(&verdicts).map_err(|error| unread(&verdicts, &error))?),
+        )?;
+        Ok(Self { root, tables })
+    }
+}
+
 /// What one run holds of the worktree.
 #[derive(Debug)]
 struct World
@@ -164,32 +237,7 @@ impl World
         parts: &Parts,
     ) -> Result<Self, GateError>
     {
-        let unread = |what: &Path, error: &std::io::Error| GateError::Read {
-            what: what.display().to_string(),
-            reason: error.to_string(),
-        };
-        let here = std::env::current_dir()
-            .map_err(|error| unread(Path::new("the working directory"), &error))?;
-        let top = Program {
-            part: Part::from("git rev-parse"),
-            name: "git",
-            arguments: &["rev-parse", "--show-toplevel"],
-            input: "",
-        }
-        .start(&here)?
-        .finish(parts)?;
-        let root = PathBuf::from(String::from_utf8_lossy(top.as_ref()).trim());
-        let config = request
-            .tables
-            .clone()
-            .unwrap_or_else(|| root.join(".config/gate-scope"));
-        let inputs = std::env::var_os("GATE_INPUTS_TABLE")
-            .map_or_else(|| config.join("inputs.json"), PathBuf::from);
-        let verdicts = config.join("verdicts.json");
-        let tables = Tables::read(
-            &Answer::from(std::fs::read(&inputs).map_err(|error| unread(&inputs, &error))?),
-            &Answer::from(std::fs::read(&verdicts).map_err(|error| unread(&verdicts, &error))?),
-        )?;
+        let Ground { root, tables } = Ground::read(request, parts)?;
         let fixed = std::env::var("GATE_INPUTS_TASK").ok();
         let manifest = root.join("Cargo.toml");
         let manifest = manifest.to_string_lossy();

@@ -35,6 +35,12 @@ pub enum GateError
         /// The check.
         check: Check,
     },
+    /// `verdicts.json` holds no row of a verdict for the check.
+    Rowless
+    {
+        /// The check.
+        check: Check,
+    },
     /// A thread of the run stopped with no result.
     Thread
     {
@@ -78,6 +84,7 @@ impl fmt::Display for GateError
                 ref reason,
             } => write!(f, "{what} does not read: {reason}"),
             Self::Unlisted { ref check } => write!(f, "mise holds no task `{check}`"),
+            Self::Rowless { ref check } => write!(f, "{check} holds no row in verdicts.json"),
             Self::Thread { ref part } => write!(f, "the thread of {part} stopped with no result"),
         }
     }
@@ -109,6 +116,13 @@ mod tests
         assert_eq!(
             read.to_string(),
             "verdicts.json does not read: expected a map"
+        );
+        let rowless = GateError::Rowless {
+            check: Check::from("check:other"),
+        };
+        assert_eq!(
+            rowless.to_string(),
+            "check:other holds no row in verdicts.json"
         );
         let unlisted = GateError::Unlisted {
             check: Check::from("check:other"),
