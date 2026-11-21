@@ -629,7 +629,10 @@ impl Presentation
     ///   counts; `term` is one well-formed pre-order term.
     /// - ensures: [`Normalized::Unchanged`] with `term` untouched when no rule
     ///   matches anywhere; otherwise [`Normalized::Rewritten`] with `term`
-    ///   rewritten until no rule matches at any position. A word of cells above
+    ///   rewritten until no rule matches at any position. A rule matches in
+    ///   each order of the two fields of a constructor that a symmetry
+    ///   ([`RuleReading::Symmetry`]) of the table names, at each such node of
+    ///   its left side, and no rewrite is by a symmetry. A word of cells above
     ///   dimension one is also unchanged only when its letters stand in the
     ///   order of their cells, and is otherwise rewritten to that order. Each
     ///   node compared or copied costs one unit of `fuel`; in the pass over a
@@ -654,6 +657,7 @@ impl Presentation
     /// - witness: `presented::tests::normalization_reduces_circle_words`
     /// - witness: `presented::tests::the_pass_over_a_word_rewrites_as_the_rules_do`
     /// - witness: `presented::tests::a_word_of_cells_above_dimension_one_sorts_and_counts_its_letters_6740`
+    /// - witness: `presented::tests::a_left_side_matches_in_each_order_under_a_symmetry_8299`
     #[spec(captures: before = fuel.0, ensures: |ret| fuel.0 <= before
         && (!matches!(ret, Err(Exhausted)) || fuel.0 == 0))]
     #[inline]
@@ -695,8 +699,9 @@ impl Presentation
     ///   validated presentation lowers; and `fuel`, which every node charges.
     ///
     /// # Cost
-    /// - allocation: the built right side of each rewrite and the rewritten
-    ///   term, growth within the rule's sides and the term's nodes
+    /// - allocation: the built right side of each rewrite, the rewritten term,
+    ///   the constructors under a symmetry and each order of a left side that
+    ///   the match tries, growth within the rule's sides and the term's nodes
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::normalize`].
@@ -715,6 +720,14 @@ impl Presentation
         L: Copy,
         F: Fn(&C) -> C,
     {
+        let symmetric: SmallVec<ConstructorTag, 0, Global> = self
+            .rules()
+            .iter()
+            .filter_map(|rule| match rule.reading() {
+                RuleReading::Symmetry(tag) => Some(tag),
+                RuleReading::Step => None,
+            })
+            .collect();
         let mut outcome = Normalized::Unchanged;
         let mut cursor = term.len();
         'rewrite: loop {
@@ -728,8 +741,14 @@ impl Presentation
                     if matches!(rule.reading(), RuleReading::Symmetry(_)) {
                         continue;
                     }
-                    let Matched::At { end, bindings } =
-                        matched(term, TermPosition(start), rule.left(), arities, fuel)?
+                    let Matched::At { end, bindings } = matched_under(
+                        &symmetric,
+                        term,
+                        TermPosition(start),
+                        rule.left(),
+                        arities,
+                        fuel,
+                    )?
                     else {
                         continue;
                     };
@@ -2708,7 +2727,7 @@ enum Matched
     {
         /// One past the redex's last node.
         end: usize,
-        /// Each variable's span, in variable order.
+        /// Each variable's span, at the number of the variable.
         bindings: SmallVec<(usize, usize), 0, Global>,
     },
 }
@@ -2716,11 +2735,14 @@ enum Matched
 /// Match the linear pattern `left` at `start` in `term`.
 ///
 /// # Specification
-/// - requires: `left` is a validated left side, its variables in order.
+/// - requires: `left` is a validated left side, so its variables are the
+///   numbers below their count, each one time. The variables stand in any
+///   order.
 /// - ensures: [`Matched::At`] when every constructor of `left` meets a
 ///   constructor of `term` with its tag and its table arity, each variable
-///   binding the subterm standing where it does; [`Matched::No`] otherwise.
-///   Each pattern node and each node a variable's span walks costs one unit.
+///   binding the subterm standing where it does, at the number of the variable;
+///   [`Matched::No`] otherwise. Each pattern node and each node a variable's
+///   span walks costs one unit.
 /// - provides: the matching half of [`Presentation::normalize`].
 /// - fails: [`Exhausted`] when `fuel` runs out.
 /// - panics: none.
@@ -2762,7 +2784,7 @@ fn matched<C, L>(
             {
                 at = at.saturating_add(1);
             },
-            (RuleNode::Variable(_), Some(_)) => {
+            (RuleNode::Variable(variable), Some(_)) => {
                 let from = at;
                 let mut owed = 1_usize;
                 while let Some(next) = owed.checked_sub(1) {
@@ -2776,12 +2798,184 @@ fn matched<C, L>(
                     };
                     at = at.saturating_add(1);
                 }
-                bindings.push((from, at));
+                let ordinal = usize::try_from(u32::from(variable)).unwrap_or(usize::MAX);
+                if ordinal >= left.len() {
+                    return Ok(Matched::No);
+                }
+                if bindings.len() <= ordinal {
+                    bindings.resize(Count::from(ordinal.saturating_add(1)), (from, at));
+                }
+                if let Some(span) = bindings.get_mut(ordinal) {
+                    *span = (from, at);
+                }
             },
             (RuleNode::Constructor(_) | RuleNode::Variable(_), _) => return Ok(Matched::No),
         }
     }
     Ok(Matched::At { end: at, bindings })
+}
+
+/// Which nodes under a symmetry of a left side take their two arguments in
+/// the other order: bit `i` selects the `i`th such node, in pre-order.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Swaps(usize);
+
+/// Match `left` at `start` in `term` in some order of the two arguments of
+/// each of its nodes whose constructor `symmetric` holds.
+///
+/// # Specification
+/// - requires: `left` is a validated left side; each tag of `symmetric` is the
+///   constructor of a validated symmetry, so it has two fields.
+/// - ensures: the outcome of [`matched`] on `left` as written when that
+///   matches, when `symmetric` is empty, or when the root of `left` does not
+///   meet the node at `start`. Otherwise the outcome of [`matched`] on the
+///   first order of `left` that matches, by [`reordered`] over each [`Swaps`]
+///   in ascending order, and [`Matched::No`] when no order matches.
+/// - provides: the match of a left side under the symmetries of its
+///   presentation, so a rule fires in each order of the two arguments of a
+///   commutative constructor. Each binding stands at the number of its
+///   variable, so the right side builds as for the written order.
+/// - fails: [`Exhausted`] when `fuel` runs out.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: the `for` loop over the orders, at most two to the count of the
+///   nodes of `left` under a symmetry.
+/// - measure: the orders left; `fuel`, which each match charges.
+///
+/// # Cost
+/// - allocation: the positions of the nodes under a symmetry and each order of
+///   the left side, growth within the left side's nodes
+///
+/// # Adequacy
+/// - hypothesis: L3 — a rule with a constant on the left of a commutative
+///   constructor fires on a term that holds the constant on the right, at the
+///   root and below a second such constructor; a term that holds the constant
+///   on neither side stays as written; a table with no symmetry matches the
+///   written order alone.
+/// - witness: `presented::tests::a_left_side_matches_in_each_order_under_a_symmetry_8299`
+#[spec(ensures: |ret| match ret {
+    Ok(Matched::At { end, ref bindings }) => end <= term.len() && bindings.iter().all(|&(from, to)| start.0 <= from && from < to && to <= end),
+    Ok(Matched::No) | Err(Exhausted) => true,
+})]
+fn matched_under<C, L>(
+    symmetric: &[ConstructorTag],
+    term: &[RuleTerm<C, L>],
+    start: TermPosition,
+    left: &[RuleNode],
+    arities: &[FieldCount],
+    fuel: &mut RewriteFuel,
+) -> Result<Matched, Exhausted>
+{
+    let written = matched(term, start, left, arities, fuel)?;
+    let rooted = matches!(
+        (left.first(), term.get(start.0)),
+        (Some(&RuleNode::Constructor(wanted)), Some(&RuleTerm::Constructor { tag, .. }))
+            if wanted == tag
+    );
+    if symmetric.is_empty() || !rooted || matches!(written, Matched::At { .. }) {
+        return Ok(written);
+    }
+    let sites: SmallVec<TermPosition, 0, Global> = left
+        .iter()
+        .enumerate()
+        .filter(
+            |&(_, &node)| matches!(node, RuleNode::Constructor(tag) if symmetric.contains(&tag)),
+        )
+        .map(|(at, _)| TermPosition(at))
+        .collect();
+    let orders = u32::try_from(sites.len())
+        .ok()
+        .and_then(|nodes| 1_usize.checked_shl(nodes))
+        .unwrap_or(usize::MAX);
+    for swaps in 1 .. orders {
+        let order = reordered(left, &sites, Swaps(swaps), arities, fuel)?;
+        let found = matched(term, start, &order, arities, fuel)?;
+        if matches!(found, Matched::At { .. }) {
+            return Ok(found);
+        }
+    }
+    Ok(Matched::No)
+}
+
+/// `left` with the two arguments in the other order at each node of `sites`
+/// that `swaps` selects.
+///
+/// # Specification
+/// - requires: `left` is one term by `arities`; `sites` are positions of
+///   `left`, in ascending order.
+/// - ensures: the pre-order of `left` where each node of two fields that stands
+///   at `sites[i]`, with bit `i` of `swaps` set, holds its second subterm
+///   before its first. Each other node holds its subterms as written. The
+///   result has the nodes of `left`, so it has its length.
+/// - fails: [`Exhausted`] when `fuel` runs out; one unit per node and per node
+///   of each subterm that the walk measures.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: the `while let` loop over a stack of the subterms still to write,
+///   not recursion.
+/// - measure: the nodes of `left` not yet written.
+///
+/// # Cost
+/// - allocation: the reordered side and the stack of its subterms, growth
+///   within the left side's nodes
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`matched_under`].
+/// - witness: `presented::tests::a_left_side_matches_in_each_order_under_a_symmetry_8299`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |order| order.len() <= left.len()))]
+fn reordered(
+    left: &[RuleNode],
+    sites: &[TermPosition],
+    Swaps(swaps): Swaps,
+    arities: &[FieldCount],
+    fuel: &mut RewriteFuel,
+) -> Result<SmallVec<RuleNode, 0, Global>, Exhausted>
+{
+    let mut order = SmallVec::<_, 0, Global>::with_capacity(Count::from(left.len()));
+    let mut pending: SmallVec<TermPosition, 0, Global> =
+        SmallVec::<_, 0, Global>::from_iter([TermPosition(0)]);
+    while let Some(TermPosition(at)) = pending.pop() {
+        fuel.charge()?;
+        let Some(&node) = left.get(at)
+        else {
+            continue;
+        };
+        order.push(node);
+        let RuleNode::Constructor(tag) = node
+        else {
+            continue;
+        };
+        let fields = arities.get(usize::from(tag)).map_or(0, |count| count.0);
+        let first = pending.len();
+        let mut child = TermPosition(at.saturating_add(1));
+        for _field in 0 .. fields {
+            pending.push(child);
+            child = subterm_end(left, child, arities, fuel)?;
+        }
+        let swapped = fields == 2
+            && sites
+                .iter()
+                .position(|&TermPosition(site)| site == at)
+                .and_then(|site| u32::try_from(site).ok())
+                .and_then(|bit| swaps.checked_shr(bit))
+                .is_some_and(|rest| rest & 1 == 1);
+        if !swapped && let Some(children) = pending.get_mut(first ..) {
+            children.reverse();
+        }
+    }
+    Ok(order)
 }
 
 #[cfg(test)]
@@ -3855,7 +4049,11 @@ mod tests
              payload of the redex root"
         );
         let mut swapped: SmallVec<RuleTerm<Letter, Point>, 0, Global> =
-            SmallVec::<_, 0, Global>::from_iter([node(2, 2), RuleTerm::Leaf(Point), node(0, 0)]);
+            SmallVec::<_, 0, Global>::from_iter([
+                node(2, 2),
+                RuleTerm::Leaf(Point),
+                RuleTerm::Leaf(Point),
+            ]);
         let written = swapped.clone();
         assert_eq!(
             band.normalize(&arities, &mut swapped, kept, &mut fuel),
@@ -3890,6 +4088,119 @@ mod tests
             },
             "no two terms are apart by a table that holds a symmetry"
         );
+    }
+
+    /// - see: #8299
+    #[test]
+    fn a_left_side_matches_in_each_order_under_a_symmetry_8299()
+    {
+        let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+        let v = |ordinal: u32| RuleNode::Variable(RuleVariable::from(ordinal));
+        let table = bits();
+        let arities = [0_usize, 0, 2, 2, 2].map(FieldCount::from);
+        let node = |tag: usize, arity: usize| RuleTerm::Constructor {
+            tag: ConstructorTag::from(tag),
+            arity: FieldCount::from(arity),
+            payload: Letter(tag),
+        };
+        let leaf = |name: usize| RuleTerm::Leaf(Letter(name));
+        let kept = |&letter: &Letter| letter;
+        let symmetry = |tag: usize| {
+            PresentedRule::new([c(tag), v(0), v(1)].into(), [c(tag), v(1), v(0)].into())
+        };
+        let steps = || {
+            [
+                PresentedRule::new([c(2), c(0), v(0)].into(), [c(0)].into()),
+                PresentedRule::new([c(2), c(1), v(0)].into(), [v(0)].into()),
+            ]
+        };
+        let band = Presentation::new(
+            steps()
+                .into_iter()
+                .chain(core::iter::once(symmetry(2)))
+                .collect(),
+        );
+        assert_eq!(band.validate(&table), Ok(()));
+        let normal = |presentation: &Presentation, term: &[RuleTerm<Letter, Letter>]| {
+            let mut term: SmallVec<RuleTerm<Letter, Letter>, 0, Global> =
+                term.iter().copied().collect();
+            let mut fuel = RewriteFuel::from(1_000_u64);
+            let outcome = presentation.normalize(&arities, &mut term, kept, &mut fuel);
+            (outcome, term)
+        };
+        assert_eq!(
+            normal(&band, &[node(2, 2), leaf(7), node(0, 0)]),
+            (
+                Ok(Normalized::Rewritten),
+                SmallVec::<_, 0, Global>::from_iter([RuleTerm::Constructor {
+                    tag: ConstructorTag::from(0_usize),
+                    arity: FieldCount::from(0_usize),
+                    payload: Letter(2),
+                }])
+            ),
+            "the rule with zero on the left fires on zero on the right"
+        );
+        assert_eq!(
+            normal(&band, &[node(2, 2), leaf(7), node(1, 0)]),
+            (
+                Ok(Normalized::Rewritten),
+                SmallVec::<_, 0, Global>::from_iter([leaf(7)])
+            ),
+            "the rule with one on the left fires on one on the right, and its variable binds the \
+             left argument"
+        );
+        let stuck = [node(2, 2), leaf(7), leaf(8)];
+        assert_eq!(
+            normal(&band, &stuck),
+            (Ok(Normalized::Unchanged), stuck.iter().copied().collect()),
+            "a term that holds a constant on neither side stays as written"
+        );
+        let right_zero = [node(2, 2), leaf(7), node(0, 0)];
+        assert_eq!(
+            normal(
+                &Presentation::new(steps().into_iter().collect()),
+                &right_zero
+            ),
+            (
+                Ok(Normalized::Unchanged),
+                right_zero.iter().copied().collect()
+            ),
+            "a table with no symmetry matches the written order alone"
+        );
+        // `bor(band(one, x), y) ==> y`, with a symmetry of `band` and of `bor`.
+        let nested = Presentation::new(SmallVec::<_, 0, Global>::from_iter([
+            PresentedRule::new([c(3), c(2), c(1), v(0), v(1)].into(), [v(1)].into()),
+            symmetry(2),
+            symmetry(3),
+        ]));
+        assert_eq!(nested.validate(&table), Ok(()));
+        for (term, order) in [
+            (
+                [node(3, 2), node(2, 2), node(1, 0), leaf(8), leaf(7)],
+                "the written order",
+            ),
+            (
+                [node(3, 2), node(2, 2), leaf(8), node(1, 0), leaf(7)],
+                "the inner arguments in the other order",
+            ),
+            (
+                [node(3, 2), leaf(7), node(2, 2), node(1, 0), leaf(8)],
+                "the outer arguments in the other order",
+            ),
+            (
+                [node(3, 2), leaf(7), node(2, 2), leaf(8), node(1, 0)],
+                "the two pairs of arguments in the other order",
+            ),
+        ] {
+            assert_eq!(
+                normal(&nested, &term),
+                (
+                    Ok(Normalized::Rewritten),
+                    SmallVec::<_, 0, Global>::from_iter([leaf(7)])
+                ),
+                "{order}"
+            );
+        }
     }
 
     #[test]
