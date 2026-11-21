@@ -61,8 +61,8 @@ unit_frame_signed() {
 # from paging again. A host with no page command prints that it pages no one.
 unit_frame_page() {
   local number=$1 frame=$2 line=$3 config state
-  config=${XDG_CONFIG_HOME:-$HOME/.config}/gandr/stall.json
-  state=${XDG_STATE_HOME:-$HOME/.local/state}/gandr/frame-paged
+  config=${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/stall.json
+  state=${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/frame-paged
   [[ ! -e $state/$number-$frame ]] || return 0
   local -a command seat
   if [[ -f $config ]]; then

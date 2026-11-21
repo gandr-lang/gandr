@@ -15,8 +15,8 @@ pids=()
 trap 'kill "${pids[@]}" 2> /dev/null || :; rm -rf "$scratch"' EXIT
 export XDG_STATE_HOME=$scratch/state XDG_CONFIG_HOME=$scratch/config GANDR_HOST_LOCK_DIR=$scratch/locks
 unset GANDR_GATE_SLOT GANDR_GATE_BACKGROUND GATE_NO_WAIT MAKEFLAGS
-rows=$XDG_STATE_HOME/gandr/gates.jsonl
-mkdir -p "$XDG_CONFIG_HOME/gandr" "$GANDR_HOST_LOCK_DIR/gandr"
+rows=$XDG_STATE_HOME/gandr-factory/gates.jsonl
+mkdir -p "$XDG_CONFIG_HOME/gandr-factory" "$GANDR_HOST_LOCK_DIR/gandr"
 failed=0
 cases=0
 
@@ -47,7 +47,7 @@ holds() {
   fi
 }
 
-printf '{"class": "fast"}\n' > "$XDG_CONFIG_HOME/gandr/host.json"
+printf '{"class": "fast"}\n' > "$XDG_CONFIG_HOME/gandr-factory/host.json"
 
 run "a pass" 'gate_open check; gate_tree=abc; gate_ran=1'
 [[ $status == 0 ]] || fail "#7021: a pass exits $status, not 0"
@@ -82,7 +82,7 @@ run "a check that a signal ends" 'gate_open check; bash -c "kill -TERM \$\$"; ga
 [[ $status == 143 ]] || fail "#7021: a gate whose check a signal ends exits $status, not 143"
 holds "a check that a signal ends" '.result == "stopped" and .status == null'
 
-rm "$XDG_CONFIG_HOME/gandr/host.json"
+rm "$XDG_CONFIG_HOME/gandr-factory/host.json"
 run "a host with no class" 'gate_open check; gate_ran=1'
 holds "a host with no class" '.host.class == null'
 

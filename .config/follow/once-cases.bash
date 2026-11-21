@@ -63,8 +63,8 @@ setup() {
   git clone --quiet "file://$1/origin.git" "$1/main" 2> /dev/null
   (cd "$1/main" && identity && commit one one 'one' && commit rust-toolchain.toml $'[toolchain]\nchannel = "nightly-case"' 'pin' \
     && git push --quiet origin main)
-  mkdir -p "$XDG_STATE_HOME/gandr/follow.json.warming"
-  echo "$$" > "$XDG_STATE_HOME/gandr/follow.json.warming/pid"
+  mkdir -p "$XDG_STATE_HOME/gandr-factory/follow.json.warming"
+  echo "$$" > "$XDG_STATE_HOME/gandr-factory/follow.json.warming/pid"
   cd "$here"
   source "$here/follow.bash"
   follow_page_command=(bash -c 'echo "$1" >> "$0"' "$1/pages")

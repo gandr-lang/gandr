@@ -220,7 +220,7 @@ sqlite3 "$fresh/fresh.db" .dump > ledger/references.sql
 # `unread` until the site is read, then `current` while the module's source
 # is the blob it was read against, `stale` once it has changed. A `vault:`
 # key shows its page's filename beside the mint, read through the vault
-# checkout `$XDG_CONFIG_HOME/gandr/references` names (#2793), so a reader
+# checkout `$XDG_CONFIG_HOME/gandr-factory/references` names (#2793), so a reader
 # never meets a bare uuid; without the checkout the key is shown alone.
 ["refs:list"]
 description = "List the sources the crates cite, each at each site, with the status of its last reading"

@@ -7,7 +7,7 @@
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 root=$(cd "$here/../.." && pwd)
-config=${GANDR_GATE_HOSTS:-${XDG_CONFIG_HOME:-$HOME/.config}/gandr/gate-hosts.json}
+config=${GANDR_GATE_HOSTS:-${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/gate-hosts.json}
 
 fail() {
   printf 'doc-targets: %s\n' "$*" >&2

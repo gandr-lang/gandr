@@ -60,7 +60,7 @@ source "${BASH_SOURCE[0]%/*}/../claims/lanes.bash"
 gate_cores=$(getconf _NPROCESSORS_ONLN)
 gate_slots=${GANDR_GATE_SLOTS:-$(( gate_cores / 8 > 1 ? gate_cores / 8 : 1 ))}
 # The rows of the gates on this host (#7021).
-gate_rows=${XDG_STATE_HOME:-$HOME/.local/state}/gandr/gates.jsonl
+gate_rows=${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/gates.jsonl
 
 # The lane of the worktree the gate runs in: the longest lane of the lane
 # table that the worktree's name equals or starts with before a `-`, else the
@@ -212,7 +212,7 @@ gate_json_text() {
 # `SIGINT` or a `SIGHUP` with the status of the last command. So the row
 # reads `stopped`, as it does for a status above 128, and its status is
 # null. The host's class is the `class` of `host.json` under
-# `$XDG_CONFIG_HOME/gandr`, `{"class": "<name>"}`, and its architecture is
+# `$XDG_CONFIG_HOME/gandr-factory`, `{"class": "<name>"}`, and its architecture is
 # bash's `HOSTTYPE`. The shell builds the row, and `git rev-parse` is its one
 # process; a gate of light checks also reads its lane, which no lock read.
 # The row is one `printf` of less than 4,096 bytes to a file opened for
@@ -229,7 +229,7 @@ gate_row() {
   else
     result=failed
   fi
-  config=${XDG_CONFIG_HOME:-$HOME/.config}/gandr/host.json
+  config=${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/host.json
   if [[ -f $config ]]; then
     IFS= read -r -d '' text < "$config" || :
     if [[ $text =~ \"class\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then class=${BASH_REMATCH[1]}; fi

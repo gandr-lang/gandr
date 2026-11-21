@@ -2302,7 +2302,7 @@ echo "wt:warm: removed $removed copied units that read $primary's sources"
 # labelling `status:unsectioned` while it fails.
 #
 # A `## Sources` row naming a vault page by its filename (#2793) is read
-# against the vault checkout `$XDG_CONFIG_HOME/gandr/references` names
+# against the vault checkout `$XDG_CONFIG_HOME/gandr-factory/references` names
 # (`.config/references/vault.bash`, the rule `.config/bodies/vault.jq`): the
 # page's `vault:<mint>` is shown beside its name, and a filename no vault page
 # carries is refused, a wrong name being a wrong source. A filename the tree
@@ -2508,7 +2508,7 @@ if [[ -n "$findings" ]]; then
 fi
 echo "unit check OK: #$issue carries every section a unit needs"
 if [[ -n "$shown" ]]; then
-  echo "its vault pages, read against the vault \$XDG_CONFIG_HOME/gandr/references names:"
+  echo "its vault pages, read against the vault \$XDG_CONFIG_HOME/gandr-factory/references names:"
   printf '%s\n' "$shown"
 fi
 {% endraw %}'''
@@ -3028,7 +3028,7 @@ findings=$(jq -n --slurpfile rows "$tables/rows.json" '{rows: $rows[0], issues: 
 # Nothing private reaches a public issue or pull request body (#2530; the
 # agents' guidance, § Public and private). `body:check [--title <text>]
 # <file>...` reads the private-names list at
-# `$XDG_CONFIG_HOME/gandr/private-names` (`~/.config` by default): one
+# `$XDG_CONFIG_HOME/gandr-factory/private-names` (`~/.config` by default): one
 # extended regular expression per line, matched without regard to case, `#`
 # lines and blank lines skipped. The list is the owner's and never lives in
 # the tree. Each match is printed with its file (or `title`) and line, and
@@ -3054,7 +3054,7 @@ run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
-list=${XDG_CONFIG_HOME:-$HOME/.config}/gandr/private-names
+list=${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/private-names
 patterns=$(mktemp)
 found=$(mktemp)
 trap 'rm -f "$patterns" "$found"' EXIT
@@ -4771,7 +4771,7 @@ fi
 # - see: #3326
 #
 # Vault pages are cited by their mint (#2793). With the vault checkout
-# `$XDG_CONFIG_HOME/gandr/references` names, the task writes each page's
+# `$XDG_CONFIG_HOME/gandr-factory/references` names, the task writes each page's
 # `vault:<mint>` beside its filename in the body's `## Sources read`
 # (`annotated.jq`), so the item's key is the one a crate carries verbatim.
 # When an issue marks a vault page primary and the change touches a crate's
@@ -5713,7 +5713,7 @@ deadline=$((SECONDS + timeout))
 # - see: #4268
 subject=#$number
 key=$number
-await_lock=${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch/$key.await
+await_lock=${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/watch/$key.await
 mkdir -p "$(dirname "$await_lock")"
 if [[ -f $await_lock ]] && kill -0 "$(< "$await_lock")" 2> /dev/null; then
   echo "pr:await: $subject is already awaited on this host by pid $(< "$await_lock"); one wait a number" >&2
@@ -5916,7 +5916,7 @@ watch_mark=$(git rev-parse --path-format=absolute --git-dir)/gandr-watch-$$
 # One watch a pull request on a host (#4268): a second `pr:watch` on the same
 # number, a seat's beside the coordinator's or a loop's beside the first, is
 # refused while the first runs, so no pull request is polled twice from here.
-watch_lock=${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch/$number.watch
+watch_lock=${XDG_STATE_HOME:-$HOME/.local/state}/gandr-factory/watch/$number.watch
 mkdir -p "$(dirname "$watch_lock")"
 if [[ -f $watch_lock ]] && kill -0 "$(< "$watch_lock")" 2> /dev/null; then
   echo "pr:watch: #$number is already watched on this host by pid $(< "$watch_lock"); one watch a pull request" >&2

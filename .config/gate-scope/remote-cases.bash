@@ -216,7 +216,7 @@ until [[ -e $scratch/home-far/held ]]; do
   (( ++tries < 100 )) || { fail "#7758: the first far gate never reached its check" "$(< "$scratch/first-gate.out")"; break; }
   sleep 0.1
 done
-clone=$scratch/home-far/state/gandr/gate-remote/flex-a
+clone=$scratch/home-far/state/gandr-factory/gate-remote/flex-a
 commit file lane-second lane-second
 git push --quiet origin HEAD
 second=$(git rev-parse HEAD)
