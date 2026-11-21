@@ -1,0 +1,4 @@
+def listed() -> -F Integer =
+  var xs : List(Integer = #[1, 2]
+  xs.#[0] += 1
+  return 0

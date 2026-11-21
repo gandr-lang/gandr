@@ -1,0 +1,162 @@
+//! `std.thir`: THIR, rustc's typed high-level IR, as data, and the
+//! weakest-precondition calculus of its control effect
+//! [Farka-2026-corten_foundational_verification_rust_programs], 2026, § 4.
+//! An expression's precondition takes one postcondition for the value it ends
+//! at and one for a `return`. A `return` sends its operand's value to the
+//! second, and a function's guard, the effect's handler, hands both to the
+//! caller's continuation (§ 4.2, Defs. 4.1, 4.2 and 4.10).
+//!
+//! The fragment is an integer literal, a read of the one parameter, `if`,
+//! `return` and a call of an item of the crate. `Expr` takes the type of the
+//! crate's items as a parameter, so a table of specifications over a closed
+//! item type covers each item. The reader of a Rust crate stages a function's
+//! body as a value of `Expr`, and a source names it by a signature under the
+//! `thir` attribute.
+//!
+//! Departing from § 4: `break`, `continue` and `nomatch` are left out, `u8` is
+//! read as `Integer`, each function takes one parameter, and propositions are
+//! read as types. The axioms are written twice. As the rules of `Thir.Wp`,
+//! over THIR's nodes as its operations, the checker orients them, joins their
+//! pairs in the second-order reading, and fires them at an inspected call. As
+//! a fold of THIR's data, the normaliser computes each precondition and the
+//! kernel replays it.
+//!
+//! - cites: [Farka-2026-corten_foundational_verification_rust_programs]
+//! - see: `corpus/model/interop/thir/example.gandr` — Corten's running example
+//!   over the staged bodies
+//!
+//! [Farka-2026-corten_foundational_verification_rust_programs]: https://arxiv.org/abs/2609.04372 "Farka et al., Corten: Foundational Verification of Rust Programs"
+
+/// A value the fragment computes: an integer or a boolean.
+pub data Value : Type where
+  /// The integer `n`.
+  | Int : (n : Integer) --> Value
+  /// The boolean true.
+  | True : Value
+  /// The boolean false.
+  | False : Value
+
+/// THIR's value expressions in the fragment, over the crate's items `f`: a
+/// literal, the parameter, a conditional, a return and a call.
+pub data Expr(f : Type) : Type where
+  /// The integer literal `n`.
+  | Lit : (n : Integer) --> Expr f
+  /// The function's parameter, read.
+  | Param : Expr f
+  /// `if c { t } else { e }`.
+  | If : (c : Expr f, t : Expr f, e : Expr f) --> Expr f
+  /// `return e`.
+  | Return : (e : Expr f) --> Expr f
+  /// The item `g` called at the argument `e`.
+  | Call : (g : f, e : Expr f) --> Expr f
+
+/// The axioms as rules over THIR's nodes, each transformer an operation whose
+/// continuations bind a value: a guarded body that returns early at false
+/// normalizes to its postcondition at zero.
+@[normalizes("body(ret(call(identity, cond(param, lit(succ(zero)), ret(lit(zero))))), ff, bind v . post(v)) ~> post(int(zero))")]
+pub theory Thir.Wp where
+  /// A natural number, which a literal carries.
+  sort Num : Type;
+  /// A value the fragment computes, which a continuation binds.
+  sort Val : Type+;
+  /// A THIR value expression.
+  sort Exp : Type;
+  /// An item of the crate, which a call names.
+  sort Fun : Type;
+  /// A precondition, which each transformer computes.
+  sort Pre : Type;
+  /// The number zero.
+  oper zero : Num;
+  /// The number after `n`.
+  oper succ : (n : Num) --> Num;
+  /// The integer value `n`.
+  oper int : (n : Num) --> Val;
+  /// The boolean true.
+  oper tt : Val;
+  /// The boolean false.
+  oper ff : Val;
+  /// The integer literal `n`.
+  oper lit : (n : Num) --> Exp;
+  /// The function's parameter, read.
+  oper param : Exp;
+  /// The conditional that runs `t` when `c` is true and `f` when it is false.
+  oper cond : (c : Exp, t : Exp, f : Exp) --> Exp;
+  /// A `return` of the value of `e`.
+  oper ret : (e : Exp) --> Exp;
+  /// The item `g` called at the argument `e`.
+  oper call : (g : Fun, e : Exp) --> Exp;
+  /// `identity`, an item a call names.
+  oper identity : Fun;
+  /// The caller's postcondition at the value `v`.
+  oper post : (v : Val) --> Pre;
+  /// The precondition `t` or `f` that the value `v` picks.
+  oper branch : (v : Val, t : Pre, f : Pre) --> Pre;
+  /// What `e` needs at the parameter `x` to end in `k` or return into `r`.
+  oper vexpr : (e : Exp, x : Val, k : pi+ (v : Val). Pre, r : pi+ (v : Val). Pre) --> Pre;
+  /// What a call of `g` at the argument `v` needs to continue in `k`.
+  oper wpfn : (g : Fun, v : Val, k : pi+ (w : Val). Pre) --> Pre;
+  /// What the function body `e` needs at the argument `v` to answer `k`.
+  oper body : (e : Exp, v : Val, k : pi+ (w : Val). Pre) --> Pre;
+  /// A literal ends at its integer.
+  rule literal : vexpr (lit n) x k r ==> k (int n);
+  /// Reading the parameter ends at its value.
+  rule read : vexpr param x k r ==> k x;
+  /// A conditional evaluates its condition, then branches on the value.
+  rule conditional : vexpr (cond c t f) x k r ==> vexpr
+    c
+    x
+    (bind v. (branch v (vexpr t x k r) (vexpr f x k r)))
+    r;
+  /// True picks the first arm.
+  rule yes : branch tt t f ==> t;
+  /// False picks the second arm.
+  rule no : branch ff t f ==> f;
+  /// A `return` sends its operand's value to the return continuation.
+  rule returned : vexpr (ret e) x k r ==> vexpr e x r r;
+  /// A call evaluates its argument, then needs the callee's transformer
+  /// at its value.
+  rule called : vexpr (call g e) x k r ==> vexpr e x (bind v. (wpfn g v k)) r;
+  /// A function's guard runs its body as a return that reaches
+  /// the caller's continuation.
+  rule guarded : body e v k ==> vexpr (ret e) v k k;
+
+/// The arm a condition's value picks; an integer condition needs
+/// what nothing meets.
+pub def branch(v : Value, t : Type, f : Type) -> Type =
+  match v where
+    | True => t
+    | False => f
+    | Int(_n) => return Void
+
+/// The core transformer: what `e` needs, at the parameter `x` and the table
+/// `spec` over the items `f`, to end in `k` or return into `r`.
+pub def rec wp[f : Type](
+  spec : (f, Value, Value -> Type) -> Type,
+  e : Expr f,
+  x : Value,
+  k : Value -> Type,
+  r : Value -> Type
+) -> Type =
+  match e where
+    | Lit(n) => k (Int n)
+    | Param => k x
+    | If(c, t, o) => wp[<]
+      spec
+      c
+      x
+      (fun (v) { branch v (wp[<] spec t x k r) (wp[<] spec o x k r) })
+      r
+    | Return(a) => wp[<] spec a x r r
+    | Call(g, a) => wp[<] spec a x (fun (v) { spec g v k }) r
+
+/// A function's transformer: its body run as a return, guarded so the return
+/// reaches the caller's continuation. It takes the crate's items `f` as its
+/// first parameter, since a type position calls it and supplies no implicit.
+pub def wpFn(
+  f : Type,
+  spec : (f, Value, Value -> Type) -> Type,
+  body : Expr f,
+  v : Value,
+  k : Value -> Type
+) -> Type =
+  wp spec (Return body : Expr f) v k k

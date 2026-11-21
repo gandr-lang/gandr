@@ -1,0 +1,2 @@
+import "./base.gandr" as base;
+def again : Integer = base.owed;
