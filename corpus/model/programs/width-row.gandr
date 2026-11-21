@@ -1,17 +1,20 @@
 //! `width-row` runs one width row that a machine instruction computes.
 //!
-//! The wrapping addition of `u32` is a machine row. A host that runs blocks
-//! enters the row as a block, and a host of no block target, such as wasm,
-//! calls the host for it. Both drivers give the same answer.
+//! The wrapping addition of `u32` is a machine row. A host of no block
+//! target, such as wasm, runs no block. Its driver must still run the row.
 //!
-//! `gandr run width-row.gandr` exits 2: the greatest `u32` and 3 wrap to 2.
+//! A host that runs blocks enters the row as a block. A host of no block
+//! target calls the host for the row. Both drivers give the same answer.
+//! `gandr run width-row.gandr` exits 2, because the sum wraps to 2.
+//!
+//! - see: `.config/wasm/cases.txt` — the wasm driver runs this program
 
 // - see: #8300 — the wasm driver runs a width row
 
 // The native finite lists.
 import std.list (List);
 
-/// The greatest `u32` and 3, wrapped.
+/// `wrapped` adds 3 to the greatest `u32` and wraps the sum.
 def wrapped() -> u32 = u32.wrapping_add 4294967295u32 3u32;
 
 /// `main` returns the wrapped sum as its exit code.
