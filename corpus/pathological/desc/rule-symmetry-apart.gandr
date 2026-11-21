@@ -1,0 +1,48 @@
+//! No case tells the two orders of a commutative meet apart.
+//!
+//! The apartness of two terms gives a value of the type with no value. So a
+//! wrong apartness makes each statement provable. The two orders of a meet
+//! are one term, and a rule that tears under the symmetry decides nothing.
+//!
+//! The checker compares two terms in each pairing of the arguments of a meet.
+//! It refuses a case with no arm where one pairing joins the two terms. It
+//! refuses each such case where a pair of rules does not join.
+//!
+//! - see: #8323
+
+// `Hollow` and `Pick`.
+import "../../model/desc/rule-symmetry-apart.gandr";
+
+/// The theory of a meet over pairs, with a rule that tears under the symmetry.
+theory Torn where
+  /// The terms.
+  sort T : Type;
+  /// The first constant.
+  oper low : T;
+  /// The second constant.
+  oper high : T;
+  /// A pair of two terms.
+  oper pair : (x : T, y : T) --> T;
+  /// The meet of two terms.
+  oper meet : (x : T, y : T) --> T;
+  /// The meet of a pair and a term is the first part of the pair.
+  rule meetPair : meet (pair x y) z <=> x;
+  /// The meet is commutative.
+  rule meetComm : meet x y <=> meet y x;
+
+/// The two orders of a meet are one term, so the case needs an arm.
+///
+/// - see: #8323
+@[refuses("NotApart")]
+def ordersNotApart(
+  e : Path[.A = Terms Pick] (Pick.meet Pick.first Pick.second) (Pick.meet Pick.second Pick.first)
+) -> Hollow =
+  match e {}
+
+/// The rule gives two results for the meet of two pairs, so no two terms are
+/// apart by these rules.
+///
+/// - see: #8323
+@[refuses("NotApart")]
+def tornApart(e : Path[.A = Terms Torn] Torn.low Torn.high) -> Hollow =
+  match e {}
