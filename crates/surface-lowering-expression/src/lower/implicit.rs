@@ -1293,6 +1293,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::supply_by_name_is_order_free`
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_supplied_function_stands_as_a_value`
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::equality_calls_the_prelude_s_eq_2302`
+    ///
+    /// # Cost
+    /// - allocation: the operands of each omitted entry and the plan of the
+    ///   site, growth within the source's nodes
     #[spec(
         captures: start = self.cx().operands.mark(),
         ensures: |ret| match ret {

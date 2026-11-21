@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc a9190a4ff1f7ed097d650b359fbec099ae19c2de2ace0b1a8a3fe45f88a04d6c # shrinks to forms = 8, fixture = false, wide = false, chain = [Insert(Position(32384460479978))]
+cc 683d65aec6ace971f086b8bd891c6b825d2aed013a8c2906181072832a5fed9e # shrinks to forms = 36, fixture = true, wide = false, chain = [Merge(Position(12841146445719845022)), Split(Position(8749489210201060595)), Split(Position(9003405071012289094))]
