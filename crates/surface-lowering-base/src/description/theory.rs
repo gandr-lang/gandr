@@ -138,8 +138,8 @@
 //! twice is refused by the name, a face holding a name the boundary lacks is
 //! the description check's `FaceOutsideShape` naming the face, a face named
 //! twice its `DuplicateFaceName`, and a second `boundary` or a face with none
-//! is malformed. The retired spelling `shape Square : 4 { … }` is refused
-//! naming `boundary`, so the word is the site's alone. The extension type
+//! is malformed. A member that opens with `shape` is malformed too, so the
+//! word names the site's points alone. The extension type
 //! reads a face as the subshape a cell is fixed on, and names each point it
 //! generates a member for by the point's name. Witnesses:
 //! `description::theory::tests::a_rendered_signature_reparses_to_itself`,
