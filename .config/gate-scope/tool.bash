@@ -4,11 +4,13 @@
 #
 # A script that calls `cargo run` pays the start of Cargo at each call, and a
 # new worktree pays a build. So a host keeps each binary under its cache
-# directory. The paths of the commit name a kept binary by their objects.
-# They are the crate's directory, the directory of each crate of the
-# workspace that it depends on, the workspace's manifest, the lock file and
-# the pin of the toolchain. A worktree whose commit holds those objects runs
-# the kept binary and starts no Cargo.
+# directory.
+#
+# The paths of the commit name a kept binary by their objects. They are the
+# directory of the crate and of each crate of the workspace that it depends
+# on. The manifest of the workspace, the lock file and the pin of the
+# toolchain are paths of the key too. A worktree whose commit holds those
+# objects runs the kept binary and starts no Cargo.
 #
 # A worktree that changes one of those paths has no object to name. So it
 # builds the binary through `cargo build` and runs it.
@@ -17,8 +19,8 @@
 # usage: tool.bash <package> <binary> [argument]...
 #
 # The binary reads the target and the flags of its caller, since the key of
-# a verdict binds them. The build of the binary reads none of them: a cross
-# target builds a binary that the host cannot run, and other flags build each
+# a verdict binds them. The build of the binary reads none of them. A cross
+# target builds a binary that the host cannot run. Other flags build each
 # crate again. So the build runs with no such variable, and the binary runs
 # with the caller's environment.
 set -euo pipefail
