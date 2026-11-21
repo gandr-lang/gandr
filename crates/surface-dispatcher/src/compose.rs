@@ -226,7 +226,6 @@ use gandr_core_checker::worlds::WorldName;
 use gandr_core_content::SourceTag;
 use gandr_core_incremental::NodeKeys;
 use gandr_core_incremental::ProgramError;
-use gandr_core_sequent::Typed;
 use gandr_core_sequent::Writers;
 use gandr_core_term::Carried;
 use gandr_core_term::Computation;
@@ -2832,9 +2831,6 @@ struct Record
     arena: CoreArena,
     /// The verdicts, over `arena`.
     verdicts: ModuleReport,
-    /// The type of each binder and field that focusing reads, over `arena`
-    /// (#8161).
-    typed: Typed,
 }
 
 /// The inputs a module's judgement reads besides its own state: the lowered
@@ -2863,13 +2859,12 @@ struct Read
 
 impl Recorded
 {
-    /// The arena, verdicts and typed table of the judgement held, when it read
-    /// `read`.
+    /// The arena and verdicts of the judgement held, when it read `read`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: copies of the held judgement's arena, verdicts and typed
-    ///   table exactly when one is held and it read `read`; nothing otherwise.
+    /// - ensures: copies of the held judgement's arena and verdicts exactly
+    ///   when one is held and it read `read`; nothing otherwise.
     /// - panics: none.
     /// - economy: one comparison of the lowered nodes, which the closure's
     ///   shared rows answer by identity; a copy of the held arena's own rows.
@@ -2883,36 +2878,29 @@ impl Recorded
     fn answering(
         &self,
         read: &Read,
-    ) -> Option<(CoreArena, ModuleReport, Typed)>
+    ) -> Option<(CoreArena, ModuleReport)>
     {
         self.held
             .as_ref()
             .filter(|record| record.read == *read)
-            .map(|record| {
-                (
-                    record.arena.clone(),
-                    record.verdicts.clone(),
-                    record.typed.clone(),
-                )
-            })
+            .map(|record| (record.arena.clone(), record.verdicts.clone()))
     }
 
-    /// Hold the judgement that read `read` and left `arena`, `verdicts` and
-    /// `typed`, in place of the one held before.
+    /// Hold the judgement that read `read` and left `arena` and `verdicts`,
+    /// in place of the one held before.
     ///
     /// # Specification
     /// trivial.
     fn keep(
         &mut self,
         read: Read,
-        (arena, verdicts, typed): (CoreArena, ModuleReport, Typed),
+        (arena, verdicts): (CoreArena, ModuleReport),
     )
     {
         self.held = Some(Record {
             read,
             arena,
             verdicts,
-            typed,
         });
     }
 }
@@ -3640,9 +3628,9 @@ where
         .as_deref()
         .zip(reading.as_ref())
         .and_then(|(recorded, reading)| recorded.answering(reading));
-    let (verdicts, read, writers, typed) = if let Some((judged, verdicts, typed)) = answered {
+    let (verdicts, read, writers) = if let Some((judged, verdicts)) = answered {
         arena = judged;
-        (verdicts, None, Writers::NONE, typed)
+        (verdicts, None, Writers::NONE)
     }
     else {
         let (opening, mut run, judged) = after.map_or_else(
@@ -3665,11 +3653,12 @@ where
         );
         let mut context = checking_context(&mut arena, opening, &settings);
         context.memoise_goals(memo);
-        // Focusing reads each binder's and each field's type off the typings
-        // (#8161), so each typed run keeps them.
-        run.keep_typings();
         if let Some(ref written) = written {
+            run.keep_typings();
             context.keep_formations(Formations::Firsts(wanted_types(written)));
+        }
+        if let Scheduling::Concurrent(_) = scheduling {
+            run.keep_typings();
         }
         if supporting == Supporting::Kept {
             run.keep_supports();
@@ -3688,16 +3677,13 @@ where
             (Scheduling::Concurrent(_), Some(typed)) => independent(context.arena(), typed),
             (Scheduling::Concurrent(_), None) | (Scheduling::Sequential, _) => Writers::NONE,
         };
-        let typed = typings.as_ref().map_or(Typed::NONE, |module| {
-            crate::annotate::typed(context.arena(), module, context.data_signatures().clone())
-        });
         let read = typings
             .zip(written)
             .map(|(typed, written)| TypedRun::read(&context, typed, written));
         if let (Some(recorded), Some(reading)) = (recorded, reading) {
-            recorded.keep(reading, (arena.clone(), verdicts.clone(), typed.clone()));
+            recorded.keep(reading, (arena.clone(), verdicts.clone()));
         }
-        (verdicts, read, writers, typed)
+        (verdicts, read, writers)
     };
     if let Demand::Retired(retired) = retirement.demand() {
         return Polled::Retired(retired, ());
@@ -3715,22 +3701,14 @@ where
     };
     let names = module.structured_names();
     let mut program = after.map_or_else(
-        || {
-            Program::after(
-                Focused::default(),
-                &arena,
-                &module,
-                &verdicts,
-                (&writers, &typed),
-            )
-        },
+        || Program::after(Focused::default(), &arena, &module, &verdicts, &writers),
         |closure| {
             Program::after(
                 closure.program.clone(),
                 &arena,
                 &module,
                 &verdicts,
-                (&writers, &typed),
+                &writers,
             )
         },
     );

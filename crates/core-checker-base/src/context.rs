@@ -1713,9 +1713,9 @@ impl<'arena> CheckingContext<'arena>
     ///   fields of the declaration's body
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a bind and a pair give the type of the binder and of
-    ///   each field, and a declaration with neither gives none.
-    /// - witness: `module::tests::a_bind_and_a_pair_give_their_annotations_8161`
+    /// - hypothesis: L3 — a bind and a cons cell give the type of the binder
+    ///   and of each field at the types that their checks give.
+    /// - witness: `gandr-surface-dispatcher::annotate::tests::the_join_reads_each_field_and_binder_at_its_occurrence_8161`
     #[spec(
         captures: before = self.annotations.len(),
         ensures: self.annotations.len() == before.saturating_add(1),
@@ -1765,7 +1765,7 @@ impl<'arena> CheckingContext<'arena>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::annotate`].
-    /// - witness: `module::tests::a_bind_and_a_pair_give_their_annotations_8161`
+    /// - witness: `gandr-surface-dispatcher::annotate::tests::the_join_reads_each_field_and_binder_at_its_occurrence_8161`
     #[spec(ensures: self.annotations.is_empty())]
     pub(crate) fn take_annotations(&mut self) -> Vec<crate::record::Annotation>
     {

@@ -153,6 +153,7 @@ use crate::failure::failed;
 use crate::failure::solved;
 use crate::footprint::Footprint;
 use crate::footprint::HoleMark;
+use crate::report::AnnotationContent;
 use crate::report::CrossingContent;
 use crate::report::DirectedContent;
 use crate::report::ElaborationContent;
@@ -166,6 +167,7 @@ use crate::report::Place as ReportPlace;
 use crate::report::ReflexivityContent;
 use crate::report::ReportContent;
 use crate::report::RowContent;
+use crate::report::SiteContent;
 use crate::report::StalledContent;
 use crate::report::StepContent;
 use crate::report::SuspensionContent;
@@ -187,17 +189,18 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with. Version
-/// `0x1f` keeps the function extensionalities that the judgement added,
-/// beside the native paths that `0x1e` keeps, the directed flows that `0x1d`
-/// keeps, the payloads that `0x1c` keeps, the reflexivities that `0x1b` keeps,
-/// the entries of the rows and the handlers that `0x1a` keeps, what the
-/// judgement reported of an item that `0x19` keeps, the table parts that
-/// `0x18` keeps of an item that its judgement entered elaborated, the failure
-/// content that `0x17` keeps and the located program that `0x16` persists.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x1f";
+/// `0x20` keeps the annotations that the judgement gave, beside the function
+/// extensionalities that `0x1f` keeps, the native paths that `0x1e` keeps,
+/// the directed flows that `0x1d` keeps, the payloads that `0x1c` keeps, the
+/// reflexivities that `0x1b` keeps, the entries of the rows and the handlers
+/// that `0x1a` keeps, what the judgement reported of an item that `0x19`
+/// keeps, the table parts that `0x18` keeps of an item that its judgement
+/// entered elaborated, the failure content that `0x17` keeps and the located
+/// program that `0x16` persists.
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x20";
 
 /// The magic and version a program's address is computed over. Version
-/// `0x0d` reads its items' content as checkpoint versions `0x16` to `0x1f`
+/// `0x0d` reads its items' content as checkpoint versions `0x16` to `0x20`
 /// write it.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0d";
 
@@ -862,7 +865,8 @@ const TABLEDS: [tabled::Absent; 4] = [
 /// Write the entries a checkpoint keeps of the rows, the handlers and the
 /// reflexivities: tag 0 and why it keeps none; else tag 1, the entries' own
 /// table and the place of each root in it, then the rows records, the
-/// handlers and the reflexivities, each a count and its entries.
+/// handlers, the reflexivities and the other tables, each a count and its
+/// entries, and last the annotations, a count and each in the order given.
 ///
 /// # Specification
 /// - ensures: [`read_tables`] reads back `tables` from what was written, given
@@ -884,6 +888,7 @@ const TABLEDS: [tabled::Absent; 4] = [
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_funext_keeps_its_steps_7463`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_declaration_keeps_its_annotations_8161`
 ///
 /// # Cost
 /// - allocation: the bytes that the sink takes, growth within the checkpoint
@@ -1023,6 +1028,22 @@ where
                 },
             }
         }
+    }
+    writer.count(Count(tables.annotations().len()))?;
+    for annotation in tables.annotations() {
+        match annotation.site {
+            SiteContent::Binder(ref at) => {
+                writer.tag(Tag(0));
+                write_report_place(writer, at)?;
+            },
+            SiteContent::Field(ref at, position) => {
+                writer.tag(Tag(1));
+                write_report_place(writer, at)?;
+                writer.count(Count(usize::from(position)))?;
+            },
+        }
+        write_report_place(writer, &annotation.ty)?;
+        writer.count(Count(usize::from(annotation.depth)))?;
     }
     Ok(())
 }
@@ -1314,8 +1335,8 @@ fn read_trace(reader: &mut Reader<'_>) -> Result<TraceContent, CodecError>
 ///
 /// # Cost
 /// - allocation: the roots, rows, handlers, reflexivities, payloads, flows,
-///   natives and funext steps of the table, growth within the checkpoint's
-///   bytes
+///   natives, funext steps and annotations of the table, growth within the
+///   checkpoint's bytes
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`write_tables`].
@@ -1325,6 +1346,7 @@ fn read_trace(reader: &mut Reader<'_>) -> Result<TraceContent, CodecError>
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_funext_keeps_its_steps_7463`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_declaration_keeps_its_annotations_8161`
 ///
 /// # Cost
 /// - allocation: the entries of the tables, growth within the bytes
@@ -1501,6 +1523,21 @@ fn read_tables(
     if !funexts.is_sorted_by(|left, right| left.0 < right.0) {
         return Err(CodecError::NonCanonical);
     }
+    let count = reader.count()?.0;
+    let mut annotations = Vec::new();
+    for _ in 0 .. count {
+        let site = match reader.tag()?.0 {
+            0 => SiteContent::Binder(places.read(reader)?),
+            1 => {
+                let at = places.read(reader)?;
+                SiteContent::Field(at, FieldPosition::from(reader.count()?.0))
+            },
+            _ => return Err(CodecError::Corrupt),
+        };
+        let ty = places.read(reader)?;
+        let depth = BinderDepth::from(reader.count()?.0);
+        annotations.push(AnnotationContent { site, ty, depth });
+    }
     Ok(Maybe::Present(TableContent::from_parts(
         (
             rows,
@@ -1510,6 +1547,7 @@ fn read_tables(
             directed,
             natives,
             funexts,
+            annotations,
         ),
         (outside, roots),
     )))

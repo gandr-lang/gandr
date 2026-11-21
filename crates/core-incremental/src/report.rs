@@ -38,6 +38,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_checker::Annotation;
 use gandr_core_checker::Directed;
 use gandr_core_checker::Evaluation;
 use gandr_core_checker::Forward;
@@ -69,6 +70,7 @@ use gandr_core_content::seating;
 use gandr_core_nbe::DomainCompId;
 use gandr_core_nbe::DomainValueId;
 use gandr_core_nbe::TraceNode;
+use gandr_core_term::BinderDepth;
 use gandr_core_term::Carried;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
@@ -83,6 +85,7 @@ use gandr_kernel_data::ThinShared;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldPosition;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::ItemOrdinal;
@@ -219,6 +222,36 @@ pub struct HandledContent
     pub answer: Place,
     /// The level of the universe the subject's result inhabits.
     pub level: Level,
+}
+
+/// A place of the IL whose value type a checkpoint keeps, its node placed
+/// (#8161).
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum SiteContent
+{
+    /// The binder of each bind that runs the computation.
+    Binder(Place),
+    /// A producer field of the structural former, at the position.
+    Field(Place, FieldPosition),
+}
+
+/// The value type that a checkpoint keeps of one site of the IL, placed
+/// (#8161).
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct AnnotationContent
+{
+    /// The site.
+    pub site: SiteContent,
+    /// Its value type.
+    pub ty: Place,
+    /// The intuitionistic binders open at the site.
+    pub depth: BinderDepth,
 }
 
 /// A node that a kept dialogue names: a definition by the item that holds
@@ -442,7 +475,8 @@ fn constant_placeholder() -> ConstantIndex
 }
 
 /// The entries that an item's judgement added to the rows, the handlers and
-/// the reflexivities, each node at its place, as a checkpoint keeps them.
+/// the reflexivities, and the annotations that it gave, each node at its
+/// place, as a checkpoint keeps them.
 ///
 /// A key is a node of the item, at its place in the item's walk, or a node
 /// of the judged body. A type inside an entry stands at any of the three
@@ -461,6 +495,7 @@ fn constant_placeholder() -> ConstantIndex
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_funext_keeps_its_steps_7463`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_declaration_keeps_its_annotations_8161`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct TableContent
 {
@@ -481,6 +516,9 @@ pub struct TableContent
     /// The steps of each function extensionality, in the order of its node's
     /// place.
     funexts: Vec<(Place, Vec<StepContent>)>,
+    /// The value type of each binder and each field that the judgement gave,
+    /// in the order given.
+    annotations: Vec<AnnotationContent>,
     /// The table of the nodes that neither the item's walk nor the judged
     /// body holds.
     outside: Vec<SupportedNode>,
@@ -490,7 +528,8 @@ pub struct TableContent
 
 /// The rows records, the handlers, the reflexivities, the payloads, the
 /// directed flows, the native paths and the function extensionalities of a
-/// [`TableContent`], each in the order of its key.
+/// [`TableContent`], each in the order of its key, and its annotations in the
+/// order given.
 pub type TableEntries = (
     Vec<RowContent>,
     Vec<(Place, HandledContent)>,
@@ -499,6 +538,7 @@ pub type TableEntries = (
     Vec<(Place, DirectedContent)>,
     Vec<(Place, Place)>,
     Vec<(Place, Vec<StepContent>)>,
+    Vec<AnnotationContent>,
 );
 
 impl TableContent
@@ -508,7 +548,7 @@ impl TableContent
     /// # Specification
     /// trivial.
     pub(crate) fn from_parts(
-        (rows, handled, reflexivities, payloads, directed, natives, funexts): TableEntries,
+        (rows, handled, reflexivities, payloads, directed, natives, funexts, annotations): TableEntries,
         (outside, roots): (Vec<SupportedNode>, Vec<TablePlace>),
     ) -> Self
     {
@@ -520,6 +560,7 @@ impl TableContent
             directed,
             natives,
             funexts,
+            annotations,
             outside,
             roots,
         }
@@ -591,6 +632,16 @@ impl TableContent
         &self.funexts
     }
 
+    /// The value type of each binder and each field that the judgement gave,
+    /// in the order given.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn annotations(&self) -> &[AnnotationContent]
+    {
+        &self.annotations
+    }
+
     /// The table of the nodes that neither the item's walk nor the judged
     /// body holds, beside the place of each such node in it.
     ///
@@ -607,14 +658,13 @@ impl TableContent
     ///
     /// # Specification
     /// - requires: `sites` is the item's walk in `arena`, and `body` holds the
-    ///   places of the judged body's table when the entry keeps the body.
     /// - ensures: [`tabled::Absent::Unread`] for a judgement that logged no
     ///   entries; [`tabled::Absent::Unkept`] when it added an entry to another
-    ///   table; [`tabled::Absent::Untabled`] when it added none;
-    ///   [`tabled::Absent::Unplaced`] when a key stands outside the item and
-    ///   the body, or a dialogue names a constant that no item holds; otherwise
-    ///   each entry, every node at the first place that holds it, in the order
-    ///   of the places.
+    ///   table; [`tabled::Absent::Untabled`] when it added none and gave no
+    ///   annotation; [`tabled::Absent::Unplaced`] when a key stands outside the
+    ///   item and the body, or a dialogue names a constant that no item holds;
+    ///   otherwise each entry, every node at the first place that holds it, in
+    ///   the order of the places, and each annotation in the order given.
     /// - panics: none.
     /// - executable: none — a predicate would place every node again, which the
     ///   witness does through a seat.
@@ -631,6 +681,7 @@ impl TableContent
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_funext_keeps_its_steps_7463`
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_declaration_keeps_its_annotations_8161`
     ///
     /// # Cost
     /// - allocation: the entries of the tables, growth within the tables
@@ -654,6 +705,7 @@ impl TableContent
             && tabled.directed().is_empty()
             && tabled.natives().is_empty()
             && tabled.funexts().is_empty()
+            && tabled.annotations().is_empty()
         {
             return Maybe::Absent(tabled::Absent::Untabled);
         }
@@ -818,6 +870,30 @@ impl TableContent
             }
             funexts.push((at, steps));
         }
+        let mut annotations = Vec::with_capacity(tabled.annotations().len());
+        for annotation in tabled.annotations() {
+            let site = match annotation.site {
+                gandr_core_checker::Site::Binder(at) => {
+                    let Some(at) = placing.key(ArenaNode::Computation(at))
+                    else {
+                        return Maybe::Absent(tabled::Absent::Unplaced);
+                    };
+                    SiteContent::Binder(at)
+                },
+                gandr_core_checker::Site::Field(at, position) => {
+                    let Some(at) = placing.key(ArenaNode::Value(at))
+                    else {
+                        return Maybe::Absent(tabled::Absent::Unplaced);
+                    };
+                    SiteContent::Field(at, position)
+                },
+            };
+            annotations.push(AnnotationContent {
+                site,
+                ty: placing.place(ArenaNode::ValueType(annotation.ty)),
+                depth: annotation.depth,
+            });
+        }
         let (outside, places) = gandr_core_content::tabled_roots(arena, layout, &placing.roots);
         let (roots, remap) = merged(places);
         let mut content = Self {
@@ -828,6 +904,7 @@ impl TableContent
             directed,
             natives,
             funexts,
+            annotations,
             outside,
             roots,
         };
@@ -940,6 +1017,12 @@ impl TableContent
                 }
             }
         }
+        for annotation in &mut self.annotations {
+            match annotation.site {
+                SiteContent::Binder(ref mut at) | SiteContent::Field(ref mut at, _) => visit(at),
+            }
+            visit(&mut annotation.ty);
+        }
     }
 
     /// Seat the entries in `arena`, constants placed through `layout`: a key
@@ -950,8 +1033,8 @@ impl TableContent
     /// - requires: `walk` is the item's walk in `arena`, and the item is
     ///   entered as written, so no key is a node of a judged body.
     /// - ensures: on success, the rows records, the handlers, the
-    ///   reflexivities, the payloads and the directed flows whose projection
-    ///   through the same places is this content.
+    ///   reflexivities, the payloads, the directed flows and the annotations
+    ///   whose projection through the same places is this content.
     /// - fails: [`seating::Absent::Unwalked`] for a place past the walk;
     ///   [`seating::Absent::Unplaceable`] for a judged place or a table place
     ///   that no mint reached; [`seating::Absent::IllSorted`] for a node of the
@@ -963,7 +1046,8 @@ impl TableContent
     ///
     /// # Cost
     /// - allocation: the seated rows, handlers, reflexivities, payloads, flows,
-    ///   natives and funext steps, growth within the report's entries
+    ///   natives, funext steps and annotations, growth within the report's
+    ///   entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`TableContent`].
@@ -973,6 +1057,7 @@ impl TableContent
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_funext_keeps_its_steps_7463`
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_declaration_keeps_its_annotations_8161`
     ///
     /// # Cost
     /// - allocation: the seated entries, growth within `arena`
@@ -1110,6 +1195,21 @@ impl TableContent
             }
             funexts.push((value_of(seat.node(at)?)?, Funext::new(seated)));
         }
+        let mut annotations = Vec::with_capacity(self.annotations.len());
+        for annotation in &self.annotations {
+            annotations.push(Annotation {
+                site: match annotation.site {
+                    SiteContent::Binder(ref at) => {
+                        gandr_core_checker::Site::Binder(computation_of(seat.node(at)?)?)
+                    },
+                    SiteContent::Field(ref at, position) => {
+                        gandr_core_checker::Site::Field(value_of(seat.node(at)?)?, position)
+                    },
+                },
+                ty: value_type_of(seat.node(&annotation.ty)?)?,
+                depth: annotation.depth,
+            });
+        }
         Ok((
             Rows::from_records(records),
             handled,
@@ -1118,13 +1218,14 @@ impl TableContent
             directed,
             natives,
             funexts,
+            annotations,
         ))
     }
 }
 
 /// The rows records, the handlers, the reflexivities, the payloads, the
-/// directed flows, the native paths and the function extensionalities that a
-/// seat of a [`TableContent`] builds in an edited arena.
+/// directed flows, the native paths, the function extensionalities and the
+/// annotations that a seat of a [`TableContent`] builds in an edited arena.
 pub type SeatedTables = (
     Rows,
     Vec<(ComputationId, Handled)>,
@@ -1133,6 +1234,7 @@ pub type SeatedTables = (
     Vec<(ValueId, Directed)>,
     Vec<(ValueId, ValueId)>,
     Vec<(ValueId, Funext)>,
+    Vec<Annotation>,
 );
 
 /// Where a node of a report stands.

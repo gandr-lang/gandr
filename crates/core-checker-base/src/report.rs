@@ -281,6 +281,10 @@ pub struct ModuleReport
     /// What elaborating each body that held a computation written where a
     /// value is read did, by position.
     nested_elaborations: BTreeMap<ConstantIndex, NestedElaboration>,
+    /// The value type that each declaration's judgement gave each binder of a
+    /// bind and each field of a structural former, in the order given
+    /// (#8161).
+    annotations: Vec<crate::record::Annotation>,
     /// The sealing sites the run minted atoms for, in minting order.
     seal_table: SealTable,
     /// The world declarations admitted, by position.
@@ -303,8 +307,8 @@ impl ModuleReport
     /// # Specification
     /// - requires: `context` is the context the run judged in.
     /// - ensures: the verdicts, the ledger, the failures, the nested
-    ///   elaborations, the suspensions and the supports as given; every other
-    ///   table is the context's.
+    ///   elaborations, the annotations, the suspensions and the supports as
+    ///   given; every other table is the context's.
     /// - panics: none.
     ///
     /// # Cost
@@ -325,7 +329,10 @@ impl ModuleReport
         context: &CheckingContext<'_>,
         (judged, ledger): (Vec<Judged>, ObligationLedger),
         failures: BTreeMap<ConstantIndex, Failure>,
-        nested_elaborations: BTreeMap<ConstantIndex, NestedElaboration>,
+        (nested_elaborations, annotations): (
+            BTreeMap<ConstantIndex, NestedElaboration>,
+            Vec<crate::record::Annotation>,
+        ),
         suspensions: BTreeMap<ConstantIndex, Suspension>,
         supported: BTreeMap<ConstantIndex, Supported>,
     ) -> Self
@@ -364,6 +371,7 @@ impl ModuleReport
             seal_table: context.seal_table().clone(),
             failures,
             nested_elaborations,
+            annotations,
             worlds: context.worlds().declared().clone(),
             suspensions,
             admitting: context.admitting(),
@@ -842,6 +850,20 @@ impl ModuleReport
     pub const fn nested_elaborations(&self) -> &BTreeMap<ConstantIndex, NestedElaboration>
     {
         &self.nested_elaborations
+    }
+
+    /// The value type that each declaration's judgement gave each binder of a
+    /// bind and each field of a structural former, in the order given, each
+    /// read with the solutions of its declaration's implicits (#8161). A
+    /// position that two judgements gave keeps an entry for each.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn annotations(&self) -> &[crate::record::Annotation]
+    {
+        self.annotations.as_slice()
     }
 
     /// What each suspended declaration waits on, by position: one entry per

@@ -1,11 +1,14 @@
-use alloc::vec::Vec;
+use alloc::collections::BTreeSet;
 
-use gandr_core_checker::TermNode;
-use gandr_core_checker::TypeNode;
-use gandr_core_checker::Typings;
-use gandr_core_checker::type_module;
+use gandr_core_checker::Site;
+use gandr_core_checker::Verdict;
+use gandr_core_checker::check_module;
+use gandr_core_term::CertificateEquality;
 use gandr_core_term::Computation;
 use gandr_core_term::Value;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::equal_type_syntax;
+use gandr_kernel_term::BaseType;
 use gandr_kernel_term::FieldPosition;
 use gandr_surface_grammar::built_in;
 use gandr_surface_syntax::SourceText;
@@ -20,10 +23,11 @@ use crate::compose::adapt;
 use crate::compose::checking_context;
 use crate::schedule::bound_run;
 
-/// The join reads each cell of `#[1, 2] : List Integer` at its own typing:
-/// the head at the element type, and the tail at the cell's list type. The
-/// binder of `let m = n + n` holds the result type of its head, the same
-/// `Integer` as the list's elements (#8161).
+/// The join reads each cell of `#[1, 2] : List Integer` at its own check: the
+/// head at the element type, and the tail at the list type. The binder of
+/// `let m = n + n` holds `Integer`. So does the binder of `let k = same n`:
+/// the judgement gives its type with the omitted implicit of `same`, and the
+/// run reads that type with the implicit's solution (#8161).
 #[test]
 fn the_join_reads_each_field_and_binder_at_its_occurrence_8161()
 {
@@ -44,51 +48,71 @@ fn the_join_reads_each_field_and_binder_at_its_occurrence_8161()
     let declarations = adapt(&module, &arena);
     let mut context =
         checking_context(&mut arena, Opening::UNBOUNDED, &ModuleSettings::of(&module));
-    let module_typed = type_module(&mut context, &declarations);
+    let report = check_module(&mut context, &declarations);
     let declared = context.data_signatures().clone();
+    let integer = context.arena_mut().value_type_base(BaseType::Integer);
     let core = &arena;
-    let table = typed(core, &module_typed, declared);
-    let mut heads = Vec::new();
-    let mut binders = Vec::new();
-    for typing in module_typed.typings().values().flat_map(Typings::typings) {
-        match (typing.term, typing.ty) {
-            (TermNode::Value(cell), TypeNode::Value(list))
-                if matches!(core.value(cell), Some(&Value::ListCons(..))) =>
-            {
-                assert_eq!(
-                    Maybe::Present(list),
-                    table.field(cell, FieldPosition::from(1_usize)),
-                    "a cell's tail holds the cell's own list type"
-                );
-                let Maybe::Present(head) = table.field(cell, FieldPosition::from(0_usize))
-                else {
-                    panic!("a cell's head holds a type");
-                };
-                heads.push(head);
+    let Some(Verdict::Checked { declared: list, .. }) = report
+        .judged()
+        .first()
+        .map(gandr_core_checker::Judged::verdict)
+    else {
+        panic!("`xs` checks at its ascribed list type");
+    };
+    let list = list.id();
+    let table = typed(core, report.annotations(), declared);
+    let equal = |left: ValueTypeId, right: ValueTypeId| {
+        equal_type_syntax(core, left, right) == CertificateEquality::Equal
+    };
+    let cells: BTreeSet<_> = report
+        .annotations()
+        .iter()
+        .filter_map(|annotation| match annotation.site {
+            Site::Field(cell, _) if matches!(core.value(cell), Some(&Value::ListCons(..))) => {
+                Some(cell)
             },
-            (TermNode::Computation(bind), _) => {
-                let Some(&Computation::Bind(head, _)) = core.computation(bind)
-                else {
-                    continue;
-                };
-                let Maybe::Present(binder) = table.binder(bound_run(core, head))
-                else {
-                    panic!("a bind's binder holds a type");
-                };
-                binders.push(binder);
-            },
-            _ => {},
-        }
+            Site::Field(..) | Site::Binder(_) => None,
+        })
+        .collect();
+    assert_eq!(2, cells.len(), "the two cells of the list");
+    for &cell in &cells {
+        let (Maybe::Present(head), Maybe::Present(tail)) = (
+            table.field(cell, FieldPosition::from(0_usize)),
+            table.field(cell, FieldPosition::from(1_usize)),
+        )
+        else {
+            panic!("a cell's head and tail hold a type");
+        };
+        assert!(equal(head, integer), "a cell's head holds the element type");
+        assert!(equal(tail, list), "a cell's tail holds the list type");
     }
-    assert_eq!(2, heads.len(), "the two cells of the list");
-    assert!(!binders.is_empty(), "the bind of `m`");
-    let element = core.value_type(heads[0]);
-    assert!(element.is_some(), "the element type resolves");
-    for &held in heads.iter().chain(binders.iter()) {
-        assert_eq!(
-            element,
-            core.value_type(held),
-            "each head and each binder hold the integer type"
-        );
+    // The judgement can give one binder at more than one node of its call:
+    // the table keys each of them.
+    let binders: BTreeSet<_> = report
+        .annotations()
+        .iter()
+        .filter_map(|annotation| match annotation.site {
+            Site::Binder(head) => Some(bound_run(core, head)),
+            Site::Field(..) => None,
+        })
+        .collect();
+    assert!(
+        binders
+            .iter()
+            .any(|&run| matches!(core.computation(run), Some(&Computation::Primitive { .. }))),
+        "the run of `n + n` keys the binder of `m`"
+    );
+    assert!(
+        binders
+            .iter()
+            .any(|&run| matches!(core.computation(run), Some(&Computation::Application(..)))),
+        "a run of `same n` keys the binder of `k`"
+    );
+    for &run in &binders {
+        let Maybe::Present(binder) = table.binder(run)
+        else {
+            panic!("each binder holds a type");
+        };
+        assert!(equal(binder, integer), "each binder holds the integer type");
     }
 }

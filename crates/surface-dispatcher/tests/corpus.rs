@@ -1885,7 +1885,9 @@ mod sweeps
     /// #8161: over each source's program, focusing counts each binder and each
     /// field that holds the unknown type by exactly one cause. The counts sum
     /// to the positions of the program's arena at the unknown type, and the
-    /// check of the annotations accepts each definition. The sweep states the
+    /// check of the annotations accepts each definition. A composition with
+    /// the goal memo off gives the same counts: a goal that the memo answers
+    /// annotates as a goal that the machine judges. The sweep states the
     /// rules, and it pins no count.
     #[test]
     fn focusing_counts_each_unknown_position_by_one_cause_8161()
@@ -1901,8 +1903,9 @@ mod sweeps
     }
 
     /// Over every source `sweep` visits, focusing's counts by cause sum to the
-    /// binders and fields of the program at the unknown type, and the check of
-    /// the annotations accepts each transparent definition.
+    /// binders and fields of the program at the unknown type, equal the counts
+    /// of a composition with the goal memo off, and the check of the
+    /// annotations accepts each transparent definition.
     ///
     /// # Specification
     /// trivial.
@@ -1935,6 +1938,7 @@ mod sweeps
         };
         let grammar = built_in().expect("the built-in grammar builds");
         let mut differing = Vec::new();
+        let mut unmemoised = Vec::new();
         let mut refused = Vec::new();
         for path in paths {
             let own = std::fs::read_to_string(&path).expect("a corpus source reads");
@@ -1950,6 +1954,22 @@ mod sweeps
                 continue;
             };
             let unknowns = program.unknowns();
+            let Ok(Composed::Settled {
+                program: inactive, ..
+            }) = compose_on::<Evaluator>(
+                &grammar,
+                CorpusRoot::Fixture,
+                SourceText::from(own.as_str()),
+                &mut LoweringCount::default(),
+                Scheduling::Sequential,
+                MemoActivity::Inactive,
+            )
+            else {
+                panic!("{} settles with the memo off as with it on", path.display());
+            };
+            if inactive.unknowns() != unknowns {
+                unmemoised.push((path.clone(), unknowns, inactive.unknowns()));
+            }
             let counted: usize = [
                 Unknown::Open,
                 Unknown::Unchecked,
@@ -1980,12 +2000,14 @@ mod sweeps
             for constant in 0 .. usize::from(definitions.len()) {
                 if let Some(gandr_core_sequent::Definition::Transparent(root)) =
                     definitions.get(gandr_kernel_term::ConstantIndex::from(constant))
-                    && let Err(refusal) = gandr_core_sequent::check_annotations(
+                {
+                    match gandr_core_sequent::check_annotations(
                         arena,
                         gandr_core_sequent::NodeAddress::Producer(root),
-                    )
-                {
-                    refused.push((path.clone(), refusal));
+                    ) {
+                        Ok(_) => {},
+                        Err(refusal) => refused.push((path.clone(), refusal)),
+                    }
                 }
             }
             if counted != held {
@@ -1996,6 +2018,10 @@ mod sweeps
             differing.is_empty(),
             "each position at the unknown type is counted once; (source, counted, held): \
              {differing:?}"
+        );
+        assert!(
+            unmemoised.is_empty(),
+            "the memo changes no count; (source, memo on, memo off): {unmemoised:?}"
         );
         assert!(
             refused.is_empty(),

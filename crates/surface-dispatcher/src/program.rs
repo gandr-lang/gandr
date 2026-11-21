@@ -33,7 +33,6 @@ use gandr_core_sequent::Definition;
 use gandr_core_sequent::Definitions;
 use gandr_core_sequent::FocusRefusal;
 use gandr_core_sequent::Provenance;
-use gandr_core_sequent::Typed;
 use gandr_core_sequent::Unknowns;
 use gandr_core_sequent::Writers;
 use gandr_core_sequent::focus_definition;
@@ -342,20 +341,15 @@ impl<'source> Program<'source>
         verdicts: &ModuleReport,
     ) -> Self
     {
-        Self::after(
-            Focused::default(),
-            core,
-            module,
-            verdicts,
-            (&Writers::NONE, &Typed::NONE),
-        )
+        Self::after(Focused::default(), core, module, verdicts, &Writers::NONE)
     }
 
     /// [`Self::new`] continuing `focused`, the part of the program the
     /// module's leading declarations make: its declarations are taken as
     /// focused and sealed, and only the later ones are focused and spelled.
     /// Each later accepted body focuses each bind of `writers` apart, its
-    /// binder marked independent.
+    /// binder marked independent, and reads the type of each binder and each
+    /// field that `verdicts` annotates (#8161).
     ///
     /// # Specification
     /// - requires: as [`Self::new`]; `focused` is [`Self::into_focused`] of the
@@ -396,7 +390,7 @@ impl<'source> Program<'source>
         core: &CoreArena,
         module: &LoweredModule<'source>,
         verdicts: &ModuleReport,
-        (writers, typed): (&Writers, &Typed),
+        writers: &Writers,
     ) -> Self
     {
         let Focused {
@@ -411,6 +405,11 @@ impl<'source> Program<'source>
         // empty table; the leading program's names are already in
         // `channels`.
         let mut provenance = Provenance::new();
+        let typed = crate::annotate::typed(
+            core,
+            verdicts.annotations(),
+            verdicts.data_signatures().clone(),
+        );
         let boundary = usize::from(definitions.len());
         let mut judged = verdicts.judged().iter().peekable();
         for lowered in module.declarations() {
@@ -425,7 +424,7 @@ impl<'source> Program<'source>
             let (definition, slot) = match (verdict, body) {
                 (Some(Verdict::Data), _) => (Definition::Opaque, Slot::Opaque(Opacity::Data)),
                 (Some(Verdict::Checked { .. } | Verdict::Synthesised { .. }), Some(body)) => {
-                    match focus_definition(core, body, &mut arena, &mut provenance, writers, typed)
+                    match focus_definition(core, body, &mut arena, &mut provenance, writers, &typed)
                     {
                         Ok(producer) => (
                             Definition::Transparent(producer),

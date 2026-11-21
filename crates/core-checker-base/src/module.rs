@@ -174,6 +174,7 @@ use crate::ledger::Absence;
 use crate::ledger::ObligationEntry;
 use crate::ledger::ObligationLedger;
 use crate::nested::NestedElaboration;
+use crate::record::Annotation;
 use crate::record::Kept;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CheckingForm;
@@ -678,6 +679,10 @@ struct Decision
     failure: Maybe<Failure, kept::Absent>,
     /// The type of every term the body judged, when asked.
     typings: Maybe<Typings, typed::Absent>,
+    /// The value type that the body's runs gave each binder of a bind and
+    /// each field of a structural former, read with the solutions of the
+    /// body's implicits (#8161).
+    annotations: Vec<Annotation>,
     /// What elaborating the body did, when it held a computation written
     /// where a value is read and the first run accepted it.
     elaboration: Maybe<NestedElaboration, elaborated::Absent>,
@@ -762,6 +767,7 @@ fn decide(
         verdict: Verdict::Refused(refusal),
         failure: Maybe::Absent(kept::Absent::Unrun),
         typings: Maybe::Absent(untyped),
+        annotations: Vec::new(),
         elaboration: Maybe::Absent(elaborated::Absent::Unnested),
         filled: Maybe::Absent(filled::Absent::Unfilled),
         residue: Residue::default(),
@@ -784,6 +790,7 @@ fn decide(
     // own: whatever an earlier declaration's typing pass left is dropped.
     let _earlier = context.take_relating();
     let _earlier_restated = context.take_restating();
+    let _earlier_annotations = context.take_annotations();
     context.forget_stages();
     if let Err(refusal) = context.admit(constant) {
         return unrun(refusal);
@@ -813,6 +820,7 @@ fn decide(
             verdict: Verdict::Data,
             failure: Maybe::Absent(kept::Absent::Accepted),
             typings,
+            annotations: Vec::new(),
             elaboration: Maybe::Absent(elaborated::Absent::Unnested),
             filled: Maybe::Absent(filled::Absent::Unfilled),
             residue: Residue::default(),
@@ -981,6 +989,7 @@ fn decide(
     };
     let mut spending = Spending::Unspent;
     let mut typings = Maybe::Absent(untyped);
+    let mut annotations = Vec::new();
     let mut elaboration = Maybe::Absent(elaborated::Absent::Unnested);
     let mut relating = Vec::new();
     let mut restating = Vec::new();
@@ -1111,12 +1120,21 @@ fn decide(
                 (residue.pending(), direction),
                 declaration.stages(),
             );
+            // The body's runs gave each binder and each field its type, read
+            // with the solutions of the implicits as a typing is (#8161).
+            let mut read = signing;
+            read.extend(solutions.iter().map(|(&hole, &solved)| (hole, solved)));
+            annotations = context.take_annotations();
+            solve_annotations(context.arena_mut(), &mut annotations, &read);
             if let Some(signed) = signed.take() {
                 // The typed run reads the table again, and those reads are no
                 // part of the judgement's support.
                 let held = context.hold_support();
                 context.own_body(body);
                 let typed = type_value(context, body, direction);
+                // The typed run judges the body a second time, and its log
+                // is no part of the record.
+                let _typed_annotations = context.take_annotations();
                 // The bridge's crossings in the run are those of the body as
                 // written, which a face reads at the values it shows.
                 let crossed = context.take_crossings();
@@ -1124,8 +1142,6 @@ fn decide(
                 // standing as holes; each type is read with their solutions.
                 // A hole the body leaves unbound reads the signature's
                 // solution.
-                let mut read = signing;
-                read.extend(solutions.iter().map(|(&hole, &solved)| (hole, solved)));
                 typings = Maybe::Present(
                     Typings::after(signed, typed.crossed(crossed))
                         .retyped(|ty, depth| solved_type(context.arena_mut(), (ty, depth), &read)),
@@ -1292,6 +1308,7 @@ fn decide(
         verdict,
         failure,
         typings,
+        annotations,
         elaboration,
         filled,
         residue: match verdict {
@@ -1784,6 +1801,41 @@ fn solved_type(
     }
 }
 
+/// Read the type of each of `annotations` with every solution in
+/// `solutions`, as [`solved_type`] reads a typing's (#8161).
+///
+/// # Specification
+/// - requires: as [`fill`].
+/// - ensures: each annotation's type read as [`solved_type`] reads it under the
+///   annotation's depth; nothing changes when `solutions` is empty.
+/// - panics: none.
+/// - executable: none — the fill of each type is [`solved_type`]'s, which its
+///   own witness reads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a binder whose type holds an omitted implicit reads at
+///   the implicit's solution.
+/// - witness: `gandr-surface-dispatcher::annotate::tests::the_join_reads_each_field_and_binder_at_its_occurrence_8161`
+fn solve_annotations(
+    arena: &mut gandr_core_term::CoreArena,
+    annotations: &mut [Annotation],
+    solutions: &Solutions,
+)
+{
+    if solutions.is_empty() {
+        return;
+    }
+    for annotation in annotations {
+        if let TypeNode::Value(solved) = solved_type(
+            arena,
+            (TypeNode::Value(annotation.ty), annotation.depth),
+            solutions,
+        ) {
+            annotation.ty = solved;
+        }
+    }
+}
+
 /// `failure` with each type its refusal compares read through every solution
 /// the solver holds now. A hole the solver left unbound stays a hole.
 ///
@@ -2127,8 +2179,8 @@ quenchant_shape::reason_enum! {
 /// A decision that a run takes from its caller in place of its own.
 ///
 /// It holds the verdict of a declaration that the caller entered into the
-/// context, and the failure, the elaboration and the suspension that its
-/// judgement kept.
+/// context, and the failure, the elaboration, the suspension and the
+/// annotations that its judgement kept.
 ///
 /// # Specification
 /// - executable: none — a data type; the witness takes each accepted
@@ -2149,12 +2201,15 @@ pub struct Taken
     elaboration: Maybe<NestedElaboration, elaborated::Absent>,
     /// What the declaration waits on, when its verdict is suspended.
     suspension: Maybe<Suspension, waits::Absent>,
+    /// The value type that the judgement gave each binder and each field of
+    /// the body, seated in the run's arena (#8161).
+    annotations: Vec<Annotation>,
 }
 
 impl Taken
 {
-    /// The decision `verdict`, beside the `failure`, the `elaboration` and the
-    /// `suspension` that its judgement kept.
+    /// The decision `verdict`, beside the `failure`, the `elaboration`, the
+    /// `suspension` and the `annotations` that its judgement kept.
     ///
     /// # Specification
     /// trivial.
@@ -2167,6 +2222,7 @@ impl Taken
             Maybe<NestedElaboration, elaborated::Absent>,
             Maybe<Suspension, waits::Absent>,
         ),
+        annotations: Vec<Annotation>,
     ) -> Self
     {
         Self {
@@ -2174,6 +2230,7 @@ impl Taken
             failure,
             elaboration,
             suspension,
+            annotations,
         }
     }
 }
@@ -2259,6 +2316,9 @@ pub struct ModuleRun
     failures: BTreeMap<ConstantIndex, Failure>,
     /// What elaborating each body with a nested computation did, by position.
     nested_elaborations: BTreeMap<ConstantIndex, NestedElaboration>,
+    /// The value type that each declaration's judgement gave each binder and
+    /// each field, in the order judged (#8161).
+    annotations: Vec<Annotation>,
     /// What each suspended declaration waits on, by position.
     suspensions: BTreeMap<ConstantIndex, Suspension>,
     /// The schedule of the module's mutual blocks.
@@ -2285,6 +2345,7 @@ impl ModuleRun
             ledger: ObligationLedger::new(),
             failures: BTreeMap::new(),
             nested_elaborations: BTreeMap::new(),
+            annotations: Vec::new(),
             suspensions: BTreeMap::new(),
             schedule: Schedule::new(),
             typed: None,
@@ -2447,6 +2508,7 @@ impl ModuleRun
                             verdict: taken.verdict,
                             failure: taken.failure,
                             typings: Maybe::Absent(typed::Absent::Unasked),
+                            annotations: taken.annotations,
                             elaboration: taken.elaboration,
                             filled: Maybe::Absent(filled::Absent::Unfilled),
                             residue: Residue::default(),
@@ -2476,7 +2538,7 @@ impl ModuleRun
                                     Maybe::Absent(waits::Absent::Reported),
                                 ),
                             )
-                            .tabling(tabled);
+                            .tabling(tabled.annotating(decision.annotations.clone()));
                             // The counts layer charges these consults to the
                             // item a pass takes the verdict for.
                             #[cfg(feature = "instrument")]
@@ -2507,6 +2569,7 @@ impl ModuleRun
                 self.nested_elaborations
                     .insert(declaration.constant(), elaboration);
             }
+            self.annotations.extend(decision.annotations);
             match decision.verdict {
                 Verdict::Owed(entry) => self.ledger.record(entry),
                 Verdict::Suspended(declared) => {
@@ -2606,6 +2669,7 @@ impl ModuleRun
             ledger,
             mut failures,
             nested_elaborations,
+            annotations,
             suspensions,
             mut schedule,
             typed: _,
@@ -2626,7 +2690,7 @@ impl ModuleRun
             context,
             (judged, ledger),
             failures,
-            nested_elaborations,
+            (nested_elaborations, annotations),
             suspensions,
             supported.unwrap_or_default(),
         )

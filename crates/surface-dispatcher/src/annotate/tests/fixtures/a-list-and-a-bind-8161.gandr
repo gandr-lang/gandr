@@ -1,3 +1,5 @@
 import std.list (List);
 def xs = (#[1, 2] : List Integer);
 def twice(n : Integer) -> Integer = { let m = n + n; m };
+def same[a : Type](y : a) -> a = y;
+def again(n : Integer) -> Integer = { let k = same n; k };

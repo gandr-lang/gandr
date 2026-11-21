@@ -1,0 +1,10 @@
+/// The negation on the booleans, by cases. Each arm checks an injection, so
+/// the judgement gives the type of the injection's field.
+def flip(b : Bool) -> Bool =
+  match b where
+    | true => +{.1 = *{}}
+    | false => +{.0 = *{}}
+
+/// The double of an integer. The judgement gives the type of the binder of
+/// `m`.
+def twice(n : Integer) -> Integer = { let m = n + n; m };

@@ -579,6 +579,7 @@ impl super::Taking for FromReport<'_>
                 Maybe::Absent(crate::support::elaborated::Absent::Unnested),
                 Maybe::Absent(crate::support::waits::Absent::Unsuspended),
             ),
+            Vec::new(),
         ))
     }
 }

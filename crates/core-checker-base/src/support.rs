@@ -444,6 +444,9 @@ pub struct Tabled
     natives: alloc::collections::BTreeMap<gandr_core_term::ValueId, gandr_core_term::ValueId>,
     /// The function extensionalities the judgement decided, by node.
     funexts: alloc::collections::BTreeMap<gandr_core_term::ValueId, crate::funext::Funext>,
+    /// The value type that the judgement gave each binder and each field of
+    /// the body, which a taken item seats as it seats the entries (#8161).
+    annotations: alloc::vec::Vec<crate::record::Annotation>,
     /// Whether the judgement added an entry to another table.
     others: OtherTables,
 }
@@ -481,8 +484,35 @@ impl Tabled
             directed,
             natives,
             funexts,
+            annotations: alloc::vec::Vec::new(),
             others,
         }
+    }
+
+    /// These entries, beside the `annotations` that the judgement gave.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) fn annotating(
+        mut self,
+        annotations: alloc::vec::Vec<crate::record::Annotation>,
+    ) -> Self
+    {
+        self.annotations = annotations;
+        self
+    }
+
+    /// The value type that the judgement gave each binder and each field of
+    /// the body, in the order given (#8161).
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn annotations(&self) -> &[crate::record::Annotation]
+    {
+        self.annotations.as_slice()
     }
 
     /// The rows records, each with its value.

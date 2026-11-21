@@ -52,6 +52,11 @@ const NATIVE: &str =
 /// their steps.
 const FUNEXT: &str = include_str!("taking/fixtures/a-taken-funext-keeps-its-steps-7463.gandr");
 
+/// The annotated fixture: injections and a bind, whose judgement gives the
+/// type of each field and binder.
+const ANNOTATED: &str =
+    include_str!("taking/fixtures/a-taken-declaration-keeps-its-annotations-8161.gandr");
+
 /// The reopened fixture: a law whose right endpoint unfolds under a thunk.
 const REOPENED: &str =
     include_str!("taking/fixtures/a-reopened-take-replays-a-kept-dialogue-7399.gandr");
@@ -484,6 +489,47 @@ fn a_taken_funext_keeps_its_steps_7463()
         decode_checkpoints(&bytes).expect("the checkpoints decode"),
         *checkpoints,
         "the kept steps read back as written"
+    );
+}
+
+/// A taken declaration keeps the annotations that its judgement gave (#8161).
+/// The take seats the type of each injection's field and of the binder of `m`
+/// at the places that an edit shifts. The program of the taking session then
+/// focuses each binder and field at the type of a fresh session's. A take that
+/// drops the annotations focuses them at the unknown type, so the two
+/// compositions differ. The kept annotations read back from bytes as written.
+#[test]
+fn a_taken_declaration_keeps_its_annotations_8161()
+{
+    assert_eq!(
+        taken_past_an_insertion(SourceText::from(ANNOTATED)),
+        ItemCount::from(2_usize),
+        "`flip` and `twice` are taken; the appended definition is decided"
+    );
+    assert_eq!(
+        taken_past_a_reopening(SourceText::from(ANNOTATED)),
+        (ItemCount::from(2_usize), ItemCount::from(2_usize)),
+        "the checkpoints are restored and taken; the definition put first is decided"
+    );
+    let mut kept = session();
+    let _kept = submit(&mut kept, SourceText::from(ANNOTATED));
+    let Maybe::Present(resume) = kept.last()
+    else {
+        panic!("the submission resumes");
+    };
+    let checkpoints = resume.checkpoints();
+    assert!(
+        checkpoints
+            .items()
+            .iter()
+            .all(|checkpoint| matches!(checkpoint.tables(), Maybe::Present(_))),
+        "each checkpoint keeps the annotations of its declaration"
+    );
+    let bytes = encode_checkpoints(checkpoints).expect("the checkpoints encode");
+    assert_eq!(
+        decode_checkpoints(&bytes).expect("the checkpoints decode"),
+        *checkpoints,
+        "the kept annotations read back as written"
     );
 }
 

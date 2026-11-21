@@ -5,6 +5,7 @@
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::bridge;
+use gandr_core_checker::check_module;
 use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
 use gandr_surface_corpus::CorpusRoot;
@@ -150,14 +151,14 @@ fn each_count_decides_its_verdict()
     )
     .expect("the module lowers");
     let declarations = adapt(&module, &arena);
-    let (verdicts, typed) = fixture::checked(
+    let verdicts = check_module(
         &mut CheckingContext::new(&mut arena, CheckBudget::from(0_usize)),
         &declarations,
     );
     let readmission = bridge::readmit(&mut arena, &verdicts);
     let kernel = readmission.export(module.structured_names());
     let keys = readmission.export_names();
-    let mut program = fixture::program(&arena, &module, (&verdicts, &typed));
+    let mut program = fixture::program(&arena, &module, &verdicts);
     let layout =
         gandr_surface_dispatcher::item_layout(&module, &arena).expect("the positions ascend");
     let report = settle(

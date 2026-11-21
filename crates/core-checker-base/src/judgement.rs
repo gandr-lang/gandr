@@ -5735,6 +5735,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         // Against a thunk whose body no returner converts
                         // with, a call is read by what it synthesises.
                         if self.nested_read(computation, body_type)? == NestedRead::Call {
+                            // The elaboration binds the call ahead (#4466), and
+                            // the bind's binder holds what the call returns.
+                            self.context
+                                .annotate(crate::record::Site::Binder(computation), entered);
                             self.wait(Frame::NestedCall {
                                 at: term,
                                 call: computation,
@@ -5754,6 +5758,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         }))
                     },
                     Maybe::Absent(matching::Absent::Mismatched) => {
+                        self.context
+                            .annotate(crate::record::Site::Binder(computation), entered);
                         self.wait(Frame::ValueBridge {
                             at: term,
                             expected: entered,
@@ -5815,12 +5821,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         unfolded: TypeNode::Value(expected),
                     });
                 }
-                let Some(components) = self.context.arena().value(term).and_then(Value::components)
-                else {
-                    return Err(CheckRefusal::MachineInvariant);
-                };
-                let owner = self.owner;
-                for (index, &component) in components.iter().enumerate().rev() {
+                for index in 0 .. count {
                     let factor = match factors {
                         Components::Known(ref parts) => {
                             *parts.get(index).ok_or(CheckRefusal::MachineInvariant)?
@@ -5834,6 +5835,19 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         ),
                         factor,
                     );
+                }
+                let Some(components) = self.context.arena().value(term).and_then(Value::components)
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                let owner = self.owner;
+                for (index, &component) in components.iter().enumerate().rev() {
+                    let factor = match factors {
+                        Components::Known(ref parts) => {
+                            *parts.get(index).ok_or(CheckRefusal::MachineInvariant)?
+                        },
+                        Components::Unknown(unknown) => unknown,
+                    };
                     self.frames.push(Waiting {
                         frame: Frame::NativeNext(Goal::Value {
                             term: component,
@@ -6238,7 +6252,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`crate::context::CheckingContext::annotate`].
-    /// - witness: `module::tests::a_bind_and_a_pair_give_their_annotations_8161`
+    /// - witness: `gandr-surface-dispatcher::annotate::tests::the_join_reads_each_field_and_binder_at_its_occurrence_8161`
     fn annotate_payloads(
         &mut self,
         term: ValueId,
