@@ -1,0 +1,869 @@
+# <critical>
+# MUST preserve anchor-first CI: maximal sharing, no copied orchestration.
+# New functionality MUST reuse template anchors or add anchors for likely reuse.
+# MUST parameterize differences; performance exceptions require measured evidence.
+# Share exceptional logic through actions; preserve parallelism, caches, and gates.
+# </critical>
+# Lists we produce are displayed collapsed: in `<details>` under a one-line
+# summary of what, how many and the verdict.
+name: nightly-sweeps
+
+# Every sweep over its whole input, which the merge queue samples: the
+# `nightly` nextest profile with specifications enforced (`mise run
+# ci:sweeps-nightly`), the costliest sweeps each over the night's slice of
+# the corpus; one crate that declares features a night, its tests with
+# every feature on; and the recovery sweep over the syntax
+# exemplars, its causes filed. Daily on main when the night's commit moved
+# since the last successful run; each lane runs at the commit of main whose
+# test state it restores. A failure is a red run on main, never a blocked
+# queue. A dispatch always runs. Beside them, every day, each CI lane's
+# median job time against its budget, and the chain of a cold build of the
+# driver on x86-64 and on riscv64 against the last night's (#6893), and the
+# wasm driver against the native one (#7402). The crates that hold `unsafe`
+# run their tests under Miri and cargo-careful after a change to one of their
+# files (#7642). The sweeps, the recovery sweep, the wasm driver and those
+# checks run on a runner of our own while one is online
+# (#6868). The whole workflow is held to fifteen minutes summed over its
+# jobs on hosted runners.
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+    inputs:
+      tip:
+        description: "Run the tip of the dispatched ref, not each saved test state's commit"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# One run at a time; a dispatch during the scheduled run replaces it.
+concurrency:
+  group: nightly-main
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+  MISE_CARGO_BINSTALL_QUICKINSTALL: "true"
+  MISE_CARGO_BINSTALL_NATIVE: "true"
+  # Must match landing-checks.yml and the image. The image checks the list at build time.
+  MISE_DISABLE_TOOLS: "cargo:bindgen-cli,cargo:hotpath,github:j178/prek,github:max-sixty/worktrunk,github:nektos/act,github:orhun/git-cliff"
+  # Must match landing-checks.yml: a job's mise writes no line of `mise.lock` (#6976).
+  MISE_LOCKFILE_MODE: merge
+  # Empty selects the bare runner. A set value selects the pin-file tag,
+  # and only a published tag is used: this workflow does not publish.
+  GANDR_CI_IMAGE: ${{ vars.GANDR_CI_IMAGE }}
+
+jobs:
+  # Definitions only: aliases run in each consuming job's context. The
+  # `needs` is what lets the aliases below name `needs.ci-image-ref`: a
+  # job that declares no needs has no `needs` context, and the workflow
+  # fails validation before any job starts.
+  template:
+    if: false
+    needs: ci-image-ref
+    # landing-checks.yml's runner: the test states this workflow restores are its arm64
+    # ones.
+    runs-on: &linux ubuntu-24.04-arm
+    permissions: &image-read-permissions
+      contents: read
+      packages: write
+    steps:
+      # A lane sets `CI_COMMIT` to the commit of the test state it restores.
+      # Every other job checks out the run's own commit.
+      - &git-checkout
+        name: git checkout
+        uses: &checkout actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ env.CI_COMMIT }}
+          fetch-depth: ${{ env.CI_FETCH_DEPTH || '1' }}
+      # A runner of our own (`CI_RUNNER=integration`, #6868) runs on its host
+      # as the host stands: the host's git, toolchain and tools, and the kept
+      # tree in place of a restored state (`.config/nightly/tree.bash`). So
+      # it skips the steps that set up a hosted runner. They would write the
+      # host's global git configuration and its Cargo home, and download a
+      # state that the job does not read.
+      - &trust-workspace
+        name: trust the workspace for git
+        if: &hosted ${{ env.CI_RUNNER != 'integration' }}
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - &find-image
+        id: image
+        name: find the published image
+        uses: ./.github/actions/find-image # zizmor: ignore[self-repository]
+        with:
+          enabled: ${{ env.GANDR_CI_IMAGE != '' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - &install-policy-tools
+        name: install mise-managed policy tools
+        if: ${{ needs.ci-image-ref.outputs.ref == '' && env.CI_RUNNER != 'integration' }}
+        uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
+      # A job that runs bare beside a published image, as the chain's cold
+      # build does, sets `CI_BARE`, and the action installs the toolchain
+      # and mold there.
+      - &setup-rust
+        name: setup rust
+        if: *hosted
+        uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
+        with:
+          install-toolchain: ${{ needs.ci-image-ref.outputs.ref == '' || env.CI_BARE == 'true' }}
+          cache-save: false
+      # The landing-checks.yml test-state restore: main's newest complete test state of
+      # this toolchain generation, which Cargo's fingerprints bring up to
+      # date. Only main's landing-checks.yml push runs write it; this workflow reads.
+      - &identify-build-state
+        name: identify build-state inputs
+        env:
+          CI_STATE_INPUTS: ${{ hashFiles('Cargo.toml', 'crates/*/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+          CI_STATE_GENERATION: ${{ hashFiles('rust-toolchain.toml') }}
+        run: printf 'CI_BUILD_FINGERPRINT=%s\nCI_BUILD_GENERATION=%s\n' "$CI_STATE_INPUTS" "$CI_STATE_GENERATION" >> "$GITHUB_ENV"
+      - &restore-test-state
+        name: restore complete test state
+        if: *hosted
+        uses: ./.github/actions/restore-test-state # zizmor: ignore[self-repository]
+      # Whether the state came down, tested once in the shell: `hashFiles`
+      # over a tarball reads the whole archive inside the expression engine,
+      # whose 120 s budget a large state exceeds.
+      - &find-build-state
+        name: find the restored build state
+        shell: bash
+        run: if [[ -e "build-state-$CI_BUILD_STATE.tar.zst" ]]; then echo CI_BUILD_STATE_FOUND=true >> "$GITHUB_ENV"; fi
+      # Each source unchanged since the state was built is dated before it,
+      # so a build script's inputs read as fresh (landing-checks.yml's anchor, #3206).
+      - &unpack-build-state
+        name: unpack build state
+        if: &state-found ${{ env.CI_BUILD_STATE_FOUND == 'true' }}
+        shell: bash
+        run: |
+          zstd -dc "build-state-$CI_BUILD_STATE.tar.zst" | tar -xf -
+          mise run --quiet ci:sources-restamp
+      # The dependency cache also holds Cargo's registry; this fills it.
+      - &fetch-dependencies
+        name: fetch locked dependencies
+        if: *state-found
+        run: cargo fetch --locked
+
+  # A missing tag selects the bare runner; this workflow does not build the
+  # image.
+  ci-image-ref:
+    name: resolve the CI image reference
+    runs-on: *linux
+    permissions: *image-read-permissions
+    outputs:
+      ref: ${{ steps.image.outputs.ref }}
+    steps:
+      - *git-checkout
+      - *find-image
+
+  # The night runs each lane at the commit of main whose test state the lane
+  # restores, so its build is warm by construction (#6863). Main keeps one
+  # cache entry per state (`ci:delete-superseded`), and the entry's key ends
+  # in the commit that saved it. A push of main saves its states 7 to 19
+  # minutes after the move, so the tip can be newer than every saved state,
+  # and a lane at the tip rebuilds a cycle of landings. The enforcing state's
+  # commit is the night's commit. A dispatch with `tip` runs the tip of its
+  # ref, which a probe of a branch's own sources needs.
+  #
+  # A state of no generation on `main` leaves the night nothing warm to run
+  # (#6947): the hosted sweeps would build the whole graph cold and pass
+  # their limit. So the job names each class with no entry as `waiting`, and
+  # a lane that restores such a class ends as skipped. The step summary and
+  # the lane budget's one issue name the class, so a seat reads the night
+  # that waits. A runner of our own keeps its target directory and restores no
+  # state, so its sweeps never wait. A night that waits records no commit, so
+  # the next night runs once the state stands.
+  #
+  # The scheduled run measures only when the night's commit moved since the
+  # last successful run; a dispatch always runs. Each run records the commit
+  # it covers as the artifact `night-commit`, a run that skipped the lanes
+  # included, so the comparison stays exact across skips, and a failed lane
+  # runs again the next day. A last run with no record compares its tip.
+  #
+  # The job also chooses the night's runner (#6868). A runner of our own
+  # with the label `integration` takes `sweeps`, with its recovery sweep,
+  # while one is online, as it takes the cycle's suite
+  # (`.config/integration/runner.jq`, #5526). Only the schedule and a
+  # dispatch of `main` in gandr-lang/gandr read the runners, through the
+  # App's token that holds `Administration: read`. No pull request reaches
+  # our runner. A fork has no App, so its night runs on the hosted runner,
+  # and so does a night whose read fails.
+  #
+  # The same read decides whether the riscv64 jobs run. Their host is not
+  # online every night, so `chain-riscv64` runs only while a runner with the
+  # label `RISCV64` is online. Otherwise the night skips it and says so.
+  # - see: `.config/integration/riscv64.jq`
+  freshness:
+    name: choose the night's commit and whether it moved
+    runs-on: *linux
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      enforcing: ${{ steps.states.outputs.enforcing }}
+      plain: ${{ steps.states.outputs.plain }}
+      stale: ${{ steps.compare.outputs.stale }}
+      runner: ${{ steps.runner.outputs.runner || 'hosted' }}
+      riscv64: ${{ steps.runner.outputs.riscv64 || 'false' }}
+      waiting: ${{ steps.waiting.outputs.waiting }}
+      unsafe: ${{ steps.unsafe.outputs.crates }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      LANDING_APP_ID: ${{ secrets.LANDING_APP_ID }}
+    steps:
+      - id: states
+        name: find the commit of each saved test state
+        if: ${{ !inputs.tip }}
+        env:
+          PREFIX: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-
+        run: >-
+          gh cache list --ref refs/heads/main --key "$PREFIX" --limit 100 --json key,createdAt
+          --jq 'def newest($state): map(select(.key | startswith(env.PREFIX + $state + "-")))
+          | max_by(.createdAt) | .key // "" | split("-") | last;
+          def held($state): any(.[]; .key | startswith(env.PREFIX + $state + "-"));
+          . as $entries
+          | "enforcing=\(newest("cargo-test-enforcing"))", "plain=\(newest("cargo-test-plain-only"))",
+          "missing=\(["cargo-test-enforcing", "cargo-test-plain-only"]
+          | map(select(. as $state | $entries | held($state) | not)) | join(" "))"'
+          >> "$GITHUB_OUTPUT"
+      - name: check out the choice of the runner and the list of the crates that hold unsafe
+        if: &own-runners ${{ github.repository == 'gandr-lang/gandr' && github.ref == 'refs/heads/main' && env.LANDING_APP_ID != '' }}
+        uses: *checkout
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .config/integration/runner.jq
+            .config/integration/riscv64.jq
+            .config/unsafe
+            .config/gh/budget.bash
+          sparse-checkout-cone-mode: false
+      - name: mint the token that reads the runners
+        id: runners
+        if: *own-runners
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.LANDING_APP_ID }}
+          private-key: ${{ secrets.LANDING_APP_PRIVATE_KEY }}
+          permission-administration: read
+      - id: runner
+        name: choose the night's runner and whether the riscv64 jobs run
+        if: ${{ steps.runners.outputs.token != '' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.runners.outputs.token }}
+          # The host of the self-hosted runners writes this word from its
+          # own load, `free` or `loaded`.
+          INTEGRATION_RUNNER_CAPACITY: ${{ vars.INTEGRATION_RUNNER_CAPACITY }}
+        run: |
+          gh api "repos/$GH_REPO/actions/runners?per_page=100" --jq '{runners}' > "$RUNNER_TEMP/runners.json"
+          jq -c --arg capacity "$INTEGRATION_RUNNER_CAPACITY" '. + {capacity: $capacity}' "$RUNNER_TEMP/runners.json" | jq -c -f .config/integration/runner.jq | jq -r '"runner=\(.runner)", "line=\(.line)"' >> "$GITHUB_OUTPUT"
+          jq -c -f .config/integration/riscv64.jq "$RUNNER_TEMP/runners.json" | jq -r '"riscv64=\(.online)", "riscv64_line=\(.line)"' >> "$GITHUB_OUTPUT"
+      - name: say the night's runner and whether the riscv64 jobs run
+        env:
+          LINE: ${{ steps.runner.outputs.line || 'The night runs on the hosted runner, since it reads no self-hosted runner.' }}
+          RISCV64_LINE: ${{ steps.runner.outputs.riscv64_line || 'The riscv64 jobs skip, since the night reads no self-hosted runner.' }}
+        run: printf '%s\n' "$LINE" "$RISCV64_LINE" >> "$GITHUB_STEP_SUMMARY"
+      - id: waiting
+        name: name the saved states the night waits for
+        shell: bash
+        env:
+          MISSING: ${{ steps.states.outputs.missing }}
+          RUNNER: ${{ steps.runner.outputs.runner || 'hosted' }}
+        run: |
+          read -ra missing <<< "$MISSING"
+          waiting=()
+          for class in "${missing[@]}"; do
+            if [[ $class == cargo-test-enforcing && $RUNNER == integration ]]; then
+              continue
+            fi
+            waiting+=("$class")
+            printf 'The night waits for a saved state of `%s`: `main` holds no entry of it, so the night skips the lanes that restore it.\n' \
+              "$class" >> "$GITHUB_STEP_SUMMARY"
+          done
+          printf 'waiting=%s\n' "${waiting[*]}" >> "$GITHUB_OUTPUT"
+      - id: compare
+        name: compare the night's commit against the last successful run
+        shell: bash
+        env:
+          NIGHT: ${{ steps.states.outputs.enforcing || github.sha }}
+          WAITING: ${{ steps.waiting.outputs.waiting }}
+        run: |
+          found=$(gh run list --workflow nightly-sweeps.yml --branch main --status success --limit 1 \
+            --json databaseId,headSha --jq '.[0] // {} | "\(.databaseId // "") \(.headSha // "")"')
+          read -r run last <<< "$found"
+          printf 'run=%s\n' "$run" >> "$GITHUB_OUTPUT"
+          if [[ -n $run ]] && gh run download "$run" --name night-commit --dir "$RUNNER_TEMP/last"; then
+            last=$(<"$RUNNER_TEMP/last/commit")
+          fi
+          mkdir -p "$RUNNER_TEMP/night"
+          printf '%s\n' "$([[ -z $WAITING ]] && echo "$NIGHT" || echo waiting)" > "$RUNNER_TEMP/night/commit"
+          printf 'stale=%s\n' "$([[ $NIGHT != "${last:-}" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          printf 'The night runs `%s`. The tip of `%s` is `%s`. The last successful night covers `%s`.\n' \
+            "$NIGHT" "$GITHUB_REF_NAME" "$GITHUB_SHA" "${last:-none}" >> "$GITHUB_STEP_SUMMARY"
+      - name: record the night's commit
+        uses: &upload-artifact actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: night-commit
+          path: ${{ runner.temp }}/night/commit
+          retention-days: 30
+      # The crates that hold `unsafe` whose files moved since the commit that
+      # their checks last covered, and the commit that this night's checks
+      # cover (`.config/unsafe/night.bash`, #7642).
+      - id: unsafe
+        name: choose the crates that hold unsafe to check
+        if: *own-runners
+        env:
+          RUN: ${{ steps.compare.outputs.run }}
+          NIGHT: ${{ steps.states.outputs.enforcing || github.sha }}
+          RUNNER: ${{ steps.runner.outputs.runner || 'hosted' }}
+        run: .config/unsafe/night.bash "$RUN" "$NIGHT" "$RUNNER"
+      - name: record the commit that the checks of unsafe cover
+        if: *own-runners
+        uses: *upload-artifact
+        with:
+          name: unsafe-commit
+          path: ${{ runner.temp }}/unsafe/commit
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # The sweeps restore main's enforcing test state, which Cargo's
+  # fingerprints bring up to date, and run the nightly task. The plain build
+  # of the whole test graph costs six minutes on its own; the sweeps run
+  # enforced alone, as every pull-request lane runs their samples. The job's
+  # share of the nightly's 900 s is 611 s: 504 s for the sweeps and 107 s for
+  # the recovery sweep, each its time in nightly 40667395217 scaled by
+  # 900/818, as every job's share is (#3013). A night's slice of a rotating
+  # sweep costs what its sources cost, so one night's sweeps can run past the
+  # share while the whole nightly stays within 900 s. A sweep that reaches
+  # its 240 s limit ends and passes, and the job uploads its JUnit report for
+  # `reports` to file (#3975).
+  #
+  # The recovery sweep (`mise run ci:recovery-nightly`, #1782) runs in this
+  # job after the sweeps, from the same enforcing state, so one container
+  # start and one restore serve both (#6704). Each of them runs once the
+  # setup passes, whatever the other gives. The rotation of the sweeps
+  # (#6704) holds the two together at about 5 minutes, inside the job's 15.
+  # The recovery sweep covers every literal tile of every syntax exemplar,
+  # missed and deleted. Its causes and counts are the job summary, the whole
+  # backlog visible whether or not it is filed; the report goes to
+  # `reports`, which holds the write token. The sweep runs the driver the
+  # restored test build links, resolved as that state was, so the step is
+  # the sweep: 7175 mutants on one thread take 20 s locally (#3289).
+  #
+  # On a runner of our own the job keeps its tree and its target directory on
+  # the host, and restores no state (`.config/nightly/tree.bash`, #6868).
+  # Each of the two sweeps waits for a gate slot of the host, so the job's
+  # limit holds that wait: 60 minutes there, 15 on the hosted runner. Its
+  # time counts in no hosted budget.
+  sweeps:
+    name: sweep the night's inputs, specifications enforced
+    needs: [ci-image-ref, freshness]
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') && !contains(needs.freshness.outputs.waiting, 'cargo-test-enforcing') }}
+    runs-on: ${{ needs.freshness.outputs.runner == 'integration' && fromJSON('["self-hosted", "integration"]') || 'ubuntu-24.04-arm' }}
+    permissions: *image-read-permissions
+    container: ${{ needs.freshness.outputs.runner != 'integration' && needs.ci-image-ref.outputs.ref || '' }} # zizmor: ignore[unpinned-images]
+    timeout-minutes: ${{ needs.freshness.outputs.runner == 'integration' && 60 || 15 }}
+    env:
+      CI_BUILD_STATE: cargo-test-enforcing
+      CI_COMMIT: ${{ needs.freshness.outputs.enforcing }}
+      CI_RUNNER: ${{ needs.freshness.outputs.runner }}
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - *setup-rust
+      - *identify-build-state
+      - *restore-test-state
+      - *find-build-state
+      - *unpack-build-state
+      - *fetch-dependencies
+      - id: night-sweeps
+        name: run the night's sweeps
+        run: .config/nightly/tree.bash mise run ci:sweeps-nightly
+      - name: upload the sweeps' test report
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: *upload-artifact
+        with:
+          name: junit-sweeps
+          path: ${{ steps.night-sweeps.outputs.tree }}/target/nextest/nightly/junit.xml
+          retention-days: 7
+          if-no-files-found: ignore
+      - id: night-recovery
+        name: sweep the exemplars for recovery
+        if: &swept ${{ !cancelled() && steps.night-sweeps.outcome != 'skipped' }}
+        run: .config/nightly/tree.bash mise run ci:recovery-nightly
+      - name: upload the recovery report
+        if: *swept
+        uses: *upload-artifact
+        with:
+          name: recovery-report
+          path: ${{ steps.night-recovery.outputs.tree }}/recovery.out/report.txt
+          retention-days: 7
+
+  # Each crate's tests with every feature it declares on, one of those crates
+  # a night (`mise run ci:all-features` says which), in the plain lane's
+  # restored test state. The sweeps sample as on a landing that changed no
+  # source. A feature-gated test that fails here is filed as a defect, never
+  # skipped (#1785). The job's share of the nightly's 900 s is 147 s, its
+  # 134 s in nightly 40667395217 scaled by 900/818 (#3013). One crate a night
+  # builds about its own closure; a crate whose night stays past the share
+  # gets its own saved build state (#3288).
+  all-features:
+    name: test every crate with every feature on
+    needs: [ci-image-ref, freshness]
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') && !contains(needs.freshness.outputs.waiting, 'cargo-test-plain-only') }}
+    runs-on: *linux
+    permissions: *image-read-permissions
+    # The tests of `gandr-runtime-uring` start an `io_uring` ring. Docker's
+    # default seccomp profile refuses `io_uring_setup` with EPERM. Docker
+    # reads a profile only from a file on the host, before the checkout, so no
+    # file of the tree can reach it. The jobs that run the crate's tests drop
+    # the filter, and only they do.
+    # - see: #7633
+    container:
+      image: &ci-image ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
+      options: --security-opt seccomp=unconfined
+    timeout-minutes: 15
+    env:
+      CI_BUILD_STATE: cargo-test-plain-only
+      CI_COMMIT: ${{ needs.freshness.outputs.plain }}
+      GANDR_SWEEP_BASE: HEAD
+      NEXTEST_PROFILE: ci
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - *setup-rust
+      - *identify-build-state
+      - *restore-test-state
+      - *find-build-state
+      - *unpack-build-state
+      - *fetch-dependencies
+      - name: run the night's crates' tests with every feature on
+        run: mise run ci:all-features
+
+  # The chain of each head (#6893): one cold build of the driver for each
+  # architecture (`.config/nightly/chain-build.bash`), whose build analysis
+  # log `reports` reads into the night's chain report (`mise run
+  # report:chain`). The build is cold by design, so it restores no test
+  # state, and it runs bare on the runner's own disk: `CI_BARE` has `setup
+  # rust` install the toolchain and mold. The x86-64 build runs on the hosted
+  # runner. Its job took 270 s on a hosted runner in nightly 43345701385,
+  # 223 s of it the build, so its share of the nightly's 900 s fits only
+  # beside the sweeps on a runner of our own (#6868). So it runs on a night
+  # whose sweeps run on our runner and on a dispatch, and a night whose
+  # sweeps fall back to the hosted runner reads no x86-64 row.
+  chain:
+    name: build the driver cold and keep its chain (x86-64)
+    needs: [ci-image-ref, freshness]
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || (needs.freshness.outputs.stale == 'true' && needs.freshness.outputs.runner == 'integration')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CHAIN_ARCH: x86-64
+      CI_BARE: "true"
+      CI_COMMIT: ${{ needs.freshness.outputs.enforcing }}
+    steps:
+      - *git-checkout
+      - *setup-rust
+      - &chain-build
+        name: build the driver cold and keep its build log
+        run: .config/nightly/chain-build.bash "$CHAIN_ARCH" "$RUNNER_TEMP/chain"
+      - &chain-upload
+        name: upload the build log
+        uses: *upload-artifact
+        with:
+          name: chain-log-${{ env.CHAIN_ARCH }}
+          path: ${{ runner.temp }}/chain
+          retention-days: 7
+          if-no-files-found: error
+
+  # The riscv64 build runs on a runner of our own. The runner's account reads
+  # the builder's tools, the bindgen command among them, through the host's
+  # mise install directory, and installs none. The build holds the host lock
+  # `par` that the host's measures hold, so a measure and the build do not
+  # load each other. It can first wait for one measure: 27 minutes at the
+  # most in the record.
+  # - see: #6945, #7008
+  #
+  # Only the schedule and a dispatch of `main` in gandr-lang/gandr reach the
+  # runner, so no fork and no branch runs code on it. Its time counts in no
+  # hosted sum. The job runs only while a runner with the label `RISCV64` is
+  # online, as `freshness` reads it. A night with no such runner skips it.
+  chain-riscv64:
+    name: build the driver cold and keep its chain (riscv64)
+    needs: freshness
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') && needs.freshness.outputs.riscv64 == 'true' && github.repository == 'gandr-lang/gandr' && github.ref == 'refs/heads/main' }}
+    runs-on: [self-hosted, Linux, RISCV64] # zizmor: ignore[self-hosted-runner]
+    timeout-minutes: 90
+    env:
+      CHAIN_ARCH: riscv64
+      CHAIN_LOCK: /run/lock/gandr/par.lock
+      CI_COMMIT: ${{ needs.freshness.outputs.enforcing }}
+    steps:
+      - *git-checkout
+      # On riscv64 the ring's liburing crate makes its bindings with the
+      # bindgen command, and `BINDGEN_PATH` names it. `mise.toml` pins the
+      # command, and the builder pushes its riscv64 build to the host. mise
+      # finds the pinned install also where the workflow disables the tool.
+      # The runner's account trusts the checkout's `mise.toml` for this step.
+      # - see: #7720
+      - name: find the bindgen command
+        env:
+          MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+        run: |
+          bin=$(mise where cargo:bindgen-cli)/bin/bindgen
+          "$bin" --version
+          echo "BINDGEN_PATH=$bin" >> "$GITHUB_ENV"
+      - *chain-build
+      - *chain-upload
+
+  # The wasm driver against the native one (#4882, #7402): `mise run
+  # test:wasm` builds the release driver for wasm32-wasip3 and runs each case
+  # of `.config/wasm/cases.txt` on both. No landing builds wasm, so a crate
+  # that a WASI build cannot take shows here first. The build rebuilds std,
+  # and a cold build does not fit the nightly's hosted budget. So the job runs
+  # only on a runner of our own, in the night's kept tree
+  # (`.config/nightly/tree.bash`), whose target directory keeps the last
+  # night's build. Its time counts in no hosted sum. A night whose sweeps fall
+  # back to the hosted runner builds no wasm. `reports` keeps one issue while
+  # the build fails (`mise run ci:wasm-file`).
+  wasm:
+    name: build the wasm driver and compare it with the native one
+    needs: freshness
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') && needs.freshness.outputs.runner == 'integration' }}
+    runs-on: &our-runner [self-hosted, integration] # zizmor: ignore[self-hosted-runner]
+    timeout-minutes: 60
+    env:
+      CI_COMMIT: ${{ needs.freshness.outputs.enforcing }}
+      CI_RUNNER: integration
+    steps:
+      - *git-checkout
+      - name: build the wasm driver and compare it with the native one
+        run: .config/nightly/tree.bash mise run test:wasm
+
+  # The crates that hold `unsafe` (`.config/unsafe/crates.json`), their tests
+  # under Miri with each aliasing model and under cargo-careful (`mise run
+  # unsafe:*`, #7642). The job checks each crate with a file that moved since
+  # the commit that the checks last covered (`freshness`), and a dispatch
+  # checks every crate. No landing runs the checks. On the x86-64 host,
+  # `gandr-kernel-data` took 131 s under tree borrows, 180 s under stacked
+  # borrows and 7 s under cargo-careful, each standard library built before.
+  # A cold runner builds the two standard libraries too, so the checks do not
+  # fit beside the night's hosted jobs. The job runs only on a runner of our
+  # own, in the night's kept tree (`.config/nightly/tree.bash`), as the wasm
+  # driver does, and its time counts in no hosted sum. A night on the hosted
+  # runner checks no crate, and the next night on ours checks what moved since
+  # the last check. Each check runs whatever the check before it gives. The
+  # job's limit holds its wait for the night's lane, as the sweeps' does.
+  unsafe:
+    name: run the crates that hold unsafe under Miri and cargo-careful
+    needs: freshness
+    if: ${{ !cancelled() && !failure() && needs.freshness.outputs.runner == 'integration' && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.unsafe != '') }}
+    runs-on: *our-runner # zizmor: ignore[self-hosted-runner]
+    timeout-minutes: 60
+    env:
+      CI_COMMIT: ${{ needs.freshness.outputs.enforcing }}
+      CI_RUNNER: integration
+      # Each word is one package; none checks every crate of the list.
+      UNSAFE_CRATES: ${{ github.event_name != 'workflow_dispatch' && needs.freshness.outputs.unsafe || '' }}
+    steps:
+      - *git-checkout
+      - name: run the tests under Miri with tree borrows
+        run: .config/nightly/tree.bash mise run unsafe:miri-tree $UNSAFE_CRATES
+      - name: run the tests under Miri with stacked borrows
+        if: &each-check ${{ !cancelled() }}
+        run: .config/nightly/tree.bash mise run unsafe:miri-stacked $UNSAFE_CRATES
+      - name: run the tests under cargo-careful
+        if: *each-check
+        run: .config/nightly/tree.bash mise run unsafe:careful $UNSAFE_CRATES
+
+  # The night's reports and filings run as one job, each its own step, so
+  # one container start serves them (#3208): a start costs 20 to 25 s, and
+  # the lane budget, the recovery filing and the reports did a minute or less
+  # of work each once the dependency report read in one pass (#3192). The job
+  # waits on the recovery sweep for the causes it files. A failing step hides
+  # none after it: each runs unless the run was cancelled, and the lane
+  # budget runs last.
+  #
+  # The recovery sweep's causes, filed (`mise run ci:recovery-file`): one
+  # issue per first error and mutation kind, at most three new a night, a
+  # cause already filed skipped. Only the scheduled run files; a dispatch
+  # prints what it would file. The report comes from the sweeps job, so
+  # filing builds nothing.
+  #
+  # The dependency report (`mise run report:deps`, #2902): every open epic
+  # set blocked by its open sub-issues, then each dependency an open issue
+  # states (an `## After` item, prose naming an open issue, an epic's open
+  # sub-issue) that GitHub does not record, on one `report: dependencies`
+  # issue. Then the obligations report (`mise run report:obligations`,
+  # #2886): how the month's merged pull requests answered their obligations,
+  # by lane and week, on one `report: obligations, <month>` issue. Only the
+  # scheduled run writes; a dispatch prints the reports. They read the
+  # tracker alone, so they build nothing. The obligations report's search
+  # leaves out every pull request the token cannot read, and writes zeros
+  # rather than failing, so the job grants `pull-requests: read` (#3576).
+  # Then the dead-weight report (`mise run report:dead-weight`, #2891): each
+  # crate's items with no caller outside tests and its exported items with no
+  # use in another crate, on one `refactor(<crate>): dead weight` issue a
+  # crate. It reads the newest landed merge group's `evidence-records`
+  # artifact, so it builds nothing. It blames each item's lines, so the job
+  # checks out the whole history (`CI_FETCH_DEPTH`).
+  # Then the prose report (`mise run report:prose`, #3591): each open issue
+  # body and each open pull request body that breaks a body rule, on one
+  # `report: prose` issue. It builds the `prose` binary and parses under the
+  # spaCy venv `check:prose` pins, restored from the cache the merge group's
+  # prose lane saves. Then the threads outside the pool (`mise run
+  # report:threads`, #3610): each site that states why it owns a thread, with
+  # its reason, in the job summary. It reads the tree alone, in under a
+  # second. So does the ledger of declared allocations (`mise run
+  # report:allocations`, #7419): each crate's count of them by why.
+  # The dependency and prose reports read the open issues and pull requests
+  # from one read of them (`mise run issues:open`, #5681), 8 pages, in place
+  # of 8 pages each, and each runs only when that read succeeds.
+  # Then the chain report (`mise run report:chain`, #6893): each chain job's
+  # build log read into its row beside the last night's, in the job summary,
+  # and a growth past 10 % in one night on the build's chain collector. The
+  # job waits on the chain jobs for their logs, and on the riscv64 build the
+  # longest. It reads the history of each crate on a chain for its edits in a
+  # week, which the whole checkout holds.
+  #
+  # Each lane's median job time over the newest ten runs of landing-checks.yml that hold
+  # it, against its budget, as the job summary and on one issue while any
+  # lane is over (`mise run ci:lane-budget`). Alerting, never a gate:
+  # nothing waits on this job, and the lane budget fails no run. The nightly's
+  # sum is reported past 900 s, its budget, and a night past 1200 s, its
+  # ceiling, is a row of the same issue (#3013, #6704). A budget changes
+  # with its lane's shape, in the same commit; the name is the job's display
+  # name. Each budget is about 1.5 times the lane's median once build state
+  # was pruned, the toolchain installed once and Clippy given its own state.
+  # This job's share of the nightly's 900 s is 113 s, its 103 s in nightly
+  # 40667395217 scaled by 900/818 (#3013). The lane budget reads the runs'
+  # jobs eight at a time (#3290), and a read GitHub answers with a server
+  # error is read again (#3492).
+  #
+  # A merge group on `landing` skips the test lanes, so only the
+  # `integration` cycle holds them (#2547). The enforcing shards, their join,
+  # the plain lane and the two documentation lanes are `--integration`
+  # budgets, held over the cycle's dispatches. A cycle carries the changes of
+  # many landings, so each shard keeps its deep budget, and each other lane
+  # its one budget. A push to `main` builds every package, and no gate waits
+  # on it. So the report tables the same lanes over the pushes to `main` as
+  # information, with no budget.
+  #
+  # A lane of the landing window is held by the cone a landing touched: deep
+  # when it changed a file under crates/kernel-* or crates/core-*,
+  # Cargo.lock, rust-toolchain.toml or .cargo/, surface otherwise. A deep
+  # landing rebuilds the whole enforcing graph and takes longer than a
+  # surface one, so one budget is wrong on both sides; each class is held to
+  # its own.
+  # The deep budget is the surface one plus the measured cost of the extra
+  # units a deep landing rebuilds. The enforcing shards' budgets scale the
+  # lane's by each shard's share of the arm64 probe's deep rebuild and suite
+  # (#702): checker 0.41, rest 0.26, and the surface shard's 0.51 split as
+  # engine 0.37 and faces 0.32, each its setup, two thirds of the one
+  # shard's build and its own tests' share (#1177); a join is setup,
+  # transfer and the witness listing. The dispatcher shard took the engine
+  # shard's longest chain and three quarters of its tests (#2148), so it
+  # holds the engine's budgets and the engine keeps them as a bound; the
+  # lowering shard took the checker shard's longest unit, the lowering's
+  # library tests, so it holds the checker's in the same way. The
+  # steps it repeats, about 175 s: setup, restore, the parser's tests' build
+  # and the 77 s sweep, until ten hosted runs give it a median; the plain
+  # lane's stands. The macOS lanes run in the daily run and on a dispatch,
+  # which this job does not sample. The mutants lanes are off (#3695), so
+  # their budgets went with them: the change report's 300 s and the daily
+  # crate's 840 s held over `--daily`, its job's own limit. Both come back
+  # with the lanes. This workflow's own all-features lane is held over its
+  # scheduled runs (`--nightly`): about 1.5 times the 194 to 216 s each
+  # third of the all-features crates took on a dispatch. Its chain's x86-64
+  # job is held in the same way: about 1.5 times the 270 s of its job in
+  # nightly 43345701385 (#6893). The hosted budget
+  # is this workflow's summed time of its jobs on hosted runners per run
+  # (`--summed`): 15 minutes for its median, 20 the ceiling no night passes.
+  # A job on a runner of our own counts in no hosted sum (#6868). The table
+  # times every active workflow and reads the cache's usage. A cache past
+  # 9 GiB keeps the issue open: GitHub evicts past 10 GiB, and the night then
+  # finds no saved state (#6951). A class of saved state that the night waits
+  # for is a `--waiting` argument and a line of the same issue (#6947).
+  reports:
+    name: report and file the night's findings
+    needs: [ci-image-ref, freshness, sweeps, chain, chain-riscv64, wasm]
+    if: ${{ !cancelled() && needs.ci-image-ref.result == 'success' }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: write
+      actions: read
+      issues: write
+      pull-requests: read
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      CI_FETCH_DEPTH: "0"
+      GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      RECOVERY_FILE: ${{ github.event_name == 'schedule' && 'file' || '' }}
+      RECOVERY_REPORT: recovery.out/report.txt
+      REPORT_FILE: ${{ github.event_name == 'schedule' && 'file' || '' }}
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - *setup-rust
+      - name: download the recovery report
+        if: &recovered ${{ !cancelled() && needs.sweeps.result != 'skipped' }}
+        uses: &download-artifact actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: recovery-report
+          path: recovery.out
+      - name: file the recovery sweep's causes
+        if: *recovered
+        run: mise run ci:recovery-file
+      # A sweep that reached its 240 s limit, filed on its own collector as
+      # the merge queue files a slow test (`mise run ci:slow-file`, #3975):
+      # a timeout obligates triage and never turns the night red. A dispatch
+      # files too, so the night it measures is on the board.
+      - name: download the sweeps' test report
+        id: swept
+        if: ${{ !cancelled() && needs.sweeps.result != 'skipped' }}
+        continue-on-error: true
+        uses: *download-artifact
+        with:
+          name: junit-sweeps
+          path: target/test-timing/${{ github.run_id }}/junit-sweeps
+      - name: file the sweeps that reached their limit
+        if: ${{ !cancelled() && steps.swept.outcome == 'success' }}
+        env:
+          SLOW_BUDGET: "240"
+          SLOW_FILE: "true"
+          SLOW_REASON: "in the nightly sweeps, its limit. nextest ends such a sweep and passes it, so a timeout never turns the night red (#3975)."
+          SLOW_RUN_ID: ${{ github.run_id }}
+          SLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: mise run ci:slow-file
+      # The open issues and pull requests, read once for the reports that read
+      # them (#5681): 8 pages of 719 on 2026-11-06. Each such report reads
+      # the file `OPEN_ISSUES` names, and it runs only when the list is read.
+      - name: list the open issues for the reports
+        id: open-issues
+        if: &not-cancelled ${{ !cancelled() }}
+        run: mise run issues:open "$RUNNER_TEMP/open-issues.json"
+      - name: report the dependencies
+        if: &listed ${{ !cancelled() && steps.open-issues.outcome == 'success' }}
+        env: &open-issues
+          OPEN_ISSUES: ${{ runner.temp }}/open-issues.json
+        run: mise run report:deps
+      # The advisories of the crates of the lock file. `cargo-deny` reads its
+      # database from the network, so the night reads it, and no landing
+      # waits on it.
+      # - see: #7743, `mise run report:advisories`
+      - name: report the advisories
+        if: *not-cancelled
+        run: mise run report:advisories
+      - name: report the obligations answered
+        if: *not-cancelled
+        run: mise run report:obligations
+      - name: report the dead weight
+        if: *not-cancelled
+        run: mise run report:dead-weight
+      - name: locate the prose tools
+        id: prose-tools
+        if: *not-cancelled
+        shell: bash
+        run: |
+          printf 'installs=%s/installs\n' "${MISE_DATA_DIR:-$HOME/.local/share/mise}" >> "$GITHUB_OUTPUT"
+          printf 'pins=%s\n' "$(sed -n '/^\["check:prose"\]/,/^usage/p' .config/mise/tasks/mise-tasks-check.toml | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      - name: restore the prose tools
+        if: *not-cancelled
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.prose-tools.outputs.installs }}/python
+            ${{ steps.prose-tools.outputs.installs }}/github-astral-sh-uv
+            ${{ steps.prose-tools.outputs.installs }}/pipx-spacy
+          key: prose-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.prose-tools.outputs.pins }}
+      - name: report the prose of the open bodies
+        if: *listed
+        env: *open-issues
+        run: mise run report:prose
+      - name: list the threads outside the pool
+        if: *not-cancelled
+        run: mise run --quiet report:threads >> "$GITHUB_STEP_SUMMARY"
+      - name: count the declared allocations
+        if: *not-cancelled
+        run: mise run --quiet report:allocations >> "$GITHUB_STEP_SUMMARY"
+      # The chain of each head (#6893): each chain job's build log read into
+      # its row, beside the last night's row, a growth past 10 % filed on
+      # the build's chain collector (`mise run report:chain`). The rows go
+      # on as the artifact `chain`, the next night's last rows. A night with
+      # no build log prints the last night's rows. Each log downloads by its
+      # name into its own directory: a pattern that matches one artifact
+      # extracts it with no directory of its own.
+      - name: download the x86-64 chain's build log
+        if: ${{ !cancelled() && needs.chain.result == 'success' }}
+        continue-on-error: true
+        uses: *download-artifact
+        with:
+          name: chain-log-x86-64
+          path: ${{ runner.temp }}/chain/chain-log-x86-64
+      - name: download the riscv64 chain's build log
+        if: ${{ !cancelled() && needs.chain-riscv64.result == 'success' }}
+        continue-on-error: true
+        uses: *download-artifact
+        with:
+          name: chain-log-riscv64
+          path: ${{ runner.temp }}/chain/chain-log-riscv64
+      - name: report the chain of each head
+        if: *not-cancelled
+        run: mise run --quiet report:chain "$RUNNER_TEMP/chain" >> "$GITHUB_STEP_SUMMARY"
+      - name: keep the night's chain rows
+        if: *not-cancelled
+        uses: *upload-artifact
+        with:
+          name: chain
+          path: ${{ runner.temp }}/chain/rows
+          retention-days: 30
+          if-no-files-found: ignore
+      # The wasm driver's night (#7402): one collector issue while the build
+      # or the comparison fails, closed on the first night that passes (`mise
+      # run ci:wasm-file`). A night that builds no wasm writes nothing.
+      - name: keep the wasm driver's issue
+        if: ${{ !cancelled() && (needs.wasm.result == 'success' || needs.wasm.result == 'failure') }}
+        env:
+          WASM_RESULT: ${{ needs.wasm.result }}
+        run: mise run ci:wasm-file
+      - name: compare each lane with its budget
+        if: *not-cancelled
+        shell: bash
+        env:
+          WAITING: ${{ needs.freshness.outputs.waiting }}
+        run: |
+          read -ra classes <<< "$WAITING"
+          waiting=()
+          for class in "${classes[@]}"; do waiting+=(--waiting "$class"); done
+          mise run ci:lane-budget --issue "CI lane budgets" \
+            --integration "test enforcing targets (linux, dispatcher)=250" \
+            --integration "test enforcing targets (linux, engine)=250" \
+            --integration "test enforcing targets (linux, faces)=215" \
+            --integration "test enforcing targets (linux, checker)=285" \
+            --integration "test enforcing targets (linux, lowering)=285" \
+            --integration "test enforcing targets (linux, rest)=200" \
+            --integration "join the enforcing shards (linux)=120" \
+            --integration "test plain-only targets (linux)=160" \
+            --budget "sweep the recovery records (linux)=260" \
+            --integration "document the workspace (linux)=150" \
+            --integration "test the documentation examples (linux)=200" \
+            --budget "check quenchant compiler policy=180" \
+            --budget "check Clippy wall=150" \
+            --budget "re-verify obligated specifications (linux)=180" \
+            --nightly "test every crate with every feature on=300" \
+            --nightly "build the driver cold and keep its chain (x86-64)=400" \
+            --summed "nightly-sweeps=900/1200" \
+            "${waiting[@]}" \
+            >> "$GITHUB_STEP_SUMMARY"
