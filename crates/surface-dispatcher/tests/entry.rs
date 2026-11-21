@@ -497,6 +497,80 @@ fn a_note_names_the_refused_declaration_it_rests_on()
     );
 }
 
+/// A declaration over a datatype that is refused at its rule is a note that
+/// names the datatype, and the rule is the one error. A declaration over a
+/// datatype that is refused as its expectation states keeps its error: that
+/// datatype settles, so no refusal of the source explains the declaration.
+///
+/// - see: #8342
+#[test]
+fn a_declaration_over_a_refused_datatype_is_a_note_8342()
+{
+    let grammar = built_in().expect("the grammar builds");
+    let text = SourceText::from(include_str!(
+        "entry/fixtures/a-declaration-over-a-refused-datatype-is-a-note-8342.gandr"
+    ));
+    let refused = step(
+        Path::new("refused.gandr"),
+        SourceRoot::Strict,
+        text,
+        Standing::Unsettled,
+        &grammar,
+    );
+    let printed: Vec<_> = entries::<Evaluator>(&refused, Verb::Check(Goals::Gated))
+        .map(|diagnostic| {
+            (
+                diagnostic.severity,
+                diagnostic.message.text,
+                diagnostic.note,
+                diagnostic.help,
+            )
+        })
+        .collect();
+    let [
+        (Severity::Error, ref rule, ..),
+        (Severity::Note, ref low, Maybe::Present(ref low_note), Maybe::Absent(_)),
+        (Severity::Note, ref flip, Maybe::Present(ref flip_note), Maybe::Absent(_)),
+    ] = *printed.as_slice()
+    else {
+        panic!("one error, then two notes with no help: {printed:?}");
+    };
+    assert!(
+        rule.starts_with("this rule may rewrite forever"),
+        "the rule is the one error: {rule}"
+    );
+    assert_eq!(
+        (low.as_str(), flip.as_str()),
+        ("this is not a datatype", "this is not a datatype"),
+        "each declaration over the block keeps the message of its refusal"
+    );
+    assert_eq!(
+        low_note,
+        "`low` is expected to check, and the refusal of `Bit` leaves it unsettled"
+    );
+    assert_eq!(
+        flip_note,
+        "`flip` is expected to check, and the refusal of `Bit` leaves it unsettled"
+    );
+
+    let stated = step(
+        Path::new("stated.gandr"),
+        SourceRoot::Fixture,
+        SourceText::from(include_str!(
+            "entry/fixtures/a-declaration-over-a-datatype-refused-as-stated-keeps-its-error-8342.gandr"
+        )),
+        Standing::Unsettled,
+        &grammar,
+    );
+    assert_eq!(
+        entries::<Evaluator>(&stated, Verb::Check(Goals::Gated))
+            .map(|diagnostic| (diagnostic.severity, diagnostic.message.text))
+            .collect::<Vec<_>>(),
+        [(Severity::Error, String::from("this is not a datatype"))],
+        "the datatype settles, so the declaration over it is the one error"
+    );
+}
+
 #[test]
 fn a_rules_refusal_reads_its_parting_pair_and_no_other_refusal_does()
 {

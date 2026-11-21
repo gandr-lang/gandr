@@ -612,11 +612,21 @@ fn lead(
 /// a source earns and those an earlier error causes, which it does not
 /// report.
 ///
+/// Three refusals of the checker say that the declaration a name stands for
+/// is not what its use needs, and each follows from that declaration's own
+/// refusal: `UnknownConstant` at a term, and `NotADataType` and
+/// `NotAnAbstractType` at the head of a type. Every other refusal that
+/// carries a declaration's index reads what that declaration admitted —
+/// `AtomTransport`, `BridgeAtSealedType`, `BuiltinRepeated` and
+/// `CapabilityUngranted` — or faults the order the source admits in —
+/// `AdmissionOrder` and `CrossBlockReference` — and is its declaration's own.
+///
 /// # Specification
 /// - requires: `admitted` is the source's declarations, by admission position.
-/// - ensures: the declaration of `admitted` whose constant an `UnknownConstant`
-///   refusal names, when it is unsettled; absent for every other refusal and
-///   for a settled or unadmitted constant.
+/// - ensures: the declaration of `admitted` whose constant an
+///   `UnknownConstant`, a `NotADataType` or a `NotAnAbstractType` refusal
+///   names, when it is unsettled; absent for every other refusal and for a
+///   settled or unadmitted constant.
 /// - provides: the cascade cut across declarations.
 /// - fails: never.
 /// - panics: none.
@@ -627,9 +637,12 @@ fn lead(
 /// # Adequacy
 /// - hypothesis: L3 — a declaration calling one the lowering refused is a note
 ///   naming it, not another refused before it, and one calling a declaration
-///   that checks is not.
+///   that checks is not; a declaration over a datatype refused at its rule is a
+///   note naming the datatype, and one over a datatype refused as its
+///   expectation states keeps its error.
 /// - witness: `tests::entry::a_declaration_naming_a_refused_one_is_a_note`
 /// - witness: `tests::entry::a_note_names_the_refused_declaration_it_rests_on`
+/// - witness: `tests::entry::a_declaration_over_a_refused_datatype_is_a_note_8342`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(found) => found.settlement() == Settlement::Unsettled,
     Maybe::Absent(_) => true,
@@ -639,7 +652,11 @@ fn upstream<'step>(
     admitted: &'step [DeclarationReport<'step>],
 ) -> Maybe<&'step DeclarationReport<'step>, upstream::Absent>
 {
-    let Refusal::Checking(CheckRefusalOf::UnknownConstant { constant, .. }) = refusal
+    let Refusal::Checking(
+        CheckRefusalOf::UnknownConstant { constant, .. }
+        | CheckRefusalOf::NotADataType(constant)
+        | CheckRefusalOf::NotAnAbstractType(constant),
+    ) = refusal
     else {
         return Maybe::Absent(upstream::Absent::Own);
     };

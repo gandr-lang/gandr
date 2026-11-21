@@ -417,6 +417,27 @@ fn an_unimplemented_refusal_closes_with_its_tracking_issue()
     expect_file!["golden/unimplemented.txt"].assert_eq(&plain(&diagnostic, Verbosity::User));
 }
 
+/// A declaration over a datatype that is refused at its rule renders as a
+/// note that names the datatype, with no help.
+///
+/// - see: #8342
+#[test]
+fn a_declaration_over_a_refused_datatype_renders_as_a_note_8342()
+{
+    let path = Path::new("refused-datatype-8342.gandr");
+    let step = unsettled(
+        path,
+        SourceRoot::Strict,
+        SourceText::from(include_str!("render/fixtures/refused-datatype-8342.gandr")),
+    );
+    let printed: Vec<Diagnostic> = entries::<Evaluator>(&step, Verb::Check(Goals::Gated)).collect();
+    let [_, ref low, _] = *printed.as_slice()
+    else {
+        panic!("the rule, then the two declarations over the block: {printed:?}");
+    };
+    expect_file!["golden/refused-datatype-8342.txt"].assert_eq(&plain(low, Verbosity::User));
+}
+
 #[test]
 fn each_causal_shape_renders_as_its_golden()
 {
