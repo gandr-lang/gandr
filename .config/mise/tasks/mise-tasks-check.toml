@@ -4479,6 +4479,7 @@ description = "The parsed sentence rules, against the prose ledger, and over eac
 tools.python = "3.15.2"
 tools."github:astral-sh/uv" = "0.13.6"
 tools."pipx:spacy" = { version = "3.8.18", depends = ["python", "github:astral-sh/uv"], uvx_args = "--python 3.15.2 --with en_core_web_sm@https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85" }
+tools.jq = "1.8.1"
 usage = '''
 flag "--write" help="rewrite corpus/prose.ledger from the findings instead of comparing"
 flag "--prune" help="after the run, remove each kept parse that the head does not hold, and the cache's directories of another script or model"
