@@ -452,7 +452,6 @@ digraph crates {
   "surface-lowering-model" -> "core-term";
   "surface-lowering-model" -> "kernel-strata";
   "surface-lowering-model" -> "kernel-term";
-  "surface-lowering-model" -> "surface-grammar";
   "surface-lowering-model" -> "surface-lowering-base";
   "surface-lowering-model" -> "surface-syntax";
   "surface-lowering-model" -> "theory-levitation";
