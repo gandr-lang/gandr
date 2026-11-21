@@ -1,0 +1,3 @@
+{{"jsonrpc":"2.0","id":9,"method":"textDocument/signatureHelp","params":{{
+                    "textDocument":{{"uri":"file:///tmp/called.gandr"}},
+                    "position":{{"line":{line},"character":{character}}}}}}}
