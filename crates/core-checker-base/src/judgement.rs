@@ -1425,7 +1425,7 @@ enum Frame
     /// types, the result-stack suffix from `base`.
     NativeTuple
     {
-        /// The tuple, whose fields the product types (#8161).
+        /// The tuple, whose fields the product types.
         term: ValueId,
         /// The result-stack suffix owned by this tuple.
         base: usize,
@@ -6234,7 +6234,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     }
 
     /// Log the type of each payload field of the run or the dialogue `term`,
-    /// by the premise that checks that payload (#8161).
+    /// by the premise that checks that payload.
     ///
     /// # Specification
     /// - requires: `premises` pairs payloads of `term` with their types.

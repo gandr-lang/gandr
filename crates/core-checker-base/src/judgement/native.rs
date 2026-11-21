@@ -825,7 +825,7 @@ impl Machine<'_, '_>
             });
         }
         // Each field checked at the type the record type wants there gives
-        // that type (#8161). The goals queued above stand last field first.
+        // that type. The goals queued above stand last field first.
         let mut index = 0_usize;
         for waiting in self.frames.get(depth ..).unwrap_or_default().iter().rev() {
             if let Frame::NativeNext(Goal::Value { direction, .. }) = waiting.frame {

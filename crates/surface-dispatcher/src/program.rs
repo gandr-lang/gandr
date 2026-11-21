@@ -349,7 +349,7 @@ impl<'source> Program<'source>
     /// focused and sealed, and only the later ones are focused and spelled.
     /// Each later accepted body focuses each bind of `writers` apart, its
     /// binder marked independent, and reads the type of each binder and each
-    /// field that `verdicts` annotates (#8161).
+    /// field that `verdicts` annotates.
     ///
     /// # Specification
     /// - requires: as [`Self::new`]; `focused` is [`Self::into_focused`] of the
@@ -687,7 +687,7 @@ impl<'source> Program<'source>
     }
 
     /// The binders and fields that focusing gave the unknown type, by cause,
-    /// over the declarations that this program focuses (#8161).
+    /// over the declarations that this program focuses.
     ///
     /// # Specification
     /// trivial.

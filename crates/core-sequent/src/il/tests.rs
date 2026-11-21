@@ -1081,7 +1081,7 @@ fn an_annotation_counts_in_its_nodes_support()
 }
 
 /// Two binders that no checker typed hold the arena's one unknown type, and a
-/// rollback to the arena's first watermark keeps that node (#8161).
+/// rollback to the arena's first watermark keeps that node.
 #[test]
 fn the_unknown_type_is_one_node_past_a_rollback_8161()
 {
@@ -1128,7 +1128,7 @@ fn the_unknown_type_is_one_node_past_a_rollback_8161()
 
 /// A constructor holds one type for each producer field, and each type
 /// resolves in the arena's annotations; minting refuses another count or a
-/// type the annotations do not hold, and leaves the arena at its mark (#8161).
+/// type the annotations do not hold, and leaves the arena at its mark.
 #[test]
 fn a_constructor_holds_one_resolved_type_for_each_field_8161()
 {

@@ -3,7 +3,7 @@
 //!
 //! Beside it, the record holds the value type that each judgement gives a
 //! binder of a bind and a field of a structural former, which focusing writes
-//! into the IL (#8161).
+//! into the IL.
 //!
 //! The context records, and the judgement's typed run reads the record back
 //! (`judgement::elaboration`). The record's types live here, below both.
@@ -65,7 +65,7 @@ pub struct Kept
     pub copies: Vec<Carried>,
 }
 
-/// A place of the IL whose value type the judgement gives (#8161).
+/// A place of the IL whose value type the judgement gives.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Site
 {

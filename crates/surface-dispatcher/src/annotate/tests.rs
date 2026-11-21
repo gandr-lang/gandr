@@ -26,7 +26,7 @@ use crate::compose::checking_context;
 /// head at the element type, and the tail at the list type. The binder of
 /// `let m = n + n` holds `Integer`. So does the binder of `let k = same n`:
 /// the judgement gives its type with the omitted implicit of `same`, and the
-/// run reads that type with the implicit's solution (#8161).
+/// run reads that type with the implicit's solution.
 #[test]
 fn the_join_reads_each_field_and_binder_at_its_occurrence_8161()
 {

@@ -606,7 +606,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
     }
 
     /// This session, with each path type at a looped point entering as the
-    /// type of its words that `signatures` declare (#8161).
+    /// type of its words that `signatures` declare.
     ///
     /// The checker identifies the two types by conversion
     /// ([`crate::identified_words`]), and a word is the value of either. A

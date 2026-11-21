@@ -952,7 +952,7 @@ fn result_stacks_enforce_singletons_and_lifo()
     assert_eq!(Err(FocusRefusal::TranslationInvariant), run.pop_command());
 }
 
-/// #8161: a key that two inserts give two contents holds a conflict, and
+/// A key that two inserts give two contents holds a conflict, and
 /// focusing reads it as its own cause. A key that one content takes at two ids
 /// keeps its type, and a key with no insert is missed.
 #[test]
@@ -997,7 +997,7 @@ fn a_key_that_takes_two_types_records_a_conflict_8161()
     );
 }
 
-/// #8161: a field of a declared constructor takes the type that its family's
+/// A field of a declared constructor takes the type that its family's
 /// signature states, whatever the typings give its node. A closed declared
 /// type imports as it stands. A declared type that names a parameter holds the
 /// unknown type, counted as a parameter and not as open.

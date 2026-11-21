@@ -224,8 +224,7 @@ pub struct HandledContent
     pub level: Level,
 }
 
-/// A place of the IL whose value type a checkpoint keeps, its node placed
-/// (#8161).
+/// A place of the IL whose value type a checkpoint keeps, its node placed.
 ///
 /// # Specification
 /// trivial.
@@ -238,8 +237,7 @@ pub enum SiteContent
     Field(Place, FieldPosition),
 }
 
-/// The value type that a checkpoint keeps of one site of the IL, placed
-/// (#8161).
+/// The value type that a checkpoint keeps of one site of the IL, placed.
 ///
 /// # Specification
 /// trivial.

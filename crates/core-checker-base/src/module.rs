@@ -681,7 +681,7 @@ struct Decision
     typings: Maybe<Typings, typed::Absent>,
     /// The value type that the body's runs gave each binder of a bind and
     /// each field of a structural former, read with the solutions of the
-    /// body's implicits (#8161).
+    /// body's implicits.
     annotations: Vec<Annotation>,
     /// What elaborating the body did, when it held a computation written
     /// where a value is read and the first run accepted it.
@@ -1115,7 +1115,7 @@ fn decide(
             restating = context.take_restating();
             residue = context.deferrals_mut().take();
             // The body's runs gave each binder and each field its type, read
-            // with the solutions of the implicits as a typing is (#8161).
+            // with the solutions of the implicits as a typing is.
             let mut read = signing;
             read.extend(solutions.iter().map(|(&hole, &solved)| (hole, solved)));
             annotations = context.take_annotations();
@@ -1804,7 +1804,7 @@ fn solved_type(
 }
 
 /// Read the type of each of `annotations` with every solution in
-/// `solutions`, as [`solved_type`] reads a typing's (#8161).
+/// `solutions`, as [`solved_type`] reads a typing's.
 ///
 /// # Specification
 /// - requires: as [`fill`].
@@ -2204,7 +2204,7 @@ pub struct Taken
     /// What the declaration waits on, when its verdict is suspended.
     suspension: Maybe<Suspension, waits::Absent>,
     /// The value type that the judgement gave each binder and each field of
-    /// the body, seated in the run's arena (#8161).
+    /// the body, seated in the run's arena.
     annotations: Vec<Annotation>,
 }
 
@@ -2319,7 +2319,7 @@ pub struct ModuleRun
     /// What elaborating each body with a nested computation did, by position.
     nested_elaborations: BTreeMap<ConstantIndex, NestedElaboration>,
     /// The value type that each declaration's judgement gave each binder and
-    /// each field, in the order judged (#8161).
+    /// each field, in the order judged.
     annotations: Vec<Annotation>,
     /// What each suspended declaration waits on, by position.
     suspensions: BTreeMap<ConstantIndex, Suspension>,

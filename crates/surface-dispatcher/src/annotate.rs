@@ -1,4 +1,4 @@
-//! The value types that focusing writes into the IL (#8161): the type of each
+//! The value types that focusing writes into the IL: the type of each
 //! bind's binder and of each field of a structural former, joined from the
 //! annotations that the checker's judgement gave, beside the signature of each
 //! declared family.
@@ -10,8 +10,8 @@
 //! a module in one pass.
 //!
 //! The table keys a binder's type by the head of its bind. The second run of a
-//! body judges the body that the elaboration rebuilds (#4466), so a bind that
-//! the elaboration makes has its own annotation.
+//! body judges the body that the elaboration rebuilds, so a bind that the
+//! elaboration makes has its own annotation.
 //!
 //! A field of a declared constructor takes no type from the annotations. Its
 //! layout is a fact of its declaration, so focusing reads the type that the

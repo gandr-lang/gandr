@@ -1281,7 +1281,7 @@ fn checked_at(
     check_annotations(arena, root)
 }
 
-/// #8161: a field's type meets the type of the `μ̃` that binds its variable,
+/// A field's type meets the type of the `μ̃` that binds its variable,
 /// by id. One id verifies the field and the binder, two ids are refused at
 /// the binder, and the unknown type verifies neither.
 #[test]

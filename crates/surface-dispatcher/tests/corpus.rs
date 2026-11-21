@@ -1882,7 +1882,7 @@ mod sweeps
         size: SampleSize(64),
     };
 
-    /// #8161: over each source's program, focusing counts each binder and each
+    /// Over each source's program, focusing counts each binder and each
     /// field that holds the unknown type by exactly one cause. The counts sum
     /// to the positions of the program's arena at the unknown type, and the
     /// check of the annotations accepts each definition. A composition with

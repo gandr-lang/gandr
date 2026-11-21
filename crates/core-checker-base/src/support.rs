@@ -445,7 +445,7 @@ pub struct Tabled
     /// The function extensionalities the judgement decided, by node.
     funexts: alloc::collections::BTreeMap<gandr_core_term::ValueId, crate::funext::Funext>,
     /// The value type that the judgement gave each binder and each field of
-    /// the body, which a taken item seats as it seats the entries (#8161).
+    /// the body, which a taken item seats as it seats the entries.
     annotations: alloc::vec::Vec<crate::record::Annotation>,
     /// Whether the judgement added an entry to another table.
     others: OtherTables,
@@ -504,7 +504,7 @@ impl Tabled
     }
 
     /// The value type that the judgement gave each binder and each field of
-    /// the body, in the order given (#8161).
+    /// the body, in the order given.
     ///
     /// # Specification
     /// trivial.

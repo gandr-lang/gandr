@@ -532,9 +532,9 @@ pub struct CheckingContext<'arena>
     /// order finished, when one is recording.
     typings: Option<crate::record::Kept>,
     /// The value type that the declaration under way gives each binder of a
-    /// bind and each field of a structural former, in the order given
-    /// (#8161). The declaration's decision takes the log when its judgement
-    /// ends, so a checkpoint copies no entry.
+    /// bind and each field of a structural former, in the order given. The
+    /// declaration's decision takes the log when its judgement ends, so a
+    /// checkpoint copies no entry.
     annotations: Vec<crate::record::Annotation>,
     /// The types whose formations a recording keeps, and which of them it
     /// has kept.
@@ -1697,8 +1697,7 @@ impl<'arena> CheckingContext<'arena>
     }
 
     /// Log `ty` as the value type of `site`, read under the binders open now,
-    /// and read back as written as [`Self::keep_typing`] reads a typing
-    /// (#8161).
+    /// and read back as written as [`Self::keep_typing`] reads a typing.
     ///
     /// # Specification
     /// - requires: `ty` is read under the intuitionistic binders open now.

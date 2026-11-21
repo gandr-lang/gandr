@@ -282,8 +282,7 @@ pub struct ModuleReport
     /// value is read did, by position.
     nested_elaborations: BTreeMap<ConstantIndex, NestedElaboration>,
     /// The value type that each declaration's judgement gave each binder of a
-    /// bind and each field of a structural former, in the order given
-    /// (#8161).
+    /// bind and each field of a structural former, in the order given.
     annotations: Vec<crate::record::Annotation>,
     /// The sealing sites the run minted atoms for, in minting order.
     seal_table: SealTable,
@@ -854,8 +853,8 @@ impl ModuleReport
 
     /// The value type that each declaration's judgement gave each binder of a
     /// bind and each field of a structural former, in the order given, each
-    /// read with the solutions of its declaration's implicits (#8161). A
-    /// position that two judgements gave keeps an entry for each.
+    /// read with the solutions of its declaration's implicits. A position that
+    /// two judgements gave keeps an entry for each.
     ///
     /// # Specification
     /// trivial.

@@ -492,7 +492,7 @@ fn a_taken_funext_keeps_its_steps_7463()
     );
 }
 
-/// A taken declaration keeps the annotations that its judgement gave (#8161).
+/// A taken declaration keeps the annotations that its judgement gave.
 /// The take seats the type of each injection's field and of the binder of `m`
 /// at the places that an edit shifts. The program of the taking session then
 /// focuses each binder and field at the type of a fresh session's. A take that
