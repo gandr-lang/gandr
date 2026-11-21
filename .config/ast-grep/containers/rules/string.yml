@@ -1,0 +1,58 @@
+# A written `String` takes the small string over the global allocator.
+# `&str` does not change. A `format!` and a `to_string` stay. Each builds a
+# `String`, and the lint refuses that call.
+id: string-is-small-string
+language: Rust
+severity: hint
+message: the string of the kernel's data, its allocator named at the site
+rule:
+  all:
+    - kind: type_identifier
+      regex: ^String$
+    - not:
+        inside:
+          stopBy: end
+          has:
+            kind: attribute_item
+            regex: std_container
+fix: SmallString<Global>
+---
+# A path to `String` takes the small string over the global allocator.
+id: string-path-is-small-string
+language: Rust
+severity: hint
+message: the string of the kernel's data, its allocator named at the site
+rule:
+  kind: scoped_identifier
+  regex: ^(?:(?:alloc|std)::string::)?String$
+  inside:
+    kind: generic_type
+    stopBy: neighbor
+fix: SmallString<Global>
+---
+# The empty string takes the empty small string in the global allocator.
+id: string-new-is-small-string-new
+language: Rust
+severity: hint
+message: the string of the kernel's data, its allocator named at the site
+rule:
+  pattern: $PATH::new()
+constraints:
+  PATH:
+    regex: ^(?:(?:alloc|std)::string::)?String$
+fix: SmallString::new_in(Global)
+---
+# A string built from a borrowed text takes the small string of that text.
+# The call answers a refusal when the allocator refuses the block.
+id: string-from-str-is-small-string
+language: Rust
+severity: hint
+message: the string of the kernel's data, its allocator named at the site
+rule:
+  pattern: $PATH::from($TEXT)
+constraints:
+  PATH:
+    regex: ^(?:(?:alloc|std)::string::)?String$
+  TEXT:
+    regex: ^(".*"|[A-Za-z_][A-Za-z0-9_]*)$
+fix: SmallString::try_from($TEXT).expect("the allocator holds the text")

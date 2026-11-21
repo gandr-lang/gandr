@@ -1,0 +1,2 @@
+/// `lazy_product_type`: a lazy product type.
+def choice : +U (-F Unit & -F Integer) = &{.0 => *{}, .1 => 1};

@@ -1,0 +1,3 @@
+/// `character`: a character, one scalar between single quotes, at `Char`.
+@[runs("'a'")]
+def letter() -> Char = 'a';
