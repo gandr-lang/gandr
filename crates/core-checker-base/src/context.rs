@@ -1703,7 +1703,11 @@ impl<'arena> CheckingContext<'arena>
     /// # Specification
     /// - requires: `ty` is read under the intuitionistic binders open now.
     /// - ensures: the log grows by one entry: `site` and `ty` read back as
-    ///   written, at the depth less the copies open below it.
+    ///   written, at the depth less the copies open below it. A path type at a
+    ///   looped point stands as the type of its words ([`Self::words`]), which
+    ///   a letter states for the rest of its word. The log is unchanged when
+    ///   `ty` is the unknown type: it tells focusing nothing, and a later run
+    ///   of the body can give the site its type.
     /// - panics: none.
     /// - executable: none — the log has no observer short of the decision that
     ///   takes it, which the witness reads.
@@ -1714,11 +1718,16 @@ impl<'arena> CheckingContext<'arena>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a bind and a cons cell give the type of the binder
-    ///   and of each field at the types that their checks give.
+    ///   and of each field at the types that their checks give. L2 — over
+    ///   `corpus/model`, the bind of the rest of a word holds the type that its
+    ///   letter states, so the check of the annotations verifies it.
     /// - witness: `gandr-surface-dispatcher::annotate::tests::the_join_reads_each_field_and_binder_at_its_occurrence_8161`
+    /// - witness: `gandr-surface-dispatcher::tests::corpus::sweeps::focusing_counts_each_unknown_position_by_one_cause_8161`
     #[spec(
         captures: before = self.annotations.len(),
-        ensures: self.annotations.len() == before.saturating_add(1),
+        ensures: self.annotations.len() == before.saturating_add(1)
+            || (self.annotations.len() == before
+                && matches!(self.arena.value_type(ty), Some(&gandr_core_term::ValueType::Unknown))),
     )]
     pub(crate) fn annotate(
         &mut self,
@@ -1726,6 +1735,26 @@ impl<'arena> CheckingContext<'arena>
         ty: ValueTypeId,
     )
     {
+        let ty = match self.arena.value_type(ty) {
+            Some(&gandr_core_term::ValueType::Unknown) => return,
+            // A path at a looped point is the type of its words
+            // ([`Self::words`]), and a letter states the rest of its word at
+            // that type. One reading gives the two one node in the IL.
+            Some(&gandr_core_term::ValueType::Path {
+                carrier,
+                left,
+                right,
+            }) => match gandr_core_term::identified_words(
+                self.arena,
+                &self.data_signatures,
+                carrier,
+                (left, right),
+            ) {
+                Maybe::Present(words) => self.arena.value_type_data(words, Vec::new()),
+                Maybe::Absent(_) => ty,
+            },
+            Some(_) | None => ty,
+        };
         let term = match site {
             crate::record::Site::Binder(at) => TermNode::Computation(at),
             crate::record::Site::Field(at, _) => TermNode::Value(at),

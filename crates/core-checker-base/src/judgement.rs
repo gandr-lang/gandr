@@ -5735,10 +5735,6 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         // Against a thunk whose body no returner converts
                         // with, a call is read by what it synthesises.
                         if self.nested_read(computation, body_type)? == NestedRead::Call {
-                            // The elaboration binds the call ahead (#4466), and
-                            // the bind's binder holds what the call returns.
-                            self.context
-                                .annotate(crate::record::Site::Binder(computation), entered);
                             self.wait(Frame::NestedCall {
                                 at: term,
                                 call: computation,
@@ -5758,8 +5754,6 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         }))
                     },
                     Maybe::Absent(matching::Absent::Mismatched) => {
-                        self.context
-                            .annotate(crate::record::Site::Binder(computation), entered);
                         self.wait(Frame::ValueBridge {
                             at: term,
                             expected: entered,

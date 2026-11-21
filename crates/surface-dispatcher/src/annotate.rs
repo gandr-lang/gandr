@@ -9,11 +9,9 @@
 //! implicits, so each type here is solved. [`typed`] joins the annotations of
 //! a module in one pass.
 //!
-//! The table keys a binder's type by the computation that its bind runs. The
-//! elaboration rebuilds a bind of a nested call over the call itself (#4466),
-//! so a bind that focusing reads is often no node that the checker judged. The
-//! computation it runs is one: a judged bind's head, read through
-//! [`bound_run`], or the call of a judged nested value.
+//! The table keys a binder's type by the head of its bind. The second run of a
+//! body judges the body that the elaboration rebuilds (#4466), so a bind that
+//! the elaboration makes has its own annotation.
 //!
 //! A field of a declared constructor takes no type from the annotations. Its
 //! layout is a fact of its declaration, so focusing reads the type that the
@@ -42,18 +40,16 @@ use gandr_core_term::ValueId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::FieldPosition;
 
-use crate::schedule::bound_run;
-
 /// The table of the binder types and the field types that `annotations` give
 /// over `core`, beside the signatures `declared` of the families in scope.
 ///
 /// # Specification
 /// - requires: `annotations` are a module report's over `core`, and `declared`
 ///   the signatures that the run admits.
-/// - ensures: the computation that each annotated bind runs ([`bound_run`]) is
-///   keyed with its annotations' type, and each annotated field with its
-///   annotations' type; a key that two annotations give two contents holds a
-///   conflict; no other key is held. The table holds `declared` unchanged.
+/// - ensures: the head of each annotated bind is keyed with its annotations'
+///   type, and each annotated field with its annotations' type; a key that two
+///   annotations give two contents holds a conflict; no other key is held. The
+///   table holds `declared` unchanged.
 /// - panics: none.
 /// - executable: none — unwitnessable provenance: the annotations must be the
 ///   run of a module over `core`, and the call holds no judgement to check them
@@ -80,9 +76,7 @@ pub(crate) fn typed(
     let mut fields: BTreeMap<(ValueId, FieldPosition), Recorded> = BTreeMap::new();
     for annotation in annotations {
         match annotation.site {
-            Site::Binder(head) => {
-                Recorded::join(&mut binders, bound_run(core, head), annotation.ty, same);
-            },
+            Site::Binder(head) => Recorded::join(&mut binders, head, annotation.ty, same),
             Site::Field(former, position) => {
                 Recorded::join(&mut fields, (former, position), annotation.ty, same);
             },

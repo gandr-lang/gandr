@@ -1114,18 +1114,18 @@ fn decide(
             relating = context.take_relating();
             restating = context.take_restating();
             residue = context.deferrals_mut().take();
-            following = follows(
-                context,
-                &judged,
-                (residue.pending(), direction),
-                declaration.stages(),
-            );
             // The body's runs gave each binder and each field its type, read
             // with the solutions of the implicits as a typing is (#8161).
             let mut read = signing;
             read.extend(solutions.iter().map(|(&hole, &solved)| (hole, solved)));
             annotations = context.take_annotations();
             solve_annotations(context.arena_mut(), &mut annotations, &read);
+            following = follows(
+                context,
+                &judged,
+                (residue.pending(), direction),
+                declaration.stages(),
+            );
             if let Some(signed) = signed.take() {
                 // The typed run reads the table again, and those reads are no
                 // part of the judgement's support.
@@ -1373,7 +1373,8 @@ fn form_built(
 /// that parameter when the body checks there, so a call reads the result at
 /// its argument's stage.
 ///
-/// Nothing the second judgement relates, owes, decides or mints is kept.
+/// Nothing the second judgement relates, owes, decides, mints or annotates is
+/// kept.
 ///
 /// # Specification
 /// - requires: `judged` is the verdict of the definition under way's body, with
@@ -1448,6 +1449,7 @@ fn follows(
     let _updates = context.take_updates();
     let _relating = context.take_relating();
     let _restating = context.take_restating();
+    let _annotations = context.take_annotations();
     let _residue = context.deferrals_mut().take();
     match (staged, read) {
         (Ok(_), crate::recursion::ResultStage::Staged(position)) => Maybe::Present(position),

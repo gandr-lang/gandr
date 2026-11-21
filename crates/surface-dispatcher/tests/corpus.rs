@@ -1955,7 +1955,9 @@ mod sweeps
             };
             let unknowns = program.unknowns();
             let Ok(Composed::Settled {
-                program: inactive, ..
+                program: inactive,
+                report: unmemoised_report,
+                ..
             }) = compose_on::<Evaluator>(
                 &grammar,
                 CorpusRoot::Fixture,
@@ -1967,7 +1969,14 @@ mod sweeps
             else {
                 panic!("{} settles with the memo off as with it on", path.display());
             };
-            if inactive.unknowns() != unknowns {
+            // A declaration that spends its allowance without the memo gives
+            // no annotation, as `the_goal_memo_settles_the_corpus_alike_5719`
+            // states, so its source has nothing to compare.
+            let spent = unmemoised_report.declarations().iter().any(|declaration| {
+                declaration.outcome()
+                    == Outcome::Refuses(gandr_surface_corpus::RefusalName::BudgetExceeded)
+            });
+            if !spent && inactive.unknowns() != unknowns {
                 unmemoised.push((path.clone(), unknowns, inactive.unknowns()));
             }
             let counted: usize = [

@@ -21,7 +21,6 @@ use crate::compose::ModuleSettings;
 use crate::compose::Opening;
 use crate::compose::adapt;
 use crate::compose::checking_context;
-use crate::schedule::bound_run;
 
 /// The join reads each cell of `#[1, 2] : List Integer` at its own check: the
 /// head at the element type, and the tail at the list type. The binder of
@@ -86,30 +85,31 @@ fn the_join_reads_each_field_and_binder_at_its_occurrence_8161()
         assert!(equal(head, integer), "a cell's head holds the element type");
         assert!(equal(tail, list), "a cell's tail holds the list type");
     }
-    // The judgement can give one binder at more than one node of its call:
-    // the table keys each of them.
+    // Each run of a body gives the binder at the head of its own bind: the
+    // bind as written, and the bind that the elaboration rebuilds over the
+    // call.
     let binders: BTreeSet<_> = report
         .annotations()
         .iter()
         .filter_map(|annotation| match annotation.site {
-            Site::Binder(head) => Some(bound_run(core, head)),
+            Site::Binder(head) => Some(head),
             Site::Field(..) => None,
         })
         .collect();
     assert!(
         binders
             .iter()
-            .any(|&run| matches!(core.computation(run), Some(&Computation::Primitive { .. }))),
-        "the run of `n + n` keys the binder of `m`"
+            .any(|&head| matches!(core.computation(head), Some(&Computation::Primitive { .. }))),
+        "the rebuilt bind of `m` runs `n + n`"
     );
     assert!(
         binders
             .iter()
-            .any(|&run| matches!(core.computation(run), Some(&Computation::Application(..)))),
-        "a run of `same n` keys the binder of `k`"
+            .any(|&head| matches!(core.computation(head), Some(&Computation::Application(..)))),
+        "the rebuilt bind of `k` runs `same n`"
     );
-    for &run in &binders {
-        let Maybe::Present(binder) = table.binder(run)
+    for &head in &binders {
+        let Maybe::Present(binder) = table.binder(head)
         else {
             panic!("each binder holds a type");
         };
