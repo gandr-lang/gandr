@@ -1468,7 +1468,8 @@ primitive_copy_wrapper!(
     struct ByteCount(usize);
 );
 
-/// Owned checkpoint byte stream.
+/// Owned checkpoint byte stream. The stream carries no version, so only the
+/// revision of this crate that writes a stream reads it.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CheckpointBytes

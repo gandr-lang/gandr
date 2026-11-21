@@ -1,0 +1,83 @@
+test: label::layout::tests::a_line_that_ends_in_a_brace_ends_its_statement_8326
+package: gandr-surface-parser
+command: mise run debug:test gandr-surface-parser label::layout::tests::a_line_that_ends_in_a_brace_ends_its_statement_8326 --break label::layout::insert
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-parser/1843c217d0396f5b/out/gandr_surface_parser-1843c217d0396f5b"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-parser/1843c217d0396f5b/out/gandr_surface_parser-1843c217d0396f5b' (x86_64).
+(lldb) settings set -- target.run-args  "label::layout::tests::a_line_that_ends_in_a_brace_ends_its_statement_8326" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex label::layout::insert
+Breakpoint 1: 7 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_parser-1843c217d0396f5b`__rustc::rust_panic + 8 at panicking.rs:883:16, address = 0x000000000073a3e8
+(lldb) run
+
+running 1 test
+test label::layout::tests::a_line_that_ends_in_a_brace_ends_its_statement_8326 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1372391 launched: 'target/debug-trace/debug/build/gandr-surface-parser/1843c217d0396f5b/out/gandr_surface_parser-1843c217d0396f5b' (x86_64)
+Process 1372391 stopped
+* thread #2, name = 'label::layout::', stop reason = breakpoint 1.5
+       frame #0: 0x0000555555891d74 gandr_surface_parser-1843c217d0396f5b`gandr_surface_parser::label::layout::insert(tokens=size=34, planned=size=2) at layout.rs:1285:1
+(lldb) bt 24
+* thread #2, name = 'label::layout::', stop reason = breakpoint 1.5
+   * frame #0: 0x0000555555891d74 gandr_surface_parser-1843c217d0396f5b`gandr_surface_parser::label::layout::insert(tokens=size=34, planned=size=2) at layout.rs:1285:1
+     frame #1: 0x0000555555895170 gandr_surface_parser-1843c217d0396f5b`gandr_surface_parser::label::layout::lay_out(bytes={0:size=46}, tokens=size=34, next=End, moves=size=0) at layout.rs:963:5
+     frame #2: 0x00005555559083a2 gandr_surface_parser-1843c217d0396f5b`gandr_surface_parser::label::label_moving(src={0:"def f() -> A =\n  let *{b, n} = *{true, 2}\n  n\n"}, moves=size=0) at label.rs:813:5
+     frame #3: 0x000055555597b151 gandr_surface_parser-1843c217d0396f5b`gandr_surface_parser::label::layout::tests::marked_moving::<&str>(src="def f() -> A =\n  let *{b, n} = *{true, 2}\n  n\n", moves=size=0) at layout.rs:1341:22
+     frame #4: 0x000055555597b524 gandr_surface_parser-1843c217d0396f5b`gandr_surface_parser::label::layout::tests::marked::<&str>(src="def f() -> A =\n  let *{b, n} = *{true, 2}\n  n\n") at layout.rs:1325:9
+     frame #5: 0x000055555599e842 gandr_surface_parser-1843c217d0396f5b`gandr_surface_parser::label::layout::tests::a_line_that_ends_in_a_brace_ends_its_statement_8326 at layout.rs:1493:13
+     frame #6: 0x00005555559880f7 gandr_surface_parser-1843c217d0396f5b`gandr_surface_parser::label::layout::tests::a_line_that_ends_in_a_brace_ends_its_statement_8326::{closure#0}((null)={}) at layout.rs:1487:61
+     frame #7: 0x0000555555844ce6 gandr_surface_parser-1843c217d0396f5b`<gandr_surface_parser::label::layout::tests::a_line_that_ends_in_a_brace_ends_its_statement_8326::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #8: 0x0000555555a6bbcb gandr_surface_parser-1843c217d0396f5b`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #9: 0x0000555555a6bbc9 gandr_surface_parser-1843c217d0396f5b`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:701:18
+     frame #10: 0x0000555555a78da5 gandr_surface_parser-1843c217d0396f5b`test::run_test_in_process::{closure#0} at lib.rs:724:74 [inlined]
+     frame #11: 0x0000555555a78da0 gandr_surface_parser-1843c217d0396f5b`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #12: 0x0000555555a78da0 gandr_surface_parser-1843c217d0396f5b`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:573:43 [inlined]
+     frame #13: 0x0000555555a78d8b gandr_surface_parser-1843c217d0396f5b`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #14: 0x0000555555a78d8b gandr_surface_parser-1843c217d0396f5b`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #15: 0x0000555555a78d8b gandr_surface_parser-1843c217d0396f5b`test::run_test_in_process at lib.rs:724:27 [inlined]
+     frame #16: 0x0000555555a78d76 gandr_surface_parser-1843c217d0396f5b`test::run_test::{closure#0} at lib.rs:645:43
+     frame #17: 0x0000555555a73794 gandr_surface_parser-1843c217d0396f5b`test::run_test::{closure#1} at lib.rs:675:41 [inlined]
+     frame #18: 0x0000555555a73719 gandr_surface_parser-1843c217d0396f5b`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #19: 0x0000555555a7be32 gandr_surface_parser-1843c217d0396f5b`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #20: 0x0000555555a7be23 gandr_surface_parser-1843c217d0396f5b`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #21: 0x0000555555a7be23 gandr_surface_parser-1843c217d0396f5b`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:573:43 [inlined]
+     frame #22: 0x0000555555a7be13 gandr_surface_parser-1843c217d0396f5b`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #23: 0x0000555555a7be13 gandr_surface_parser-1843c217d0396f5b`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+(lldb) frame variable --depth 3
+(alloc::vec::Vec<gandr_surface_parser::label::Token, alloc::alloc::Global> *) tokens = 0x00007ffff79fe0b8 size=34
+(&[gandr_surface_parser::label::layout::Insertion]) planned = size=2 {
+  [0] = {before:30, token:{lexeme:LayoutSemi, start:41, end:41}}
+  [1] = {before:33, token:{lexeme:LayoutClose, start:45, end:45}}
+}
+(bool) __anodized_pre = true
+(lldb) up
+frame #1: 0x0000555555895170 gandr_surface_parser-1843c217d0396f5b`gandr_surface_parser::label::layout::lay_out(bytes={0:size=46}, tokens=size=34, next=End, moves=size=0) at layout.rs:963:5
+(lldb) frame variable --depth 3
+(gandr_surface_parser::label::SourceBytes) bytes = {0:size=46}
+(alloc::vec::Vec<gandr_surface_parser::label::Token, alloc::alloc::Global> *) tokens = 0x00007ffff79fe0b8 size=34
+(gandr_surface_parser::label::layout::Next) next = End
+(&[gandr_surface_parser::label::layout::Move]) moves = size=0
+(gandr_surface_parser::label::layout::lay_out::{closure_env#0}) text = {_ref__bytes__0:size=46}
+(gandr_surface_parser::label::layout::Plan) plan = {planned:size=2, after:33, end:45, prev:Closed(Semi), ending:Ends}
+(alloc::vec::Vec<gandr_surface_parser::label::layout::Frame, alloc::alloc::Global>) frames = size=1 {
+  [0] = {kind:Layout{column:0}, sep:Top, head:{opener:None, defined:true, lead:Word, more:true}, items:1, ending:Ends}
+}
+(bool) line_start = true
+(unsigned int) line_begin = 42
+(unsigned int) line_indent = 2
+(gandr_surface_parser::label::layout::Pending) pending = None
+(&[u8]) before_arrow = size=1 {
+  [0] = 110
+}
+(core::option::Option<usize>) attribute = None
+(bool) after_attribute = false
+(bool) restart = false
+(gandr_surface_parser::label::layout::Frame) frame = {kind:Layout{column:2}, sep:Semi, head:{opener:None, defined:false, lead:Word, more:false}, items:2, ending:Ends}
+(gandr_surface_parser::label::layout::Frame *) base = 0x00005555556e4127 {kind:Brace{column:None}, sep:0x6c, head:{opener:0x20, defined:true, lead:Bar | 0x40, more:true}, items:537541920, ending:0x20}

@@ -46,7 +46,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 
 - **A checked grammar.** Every entry point takes a `Pbg` from `gandr-surface-grammar`; the built-in surface is `built_in()`. A tree records the grammar's fingerprint, and a consumer resolves the tree's mold ids against that grammar alone.
 - **The source outlives the tree.** A committed tree borrows the text it spans; the caller keeps the `SourceText` alive for as long as it reads the tree.
-- **A checkpoint resumes under its own grammar and revision.** `Checkpoint::fingerprint` names the grammar a snapshot was taken under; pairing it with the right grammar is the caller's, and the byte stream carries no version, so a stream written by one revision of this crate is read by that revision only.
+- **A checkpoint resumes under its own grammar and revision.** `Checkpoint::fingerprint` names the grammar a snapshot was taken under; pairing it with the right grammar is the caller's, and `CheckpointBytes` names the revision that reads it.
 - **`alloc`.** The crate is `no_std` with `alloc`; its tests link `std` for files and timing.
 
 ## Examples
@@ -96,6 +96,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: `flow` is reserved; `via` stays contextual.
 - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: `via` names a translation.
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: a renaming molds as a definition.
+- `vault:01a1dd3c-1111-7400-ae8f-fb22f062f5fd` — newest: the layout rule.
 
 ## License
 
