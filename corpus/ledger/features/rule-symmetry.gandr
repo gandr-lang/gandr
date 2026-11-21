@@ -6,7 +6,7 @@
 /// rule of the operation fires in the two orders of its arguments. Two terms
 /// that differ by the order of two arguments convert.
 ///
-/// Not implemented: the decision that two terms are apart under the law.
+/// Not implemented: the apartness of two terms under the law.
 ///
 /// The kernel replays each rewriting by the match that the checker uses. It
 /// replays the crossed pairing of two arguments only where its own rules hold

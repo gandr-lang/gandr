@@ -6,8 +6,8 @@
 //! two arguments that are variables, so the rewriting does not join them.
 //!
 //! The conversion pairs the two arguments of two meets in the written order
-//! or crossed. The checker records the crossed pairing in the trace. The
-//! kernel replays it only where its own rules hold the symmetry of the meet.
+//! or crossed. The checker records a crossed pair in the trace. The kernel
+//! replays it only where its own rules hold the symmetry of the meet.
 //!
 //! - see: #8311
 

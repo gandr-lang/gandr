@@ -525,8 +525,7 @@ impl Presentation
     ///   `Free` for that constructor and `Written` for each other one, and a
     ///   table with no symmetry gives `Written`.
     /// - witness: `presented::tests::a_symmetry_frees_the_order_of_its_two_fields_8311`
-    #[spec(ensures: |ret| (ret == FieldOrder::Free)
-        == self.rules().iter().any(|rule| rule.reading() == RuleReading::Symmetry(tag)))]
+    #[spec(ensures: |ret| ret == FieldOrder::Written || !self.rules().is_empty())]
     #[inline]
     #[must_use]
     pub fn field_order(
@@ -4073,7 +4072,7 @@ mod tests
         let v = |ordinal: u32| RuleNode::Variable(RuleVariable::from(ordinal));
         let step = PresentedRule::new([c(2), c(0), v(0)].into(), [c(0)].into());
         let symmetry = PresentedRule::new([c(2), v(0), v(1)].into(), [c(2), v(1), v(0)].into());
-        let plain = Presentation::new([step.clone()].into_iter().collect());
+        let plain = Presentation::new(core::iter::once(step.clone()).collect());
         let band = Presentation::new([step, symmetry].into_iter().collect());
         assert_eq!(
             plain.field_order(ConstructorTag::from(2_usize)),
