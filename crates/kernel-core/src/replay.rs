@@ -1,0 +1,11601 @@
+//! **Conversion replay**: the kernel's sequential recheck of a conversion
+//! engine's trace, under a three-valued verdict.
+//!
+//! Term conversion with δ-, β- and η-rules is proof search, and a concurrent
+//! search is too large to trust. Courant and Leroy instrument their checker to
+//! emit a trace of its decisions and recheck the trace sequentially
+//! (Nathanaëlle Courant and Xavier Leroy, "A Lazy, Concurrent Convertibility
+//! Checker", POPL 2026, §9, `doi:10.1145/3776695`). [`replay()`] is that
+//! recheck: the engine's search stays outside the trusted base, and what the
+//! kernel trusts is a loop that fires every step itself and reads the trace
+//! only where a rule leaves a choice.
+//!
+//! # What the replay trusts, and what it does not
+//!
+//! An engine outside the trusted base decides conversion by a concurrent search
+//! and records the derivation it found as a sequence of
+//! [`ConversionDecision`]s. The replay takes that sequence, the engine's claim
+//! and the two sides, and **re-derives the claim one decision at a time**,
+//! firing every step itself: a β-step, a δ-step on the constant the trace
+//! names, a force, an η-expansion, a decomposition. A decision chooses among
+//! the rules a goal admits; it never stands in for one. Nothing else the engine
+//! computed is read, so a wrong engine produces a trace that fails to replay
+//! rather than a wrong verdict.
+//!
+//! A replay's caller translates its sides and the bodies it allows unfolding
+//! into the replay's arena, maps each trace identifier to the constant it
+//! names or [`ReplayNode::Other`], and maps its engine's verdict to an
+//! [`EngineClaim`]. A body is a closed value, an operator's body is closed
+//! beyond its parameters, and a constant given neither is opaque.
+//!
+//! # Search-free, by expectation
+//!
+//! Every goal carries the verdict its derivation owes. A convertibility
+//! derivation discharges every premise of a decomposition; a refutation names
+//! the one premise that fails by a negative subgoal, and the replay checks only
+//! that one. A refutation reached through a frozen constant or through the
+//! shortcut over two applications of one constant is not authoritative —
+//! failing to convert a frozen pair proves nothing about the unfolded one — so
+//! those two decisions are refused under a refutation. Where the vocabulary
+//! leaves a rule implicit, the replay applies the rule the two shapes force;
+//! where the shapes admit a choice, it reads the next decision and applies only
+//! that. Nothing is tried and undone.
+//!
+//! Both sides are first put in weak head form by the reductions that need no
+//! choice — β, a forced thunk, a returner met by a bind, an injection met by a
+//! case, a lazy pairing met by a projection, an elimination met by a returned
+//! endpoint, never a δ-step — a value of a presented type is read by its
+//! normal form under the type's rules ([`Unfoldings::presentations`], crate
+//! docs § Presented types), and a cong chain whose functions compose to the
+//! identity is read as the `return` of its path (§ A cong chain). Then:
+//!
+//! | goal | what the replay reads |
+//! | --- | --- |
+//! | any | `ComparedShared` closes it when the sides are α-equal, or alike once each returned endpoint inside them is read (#695), a definition at its head unfolding where the goal is two stuck eliminations' motives (#4179), or rigid and α-distinct |
+//! | a defined constant at either head | `Unfold` and the reduction naming its side, with `Postpone` before it; `Freeze`; `ConstShortcut` |
+//! | a thunk against a thunk or a neutral value | two `Force`s |
+//! | a lambda against a neutral computation | `EtaExpand` on the neutral side |
+//! | a lazy pairing against a neutral computation | nothing for the η step: both projections of the neutral are compared with the components; under a refutation, `NegativeSubgoal` picks one |
+//! | two neutrals over one head whose binds differ | `Reassociate` on a side stacking two binds, else `ReturnEta` on the side one bind short |
+//! | anything else | a leaf decides it or a decomposition pushes its premises; under a refutation, `NegativeSubgoal` picks the one premise |
+//!
+//! The bind row comes before any decomposition of the pair, explicit or
+//! implicit: a pair still owing a commuting conversion of `F` is not in the
+//! form its positions compare in, so a `Decompose` there refuses, and a
+//! refutation through its positions is never reached.
+//!
+//! A rigid term is built only of formers, variables and constants without a
+//! body: nothing in it can reduce, so two α-distinct rigid terms never convert.
+//!
+//! A decision anchored at [`ReplayNode::Other`] names no constant, which is
+//! how persisted evidence carries its dialogues: the wire keeps a decision's
+//! kind and side but no identifier. Every constant decision reads its constant
+//! off the shapes where an anchored one would name it. An anchor-free
+//! `Unfold`, with the reduction naming its side anchor-free too, unfolds the
+//! defined constant the side's head holds; a `Freeze` freezes the defined
+//! head of the side it names; a `ConstShortcut` takes the head both sides
+//! share, and refuses when they differ; a `Postpone` defers to the `Unfold`
+//! that follows it, whose opposite side must hold a defined head. A side
+//! headed by anything else refuses the decision. Each step is the one an
+//! anchored decision would name, since a side has one head, so the trace
+//! still chooses only whether, where and how δ fires.
+//!
+//! **Alternatives.** Persisting the constant's position in every decision
+//! widens the evidence wire for a name the term already holds; keeping
+//! `Postpone`, `Freeze` and `ConstShortcut` anchored strands every persisted
+//! dialogue that compares two applications of one definition, as an
+//! associativity law does. **Reversal.** A decision whose constant the shapes
+//! do not determine — a rule over two heads at once that names only one —
+//! takes the constant's position on the wire.
+//!
+//! # The lazy product's η
+//!
+//! A lazy pairing against a neutral computation is the η law of `C & D`
+//! (Levy's computation product): the neutral is the pairing of its two
+//! projections, so the goal decomposes into each projection of the neutral
+//! against the matching component, left first. The two shapes force the rule
+//! and nothing in it is chosen, so no decision names it and the vocabulary is
+//! unchanged; a refutation names its premise by `NegativeSubgoal`, as any
+//! decomposition's does. `Decompose` is refused there, as at the arrow's η, so
+//! the step has one trace.
+//!
+//! **Alternatives.** Reading `EtaExpand` at the step would give that decision
+//! a second meaning: its payload names the fresh variable the arrow's η
+//! introduces, and the product's η introduces none. A decision of its own
+//! would widen the vocabulary the engine and the kernel share by a step with
+//! no choice in it. **Reversal.** A second rule the same two shapes admit
+//! would make the step a choice, and the choice would take a decision.
+//!
+//! # The returned endpoint
+//!
+//! A returned endpoint stands for the value its pure computation returns, and
+//! a pure computation returns `v` exactly when it converts with `return v`. A
+//! value goal with a returned endpoint on either side is therefore read as the
+//! goal between the endpoint's computation and the other side's: the other
+//! endpoint's computation, or the `return` of the other value. An elimination
+//! that meets a returned endpoint in weak head form runs its computation
+//! first, `E[c] ⇝ c to x. E[x]`, `E` the whole elimination context up to the
+//! nearest bind: the applications and projections past the elimination move
+//! under the binder with it, so a bind written over the same call compares
+//! with the elimination bind for bind. The shapes force both steps, so no
+//! decision names them and the vocabulary is unchanged.
+//!
+//! [`convert`] fires both steps unread and unfolds no constant: the forced loop
+//! stays δ-free. A returned endpoint a mode switch's structural type comparison
+//! leaves apart is read rather than compared: [`read_endpoints`] normalizes it
+//! by the kernel's own evaluator, this module's weak head reduction with one
+//! δ-step wherever the computation is stuck at a head naming an admitted
+//! definition, and the normal forms go back through [`convert_values`], the one
+//! conversion. The reading takes no trace: the reduction of one computation to
+//! `return v` chooses nothing — β and the forced steps are determined, and a
+//! stuck defined head admits exactly its own δ-step — so a trace could only
+//! restate the term. That δ-step is the kernel's own, as readmission's
+//! unfolding of a crossed definition is.
+//!
+//! At reflexivity the endpoint's relation to the point is replayed instead:
+//! the `here` carries the engine's dialogue for each endpoint, and [`replay()`]
+//! runs it with the admitted definitions unfoldable. The engine holds a
+//! returned endpoint at the definition it calls, so the dialogue names each
+//! δ-step, the ones under a binder that evaluation never reaches among them.
+//!
+//! **Alternatives.** A reading without δ would leave every endpoint over a
+//! named function — `cong(f, p)` for a defined `f`, every law a model proves —
+//! apart from its value. A δ rule inside [`convert`] would make the forced loop
+//! choose where to unfold, which is the engine's to say. Normalising the
+//! endpoint in the producer would make the producer's normaliser trusted
+//! computation. **Reversal.** A mode switch whose comparison the reading cannot
+//! settle by normalizing one side — two stuck neutrals equal only after
+//! unfolding — carries a dialogue as reflexivity does.
+//!
+//! A bind in an endpoint's computation over a call stuck at a variable or a
+//! constant with no body reads through: the computation is pure, so `c to x.
+//! k` returns what `k[⟨c⟩/x]` returns. `wind(Loop(x))`, stuck at `wind(x) to
+//! n. return S(n)`, reads as `S(⟨wind(x)⟩)`, and the field goal between
+//! `⟨wind(x)⟩` and the other side's call is then an endpoint goal of its own.
+//! The engine reads each endpoint it delivers this way, and the kernel mirrors
+//! the reading by forced replay: [`Replay::whnf`] takes the innermost
+//! such bind whose continuation returns or stops at a call a definition or a
+//! binder heads, and the next bind out over both when it does neither. A
+//! continuation stuck at such a bind of its own is read the same
+//! way before it is judged: a decoder's arm `el(a) to x. el(b) to y.
+//! return ⌜x ⇒ y⌝`, stuck at both calls, reads as `⌜⟨el(a)⟩ ⇒ ⟨el(b)⟩⌝`. A
+//! specification's `post((), s + 1)`, bound ahead as `add(s, 1) to t.
+//! post((), t)`, reads as `post((), ⟨add(s, 1)⟩)`, the call a fold handing
+//! `post` the sum held reads to: a binder's call is a stop no step unfolds,
+//! and the law is the same, so it needs no argument of its own. The
+//! run is deterministic, so no decision names it and the vocabulary is
+//! unchanged. It fires only in a goal [`Replay::open_returned`] opened, in a
+//! computation premise such a goal decomposes into, which is a part of the
+//! same pure computation, and in [`Replay::normalize_returned`] read at
+//! [`Reduction::Endpoint`]: a computation goal of its own may be effectful,
+//! and there the two bind laws stay as the dialogue names them. A call a
+//! definition heads is not read through; the dialogue unfolds it first, as it
+//! does at reflexivity.
+//!
+//! A bind whose continuation eliminates its own variable at its head is passed
+//! over, as part of the call: it is the bind `E[c] ⇝ c to x. E[x]` builds, and
+//! run with the call as a returned endpoint it meets that endpoint again and
+//! binds the same call, so it never returns. The engine holds such an
+//! elimination of a returned endpoint as one neutral, never a bind.
+//!
+//! **Alternatives.** A delivery word recording each bind the engine read
+//! would let the kernel check a named step rather than re-run it; the run
+//! costs the continuation's reduction either way, so the word would restate
+//! the term. **Reversal.** A reading that chooses — between two binds, or
+//! between a continuation's reduction and an unfolding — or an endpoint read
+//! inside a computation goal the kernel replays plainly takes a delivery word.
+//!
+//! # A decode is read as its code
+//!
+//! A type `El(⟨c⟩)` over a returned code denotes the type whose quote the
+//! code's computation returns, so a mode switch's structural comparison sets
+//! it aside against a type of another former rather than separating them, and
+//! [`read_endpoints`] reads it: the code normalized as an endpoint is, to a
+//! quote, and the quoted type compared with the other side by the same walk. A
+//! decode over a code stuck on a binder stays a type of its own, a neutral
+//! `Element`, compared with another decode by its code. Only value-type
+//! decodes are set aside; a computation-type decode compares structurally.
+//! [`read_step`] re-derives an open returned code's step the same way, with
+//! no trace: a decoder's arm run over a binder to its quote.
+//!
+//! **Design.** This is the recorded Tarski data universe: the codes are an
+//! ordinary datatype, the decoder a function over them, and a decode a type
+//! over a code that is a term, so the kernel gains no node and no type that
+//! computes by itself. **Alternatives.** A large elimination into `Type`, a
+//! `case` with types for arms in the type language and `Element` erased, was
+//! declined in #353. A dialogue for an open step would need the engine's code
+//! walk to decide returned endpoints under quotes, which it compares by place.
+//! **Reversal.** A universe that stops being a data universe; a model needing
+//! a computation-type decode read the same way; the engine deciding codes
+//! under quotes, at which point an open step carries a dialogue.
+//!
+//! # A cong chain
+//!
+//! `cong(f, p)` is the transport of a reflexivity along `p` in a family whose
+//! right endpoint moves by `f`; along a stuck path it is stuck, and so is a
+//! cong of it. Functoriality, `cong(g, cong(f, p)) = cong(g ∘ f, p)`, and the
+//! identity law, `cong(id, p) = p`, are laws of the path type no reduction
+//! reaches. [`Replay::fuse`] decides their composite: a chain — a link of that
+//! shape, then binds whose continuations are each one link along the path the
+//! bind binds — whose composite right endpoint reads, under the family's
+//! binder, as that binder is the `return` of the path it starts from. The
+//! composite is read by the evaluator's bodies, the admitted definitions the
+//! caller hands over, and by the presentations; no rule of the table unfolds,
+//! so the forced loop stays δ-free where it compares. The engine reads the same
+//! chain before it plans a pair, so no decision names the step.
+//!
+//! # The kernel's own conversion
+//!
+//! [`convert`] is the same loop with no trace: each rule the shapes force —
+//! weak head reduction, the two forces, both η laws, the two bind laws, a
+//! returned endpoint read as its computation, a cong chain read as its path,
+//! a decomposition — fires unread, no constant unfolds and no refutation is
+//! certified, and one node on both sides closes convertible before its shape
+//! is read, as the engine's shared comparison closes it. It is the equality a
+//! judgement the kernel decides alone reads, reflexivity's endpoints first,
+//! so the kernel admits what the engine's normalizer admits by the same laws
+//! without asking an engine for a trace.
+//!
+//! # Weak heads under an environment
+//!
+//! The replay reduces to a weak head as Courant and Leroy's weak-head machine
+//! does (§ 4.2, Krivine's machine with environments): its focus is a
+//! computation together with an environment, the values its innermost binders
+//! stand for, each held with the environment the reduction read it in. A step
+//! that enters a binder — a β-step at an application or a bind, a case's
+//! payload, a split's components, a fold's head and tail, a fixpoint's
+//! self-reference, an endpoint's read-through — pushes a cell and walks
+//! nothing, and a δ-step enters a definition's closed body with the empty
+//! environment. Where the reduction stops, one unload substitutes the
+//! environment into the weak head and closes each cell the head reaches once,
+//! however often the head reads it. A goal, a decision and [`convert`] see the
+//! weak head the substituting reduction reaches, after the same charges, and a
+//! chain of β-steps walks its reduct once where substitution walks it at each.
+//!
+//! The simulation argument: each environment state unloads to the
+//! substituting reduction's state at the same step. An unload of a band of
+//! cells is the substitutions of its cells one binder at a time, the innermost
+//! first, so a push followed by the unload is the substituting step's
+//! substitution; a step that reads a cell reads the value the substituting
+//! state holds at that place, so both machines fire one rule. The
+//! substituting reduction is this one unloading after every step, and the
+//! replay's witnesses run the two side by side over generated terms.
+//! Machinery that reads closed terms — an endpoint's elimination, a transport
+//! — unloads the state first.
+//!
+//! # Three verdicts
+//!
+//! [`KernelVerdict::Convertible`] and [`KernelVerdict::NotConvertible`] are
+//! certified: the replay re-derived the claim. [`KernelVerdict::Declined`] is
+//! neither — the engine declined, the step budget ran out, or the trace did not
+//! replay — and a decline is never read as a refutation. A run the engine's
+//! schedule starved declines the same way: the kernel has no search of its own
+//! to recover with, and a decline costs completeness, never soundness.
+//!
+//! # The arena is restored
+//!
+//! The replay mints its reducts in the caller's arena, past the watermark it
+//! found there, and truncates back to that watermark before it returns, so the
+//! caller's arena holds exactly what it held before.
+//!
+//! # Totality
+//!
+//! Every loop is iterative over an explicit stack, and every step the replay
+//! takes is charged to a [`ReplayBudget`], so a trace of any length and a term
+//! that reduces forever both end in a verdict.
+//!
+//! A `ComparedShared` met at a decomposable goal closes that goal when it can
+//! and otherwise passes to the first premise; the engine emits an agreeing
+//! decomposition it settled equal as that one closing, so the two readings
+//! coincide.
+//!
+//! # Codes and static operators
+//!
+//! The replay closes a comparison of two codes as the untrusted engine's
+//! shared comparison does: α-equal codes convert, codes whose quoted types
+//! hold nothing that could still unfold are apart, and any other pair is
+//! refused rather than guessed at. Rigidity reads through quoted types and the
+//! codes they decode, so the engine's verdict of apart is one the kernel
+//! reaches in its own terms. The kernel's own conversion with definitions
+//! unfolding, which no engine trace drives, owes two quotes instead of
+//! refusing them: a δ-step can return a code holding a call the other side
+//! ran, so the pair closes on condition, and once the replay ends the returned
+//! endpoints and decodes the walk over the two quoted types sets aside are
+//! read as a step's reading reads them. The reading runs on its own worklist
+//! after the replay, never inside it.
+//!
+//! A static definition's certificate unfolds one instance of an operator.
+//! [`Unfoldable::Operator`] hands the replay the operator's body with its
+//! [`ParameterCount`] binders stripped, the innermost binder its last
+//! parameter; unfolding a value headed by it instantiates the binders at the
+//! side's first arguments, innermost first, each argument shifted past the
+//! parameters still standing outside it, and keeps any further applications
+//! over the reduct. A body standing at a static spine keeps the spine. An
+//! operator short of its arguments has no reduct and refuses as unreadable. A
+//! kernel static lambda would turn this δβ into a δ-step followed by a β-rule
+//! at values, owing a reduction the kernel otherwise never fires; stripping
+//! the binders keeps the substitution the kernel already trusts for
+//! computations as the only rewrite. When a static lambda arrives (see
+//! `gandr-kernel-term`), the operator unfolding becomes a body unfolding and
+//! the weak head form fires static β like the computational one.
+//!
+//! # Alternatives and reversal
+//!
+//! **Alternatives.** Running the engine's search inside the kernel would
+//! certify by trusting the search. Trusting the engine's verdict would certify
+//! nothing. Replaying a refuted decomposition without its negative subgoal
+//! means trying every premise, which is search. Memoizing replayed
+//! sub-derivations would let a trace refer back to a shared one; the engine
+//! emits a derivation shared by two parents once under each, so the trace is
+//! the derivation's expansion as a tree and the replay needs no table.
+//!
+//! **Reversal.** A back-reference decision, with a replay-side table keyed on
+//! the goal it names, replaces the expansion once a measured trace of a deeply
+//! shared proof outgrows the replay budget. A closing the kernel cannot
+//! reproduce, because the engine's structural equality and the kernel's
+//! α-equality disagree on a pair, shows up as a refusal on an engine trace and
+//! moves the tie-break into the vocabulary.
+//!
+//! # Laws and evidence
+//!
+//! The unit and purity specifications, their named witnesses and the
+//! goal-refinement composition shape live on [`replay()`]. [`KernelVerdict`]
+//! carries the refusal class table and the certified fragment's
+//! partial-equivalence scope. The `replay_laws` integration test generates 256
+//! recipes, checking each claim twice and in a cloned arena, with exact
+//! unit-law goldens and rollback checks.
+//!
+//! **Property-test dependency.** Dev-only `proptest` uses the workspace's 1.11
+//! version range, defaults off and only `std` for generation, shrinking and
+//! persistence. It reuses the workspace's runner without expanding the shipped
+//! kernel dependencies. The `quickcheck` crate would add a second runner;
+//! hand-written enumeration would lose shrinking of generated term recipes.
+//! Reconsider on an unmaintained release, a high-risk advisory or a need the
+//! existing strategy API cannot express.
+//!
+//! # References
+//!
+//! - `Courant-2026-lazy_concurrent_convertibility_checker` — lineage: § 4.2's
+//!   weak-head machine, Krivine's with environments, is the reduction the
+//!   replay runs, and § 9's sequential recheck is [`replay()`].
+//! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel
+//!   re-assessment's design (§ kernel-reassessment-design item 6) — a step
+//!   enters the trusted base on a property test against its reference and a
+//!   simulation argument.
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a chain has one
+//!   composite up to its nestings, so every nesting reads as the left-nested
+//!   fold a composite realises.
+//! - `vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb` — anchor: the trace records
+//!   decisions only. The replay owns the deterministic run of a held operand,
+//!   under its budget, and `Replay::bound_link` starts that run at a bind over
+//!   a stuck link. A run that parts from the evaluator declines, and the
+//!   endpoint check still stands.
+
+use alloc::alloc::Global;
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
+use core::convert::Infallible;
+use core::iter::Peekable;
+
+use anodized::spec;
+use gandr_kernel_check_memo::NullMemo;
+use gandr_kernel_conversion_trace::ConversionDecision;
+use gandr_kernel_conversion_trace::ConversionSide;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
+use gandr_kernel_term::AnyNode;
+use gandr_kernel_term::CompType;
+use gandr_kernel_term::CompTypeId;
+use gandr_kernel_term::Computation;
+use gandr_kernel_term::ComputationId;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FixpointEvidence;
+use gandr_kernel_term::RewriteFuel;
+use gandr_kernel_term::TermArena;
+use gandr_kernel_term::Value;
+use gandr_kernel_term::ValueId;
+use gandr_kernel_term::ValueType;
+use gandr_kernel_term::ValueTypeId;
+
+use self::environment::Closure;
+use self::environment::Environment;
+use self::environment::Environments;
+use crate::conv::Codomains;
+use crate::conv::ConversionGoal;
+use crate::conv::Convertibility;
+use crate::conv::SetAside;
+use crate::conv::convert_values;
+use crate::conv::equal_values;
+use crate::conv::equal_weakened;
+use crate::conv::pending_endpoints;
+use crate::descent::Descent;
+use crate::element_identity::BinderUse;
+use crate::encoding::ContentTable;
+pub use crate::error::replay::KernelVerdict;
+pub use crate::error::replay::RefusalClass;
+pub use crate::error::replay::ReplayDecline;
+pub use crate::error::replay::ReplayRefusal;
+pub use crate::error::replay::TracePosition;
+use crate::path_universe::CellIdentity;
+use crate::rewrite::BinderDepth;
+use crate::rewrite::shift_comp_type;
+use crate::rewrite::shift_computation;
+use crate::rewrite::shift_value;
+use crate::rewrite::substitute_computation;
+use crate::rewrite::substitute_value;
+use crate::support::innermost;
+
+mod environment;
+
+/// What the replay reads of a trace identifier: the constant it names, if
+/// any. A caller maps its own identifiers into this before replaying.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ReplayNode
+{
+    /// The identifier names the constant at this admission position.
+    Constant(ConstantIndex),
+    /// The identifier names a node the replay does not read.
+    Other,
+}
+
+/// Whether a constant has a body the replay may unfold.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Unfoldable
+{
+    /// The constant is defined by this closed value.
+    Body(ValueId),
+    /// The constant is a type operator: a value under `parameters` static
+    /// binders, the innermost binder its last parameter, closed beyond them.
+    ///
+    /// The kernel has no static lambda, so an operator's body is handed over
+    /// with its binders stripped, and unfolding it at a static application
+    /// instantiates them at the application's arguments: the δβ-step a static
+    /// definition's certificate replays.
+    Operator
+    {
+        /// How many static binders the body stands under.
+        parameters: ParameterCount,
+        /// The body, with its parameters as its innermost free variables.
+        body: ValueId,
+    },
+    /// The constant has no body: an axiom, an atom, or a declaration the
+    /// replay was not given.
+    Opaque,
+}
+
+/// How many static parameters an operator's body stands under.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ParameterCount(u32);
+
+impl From<u32> for ParameterCount
+{
+    /// The parameter count of a raw count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: u32) -> Self
+    {
+        Self(count)
+    }
+}
+
+impl From<ParameterCount> for u32
+{
+    /// The raw count of a parameter count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: ParameterCount) -> Self
+    {
+        count.0
+    }
+}
+
+/// Which rules of the admitted entries a replay fires.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Fires(u8);
+
+impl Fires
+{
+    /// A definition's body.
+    const BODIES: Self = Self(1);
+    /// A lawful atom's relation.
+    const IDENTITIES: Self = Self(2);
+    /// A ruled definition's fixpoint.
+    const RULED: Self = Self(8);
+    /// A literal identity test.
+    const TESTS: Self = Self(4);
+
+    /// These rules and `other`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn and(
+        self,
+        other: Self,
+    ) -> Self
+    {
+        Self(self.0 | other.0)
+    }
+
+    /// These rules, kept only where `rule` holds them.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn only(
+        self,
+        rule: Self,
+    ) -> Self
+    {
+        Self(self.0 & rule.0)
+    }
+}
+
+/// The rules a replay may fire, by admission position.
+///
+/// They are the definitions it may unfold, the presented types whose terms it
+/// rewrites, the relations lawful atoms read their identities as, the literal
+/// identity tests it computes and the ruled fixpoints whose recursion
+/// terminates. A replay over admitted entries reads each rule from its entry
+/// when the replay asks for it, through the support of the check that runs,
+/// so no reading walks the environment.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Unfoldings
+{
+    /// The admitted entries the replay reads its rules from; none for a
+    /// replay given its rules alone.
+    admitted: Option<crate::env::Entries>,
+    /// Which rules of the admitted entries the replay fires.
+    fires: Fires,
+    /// The unfolding of each constant at its admission position: past the
+    /// admitted entries when they give the bodies, from the first position
+    /// otherwise.
+    bodies: Vec<Unfoldable>,
+    /// The rules of every presented type the replay's terms may hold.
+    presentations: crate::presented::Presentations,
+    /// The test of each literal identity declaration given beside the
+    /// admitted entries, at its admission position.
+    tests: BTreeMap<ConstantIndex, gandr_kernel_term::LiteralIdentity>,
+}
+
+impl Unfoldings
+{
+    /// The unfoldings `bodies` lists, the constant at each position defined by
+    /// the entry at that position.
+    ///
+    /// # Specification
+    /// - requires: every body is a value in the arena the replay runs in,
+    ///   minted below the watermark the replay finds: closed for
+    ///   [`Unfoldable::Body`], closed beyond its parameters for
+    ///   [`Unfoldable::Operator`].
+    /// - ensures: [`Self::unfolding`] answers the entry at a constant's
+    ///   position, and [`Unfoldable::Opaque`] past the end.
+    /// - provides: the δ- and δβ-rules a replay may fire; a constant left
+    ///   opaque is compared by name only.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — provenance and closure require the replay arena,
+    ///   which construction does not receive; lookup is the executable observer
+    ///   of the transferred vector.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the sole surface is the position lookup, separated by
+    ///   a listed constant and one past the end.
+    /// - witness: `replay::tests::an_unfolding_fires_only_where_the_trace_names_its_head`
+    /// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
+    #[inline]
+    #[must_use]
+    pub fn new(bodies: Vec<Unfoldable>) -> Self
+    {
+        Self {
+            bodies,
+            ..Self::default()
+        }
+    }
+
+    /// The unfoldings that the admitted `entries` state, read from each entry
+    /// when a replay asks for it.
+    ///
+    /// # Specification
+    /// - ensures: [`Self::unfolding`] answers the body of each definition among
+    ///   `entries`, [`Self::identity`] the relation of each lawful atom and
+    ///   [`Self::literal_identity`] each literal identity test, each read
+    ///   through the support of the check that runs.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clauses state what later reads through the
+    ///   support answer, which construction does not run.
+    /// - intension: no walk over `entries` and no allocation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition, a lawful atom and a literal identity
+    ///   test admitted together give their replay rules at their positions.
+    /// - witness: `check::tests::a_pair_checks_at_a_fibre_decoding_a_call_into_its_first_component_721`
+    /// - witness: `element_identity::bridge_tests::j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937`
+    /// - witness: `replay::tests::a_literal_identity_test_reduces_on_two_literals`
+    #[inline]
+    #[must_use]
+    pub(crate) fn admitted(entries: &crate::env::Entries) -> Self
+    {
+        Self {
+            admitted: Some(entries.reading()),
+            fires: Fires::BODIES.and(Fires::IDENTITIES).and(Fires::TESTS),
+            ..Self::default()
+        }
+    }
+
+    /// These unfoldings, and `bodies` at the positions past the admitted
+    /// entries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn extended(
+        self,
+        bodies: Vec<Unfoldable>,
+    ) -> Self
+    {
+        Self { bodies, ..self }
+    }
+
+    /// These unfoldings, reading the rules `fires` names from `entries`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn reading(
+        self,
+        entries: &crate::env::Entries,
+        fires: Fires,
+    ) -> Self
+    {
+        Self {
+            admitted: Some(self.admitted.unwrap_or_else(|| entries.reading())),
+            fires: self.fires.and(fires),
+            ..self
+        }
+    }
+
+    /// These unfoldings, the replay rewriting every presented type's terms by
+    /// `presentations`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn presenting(
+        self,
+        presentations: crate::presented::Presentations,
+    ) -> Self
+    {
+        Self {
+            presentations,
+            ..self
+        }
+    }
+
+    /// The presented types the replay rewrites by.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn presentations(&self) -> &crate::presented::Presentations
+    {
+        &self.presentations
+    }
+
+    /// A type of words that the running check may read and that wraps at least
+    /// `wraps` times: a type below the horizon of the presentations that the
+    /// support of the check names, or any such type when no check runs.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the position of a type of words that [`Self::presentations`]
+    ///   holds below its horizon, wrapped at least `wraps` times, at a position
+    ///   that the admitted entries read through their support; `None` when it
+    ///   holds none. Unfoldings with no admitted entries read every such type.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the support is the check's, and no predicate reads
+    ///   it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type of words outside the support answers no guard,
+    ///   and the same type inside it answers.
+    /// - witness: `environment::tests::a_reflexivity_reads_no_type_of_words_outside_its_support_6961`
+    #[inline]
+    #[must_use]
+    pub(crate) fn worded(
+        &self,
+        wraps: gandr_kernel_term::Reflexivities,
+    ) -> Option<ConstantIndex>
+    {
+        self.presentations.worded().find_map(|(words, cells)| {
+            (cells.reflexivities() >= wraps
+                && self
+                    .admitted
+                    .as_ref()
+                    .is_none_or(|entries| entries.peek(usize::from(words)).is_some()))
+            .then_some(words)
+        })
+    }
+
+    /// These unfoldings, the replay reading the identity of every lawful atom
+    /// among `entries` through the atom's relation.
+    ///
+    /// # Specification
+    /// - requires: `entries` is the admission log the replay's terms were
+    ///   admitted in.
+    /// - ensures: [`Self::identity`] answers the relation of each abstract type
+    ///   among `entries` whose interface states its law, at its admission
+    ///   position, and nothing at any other position.
+    /// - provides: where a transport along a lawful atom's evidence reads the
+    ///   fibre the relation returns.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause quantifies over every entry of the
+    ///   admission log, which a predicate may not iterate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a transport along a lawful atom's evidence into the
+    ///   fibre its relation reads as the unit type returns the unit once the
+    ///   atom is identified, and sticks before.
+    /// - witness: `element_identity::bridge_tests::j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937`
+    #[inline]
+    #[must_use]
+    pub fn identifying(
+        self,
+        entries: &crate::env::Entries,
+    ) -> Self
+    {
+        self.reading(entries, Fires::IDENTITIES)
+    }
+
+    /// The relation the lawful atom at `atom` reads its identity as, when it
+    /// is identified.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn identity(
+        &self,
+        atom: ConstantIndex,
+    ) -> Option<ValueId>
+    {
+        if self.fires.only(Fires::IDENTITIES) != Fires::IDENTITIES {
+            return None;
+        }
+        let entry = self.admitted.as_ref()?.get(usize::from(atom))?;
+        let gandr_kernel_term::DeclarationContent::AbstractType {
+            interface: quenchant_shape::shape::Maybe::Present(interface),
+            ..
+        } = *entry.content()
+        else {
+            return None;
+        };
+        match interface.law() {
+            quenchant_shape::shape::Maybe::Present(_) => Some(interface.relation()),
+            quenchant_shape::shape::Maybe::Absent(_) => None,
+        }
+    }
+
+    /// These unfoldings, the replay computing every literal identity test
+    /// among `entries` on two literals.
+    ///
+    /// # Specification
+    /// - requires: `entries` is the admission log the replay's terms were
+    ///   admitted in.
+    /// - ensures: [`Self::literal_identity`] answers the test of each literal
+    ///   identity declaration among `entries`, at its admission position, and
+    ///   nothing at any other position.
+    /// - provides: where the reduction computes a test forced and applied to
+    ///   two literals.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause quantifies over every entry of the
+    ///   admission log, which a predicate may not iterate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a test applied to two literals reduces to its answer
+    ///   with the table, and stays stuck without it.
+    /// - witness: `replay::tests::a_literal_identity_test_reduces_on_two_literals`
+    #[inline]
+    #[must_use]
+    pub fn testing(
+        self,
+        entries: &crate::env::Entries,
+    ) -> Self
+    {
+        self.reading(entries, Fires::TESTS)
+    }
+
+    /// These unfoldings, the replay computing the test each position of
+    /// `tests` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn testing_at(
+        self,
+        tests: BTreeMap<ConstantIndex, gandr_kernel_term::LiteralIdentity>,
+    ) -> Self
+    {
+        Self { tests, ..self }
+    }
+
+    /// The literal identity test the constant at `constant` computes, when it
+    /// is one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn literal_identity(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<gandr_kernel_term::LiteralIdentity>
+    {
+        if let Some(&test) = self.tests.get(&constant) {
+            return Some(test);
+        }
+        if self.fires.only(Fires::TESTS) != Fires::TESTS {
+            return None;
+        }
+        match *self
+            .admitted
+            .as_ref()?
+            .get(usize::from(constant))?
+            .content()
+        {
+            gandr_kernel_term::DeclarationContent::LiteralIdentity { test, .. } => Some(test),
+            gandr_kernel_term::DeclarationContent::Data { .. }
+            | gandr_kernel_term::DeclarationContent::Codata { .. }
+            | gandr_kernel_term::DeclarationContent::Def { .. }
+            | gandr_kernel_term::DeclarationContent::Axiom { .. }
+            | gandr_kernel_term::DeclarationContent::AbstractType { .. } => None,
+        }
+    }
+
+    /// The rules of these unfoldings that no choice stands behind: the
+    /// presented types' rewriting and the literal identity tests, with no
+    /// definition to unfold.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the same presentations and tests, every constant opaque, and
+    ///   no lawful atom or ruled fixpoint. The clause checks the count of tests
+    ///   and the empty bodies; the equality of the two tables stays prose-only,
+    ///   since comparing them walks both.
+    /// - provides: the table the kernel's own conversion fires unread.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the kernel's own conversion relates a test applied to
+    ///   two literals to its answer.
+    /// - witness: `replay::tests::a_literal_identity_test_reduces_on_two_literals`
+    #[spec(ensures: |ret| ret.tests.len() == self.tests.len() && ret.bodies.is_empty() && ret.fires.only(Fires::BODIES) != Fires::BODIES)]
+    #[inline]
+    #[must_use]
+    pub fn forced(&self) -> Self
+    {
+        Self {
+            admitted: self.admitted.as_ref().map(crate::env::Entries::reading),
+            fires: self.fires.only(Fires::TESTS),
+            presentations: self.presentations.clone(),
+            tests: self.tests.clone(),
+            bodies: Vec::new(),
+        }
+    }
+
+    /// These unfoldings, the replay reading the fixpoint each ruled
+    /// definition among `entries` thunks as one whose recursion terminates.
+    ///
+    /// # Specification
+    /// - requires: `entries` is the admission log the replay's terms were
+    ///   admitted in.
+    /// - ensures: the partial gate unfolds the fixpoint that the body of each
+    ///   definition among `entries` with operation rules thunks. It unfolds no
+    ///   other partial fixpoint whose recursion it cannot ignore.
+    /// - provides: where a partial fixpoint's gate unfolds an operation that
+    ///   its admitted rules decide.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause quantifies over every entry of the
+    ///   admission log, which a predicate may not iterate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operation's ruled fixpoint unfolds at its gate and
+    ///   at its recursive call, and declines at its gate without the ruling.
+    /// - witness: `ruled::tests::a_ruled_fixpoint_unfolds_at_its_partial_gate_4291`
+    #[inline]
+    #[must_use]
+    pub fn ruling(
+        self,
+        entries: &crate::env::Entries,
+    ) -> Self
+    {
+        self.reading(entries, Fires::RULED)
+    }
+
+    /// The position of the ruled definition whose body thunks the fixpoint
+    /// `root`, when the replay fires ruled fixpoints: then the fixpoint's
+    /// recursion terminates.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn terminates(
+        &self,
+        root: ComputationId,
+    ) -> Option<ConstantIndex>
+    {
+        if self.fires.only(Fires::RULED) != Fires::RULED {
+            return None;
+        }
+        self.admitted.as_ref()?.ruled(root)
+    }
+
+    /// How the constant `constant` unfolds.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the body of the definition at `constant`'s position among the
+    ///   admitted entries, read through the support, or [`Unfoldable::Opaque`]
+    ///   for any other entry there; past them, the listed body at `constant`'s
+    ///   position, or [`Unfoldable::Opaque`] when the list does not reach it.
+    /// - provides: the δ-rule lookup the replay runs before every unfolding.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::new`].
+    /// - witness: `replay::tests::an_unfolding_fires_only_where_the_trace_names_its_head`
+    #[spec(ensures: |ret| self.fires.only(Fires::BODIES) == Fires::BODIES || ret == self.bodies.get(usize::from(constant)).copied().unwrap_or(Unfoldable::Opaque))]
+    #[inline]
+    #[must_use]
+    pub fn unfolding(
+        &self,
+        constant: ConstantIndex,
+    ) -> Unfoldable
+    {
+        self.held(constant).map_or_else(
+            || self.listed(constant),
+            |admitted| Self::body_of(admitted.get(usize::from(constant))),
+        )
+    }
+
+    /// How the constant `constant` unfolds, read through the support of the
+    /// check that runs without moving it: for a specification clause.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn peeked(
+        &self,
+        constant: ConstantIndex,
+    ) -> Unfoldable
+    {
+        self.held(constant).map_or_else(
+            || self.listed(constant),
+            |admitted| Self::body_of(admitted.peek(usize::from(constant))),
+        )
+    }
+
+    /// The admitted entries, when the replay reads bodies from them and
+    /// `constant` is among them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn held(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<&crate::env::Entries>
+    {
+        let admitted = self.admitted.as_ref()?;
+        let bodies = self.fires.only(Fires::BODIES) == Fires::BODIES;
+        (bodies && usize::from(constant) < usize::from(admitted.len())).then_some(admitted)
+    }
+
+    /// The listed body of `constant`, counted past the admitted entries when
+    /// the replay reads bodies from them, or [`Unfoldable::Opaque`] when the
+    /// list does not reach it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn listed(
+        &self,
+        constant: ConstantIndex,
+    ) -> Unfoldable
+    {
+        let past = match self.admitted.as_ref() {
+            Some(admitted) if self.fires.only(Fires::BODIES) == Fires::BODIES => {
+                usize::from(admitted.len())
+            },
+            Some(_) | None => 0,
+        };
+        usize::from(constant)
+            .checked_sub(past)
+            .and_then(|offset| self.bodies.get(offset))
+            .copied()
+            .unwrap_or(Unfoldable::Opaque)
+    }
+
+    /// How an admitted `entry` unfolds: a definition by its body, any other
+    /// entry, or none, as [`Unfoldable::Opaque`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn body_of(entry: Option<&crate::env::AdmittedDeclaration>) -> Unfoldable
+    {
+        entry.map_or(Unfoldable::Opaque, |entry| match *entry.content() {
+            gandr_kernel_term::DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
+            gandr_kernel_term::DeclarationContent::Data { .. }
+            | gandr_kernel_term::DeclarationContent::Codata { .. }
+            | gandr_kernel_term::DeclarationContent::Axiom { .. }
+            | gandr_kernel_term::DeclarationContent::LiteralIdentity { .. }
+            | gandr_kernel_term::DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
+        })
+    }
+}
+
+/// The two sides a replay compares, of one polarity.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ReplaySides
+{
+    /// Two values.
+    Values(ValueId, ValueId),
+    /// Two computations.
+    Computations(ComputationId, ComputationId),
+}
+
+/// The verdict an engine claims for the trace it hands over.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum EngineClaim
+{
+    /// The engine found a convertibility derivation.
+    Convertible,
+    /// The engine found a refutation.
+    NotConvertible,
+    /// The engine reached no verdict.
+    Declined,
+}
+
+/// The most steps one replay takes before it declines.
+///
+/// A step is one turn of the replay's goal loop or one weak head reduction
+/// step, so the budget bounds both a long trace and a term that reduces
+/// forever.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ReplayBudget(u64);
+
+impl ReplayBudget
+{
+    /// A budget no well-sized conversion exhausts.
+    pub const DEFAULT: Self = Self(0x0010_0000);
+}
+
+impl Default for ReplayBudget
+{
+    /// The [`Self::DEFAULT`] budget.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `ret == ReplayBudget::DEFAULT`.
+    /// - provides: the budget a caller with no measured bound passes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: accepted, contradicted, and malformed finite traces
+    ///   run with the default budget; the numerical default is not pinned.
+    /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+    /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
+    #[spec(ensures: |ret| ret.0 == Self::DEFAULT.0)]
+    #[inline]
+    fn default() -> Self
+    {
+        Self::DEFAULT
+    }
+}
+
+impl From<u64> for ReplayBudget
+{
+    /// A budget of `steps` steps.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `u64::from(ret) == steps`.
+    /// - provides: the budget's construction.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: zero, one, and maximum budgets preserve the admission
+    ///   boundary through the public count wrapper.
+    /// - witness: `replay::tests::budget_exhaustion_survives_the_counter_ceiling`
+    #[spec(ensures: |ret| ret.0 == steps)]
+    #[inline]
+    fn from(steps: u64) -> Self
+    {
+        Self(steps)
+    }
+}
+
+impl From<ReplayBudget> for u64
+{
+    /// The steps `budget` allows.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: inverse of `ReplayBudget::from`.
+    /// - provides: the budget's count.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: zero, one, and maximum budgets preserve the admission
+    ///   boundary through the public count wrapper.
+    /// - witness: `replay::tests::budget_exhaustion_survives_the_counter_ceiling`
+    #[spec(ensures: |ret| ret == budget.0)]
+    #[inline]
+    fn from(budget: ReplayBudget) -> Self
+    {
+        budget.0
+    }
+}
+
+/// Replay `trace` against `claim` for the two `sides`, firing every step in
+/// `arena` and unfolding only what `unfoldings` defines.
+///
+/// A trace composes by goal refinement: decisions rewriting a goal precede the
+/// rewritten goal's dialogue, and a decomposed pair's dialogue is its first
+/// component's then its second's. A leading `ComparedShared` instead closes an
+/// alpha-equal pair whole. There is no transitive composite: traces for
+/// `a = b` and `b = c` do not supply a trace for `a = c`.
+///
+/// The replay runs through [`crate::descent::replay`] as the trivial cover:
+/// one class, the claimed goal, and no positions.
+///
+/// # Specification
+/// - requires: the two sides and every body in `unfoldings` live in `arena`.
+/// - ensures: [`KernelVerdict::Convertible`] or
+///   [`KernelVerdict::NotConvertible`] exactly when `trace` replays as a
+///   derivation of `claim`: every decision applies, in order, to the goal it is
+///   read at, every goal closes at the verdict its derivation owes, and no
+///   decision is left over. An engine decline answers
+///   [`ReplayDecline::EngineDeclined`] without reading the trace; a budget
+///   exhausted answers [`ReplayDecline::Budget`]; anything else answers the
+///   refusal. `arena` holds what it held on entry.
+/// - ensures: unit — on the budget-terminating fragment, the one-decision trace
+///   `[ComparedShared]` certifies `Convertible` on alpha-equal sides and
+///   `NotConvertible` on rigid alpha-distinct sides, under the matching claim.
+///   Weak head reduction precedes that decision; a divergent side declines with
+///   [`ReplayDecline::Budget`], even against itself.
+/// - ensures: purity — the verdict depends only on the sides' content,
+///   unfoldings, claim, trace and budget. Replaying twice or in a cloned arena
+///   gives the same verdict and restores the entry watermark on every return.
+///   No verdict adds data to the classified object.
+/// - ensures: composition — a pair whose components each replay `Convertible`
+///   on their own traces replays `Convertible` on the first component's trace
+///   followed by the second's; read the other way round, the second's trace
+///   answers the first component's goal and is refused as
+///   [`ReplayRefusal::Inapplicable`] at its first decision that does not apply
+///   there. An alpha-equal pair also closes whole on `[ComparedShared]`,
+///   leaving any further decision [`ReplayRefusal::Leftover`].
+/// - provides: the certified recheck of an untrusted engine's conversion
+///   verdict, search-free and sequential.
+/// - fails: never — a refusal is a verdict.
+/// - panics: none.
+/// - intension: each active replay uses a fresh content table and no memo
+///   shared with another call; temporary reducts are discarded.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the surfaces are the rule table's rows, the refusal kinds
+///   and the two decline sources, each separated by a hand-written trace that
+///   takes it. The traces an engine produces are replayed end to end by that
+///   engine's own tests, which sit above this crate. L2/L3 — generated rigid
+///   terms, beta redexes, static unfoldings and a divergent term exercise
+///   repeat/clone invariance and rollback, with independent unit-law goldens
+///   preventing agreement on a constant verdict.
+/// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+/// - witness: `replay::tests::the_replay_reduces_before_it_reads_a_decision`
+/// - witness: `replay::tests::an_unfolding_fires_only_where_the_trace_names_its_head`
+/// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
+/// - witness: `replay::tests::a_frozen_branch_cannot_carry_a_refutation`
+/// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+/// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
+/// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
+/// - witness: `tests::replay_laws::replay_is_pure_across_repeated_and_cloned_arenas`
+/// - witness: `tests::replay_laws::a_pair_replays_as_its_components_traces_in_order`
+/// - witness: `replay::tests::engine_decline_and_zero_budget_do_not_read_the_trace`
+/// - witness: `replay::tests::reduced_heads_retain_application_and_bind_frames`
+// Unit and cross-run purity are witnessed relations, not predicates over one
+// result. The executable clause checks their per-call boundary: rollback and
+// preservation of the claimed verdict, including the no-dialogue case.
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| arena.watermark() == before && match (claim, ret) {
+        (EngineClaim::Declined, KernelVerdict::Declined(ReplayDecline::EngineDeclined)) => true,
+        (EngineClaim::Declined, _) | (_, KernelVerdict::Declined(ReplayDecline::EngineDeclined)) => false,
+        (EngineClaim::Convertible, KernelVerdict::Convertible)
+        | (EngineClaim::NotConvertible, KernelVerdict::NotConvertible)
+        | (_, KernelVerdict::Declined(ReplayDecline::Refused(_) | ReplayDecline::PartialFixpoint)) => budget.0 > 0,
+        (_, KernelVerdict::Declined(ReplayDecline::Budget)) => true,
+        _ => false,
+    },
+)]
+#[inline]
+#[must_use]
+pub fn replay<I>(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    sides: ReplaySides,
+    claim: EngineClaim,
+    trace: I,
+    budget: ReplayBudget,
+) -> KernelVerdict
+where
+    I: IntoIterator<Item = ConversionDecision<ReplayNode>>,
+{
+    let mut conversion = Conversion {
+        arena,
+        unfoldings,
+        budget,
+    };
+    let claimed = Claimed {
+        sides,
+        claim,
+        trace,
+    };
+    let Ok(verdict) = crate::descent::replay(&mut conversion, claimed, []);
+    verdict
+}
+
+/// A conversion trace's replay as the trivial descent datum: one class, the
+/// claimed goal, glued by the replay, and no positions.
+///
+/// The engine emits a shared derivation once under each parent, so a trace
+/// holds no overlap, and the cover puts no position beside its one class.
+struct Conversion<'run>
+{
+    /// The arena the sides and bodies live in, restored on every return.
+    arena: &'run mut TermArena,
+    /// The bodies the replay may unfold.
+    unfoldings: &'run Unfoldings,
+    /// The steps the replay may take.
+    budget: ReplayBudget,
+}
+
+/// The class a conversion trace covers: two sides, the engine's claim about
+/// them and the trace that derives it.
+struct Claimed<Trace>
+{
+    /// The two terms compared.
+    sides: ReplaySides,
+    /// The engine's verdict.
+    claim: EngineClaim,
+    /// The engine's decisions, in the order it made them.
+    trace: Trace,
+}
+
+impl<Trace> Descent<Claimed<Trace>> for Conversion<'_>
+where
+    Trace: IntoIterator<Item = ConversionDecision<ReplayNode>>,
+{
+    type Bound<'glued>
+        = ()
+    where
+        Self: 'glued;
+    type Gluing = KernelVerdict;
+    type Position = Infallible;
+    type Refusal = Infallible;
+
+    /// Replay the trace against the claim for the two sides.
+    ///
+    /// # Specification
+    /// - requires: the two sides and every body in the unfoldings live in the
+    ///   arena.
+    /// - ensures: the verdict [`replay()`] states, and the arena holds what it
+    ///   held on entry.
+    /// - fails: never — a refusal is a verdict.
+    /// - panics: none.
+    /// - executable: none — [`replay()`]'s attribute checks the verdict against
+    ///   the claim and the restored arena.
+    ///
+    /// # Cost
+    /// - allocation: a content table on the global allocator until #7390, setup
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every witness of [`replay()`] replays through this
+    ///   gluing, so a gluing that departs from the rule table refuses there.
+    /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
+    /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
+    #[inline]
+    fn glue(
+        &mut self,
+        class: Claimed<Trace>,
+    ) -> Result<KernelVerdict, Infallible>
+    {
+        let Claimed {
+            sides,
+            claim,
+            trace,
+        } = class;
+        let expect = match claim {
+            EngineClaim::Convertible => Expect::Convertible,
+            EngineClaim::NotConvertible => Expect::NotConvertible,
+            EngineClaim::Declined => {
+                return Ok(KernelVerdict::Declined(ReplayDecline::EngineDeclined));
+            },
+        };
+        let (left, right) = terms(sides);
+        let arena = &mut *self.arena;
+        let watermark = arena.watermark();
+        let outcome = {
+            let mut run = Replay {
+                arena: &mut *arena,
+                unfoldings: self.unfoldings,
+                evaluator: self.unfoldings,
+                trace: trace.into_iter().peekable(),
+                reading: Reading::Recorded,
+                position: 0,
+                spent: 0,
+                budget: u64::from(self.budget),
+                table: ContentTable::new_in(Global),
+                memo: NullMemo,
+                owed: Vec::new(),
+            };
+            let premise = Premise {
+                left,
+                right,
+                defined: DefinedHead::Hold,
+            };
+            run.drive(Goal::premise(premise, expect, Reduction::Plain))
+        };
+        arena.truncate_to(watermark);
+        Ok(concluded(outcome, expect))
+    }
+
+    /// Bind nothing: a verdict needs no reading.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn bind(
+        &mut self,
+        _gluing: &KernelVerdict,
+    ) -> Result<(), Infallible>
+    {
+        Ok(())
+    }
+
+    /// Agree no position: the trivial cover has none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn agree(
+        &mut self,
+        _bound: &(),
+        position: Infallible,
+    ) -> Result<(), Infallible>
+    {
+        match position {}
+    }
+}
+
+/// The kernel's own conversion of two terms: the replay with no trace, every
+/// rule the shapes force fired unread.
+///
+/// The rules that fire are the ones no choice stands behind: weak head
+/// reduction, a presented type's terms rewritten to normal form by
+/// `unfoldings`' presentations, a cong chain whose functions compose to the
+/// identity read as its path, forcing two thunks, η for a lambda against a
+/// neutral, the two commuting conversions of `F`, a returned endpoint taken
+/// as its computation, and every structural decomposition. No rule of the
+/// table unfolds a constant, so a constant is compared by name, and no
+/// refutation is certified: a pair this cannot relate declines rather than
+/// separating. `unfoldings`' bodies are read only by the kernel's own
+/// evaluator, inside the cong chain's reading ([`Replay::fuse`]).
+///
+/// # Specification
+/// - requires: the two sides, and every body in `unfoldings`, live in `arena`.
+/// - ensures: [`KernelVerdict::Convertible`] exactly when the forced rules
+///   derive the two sides convertible within `budget`; otherwise a
+///   [`KernelVerdict::Declined`], never [`KernelVerdict::NotConvertible`].
+///   `arena` holds what it held on entry.
+/// - provides: the conversion a judgement the kernel decides by itself reads,
+///   with no engine to supply a trace: reflexivity's endpoints first of all.
+/// - fails: never — a decline is a verdict.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
+/// # Adequacy
+/// - hypothesis: L3 — an η-expanded pair, a reassociated pair and a pair apart
+///   in one continuation separate a conversion that fires the forced rules from
+///   one that compares syntax, and from one that relates everything.
+/// - witness: `replay::tests::the_kernel_converts_by_the_forced_rules_alone`
+/// - witness: `element_identity::tests::reflexivity_converts_its_endpoints_by_the_laws_of_bind`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| arena.watermark() == before && ret != KernelVerdict::NotConvertible,
+)]
+#[inline]
+#[must_use]
+pub fn convert(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    sides: ReplaySides,
+    budget: ReplayBudget,
+) -> KernelVerdict
+{
+    let (left, right) = terms(sides);
+    let rules = unfoldings.forced();
+    let watermark = arena.watermark();
+    let outcome = {
+        let mut run = Replay {
+            arena: &mut *arena,
+            unfoldings: &rules,
+            evaluator: unfoldings,
+            trace: core::iter::empty().peekable(),
+            reading: Reading::Forced,
+            position: 0,
+            spent: 0,
+            budget: u64::from(budget),
+            table: ContentTable::new_in(Global),
+            memo: NullMemo,
+            owed: Vec::new(),
+        };
+        let premise = Premise {
+            left,
+            right,
+            defined: DefinedHead::Hold,
+        };
+        run.drive(Goal::premise(
+            premise,
+            Expect::Convertible,
+            Reduction::Plain,
+        ))
+    };
+    arena.truncate_to(watermark);
+    concluded(outcome, Expect::Convertible)
+}
+
+/// The kernel's own conversion of two terms with definitions unfolding.
+///
+/// The forced rules of [`convert`] apply, and at a head naming a definition
+/// `unfoldings` holds, the one δ-step it admits, the left side's first. Two
+/// quotes that are neither α-equal nor both rigid convert when the returned
+/// endpoints and decodes the walk over their quoted types sets aside read
+/// alike, as [`read_endpoints`] reads a step's endpoints: the replay owes the
+/// pair, and the reading follows it.
+///
+/// This is the conversion an obligation the record decides "by conversion"
+/// asks for, where a side runs a definition the other side states by what it
+/// computes: a case's loop obligation, whose loop arm may answer with a call
+/// at the transported point. Every step, the δ-steps among them, is charged to
+/// `budget`, and a run past it is declined as
+/// [`ReplayDecline::Budget`], never read as apart.
+///
+/// # Specification
+/// - requires: the two sides, and every body in `unfoldings`, live in `arena`.
+/// - ensures: [`KernelVerdict::Convertible`] exactly when the forced rules, the
+///   δ-steps and the reading of every quote pair they owe derive the two sides
+///   convertible within `budget`, the reading taking what the replay left;
+///   [`KernelVerdict::Declined`] with [`ReplayDecline::Budget`] when the replay
+///   outruns it, with [`ReplayRefusal::Unreadable`] when an owed pair does not
+///   read alike, and some other decline otherwise; never
+///   [`KernelVerdict::NotConvertible`]. `arena` holds what it held on entry.
+/// - provides: the conversion a loop obligation is decided by.
+/// - fails: never — a decline is a verdict.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a definition run at a head converts with what it computes
+///   here and declines under [`convert`], and a definition that unfolds to
+///   itself runs past a small budget and is declined as such; a call returning
+///   a record code over another call converts with the record its run reaches,
+///   and not with one whose field reads to another type.
+/// - witness: `replay::tests::the_kernel_unfolds_a_defined_head_within_its_budget`
+/// - witness: `replay::tests::a_step_reads_a_record_code_a_stuck_arm_returns_3045`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| arena.watermark() == before && ret != KernelVerdict::NotConvertible,
+)]
+#[inline]
+#[must_use]
+pub fn convert_unfolding(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    sides: ReplaySides,
+    budget: ReplayBudget,
+) -> KernelVerdict
+{
+    let watermark = arena.watermark();
+    let verdict = {
+        let Unfolded {
+            verdict,
+            owed,
+            left,
+        } = unfold_owing(arena, unfoldings, sides, budget);
+        if owed.is_empty() {
+            verdict
+        }
+        else {
+            match read_endpoints(arena, unfoldings, &owed, left, StuckEndpoints::Unfolding) {
+                EndpointReading::Converts => KernelVerdict::Convertible,
+                EndpointReading::Apart => {
+                    KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Unreadable))
+                },
+            }
+        }
+    };
+    arena.truncate_to(watermark);
+    verdict
+}
+
+/// What the kernel's conversion with definitions unfolding comes to before
+/// the quote pairs it owes are read.
+#[derive(Debug)]
+struct Unfolded
+{
+    /// The replay's verdict.
+    verdict: KernelVerdict,
+    /// The quote pairs the verdict owes; empty unless it is
+    /// [`KernelVerdict::Convertible`].
+    owed: Vec<SetAside>,
+    /// The budget the replay left.
+    left: ReplayBudget,
+}
+
+/// The replay [`convert_unfolding`] runs, short of reading the quote pairs
+/// it owes, and without restoring `arena`: the owed pairs name nodes the
+/// replay minted, which their reader needs.
+///
+/// # Specification
+/// - requires: the two sides, and every body in `unfoldings`, live in `arena`.
+/// - ensures: the replay's verdict, never [`KernelVerdict::NotConvertible`];
+///   the quote pairs the replay closed on condition, none unless the verdict is
+///   [`KernelVerdict::Convertible`]; and the budget the replay left. Every node
+///   an owed pair names lives in `arena`.
+/// - provides: the one replay whose owed pairs [`convert_unfolding`] and
+///   [`read_endpoints`] read, each on its own loop, so neither reading calls
+///   back into the other.
+/// - fails: never — a decline is a verdict.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
+/// # Adequacy
+/// - hypothesis: L3 — a call returning a record code over another call owes
+///   that code against the record its run reaches.
+/// - witness: `replay::tests::a_step_reads_a_record_code_a_stuck_arm_returns_3045`
+#[spec(ensures: |ret| ret.verdict != KernelVerdict::NotConvertible
+    && (ret.owed.is_empty() || ret.verdict == KernelVerdict::Convertible))]
+fn unfold_owing(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    sides: ReplaySides,
+    budget: ReplayBudget,
+) -> Unfolded
+{
+    let (left, right) = terms(sides);
+    let mut run = Replay {
+        arena,
+        unfoldings,
+        evaluator: unfoldings,
+        trace: core::iter::empty().peekable(),
+        reading: Reading::Unfolding,
+        position: 0,
+        spent: 0,
+        budget: u64::from(budget),
+        table: ContentTable::new_in(Global),
+        memo: NullMemo,
+        owed: Vec::new(),
+    };
+    let premise = Premise {
+        left,
+        right,
+        defined: DefinedHead::Hold,
+    };
+    let outcome = run.drive(Goal::premise(
+        premise,
+        Expect::Convertible,
+        Reduction::Plain,
+    ));
+    let verdict = concluded(outcome, Expect::Convertible);
+    let mut owed = run.owed;
+    if verdict != KernelVerdict::Convertible {
+        owed.clear();
+    }
+    Unfolded {
+        verdict,
+        owed,
+        left: ReplayBudget::from(run.budget.saturating_sub(run.spent)),
+    }
+}
+
+/// The kernel's own reading of the step `left` to `right`.
+///
+/// Each side is read as a returned endpoint is: its computation normalized
+/// by this module's weak head reduction with one δ-step wherever it sticks
+/// at a head naming a definition `unfoldings` holds, and the normal forms
+/// converted by the one conversion — two quotes by the structural walk over
+/// their types, whose own returned endpoints and decodes are read the same
+/// way. Two stuck endpoints the walk separates convert by the kernel's
+/// conversion with definitions unfolding: a call a stuck arm holds on one
+/// side and runs on the other is the same computation (#2831).
+///
+/// The reading takes no trace: the reduction of a pure computation to
+/// `return v` chooses nothing, so a dialogue could only restate the term.
+/// It is the re-derivation of a step that runs a code over a binder to the
+/// quote it returns: that quote holds the calls its arms make on the binder,
+/// which an engine compares by place and never by what they run to, so no
+/// engine dialogue relates the two sides.
+///
+/// # Specification
+/// - requires: the two values, and every body in `unfoldings`, live in `arena`.
+/// - ensures: [`KernelVerdict::Convertible`] exactly when [`read_endpoints`]
+///   converts the pair within `budget` under [`StuckEndpoints::Unfolding`];
+///   otherwise [`ReplayRefusal::Contradicted`] at the empty trace's first
+///   position, never [`KernelVerdict::NotConvertible`]: a reading that stops
+///   short of a value certifies nothing. `arena` holds what it held on entry.
+/// - provides: the readmission's re-derivation of an open returned code's step.
+/// - fails: never — a decline is a verdict.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an open decode read through its decoder's arm converts
+///   with the quote over the calls the arm makes, and a forged quote stays
+///   apart; a reading that compared the two syntactically separates the first.
+/// - witness: `replay::tests::a_decode_reads_as_the_quote_its_code_returns`
+/// - witness: `replay::tests::a_step_reads_a_call_a_stuck_arm_holds_by_its_unfolding_2831`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| arena.watermark() == before && ret != KernelVerdict::NotConvertible,
+)]
+#[inline]
+#[must_use]
+pub fn read_step(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    left: ValueId,
+    right: ValueId,
+    budget: ReplayBudget,
+) -> KernelVerdict
+{
+    match read_endpoints(
+        arena,
+        unfoldings,
+        &[SetAside::Values(left, right)],
+        budget,
+        StuckEndpoints::Unfolding,
+    ) {
+        EndpointReading::Converts => KernelVerdict::Convertible,
+        EndpointReading::Apart => {
+            KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Contradicted {
+                at: TracePosition::default(),
+            }))
+        },
+    }
+}
+
+/// What reading a goal's returned endpoints comes to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EndpointReading
+{
+    /// Every pair converts once its returned endpoints are read.
+    Converts,
+    /// Some pair stays apart.
+    Apart,
+}
+
+/// How [`read_endpoints`] compares two returned endpoints that both stay stuck.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StuckEndpoints
+{
+    /// By the structural walk over their computations alone: a relation's
+    /// endpoints, where every unfolding is a recorded decision.
+    Structural,
+    /// By the walk, or else by the kernel's conversion with definitions
+    /// unfolding: a step's own reading, which runs a code to its quote, and a
+    /// mode switch's, which reads the types the checker's reducts hold, so a
+    /// call held in a stuck arm and the same call run read alike.
+    Unfolding,
+}
+
+/// What `pending` comes to once its returned endpoints, decodes and codomains
+/// are read: each side of a value pair normalized as
+/// [`Replay::normalize_returned`] gives it and the normal forms converted by
+/// [`convert_values`], the kernel's one conversion; two normal forms that are
+/// both stuck endpoints, or both thunks, compared by the structural walk over
+/// their computations, whose own set-aside pairs — the endpoints the stuck
+/// heads carry, which the evaluator does not run — are read in turn (#698);
+/// two that are neither, a reflexivity or a constructor each, compared by
+/// that walk over the formers, whose endpoints are read in turn the same way,
+/// and left apart when the walk sets the pair aside whole;
+/// a decode's code normalized to the quote it returns, and the type it quotes
+/// compared with the other side by the same walk; a dependent arrow's codomain
+/// compared by that walk with a plain arrow's weakened past the dependent
+/// binder (#577).
+///
+/// # Specification
+/// - requires: every pair's values and types, and every body in `unfoldings`,
+///   live in `arena`.
+/// - ensures: [`EndpointReading::Converts`] exactly when, within `budget`,
+///   every value pair's normal forms convert under [`convert_values`] — or,
+///   when both are quotes, their quoted types converge under the walk with
+///   every pair it sets aside read the same way, or, when both are stuck
+///   endpoints or both thunks, their computations converge the same way, or,
+///   when neither is a stuck endpoint, the formers converge the same way with
+///   the pair itself not set aside, or, under [`StuckEndpoints::Unfolding`],
+///   two stuck endpoints or two thunks convert under [`convert_unfolding`]
+///   within `budget`, every quote pair it owes read the same way — and every
+///   decode's code normalizes to a quote whose quoted type converges with the
+///   other side the same way, and every dependent codomain converges the same
+///   way with its plain codomain weakened by one binder. A normalization that
+///   stops short of a value — budget, a partial fixpoint, an unreadable node —
+///   leaves its pair apart, and so does a decode whose code reads to no quote
+///   and a pair whose normal forms do not convert. `arena` holds what it held
+///   on entry.
+/// - provides: the checker's reading of a returned endpoint, and of the type a
+///   returned code denotes, at a mode switch.
+/// - fails: never — a normalization that stops is an apart answer.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `while let` loop over a worklist of set-aside pairs, not
+///   recursion.
+/// - measure: the budget left, then the size of the pair popped. A pair adds to
+///   the worklist only after reading a returned code, reading two returned
+///   endpoints, weakening a codomain, building a words' point or taking the
+///   quote pairs a conversion with definitions unfolding owes, each of which
+///   charges the budget at least one step, or after walking two formers. That
+///   walk adds only pairs inside them, since one that would add the pair itself
+///   leaves it apart. A former that is the popped pair's own value cost no
+///   charge, and the pairs inside it are smaller than the pair. The walk over
+///   one type or computation, like one such conversion, adds finitely many
+///   pairs. The conversion reads none of what it owes, so it never calls back
+///   here.
+///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
+/// # Adequacy
+/// - hypothesis: L3 — an endpoint returning its value through a definition
+///   converts, a stuck endpoint converts only with an equal one, and an
+///   endpoint returning a different value stays apart; two stuck endpoints
+///   carrying endpoints that read alike, one through a definition and one
+///   through a β-redex, convert, and stay apart when what they carry reads
+///   apart; a decode whose code returns the other side's quote converts, one
+///   whose code returns another quote or stays stuck does not; a dependent
+///   codomain that ignores its binder converts with the plain one and one that
+///   names it does not; the arena's watermark is restored. Under
+///   [`StuckEndpoints::Unfolding`], two stuck endpoints whose arms differ by a
+///   call one side holds and the other runs convert, and they stay apart under
+///   [`StuckEndpoints::Structural`]. Two whose arms differ by a call returning
+///   a record code over another call and the record its run reaches convert
+///   too, and stay apart when the record's field reads to another type. A thunk
+///   a δ-step leaves over a recursion under parameters converts with the thunk
+///   over the call its source wrote, and stays apart from one over the
+///   parameters swapped. Two reflexivities over endpoints that read alike, one
+///   through a definition and one through a β-redex, convert, and stay apart
+///   when one reads to another call.
+/// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
+/// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
+/// - witness: `replay::tests::a_decode_reads_as_the_quote_its_code_returns`
+/// - witness: `conv::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
+/// - witness: `replay::tests::endpoints_a_stuck_endpoint_carries_are_read_in_turn_698`
+/// - witness: `replay::tests::endpoints_a_former_carries_are_read_in_turn_4186`
+/// - witness: `replay::tests::a_step_reads_a_call_a_stuck_arm_holds_by_its_unfolding_2831`
+/// - witness: `replay::tests::a_step_reads_a_record_code_a_stuck_arm_returns_3045`
+/// - witness: `replay::tests::a_recursion_under_its_parameters_reads_as_its_call_3733`
+#[spec(captures: before = arena.watermark(), ensures: arena.watermark() == before)]
+#[must_use]
+pub(crate) fn read_endpoints(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    pending: &[SetAside],
+    budget: ReplayBudget,
+    stuck: StuckEndpoints,
+) -> EndpointReading
+{
+    let watermark = arena.watermark();
+    let reading = {
+        let mut run = Replay {
+            arena: &mut *arena,
+            unfoldings,
+            evaluator: unfoldings,
+            trace: core::iter::empty().peekable(),
+            reading: Reading::Forced,
+            position: 0,
+            spent: 0,
+            budget: u64::from(budget),
+            table: ContentTable::new_in(Global),
+            memo: NullMemo,
+            owed: Vec::new(),
+        };
+        let mut reading = EndpointReading::Converts;
+        let mut worklist = pending.to_vec();
+        while let Some(set_aside) = worklist.pop() {
+            let goal = match set_aside {
+                SetAside::Values(left, right) => {
+                    let (Ok(left_normal), Ok(right_normal)) = (
+                        run.normalize_returned(left, Reduction::Endpoint, DefinedHead::Unfold),
+                        run.normalize_returned(right, Reduction::Endpoint, DefinedHead::Unfold),
+                    )
+                    else {
+                        reading = EndpointReading::Apart;
+                        break;
+                    };
+                    if convert_values(
+                        run.arena,
+                        run.unfoldings.presentations(),
+                        left_normal,
+                        right_normal,
+                    ) == Convertibility::Convertible
+                    {
+                        continue;
+                    }
+                    // A step's own reading runs its code to the quote it
+                    // returns, so two stuck endpoints that differ by a
+                    // definition a stuck arm calls, held on one side and run
+                    // on the other, convert by the kernel's δ-steps (#2831).
+                    // A quote pair the δ-steps reach and owe is read on this
+                    // worklist in turn (#3045). Two thunks the walk set aside
+                    // for a forced thunk convert by the same reduction.
+                    if stuck == StuckEndpoints::Unfolding
+                        && matches!(
+                            (run.arena.value(left_normal), run.arena.value(right_normal)),
+                            (Some(&Value::Returned(_)), Some(&Value::Returned(_)))
+                                | (Some(&Value::Thunk(_)), Some(&Value::Thunk(_)))
+                        )
+                    {
+                        let unfoldings = run.unfoldings;
+                        let arena = &mut *run.arena;
+                        let mark = arena.watermark();
+                        let owing = match unfold_owing(
+                            arena,
+                            unfoldings,
+                            ReplaySides::Values(left_normal, right_normal),
+                            budget,
+                        ) {
+                            Unfolded { verdict, owed, .. }
+                                if verdict == KernelVerdict::Convertible && !owed.is_empty() =>
+                            {
+                                Ok(owed)
+                            },
+                            Unfolded { verdict, .. } => Err(verdict),
+                        };
+                        if owing.is_err() {
+                            arena.truncate_to(mark);
+                        }
+                        match owing {
+                            Ok(owed) => {
+                                let Ok(()) = run.charge()
+                                else {
+                                    reading = EndpointReading::Apart;
+                                    break;
+                                };
+                                worklist.extend(owed);
+                                continue;
+                            },
+                            Err(KernelVerdict::Convertible) => continue,
+                            Err(_) => {},
+                        }
+                    }
+                    match (run.arena.value(left_normal), run.arena.value(right_normal)) {
+                        (Some(&Value::Quote(one)), Some(&Value::Quote(other))) => {
+                            ConversionGoal::ValueType(one, other)
+                        },
+                        // The evaluator stops at a stuck head and leaves the
+                        // endpoints its arguments carry unrun: compare the heads by
+                        // structure and read those endpoints in turn.
+                        (Some(&Value::Returned(one)), Some(&Value::Returned(other)))
+                        | (Some(&Value::Thunk(one)), Some(&Value::Thunk(other))) => {
+                            ConversionGoal::Computation(one, other)
+                        },
+                        // A stuck endpoint reads apart from any former.
+                        (Some(&Value::Returned(_)) | None, _)
+                        | (_, Some(&Value::Returned(_)) | None) => {
+                            reading = EndpointReading::Apart;
+                            break;
+                        },
+                        // A former each side reads to, a reflexivity or a
+                        // constructor, leaves the endpoints it carries unrun too:
+                        // compare the formers by structure and read those
+                        // endpoints in turn. A walk that sets the pair aside
+                        // whole meets a presented type's constructor, which
+                        // `convert_values` has read by the type's rules already.
+                        (Some(_), Some(_)) => {
+                            let added = worklist.len();
+                            if pending_endpoints(
+                                run.arena,
+                                run.unfoldings.presentations(),
+                                ConversionGoal::Value(left_normal, right_normal),
+                                &mut worklist,
+                            ) != Convertibility::Convertible
+                                || worklist.get(added ..).is_some_and(|set_aside| {
+                                    set_aside.contains(&SetAside::Values(left_normal, right_normal))
+                                })
+                            {
+                                reading = EndpointReading::Apart;
+                                break;
+                            }
+                            continue;
+                        },
+                    }
+                },
+                SetAside::Decoded { code, other } => {
+                    let Ok(normal) =
+                        run.normalize_returned(code, Reduction::Endpoint, DefinedHead::Unfold)
+                    else {
+                        reading = EndpointReading::Apart;
+                        break;
+                    };
+                    let Some(&Value::Quote(quoted)) = run.arena.value(normal)
+                    else {
+                        reading = EndpointReading::Apart;
+                        break;
+                    };
+                    ConversionGoal::ValueType(quoted, other)
+                },
+                SetAside::Codomains(Codomains { dependent, plain }) => {
+                    let Ok(()) = run.charge()
+                    else {
+                        reading = EndpointReading::Apart;
+                        break;
+                    };
+                    let weakened = shift_comp_type(
+                        run.arena,
+                        &mut run.table,
+                        &mut run.memo,
+                        plain,
+                        BinderDepth::NONE,
+                        BinderDepth::from(1_u32),
+                    );
+                    ConversionGoal::CompType(dependent, weakened)
+                },
+                // A path whose endpoints do not spell its words' point reads as the
+                // words when each endpoint reads as the point (#485, #5099).
+                SetAside::AtPoint { words, from, to } => {
+                    let Some(point) =
+                        crate::words::point(run.arena, run.unfoldings.presentations(), words)
+                    else {
+                        reading = EndpointReading::Apart;
+                        break;
+                    };
+                    let Ok(()) = run.charge()
+                    else {
+                        reading = EndpointReading::Apart;
+                        break;
+                    };
+                    worklist.push(SetAside::Values(from, point));
+                    worklist.push(SetAside::Values(to, point));
+                    continue;
+                },
+            };
+            if pending_endpoints(
+                run.arena,
+                run.unfoldings.presentations(),
+                goal,
+                &mut worklist,
+            ) != Convertibility::Convertible
+            {
+                reading = EndpointReading::Apart;
+                break;
+            }
+        }
+        reading
+    };
+    arena.truncate_to(watermark);
+    reading
+}
+
+/// The type the decode of `code` denotes, read as [`read_endpoints`] reads a
+/// decode: `code` normalized as [`Replay::normalize_returned`] gives it, and
+/// the type its normal form quotes.
+///
+/// # Specification
+/// - requires: `code`, and every body in `unfoldings`, live in `arena`.
+/// - ensures: `Some(quoted)` exactly when `code` normalizes within `budget` to
+///   a quote of `quoted`, which then lives in `arena` with every node the
+///   reading minted for it; `None` otherwise, with `arena` holding what it held
+///   on entry.
+/// - provides: the check's reading of a decode it must see the head of — the
+///   fibre a pair's second component checks at, instantiated at a first
+///   component a code calls into (#721), and the type a data or sum case's
+///   scrutinee is cased on at, a binder a case refined to a call — kept beside
+///   the conversion's reading so both read a returned code by the one
+///   evaluator.
+/// - fails: never — a normalization that stops reads to no type.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a decode whose code calls a thunk returning `⌜Unit⌝`
+///   reads to the unit type and admits `()`; one whose code returns `⌜Integer⌝`
+///   reads to the integers and refuses it. A binder whose decode reads to a
+///   data type or a sum is cased on at it; one reading to the unit type is
+///   refused.
+/// - witness: `check::tests::a_pair_checks_at_a_fibre_decoding_a_call_into_its_first_component_721`
+/// - witness: `check::tests::a_data_case_reads_a_decode_of_a_call_to_its_data_type_2872`
+/// - witness: `check::tests::a_sum_case_reads_a_decode_of_a_call_to_its_sum_2830`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| ret.map_or_else(|| arena.watermark() == before, |quoted| arena.value_type(quoted).is_some()),
+)]
+#[must_use]
+pub(crate) fn read_decode(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    code: ValueId,
+    budget: ReplayBudget,
+) -> Option<ValueTypeId>
+{
+    read_quoted(arena, unfoldings, code, budget, |normal| {
+        if let Value::Quote(quoted) = *normal {
+            Some(quoted)
+        }
+        else {
+            None
+        }
+    })
+}
+
+/// The computation type the decode of `code` denotes, read as [`read_decode`]
+/// reads a value decode: `code` normalized, and the computation type its
+/// normal form quotes.
+///
+/// # Specification
+/// - requires: `code`, and every body in `unfoldings`, live in `arena`.
+/// - ensures: `Some(quoted)` exactly when `code` normalizes within `budget` to
+///   a computation quote of `quoted`, which then lives in `arena` with every
+///   node the reading minted for it; `None` otherwise, with `arena` holding
+///   what it held on entry.
+/// - provides: the head of a computation type that decodes a returned code, as
+///   a joint fixpoint's goal does at each summand (#5036).
+/// - fails: never — a normalization that stops reads to no type.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lambda checks at a decode whose code is a case on an
+///   injection returning an arrow's quote, and a call of a function at such a
+///   decode converts with the arrow.
+/// - witness: `check::tests::a_lambda_checks_at_a_decode_of_a_case_on_an_injection_5036`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| ret.map_or_else(|| arena.watermark() == before, |quoted| arena.comp_type(quoted).is_some()),
+)]
+#[must_use]
+pub(crate) fn read_comp_decode(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    code: ValueId,
+    budget: ReplayBudget,
+) -> Option<CompTypeId>
+{
+    read_quoted(arena, unfoldings, code, budget, |normal| {
+        if let Value::QuoteComputation(quoted) = *normal {
+            Some(quoted)
+        }
+        else {
+            None
+        }
+    })
+}
+
+/// `quoted`, or the identity type it is with each endpoint read to its normal
+/// form, normalized as [`Replay::normalize_returned`] gives it.
+///
+/// # Specification
+/// - requires: `quoted`, and every body in `unfoldings`, live in `arena`.
+/// - ensures: an identity type at the domain of `quoted` over the normal forms
+///   of its endpoints, which lives in `arena`, when `quoted` is an identity
+///   type and an endpoint reads to another normal form within `budget`. An
+///   endpoint whose normalization stops stays as `quoted` holds it. `quoted`
+///   otherwise, with `arena` holding what it held on entry.
+/// - provides: the endpoints a reflexivity reads at the type a decode quotes.
+///   The kernel's evaluator reads the decode. The checker reads the whole
+///   decode by its own evaluation. So the checker records no dialogue for an
+///   endpoint that its evaluation runs. The kernel reads that endpoint by the
+///   evaluator that read the decode (#5364).
+/// - fails: never.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
+/// # Adequacy
+/// - hypothesis: L3 — a reflexivity with no dialogue checks at a decode whose
+///   code returns an identity's quote over an endpoint that calls a definition,
+///   and one whose point the call does not answer is refused.
+/// - witness: `check::tests::a_reflexivity_reads_the_endpoints_of_a_decoded_identity_5364`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| (ret == quoted && arena.watermark() == before)
+        || matches!(arena.value_type(ret), Some(&ValueType::Path { .. })),
+)]
+#[must_use]
+pub(crate) fn read_identity_endpoints(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    quoted: ValueTypeId,
+    budget: ReplayBudget,
+) -> ValueTypeId
+{
+    let Some(&ValueType::Path {
+        domain,
+        left,
+        right,
+    }) = arena.value_type(quoted)
+    else {
+        return quoted;
+    };
+    let watermark = arena.watermark();
+    let path = {
+        let mut run = Replay {
+            arena: &mut *arena,
+            unfoldings,
+            evaluator: unfoldings,
+            trace: core::iter::empty().peekable(),
+            reading: Reading::Forced,
+            position: 0,
+            spent: 0,
+            budget: u64::from(budget),
+            table: ContentTable::new_in(Global),
+            memo: NullMemo,
+            owed: Vec::new(),
+        };
+        let left_normal = run
+            .normalize_returned(left, Reduction::Endpoint, DefinedHead::Unfold)
+            .unwrap_or(left);
+        let right_normal = run
+            .normalize_returned(right, Reduction::Endpoint, DefinedHead::Unfold)
+            .unwrap_or(right);
+        if (left_normal, right_normal) == (left, right) {
+            Err(())
+        }
+        else {
+            Ok(run.arena.value_type_path(domain, left_normal, right_normal))
+        }
+    };
+    if path.is_err() {
+        arena.truncate_to(watermark);
+    }
+    path.unwrap_or(quoted)
+}
+
+/// What `quoted` reads from the normal form of `code`, normalized as
+/// [`Replay::normalize_returned`] gives it.
+///
+/// # Specification
+/// - requires: `code`, and every body in `unfoldings`, live in `arena`.
+/// - ensures: `quoted` of the normal form when `code` normalizes within
+///   `budget` and `quoted` reads it; `None` otherwise, with `arena` holding
+///   what it held on entry.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`read_decode`] and [`read_comp_decode`].
+/// - witness: `check::tests::a_data_case_reads_a_decode_of_a_call_to_its_data_type_2872`
+/// - witness: `check::tests::a_lambda_checks_at_a_decode_of_a_case_on_an_injection_5036`
+#[spec(captures: before = arena.watermark(), ensures: |ret| ret.is_some() || arena.watermark() == before)]
+fn read_quoted<Quoted>(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    code: ValueId,
+    budget: ReplayBudget,
+    quoted: impl Fn(&Value) -> Option<Quoted>,
+) -> Option<Quoted>
+{
+    let watermark = arena.watermark();
+    let read = {
+        let mut run = Replay {
+            arena: &mut *arena,
+            unfoldings,
+            evaluator: unfoldings,
+            trace: core::iter::empty().peekable(),
+            reading: Reading::Forced,
+            position: 0,
+            spent: 0,
+            budget: u64::from(budget),
+            table: ContentTable::new_in(Global),
+            memo: NullMemo,
+            owed: Vec::new(),
+        };
+        run.normalize_returned(code, Reduction::Endpoint, DefinedHead::Unfold)
+            .ok()
+            .and_then(|normal| run.arena.value(normal).and_then(&quoted))
+            .ok_or(())
+    };
+    if read.is_err() {
+        arena.truncate_to(watermark);
+    }
+    read.ok()
+}
+
+/// The two sides as goal terms.
+///
+/// # Specification
+/// trivial.
+const fn terms(sides: ReplaySides) -> (Term, Term)
+{
+    match sides {
+        ReplaySides::Values(left, right) => (Term::Value(left), Term::Value(right)),
+        ReplaySides::Computations(left, right) => {
+            (Term::Computation(left), Term::Computation(right))
+        },
+    }
+}
+
+/// The verdict a finished run owes `expect`.
+///
+/// # Specification
+/// trivial.
+const fn concluded(
+    outcome: Result<(), Stop>,
+    expect: Expect,
+) -> KernelVerdict
+{
+    match outcome {
+        Ok(()) => match expect {
+            Expect::Convertible => KernelVerdict::Convertible,
+            Expect::NotConvertible => KernelVerdict::NotConvertible,
+        },
+        Err(Stop::Budget) => KernelVerdict::Declined(ReplayDecline::Budget),
+        Err(Stop::PartialFixpoint) => KernelVerdict::Declined(ReplayDecline::PartialFixpoint),
+        Err(Stop::Refused(refusal)) => KernelVerdict::Declined(ReplayDecline::Refused(refusal)),
+    }
+}
+
+/// Why a replay stopped short of a certified verdict.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Stop
+{
+    /// The step budget ran out.
+    Budget,
+    /// A partial fixpoint stood at its unfolding gate.
+    PartialFixpoint,
+    /// The trace did not replay.
+    Refused(ReplayRefusal),
+}
+
+/// One side of a goal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Term
+{
+    /// A value.
+    Value(ValueId),
+    /// A computation.
+    Computation(ComputationId),
+}
+
+/// The verdict a goal's derivation owes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Expect
+{
+    /// The derivation proves the sides convertible.
+    Convertible,
+    /// The derivation refutes them.
+    NotConvertible,
+}
+
+/// The constants each side has frozen since its goal's last decomposition.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct Frozen
+{
+    /// The left side's frozen constants.
+    left: Vec<ConstantIndex>,
+    /// The right side's frozen constants.
+    right: Vec<ConstantIndex>,
+}
+
+impl Frozen
+{
+    /// The constants `side` has frozen.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the list [`Self::freeze`] built for `side`.
+    /// - provides: the frozen test a head's status reads.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a defined head is frozen only on the selected side,
+    ///   while an opaque head stays opaque on both sides.
+    /// - witness: `replay::tests::frozen_heads_are_side_local_and_opacity_takes_precedence`
+    #[spec(ensures: |ret| {
+        let selected = match side {
+            ConversionSide::Left => &self.left,
+            ConversionSide::Right => &self.right,
+        };
+        ret.len() == selected.len() && core::ptr::eq(ret.as_ptr(), selected.as_ptr())
+    })]
+    fn side(
+        &self,
+        side: ConversionSide,
+    ) -> &[ConstantIndex]
+    {
+        match side {
+            ConversionSide::Left => &self.left,
+            ConversionSide::Right => &self.right,
+        }
+    }
+
+    /// Freeze `constant` on `side`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `self.side(side)` contains `constant`.
+    /// - provides: the effect of a `Freeze` decision.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: freezing either side changes only that side of a
+    ///   defined head; freezing an opaque head cannot make it unfoldable. A
+    ///   freeze appends, so the predicate reads the side's length and its last
+    ///   constant rather than searching it.
+    /// - witness: `replay::tests::frozen_heads_are_side_local_and_opacity_takes_precedence`
+    #[spec(
+        captures: [own_count = self.side(side).len(), other_count = self.side(opposite(side)).len()],
+        ensures: self.side(side).len() == own_count.saturating_add(1)
+            && self.side(side).last() == Some(&constant)
+            && self.side(opposite(side)).len() == other_count,
+    )]
+    fn freeze(
+        &mut self,
+        side: ConversionSide,
+        constant: ConstantIndex,
+    )
+    {
+        match side {
+            ConversionSide::Left => self.left.push(constant),
+            ConversionSide::Right => self.right.push(constant),
+        }
+    }
+}
+
+/// Two terms of one polarity, compared.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Premise
+{
+    /// The left side.
+    left: Term,
+    /// The right side.
+    right: Term,
+    /// How a closing on the two reads an endpoint stuck at a defined head.
+    defined: DefinedHead,
+}
+
+impl Premise
+{
+    /// Two values.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn values(
+        left: ValueId,
+        right: ValueId,
+    ) -> Self
+    {
+        Self {
+            left: Term::Value(left),
+            right: Term::Value(right),
+            defined: DefinedHead::Hold,
+        }
+    }
+
+    /// Two computations.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn computations(
+        left: ComputationId,
+        right: ComputationId,
+    ) -> Self
+    {
+        Self {
+            left: Term::Computation(left),
+            right: Term::Computation(right),
+            defined: DefinedHead::Hold,
+        }
+    }
+
+    /// Two stuck eliminations' quoted motives, whose closing reads each
+    /// endpoint it sets aside by the replay's own reduction, a defined head
+    /// unfolding.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn motives(
+        left: ValueId,
+        right: ValueId,
+    ) -> Self
+    {
+        Self {
+            left: Term::Value(left),
+            right: Term::Value(right),
+            defined: DefinedHead::Unfold,
+        }
+    }
+}
+
+/// A goal awaiting its derivation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Goal
+{
+    /// The left side.
+    left: Term,
+    /// The right side.
+    right: Term,
+    /// What each side froze since the goal's last decomposition.
+    frozen: Frozen,
+    /// The verdict the derivation owes.
+    expect: Expect,
+    /// How the goal's computations reduce: as returned endpoints' once
+    /// [`Replay::open_returned`] has read the goal as their computations, and
+    /// in each computation premise such a goal decomposes into.
+    reduction: Reduction,
+    /// How a closing on the goal reads an endpoint stuck at a defined head.
+    defined: DefinedHead,
+}
+
+/// How a computation reduces to weak head form.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reduction
+{
+    /// By the search-free steps every computation takes.
+    Plain,
+    /// As a returned endpoint's computation, which is pure: a bind over a
+    /// call stuck at a variable or an opaque head also reads as what its
+    /// continuation returns with the call as its value ([`Replay::whnf`]).
+    Endpoint,
+}
+
+/// What [`Replay::normalize_returned`] does at a computation stuck at a
+/// defined head.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DefinedHead
+{
+    /// Takes the δ-step the head admits, as the kernel's own evaluator does,
+    /// and as two stuck eliminations' motives read the endpoints a compared
+    /// pair sets aside.
+    Unfold,
+    /// Stops there: any other compared pair's reading unfolds no definition,
+    /// as no decision names one.
+    Hold,
+}
+
+/// When [`Replay::reduce`] reads its environment back into its state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Unloading
+{
+    /// Once, at the weak head it stops at: the reduction the kernel runs.
+    AtTheHead,
+    /// After every step, so no environment outlives a step: the substituting
+    /// reduction the first is tested against.
+    #[cfg(test)]
+    EveryStep,
+}
+
+/// A bind an endpoint reading tries in [`Replay::whnf`], kept while its
+/// continuation reduces.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Attempt
+{
+    /// The frames outside the bind, innermost last.
+    outer: Vec<Frame>,
+    /// The call the bind binds: the stuck focus under the frames inside it.
+    call: ComputationId,
+    /// The bind over `call`, of one value or of several.
+    bind: Bound,
+    /// What the reduction had come to before the attempt.
+    progress: Progress,
+}
+
+/// A plain reading [`Replay::whnf`] suspends while the computation of a
+/// returned endpoint it met is read as an endpoint.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Suspended
+{
+    /// What met the endpoint: an elimination over it, or a fixpoint applied to
+    /// it.
+    elimination: ComputationId,
+    /// The endpoint, as the node `elimination` inspects.
+    endpoint: ValueId,
+    /// The endpoint's computation.
+    returned: ComputationId,
+    /// The frames outside `elimination`, innermost last.
+    frames: Vec<Frame>,
+}
+
+/// A held operand [`Replay::whnf`] runs in place of the reading that met it,
+/// as the evaluator's append runs one before it reads the operand's word.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct HeldRun
+{
+    /// The transport whose operand runs.
+    transport: crate::element_identity::ElementTransport,
+    /// The operand's computation, as the append holds it.
+    operand: ComputationId,
+    /// The frames outside the transport, innermost last.
+    frames: Vec<Frame>,
+    /// The binds the waiting reading was trying.
+    attempts: Vec<Attempt>,
+    /// How the waiting reading reduces.
+    reduction: Reduction,
+    /// What the run reads now: the operand, or an endpoint it returned.
+    reading: HeldReading,
+}
+
+/// What a held operand's run reads, which decides its step at a definition and
+/// at an endpoint it returns.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum HeldReading
+{
+    /// A call, a definition forced and applied: a definition heading it
+    /// unfolds, as the evaluator's append runs the call the operand holds, and
+    /// an endpoint it returns is read on, as the evaluator evaluates the
+    /// endpoint the call's body returns.
+    Call,
+    /// Any other operand, a bind or a transport: a definition heading it
+    /// unfolds. An endpoint it returns reads by the evaluator's one rule for a
+    /// resumed endpoint ([`Replay::resumed`]).
+    Operand,
+    /// The computation of an endpoint a call returned: a definition heading
+    /// it holds, as the evaluator holds the calls an endpoint's value holds.
+    Returned,
+}
+
+/// A frame of a stuck run that moves its value along a returned path, `y.
+/// tr(R↑, ⟨c⟩↑, y)`, read outside every binder of its environment.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ReturnedLeg
+{
+    /// The frame's position among the frames, innermost last.
+    at: usize,
+    /// The frame's continuation.
+    frame: ComputationId,
+    /// Its family `R`.
+    family: ValueTypeId,
+    /// The path's computation `c`.
+    path: ComputationId,
+}
+
+/// A returned path [`Replay::whnf`] runs in place of the reading stuck under
+/// the frame that moves along it, as the evaluator evaluates a path before it
+/// reads it as a composite.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PathRun
+{
+    /// The frame whose path runs.
+    leg: ReturnedLeg,
+    /// The stuck focus.
+    focus: ComputationId,
+    /// The frames outside it, innermost last.
+    frames: Vec<Frame>,
+    /// The binds the waiting reading was trying.
+    attempts: Vec<Attempt>,
+    /// How the waiting reading reduces.
+    reduction: Reduction,
+    /// What the waiting reading had come to.
+    progress: Progress,
+}
+
+/// A computation [`Replay::whnf`] runs in place of a waiting reading.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Run
+{
+    /// A held operand, which an append runs before it reads its word.
+    Held(HeldRun),
+    /// A returned path, which a stuck composite's transport reads.
+    Path(PathRun),
+}
+
+/// What [`Replay::along_composite`] reads at a stuck weak head.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AlongComposite
+{
+    /// The transport moves along each path: the new focus, the frames
+    /// rewritten.
+    Moved(Closure<ComputationId>),
+    /// A frame of the run moves along a returned path, which runs first.
+    Runs(ReturnedLeg),
+    /// No transport along a stuck composite stands here.
+    Stays,
+}
+
+/// What a held operand's run does at the weak head it stopped at.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RunStep
+{
+    /// It returned this value, which is no returned endpoint.
+    Returns(ValueId),
+    /// It reached this transport, which the evaluator holds as a value
+    /// ([`crate::element_identity::held_transport`]): the run returns it held.
+    Holds(ComputationId),
+    /// It returned an endpoint, and the run reads on into this computation as
+    /// the reading names.
+    Reads(ComputationId, HeldReading),
+    /// This definition heads it, and the run unfolds it.
+    Unfolds(ConstantIndex),
+    /// It returned this transport, which the append does not read and which
+    /// stands on this held call of this definition: the run unfolds the call
+    /// under the transport.
+    RunsPath(ComputationId, ComputationId, ConstantIndex),
+    /// It stuck at a head the run does not unfold.
+    Sticks,
+}
+
+impl Goal
+{
+    /// A fresh goal over `premise`, a part of a goal read at `within`, with
+    /// nothing frozen.
+    ///
+    /// A computation premise of a goal read as a returned endpoint's
+    /// computation, a bind's continuation among them, is a part of that one
+    /// pure computation, so it reads as the endpoint does: the engine reads a
+    /// continuation stuck at a bind of its own before it judges it. A value
+    /// premise reads plainly, a thunk's suspended computation among them,
+    /// until [`Replay::open_returned`] opens a returned endpoint there.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the goal's sides and defined-head reading are `premise`'s, it
+    ///   owes `expect` with nothing frozen, and it reads at `within` when both
+    ///   sides are computations, at [`Reduction::Plain`] otherwise.
+    /// - provides: the reading a decomposition's premise inherits.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two returned endpoints standing at one stuck call
+    ///   whose continuations case on its value decompose into arms, and an arm
+    ///   binding a call stuck at a variable before a call a definition heads
+    ///   meets the other arm's call there; read plainly, the bind sticks the
+    ///   arm and the replay refuses the decision the checker records next.
+    /// - witness: `replay::tests::an_endpoint_s_continuation_reads_through_a_bind_over_a_stuck_call_4246`
+    #[spec(ensures: |ret| ret.left == premise.left
+        && ret.right == premise.right
+        && ret.expect == expect
+        && ret.frozen == Frozen::default()
+        && ret.defined == premise.defined
+        && ret.reduction == match (premise.left, premise.right) {
+            (Term::Computation(_), Term::Computation(_)) => within,
+            _ => Reduction::Plain,
+        })]
+    fn premise(
+        premise: Premise,
+        expect: Expect,
+        within: Reduction,
+    ) -> Self
+    {
+        let reduction = match (premise.left, premise.right) {
+            (Term::Computation(_), Term::Computation(_)) => within,
+            (Term::Value(_), _) | (_, Term::Value(_)) => Reduction::Plain,
+        };
+        Self {
+            left: premise.left,
+            right: premise.right,
+            frozen: Frozen::default(),
+            expect,
+            reduction,
+            defined: premise.defined,
+        }
+    }
+
+    /// The term on `side`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn side(
+        &self,
+        side: ConversionSide,
+    ) -> Term
+    {
+        match side {
+            ConversionSide::Left => self.left,
+            ConversionSide::Right => self.right,
+        }
+    }
+
+    /// Replace the term on `side` with `term`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn set(
+        &mut self,
+        side: ConversionSide,
+        term: Term,
+    )
+    {
+        match side {
+            ConversionSide::Left => self.left = term,
+            ConversionSide::Right => self.right = term,
+        }
+    }
+}
+
+/// How a constant at a head may be read on one side.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Status
+{
+    /// It has a body, and the side has not frozen it.
+    Defined,
+    /// It has a body the side froze.
+    Frozen,
+    /// It has no body.
+    Opaque,
+}
+
+/// The head of a neutral term.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Head
+{
+    /// A bound variable.
+    Variable(DeBruijnIndex),
+    /// A constant, with its status on the side it stands on.
+    Constant(ConstantIndex, Status),
+}
+
+/// One elimination of a neutral's spine.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Elimination
+{
+    /// Nominal elimination; the arena node retains its motive and branches.
+    DataCase(ComputationId),
+    /// Dependent split; the arena node retains its motive and body. Only the
+    /// body is compared: the motive is a typing annotation that no reduction
+    /// reads.
+    SigmaSplit(ComputationId),
+    /// Record projection; the arena node retains its exact label.
+    RecordProjection(ComputationId),
+    /// Tuple projection; the arena node retains its component.
+    TupleProjection(ComputationId),
+    /// Lazy product projection of this component.
+    Project(gandr_kernel_term::Component),
+    /// Transport under a neutral path head, retaining its operand.
+    Transport(ValueId),
+    /// Product transport waiting for a neutral pair operand.
+    ProductTransport(ValueId),
+    /// A ride along a neutral flow head; the arena node retains its motive
+    /// and its value.
+    Ride(ComputationId),
+    /// A path transport along a neutral path head; the arena node retains
+    /// its motive and its value.
+    PathTransport(ComputationId),
+    /// A telescope transport along a neutral path head; the arena node
+    /// retains its motive, its second entry's start and path, and its value.
+    TelescopeTransport(ComputationId),
+    /// The head forced.
+    Force,
+    /// An application to this argument.
+    Apply(ValueId),
+    /// A bind into this continuation.
+    Bind(ComputationId),
+    /// A bind of this many values into this continuation.
+    BindAll(gandr_kernel_term::ResultCount, ComputationId),
+    /// A sum case; the arena node retains its branches, none for the empty
+    /// sum's elimination.
+    Case(ComputationId),
+    /// A native List fold's branches; checked element and result annotations
+    /// erase.
+    ListFold(ComputationId, ComputationId),
+    /// A native List case's branches; the checked element annotation erases.
+    ListCase(ComputationId, ComputationId),
+    /// A static application to this code: the one value elimination.
+    StaticApply(ValueId),
+    /// A fixpoint applied, past its leading arguments, to the neutral head;
+    /// the arena node is the fixpoint applied to those leading arguments, `fix
+    /// a₀ … aₖ₋₁`, the fixpoint itself when it has none.
+    Fixpoint(ComputationId),
+}
+
+/// A side's shape in weak head form.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Shape
+{
+    /// A unit, literal, pair, injection, lift or code.
+    Former,
+    /// A thunk of this computation.
+    Thunk(ComputationId),
+    /// A lambda over this body.
+    Lambda(ComputationId),
+    /// A lazy pairing of these components.
+    With(alloc::boxed::Box<[ComputationId]>),
+    /// A fixpoint over this body, standing at no gate, applied to these
+    /// leading arguments, first to last.
+    Fixpoint(ComputationId, Vec<ValueId>),
+    /// A returner of this value.
+    Return(ValueId),
+    /// A returner of these several values, in order.
+    ReturnAll(alloc::boxed::Box<[ValueId]>),
+    /// A head under its spine, innermost elimination first; a value's spine
+    /// holds static applications only.
+    Neutral(Head, Vec<Elimination>),
+}
+
+/// The rule a goal's two shapes select.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Rule
+{
+    /// A defined constant stands at a head: the trace chooses a δ-rule.
+    Constants,
+    /// A thunk meets a thunk or a neutral value: both sides are forced.
+    Force,
+    /// A lambda meets a neutral computation on this side: it is η-expanded.
+    Eta(ConversionSide),
+    /// A lazy pairing meets a neutral computation on this side: the neutral
+    /// is projected on both sides and each projection compared with the
+    /// pairing's component.
+    ProductEta(ConversionSide),
+    /// Neither side admits a choice: a leaf or a decomposition.
+    Structural,
+}
+
+/// What a structural rule makes of a goal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Structure
+{
+    /// The goal closes at this verdict.
+    Leaf(Expect),
+    /// The goal holds exactly when every premise does; never empty.
+    Premises(Vec<Premise>),
+}
+
+impl Structure
+{
+    /// The decomposition into `premises`, a leaf when there are none.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Leaf(Convertible)` when `premises` is empty, `Premises`
+    ///   otherwise.
+    /// - provides: the invariant that a decomposition always has a premise to
+    ///   refute through.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: empty neutral spines close positively, while ordered
+    ///   case and application premises admit only the selected refuting
+    ///   subgoal.
+    /// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
+    #[spec(
+        captures: count = premises.len(),
+        ensures: |ret| match ret {
+            Self::Leaf(Expect::Convertible) => count == 0,
+            Self::Premises(ref children) => count > 0 && children.len() == count,
+            Self::Leaf(Expect::NotConvertible) => false,
+        },
+    )]
+    fn of(premises: Vec<Premise>) -> Self
+    {
+        if premises.is_empty() {
+            return Self::Leaf(Expect::Convertible);
+        }
+        Self::Premises(premises)
+    }
+}
+
+/// What a compared pair closes to.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Compared
+{
+    /// The sides are α-equal.
+    Equal,
+    /// The sides are rigid and α-distinct.
+    Separated,
+    /// Alike but for the pairs of computations the walk parts, which convert
+    /// only by the forced rules ([`Replay::forced_converts`]).
+    Deferred(Vec<(ComputationId, ComputationId)>),
+    /// Neither: the comparison decides nothing.
+    Open,
+}
+
+/// How a shared comparison reads two computations its walk parts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Apart
+{
+    /// They part the pair: the comparison decides nothing, and the trace
+    /// reads the goal on.
+    Part,
+    /// They hand the goal back to [`Replay::drive`], which converts them by
+    /// the forced rules alone ([`Replay::forced_converts`]).
+    Defer,
+}
+
+/// What one turn of [`Replay::settle`] leaves its driver.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Settled
+{
+    /// The goal closed, or pushed the premises its derivation owes.
+    Turned,
+    /// The goal's shared comparison is alike but for `parted`: the goal as
+    /// read, its decision still next.
+    Deferred
+    {
+        /// The goal, read up to its shared comparison.
+        goal: Goal,
+        /// The pairs of computations the comparison's walk parts.
+        parted: Vec<(ComputationId, ComputationId)>,
+    },
+}
+
+/// Whether a term can reduce anywhere inside it, and what it holds that η
+/// relates across a pair.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Rigidity
+{
+    /// Built only of formers, variables and constants without a body.
+    Rigid
+    {
+        /// It holds a tuple or a record of no components.
+        unit: bool,
+        /// It holds a variable or an opaque constant.
+        neutral: bool,
+    },
+    /// It holds a thunk, a binder or a defined constant.
+    Flexible,
+}
+
+impl Rigidity
+{
+    /// Whether two α-distinct terms of these rigidities are apart: both are
+    /// rigid, and neither holds a unit where the other holds a neutral, which
+    /// η relates to it (#6110).
+    ///
+    /// # Specification
+    /// trivial.
+    const fn separates(
+        self,
+        other: Self,
+    ) -> Separation
+    {
+        match (self, other) {
+            (
+                Self::Rigid { unit, neutral },
+                Self::Rigid {
+                    unit: other_unit,
+                    neutral: other_neutral,
+                },
+            ) if !((unit && other_neutral) || (neutral && other_unit)) => Separation::Apart,
+            (Self::Rigid { .. } | Self::Flexible, _) => Separation::Open,
+        }
+    }
+}
+
+/// Whether rigidity alone parts two α-distinct terms.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Separation
+{
+    /// No reduction and no η can relate them.
+    Apart,
+    /// A reduction or η may relate them.
+    Open,
+}
+
+/// Whether a term is the unit: the tuple or the record of no components.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum UnitForm
+{
+    /// The term is the unit, which η relates to each neutral of its type.
+    Unit,
+    /// The term is another.
+    Other,
+}
+
+/// Whether η closes a pair with no premise (#6110).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EtaJoin
+{
+    /// One side is the unit and the other a neutral.
+    Joins,
+    /// η leaves the pair to the other rules.
+    Leaves,
+}
+
+/// What a bind's continuation does at its head with the variable it binds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Continuation
+{
+    /// It eliminates the variable there: the continuation `E[x]` of a bind
+    /// that a returned endpoint's elimination was rebuilt into.
+    Eliminates,
+    /// It returns the variable as it is, `return x`: the η-expansion of `F`
+    /// that [`BindRule::ReturnEta`] builds, which reading through only folds
+    /// back into the call it expanded.
+    Returns,
+    /// Anything else.
+    Other,
+}
+
+/// A constant the trace postponed, awaiting the unfolding on the other side.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Postponed
+{
+    /// No postponement is pending.
+    Nothing,
+    /// The other side's head constant was postponed.
+    Constant(ConstantIndex),
+    /// An anchor-free postponement: the unfolding that follows names its
+    /// side, and the other side's head, whichever defined constant it holds,
+    /// is the one postponed.
+    Opposite,
+}
+
+/// The next decision, or the trace's end.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Next
+{
+    /// The decision at the current position.
+    Decision(ConversionDecision<ReplayNode>),
+    /// The trace is spent.
+    End,
+}
+
+/// A frame on a computation's head path.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Frame
+{
+    /// An application to this argument.
+    Apply(ValueId),
+    /// A bind into this continuation.
+    Bind(ComputationId),
+    /// A bind of this many values into this continuation.
+    BindAll(gandr_kernel_term::ResultCount, ComputationId),
+    /// A projection of this component of a lazy pairing.
+    Project(gandr_kernel_term::Component),
+}
+
+/// A bind an endpoint reading in [`Replay::whnf`] reads through: of one value
+/// or of several, into its continuation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Bound
+{
+    /// A bind of one value into this continuation.
+    One(ComputationId),
+    /// A bind of this many values into this continuation.
+    Several(gandr_kernel_term::ResultCount, ComputationId),
+}
+
+impl Bound
+{
+    /// The bind's continuation.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn body(self) -> ComputationId
+    {
+        match self {
+            Self::One(body) | Self::Several(_, body) => body,
+        }
+    }
+
+    /// The values the bind binds: the innermost this many variables of its
+    /// continuation.
+    ///
+    /// # Specification
+    /// trivial.
+    fn count(self) -> gandr_kernel_term::ResultCount
+    {
+        match self {
+            Self::One(_) => gandr_kernel_term::ResultCount::from(1_usize),
+            Self::Several(arity, _) => arity,
+        }
+    }
+
+    /// The bind as the frame over its call.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn frame(self) -> Frame
+    {
+        match self {
+            Self::One(body) => Frame::Bind(body),
+            Self::Several(arity, body) => Frame::BindAll(arity, body),
+        }
+    }
+}
+
+/// Where a goal's forced one-sided rewrites are read from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reading
+{
+    /// The trace names each one, and a missing or different name refuses.
+    Recorded,
+    /// Each fires where the shapes force it, reading nothing: the kernel's own
+    /// conversion, which has no trace.
+    Forced,
+    /// As [`Reading::Forced`], and a defined head unfolds by the one δ-step it
+    /// admits, the left side's first: the kernel's own conversion where its
+    /// evaluator reads definitions, as an obligation decided by conversion
+    /// asks ([`convert_unfolding`]).
+    Unfolding,
+}
+
+/// A one-sided rewrite the shapes force, as the trace names it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Forced
+{
+    /// One side of a thunk goal forced.
+    Force,
+    /// The neutral side of a lambda goal applied to a fresh variable.
+    Eta(ConversionSide),
+    /// The side read as its bind into `return`.
+    ReturnEta(ConversionSide),
+    /// The two binds nearest the side's head made one.
+    Reassociate(ConversionSide),
+}
+
+/// Which commuting conversion of `F` two neutral shapes over one head still
+/// owe before their spines decompose.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BindRule
+{
+    /// Neither spine stacks two binds in a row, and neither stops one bind
+    /// short of the other: the spines compare position by position.
+    Normal,
+    /// The side whose spine stacks two binds in a row, the left first.
+    Reassociate(ConversionSide),
+    /// The side whose spine stops one bind short of the other's.
+    ReturnEta(ConversionSide),
+}
+
+/// What stands at a fixpoint's unfolding gate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Gate
+{
+    /// An application to a constructor: the `<` direction at data.
+    Constructor,
+    /// An application to another canonical value.
+    Canonical,
+    /// A bind or a projection observing the fixpoint's result: the `>`
+    /// direction.
+    Observed,
+    /// No elimination, or an application to a neutral value.
+    Shut,
+}
+
+/// Whether a weak head walk reduced anything.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Progress
+{
+    /// The term was already in weak head form.
+    Unchanged,
+    /// At least one step fired.
+    Reduced,
+}
+
+/// What a constants step did to its goal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Flow
+{
+    /// The goal stays, rewritten.
+    Continue,
+    /// The goal closed or decomposed.
+    Settled,
+}
+
+/// The other side.
+///
+/// # Specification
+/// trivial.
+const fn opposite(side: ConversionSide) -> ConversionSide
+{
+    match side {
+        ConversionSide::Left => ConversionSide::Right,
+        ConversionSide::Right => ConversionSide::Left,
+    }
+}
+
+/// The refusal for an unreadable term.
+///
+/// # Specification
+/// trivial.
+const fn unreadable() -> Stop
+{
+    Stop::Refused(ReplayRefusal::Unreadable)
+}
+
+/// What reading a transport's family as a cong link's gave.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Linked
+{
+    /// A path type whose carrier and left endpoint ignore the binder: its
+    /// right endpoint, under the binder.
+    Right(ValueId),
+    /// Any other family.
+    Other,
+}
+
+/// What a cong chain's composite right endpoint reads as.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Composite
+{
+    /// The variable the family binds: the chain's functions compose to the
+    /// identity.
+    Bound,
+    /// Anything else.
+    Other,
+}
+
+/// Whether [`Replay::present`] reads a reflexivity at the root as an empty
+/// word: the pair's other side picks it, so two reflexivities keep the rule
+/// that compares their points, as the evaluator's `presented::Reflexive` does.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reflexive
+{
+    /// The other side is no reflexivity: a reflexivity at a looped point
+    /// reads as the empty word of its words.
+    Worded,
+    /// The other side is a reflexivity, or no pair stands: a reflexivity
+    /// stays as it is.
+    Kept,
+}
+
+/// One replay in flight.
+struct Replay<'run, I>
+where
+    I: Iterator<Item = ConversionDecision<ReplayNode>>,
+{
+    /// The arena reducts are minted in.
+    arena: &'run mut TermArena,
+    /// The δ-rules the replay may fire.
+    unfoldings: &'run Unfoldings,
+    /// The bodies the kernel's own evaluator unfolds inside a cong chain's
+    /// reading ([`Self::fuse`]): `unfoldings` itself in a recorded replay and
+    /// at a mode switch, the admitted definitions in the forced loop, whose
+    /// rule table unfolds none.
+    evaluator: &'run Unfoldings,
+    /// The decisions still unread.
+    trace: Peekable<I>,
+    /// Whether forced rewrites are read off the trace or fired unread.
+    reading: Reading,
+    /// The position of the next unread decision.
+    position: usize,
+    /// The steps taken.
+    spent: u64,
+    /// The steps allowed.
+    budget: u64,
+    /// The content table the rewrite machines run against, on the global
+    /// allocator: no region stands at a replay yet.
+    table: ContentTable<Global>,
+    /// The rewrite memo: off, since nothing here reuses a rewrite.
+    memo: NullMemo,
+    /// The pairs of quotes a reading with definitions unfolding closed on
+    /// condition: each converts only once [`read_endpoints`] reads it alike.
+    /// Empty under every other reading.
+    owed: Vec<SetAside>,
+}
+
+impl<I> Replay<'_, I>
+where
+    I: Iterator<Item = ConversionDecision<ReplayNode>>,
+{
+    /// Replay the derivation of `root`, then require the trace spent.
+    ///
+    /// A shared comparison whose walk parts two computations hands its goal
+    /// back here. The pairs convert by the forced rules alone, in a reading of
+    /// their own ([`Self::forced_converts`]). Where they do, the goal closes at
+    /// the recorded comparison. Where they do not, it settles on by parting,
+    /// as the trace reads it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Ok` exactly when every goal closed at its owed verdict and
+    ///   no decision is left.
+    /// - provides: the replay's driver.
+    /// - fails: [`Stop::Budget`] or the first refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Budget`] when the steps run out; [`Stop::Refused`] when the
+    /// trace does not replay.
+    ///
+    /// # Termination
+    /// - reason: the `while let Some(goal) = goals.pop()` loop over an explicit
+    ///   stack of goals, and the inner `while let` over one goal's turns, not
+    ///   recursion. A goal handed back settles again only by parting, which
+    ///   hands nothing back.
+    /// - measure: the budget left: every goal's settling charges at least one
+    ///   step, and the loop stops at the first charge past the budget.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: accepted finite traces, leftover decisions,
+    ///   contradictory claims, and a diverging term separate the driver
+    ///   outcomes; the bound is the charged steps, not elapsed time. A shared
+    ///   comparison whose walk parts two binds closes where the forced rules
+    ///   convert them, and settles on by the trace where they do not (#4011);
+    ///   closing it on the walk alone changes the first, and refusing it where
+    ///   they do not the second.
+    /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+    /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
+    /// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
+    /// - witness: `replay::tests::a_compared_pair_reads_two_binds_by_the_forced_rules_4011`
+    #[spec(ensures: |ret| match ret {
+        Ok(()) => self.trace.size_hint() == (0, Some(0)),
+        Err(Stop::Refused(ReplayRefusal::Leftover { at })) => usize::from(at) == self.position && self.trace.size_hint().0 > 0,
+        Err(Stop::Budget) => self.spent >= self.budget,
+        Err(Stop::Refused(_) | Stop::PartialFixpoint) => true,
+    })]
+    fn drive(
+        &mut self,
+        root: Goal,
+    ) -> Result<(), Stop>
+    {
+        let mut goals = Vec::from([root]);
+        while let Some(goal) = goals.pop() {
+            let mut turn = Some((goal, Apart::Defer));
+            while let Some((goal, apart)) = turn.take() {
+                match self.settle(goal, &mut goals, apart)? {
+                    Settled::Turned => {},
+                    Settled::Deferred { goal, parted } => {
+                        if self.forced_converts(parted)? == Convertibility::Convertible {
+                            self.take();
+                            self.close(goal.expect, Expect::Convertible)?;
+                        }
+                        else {
+                            turn = Some((goal, Apart::Part));
+                        }
+                    },
+                }
+            }
+        }
+        if let Next::Decision(_) = self.peek() {
+            return Err(Stop::Refused(ReplayRefusal::Leftover { at: self.at() }));
+        }
+        Ok(())
+    }
+
+    /// Whether the forced rules alone derive each pair convertible, each step
+    /// charged to this replay's budget.
+    ///
+    /// The reading runs as [`convert`] runs it, in a replay of its own: it
+    /// reads no decision, unfolds no constant, and drops the nodes it mints
+    /// once it answers. It counts on from the steps this replay has taken and
+    /// leaves its count there, so a reading past the budget stops this replay
+    /// too.
+    ///
+    /// # Specification
+    /// - requires: every pair's computations live in the arena.
+    /// - ensures: [`Convertibility::Convertible`] exactly when the forced rules
+    ///   derive every pair convertible within the budget left;
+    ///   [`Convertibility::Distinct`] when they stop short of that otherwise.
+    ///   The arena holds what it held on entry, and `self.spent` counts every
+    ///   step taken.
+    /// - provides: the reading [`Self::drive`] closes a handed-back shared
+    ///   comparison on.
+    /// - fails: [`Stop::Budget`] when the reading outruns the budget.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Termination
+    /// - reason: the `while let Some(goal) = goals.pop()` loop over an explicit
+    ///   stack of goals, not recursion. The forced reading reads no decision,
+    ///   so its turns never reach [`Self::compared`].
+    /// - measure: the budget left: every goal's settling charges at least one
+    ///   step, and the loop stops at the first charge past the budget.
+    ///
+    /// # Cost
+    /// - allocation: a content table on the global allocator until #7390, setup
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two returned binds over one stuck transport, one
+    ///   continuation a lambda's call through its ascription's fold and the
+    ///   other that lambda's body, convert, and not where the body transports
+    ///   along another path; reading the pair by syntax alone changes the
+    ///   first, and answering every parted pair alike the second.
+    /// - witness: `replay::tests::a_compared_pair_reads_two_binds_by_the_forced_rules_4011`
+    #[spec(
+        captures: before = (self.arena.watermark(), self.spent),
+        ensures: |ret| self.arena.watermark() == before.0
+            && self.spent >= before.1
+            && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget),
+    )]
+    fn forced_converts(
+        &mut self,
+        parted: Vec<(ComputationId, ComputationId)>,
+    ) -> Result<Convertibility, Stop>
+    {
+        let rules = self.unfoldings.forced();
+        let arena = &mut *self.arena;
+        let watermark = arena.watermark();
+        let (outcome, spent) = {
+            let mut run = Replay {
+                arena: &mut *arena,
+                unfoldings: &rules,
+                evaluator: self.evaluator,
+                trace: core::iter::empty().peekable(),
+                reading: Reading::Forced,
+                position: 0,
+                spent: self.spent,
+                budget: self.budget,
+                table: ContentTable::new_in(Global),
+                memo: NullMemo,
+                owed: Vec::new(),
+            };
+            let mut goals: Vec<Goal> = parted
+                .into_iter()
+                .map(|(left, right)| {
+                    Goal::premise(
+                        Premise::computations(left, right),
+                        Expect::Convertible,
+                        Reduction::Plain,
+                    )
+                })
+                .collect();
+            let mut outcome = Ok(Convertibility::Convertible);
+            while let Some(goal) = goals.pop() {
+                match run.settle(goal, &mut goals, Apart::Part) {
+                    Ok(Settled::Turned) => {},
+                    // Parting hands no goal back: one that came back would be a
+                    // pair this reading did not derive.
+                    Ok(Settled::Deferred { .. })
+                    | Err(Stop::Refused(_) | Stop::PartialFixpoint) => {
+                        outcome = Ok(Convertibility::Distinct);
+                        break;
+                    },
+                    Err(Stop::Budget) => {
+                        outcome = Err(Stop::Budget);
+                        break;
+                    },
+                }
+            }
+            (outcome, run.spent)
+        };
+        arena.truncate_to(watermark);
+        self.spent = spent;
+        outcome
+    }
+
+    /// Replay one goal until it closes or decomposes into `goals`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Ok(Settled::Turned)` when the goal closed at its owed
+    ///   verdict or pushed the premises its derivation owes, and
+    ///   `Ok(Settled::Deferred)` when, under [`Apart::Defer`], its shared
+    ///   comparison is alike but for computations the walk parts. A value goal
+    ///   with a returned endpoint on either side is first read as the goal
+    ///   between computations ([`Self::open_returned`]), and each side's weak
+    ///   head form is read through the presentations and as a cong chain
+    ///   ([`Self::fuse`]), forced steps no decision records. In the forced loop
+    ///   one node on both sides closes convertible there.
+    /// - provides: one goal's turn through the rule table.
+    /// - fails: [`Stop::Budget`] or the first refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::drive`].
+    ///
+    /// # Termination
+    /// - reason: the `loop` below, which rewrites the goal in place, not
+    ///   recursion.
+    /// - measure: the budget left: every iteration charges one step.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: shared comparison, force, eta, and positive or
+    ///   negative decomposition preserve the owed verdict of every scheduled
+    ///   premise; finite traces and the budget witness do not establish
+    ///   completeness of conversion.
+    /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+    /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    /// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
+    /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
+    /// - witness: `replay::tests::a_cong_chain_composing_to_the_identity_replays_as_its_path`
+    /// - witness: `replay::tests::the_laws_of_bind_replay_by_name`
+    #[spec(
+        captures: before = (self.spent, goals.len(), goal.expect),
+        ensures: |ret| {
+            let (spent, previous_goals, owed) = before;
+            self.spent >= spent
+                && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget)
+                && (ret.is_err() || (self.spent > spent && self.spent <= self.budget
+                    && goals.get(previous_goals..).is_some_and(|pending| pending.iter().all(|next| next.expect == owed))))
+        },
+    )]
+    fn settle(
+        &mut self,
+        mut goal: Goal,
+        goals: &mut Vec<Goal>,
+        apart: Apart,
+    ) -> Result<Settled, Stop>
+    {
+        let mut postponed = Postponed::Nothing;
+        loop {
+            self.charge()?;
+            self.open_returned(&mut goal);
+            let left = self.whnf(goal.left, goal.reduction)?;
+            let right = self.whnf(goal.right, goal.reduction)?;
+            let reflexive = |arena: &TermArena, other: Term| match other {
+                Term::Value(other) if matches!(arena.value(other), Some(&Value::Here { .. })) => {
+                    Reflexive::Kept
+                },
+                Term::Value(_) | Term::Computation(_) => Reflexive::Worded,
+            };
+            let (left_reads, right_reads) =
+                (reflexive(self.arena, right), reflexive(self.arena, left));
+            goal.left = self.present(left, left_reads)?;
+            goal.right = self.present(right, right_reads)?;
+            goal.left = self.fuse(goal.left)?;
+            goal.right = self.fuse(goal.right)?;
+            // A presented constructor whose rules rewrite it to one of its
+            // returned leaves (`S(P(plus(a, x)))` to `plus(a, x)`) presents as
+            // that leaf: read it by its computation, as a goal's returned
+            // endpoint is read on entry, before its shape.
+            if let (Term::Value(left), Term::Value(right)) = (goal.left, goal.right)
+                && [left, right]
+                    .into_iter()
+                    .any(|side| matches!(self.arena.value(side), Some(&Value::Returned(_))))
+            {
+                continue;
+            }
+            // `return (returned c)` against a side that returns nothing yet is
+            // `c` itself, as a pure computation returns `v` exactly when it
+            // converts with `return v`: a sum whose case answers its summand
+            // (`plus(wind(q), Z)` to `return wind(q)`) is read on as the call
+            // it returned. Two returns still decompose by their values.
+            if let Some((side, computation)) = self.returned_return(&goal) {
+                goal.set(side, Term::Computation(computation));
+                continue;
+            }
+            // One node on both sides converts by reflexivity: the forced loop
+            // closes it as an engine's shared comparison would, rather than
+            // descend into a term its shapes may not read.
+            if self.reading != Reading::Recorded && goal.left == goal.right {
+                return self
+                    .close(goal.expect, Expect::Convertible)
+                    .map(|()| Settled::Turned);
+            }
+            let left_shape = self.shape(goal.left, &goal.frozen, ConversionSide::Left)?;
+            let right_shape = self.shape(goal.right, &goal.frozen, ConversionSide::Right)?;
+            let next = self.peek();
+            if postponed != Postponed::Nothing
+                && !matches!(next, Next::Decision(ConversionDecision::Unfold { .. }))
+            {
+                return Err(self.refuse(next));
+            }
+            // Every call of the fragment returns, so an unread one is the
+            // continuation it binds: the trace names the side it drops, and a
+            // refutation may not leave one standing.
+            if self
+                .discard(&mut goal, [&left_shape, &right_shape], next)?
+                .is_some()
+            {
+                continue;
+            }
+            // A call that returns is the value it binds: the trace names the
+            // side whose call its continuation passes on to another
+            // variable's call, read at the call's returned endpoint.
+            if self
+                .hold(&mut goal, [&left_shape, &right_shape], next)?
+                .is_some()
+            {
+                continue;
+            }
+            let bind = bind_rule(&left_shape, &right_shape);
+            if matches!(next, Next::Decision(ConversionDecision::Decompose)) {
+                if !matches!(rule(&left_shape, &right_shape), Rule::Structural)
+                    || bind != BindRule::Normal
+                {
+                    return Err(self.refuse(next));
+                }
+                return self
+                    .structural(&goal, &left_shape, &right_shape, goals)
+                    .map(|()| Settled::Turned);
+            }
+            if matches!(
+                next,
+                Next::Decision(ConversionDecision::ComparedShared { .. })
+            ) {
+                // The unit meets a neutral by η with no premise, a leaf the
+                // engine records as one shared comparison (#6110).
+                let compared = if self.unit_against_neutral(&goal, [&left_shape, &right_shape])
+                    == EtaJoin::Joins
+                {
+                    Compared::Equal
+                }
+                else {
+                    self.compared(&goal, apart)?
+                };
+                match compared {
+                    Compared::Equal => {
+                        self.take();
+                        return self
+                            .close(goal.expect, Expect::Convertible)
+                            .map(|()| Settled::Turned);
+                    },
+                    Compared::Separated => {
+                        self.take();
+                        return self
+                            .close(goal.expect, Expect::NotConvertible)
+                            .map(|()| Settled::Turned);
+                    },
+                    Compared::Deferred(parted) => return Ok(Settled::Deferred { goal, parted }),
+                    Compared::Open => {},
+                }
+            }
+            match bind {
+                BindRule::Normal => {},
+                BindRule::Reassociate(side) => {
+                    let held = match side {
+                        ConversionSide::Left => &left_shape,
+                        ConversionSide::Right => &right_shape,
+                    };
+                    let Shape::Neutral(_, ref spine) = *held
+                    else {
+                        return Err(unreadable());
+                    };
+                    self.reassociate(&mut goal, side, spine)?;
+                    continue;
+                },
+                BindRule::ReturnEta(side) => {
+                    self.return_eta(&mut goal, side)?;
+                    continue;
+                },
+            }
+            match rule(&left_shape, &right_shape) {
+                Rule::Constants if self.reading == Reading::Unfolding => {
+                    self.unfold_defined(&mut goal, [&left_shape, &right_shape])?;
+                },
+                Rule::Constants => {
+                    let flow = self.constants(
+                        &mut goal,
+                        [&left_shape, &right_shape],
+                        &mut postponed,
+                        goals,
+                    )?;
+                    if flow == Flow::Settled {
+                        return Ok(Settled::Turned);
+                    }
+                },
+                Rule::Force => self.force(&mut goal)?,
+                Rule::Eta(side) => self.eta(&mut goal, side)?,
+                Rule::ProductEta(side) => {
+                    return self
+                        .product_eta(&goal, side, goals)
+                        .map(|()| Settled::Turned);
+                },
+                Rule::Structural => {
+                    return self
+                        .structural(&goal, &left_shape, &right_shape, goals)
+                        .map(|()| Settled::Turned);
+                },
+            }
+        }
+    }
+
+    /// Read a value goal with a returned endpoint on either side as the goal
+    /// between computations: a returned endpoint by its computation, any
+    /// other value by its `return`.
+    ///
+    /// A pure computation returns `v` exactly when it converts with
+    /// `return v`, so the rewritten goal owes the verdict the value goal owed,
+    /// and no rule leaves a choice: the step is forced, and no decision of the
+    /// trace vocabulary records it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a goal between two values, one of them a returned endpoint,
+    ///   becomes the goal between two computations, each side its returned
+    ///   endpoint's computation or the `return` of its value; every other goal
+    ///   is unchanged, and so is the owed verdict.
+    /// - provides: the replay's reading of the returned endpoint.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a returned endpoint against its value, against
+    ///   another returned endpoint and against a different value separate the
+    ///   two rewrites from an untouched goal.
+    /// - witness: `element_identity::tests::a_returned_endpoint_replays_as_its_computation`
+    #[spec(
+        captures: before = (goal.left, goal.right, goal.expect),
+        ensures: goal.expect == before.2 && match before {
+            (Term::Value(left), Term::Value(right), _)
+                if matches!(self.arena.value(left), Some(&Value::Returned(_)))
+                    || matches!(self.arena.value(right), Some(&Value::Returned(_))) =>
+                matches!((goal.left, goal.right), (Term::Computation(_), Term::Computation(_))),
+            _ => goal.left == before.0 && goal.right == before.1,
+        },
+    )]
+    fn open_returned(
+        &mut self,
+        goal: &mut Goal,
+    )
+    {
+        let (Term::Value(left), Term::Value(right)) = (goal.left, goal.right)
+        else {
+            return;
+        };
+        let returned = |arena: &TermArena, value| match arena.value(value) {
+            Some(&Value::Returned(computation)) => Some(computation),
+            _ => None,
+        };
+        if returned(self.arena, left).is_none() && returned(self.arena, right).is_none() {
+            return;
+        }
+        for (side, value) in [(ConversionSide::Left, left), (ConversionSide::Right, right)] {
+            let computation = match returned(self.arena, value) {
+                Some(computation) => computation,
+                None => self.arena.computation_return(value),
+            };
+            goal.set(side, Term::Computation(computation));
+        }
+        goal.reduction = Reduction::Endpoint;
+    }
+
+    /// The side of a computation goal that returns a returned endpoint while
+    /// the other side returns nothing yet, with that endpoint's computation.
+    ///
+    /// `return (returned c)` converts with `c`, as a pure computation returns
+    /// `v` exactly when it converts with `return v`; reading it so is forced,
+    /// and no decision of the trace vocabulary records it. Two returns are left
+    /// to decompose by their values, as the engine's trace does.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Some((side, c))` exactly when the goal's `side` is a
+    ///   computation `return v` with `v` the returned endpoint of `c`, and the
+    ///   other side is a computation that is no `return`, the left side first;
+    ///   `None` otherwise.
+    /// - provides: the replay's reading of a returned endpoint a computation
+    ///   returns.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `return (returned (force f))` converts with `force f`
+    ///   on either side and not with `force g`; without this reading the forced
+    ///   loop contradicts at its first step.
+    /// - witness: `element_identity::tests::a_returned_endpoint_a_computation_returns_replays_as_its_computation`
+    #[spec(ensures: |ret| match ret {
+        Some((side, computation)) => {
+            let (own, other) = match side {
+                ConversionSide::Left => (goal.left, goal.right),
+                ConversionSide::Right => (goal.right, goal.left),
+            };
+            matches!(own, Term::Computation(id) if matches!(self.arena.computation(id),
+                Some(&Computation::Return(value)) if self.arena.value(value) == Some(&Value::Returned(computation))))
+                && matches!(other, Term::Computation(id) if !matches!(self.arena.computation(id), Some(&Computation::Return(_))))
+        },
+        None => true,
+    })]
+    fn returned_return(
+        &self,
+        goal: &Goal,
+    ) -> Option<(ConversionSide, ComputationId)>
+    {
+        let returned = |term: Term| match term {
+            Term::Computation(id) => match self.arena.computation(id) {
+                Some(&Computation::Return(value)) => match self.arena.value(value) {
+                    Some(&Value::Returned(computation)) => Some(Some(computation)),
+                    _ => Some(None),
+                },
+                _ => None,
+            },
+            Term::Value(_) => Some(None),
+        };
+        match (returned(goal.left), returned(goal.right)) {
+            (Some(Some(computation)), None) => Some((ConversionSide::Left, computation)),
+            (None, Some(Some(computation))) => Some((ConversionSide::Right, computation)),
+            _ => None,
+        }
+    }
+
+    /// A value headed by a constructor of a presented type, rewritten to its
+    /// normal form once its returned leaves are read; a `return` of such a
+    /// value as the `return` of that normal form; a reflexivity at a looped
+    /// point read as its empty word when `reflexive` is [`Reflexive::Worded`];
+    /// every other term unchanged.
+    ///
+    /// A value goal with a returned endpoint on one side is read as a goal
+    /// between computations before this step, so its other side stands under a
+    /// `return`. The rules read it there as they read it bare: `return
+    /// band(one, encode(b))` presents as `return encode(b)`, which
+    /// [`Self::returned_return`] then reads as the call it returned.
+    ///
+    /// The rules are the type's definition, applied by one fixed strategy, and
+    /// a returned leaf reads by the kernel's own evaluator, so the step chooses
+    /// nothing and no decision of the trace records it. Normalizing at
+    /// evaluation instead, so that a presented constructor is never built
+    /// unreduced, would let a `case` see a different term in the kernel than
+    /// in the producer's evaluator.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`crate::presented::normal_form`] under the unfoldings'
+    ///   presentations of what [`Self::read_returned_leaves`] gives for a
+    ///   value; for a `return` of a value, the `return` of that form, the term
+    ///   itself when the form is the value; any other computation unchanged.
+    ///   Under [`Reflexive::Worded`], a bare reflexivity at the root, and a
+    ///   normal form that is one, read as [`Self::present_reflexivity`] reads
+    ///   them first. Every node the rewriting compared or copied, and every
+    ///   step the reading took, is charged to the budget.
+    /// - provides: the presented half of weak head form, before any rule of the
+    ///   table reads a value goal.
+    /// - fails: [`Stop::Budget`] when the rewriting outruns the budget; as
+    ///   [`Self::read_returned_leaves`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Cost
+    /// - allocation: the `return` of a normal form that differs from the value
+    ///   under the `return`, durable by the arena's identifiers
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle's words convert by their normal forms in
+    ///   the forced loop, which compares a free type's constructors as before,
+    ///   and a reflexivity at the looped point meets the empty word. A stuck
+    ///   call meets a term whose rule answers that call, and a term whose rule
+    ///   answers another leaf stays apart from it.
+    /// - witness: `environment::presented_tests::the_forced_loop_converts_circle_words_by_their_normal_forms`
+    /// - witness: `replay::tests::a_returned_leaf_of_a_presented_term_reads_before_the_rules`
+    /// - witness: `replay::tests::a_reflexivity_at_a_looped_point_presents_as_its_empty_word_6477`
+    /// - witness: `corpus/model/desc/rule-answers-a-stuck-call.gandr`
+    /// - witness: `replay::tests::a_rule_answers_a_stuck_call_under_a_return_8278`
+    #[spec(
+        captures: before = self.spent,
+        ensures: |ret| self.spent >= before
+            && (!matches!(term, Term::Computation(id) if !matches!(self.arena.computation(id), Some(&Computation::Return(_)))) || ret == Ok(term))
+            && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget),
+    )]
+    fn present(
+        &mut self,
+        term: Term,
+        reflexive: Reflexive,
+    ) -> Result<Term, Stop>
+    {
+        let (value, reflexive) = match term {
+            Term::Value(value) => (value, reflexive),
+            Term::Computation(computation) => match self.arena.computation(computation) {
+                Some(&Computation::Return(value)) => (value, Reflexive::Kept),
+                _ => return Ok(term),
+            },
+        };
+        let read = match reflexive {
+            Reflexive::Worded => self.present_reflexivity(value)?,
+            Reflexive::Kept => value,
+        };
+        let read = self.read_returned_leaves(read)?;
+        let mut fuel = RewriteFuel::from(self.budget.saturating_sub(self.spent));
+        let before = u64::from(fuel);
+        let normal = crate::presented::normal_form(
+            self.arena,
+            self.unfoldings.presentations(),
+            read,
+            &mut fuel,
+        );
+        self.spent = self
+            .spent
+            .saturating_add(before.saturating_sub(u64::from(fuel)));
+        let Ok(normal) = normal
+        else {
+            self.spent = self.budget;
+            return Err(Stop::Budget);
+        };
+        let normal = if reflexive == Reflexive::Worded
+            && matches!(self.arena.value(normal), Some(&Value::Here { .. }))
+        {
+            self.present_reflexivity(normal)?
+        }
+        else {
+            normal
+        };
+        Ok(match term {
+            Term::Value(_) => Term::Value(normal),
+            Term::Computation(_) if normal == value => term,
+            Term::Computation(_) => Term::Computation(self.arena.computation_return(normal)),
+        })
+    }
+
+    /// The empty word a reflexivity at a looped point presents as; every other
+    /// value unchanged.
+    ///
+    /// A reflexivity at the point a type of words loops at, and that type's
+    /// empty word, spell one path. The empty word is its canonical form: the
+    /// lowering reads `here(p)` so in types, and the evaluator's
+    /// `presented::normal_form` reads a value so before the machine plans a
+    /// pair whose other side is no reflexivity.
+    ///
+    /// **Choice.** The reading is forced: the point and its wrapping fix the
+    /// one type of words admission keeps, and a returned point reads by the
+    /// kernel's own evaluator, so no decision of the trace records it. Two
+    /// reflexivities keep the rule that compares their points, so a dialogue
+    /// that rule recorded replays as before. **Alternatives.** A pair rule of
+    /// the value table between a reflexivity and an empty word: it splits one
+    /// canonical form across two places. **Reversal.** A type of words whose
+    /// empty word needs a choice among several readings takes a recorded
+    /// decision.
+    ///
+    /// # Specification
+    /// - requires: `value` lives in the arena.
+    /// - ensures: a fresh empty word of `w`, the constructor of tag zero and no
+    ///   fields at `Data(w, [])`, exactly when `value` is `here(q)` and `q`
+    ///   reads as a point `p` wrapped in `r` reflexivities, and
+    ///   [`crate::presented::Presentations::emptied`] reads `w` for `p` at `r`;
+    ///   `value` otherwise. The reading takes the reflexivities off `q`, and
+    ///   each returned endpoint it then meets is read by
+    ///   [`Self::normalize_returned`] and unwrapped in turn, so `p` is no
+    ///   reflexivity and no returned endpoint. A returned endpoint is read only
+    ///   while some type of words is wrapped at least as often as the
+    ///   reflexivities taken off so far.
+    /// - provides: the reflexivity half of [`Self::present`].
+    /// - fails: as [`Self::normalize_returned`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: the `loop` reads one returned endpoint for each turn, and each
+    ///   reading is charged to the budget.
+    /// - measure: the budget left.
+    ///
+    /// # Cost
+    /// - allocation: the fresh empty word and its type of words in the arena,
+    ///   durable by the arena's identifiers
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Path.ap` of a map on the circle's empty word replays
+    ///   against the empty word at dimension one and two, the point a held call
+    ///   of the map; a reflexivity off the point stays as written.
+    /// - witness: `replay::tests::a_reflexivity_at_a_looped_point_presents_as_its_empty_word_6477`
+    #[spec(
+        captures: before = self.spent,
+        ensures: |ret| self.spent >= before
+            && ret.as_ref().map_or(true, |read| *read == value || self.arena.value(*read).is_some()),
+    )]
+    fn present_reflexivity(
+        &mut self,
+        value: ValueId,
+    ) -> Result<ValueId, Stop>
+    {
+        let Some(&Value::Here { point, .. }) = self.arena.value(value)
+        else {
+            return Ok(value);
+        };
+        let mut base = point;
+        let mut wraps = 0_usize;
+        loop {
+            let (inner, more) = crate::presented::unwrapped(self.arena, base);
+            base = inner;
+            wraps = wraps.saturating_add(usize::from(more));
+            if !matches!(self.arena.value(base), Some(&Value::Returned(_))) {
+                break;
+            }
+            // The guard reads the types of words through the support, so a
+            // type that the check does not read answers nothing.
+            if self
+                .unfoldings
+                .worded(gandr_kernel_term::Reflexivities::from(wraps))
+                .is_none()
+            {
+                return Ok(value);
+            }
+            let read = self.normalize_returned(base, Reduction::Endpoint, DefinedHead::Unfold)?;
+            if matches!(self.arena.value(read), Some(&Value::Returned(_))) {
+                return Ok(value);
+            }
+            base = read;
+        }
+        let Some(words) = self.unfoldings.presentations().emptied(
+            self.arena,
+            base,
+            gandr_kernel_term::Reflexivities::from(wraps),
+        )
+        else {
+            return Ok(value);
+        };
+        let own = self
+            .arena
+            .value_type_data(words, SmallVec::<_, 0, Global>::new());
+        Ok(self.arena.value_constructor(
+            words,
+            own,
+            gandr_kernel_term::ConstructorTag::from(0_usize),
+            SmallVec::<_, 0, Global>::new(),
+        ))
+    }
+
+    /// A cong chain whose functions compose to the identity, read as the
+    /// `return` of its path, and a run of links along the value a bind binds
+    /// that composes to the identity, read as the computation the bind runs;
+    /// every other term unchanged.
+    ///
+    /// A **link** is a transport of a reflexivity in a family `y. Path[.A =
+    /// D](l, r)` whose carrier and left endpoint never read `y`; a
+    /// **chain** is a link along a path `p`, under binds whose
+    /// continuations are each one link along the path the bind binds, the
+    /// family reading no other index. The chain is the path `p` when its
+    /// composite right endpoint `rₙ[y := … r₁]` reads as `y` — normalized
+    /// by [`Self::normalize_returned`], the kernel's own evaluator, and
+    /// taken to its presented normal form by [`Self::present`]: transport along
+    /// `cong(f, p)` is transport along `p` in the family pulled back along
+    /// `f`, and a family whose right endpoint is its binder is the
+    /// singleton, whose transport of a reflexivity is the path. A **run**
+    /// is the continuations of the binds outside some bind `M to x. …`,
+    /// each a link along the path the bind binds, the innermost along `x`.
+    /// A run whose composite right endpoint reads as `y` is `return x` by
+    /// the same singleton, so the bind is `M to x. return x`, which the
+    /// η-law of bind reads as `M`. A chain over `p` is read first, then the
+    /// longest run that composes to the identity.
+    ///
+    /// **Choice.** The chain is read as the engine reads it, by the forced
+    /// replay of its composite: the reading chooses nothing — the evaluator
+    /// fires the one step each head admits — so no decision of the trace
+    /// records it, and the forced loop of [`convert`] reads it as the
+    /// recorded one does. A run is the engine's own reading too: the engine
+    /// runs a bind over a stuck computation with that computation as the
+    /// returned endpoint for `x`, and a run composing to the identity returns
+    /// that endpoint. **Alternatives.** A decision naming the fusion,
+    /// which would restate a reduction the kernel re-derives anyway; fusing to
+    /// a composite family rather than to the identity, which needs a family
+    /// rebuilt by substitution and compared by its function. **Reversal.** A
+    /// fusion whose reading would need a search, or one to a composite other
+    /// than the identity, takes a decision of its own.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `return p` when `term` is a computation that is a chain over
+    ///   `p` whose composite right endpoint normalizes, within the budget and
+    ///   with no refusal, to the family's bound variable; otherwise `M` when
+    ///   `term` is binds over `M to x. …` whose continuations outside `M` are a
+    ///   run composing so, `M` the innermost such; `term` itself otherwise, a
+    ///   value among them. Every step of the reading is charged to the budget.
+    /// - provides: cong fusion to the identity in the replay's weak head form,
+    ///   before any rule of the table reads a computation goal.
+    /// - fails: [`Stop::Budget`] when the reading outruns the budget.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loops peeling binds and shortening the run,
+    ///   not recursion; each normalization is bounded by the budget.
+    /// - measure: the binds still to peel, then the runs still to compose.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the presented circle, `let q = cong(unlooped,
+    ///   p); cong(looped, q)` converts with `return p` in the forced loop with
+    ///   the two definitions unfoldable, and a chain composing to `looped ∘
+    ///   looped` does not. `cong(looped, p)` under binds into `cong(looped, x)`
+    ///   and then `cong(unlooped, y)` replays `ComparedShared` against
+    ///   `cong(looped, p)` under the rules; a run composing to `looped ∘
+    ///   looped`, and the same run over a free circle, do not.
+    /// - witness: `replay::tests::a_cong_chain_composing_to_the_identity_replays_as_its_path`
+    /// - witness: `replay::tests::a_run_composing_to_the_identity_reads_as_its_bound_computation_4255`
+    #[spec(
+        captures: before = self.spent,
+        ensures: |ret| self.spent >= before
+            && (!matches!(term, Term::Value(_)) || ret == Ok(term))
+            && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget),
+    )]
+    fn fuse(
+        &mut self,
+        term: Term,
+    ) -> Result<Term, Stop>
+    {
+        let Term::Computation(computation) = term
+        else {
+            return Ok(term);
+        };
+        // Each bind's computation and continuation, outermost first.
+        let mut binds = Vec::new();
+        let mut focus = computation;
+        while let Some(&Computation::Bind(bound, body)) = self.arena.computation(focus) {
+            binds.push((bound, body));
+            focus = bound;
+        }
+        if let Some(&Computation::PathTransport {
+            motive,
+            path,
+            value,
+        }) = self.arena.computation(focus)
+            && matches!(self.arena.value(value), Some(&Value::Here { .. }))
+            && let Linked::Right(image) = self.link(motive)
+        {
+            let composite = self.composed(image, &binds, path)?;
+            if composite == Composite::Bound {
+                return Ok(Term::Computation(self.arena.computation_return(path)));
+            }
+        }
+        // The longest run first: every bind, then each without its innermost.
+        let mut run = binds.as_slice();
+        while let Some((&(bound, _), outer)) = run.split_last() {
+            let closed = self.arena.value_unit();
+            let identity = self.arena.value_variable(DeBruijnIndex::from(0_u32));
+            let composite = self.composed(identity, run, closed)?;
+            if composite == Composite::Bound {
+                return Ok(Term::Computation(bound));
+            }
+            run = outer;
+        }
+        Ok(term)
+    }
+
+    /// What `image`, a right endpoint under a family's binder, reads as once
+    /// composed with each continuation of `binds` as a link, innermost first.
+    ///
+    /// # Specification
+    /// - requires: `binds` lists each bind's computation and continuation,
+    ///   outermost first; `opening` lives in the arena.
+    /// - ensures: [`Composite::Bound`] exactly when every continuation is a
+    ///   link along the path its bind binds, transporting a reflexivity in a
+    ///   family that reads that path only past its own binder, and
+    ///   [`Self::composite`] reads the composite right endpoint as the bound
+    ///   variable; [`Composite::Other`] otherwise. Every step is charged to the
+    ///   budget.
+    /// - provides: the identity test of [`Self::fuse`] for a chain and for a
+    ///   run, with `opening` standing for the path each family ignores.
+    /// - fails: [`Stop::Budget`] when the reading outruns the budget.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: the `for` loop over the continuations, not recursion; the
+    ///   normalization is bounded by the budget.
+    /// - measure: the continuations still to compose.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::fuse`].
+    /// - witness: `replay::tests::a_cong_chain_composing_to_the_identity_replays_as_its_path`
+    /// - witness: `replay::tests::a_run_composing_to_the_identity_reads_as_its_bound_computation_4255`
+    #[spec(
+        captures: before = self.spent,
+        ensures: |ret| self.spent >= before
+            && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget),
+    )]
+    fn composed(
+        &mut self,
+        mut image: ValueId,
+        binds: &[(ComputationId, ComputationId)],
+        opening: ValueId,
+    ) -> Result<Composite, Stop>
+    {
+        let bound = DeBruijnIndex::from(0_u32);
+        for &(_, body) in binds.iter().rev() {
+            let Some(&Computation::PathTransport {
+                motive,
+                path: along,
+                value,
+            }) = self.arena.computation(body)
+            else {
+                return Ok(Composite::Other);
+            };
+            if !matches!(self.arena.value(along), Some(&Value::Variable(index)) if index == bound)
+                || !matches!(self.arena.value(value), Some(&Value::Here { .. }))
+            {
+                return Ok(Composite::Other);
+            }
+            // The family reads the path the bind binds only past its own
+            // binder: closed off there, it must ignore its innermost index.
+            let closed = self.arena.value_unit();
+            let probe = crate::rewrite::substitute_value_type(
+                self.arena,
+                &mut self.table,
+                &mut self.memo,
+                motive,
+                closed,
+            );
+            if crate::element_identity::binder_use(
+                self.arena,
+                crate::element_identity::Family::Type(probe),
+            ) == crate::element_identity::BinderUse::Read
+            {
+                return Ok(Composite::Other);
+            }
+            let opened = self.instantiate(body, opening);
+            let Some(&Computation::PathTransport { motive, .. }) = self.arena.computation(opened)
+            else {
+                return Ok(Composite::Other);
+            };
+            let Linked::Right(right) = self.link(motive)
+            else {
+                return Ok(Composite::Other);
+            };
+            let lifted = shift_value(
+                self.arena,
+                &mut self.table,
+                &mut self.memo,
+                right,
+                BinderDepth::NONE.deeper(),
+                BinderDepth::NONE.deeper(),
+            );
+            image = substitute_value(self.arena, &mut self.table, &mut self.memo, lifted, image);
+        }
+        // The composite is read by the evaluator's bodies, the rule table's
+        // restored whatever the reading ends in.
+        let rules = self.unfoldings;
+        self.unfoldings = self.evaluator;
+        let read = self.composite(image);
+        self.unfoldings = rules;
+        read
+    }
+
+    /// A stuck composite's transport read as the transport along each of its
+    /// paths in order: transport's functoriality, `tr(P, ⟨p then q⟩, v) ≡
+    /// tr(P, q, ⟨tr(P, p, v)⟩)`.
+    ///
+    /// `p then q` is the transport of `p` along `q` in a **link**, a family `y.
+    /// Path[.A = D](l, y)` whose carrier and left endpoint ignore the binder. A
+    /// transport runs a returned operand first, then a returned path, so the
+    /// transport along a stuck composite stands at one of three weak heads.
+    /// The frames outside the focus that move its result, each a bind into `y.
+    /// tr(R↑, r↑, y)` whose family and path ignore `y`, form a **run**:
+    ///
+    /// - the focus is the stuck link `tr(Q, q, p)`, and the innermost frame
+    ///   binds into `w. tr(P↑, w, v↑)`, whose family and operand ignore `w`:
+    ///   the focus becomes `tr(P, p, v)` under a bind into `u. tr(P↑, q↑, u)`;
+    /// - a frame of the run binds into `y. tr(R↑, ⟨c⟩↑, y)`: `c` runs first, in
+    ///   [`Self::reduce`], and where it sticks at a composite ([`Self::legs`])
+    ///   the frame becomes a bind into `y. tr(R↑, p↑, y)` inside one into `u.
+    ///   tr(R↑, q↑, u)`;
+    /// - the run is links `y. tr(Q↑, q↑, y)`, which build a composite on the
+    ///   focus's result, and the frame just outside it binds into `w. tr(P↑, w,
+    ///   v↑)`: that frame moves inside the run, and each link becomes a bind
+    ///   into `u. tr(P↑, q↑, u)`.
+    ///
+    /// Each way the operand moves along `p`, then along `q`. That is the
+    /// left-nested fold a composite's realisation is, so every nesting of one
+    /// chain reaches one weak head. The run is read innermost first, as the
+    /// evaluator reads it.
+    ///
+    /// **Termination.** The first and second rewrites replace the transport
+    /// along a composite by transports along its two paths, each a proper
+    /// part of it, so the multiset of the paths transported along decreases in
+    /// the multiset order of their sizes. A returned path runs once: `whole`
+    /// names each continuation whose path ran to no composite, and the reading
+    /// passes over it after. The third rewrite moves one frame inward past
+    /// links, which it turns into frames no link reads, so it fires at most
+    /// once for each frame. Every step of a path's run is charged to the budget
+    /// too.
+    ///
+    /// **Confluence.** The rewrite reads a weak head no other row moves:
+    /// [`crate::element_identity::transport_beta`]'s rows, the word rows and a
+    /// held operand's run each declined before the focus stuck, so no row
+    /// overlaps it at its root. A row a motive or an operand directs fires at
+    /// the outer transport before its path runs, and moves each part of the
+    /// operand along the composite. Each part then meets this rewrite, which
+    /// reaches the parts the rewrite-first order reaches. A link along `here`
+    /// or along a word computes before it sticks, so it meets no other row
+    /// here. The evaluator's `AlongThen` row reads the same shapes, so the two
+    /// conversions reach one weak head.
+    ///
+    /// # Specification
+    /// - requires: `focus` and `frames` are [`Self::reduce`]'s state at a stuck
+    ///   weak head, `cells` the environments they close over, and `whole` the
+    ///   continuations whose returned path ran to no composite.
+    /// - ensures: [`AlongComposite::Moved`], `frames` rewritten, at the first
+    ///   and third weak heads; [`AlongComposite::Runs`] of the innermost frame
+    ///   of the run whose returned path has not run, `frames` unchanged;
+    ///   [`AlongComposite::Stays`], `frames` unchanged, at any other.
+    /// - provides: transport's functoriality along a stuck composite, the
+    ///   reading that decides two nestings of one chain.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `f then (g then h)`, `k then ((f then g) then h)`,
+    ///   `(k then f) then (g then h)` and `(a then b) then ((c then d) then e)`
+    ///   reach the weak heads of their left nestings, and a bind whose family
+    ///   reads the bound path stays as it is.
+    /// - witness: `replay::tests::a_transport_along_a_stuck_composite_moves_along_each_path_in_order`
+    #[spec(captures: before = frames.len(), ensures: |ret| match ret {
+        AlongComposite::Moved(_) => true,
+        AlongComposite::Runs(leg) => frames.len() == before && leg.at < before && !whole.contains(&leg.frame),
+        AlongComposite::Stays => frames.len() == before,
+    })]
+    fn along_composite(
+        &mut self,
+        cells: &mut Environments,
+        focus: Closure<ComputationId>,
+        frames: &mut Vec<Closure<Frame>>,
+        whole: &BTreeSet<ComputationId>,
+    ) -> AlongComposite
+    {
+        let Some(&innermost) = frames.last()
+        else {
+            return AlongComposite::Stays;
+        };
+        let bound = DeBruijnIndex::from(0_u32);
+        if let Frame::Bind(body) = innermost.node
+            && self.along_bound(body).is_some()
+        {
+            // Stuck on a path: the focus is the link.
+            if crate::element_identity::composite_legs(self.arena, focus.node).is_none() {
+                return AlongComposite::Stays;
+            }
+            let link = self.unload(cells, focus);
+            let Frame::Bind(onward) = self.unload_frame(cells, innermost)
+            else {
+                return AlongComposite::Stays;
+            };
+            let (Some((first, second)), Some(&Computation::PathTransport { motive: family, .. })) = (
+                crate::element_identity::composite_legs(self.arena, link),
+                self.arena.computation(onward),
+            )
+            else {
+                return AlongComposite::Stays;
+            };
+            if self.bound_use(family) == BinderUse::Read {
+                return AlongComposite::Stays;
+            }
+            let moved = self.instantiate(onward, first);
+            let then = self.along_lifted(family, second);
+            frames.pop();
+            frames.push(Closure::closed(Frame::Bind(then)));
+            return AlongComposite::Moved(Closure::closed(moved));
+        }
+        // The run, innermost first. Its frames' fields are read in place: a
+        // frame's own binders are the indices its environment never reads.
+        let mut linked = true;
+        let mut outside = None;
+        for (at, &frame) in frames.iter().enumerate().rev() {
+            let Frame::Bind(body) = frame.node
+            else {
+                break;
+            };
+            if self.along_bound(body).is_some() {
+                if linked && at.saturating_add(1) < frames.len() {
+                    outside = Some(at);
+                }
+                break;
+            }
+            let Some(&Computation::PathTransport {
+                motive,
+                path,
+                value,
+            }) = self.arena.computation(body)
+            else {
+                break;
+            };
+            if !matches!(self.arena.value(value), Some(&Value::Variable(index)) if index == bound)
+                || crate::element_identity::binder_use(
+                    self.arena,
+                    crate::element_identity::Family::Value(path),
+                ) != BinderUse::Ignored
+                || self.bound_use(motive) == BinderUse::Read
+            {
+                break;
+            }
+            if matches!(self.arena.value(path), Some(&Value::Returned(_)))
+                && let Some((continuation, family, computation)) = self.returned_path(cells, frame)
+                && !whole.contains(&continuation)
+            {
+                return AlongComposite::Runs(ReturnedLeg {
+                    at,
+                    frame: continuation,
+                    family,
+                    path: computation,
+                });
+            }
+            linked &= self.then_link(motive) != Linked::Other;
+        }
+        let Some(at) = outside
+        else {
+            return AlongComposite::Stays;
+        };
+        let Some(&outer) = frames.get(at)
+        else {
+            return AlongComposite::Stays;
+        };
+        let Frame::Bind(onward) = self.unload_frame(cells, outer)
+        else {
+            return AlongComposite::Stays;
+        };
+        let Some(&Computation::PathTransport { motive: family, .. }) =
+            self.arena.computation(onward)
+        else {
+            return AlongComposite::Stays;
+        };
+        if self.bound_use(family) == BinderUse::Read {
+            return AlongComposite::Stays;
+        }
+        let links = frames.get(at.saturating_add(1) ..).unwrap_or_default();
+        let mut moved = Vec::with_capacity(links.len().saturating_add(1));
+        for &link in links {
+            let Frame::Bind(link) = self.unload_frame(cells, link)
+            else {
+                return AlongComposite::Stays;
+            };
+            let Some(&Computation::PathTransport { path, .. }) = self.arena.computation(link)
+            else {
+                return AlongComposite::Stays;
+            };
+            let variable = self.arena.value_variable(bound);
+            let along = self
+                .arena
+                .computation_path_transport(family, path, variable);
+            moved.push(Closure::closed(Frame::Bind(along)));
+        }
+        moved.push(Closure::closed(Frame::Bind(onward)));
+        frames.truncate(at);
+        frames.extend(moved);
+        AlongComposite::Moved(focus)
+    }
+
+    /// The held run that a bind over a stuck link starts: the link of the
+    /// innermost frame over the held stuck link, and the stuck link that runs.
+    ///
+    /// The evaluator binds a stuck link as the endpoint it holds. The append
+    /// of the link outside runs that endpoint before it reads its word
+    /// (`eval::words::appended`). So the replay reads `y ← tr(Q′, k, v);
+    /// tr(Q↑, q↑, y)` as the held operand `tr(Q′, k, v)` of `tr(Q, q,
+    /// ⟨tr(Q′, k, v)⟩)`, and runs it as [`Run::Held`]. The run unfolds the
+    /// definitions that name `k` and records no decision for them. It returns
+    /// the held transport that it reaches ([`Self::run_step`]). The run starts
+    /// only where the definitions end at a held path, so it never sticks.
+    ///
+    /// # Specification
+    /// - requires: `focus` and `frames` are [`Self::reduce`]'s state at a stuck
+    ///   weak head, `cells` the environments they close over.
+    /// - ensures: `Some((tr(Q, q, ⟨l⟩), l))`, the innermost frame popped, when
+    ///   that frame binds into `y. tr(Q↑, q↑, y)` with `Q` a
+    ///   [`crate::words::singleton`] family, the focus is `l = tr(Q′, k, v)`
+    ///   with `Q′` one too, and the definitions that name `k` unfold, one after
+    ///   another, to `u` with `tr(Q′, u, v)` a
+    ///   [`crate::element_identity::held_transport`]; `None` with `frames`
+    ///   unchanged otherwise.
+    /// - provides: the start of a held operand's run at a bind, as the
+    ///   evaluator's append runs the endpoint it holds.
+    /// - fails: [`Stop::Budget`] when the walk along the definitions exhausts
+    ///   the budget.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop that walks the definitions, not
+    ///   recursion.
+    /// - measure: the budget left, which each definition the loop reads
+    ///   charges.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the composite of three negation paths walks `true`
+    ///   with one recorded unfolding of `negPath` fewer than it has paths, as
+    ///   the checker records. Left as a bind over the stuck link, the replay
+    ///   unfolds every path and refuses what the checker accepted.
+    /// - witness: `replay::tests::a_bind_over_a_link_on_a_named_univalence_runs_it_6321`
+    #[spec(captures: before = frames.len(), ensures: |ret| match ret {
+        Ok(Some(_)) => frames.len() < before,
+        Ok(None) => frames.len() == before,
+        Err(_) => true,
+    })]
+    fn bound_link(
+        &mut self,
+        cells: &mut Environments,
+        focus: Closure<ComputationId>,
+        frames: &mut Vec<Closure<Frame>>,
+    ) -> Result<Option<(crate::element_identity::ElementTransport, ComputationId)>, Stop>
+    {
+        let Some(&innermost) = frames.last()
+        else {
+            return Ok(None);
+        };
+        if !matches!(innermost.node, Frame::Bind(_)) {
+            return Ok(None);
+        }
+        let Frame::Bind(onward) = self.unload_frame(cells, innermost)
+        else {
+            return Ok(None);
+        };
+        let Some(&Computation::PathTransport {
+            motive,
+            path,
+            value,
+        }) = self.arena.computation(onward)
+        else {
+            return Ok(None);
+        };
+        if !matches!(self.arena.value(value), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
+            || crate::element_identity::binder_use(
+                self.arena,
+                crate::element_identity::Family::Value(path),
+            ) != BinderUse::Ignored
+            || crate::words::singleton(self.arena, motive).is_none()
+            || self.bound_use(motive) == BinderUse::Read
+        {
+            return Ok(None);
+        }
+        let link = self.unload(cells, focus);
+        let Some(&Computation::PathTransport {
+            motive: inner,
+            path: along,
+            value: moved,
+        }) = self.arena.computation(link)
+        else {
+            return Ok(None);
+        };
+        if crate::words::singleton(self.arena, inner).is_none() {
+            return Ok(None);
+        }
+        // The run returns only where the definitions that head the path end
+        // at a held transport. Elsewhere it sticks, and the evaluator keeps
+        // the operand as it was.
+        let mut end = along;
+        while let Some(&Value::Constant(constant)) = self.arena.value(end)
+            && let Unfoldable::Body(body) = self.unfoldings.unfolding(constant)
+        {
+            self.charge()?;
+            end = body;
+        }
+        if end == along {
+            return Ok(None);
+        }
+        let ended = self.arena.computation_path_transport(inner, end, moved);
+        if !bool::from(crate::element_identity::held_transport(self.arena, ended)) {
+            return Ok(None);
+        }
+        frames.pop();
+        let held = self.arena.value_returned(link);
+        let outer = self.instantiate(onward, held);
+        let Some(&Computation::PathTransport {
+            motive,
+            path,
+            value,
+        }) = self.arena.computation(outer)
+        else {
+            return Err(unreadable());
+        };
+        Ok(Some((
+            crate::element_identity::ElementTransport {
+                motive,
+                path,
+                value,
+            },
+            link,
+        )))
+    }
+
+    /// The continuation, family and path computation of `frame`, a bind into
+    /// `y. tr(R↑, ⟨c⟩↑, y)` that moves the bound value along a returned path,
+    /// read outside the bind: `(y. tr(R↑, ⟨c⟩↑, y), R, c)`.
+    ///
+    /// # Specification
+    /// - requires: `frame` binds into a transport along a path that ignores the
+    ///   bound value, `cells` the environments it closes over.
+    /// - ensures: `Some` when that path, closed off at the bind, is a returned
+    ///   computation, the continuation a transport in the family named; `None`
+    ///   otherwise.
+    /// - provides: the frame whose path the second weak head of
+    ///   [`Self::along_composite`] runs.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::along_composite`].
+    /// - witness: `replay::tests::a_transport_along_a_stuck_composite_moves_along_each_path_in_order`
+    #[spec(ensures: |ret| ret.is_none_or(|(continuation, family, _)| matches!(
+        self.arena.computation(continuation),
+        Some(&Computation::PathTransport { motive, .. }) if motive == family
+    )))]
+    fn returned_path(
+        &mut self,
+        cells: &mut Environments,
+        frame: Closure<Frame>,
+    ) -> Option<(ComputationId, ValueTypeId, ComputationId)>
+    {
+        let Frame::Bind(continuation) = self.unload_frame(cells, frame)
+        else {
+            return None;
+        };
+        let Some(&Computation::PathTransport {
+            motive: family,
+            path,
+            ..
+        }) = self.arena.computation(continuation)
+        else {
+            return None;
+        };
+        let unit = self.arena.value_unit();
+        let outside = substitute_value(self.arena, &mut self.table, &mut self.memo, path, unit);
+        let Some(&Value::Returned(computation)) = self.arena.value(outside)
+        else {
+            return None;
+        };
+        Some((continuation, family, computation))
+    }
+
+    /// The two paths of the composite `computation` is stuck at, `(p, q)` for
+    /// `p then q`, read outside every binder.
+    ///
+    /// # Specification
+    /// - requires: `computation` is closed and at its weak head.
+    /// - ensures: `Some((p, q))` when it is the link `tr(Q, q, p)`, or the bind
+    ///   `y ← c; tr(Q↑, q↑, y)` of a link that ran its returned operand first,
+    ///   `p` then standing as `⟨c⟩`; `None` for any other weak head.
+    /// - provides: the legs of a returned path the second weak head of
+    ///   [`Self::along_composite`] moves an operand along, read as the
+    ///   evaluator reads the evaluated path.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::along_composite`].
+    /// - witness: `replay::tests::a_transport_along_a_stuck_composite_moves_along_each_path_in_order`
+    #[spec(ensures: |ret| ret.is_none() || matches!(
+        self.arena.computation(computation),
+        Some(&(Computation::PathTransport { .. } | Computation::Bind(..)))
+    ))]
+    fn legs(
+        &mut self,
+        computation: ComputationId,
+    ) -> Option<(ValueId, ValueId)>
+    {
+        match self.arena.computation(computation) {
+            Some(&Computation::PathTransport { .. }) => {
+                crate::element_identity::composite_legs(self.arena, computation)
+            },
+            Some(&Computation::Bind(ran, body)) => {
+                let (value, path) = crate::element_identity::composite_legs(self.arena, body)?;
+                let Some(&Computation::PathTransport { motive, .. }) = self.arena.computation(body)
+                else {
+                    return None;
+                };
+                if !matches!(self.arena.value(value), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
+                    || crate::element_identity::binder_use(
+                        self.arena,
+                        crate::element_identity::Family::Value(path),
+                    ) != BinderUse::Ignored
+                    || self.bound_use(motive) == BinderUse::Read
+                {
+                    return None;
+                }
+                let unit = self.arena.value_unit();
+                let second =
+                    substitute_value(self.arena, &mut self.table, &mut self.memo, path, unit);
+                Some((self.arena.value_returned(ran), second))
+            },
+            Some(_) | None => None,
+        }
+    }
+
+    /// The transport of a bind's value along `path` in `family`, both read
+    /// outside the bind: `u. tr(family, path↑, u)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn along_lifted(
+        &mut self,
+        family: ValueTypeId,
+        path: ValueId,
+    ) -> ComputationId
+    {
+        let lifted = shift_value(
+            self.arena,
+            &mut self.table,
+            &mut self.memo,
+            path,
+            BinderDepth::NONE,
+            BinderDepth::NONE.deeper(),
+        );
+        let variable = self.arena.value_variable(DeBruijnIndex::from(0_u32));
+        self.arena
+            .computation_path_transport(family, lifted, variable)
+    }
+
+    /// `motive` read as a link whose right endpoint is its binder, `y.
+    /// Path[.A = D](l, y)`, the family `then` transports in; [`Linked::Other`]
+    /// for any other family.
+    ///
+    /// # Specification
+    /// trivial.
+    fn then_link(
+        &mut self,
+        motive: ValueTypeId,
+    ) -> Linked
+    {
+        match self.link(motive) {
+            Linked::Right(right) if matches!(self.arena.value(right), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32)) => {
+                Linked::Right(right)
+            },
+            Linked::Right(_) | Linked::Other => Linked::Other,
+        }
+    }
+
+    /// The operand `v` of `body` when it transports an operand ignoring its
+    /// binder along the path it binds, `w. tr(P, w, v)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn along_bound(
+        &self,
+        body: ComputationId,
+    ) -> Option<ValueId>
+    {
+        match self.arena.computation(body) {
+            Some(&Computation::PathTransport { path, value, .. })
+                if matches!(self.arena.value(path), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
+                    && crate::element_identity::binder_use(
+                        self.arena,
+                        crate::element_identity::Family::Value(value),
+                    ) == BinderUse::Ignored =>
+            {
+                Some(value)
+            },
+            Some(_) | None => None,
+        }
+    }
+
+    /// How `motive`, a family under a bind's binder, uses the bound value:
+    /// closed off at its own binder, how it uses its innermost index.
+    ///
+    /// # Specification
+    /// trivial.
+    fn bound_use(
+        &mut self,
+        motive: ValueTypeId,
+    ) -> BinderUse
+    {
+        let closed = self.arena.value_unit();
+        let probe = crate::rewrite::substitute_value_type(
+            self.arena,
+            &mut self.table,
+            &mut self.memo,
+            motive,
+            closed,
+        );
+        crate::element_identity::binder_use(
+            self.arena,
+            crate::element_identity::Family::Type(probe),
+        )
+    }
+
+    /// What `image`, a cong chain's composite right endpoint under the
+    /// family's binder, reads as.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Composite::Bound`] exactly when
+    ///   [`Self::normalize_returned`] and then [`Self::present`] take `image`
+    ///   to the variable the family binds; [`Composite::Other`] for any other
+    ///   normal form, and for a reading refused or stopped at a partial
+    ///   fixpoint. Every step is charged to the budget.
+    /// - provides: the identity test of [`Self::fuse`].
+    /// - fails: [`Stop::Budget`] when the reading outruns the budget.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::fuse`].
+    /// - witness: `replay::tests::a_cong_chain_composing_to_the_identity_replays_as_its_path`
+    #[spec(
+        captures: before = self.spent,
+        ensures: |ret| self.spent >= before
+            && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget),
+    )]
+    fn composite(
+        &mut self,
+        image: ValueId,
+    ) -> Result<Composite, Stop>
+    {
+        let read = match self.normalize_returned(image, Reduction::Endpoint, DefinedHead::Unfold) {
+            Ok(read) => read,
+            Err(Stop::Budget) => return Err(Stop::Budget),
+            Err(Stop::Refused(_) | Stop::PartialFixpoint) => return Ok(Composite::Other),
+        };
+        let normal = match self.present(Term::Value(read), Reflexive::Kept) {
+            Ok(Term::Value(normal)) => normal,
+            Err(Stop::Budget) => return Err(Stop::Budget),
+            Ok(Term::Computation(_)) | Err(Stop::Refused(_) | Stop::PartialFixpoint) => {
+                return Ok(Composite::Other);
+            },
+        };
+        Ok(
+            if matches!(self.arena.value(normal), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
+            {
+                Composite::Bound
+            }
+            else {
+                Composite::Other
+            },
+        )
+    }
+
+    /// `family`, a value type under one binder, read as a link's family.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Linked::Right`] with its right endpoint exactly when
+    ///   `family` is a path type whose carrier and left endpoint provably
+    ///   ignore its binder; [`Linked::Other`] otherwise.
+    /// - provides: the shape every link of [`Self::fuse`]'s chain shares.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::fuse`].
+    /// - witness: `replay::tests::a_cong_chain_composing_to_the_identity_replays_as_its_path`
+    #[spec(ensures: |ret| match ret {
+        Linked::Right(endpoint) => matches!(self.arena.value_type(family), Some(&ValueType::Path { right, .. }) if right == endpoint),
+        Linked::Other => true,
+    })]
+    fn link(
+        &mut self,
+        family: gandr_kernel_term::ValueTypeId,
+    ) -> Linked
+    {
+        let Some(&ValueType::Path {
+            domain,
+            left,
+            right,
+        }) = self.arena.value_type(family)
+        else {
+            return Linked::Other;
+        };
+        let ignored = |run: &mut Self, family| {
+            crate::element_identity::binder_use(run.arena, family)
+                == crate::element_identity::BinderUse::Ignored
+        };
+        if ignored(self, crate::element_identity::Family::Type(domain))
+            && ignored(self, crate::element_identity::Family::Value(left))
+        {
+            Linked::Right(right)
+        }
+        else {
+            Linked::Other
+        }
+    }
+
+    /// `value` with every returned endpoint standing as a leaf of its presented
+    /// constructor term read by [`Self::normalize_returned`].
+    ///
+    /// A presented type's normal form reads no definition: [`normal_form`] in
+    /// [`crate::presented`] carries every leaf as written. A returned endpoint
+    /// standing as a leaf is the one exception, read here before the rules run
+    /// so a rewrite a call hides — `S(unturn(n))` once `unturn(n)` returns
+    /// `P(n)` — fires. The conversion machine reads the same leaves, held
+    /// endpoints it runs as an unheld evaluation would, so both sides rewrite
+    /// one term.
+    ///
+    /// **Choice.** A returned leaf under a presented constructor is read by
+    /// forced replay: the kernel's own evaluator, [`Self::normalize_returned`],
+    /// re-derives what the endpoint returns by the one step each head admits,
+    /// with no search and no decision, budgeted like every normalization.
+    /// **Alternatives.** A recorded decision at the leaf's position, which
+    /// needs a trace address for a position under a constructor and a rule
+    /// that follows it, for no gain in what the kernel trusts. **Reversal.** A
+    /// leaf whose reading would need a search, or would outrun the normalizer's
+    /// budget, takes the recorded route.
+    ///
+    /// [`normal_form`]: crate::presented::normal_form
+    ///
+    /// # Specification
+    /// - requires: `value` lives in the arena.
+    /// - ensures: `value` itself when it is no constructor of a presented type;
+    ///   otherwise its constructor term, flattened through its own
+    ///   declaration's constructors, with each leaf that is a returned endpoint
+    ///   whose normal form is no returned endpoint replaced by that normal form
+    ///   and read again in turn, every constructor whose fields are unchanged
+    ///   kept at its own id.
+    /// - provides: the leaf half of [`Self::present`].
+    /// - fails: as [`Self::normalize_returned`]; [`ReplayRefusal::Unreadable`]
+    ///   on a dangling node.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop over the walk, not recursion.
+    /// - measure: the budget left, which every reading charges, then the
+    ///   constructor nodes still to visit and rebuild.
+    ///
+    /// # Cost
+    /// - allocation: the walk's steps and the leaves read so far, growth within
+    ///   the constructor term's nodes
+    /// - allocation: each rebuilt constructor over its read fields, durable by
+    ///   the arena's identifiers
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `loop(⟨force wound⟩)` over the presented circle, with
+    ///   `wound` returning `unloop(base)`, reads as `base` once the leaf is
+    ///   read, and the same term over a free circle stays apart from `base`.
+    /// - witness: `replay::tests::a_returned_leaf_of_a_presented_term_reads_before_the_rules`
+    #[spec(
+        captures: before = self.spent,
+        ensures: |ret| self.spent >= before
+            && ret.as_ref().map_or(true, |read| *read == value || self.arena.value(*read).is_some()),
+    )]
+    fn read_returned_leaves(
+        &mut self,
+        value: ValueId,
+    ) -> Result<ValueId, Stop>
+    {
+        /// One step of the walk.
+        enum Walk
+        {
+            /// Read the node at this id.
+            Visit(ValueId),
+            /// Rebuild the constructor at this id over the fields read last.
+            Rebuild(ValueId),
+        }
+        let Some(&Value::Constructor { datatype, .. }) = self.arena.value(value)
+        else {
+            return Ok(value);
+        };
+        let Some(&ValueType::Data {
+            declaration: own, ..
+        }) = self.arena.value_type(datatype)
+        else {
+            return Ok(value);
+        };
+        if self.unfoldings.presentations().presented(own).is_none() {
+            return Ok(value);
+        }
+        let owned = |arena: &TermArena, datatype| {
+            matches!(
+                arena.value_type(datatype),
+                Some(&ValueType::Data { declaration, .. }) if declaration == own
+            )
+        };
+        let mut walk = Vec::from([Walk::Visit(value)]);
+        let mut built: SmallVec<ValueId, 0, Global> = SmallVec::<_, 0, Global>::new();
+        while let Some(step) = walk.pop() {
+            match step {
+                Walk::Visit(id) => match self.arena.value(id) {
+                    Some(&Value::Constructor {
+                        datatype,
+                        ref fields,
+                        ..
+                    }) if owned(self.arena, datatype) => {
+                        walk.push(Walk::Rebuild(id));
+                        walk.extend(fields.iter().rev().map(|&field| Walk::Visit(field)));
+                    },
+                    Some(&Value::Returned(_)) => {
+                        let read =
+                            self.normalize_returned(id, Reduction::Endpoint, DefinedHead::Unfold)?;
+                        if matches!(self.arena.value(read), Some(&Value::Returned(_))) {
+                            built.push(id);
+                        }
+                        else {
+                            walk.push(Walk::Visit(read));
+                        }
+                    },
+                    Some(_) => built.push(id),
+                    None => return Err(unreadable()),
+                },
+                Walk::Rebuild(id) => {
+                    let Some(&Value::Constructor {
+                        family,
+                        datatype,
+                        tag,
+                        ref fields,
+                    }) = self.arena.value(id)
+                    else {
+                        return Err(unreadable());
+                    };
+                    let start = built
+                        .len()
+                        .checked_sub(fields.len())
+                        .ok_or_else(unreadable)?;
+                    if built.get(start ..) == Some(fields.as_slice()) {
+                        built.truncate(Count::from(start));
+                        built.push(id);
+                    }
+                    else {
+                        let read = built.split_off(Count::from(start));
+                        let rebuilt = self.arena.value_constructor(family, datatype, tag, read);
+                        built.push(rebuilt);
+                    }
+                },
+            }
+        }
+        built.pop().ok_or_else(unreadable)
+    }
+
+    /// Unfold a defined head by the one δ-step it admits, the left side's if
+    /// it has one, the right side's otherwise: the constant rule of
+    /// [`Reading::Unfolding`], which reads no decision.
+    ///
+    /// **Choice.** The left side unfolds first and nothing is frozen or
+    /// shortcut: a forced conversion takes no decision, so it reads each side
+    /// down to a head no definition stands at, and only then compares them by
+    /// name or structure. **Alternatives.** Shortcutting two sides headed by
+    /// one constant by their spines, which is a choice a trace records, and a
+    /// refutation through it is not authoritative. **Reversal.** An obligation
+    /// whose sides only meet by a shortcut, and diverge when unfolded, takes a
+    /// recorded dialogue.
+    ///
+    /// # Specification
+    /// - requires: `shapes` are the goal's left and right shapes, at least one
+    ///   with a defined head.
+    /// - ensures: the side whose head is defined, the left one first, replaced
+    ///   by its δ-reduct as [`Self::unfold`] gives it; the other side
+    ///   unchanged.
+    /// - provides: the δ-step of the kernel's unfolding conversion.
+    /// - fails: as [`Self::unfold`]; [`ReplayRefusal::Unreadable`] when neither
+    ///   shape has a defined head.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a side running a definition at its head unfolds it
+    ///   and meets the other side, while the δ-free conversion compares the
+    ///   definition's name and declines.
+    /// - witness: `replay::tests::the_kernel_unfolds_a_defined_head_within_its_budget`
+    #[spec(
+        captures: before = (goal.left, goal.right),
+        ensures: |ret| ret.is_err() || goal.left != before.0 || goal.right != before.1,
+    )]
+    fn unfold_defined(
+        &mut self,
+        goal: &mut Goal,
+        shapes: [&Shape; 2],
+    ) -> Result<(), Stop>
+    {
+        let (side, constant) = match shapes {
+            [
+                &Shape::Neutral(Head::Constant(constant, Status::Defined), _),
+                _,
+            ] => (ConversionSide::Left, constant),
+            [
+                _,
+                &Shape::Neutral(Head::Constant(constant, Status::Defined), _),
+            ] => (ConversionSide::Right, constant),
+            _ => return Err(unreadable()),
+        };
+        self.unfold(goal, side, constant)
+    }
+
+    /// The δ-step a reading takes at `term`'s defined head `constant`, with a
+    /// recursive definition's own recursion refolded to its name.
+    ///
+    /// A recursive definition's body is a suspended fixpoint, and its gate
+    /// opens it with the fixpoint itself for its recursive calls, so a call
+    /// that reads through one level leaves `fix f x` where the source wrote
+    /// `f(x)`. The evaluator reads that recursion back as the call its source
+    /// wrote. This step unfolds the head to the same fixpoint with its body's
+    /// recursion bound to the constant instead — `fix _. b[f ↦ c]` for `fix f.
+    /// b` — which opens at the same gate and computes the same value, so a
+    /// recursive call `spin(x)` stays the call its source wrote, which
+    /// [`Self::shut_recursion`] then reads through. Everywhere else it is
+    /// [`Self::unfold_term`]'s step.
+    ///
+    /// # Specification
+    /// - requires: `term`'s head is `constant`, defined.
+    /// - ensures: for a computation whose head, under application, bind — of
+    ///   one value or of several — and projection frames, forces `constant`,
+    ///   whose body is a suspended fixpoint, the fixpoint refolded — its body
+    ///   opened at the constant and weakened past the binder it does not read,
+    ///   its evidence kept — under those frames; otherwise
+    ///   [`Self::unfold_term`]'s reduct.
+    /// - provides: the δ-step of [`Self::normalize_returned`] and of a held
+    ///   operand's run in [`Self::reduce`].
+    /// - fails: as [`Self::unfold_term`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Termination
+    /// - reason: the `loop` descending the head path and the `while let` loop
+    ///   rebuilding it, not recursion.
+    /// - measure: the focus's arena position while descending, then the frames
+    ///   left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `spin(S(x)) then spin(a)` against `loop ∷ (spin(x)
+    ///   then spin(a))` at the mode switch: unfolded to the bare fixpoint, the
+    ///   recursive call reads `fix f x` and the sides stay apart. Under a bind
+    ///   of several values, the first result of `spin(S(x))` against `loop ∷`
+    ///   the first result of `spin(x)`: not refolded, the sides stay apart.
+    /// - witness: `tests::native_formers::a_recursive_call_stuck_at_a_variable_reads_as_its_call_473`
+    /// - witness: `tests::native_formers::a_recursive_call_under_a_bind_of_several_values_reads_as_its_call_5070`
+    #[spec(ensures: |ret| ret.map_or(true, |reduct| matches!((term, reduct), (Term::Value(_), Term::Value(_)) | (Term::Computation(_), Term::Computation(_)))))]
+    fn unfold_refolded(
+        &mut self,
+        term: Term,
+        constant: ConstantIndex,
+    ) -> Result<Term, Stop>
+    {
+        let Term::Computation(start) = term
+        else {
+            return self.unfold_term(term, constant);
+        };
+        let Some((open, evidence)) = self.suspended_fixpoint(constant)
+        else {
+            return self.unfold_term(term, constant);
+        };
+        let mut frames = Vec::new();
+        let mut focus = start;
+        loop {
+            match self.arena.computation(focus) {
+                Some(&Computation::Application(function, argument)) => {
+                    frames.push(Frame::Apply(argument));
+                    focus = function;
+                },
+                Some(&Computation::Bind(bound, next)) => {
+                    frames.push(Frame::Bind(next));
+                    focus = bound;
+                },
+                Some(&Computation::BindAll { bound, arity, body }) => {
+                    frames.push(Frame::BindAll(arity, body));
+                    focus = bound;
+                },
+                Some(&Computation::Project(component, pair)) => {
+                    frames.push(Frame::Project(component));
+                    focus = pair;
+                },
+                Some(&Computation::Force(forced))
+                    if self.arena.value(forced) == Some(&Value::Constant(constant)) =>
+                {
+                    break;
+                },
+                Some(_) | None => return self.unfold_term(term, constant),
+            }
+        }
+        let named = self.arena.value_constant(constant);
+        let opened = self.instantiate(open, named);
+        let weakened = crate::rewrite::shift_computation(
+            self.arena,
+            &mut self.table,
+            &mut self.memo,
+            opened,
+            BinderDepth::NONE,
+            BinderDepth::from(1_u32),
+        );
+        let mut rebuilt = self.arena.computation_fixpoint(weakened, evidence);
+        while let Some(frame) = frames.pop() {
+            rebuilt = self.wrap(rebuilt, frame);
+        }
+        Ok(Term::Computation(rebuilt))
+    }
+
+    /// Apply the δ-rule decision the trace names at a goal with a defined
+    /// head.
+    ///
+    /// # Specification
+    /// - requires: `shapes` are the goal's left and right shapes, at least one
+    ///   with a defined head.
+    /// - ensures: an `Unfold` and its reduction replace that side's head by its
+    ///   body; a `Postpone` waits for the unfolding on the other side; a
+    ///   `Freeze` freezes a defined head; a `ConstShortcut` over one constant
+    ///   with agreeing spines pushes the spines' premises into `goals`. An
+    ///   anchor-free decision names the constant the shapes hold where an
+    ///   anchored one would name it: the unfolded or frozen side's head, the
+    ///   head the two shortcut sides share, and for a `Postpone` the head
+    ///   opposite the unfolding that follows.
+    /// - provides: the replay of every two-sided constant rule.
+    /// - fails: a refusal when the decision does not apply, or would refute
+    ///   through a freeze or a shortcut.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: named-head unfolding and postponed-head traces
+    ///   distinguish side and name mismatches; freeze and shortcut traces
+    ///   reject negative authority before consumption; anchor-free freeze,
+    ///   postponement and shortcut replay the anchored chain and refuse a side
+    ///   with no defined head or two heads that differ. These fixtures bound
+    ///   dispatch, not every possible spine.
+    /// - witness: `replay::tests::an_unfolding_fires_only_where_the_trace_names_its_head`
+    /// - witness: `replay::tests::a_frozen_branch_cannot_carry_a_refutation`
+    /// - witness: `replay::tests::anchor_free_constant_decisions_read_their_constant_off_the_shapes`
+    #[spec(
+        requires: shapes.iter().any(|shape| matches!(shape, &&Shape::Neutral(Head::Constant(_, Status::Defined), _))),
+        captures: before = (self.position, goals.len()),
+        ensures: |ret| self.position >= before.0 && self.position <= before.0.saturating_add(2)
+            && match ret {
+                Ok(Flow::Settled) => goal.expect == Expect::Convertible
+                    && self.position == before.0.saturating_add(1)
+                    && goals.get(before.1..).is_some_and(|pending| pending.iter().all(|next| next.expect == Expect::Convertible)),
+                Ok(Flow::Continue) => self.position > before.0
+                    && (self.position != before.0.saturating_add(2) || *postponed == Postponed::Nothing),
+                Err(Stop::Refused(ReplayRefusal::NonAuthoritative { at })) =>
+                    goal.expect == Expect::NotConvertible && usize::from(at) == before.0 && self.position == before.0,
+                Err(_) => true,
+            },
+    )]
+    fn constants(
+        &mut self,
+        goal: &mut Goal,
+        shapes: [&Shape; 2],
+        postponed: &mut Postponed,
+        goals: &mut Vec<Goal>,
+    ) -> Result<Flow, Stop>
+    {
+        let [left, right] = shapes;
+        let shape_of = |side: ConversionSide| match side {
+            ConversionSide::Left => left,
+            ConversionSide::Right => right,
+        };
+        let next = self.peek();
+        let Next::Decision(decision) = next
+        else {
+            return Err(self.refuse(next));
+        };
+        match decision {
+            ConversionDecision::Unfold { constant } => {
+                self.take();
+                let reduction = self.peek();
+                let side = match reduction {
+                    Next::Decision(ConversionDecision::ReduceLeft { redex })
+                        if redex == constant =>
+                    {
+                        ConversionSide::Left
+                    },
+                    Next::Decision(ConversionDecision::ReduceRight { redex })
+                        if redex == constant =>
+                    {
+                        ConversionSide::Right
+                    },
+                    Next::Decision(_) | Next::End => return Err(self.refuse(reduction)),
+                };
+                // An anchor-free decision, as persisted evidence carries it,
+                // names no constant: it unfolds the one the side's head holds.
+                let name = match (constant, shape_of(side)) {
+                    (ReplayNode::Constant(name), _)
+                    | (
+                        ReplayNode::Other,
+                        &Shape::Neutral(Head::Constant(name, Status::Defined), _),
+                    ) => name,
+                    (ReplayNode::Other, _) => return Err(self.refuse(reduction)),
+                };
+                let unfolds = matches!(shape_of(side), &Shape::Neutral(Head::Constant(head, Status::Defined), _) if head == name);
+                let waits = match *postponed {
+                    Postponed::Nothing => true,
+                    Postponed::Constant(other) => matches!(
+                        shape_of(opposite(side)),
+                        &Shape::Neutral(Head::Constant(head, Status::Defined), _) if head == other
+                    ),
+                    Postponed::Opposite => matches!(
+                        shape_of(opposite(side)),
+                        &Shape::Neutral(Head::Constant(_, Status::Defined), _)
+                    ),
+                };
+                if !(unfolds && waits) {
+                    return Err(self.refuse(reduction));
+                }
+                self.take();
+                self.unfold(goal, side, name)?;
+                *postponed = Postponed::Nothing;
+                Ok(Flow::Continue)
+            },
+            ConversionDecision::Postpone { constant } if *postponed == Postponed::Nothing => {
+                self.take();
+                *postponed = match constant {
+                    ReplayNode::Constant(name) => Postponed::Constant(name),
+                    ReplayNode::Other => Postponed::Opposite,
+                };
+                Ok(Flow::Continue)
+            },
+            ConversionDecision::Freeze { constant, side } => {
+                if goal.expect == Expect::NotConvertible {
+                    return Err(Stop::Refused(ReplayRefusal::NonAuthoritative {
+                        at: self.at(),
+                    }));
+                }
+                let &Shape::Neutral(Head::Constant(head, Status::Defined), _) = shape_of(side)
+                else {
+                    return Err(self.refuse(next));
+                };
+                if matches!(constant, ReplayNode::Constant(name) if name != head) {
+                    return Err(self.refuse(next));
+                }
+                self.take();
+                goal.frozen.freeze(side, head);
+                Ok(Flow::Continue)
+            },
+            ConversionDecision::ConstShortcut { constant } => {
+                if goal.expect == Expect::NotConvertible {
+                    return Err(Stop::Refused(ReplayRefusal::NonAuthoritative {
+                        at: self.at(),
+                    }));
+                }
+                let (
+                    &Shape::Neutral(
+                        Head::Constant(left_head, Status::Defined | Status::Frozen),
+                        ref left_spine,
+                    ),
+                    &Shape::Neutral(
+                        Head::Constant(right_head, Status::Defined | Status::Frozen),
+                        ref right_spine,
+                    ),
+                ) = (left, right)
+                else {
+                    return Err(self.refuse(next));
+                };
+                let named = match constant {
+                    ReplayNode::Constant(name) => name == left_head,
+                    ReplayNode::Other => true,
+                };
+                if !named || left_head != right_head {
+                    return Err(self.refuse(next));
+                }
+                self.take();
+                let premises = match spines(self.arena, left_spine, right_spine)? {
+                    Structure::Leaf(verdict) => {
+                        return self.close(goal.expect, verdict).map(|()| Flow::Settled);
+                    },
+                    Structure::Premises(premises) => premises,
+                };
+                goals.extend(
+                    premises
+                        .into_iter()
+                        .rev()
+                        .map(|premise| Goal::premise(premise, Expect::Convertible, goal.reduction)),
+                );
+                Ok(Flow::Settled)
+            },
+            ConversionDecision::ReduceLeft { .. }
+            | ConversionDecision::ReduceRight { .. }
+            | ConversionDecision::Postpone { .. }
+            | ConversionDecision::EtaExpand { .. }
+            | ConversionDecision::ReturnEta { .. }
+            | ConversionDecision::Reassociate { .. }
+            | ConversionDecision::Discard { .. }
+            | ConversionDecision::Hold { .. }
+            | ConversionDecision::Force { .. }
+            | ConversionDecision::ComparedShared { .. }
+            | ConversionDecision::Decompose
+            | ConversionDecision::NegativeSubgoal { .. }
+            | ConversionDecision::Evaluate
+            | ConversionDecision::Admitted => Err(self.refuse(next)),
+        }
+    }
+
+    /// Force both sides of a thunk goal on the trace's two `Force`s.
+    ///
+    /// # Specification
+    /// - requires: the goal is a thunk against a thunk or a neutral value.
+    /// - ensures: a thunk side becomes its body, a neutral side its force.
+    /// - provides: the replay of the force rule.
+    /// - fails: a refusal unless the next two decisions are `Force`s.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a thunk against a neutral consumes two force decisions
+    ///   before eta; a wrong second decision refuses at its position without
+    ///   replacing either side.
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    #[spec(
+        captures: before = (self.position, goal.left, goal.right),
+        ensures: |ret| if ret.is_ok() {
+            let agrees = |source, result| match (source, result) {
+                (Term::Value(value), Term::Computation(computation)) => match self.arena.value(value) {
+                    Some(&Value::Thunk(body)) => computation == body,
+                    Some(&(Value::Variable(_) | Value::Constant(_))) => self.arena.computation(computation) == Some(&Computation::Force(value)),
+                    _ => false,
+                },
+                _ => false,
+            };
+            self.position == before.0.saturating_add(match self.reading { Reading::Recorded => 2, Reading::Forced | Reading::Unfolding => 0 })
+                && agrees(before.1, goal.left) && agrees(before.2, goal.right)
+        } else {
+            goal.left == before.1 && goal.right == before.2
+                && self.position >= before.0 && self.position <= before.0.saturating_add(2)
+        },
+    )]
+    fn force(
+        &mut self,
+        goal: &mut Goal,
+    ) -> Result<(), Stop>
+    {
+        for _ in [ConversionSide::Left, ConversionSide::Right] {
+            self.read(Forced::Force)?;
+        }
+        let left = self.forced(goal.left)?;
+        let right = self.forced(goal.right)?;
+        goal.left = left;
+        goal.right = right;
+        Ok(())
+    }
+
+    /// The computation `term` runs when forced.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a thunk's body, or the force of a variable or a constant.
+    /// - provides: one side of the force rule.
+    /// - fails: [`ReplayRefusal::Unreadable`] on any other term.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: replaying a suspended lambda against a free variable
+    ///   distinguishes opening a thunk from allocating a neutral force; other
+    ///   root classes are bounded by the executable local match.
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    /// - witness: `path_universe::tests::no_k`
+    #[spec(ensures: |ret| match term {
+        Term::Value(value) => match self.arena.value(value) {
+            Some(&Value::Thunk(body)) => ret == Ok(Term::Computation(body)),
+            Some(&(Value::Variable(_) | Value::Constant(_))) => matches!(ret, Ok(Term::Computation(computation)) if self.arena.computation(computation) == Some(&Computation::Force(value))),
+            _ => ret == Err(unreadable()),
+        },
+        Term::Computation(_) => ret == Err(unreadable()),
+    })]
+    fn forced(
+        &mut self,
+        term: Term,
+    ) -> Result<Term, Stop>
+    {
+        let Term::Value(value) = term
+        else {
+            return Err(unreadable());
+        };
+        match self.arena.value(value) {
+            Some(&Value::Thunk(body)) => Ok(Term::Computation(body)),
+            Some(&(Value::Variable(_) | Value::Constant(_))) => {
+                Ok(Term::Computation(self.arena.computation_force(value)))
+            },
+            Some(
+                &(Value::PathRefl(_)
+                | Value::Constructor { .. }
+                | Value::Record(_)
+                | Value::Restrict { .. }
+                | Value::PathProduct(..)
+                | Value::SessionPath { .. }
+                | Value::SessionFlow { .. }
+                | Value::PathEquiv { .. }
+                | Value::Univalence { .. }
+                | Value::Here { .. }
+                | Value::Stay { .. }
+                | Value::ForwardFlow { .. }
+                | Value::FunctionFlow { .. }
+                | Value::Then { .. }
+                | Value::FlowProduct(..)
+                | Value::Higher { .. }
+                | Value::HigherEvaluation { .. }
+                | Value::QuantifiedEvaluation { .. }
+                | Value::Literal(_)
+                | Value::Tuple(..)
+                | Value::ListNil
+                | Value::ListCons(..)
+                | Value::Injection(..)
+                | Value::Lift { .. }
+                | Value::Quote(_)
+                | Value::QuoteComputation(_)
+                | Value::StaticApplication(..)
+                | Value::Returned(_)),
+            )
+            | None => Err(unreadable()),
+        }
+    }
+
+    /// η-expand the neutral `side` of a lambda goal on the trace's
+    /// `EtaExpand`.
+    ///
+    /// # Specification
+    /// - requires: `side` is a neutral computation and the other side a lambda.
+    /// - ensures: the neutral side becomes its shift applied to the fresh
+    ///   variable, and the lambda side its body.
+    /// - provides: the replay of the η rule.
+    /// - fails: a refusal unless the next decision is an `EtaExpand` naming
+    ///   `side`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: eta on the neutral side opens the opposite lambda and
+    ///   introduces variable zero; a missing or wrong-side decision refuses
+    ///   after the same force prefix. The witness does not cover arbitrary open
+    ///   binder depths.
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    #[spec(
+        captures: before = (self.position, goal.side(side), goal.side(opposite(side))),
+        ensures: |ret| if ret.is_ok() {
+            self.position == before.0.saturating_add(match self.reading { Reading::Recorded => 1, Reading::Forced | Reading::Unfolding => 0 })
+                && match (before.2, goal.side(opposite(side)), goal.side(side)) {
+                    (Term::Computation(lambda), Term::Computation(body), Term::Computation(applied)) =>
+                        self.arena.computation(lambda) == Some(&Computation::Lambda(body))
+                        && matches!(self.arena.computation(applied), Some(&Computation::Application(_, variable))
+                            if self.arena.value(variable) == Some(&Value::Variable(DeBruijnIndex::from(0)))),
+                    _ => false,
+                }
+        } else {
+            self.position == before.0 && goal.side(side) == before.1 && goal.side(opposite(side)) == before.2
+        },
+    )]
+    fn eta(
+        &mut self,
+        goal: &mut Goal,
+        side: ConversionSide,
+    ) -> Result<(), Stop>
+    {
+        let (Term::Computation(neutral), Term::Computation(lambda)) =
+            (goal.side(side), goal.side(opposite(side)))
+        else {
+            return Err(unreadable());
+        };
+        let Some(&Computation::Lambda(body)) = self.arena.computation(lambda)
+        else {
+            return Err(unreadable());
+        };
+        self.read(Forced::Eta(side))?;
+        let shifted = shift_computation(
+            self.arena,
+            &mut self.table,
+            &mut self.memo,
+            neutral,
+            BinderDepth::default(),
+            BinderDepth::from(1),
+        );
+        let variable = self.arena.value_variable(DeBruijnIndex::from(0));
+        let applied = self.arena.computation_application(shifted, variable);
+        goal.set(side, Term::Computation(applied));
+        goal.set(opposite(side), Term::Computation(body));
+        Ok(())
+    }
+
+    /// Decompose a lazy pairing goal by projecting its neutral `side` on both
+    /// sides of the lazy product.
+    ///
+    /// # Specification
+    /// - requires: `side` is a neutral computation and the other side a lazy
+    ///   pairing.
+    /// - ensures: the premises are the neutral's left projection against the
+    ///   pairing's left component, then its right projection against the right
+    ///   component, each kept on the goal's own sides, scheduled as
+    ///   [`Self::schedule`] states. No decision names the η step: the two
+    ///   shapes force it and nothing about it is chosen.
+    /// - provides: the replay of the lazy product's η rule, `M = ⟨π₁ M, π₂ M⟩`.
+    /// - fails: [`ReplayRefusal::Unreadable`] when the sides are not a
+    ///   computation and a lazy pairing; a refusal when a refutation's next
+    ///   decision is not a `NegativeSubgoal` naming one of the two premises.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: the pairing of a variable's projections converts with
+    ///   that variable on either side with an empty trace; a pairing whose last
+    ///   component differs refutes through `NegativeSubgoal` at that position
+    ///   and not at position zero; an `EtaExpand` there is never read and is
+    ///   left over, and a `Decompose` there is inapplicable.
+    /// - witness: `replay::tests::a_lazy_pairing_meets_a_neutral_by_its_projections`
+    #[spec(
+        captures: [before = goals.len(), width = match goal.side(opposite(side)) {
+            Term::Computation(pairing) => match self.arena.computation(pairing) {
+                Some(&Computation::With(ref components)) => components.len(),
+                _ => 0_usize,
+            },
+            Term::Value(_) => 0_usize,
+        }],
+        ensures: |ret| match ret {
+            Ok(()) => goals.get(before..).is_some_and(|pending| {
+                pending.len() == match goal.expect { Expect::Convertible => width, Expect::NotConvertible => 1_usize }
+                    && pending.iter().all(|next| next.expect == goal.expect && matches!(next.side(side), Term::Computation(projected)
+                        if matches!(self.arena.computation(projected), Some(&Computation::Project(_, neutral)) if goal.side(side) == Term::Computation(neutral))))
+            }),
+            Err(_) => goals.len() == before,
+        },
+    )]
+    fn product_eta(
+        &mut self,
+        goal: &Goal,
+        side: ConversionSide,
+        goals: &mut Vec<Goal>,
+    ) -> Result<(), Stop>
+    {
+        let (Term::Computation(neutral), Term::Computation(pairing)) =
+            (goal.side(side), goal.side(opposite(side)))
+        else {
+            return Err(unreadable());
+        };
+        let Some(&Computation::With(ref components)) = self.arena.computation(pairing)
+        else {
+            return Err(unreadable());
+        };
+        let components = components.clone();
+        let mut premises = Vec::with_capacity(components.len());
+        for (position, &component) in components.iter().enumerate() {
+            let projection = self
+                .arena
+                .computation_project(gandr_kernel_term::Component::from(position), neutral);
+            premises.push(match side {
+                ConversionSide::Left => Premise::computations(projection, component),
+                ConversionSide::Right => Premise::computations(component, projection),
+            });
+        }
+        self.schedule((goal.expect, goal.reduction), premises, goals)
+    }
+
+    /// Read the decision naming `wanted` off the trace, or fire it unread.
+    ///
+    /// # Specification
+    /// - requires: the shapes force `wanted` at the current goal.
+    /// - ensures: under [`Reading::Recorded`], `Ok` after consuming exactly one
+    ///   decision when the next one names `wanted`, side and all; under
+    ///   [`Reading::Forced`] and [`Reading::Unfolding`], `Ok` without reading.
+    /// - provides: the one place a forced rewrite meets the trace.
+    /// - fails: a refusal when the trace names anything else or has ended.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a missing or wrong-side decision refuses where the
+    ///   recorded replay reads it, and the forced conversion relates the same
+    ///   pair with no trace at all.
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    /// - witness: `replay::tests::the_laws_of_bind_replay_by_name`
+    /// - witness: `replay::tests::the_kernel_converts_by_the_forced_rules_alone`
+    #[spec(
+        captures: before = self.position,
+        ensures: |ret| match (self.reading, ret) {
+            (Reading::Forced | Reading::Unfolding, Ok(())) | (Reading::Recorded, Err(_)) => self.position == before,
+            (Reading::Recorded, Ok(())) => self.position == before.saturating_add(1),
+            (Reading::Forced | Reading::Unfolding, Err(_)) => false,
+        },
+    )]
+    fn read(
+        &mut self,
+        wanted: Forced,
+    ) -> Result<(), Stop>
+    {
+        if self.reading != Reading::Recorded {
+            return Ok(());
+        }
+        let next = self.peek();
+        let named = match (wanted, next) {
+            (Forced::Force, Next::Decision(ConversionDecision::Force { .. })) => true,
+            (
+                Forced::Eta(side),
+                Next::Decision(ConversionDecision::EtaExpand { side: named, .. }),
+            )
+            | (
+                Forced::ReturnEta(side),
+                Next::Decision(ConversionDecision::ReturnEta { side: named }),
+            )
+            | (
+                Forced::Reassociate(side),
+                Next::Decision(ConversionDecision::Reassociate { side: named }),
+            ) => named == side,
+            (
+                Forced::Force | Forced::Eta(_) | Forced::ReturnEta(_) | Forced::Reassociate(_),
+                Next::Decision(_) | Next::End,
+            ) => false,
+        };
+        if !named {
+            return Err(self.refuse(next));
+        }
+        self.take();
+        Ok(())
+    }
+
+    /// Read the computation on `side` as its bind into `return`.
+    ///
+    /// # Specification
+    /// - requires: [`bind_rule`] answered [`BindRule::ReturnEta`] naming
+    ///   `side`.
+    /// - ensures: `side` becomes `M to x. return x` over the `M` it held, the
+    ///   other side unchanged.
+    /// - provides: the replay of the η-rule of `F`.
+    /// - fails: a refusal unless the trace names `ReturnEta` on `side`, or when
+    ///   the side is not a computation.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a neutral against its own bind into `return` converts
+    ///   only through this rewrite, and the same trace naming the other side
+    ///   refuses.
+    /// - witness: `replay::tests::the_laws_of_bind_replay_by_name`
+    #[spec(
+        captures: before = (goal.side(side), goal.side(opposite(side))),
+        ensures: |ret| goal.side(opposite(side)) == before.1 && if ret.is_ok() {
+            matches!((before.0, goal.side(side)), (Term::Computation(held), Term::Computation(expanded))
+                if matches!(self.arena.computation(expanded), Some(&Computation::Bind(bound, returned))
+                    if bound == held && matches!(self.arena.computation(returned), Some(&Computation::Return(variable))
+                        if self.arena.value(variable) == Some(&Value::Variable(DeBruijnIndex::from(0))))))
+        } else {
+            goal.side(side) == before.0
+        },
+    )]
+    fn return_eta(
+        &mut self,
+        goal: &mut Goal,
+        side: ConversionSide,
+    ) -> Result<(), Stop>
+    {
+        let Term::Computation(held) = goal.side(side)
+        else {
+            return Err(unreadable());
+        };
+        self.read(Forced::ReturnEta(side))?;
+        let variable = self.arena.value_variable(DeBruijnIndex::from(0));
+        let returned = self.arena.computation_return(variable);
+        let expanded = self.arena.computation_bind(held, returned);
+        goal.set(side, Term::Computation(expanded));
+        Ok(())
+    }
+
+    /// Make the two binds nearest the head of `side` one.
+    ///
+    /// # Specification
+    /// - requires: [`bind_rule`] answered [`BindRule::Reassociate`] naming
+    ///   `side`, and `spine` is that side's spine.
+    /// - ensures: the node `(M to x. N) to y. P` that holds the pair becomes `M
+    ///   to x. (N to y. P')`, with `P'` the continuation shifted past the new
+    ///   binder, and every application, bind and projection above it is rebuilt
+    ///   unchanged; the other side is unchanged.
+    /// - provides: the replay of bind associativity.
+    /// - fails: a refusal unless the trace names `Reassociate` on `side`, or
+    ///   when the side's term does not hold the pair the spine says it does.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Termination
+    /// - reason: the `for` loops below walk a bounded count of frames, not
+    ///   recursion.
+    /// - measure: the frames between the root and the pair, fewer than the
+    ///   spine's length.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a left-nested pair of binds under an application
+    ///   converts to its right-nested twin only through this rewrite, and a
+    ///   continuation reading the outer binder separates a shift from none.
+    /// - witness: `replay::tests::the_laws_of_bind_replay_by_name`
+    #[spec(
+        captures: before = (goal.side(side), goal.side(opposite(side))),
+        ensures: |ret| goal.side(opposite(side)) == before.1
+            && (ret.is_ok() || goal.side(side) == before.0),
+    )]
+    fn reassociate(
+        &mut self,
+        goal: &mut Goal,
+        side: ConversionSide,
+        spine: &[Elimination],
+    ) -> Result<(), Stop>
+    {
+        let Term::Computation(root) = goal.side(side)
+        else {
+            return Err(unreadable());
+        };
+        let pair = spine
+            .windows(2)
+            .position(|pair| matches!(pair, &[Elimination::Bind(_), Elimination::Bind(_)]))
+            .ok_or_else(unreadable)?;
+        let above = spine
+            .len()
+            .checked_sub(pair)
+            .and_then(|rest| rest.checked_sub(2))
+            .ok_or_else(unreadable)?;
+        let mut frames = Vec::with_capacity(above);
+        let mut focus = root;
+        for _ in 0 .. above {
+            match self.arena.computation(focus) {
+                Some(&Computation::Application(head, argument)) => {
+                    frames.push(Frame::Apply(argument));
+                    focus = head;
+                },
+                Some(&Computation::Bind(bound, body)) => {
+                    frames.push(Frame::Bind(body));
+                    focus = bound;
+                },
+                Some(&Computation::Project(projected, pair)) => {
+                    frames.push(Frame::Project(projected));
+                    focus = pair;
+                },
+                Some(_) | None => return Err(unreadable()),
+            }
+        }
+        let Some(&Computation::Bind(inner, outer)) = self.arena.computation(focus)
+        else {
+            return Err(unreadable());
+        };
+        let Some(&Computation::Bind(head, first)) = self.arena.computation(inner)
+        else {
+            return Err(unreadable());
+        };
+        self.read(Forced::Reassociate(side))?;
+        let then = shift_computation(
+            self.arena,
+            &mut self.table,
+            &mut self.memo,
+            outer,
+            BinderDepth::from(1),
+            BinderDepth::from(1),
+        );
+        let fused = self.arena.computation_bind(first, then);
+        let mut rebuilt = self.arena.computation_bind(head, fused);
+        for &frame in frames.iter().rev() {
+            rebuilt = self.wrap(rebuilt, frame);
+        }
+        goal.set(side, Term::Computation(rebuilt));
+        Ok(())
+    }
+
+    /// Read an unread call on one side as the continuation it binds.
+    ///
+    /// # Specification
+    /// - requires: `shapes` are the goal's left and right shapes, and `next`
+    ///   the trace's next decision.
+    /// - ensures: under [`Reading::Recorded`], when `next` is `Discard` naming
+    ///   a side whose shape [`unread_call`] reads, that decision is consumed
+    ///   and the side becomes the continuation with its unread binder dropped;
+    ///   `None` and nothing changed when `next` is no `Discard` and the goal is
+    ///   owed convertible, or no side holds an unread call. Under
+    ///   [`Reading::Forced`] and [`Reading::Unfolding`], the left side's unread
+    ///   call is dropped before the right's, reading nothing.
+    /// - provides: the replay of the discard, `M to x. N ≡ N` when `x` is not
+    ///   free in `N` and `M` is a call of a variable.
+    /// - fails: a refusal when the trace names a `Discard` on a side that holds
+    ///   no unread call, or names anything else at a goal owed apart while a
+    ///   side holds one.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: an unread call against its continuation converts on
+    ///   either side by the named decision and by the forced reading alone; a
+    ///   decision naming the side with no call refuses, and so does a
+    ///   refutation that decomposes past a call it could drop.
+    /// - witness: `replay::tests::an_unread_call_replays_as_its_continuation`
+    #[spec(
+        captures: before = (self.position, goal.side(ConversionSide::Left), goal.side(ConversionSide::Right)),
+        ensures: |ret| match ret {
+            Ok(None) => self.position == before.0
+                && goal.side(ConversionSide::Left) == before.1
+                && goal.side(ConversionSide::Right) == before.2,
+            Ok(Some(side)) => goal.side(opposite(side)) == match opposite(side) {
+                ConversionSide::Left => before.1,
+                ConversionSide::Right => before.2,
+            },
+            Err(_) => self.position == before.0,
+        },
+    )]
+    fn discard(
+        &mut self,
+        goal: &mut Goal,
+        shapes: [&Shape; 2],
+        next: Next,
+    ) -> Result<Option<ConversionSide>, Stop>
+    {
+        let [left, right] = shapes;
+        let unread = |shape: &Shape| {
+            unread_call(shape).filter(|&continuation| {
+                innermost(self.arena.computation_support(continuation)) == BinderUse::Ignored
+            })
+        };
+        let calls = [
+            (ConversionSide::Left, unread(left)),
+            (ConversionSide::Right, unread(right)),
+        ];
+        let chosen = match (self.reading, next) {
+            (Reading::Recorded, Next::Decision(ConversionDecision::Discard { side })) => {
+                let Some(&(_, Some(continuation))) = calls.iter().find(|&&(at, _)| at == side)
+                else {
+                    return Err(self.refuse(next));
+                };
+                self.take();
+                (side, continuation)
+            },
+            (Reading::Recorded, Next::Decision(_) | Next::End) => {
+                if goal.expect == Expect::NotConvertible
+                    && calls.iter().any(|&(_, call)| call.is_some())
+                {
+                    return Err(self.refuse(next));
+                }
+                return Ok(None);
+            },
+            (Reading::Forced | Reading::Unfolding, _) => {
+                let Some(&(side, Some(continuation))) =
+                    calls.iter().find(|&&(_, call)| call.is_some())
+                else {
+                    return Ok(None);
+                };
+                (side, continuation)
+            },
+        };
+        let (side, continuation) = chosen;
+        let dropped = self.arena.value_unit();
+        let opened = self.instantiate(continuation, dropped);
+        goal.set(side, Term::Computation(opened));
+        Ok(Some(side))
+    }
+
+    /// Read a computation on one side that returns as its continuation at the
+    /// computation's returned endpoint.
+    ///
+    /// # Specification
+    /// - requires: `shapes` are the goal's left and right shapes, and `next`
+    ///   the trace's next decision.
+    /// - ensures: a side holds a computation when its shape [`held_bind`]
+    ///   reads, its term binds that computation into that continuation, and the
+    ///   continuation reads its binder. Under [`Reading::Recorded`], when
+    ///   `next` is `Hold` naming a side that holds one, that decision is
+    ///   consumed and the side becomes the continuation instantiated at the
+    ///   computation's returned endpoint; `None` and nothing changed when
+    ///   `next` is no `Hold`. Under [`Reading::Forced`] and
+    ///   [`Reading::Unfolding`], a side holds one only when its continuation
+    ///   passes the value it binds on to another variable's call
+    ///   ([`passed_to`]), and the left side's held computation is read before
+    ///   the right's, reading nothing.
+    /// - provides: the replay of the hold, `M to x. N ≡ N[⟨M⟩/x]` when `M` is a
+    ///   call of a variable or a transport stuck on a path (#4011) and `N`
+    ///   reads `x`: the instantiation the endpoint reading of [`Self::whnf`]
+    ///   performs for a continuation that does not inspect its binder. Every
+    ///   call of the fragment returns, and so does every transport, so the
+    ///   forced reading takes it as it takes the discard.
+    /// - fails: a refusal when the trace names a `Hold` on a side that holds no
+    ///   such computation.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a call passed on against the other variable's call
+    ///   over its endpoint, and a transport stuck on a path against the
+    ///   continuation's transport over its endpoint, replay on either side by
+    ///   the named decision and by the forced reading alone; a decision naming
+    ///   the side with no such computation refuses; a call passed to another
+    ///   function stands apart once held.
+    /// - witness: `replay::tests::a_held_call_replays_as_its_continuation_at_its_endpoint`
+    /// - witness: `replay::tests::a_held_transport_replays_as_its_continuation_at_its_endpoint_4011`
+    #[spec(
+        captures: before = (self.position, goal.side(ConversionSide::Left), goal.side(ConversionSide::Right)),
+        ensures: |ret| match ret {
+            Ok(None) => self.position == before.0
+                && goal.side(ConversionSide::Left) == before.1
+                && goal.side(ConversionSide::Right) == before.2,
+            Ok(Some(side)) => goal.side(opposite(side)) == match opposite(side) {
+                ConversionSide::Left => before.1,
+                ConversionSide::Right => before.2,
+            },
+            Err(_) => self.position == before.0,
+        },
+    )]
+    fn hold(
+        &mut self,
+        goal: &mut Goal,
+        shapes: [&Shape; 2],
+        next: Next,
+    ) -> Result<Option<ConversionSide>, Stop>
+    {
+        let [left, right] = shapes;
+        let arena: &TermArena = self.arena;
+        let held = |side: ConversionSide| {
+            let shape = match side {
+                ConversionSide::Left => left,
+                ConversionSide::Right => right,
+            };
+            let continuation = held_bind(shape)?;
+            let Term::Computation(bound) = goal.side(side)
+            else {
+                return None;
+            };
+            let Some(&Computation::Bind(call, body)) = arena.computation(bound)
+            else {
+                return None;
+            };
+            let passed_on = body == continuation
+                && innermost(arena.computation_support(body)) != BinderUse::Ignored;
+            passed_on.then_some((call, body))
+        };
+        let (side, call, body) = match (self.reading, next) {
+            (Reading::Recorded, Next::Decision(ConversionDecision::Hold { side })) => {
+                let Some((call, body)) = held(side)
+                else {
+                    return Err(self.refuse(next));
+                };
+                self.take();
+                (side, call, body)
+            },
+            (Reading::Recorded, Next::Decision(_) | Next::End) => return Ok(None),
+            (Reading::Forced | Reading::Unfolding, _) => {
+                let Some((side, (call, body))) = [ConversionSide::Left, ConversionSide::Right]
+                    .into_iter()
+                    .find_map(|side| {
+                        held(side)
+                            .filter(|&(_, body)| passed_to(arena, body).is_some())
+                            .map(|found| (side, found))
+                    })
+                else {
+                    return Ok(None);
+                };
+                (side, call, body)
+            },
+        };
+        let endpoint = self.arena.value_returned(call);
+        let opened = self.instantiate(body, endpoint);
+        goal.set(side, Term::Computation(opened));
+        Ok(Some(side))
+    }
+
+    /// Close or decompose a goal no decision is needed to rewrite.
+    ///
+    /// # Specification
+    /// - requires: the goal selected [`Rule::Structural`].
+    /// - ensures: a leaf closes at its verdict without consuming a decision. A
+    ///   decomposition may consume a leading `Decompose`; one owing
+    ///   convertibility pushes every premise, and one owing a refutation also
+    ///   consumes the `NegativeSubgoal` naming its selected premise. A refused
+    ///   negative subgoal leaves an already consumed `Decompose` consumed.
+    /// - provides: implicit structural rules and their optional trace marker.
+    /// - fails: a refusal on a leaf against the owed verdict, or a refutation
+    ///   without its negative subgoal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a pair and a case/application spine distinguish
+    ///   selecting the refuting premise from accepting a positive sibling or an
+    ///   out-of-range position; newly scheduled goals owe the parent verdict.
+    ///   Native path and flow fixtures separate an explicit decomposition from
+    ///   its subsequent refusal without restoring the consumed prefix.
+    /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
+    /// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
+    /// - witness: `path_universe::tests::it_computes_through_a_former`
+    /// - witness: `flow_universe::tests::formation_boundaries_refuse`
+    /// - witness: `replay::tests::a_refutation_at_a_presented_term_is_not_authoritative`
+    #[spec(
+        requires: rule(left, right) == Rule::Structural,
+        captures: before = (goals.len(), self.position),
+        ensures: |ret| self.position >= before.1 && if ret.is_ok() {
+            goals.get(before.0..).is_some_and(|pending| {
+                pending.iter().all(|next| next.expect == goal.expect && next.frozen.left.is_empty() && next.frozen.right.is_empty())
+                    && if pending.is_empty() {
+                        self.position == before.1
+                    } else {
+                        match goal.expect {
+                            Expect::Convertible => self.position <= before.1.saturating_add(1),
+                            Expect::NotConvertible => pending.len() == 1
+                                && self.position >= before.1.saturating_add(1)
+                                && self.position <= before.1.saturating_add(2),
+                        }
+                    }
+            })
+        } else {
+            goals.len() == before.0 && self.position <= before.1.saturating_add(1)
+        },
+    )]
+    fn structural(
+        &mut self,
+        goal: &Goal,
+        left: &Shape,
+        right: &Shape,
+        goals: &mut Vec<Goal>,
+    ) -> Result<(), Stop>
+    {
+        let structure = self.decompose(goal, left, right)?;
+        let next = self.peek();
+        if matches!(next, Next::Decision(ConversionDecision::Decompose)) {
+            if !matches!(structure, Structure::Premises(_)) {
+                return Err(self.refuse(next));
+            }
+            self.take();
+        }
+        // A refutation over a presented type's term is not authoritative: a
+        // leaf of its normal form may unfold into a redex, so two normal forms
+        // apart here may still be one term.
+        let presentations = self.unfoldings.presentations();
+        let presented = |term: Term| match term {
+            Term::Value(value) => match self.arena.value(value) {
+                Some(&Value::Constructor { datatype, .. }) => matches!(
+                    self.arena.value_type(datatype),
+                    Some(&ValueType::Data { declaration, .. })
+                        if presentations.presented(declaration).is_some()
+                ),
+                _ => false,
+            },
+            Term::Computation(_) => false,
+        };
+        if goal.expect == Expect::NotConvertible
+            && structure == Structure::Leaf(Expect::NotConvertible)
+            && (presented(goal.left) || presented(goal.right))
+        {
+            return Err(Stop::Refused(ReplayRefusal::NonAuthoritative {
+                at: self.at(),
+            }));
+        }
+        let premises = match structure {
+            Structure::Leaf(verdict) => return self.close(goal.expect, verdict),
+            Structure::Premises(premises) => premises,
+        };
+        self.schedule((goal.expect, goal.reduction), premises, goals)
+    }
+
+    /// Schedule a decomposition's premises at the verdict its goal owes and
+    /// the reading it is read at.
+    ///
+    /// # Specification
+    /// - requires: `premises` is non-empty.
+    /// - ensures: owing convertibility, every premise is pushed, the first on
+    ///   top, and no decision is read; owing a refutation, the premise the next
+    ///   `NegativeSubgoal` names is pushed alone and that decision consumed.
+    ///   Every pushed goal owes `owed`'s verdict with nothing frozen, and reads
+    ///   as [`Goal::premise`] reads a premise of a goal read at `owed`'s
+    ///   reading.
+    /// - provides: the premise half shared by structural decomposition and the
+    ///   lazy product's η.
+    /// - fails: a refusal when a refutation's next decision is not a
+    ///   `NegativeSubgoal` naming one of `premises`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a pair and a lazy pairing against a neutral
+    ///   distinguish selecting the refuting premise from accepting a positive
+    ///   sibling or an out-of-range position, and a missing `NegativeSubgoal`
+    ///   from a present one. A continuation of a returned endpoint's
+    ///   computation reads through a bind over a stuck call, as the endpoint
+    ///   does.
+    /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
+    /// - witness: `replay::tests::a_lazy_pairing_meets_a_neutral_by_its_projections`
+    /// - witness: `replay::tests::an_endpoint_s_continuation_reads_through_a_bind_over_a_stuck_call_4246`
+    #[spec(
+        captures: before = (goals.len(), self.position, premises.len()),
+        ensures: |ret| match ret {
+            Ok(()) => goals.get(before.0..).is_some_and(|pending| {
+                pending.iter().all(|next| next.expect == owed.0
+                    && next.frozen == Frozen::default()
+                    && (next.reduction == Reduction::Plain || next.reduction == owed.1))
+                    && match owed.0 {
+                        Expect::Convertible => pending.len() == before.2 && self.position == before.1,
+                        Expect::NotConvertible => pending.len() == 1_usize && self.position == before.1.saturating_add(1),
+                    }
+            }),
+            Err(_) => goals.len() == before.0 && self.position == before.1,
+        },
+    )]
+    fn schedule(
+        &mut self,
+        owed: (Expect, Reduction),
+        premises: Vec<Premise>,
+        goals: &mut Vec<Goal>,
+    ) -> Result<(), Stop>
+    {
+        let (expect, within) = owed;
+        match expect {
+            Expect::Convertible => {
+                goals.extend(
+                    premises
+                        .into_iter()
+                        .rev()
+                        .map(|premise| Goal::premise(premise, Expect::Convertible, within)),
+                );
+            },
+            Expect::NotConvertible => {
+                let next = self.peek();
+                let Next::Decision(ConversionDecision::NegativeSubgoal { position }) = next
+                else {
+                    return Err(self.refuse(next));
+                };
+                let Some(&premise) = usize::try_from(u32::from(position))
+                    .ok()
+                    .and_then(|index| premises.get(index))
+                else {
+                    return Err(self.refuse(next));
+                };
+                self.take();
+                goals.push(Goal::premise(premise, Expect::NotConvertible, within));
+            },
+        }
+        Ok(())
+    }
+
+    /// The structural rule two shapes force.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: two formers of one kind decompose child by child, or close on
+    ///   their payloads; two codes close on α-equality or rigid separation; two
+    ///   returners, two lambdas, two lazy pairings, and two neutrals with one
+    ///   head and agreeing spines decompose; a tuple or record against a
+    ///   neutral decomposes into its components or fields against the neutral's
+    ///   projections, the empty one into none, which is a convertible leaf;
+    ///   every other pair is a refuting leaf.
+    /// - provides: the leaf and decomposition rules.
+    /// - fails: [`ReplayRefusal::Unreadable`] on a dangling former.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: return, lambda, lazy pairing, pair, and neutral-spine
+    ///   fixtures distinguish ordered same-polarity premises from rigidly
+    ///   distinct leaves. The observer is the replayed positive or selected
+    ///   negative derivation, not a general normalization proof.
+    /// - witness: `replay::tests::the_replay_reduces_before_it_reads_a_decision`
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
+    /// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
+    /// - witness: `replay::tests::a_lazy_pairing_meets_a_neutral_by_its_projections`
+    /// - witness: `replay::tests::a_tuple_meets_a_neutral_by_its_projections_715`
+    /// - witness: `replay::tests::the_unit_meets_a_neutral_by_eta_6110`
+    #[spec(ensures: |ret| match (left, right) {
+        (&Shape::Return(one), &Shape::Return(other)) => matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one, other)]),
+        (&Shape::ReturnAll(ref ones), &Shape::ReturnAll(ref others)) => if ones.len() == others.len() {
+            matches!(ret, Ok(Structure::Premises(ref premises))
+                if premises.iter().copied().eq(ones.iter().zip(others.iter()).map(|(&one, &other)| Premise::values(one, other))))
+        } else {
+            ret == Ok(Structure::Leaf(Expect::NotConvertible))
+        },
+        (&Shape::Lambda(one), &Shape::Lambda(other)) => matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::computations(one, other)]),
+        (&Shape::Fixpoint(one, ref ones), &Shape::Fixpoint(other, ref others)) => if ones.len() == others.len() {
+            matches!(ret, Ok(Structure::Premises(ref premises)) if premises.first() == Some(&Premise::computations(one, other)) && Some(premises.len()) == ones.len().checked_add(1_usize))
+        } else {
+            ret == Ok(Structure::Leaf(Expect::NotConvertible))
+        },
+        (&Shape::With(ref ones), &Shape::With(ref others)) => if ones.len() == others.len() {
+            matches!(ret, Ok(Structure::Premises(ref premises))
+                if premises.iter().copied().eq(ones.iter().zip(others.iter()).map(|(&one, &other)| Premise::computations(one, other))))
+        } else {
+            ret == Ok(Structure::Leaf(Expect::NotConvertible))
+        },
+        (&Shape::Former | &Shape::Neutral(..), &Shape::Former)
+        | (&Shape::Former, &Shape::Neutral(..)) => true,
+        (&Shape::Neutral(one, _), &Shape::Neutral(other, _)) if one == other => match ret {
+            Ok(Structure::Premises(ref premises)) => !premises.is_empty() && premises.iter().all(|premise|
+                matches!((premise.left, premise.right), (Term::Value(_), Term::Value(_)) | (Term::Computation(_), Term::Computation(_)))),
+            Ok(Structure::Leaf(_)) | Err(Stop::Refused(ReplayRefusal::Unreadable)) => true,
+            Err(_) => false,
+        },
+        _ => ret == Ok(Structure::Leaf(Expect::NotConvertible)),
+    })]
+    fn decompose(
+        &mut self,
+        goal: &Goal,
+        left: &Shape,
+        right: &Shape,
+    ) -> Result<Structure, Stop>
+    {
+        let structure = match (left, right) {
+            (&Shape::Former, &Shape::Former) => {
+                let (Term::Value(left_value), Term::Value(right_value)) = (goal.left, goal.right)
+                else {
+                    return Err(unreadable());
+                };
+                return self.formers(left_value, right_value);
+            },
+            (&Shape::Return(left_value), &Shape::Return(right_value)) => {
+                Structure::of(Vec::from([Premise::values(left_value, right_value)]))
+            },
+            // Two returns of several values compare valuewise; a different
+            // count is apart.
+            (&Shape::ReturnAll(ref ones), &Shape::ReturnAll(ref others)) => {
+                if ones.len() != others.len() {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+                Structure::of(
+                    ones.iter()
+                        .zip(others.iter())
+                        .map(|(&one, &other)| Premise::values(one, other))
+                        .collect(),
+                )
+            },
+            (&Shape::Lambda(left_body), &Shape::Lambda(right_body)) => {
+                Structure::of(Vec::from([Premise::computations(left_body, right_body)]))
+            },
+            // Two fixpoints compare by their bodies, then by the leading
+            // arguments each has taken, pairwise; a different count is apart.
+            (
+                &Shape::Fixpoint(left_body, ref left_leading),
+                &Shape::Fixpoint(right_body, ref right_leading),
+            ) => {
+                if left_leading.len() != right_leading.len() {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+                let mut premises = Vec::with_capacity(left_leading.len().saturating_add(1));
+                premises.push(Premise::computations(left_body, right_body));
+                premises.extend(
+                    left_leading
+                        .iter()
+                        .zip(right_leading)
+                        .map(|(&one, &other)| Premise::values(one, other)),
+                );
+                Structure::of(premises)
+            },
+            // Two pairings compare componentwise; a different arity is apart.
+            (&Shape::With(ref ones), &Shape::With(ref others)) => {
+                if ones.len() != others.len() {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+                Structure::of(
+                    ones.iter()
+                        .zip(others.iter())
+                        .map(|(&one, &other)| Premise::computations(one, other))
+                        .collect(),
+                )
+            },
+            (
+                &Shape::Neutral(left_head, ref left_spine),
+                &Shape::Neutral(right_head, ref right_spine),
+            ) if left_head == right_head => spines(self.arena, left_spine, right_spine)?,
+            (&Shape::Former, &Shape::Neutral(..)) => {
+                self.projections(goal.left, goal.right, ConversionSide::Right)?
+            },
+            (&Shape::Neutral(..), &Shape::Former) => {
+                self.projections(goal.right, goal.left, ConversionSide::Left)?
+            },
+            (
+                &(Shape::Former
+                | Shape::Thunk(_)
+                | Shape::Lambda(_)
+                | Shape::With(..)
+                | Shape::Fixpoint(..)
+                | Shape::Return(_)
+                | Shape::ReturnAll(_)
+                | Shape::Neutral(..)),
+                _,
+            ) => Structure::Leaf(Expect::NotConvertible),
+        };
+        Ok(structure)
+    }
+
+    /// The η premises of a tuple or a record against a neutral: each component
+    /// or field against the neutral's projection at it, in the order the tuple
+    /// or the record's labels hold them, the neutral on `side`. The unit is the
+    /// tuple and the record of no components, so it meets a neutral of its type
+    /// with no premise.
+    ///
+    /// # Specification
+    /// - requires: the two sides stand at one type, as every conversion goal
+    ///   does.
+    /// - ensures: for a tuple or record value against a neutral value, one
+    ///   value premise per component or field, its other side the returned
+    ///   projection of the neutral at its position or label, in order; a
+    ///   convertible leaf for an empty tuple or record, and a refuting leaf for
+    ///   any other pair. Two neutrals never reach here, so two neutrals of the
+    ///   unit type stay apart unless they are one term.
+    /// - provides: η for products and records, the unit's among them.
+    /// - fails: [`ReplayRefusal::Unreadable`] on a dangling former.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tuple or record of a neutral's own projections
+    ///   replays convertible on either side, and swapped components refute at
+    ///   the first. The empty tuple and the empty record replay convertible
+    ///   with a neutral on either side, and two neutrals stay apart.
+    /// - witness: `replay::tests::a_tuple_meets_a_neutral_by_its_projections_715`
+    /// - witness: `replay::tests::the_unit_meets_a_neutral_by_eta_6110`
+    #[spec(ensures: |ret| match ret {
+        Ok(Structure::Premises(ref premises)) => premises.iter().all(|premise| {
+            let (held, projected) = match side {
+                ConversionSide::Left => (premise.right, premise.left),
+                ConversionSide::Right => (premise.left, premise.right),
+            };
+            matches!((held, projected), (Term::Value(_), Term::Value(value))
+                if matches!(self.arena.value(value), Some(&Value::Returned(_))))
+        }),
+        Ok(Structure::Leaf(verdict)) => verdict == Expect::NotConvertible
+            || (verdict == Expect::Convertible && self.unit(former) == UnitForm::Unit),
+        Err(_) => true,
+    })]
+    fn projections(
+        &mut self,
+        former: Term,
+        neutral: Term,
+        side: ConversionSide,
+    ) -> Result<Structure, Stop>
+    {
+        let (Term::Value(former), Term::Value(neutral)) = (former, neutral)
+        else {
+            return Ok(Structure::Leaf(Expect::NotConvertible));
+        };
+        let mut premises = Vec::new();
+        let premise = |held: ValueId, projected: ValueId| match side {
+            ConversionSide::Left => Premise::values(projected, held),
+            ConversionSide::Right => Premise::values(held, projected),
+        };
+        let held = self.arena.value(former).ok_or_else(unreadable)?;
+        if let Value::Tuple(ref components) = *held {
+            let components = components.to_vec();
+            for (position, held) in components.into_iter().enumerate() {
+                let projection = self.arena.computation_tuple_projection(
+                    neutral,
+                    gandr_kernel_term::Component::from(position),
+                );
+                premises.push(premise(held, self.arena.value_returned(projection)));
+            }
+        }
+        else if let Value::Record(ref fields) = *held {
+            let fields: Vec<_> = fields
+                .iter()
+                .map(|(label, &held)| (label.clone(), held))
+                .collect();
+            for (label, held) in fields {
+                let projection = self.arena.computation_record_projection(neutral, label);
+                premises.push(premise(held, self.arena.value_returned(projection)));
+            }
+        }
+        else {
+            return Ok(Structure::Leaf(Expect::NotConvertible));
+        }
+        // No premise remains for the unit, which is a convertible leaf.
+        Ok(Structure::of(premises))
+    }
+
+    /// Whether `term` is the unit: the tuple or the record of no components.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unit(
+        &self,
+        term: Term,
+    ) -> UnitForm
+    {
+        let Term::Value(value) = term
+        else {
+            return UnitForm::Other;
+        };
+        let held = self.arena.value(value);
+        if matches!(held, Some(&Value::Tuple(ref components)) if components.is_empty())
+            || matches!(held, Some(&Value::Record(ref fields)) if fields.is_empty())
+        {
+            UnitForm::Unit
+        }
+        else {
+            UnitForm::Other
+        }
+    }
+
+    /// Whether one side of `goal` is the unit and the other a neutral: the
+    /// pair that η closes with no premise.
+    ///
+    /// # Specification
+    /// - requires: `shapes` are the shapes of the goal's sides, left first.
+    /// - ensures: [`EtaJoin::Joins`] exactly when one shape is a former that is
+    ///   the unit and the other shape is a neutral.
+    /// - provides: the unit's η at a shared comparison, as
+    ///   [`Self::projections`] reads it in a decomposition.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a shared comparison of the unit and a variable closes
+    ///   convertible on either side, and one of two variables stays apart;
+    ///   reading another former as the unit changes a verdict.
+    /// - witness: `replay::tests::the_unit_meets_a_neutral_by_eta_6110`
+    #[spec(ensures: |ret| ret == EtaJoin::Leaves || (self.unit(goal.left) != self.unit(goal.right)
+        && matches!(shapes, [&Shape::Former, &Shape::Neutral(..)] | [&Shape::Neutral(..), &Shape::Former])))]
+    fn unit_against_neutral(
+        &self,
+        goal: &Goal,
+        shapes: [&Shape; 2],
+    ) -> EtaJoin
+    {
+        let unit = match shapes {
+            [&Shape::Former, &Shape::Neutral(..)] => self.unit(goal.left),
+            [&Shape::Neutral(..), &Shape::Former] => self.unit(goal.right),
+            _ => UnitForm::Other,
+        };
+        match unit {
+            UnitForm::Unit => EtaJoin::Joins,
+            UnitForm::Other => EtaJoin::Leaves,
+        }
+    }
+
+    /// The structural rule over two value formers.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::decompose`], over the value formers; two
+    ///   constructors of two families or two tags are apart before their
+    ///   classifiers are read; two reflexivities decompose to their points. A
+    ///   returned endpoint never reaches here: [`Self::settle`] reads it first.
+    ///   Under [`Reading::Unfolding`], two quotes neither α-equal nor both
+    ///   rigid close convertible with the pair pushed to the replay's `owed`.
+    /// - provides: the former half of [`Self::decompose`].
+    /// - fails: [`ReplayRefusal::Unreadable`] on a dangling id or a returned
+    ///   endpoint.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Cost
+    /// - allocation: the premises over the formers' components, growth within
+    ///   the formers' fields
+    /// - allocation: the quote pair set aside in the replay's owed, growth
+    ///   within the replay's compared pairs
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: pair refutations select the differing component and
+    ///   reject a positive sibling or an absent index; unit and distinct rigid
+    ///   leaves close at opposite verdicts; two reflexivities one unfolding
+    ///   apart convert by the unfolding their points need and refuse it read on
+    ///   the other side. Quotes and larger former combinations are not claimed
+    ///   by these fixtures. Native path witnesses separate evidence from
+    ///   syntax; their predicate observes identity and root family without
+    ///   repeating conversion.
+    /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
+    /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+    /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
+    /// - witness: `replay::tests::two_reflexivities_decompose_to_their_points`
+    /// - witness: `replay::tests::the_forced_loop_compares_children_only_where_the_shapes_agree`
+    #[spec(ensures: |ret| { let (matched_left_value, matched_right_value) = (self.arena.value(left), self.arena.value(right));
+if let Some(matched_left_node) = matched_left_value && let Value::Constructor { family:a_family,datatype:a,tag:a_tag,fields:ref a_fields } = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Constructor { family:b_family,datatype:b,tag:b_tag,fields:ref b_fields } = *matched_right_node { {
+            if a_family != b_family || a_tag != b_tag || a_fields.len() != b_fields.len() { ret == Ok(Structure::Leaf(Expect::NotConvertible)) }
+            else { matches!(&ret,Ok(Structure::Premises(premises)) if premises.len() == a_fields.len().saturating_add(1_usize)
+                && premises.first().is_some_and(|premise| matches!((premise.left,premise.right), (Term::Value(left),Term::Value(right)) if self.arena.value(left) == Some(&Value::Quote(a)) && self.arena.value(right) == Some(&Value::Quote(b))))
+                && premises.iter().skip(1).copied().eq(a_fields.iter().zip(b_fields).map(|(a,b)| Premise::values(*a,*b)))) }
+        } }
+ else if let Some(matched_left_node) = matched_left_value && let Value::Record(ref a) = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Record(ref b) = *matched_right_node { {
+            if a.keys().eq(b.keys()) { ret == Ok(Structure::of(a.values().zip(b.values()).map(|(a,b)| Premise::values(*a,*b)).collect())) } else { ret == Ok(Structure::Leaf(Expect::NotConvertible)) }
+        } }
+ else if let Some(matched_left_node) = matched_left_value && let Value::Restrict { value: a, fixed: ref a_fixed } = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Restrict { value: b, fixed: ref b_fixed } = *matched_right_node { {
+            if a_fixed.keys().eq(b_fixed.keys()) { ret == Ok(Structure::of(core::iter::once(Premise::values(a, b)).chain(a_fixed.values().zip(b_fixed.values()).map(|(a,b)| Premise::values(*a,*b))).collect())) } else { ret == Ok(Structure::Leaf(Expect::NotConvertible)) }
+        } }
+ else if matched_left_value.is_none() || matched_right_value.is_none() || matches!(matched_left_value, Some(&Value::Returned(_))) || matches!(matched_right_value, Some(&Value::Returned(_))) { ret == Err(unreadable()) }
+ else if let (Some(&Value::Here { point: one_point, .. }), Some(&Value::Here { point: other_point, .. })) = (matched_left_value, matched_right_value) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_point, other_point)]) }
+ else if let (Some(&Value::Univalence(one)), Some(&Value::Univalence(other))) = (matched_left_value, matched_right_value) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one, other)]) }
+ else if matches!((matched_left_value, matched_right_value), (Some(&Value::Univalence(_)), Some(&Value::Here { .. })) | (Some(&Value::Here { .. }), Some(&Value::Univalence(_)))) { matches!(ret, Ok(Structure::Leaf(_)) | Err(_)) }
+ else if let Some(matched_left_node) = matched_left_value && let ref one @ (Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. }) = *matched_left_node && let Some(other) = matched_right_value { matches!(ret, Ok(Structure::Leaf(verdict)) if (left != right || verdict == Expect::Convertible)
+                && (core::mem::discriminant(one) == core::mem::discriminant(other) || verdict == Expect::NotConvertible)) }
+ else if matches!((matched_left_value, matched_right_value), (Some(&Value::ListNil), Some(&Value::ListNil))) { ret == Ok(Structure::Leaf(Expect::Convertible)) }
+ else if let (Some(one), Some(other)) = (matched_left_value.and_then(Value::components), matched_right_value.and_then(Value::components)) { if one.len() == other.len() { ret == Ok(Structure::of(one.iter().zip(other.iter()).map(|(&a, &b)| Premise::values(a, b)).collect())) } else { ret == Ok(Structure::Leaf(Expect::NotConvertible)) } }
+ else if let Some(matched_left_node) = matched_left_value && let ref one @ Value::Literal(_) = *matched_left_node && let Some(matched_right_node) = matched_right_value && let ref other @ Value::Literal(_) = *matched_right_node { ret == Ok(Structure::Leaf(if one == other { Expect::Convertible } else { Expect::NotConvertible })) }
+ else if let (Some(&Value::ListCons(one_first, one_second)), Some(&Value::ListCons(other_first, other_second))) = (matched_left_value, matched_right_value) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_first, other_first), Premise::values(one_second, other_second)]) }
+ else if let Some(matched_left_node) = matched_left_value && let Value::Injection(one_side, one_body) = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Injection(other_side, other_body) = *matched_right_node && (one_side == other_side) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_body, other_body)]) }
+ else if let Some(matched_left_node) = matched_left_value && let Value::Lift { target: ref one_target, body: one_body } = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Lift { target: ref other_target, body: other_body } = *matched_right_node && (one_target == other_target) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_body, other_body)]) }
+ else if (matched_left_value.is_some_and(|node| matches!(*node, Value::Quote(_))) && matched_right_value.is_some_and(|node| matches!(*node, Value::Quote(_)))) || (matched_left_value.is_some_and(|node| matches!(*node, Value::QuoteComputation(_))) && matched_right_value.is_some_and(|node| matches!(*node, Value::QuoteComputation(_)))) { matches!(ret, Ok(Structure::Leaf(_)) | Err(Stop::Refused(ReplayRefusal::Unreadable))) }
+ else { ret == Ok(Structure::Leaf(Expect::NotConvertible)) }
+})]
+    fn formers(
+        &mut self,
+        left: ValueId,
+        right: ValueId,
+    ) -> Result<Structure, Stop>
+    {
+        let (Some(one), Some(other)) = (self.arena.value(left), self.arena.value(right))
+        else {
+            return Err(unreadable());
+        };
+        let structure = match (one, other) {
+            (&Value::Returned(_), _) | (_, &Value::Returned(_)) => return Err(unreadable()),
+            (
+                &Value::Constructor {
+                    family: one_family,
+                    datatype: a,
+                    tag: one_tag,
+                    fields: ref a_fields,
+                },
+                &Value::Constructor {
+                    family: other_family,
+                    datatype: b,
+                    tag: other_tag,
+                    fields: ref b_fields,
+                },
+            ) => {
+                // Constructors of two families are apart before their
+                // classifiers are read, as core-nbe decides them.
+                if one_family != other_family
+                    || one_tag != other_tag
+                    || a_fields.len() != b_fields.len()
+                {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+                let count = a_fields.len();
+                let a_quote = self.arena.value_quote(a);
+                let b_quote = self.arena.value_quote(b);
+                let mut premises = Vec::with_capacity(count.saturating_add(1_usize));
+                premises.push(Premise::values(a_quote, b_quote));
+                let (Some(left_node), Some(right_node)) =
+                    (self.arena.value(left), self.arena.value(right))
+                else {
+                    return Err(unreadable());
+                };
+                let Value::Constructor {
+                    fields: ref a_fields,
+                    ..
+                } = *left_node
+                else {
+                    return Err(unreadable());
+                };
+                let Value::Constructor {
+                    fields: ref b_fields,
+                    ..
+                } = *right_node
+                else {
+                    return Err(unreadable());
+                };
+                premises.extend(
+                    a_fields
+                        .iter()
+                        .zip(b_fields)
+                        .map(|(a, b)| Premise::values(*a, *b)),
+                );
+                Structure::of(premises)
+            },
+            (&Value::Record(ref a), &Value::Record(ref b)) => {
+                if a.len() != b.len() || !a.keys().eq(b.keys()) {
+                    Structure::Leaf(Expect::NotConvertible)
+                }
+                else {
+                    Structure::of(
+                        a.values()
+                            .zip(b.values())
+                            .map(|(a, b)| Premise::values(*a, *b))
+                            .collect(),
+                    )
+                }
+            },
+            // Two restrictions convert when their record values do and they
+            // fix one set of labels at convertible values.
+            (
+                &Value::Restrict {
+                    value: one_value,
+                    fixed: ref one_fixed,
+                },
+                &Value::Restrict {
+                    value: other_value,
+                    fixed: ref other_fixed,
+                },
+            ) => {
+                if one_fixed.keys().eq(other_fixed.keys()) {
+                    Structure::of(
+                        core::iter::once(Premise::values(one_value, other_value))
+                            .chain(
+                                one_fixed
+                                    .values()
+                                    .zip(other_fixed.values())
+                                    .map(|(a, b)| Premise::values(*a, *b)),
+                            )
+                            .collect(),
+                    )
+                }
+                else {
+                    Structure::Leaf(Expect::NotConvertible)
+                }
+            },
+            // Two reflexivities convert exactly when their points do; the
+            // dialogues they carry are evidence for their endpoints, never
+            // part of the value.
+            (
+                &Value::Here {
+                    point: left_point, ..
+                },
+                &Value::Here {
+                    point: right_point, ..
+                },
+            ) => Structure::of(Vec::from([Premise::values(left_point, right_point)])),
+            // Two univalences convert exactly when their records do, the laws
+            // included: the record is the term.
+            (&Value::Univalence(one), &Value::Univalence(other)) => {
+                Structure::of(Vec::from([Premise::values(one, other)]))
+            },
+            // `ua` of the identity cell is the empty word of the universe's
+            // paths, which reflexivity is; `ua` of any other cell is apart
+            // from reflexivity, as core-nbe decides them.
+            (&Value::Univalence(cell), &Value::Here { .. })
+            | (&Value::Here { .. }, &Value::Univalence(cell)) => {
+                Structure::Leaf(if self.identity_cell(cell)? == CellIdentity::Identity {
+                    Expect::Convertible
+                }
+                else {
+                    Expect::NotConvertible
+                })
+            },
+            (
+                &(Value::PathRefl(_)
+                | Value::PathProduct(..)
+                | Value::SessionPath { .. }
+                | Value::SessionFlow { .. }
+                | Value::PathEquiv { .. }
+                | Value::Univalence { .. }
+                | Value::Here { .. }
+                | Value::Stay { .. }
+                | Value::ForwardFlow { .. }
+                | Value::FunctionFlow { .. }
+                | Value::Then { .. }
+                | Value::FlowProduct(..)
+                | Value::Higher { .. }
+                | Value::HigherEvaluation { .. }
+                | Value::QuantifiedEvaluation { .. }),
+                _,
+            ) => Structure::Leaf(
+                if equal_values(self.arena, left, right) == Convertibility::Convertible {
+                    Expect::Convertible
+                }
+                else {
+                    Expect::NotConvertible
+                },
+            ),
+            (&Value::ListNil, &Value::ListNil) => Structure::Leaf(Expect::Convertible),
+            // Two tuples of one arity compare component by component; a
+            // different arity separates them.
+            (&Value::Tuple(ref left), &Value::Tuple(ref right)) => {
+                if left.len() == right.len() {
+                    Structure::of(
+                        left.iter()
+                            .zip(right.iter())
+                            .map(|(&left, &right)| Premise::values(left, right))
+                            .collect(),
+                    )
+                }
+                else {
+                    Structure::Leaf(Expect::NotConvertible)
+                }
+            },
+            (&Value::Literal(_), &Value::Literal(_)) if one == other => {
+                Structure::Leaf(Expect::Convertible)
+            },
+            (
+                &Value::ListCons(left_first, left_second),
+                &Value::ListCons(right_first, right_second),
+            ) => Structure::of(Vec::from([
+                Premise::values(left_first, right_first),
+                Premise::values(left_second, right_second),
+            ])),
+            (
+                &Value::Injection(left_side, left_body),
+                &Value::Injection(right_side, right_body),
+            ) if left_side == right_side => {
+                Structure::of(Vec::from([Premise::values(left_body, right_body)]))
+            },
+            (
+                &Value::Lift {
+                    target: ref left_target,
+                    body: left_body,
+                },
+                &Value::Lift {
+                    target: ref right_target,
+                    body: right_body,
+                },
+            ) if left_target == right_target => {
+                Structure::of(Vec::from([Premise::values(left_body, right_body)]))
+            },
+            // A code's children are types, which no value premise can carry,
+            // so a pair of codes closes here as the shared comparison would:
+            // α-equal codes convert — a dependent arrow whose codomain ignores
+            // its binder being the plain arrow (#577) — rigid α-distinct codes
+            // are apart, and a pair neither settles is refused rather than
+            // guessed at. The kernel's own conversion owes two such quotes
+            // instead: a code its δ-step returned may hold a call another side
+            // ran, `El(⟨emp(h)⟩)` against `1`, and the pair converts once its
+            // caller reads it as a step's endpoints are read (#3045).
+            (&Value::Quote(_), &Value::Quote(_))
+            | (&Value::QuoteComputation(_), &Value::QuoteComputation(_)) => {
+                let owable = self.reading == Reading::Unfolding
+                    && matches!((one, other), (&Value::Quote(_), &Value::Quote(_)));
+                if equal_weakened(self.arena, ConversionGoal::Value(left, right))
+                    == Convertibility::Convertible
+                {
+                    Structure::Leaf(Expect::Convertible)
+                }
+                else if self
+                    .rigidity(Term::Value(left))
+                    .separates(self.rigidity(Term::Value(right)))
+                    == Separation::Apart
+                {
+                    Structure::Leaf(Expect::NotConvertible)
+                }
+                else if owable {
+                    self.owed.push(SetAside::Values(left, right));
+                    Structure::Leaf(Expect::Convertible)
+                }
+                else {
+                    return Err(unreadable());
+                }
+            },
+            (
+                &(Value::Variable(_)
+                | Value::Constructor { .. }
+                | Value::Record(_)
+                | Value::Restrict { .. }
+                | Value::Constant(_)
+                | Value::Literal(_)
+                | Value::Tuple(..)
+                | Value::ListNil
+                | Value::ListCons(..)
+                | Value::Injection(..)
+                | Value::Thunk(_)
+                | Value::Lift { .. }
+                | Value::Quote(_)
+                | Value::QuoteComputation(_)
+                | Value::StaticApplication(..)),
+                _,
+            ) => Structure::Leaf(Expect::NotConvertible),
+        };
+        Ok(structure)
+    }
+
+    /// Whether `cell` is the identity cell, which `ua` reads as the empty word
+    /// of the universe's paths, as core-nbe reads it.
+    ///
+    /// The identity cell at dimension one is the identity equivalence `*{id,
+    /// *{*{id, refl}, *{id, refl}}}`, and at dimension two the homotopy `λy.
+    /// here(y)`. The cell and each of its parts are read to the value they
+    /// return first, so a cell a definition gives reads as its body.
+    ///
+    /// # Specification
+    /// - requires: `cell` lives in the arena.
+    /// - ensures: [`CellIdentity::Identity`] exactly when `cell` reads to a
+    ///   thunk of `λ. return here(#0)`, or to a pair of a thunk of `λ. return
+    ///   #0` with a pair of two pairs, each a thunk of `λ. return #0` beside a
+    ///   thunk of `λ. return here(#0)`.
+    /// - fails: as [`Self::normalize_returned`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `ua` of the identity record over the booleans
+    ///   converts with reflexivity at the booleans, and `ua` of the record of
+    ///   negation does not.
+    /// - witness: `path_universe::tests::a_homotopy_is_the_cell_of_ua_at_dimension_two_6530`
+    #[spec(ensures: |ret| !matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget)]
+    fn identity_cell(
+        &mut self,
+        cell: ValueId,
+    ) -> Result<CellIdentity, Stop>
+    {
+        use crate::path_universe::Returns;
+        use crate::path_universe::identity_map;
+        let read = |this: &mut Self, at| {
+            this.normalize_returned(at, Reduction::Plain, DefinedHead::Unfold)
+        };
+        let pair = |arena: &TermArena, at| match arena.value(at) {
+            Some(&Value::Tuple(ref parts)) => match **parts {
+                [first, second] => Some([first, second]),
+                _ => None,
+            },
+            Some(_) | None => None,
+        };
+        let cell = read(self, cell)?;
+        if matches!(self.arena.value(cell), Some(&Value::Thunk(_))) {
+            return Ok(identity_map(self.arena, cell, Returns::Reflexivity));
+        }
+        let Some([map, inverses]) = pair(self.arena, cell)
+        else {
+            return Ok(CellIdentity::Other);
+        };
+        let map = read(self, map)?;
+        if identity_map(self.arena, map, Returns::Point) == CellIdentity::Other {
+            return Ok(CellIdentity::Other);
+        }
+        let inverses = read(self, inverses)?;
+        let Some(inverses) = pair(self.arena, inverses)
+        else {
+            return Ok(CellIdentity::Other);
+        };
+        for inverse in inverses {
+            let inverse = read(self, inverse)?;
+            let Some([back, law]) = pair(self.arena, inverse)
+            else {
+                return Ok(CellIdentity::Other);
+            };
+            let back = read(self, back)?;
+            let law = read(self, law)?;
+            if identity_map(self.arena, back, Returns::Point) == CellIdentity::Other
+                || identity_map(self.arena, law, Returns::Reflexivity) == CellIdentity::Other
+            {
+                return Ok(CellIdentity::Other);
+            }
+        }
+        Ok(CellIdentity::Identity)
+    }
+
+    /// Close a `ComparedShared` goal, or report that it decides nothing.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Compared::Equal`] when the sides are α-equal under
+    ///   [`equal_weakened`], or converge under [`pending_endpoints`] with every
+    ///   pair it sets aside alike once read by [`Self::endpoints_alike`], at a
+    ///   defined head as the goal's premise says — a reading that stops leaves
+    ///   the pair open, as [`read_endpoints`] leaves it apart; under
+    ///   [`Apart::Defer`], [`Compared::Deferred`] when they are alike so but
+    ///   for computations that reading parts; [`Compared::Separated`] when
+    ///   neither holds and their rigidities separate, so η relates no unit of
+    ///   one to a neutral of the other; [`Compared::Open`] otherwise.
+    /// - provides: the replay of a closing on two shared nodes.
+    /// - fails: [`ReplayRefusal::Unreadable`] on sides of two polarities.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: equal pairs, distinct rigid variables, thunks, and
+    ///   defined constants separate equality, rigid separation, and undecided
+    ///   comparison under both engine claims; a call over a returned endpoint
+    ///   closes with the call over what the endpoint returns, and not with the
+    ///   call over another value (#695); two reflexivities whose points one
+    ///   presented rule relates close, and not over a free type (#1723). Only
+    ///   root identity and polarity are executable here; the recursive relation
+    ///   is not rerun.
+    /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+    /// - witness: `replay::tests::a_compared_pair_reads_a_returned_endpoint_the_engine_read_through_695`
+    /// - witness: `replay::tests::a_compared_pair_reads_presented_points_by_their_rules_1723`
+    #[spec(ensures: |ret| match (goal.left, goal.right) {
+        (Term::Value(left), Term::Value(right)) if left == right =>
+            ret == Ok(if self.arena.value(left).is_some() { Compared::Equal } else { Compared::Open }),
+        (Term::Computation(left), Term::Computation(right)) if left == right =>
+            ret == Ok(if self.arena.computation(left).is_some() { Compared::Equal } else { Compared::Open }),
+        (Term::Value(_), Term::Computation(_)) | (Term::Computation(_), Term::Value(_)) => ret == Err(unreadable()),
+        _ => ret.is_ok(),
+    })]
+    fn compared(
+        &mut self,
+        goal: &Goal,
+        apart: Apart,
+    ) -> Result<Compared, Stop>
+    {
+        let pair = match (goal.left, goal.right) {
+            (Term::Value(left), Term::Value(right)) => ConversionGoal::Value(left, right),
+            (Term::Computation(left), Term::Computation(right)) => {
+                ConversionGoal::Computation(left, right)
+            },
+            (Term::Value(_), Term::Computation(_)) | (Term::Computation(_), Term::Value(_)) => {
+                return Err(unreadable());
+            },
+        };
+        if equal_weakened(self.arena, pair) == Convertibility::Convertible {
+            return Ok(Compared::Equal);
+        }
+        // The engine compares a returned endpoint by what its computation
+        // returned, so two sides alike but for an endpoint it read through,
+        // `⟨(λe. return ua(e)) e⟩` against `ua(e)` beneath one held call, are
+        // the shared pair it found once each endpoint set aside is read (#695).
+        // Two computations that reading parts, a bind whose continuation
+        // calls a lambda through its ascription's fold against the bind that
+        // lambda's body is, may still convert by the redexes the walk does not
+        // run: the driver reads them by the forced rules (#4011). Two stuck
+        // eliminations' motives read each endpoint as the replay reduces it, a
+        // definition at its head unfolding: the engine entered a call one
+        // motive writes against what the other reads there (#4179).
+        let mut pending = Vec::new();
+        let mut parted = Vec::new();
+        if pending_endpoints(
+            self.arena,
+            self.unfoldings.presentations(),
+            pair,
+            &mut pending,
+        ) == Convertibility::Convertible
+            && !pending.is_empty()
+            && self.endpoints_alike(pending, (goal.reduction, goal.defined), &mut parted)
+                == Ok(Convertibility::Convertible)
+        {
+            if parted.is_empty() {
+                return Ok(Compared::Equal);
+            }
+            match apart {
+                Apart::Defer => return Ok(Compared::Deferred(parted)),
+                Apart::Part => {},
+            }
+        }
+        // `ua` of the identity cell closes against reflexivity, the empty word
+        // of the universe's paths: the engine closed the pair as one by the
+        // cell's syntax.
+        if let (Term::Value(left), Term::Value(right)) = (goal.left, goal.right)
+            && let (Some(&Value::Univalence(cell)), Some(&Value::Here { .. }))
+            | (Some(&Value::Here { .. }), Some(&Value::Univalence(cell))) =
+                (self.arena.value(left), self.arena.value(right))
+            && self.identity_cell(cell)? == CellIdentity::Identity
+        {
+            return Ok(Compared::Equal);
+        }
+        if self
+            .rigidity(goal.left)
+            .separates(self.rigidity(goal.right))
+            == Separation::Apart
+        {
+            Ok(Compared::Separated)
+        }
+        else {
+            Ok(Compared::Open)
+        }
+    }
+
+    /// Whether every pair `pending` holds is alike once each returned endpoint
+    /// in it is read by the reduction the goal takes, and each constructor of a
+    /// presented type by the type's rules.
+    ///
+    /// A side reads as [`Self::normalize_returned`] reads it, by `reduction`
+    /// and at a defined head as `defined` says: to the value its computation
+    /// returns, through every `return` it reaches, or to the returned endpoint
+    /// over what a computation that reaches none reduced to, so a bind read
+    /// through to a binder's call compares by that call. The side then reads
+    /// to its normal form under the presentations ([`Self::present`]), as a
+    /// goal's root reads before its shape. Holding, no definition unfolds, as
+    /// no decision names one. Unfolding, a definition at the head takes the
+    /// replay's own δ-step, as two stuck eliminations' motives read their
+    /// endpoints. A pair that read to something is walked again, its own
+    /// set-aside pairs read in turn. A pair neither side of which reads to
+    /// anything compares by [`equal_weakened`]; two thunks, or two returned
+    /// values, it leaves apart walk their computations the same way. Two
+    /// computations that walk parts count alike here on condition: the pair
+    /// joins `parted`, for the caller to convert by the forced rules alone
+    /// ([`Self::forced_converts`]), which run the redexes the walk does not.
+    ///
+    /// # Specification
+    /// - requires: every pair's values live in the arena.
+    /// - ensures: [`Convertibility::Convertible`] exactly when every pair is
+    ///   alike so, a thunk or returned pair the walk parts counted alike and
+    ///   pushed to `parted`; [`Convertibility::Distinct`] at the first that is
+    ///   not, and at any set-aside decode or codomain, which this reading does
+    ///   not read.
+    /// - provides: the endpoint reading [`Self::compared`] closes on.
+    /// - fails: [`Stop::Budget`] past the budget; as [`Self::whnf`] otherwise.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Termination
+    /// - reason: the `while let` over the worklist, not recursion; a side's
+    ///   chain of returned values reads in [`Self::normalize_returned`]'s loop.
+    /// - measure: the budget left: a side reads one step of its chain per
+    ///   charge, its rewriting charges every node it compares or copies, and a
+    ///   pair returns to the worklist only after one of its sides read to
+    ///   something — a normal form reads to itself — and a thunk or returned
+    ///   pair's walk adds only pairs inside its two computations, or none when
+    ///   it parts them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call over an endpoint returning the other side's
+    ///   argument is alike, and over one returning another variable is not;
+    ///   leaving the endpoints unread changes the first, and answering every
+    ///   read pair alike the second. An endpoint whose bind reads through to
+    ///   the call the other side holds is alike, and one reading to another
+    ///   call is not (#3969); dropping what a stuck reading reduced to changes
+    ///   the first. Two points one presented rule relates are alike, and two no
+    ///   rule relates are not (#1723); leaving the rules unread changes the
+    ///   first. A call through a lambda and the same call through its
+    ///   ascription's fold, neither returning, are alike, and through a lambda
+    ///   calling another rigid are not (#3920); comparing an unread returned
+    ///   pair by α-equality changes the first. Two codes over binds, one
+    ///   continuation a lambda's call through its ascription's fold and the
+    ///   other that lambda's body, are alike but for their parted pair (#4011);
+    ///   answering them distinct changes the first. Two motives whose starts
+    ///   are a definition's call and the variable it returns are alike
+    ///   unfolding, and apart holding (#4179).
+    /// - witness: `replay::tests::a_compared_pair_reads_a_returned_endpoint_the_engine_read_through_695`
+    /// - witness: `replay::tests::a_compared_pair_reads_an_endpoint_through_its_bind_to_a_binder_call_3969`
+    /// - witness: `replay::tests::a_compared_pair_reads_presented_points_by_their_rules_1723`
+    /// - witness: `replay::tests::an_unread_pair_of_returned_calls_walks_their_computations_3920`
+    /// - witness: `replay::tests::a_compared_pair_reads_two_binds_by_the_forced_rules_4011`
+    /// - witness: `replay::tests::stuck_transports_read_their_motives_endpoints_by_unfolding_4179`
+    #[spec(captures: before = self.spent, ensures: |ret| self.spent >= before
+        && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget))]
+    fn endpoints_alike(
+        &mut self,
+        mut pending: Vec<SetAside>,
+        (reduction, defined): (Reduction, DefinedHead),
+        parted: &mut Vec<(ComputationId, ComputationId)>,
+    ) -> Result<Convertibility, Stop>
+    {
+        let mut inside = Vec::new();
+        while let Some(set_aside) = pending.pop() {
+            let (left, right) = match set_aside {
+                SetAside::Values(left, right) => (left, right),
+                // Each endpoint reads against the words' point (#5099).
+                SetAside::AtPoint { words, from, to } => {
+                    let Some(point) =
+                        crate::words::point(self.arena, self.unfoldings.presentations(), words)
+                    else {
+                        return Ok(Convertibility::Distinct);
+                    };
+                    self.charge()?;
+                    pending.push(SetAside::Values(from, point));
+                    pending.push(SetAside::Values(to, point));
+                    continue;
+                },
+                SetAside::Decoded { .. } | SetAside::Codomains(_) => {
+                    return Ok(Convertibility::Distinct);
+                },
+            };
+            let mut read = [left, right];
+            for side in &mut read {
+                // A computation that reaches no `return` reads as the
+                // endpoint over what it reduced to, as the forced reading
+                // keeps it: a bind read through to a binder's call compares by
+                // that call, as the engine read it (#3969).
+                *side = self.normalize_returned(*side, reduction, defined)?;
+                // A constructor of a presented type is set aside for its
+                // normal form: read it by the type's rules.
+                let Term::Value(normal) = self.present(Term::Value(*side), Reflexive::Kept)?
+                else {
+                    return Err(unreadable());
+                };
+                *side = normal;
+            }
+            let [one, other] = read;
+            let unread = (one, other) == (left, right);
+            let walked = if !unread {
+                pending_endpoints(
+                    self.arena,
+                    self.unfoldings.presentations(),
+                    ConversionGoal::Value(one, other),
+                    &mut pending,
+                )
+            }
+            else if equal_weakened(self.arena, ConversionGoal::Value(one, other))
+                == Convertibility::Convertible
+            {
+                Convertibility::Convertible
+            }
+            else {
+                match (self.arena.value(one), self.arena.value(other)) {
+                    // The walk sets a thunk pair aside for the redex one of
+                    // its computations forces, which this reading does not
+                    // contract, and two returned calls that return nothing
+                    // alike, a lambda against its ascription's fold (#3920):
+                    // walk the two computations, their own set-aside pairs
+                    // read in turn. Two the walk parts, a bind whose
+                    // continuation calls a lambda through its ascription's
+                    // fold against the bind that lambda's body is, close on
+                    // condition: the caller reads them by the forced rules
+                    // (#4011).
+                    (Some(&Value::Thunk(one)), Some(&Value::Thunk(other)))
+                    | (Some(&Value::Returned(one)), Some(&Value::Returned(other))) => {
+                        inside.clear();
+                        match pending_endpoints(
+                            self.arena,
+                            self.unfoldings.presentations(),
+                            ConversionGoal::Computation(one, other),
+                            &mut inside,
+                        ) {
+                            Convertibility::Convertible => pending.append(&mut inside),
+                            Convertibility::Distinct => parted.push((one, other)),
+                        }
+                        Convertibility::Convertible
+                    },
+                    _ => Convertibility::Distinct,
+                }
+            };
+            if walked == Convertibility::Distinct {
+                return Ok(Convertibility::Distinct);
+            }
+        }
+        Ok(Convertibility::Convertible)
+    }
+
+    /// Whether anything inside `term` can reduce, or meet a neutral by η.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: native path introductions are rigid records: comparison never
+    ///   descends into their translator programs. Every other term is rigid
+    ///   exactly when it resolves throughout and contains no reducible thunk,
+    ///   returned endpoint, lambda, bind, case, transport or defined constant,
+    ///   including through quoted types, decoded codes and static application
+    ///   operands. A static application over an opaque head is rigid. A rigid
+    ///   term records whether it holds a unit and whether it holds a variable
+    ///   or an opaque constant.
+    /// - provides: the separation half of [`Self::compared`].
+    /// - fails: never — a dangling id is flexible.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// - reason: the `while let Some(next) = work.pop()` loop over an explicit
+    ///   worklist, not recursion.
+    /// - measure: the multiset of arena positions on the worklist: a node is
+    ///   replaced by its children, which the arena minted before it within a
+    ///   family; a crossing between families is to a node the quote or the
+    ///   decode holds, and the arena is finite and acyclic across them.
+    ///
+    /// # Cost
+    /// - allocation: the worklist of nodes inside the term, growth within the
+    ///   term's nodes in the arena
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: units and distinct variables are rigid while thunks
+    ///   and defined constants prevent a shared comparison from closing
+    ///   negatively, and a unit never separates from a variable. This observer
+    ///   covers the root barriers and named pair fixtures, not every quoted
+    ///   type graph.
+    /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+    /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
+    #[spec(ensures: |ret| match term {
+        Term::Value(value) => match self.arena.value(value) {
+            Some(&(Value::Literal(_) | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. })) => ret == Rigidity::Rigid { unit: false, neutral: false },
+            Some(&Value::Variable(_)) => ret == Rigidity::Rigid { unit: false, neutral: true },
+            Some(_) if self.unit(term) == UnitForm::Unit => ret == Rigidity::Rigid { unit: true, neutral: false },
+            Some(&Value::Constant(constant)) => ret == if self.unfoldings.peeked(constant) == Unfoldable::Opaque { Rigidity::Rigid { unit: false, neutral: true } } else { Rigidity::Flexible },
+            Some(&(Value::Thunk(_) | Value::Returned(_))) | None => ret == Rigidity::Flexible,
+            _ => true,
+        },
+        Term::Computation(computation) => match self.arena.computation(computation) {
+            Some(&(Computation::Transport(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Ride { .. } | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::Lambda(_) | Computation::Bind(..) | Computation::Case { .. } | Computation::With(..) | Computation::Project(..))) | None => ret == Rigidity::Flexible,
+            _ => true,
+        },
+    })]
+    fn rigidity(
+        &self,
+        term: Term,
+    ) -> Rigidity
+    {
+        let mut work = Vec::from([match term {
+            Term::Value(value) => AnyNode::Value(value),
+            Term::Computation(computation) => AnyNode::Computation(computation),
+        }]);
+        let mut unit = false;
+        let mut neutral = false;
+        while let Some(next) = work.pop() {
+            match next {
+                AnyNode::Value(value) => match self.arena.value(value) {
+                    Some(&Value::Constructor {
+                        datatype,
+                        ref fields,
+                        ..
+                    }) => {
+                        // A presented type's constructor may be a redex, or
+                        // become one when a leaf unfolds.
+                        if let Some(&ValueType::Data { declaration, .. }) =
+                            self.arena.value_type(datatype)
+                            && self
+                                .unfoldings
+                                .presentations()
+                                .presented(declaration)
+                                .is_some()
+                        {
+                            return Rigidity::Flexible;
+                        }
+                        work.extend(
+                            core::iter::once(AnyNode::ValueType(datatype))
+                                .chain(fields.iter().copied().map(AnyNode::Value)),
+                        );
+                    },
+                    Some(&Value::Record(ref fields)) => {
+                        // η relates the unit to a neutral of its type (#6110).
+                        unit |= fields.is_empty();
+                        work.extend(fields.values().copied().map(AnyNode::Value));
+                    },
+                    Some(&Value::Restrict { value, ref fixed }) => {
+                        work.extend(
+                            core::iter::once(AnyNode::Value(value))
+                                .chain(fixed.values().copied().map(AnyNode::Value)),
+                        );
+                    },
+                    Some(&Value::Univalence(equivalence)) => {
+                        work.push(AnyNode::Value(equivalence));
+                    },
+                    Some(&Value::Variable(_)) => neutral = true,
+                    Some(
+                        &(Value::Literal(_)
+                        | Value::ListNil
+                        | Value::PathRefl(_)
+                        | Value::PathProduct(..)
+                        | Value::SessionPath { .. }
+                        | Value::SessionFlow { .. }
+                        | Value::PathEquiv { .. }
+                        | Value::Here { .. }
+                        | Value::Stay { .. }
+                        | Value::ForwardFlow { .. }
+                        | Value::FunctionFlow { .. }
+                        | Value::Then { .. }
+                        | Value::FlowProduct(..)
+                        | Value::Higher { .. }
+                        | Value::HigherEvaluation { .. }
+                        | Value::QuantifiedEvaluation { .. }),
+                    ) => {},
+                    Some(
+                        &(Value::ListCons(first, second) | Value::StaticApplication(first, second)),
+                    ) => {
+                        work.extend([AnyNode::Value(first), AnyNode::Value(second)]);
+                    },
+                    Some(&Value::Tuple(ref components)) => {
+                        unit |= components.is_empty();
+                        work.extend(components.iter().copied().map(AnyNode::Value));
+                    },
+                    Some(&(Value::Injection(_, body) | Value::Lift { body, .. })) => {
+                        work.push(AnyNode::Value(body));
+                    },
+                    Some(&Value::Constant(constant)) => {
+                        if self.unfoldings.unfolding(constant) != Unfoldable::Opaque {
+                            return Rigidity::Flexible;
+                        }
+                        neutral = true;
+                    },
+                    Some(&Value::Quote(quoted)) => work.push(AnyNode::ValueType(quoted)),
+                    Some(&Value::QuoteComputation(quoted)) => {
+                        work.push(AnyNode::CompType(quoted));
+                    },
+                    Some(&(Value::Thunk(_) | Value::Returned(_))) | None => {
+                        return Rigidity::Flexible;
+                    },
+                },
+                AnyNode::Computation(computation) => match self.arena.computation(computation) {
+                    Some(&(Computation::Return(value) | Computation::Force(value))) => {
+                        work.push(AnyNode::Value(value));
+                    },
+                    Some(&Computation::ReturnAll(ref values)) => {
+                        work.extend(values.iter().copied().map(AnyNode::Value));
+                    },
+                    Some(&Computation::Application(head, argument)) => {
+                        work.extend([AnyNode::Computation(head), AnyNode::Value(argument)]);
+                    },
+                    Some(
+                        &(Computation::Transport(..)
+                        | Computation::PathTransport { .. }
+                        | Computation::TelescopeTransport { .. }
+                        | Computation::Ride { .. }
+                        | Computation::TelescopeRide { .. }
+                        | Computation::RelatedApplication { .. }
+                        | Computation::DataCase { .. }
+                        | Computation::SigmaSplit { .. }
+                        | Computation::RecordProjection(..)
+                        | Computation::TupleProjection(..)
+                        | Computation::Lambda(_)
+                        | Computation::Fixpoint { .. }
+                        | Computation::ListFold { .. }
+                        | Computation::ListCase { .. }
+                        | Computation::Bind(..)
+                        | Computation::BindAll { .. }
+                        | Computation::Case { .. }
+                        | Computation::With(..)
+                        | Computation::Project(..)),
+                    )
+                    | None => {
+                        return Rigidity::Flexible;
+                    },
+                },
+                AnyNode::ValueType(value_type) => match self.arena.value_type(value_type) {
+                    Some(&ValueType::Data { ref arguments, .. }) => {
+                        work.extend(arguments.iter().copied().map(AnyNode::Value));
+                    },
+                    Some(&ValueType::Record(ref fields)) => {
+                        work.extend(fields.values().copied().map(AnyNode::ValueType));
+                    },
+                    Some(
+                        &(ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_)),
+                    ) => {},
+                    Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
+                        work.extend(parts.iter().copied().map(AnyNode::ValueType));
+                    },
+                    Some(
+                        &ValueType::PathUniverse(source, target)
+                        | &ValueType::FlowUniverse(source, target),
+                    ) => {
+                        work.extend([AnyNode::Value(source), AnyNode::Value(target)]);
+                    },
+                    Some(
+                        &ValueType::Path {
+                            domain,
+                            left,
+                            right,
+                        }
+                        | &ValueType::Flow {
+                            domain,
+                            source: left,
+                            target: right,
+                        }
+                        | &ValueType::Bridge {
+                            domain,
+                            left,
+                            right,
+                        },
+                    ) => {
+                        work.extend([
+                            AnyNode::ValueType(domain),
+                            AnyNode::Value(left),
+                            AnyNode::Value(right),
+                        ]);
+                    },
+                    Some(
+                        &ValueType::StaticPi {
+                            domain: first,
+                            codomain: second,
+                        }
+                        | &ValueType::Sigma { first, second },
+                    ) => {
+                        work.extend([AnyNode::ValueType(first), AnyNode::ValueType(second)]);
+                    },
+                    Some(&ValueType::Thunk(body)) => work.push(AnyNode::CompType(body)),
+                    Some(
+                        &ValueType::Session {
+                            payloads: inner, ..
+                        }
+                        | &ValueType::Lift { inner, .. }
+                        | &ValueType::List(inner)
+                        | &ValueType::Staged { base: inner, .. },
+                    ) => {
+                        work.push(AnyNode::ValueType(inner));
+                    },
+                    Some(&ValueType::Element { code, .. }) => work.push(AnyNode::Value(code)),
+                    None => return Rigidity::Flexible,
+                },
+                AnyNode::CompType(comp_type) => match self.arena.comp_type(comp_type) {
+                    Some(&CompType::Returner(result)) => work.push(AnyNode::ValueType(result)),
+                    Some(&CompType::Returns(ref results)) => {
+                        work.extend(results.iter().copied().map(AnyNode::ValueType));
+                    },
+                    Some(
+                        &(CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain }),
+                    ) => {
+                        work.extend([AnyNode::ValueType(domain), AnyNode::CompType(codomain)]);
+                    },
+                    Some(&CompType::Element { code, .. }) => work.push(AnyNode::Value(code)),
+                    Some(&CompType::With(ref components)) => {
+                        work.extend(components.iter().copied().map(AnyNode::CompType));
+                    },
+                    Some(&CompType::Codata { ref arguments, .. }) => {
+                        work.extend(arguments.iter().copied().map(AnyNode::Value));
+                    },
+                    None => return Rigidity::Flexible,
+                },
+            }
+        }
+        Rigidity::Rigid { unit, neutral }
+    }
+
+    /// The shape of `term` in weak head form, with each constant head's status
+    /// on `side`.
+    ///
+    /// # Specification
+    /// - requires: `term` is in weak head form.
+    /// - ensures: a value's former, thunk, or head under its static
+    ///   applications, innermost first; a computation's lambda, lazy pairing,
+    ///   returner, or head under its spine, innermost first. A transport's
+    ///   path, a telescope transport's path and a ride's flow stand at the head
+    ///   of their elimination.
+    /// - provides: what the rule table dispatches on.
+    /// - fails: [`ReplayRefusal::Unreadable`] on a dangling id, a head no rule
+    ///   reads, or a returned endpoint, which [`Self::settle`] reads first.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Termination
+    /// - reason: the `loop` below, which descends a computation's head path,
+    ///   and the `while let` loop descending a value's static applications, not
+    ///   recursion.
+    /// - measure: the arena position of the focus, which falls at every descent
+    ///   because a child is minted before its parent.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: force/eta traces and neutral case/application spines
+    ///   distinguish head classes and the order of their premises; static
+    ///   operator traces cover static application heads; a ride over a named
+    ///   flow offers that flow's unfolding on its own side only. The executable
+    ///   observer checks root shape and the outermost elimination without
+    ///   repeating the head walk.
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    /// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
+    /// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
+    /// - witness: `path_universe::tests::refl_collapses`
+    /// - witness: `replay::tests::a_projection_runs_its_side_of_a_pairing`
+    /// - witness: `replay::tests::a_ride_unfolds_its_flow_where_the_dialogue_names_it`
+    /// - witness: `replay::tests::an_introduction_under_a_spine_is_unreadable`
+    #[spec(ensures: |ret| match term {
+        Term::Value(value) => match self.arena.value(value) {
+            Some(&Value::Variable(index)) => matches!(ret, Ok(Shape::Neutral(Head::Variable(found), ref spine)) if found == index && spine.is_empty()),
+            Some(&Value::Constant(constant)) => matches!(ret, Ok(Shape::Neutral(head, ref spine)) if head == self.peeked_head(constant, frozen, side) && spine.is_empty()),
+            Some(&Value::Thunk(body)) => ret == Ok(Shape::Thunk(body)),
+            Some(&Value::Returned(_)) | None => ret == Err(unreadable()),
+            Some(&Value::StaticApplication(_, argument)) => match ret {
+                Ok(Shape::Neutral(_, ref spine)) => spine.last() == Some(&Elimination::StaticApply(argument))
+                    && spine.iter().all(|elimination| matches!(elimination, &Elimination::StaticApply(_))),
+                Err(Stop::Refused(ReplayRefusal::Unreadable)) => true,
+                _ => false,
+            },
+            Some(_) => ret == Ok(Shape::Former),
+        },
+        Term::Computation(computation) => match self.arena.computation(computation) {
+            Some(&Computation::Lambda(body)) => ret == Ok(Shape::Lambda(body)),
+            Some(&Computation::With(ref components)) => ret == Ok(Shape::With(components.clone())),
+            Some(&Computation::Fixpoint { body, .. }) => ret == Ok(Shape::Fixpoint(body, Vec::new())),
+            Some(&Computation::Return(value)) => ret == Ok(Shape::Return(value)),
+            Some(&Computation::ReturnAll(ref values)) => ret == Ok(Shape::ReturnAll(values.clone())),
+            Some(node) => match ret {
+                Ok(Shape::Fixpoint(_, ref leading)) => matches!(*node, Computation::Application(_, argument) if leading.last() == Some(&argument)),
+                Ok(Shape::Neutral(_, ref spine)) => match *node {
+                    Computation::Application(head, argument) => spine.last() == Some(&Elimination::Apply(argument))
+                        || spine.last() == Some(&Elimination::Fixpoint(head)),
+                    Computation::Bind(_, body) => spine.last() == Some(&Elimination::Bind(body)),
+                    Computation::BindAll { arity, body, .. } => spine.last() == Some(&Elimination::BindAll(arity, body)),
+                    Computation::Force(_) => spine.as_slice() == [Elimination::Force],
+                    Computation::Transport(path, value) => if matches!(self.arena.value(path), Some(&Value::PathProduct(..))) {
+                        spine.as_slice() == [Elimination::ProductTransport(path)]
+                    } else { spine.as_slice() == [Elimination::Transport(value)] },
+                    Computation::Ride { .. } => spine.as_slice() == [Elimination::Ride(computation)],
+                    Computation::PathTransport { .. } => spine.as_slice() == [Elimination::PathTransport(computation)],
+                    Computation::TelescopeTransport { .. } => spine.as_slice() == [Elimination::TelescopeTransport(computation)],
+                    Computation::Case { .. } => spine.as_slice() == [Elimination::Case(computation)],
+                    Computation::DataCase { .. } => spine.as_slice() == [Elimination::DataCase(computation)],
+                    Computation::SigmaSplit { .. } => spine.as_slice() == [Elimination::SigmaSplit(computation)],
+                    Computation::RecordProjection(..) => spine.as_slice() == [Elimination::RecordProjection(computation)],
+                    Computation::TupleProjection(..) => spine.as_slice() == [Elimination::TupleProjection(computation)],
+                    Computation::Project(side, _) => spine.last() == Some(&Elimination::Project(side)),
+                    Computation::ListFold { on_nil, on_cons, .. } => spine.as_slice() == [Elimination::ListFold(on_nil, on_cons)],
+                    Computation::ListCase { on_nil, on_cons, .. } => spine.as_slice() == [Elimination::ListCase(on_nil, on_cons)],
+                    Computation::Lambda(_) | Computation::Return(_) | Computation::ReturnAll(_) | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::With(..) | Computation::Fixpoint { .. } => false,
+                },
+                Err(Stop::Refused(ReplayRefusal::Unreadable)) => true,
+                _ => false,
+            },
+            None => ret == Err(unreadable()),
+        },
+    })]
+    fn shape(
+        &self,
+        term: Term,
+        frozen: &Frozen,
+        side: ConversionSide,
+    ) -> Result<Shape, Stop>
+    {
+        let start = match term {
+            Term::Value(value) => {
+                return match self.arena.value(value) {
+                    Some(&Value::Variable(index)) => {
+                        Ok(Shape::Neutral(Head::Variable(index), Vec::new()))
+                    },
+                    Some(&Value::Constant(constant)) => Ok(Shape::Neutral(
+                        self.head(constant, frozen, side),
+                        Vec::new(),
+                    )),
+                    Some(&Value::Thunk(body)) => Ok(Shape::Thunk(body)),
+                    Some(&Value::Returned(_)) | None => Err(unreadable()),
+                    Some(&Value::StaticApplication(..)) => {
+                        let mut spine = Vec::new();
+                        let mut focus = value;
+                        while let Some(&Value::StaticApplication(head, argument)) =
+                            self.arena.value(focus)
+                        {
+                            spine.push(Elimination::StaticApply(argument));
+                            focus = head;
+                        }
+                        spine.reverse();
+                        let head = self.value_head(focus, frozen, side)?;
+                        Ok(Shape::Neutral(head, spine))
+                    },
+                    Some(
+                        &(Value::PathRefl(_)
+                        | Value::Constructor { .. }
+                        | Value::Record(_)
+                        | Value::Restrict { .. }
+                        | Value::PathProduct(..)
+                        | Value::SessionPath { .. }
+                        | Value::SessionFlow { .. }
+                        | Value::PathEquiv { .. }
+                        | Value::Univalence { .. }
+                        | Value::Literal(_)
+                        | Value::Tuple(..)
+                        | Value::ListNil
+                        | Value::ListCons(..)
+                        | Value::Injection(..)
+                        | Value::Lift { .. }
+                        | Value::Quote(_)
+                        | Value::QuoteComputation(_)
+                        | Value::Here { .. }
+                        | Value::Stay { .. }
+                        | Value::ForwardFlow { .. }
+                        | Value::FunctionFlow { .. }
+                        | Value::Then { .. }
+                        | Value::FlowProduct(..)
+                        | Value::Higher { .. }
+                        | Value::HigherEvaluation { .. }
+                        | Value::QuantifiedEvaluation { .. }),
+                    ) => Ok(Shape::Former),
+                };
+            },
+            Term::Computation(computation) => computation,
+        };
+        let mut spine = Vec::new();
+        // The application node over each `Apply` the spine holds, in step:
+        // a stuck fixpoint's elimination names the one over its last leading
+        // argument.
+        let mut applications = Vec::new();
+        let mut focus = start;
+        let head = loop {
+            match self.arena.computation(focus) {
+                Some(&Computation::DataCase { scrutinee, .. }) => {
+                    spine.push(Elimination::DataCase(focus));
+                    break self.value_head(scrutinee, frozen, side)?;
+                },
+                Some(&Computation::SigmaSplit { scrutinee, .. }) => {
+                    spine.push(Elimination::SigmaSplit(focus));
+                    break self.value_head(scrutinee, frozen, side)?;
+                },
+                Some(&Computation::RecordProjection(record, _)) => {
+                    spine.push(Elimination::RecordProjection(focus));
+                    break self.value_head(record, frozen, side)?;
+                },
+                Some(&Computation::TupleProjection(tuple, _)) => {
+                    spine.push(Elimination::TupleProjection(focus));
+                    break self.value_head(tuple, frozen, side)?;
+                },
+                Some(&Computation::ListFold {
+                    list,
+                    on_nil,
+                    on_cons,
+                    ..
+                }) => {
+                    spine.push(Elimination::ListFold(on_nil, on_cons));
+                    break self.value_head(list, frozen, side)?;
+                },
+                Some(&Computation::ListCase {
+                    list,
+                    on_nil,
+                    on_cons,
+                    ..
+                }) => {
+                    spine.push(Elimination::ListCase(on_nil, on_cons));
+                    break self.value_head(list, frozen, side)?;
+                },
+                Some(&Computation::Transport(path, value)) => {
+                    if matches!(self.arena.value(path), Some(&Value::PathProduct(..))) {
+                        spine.push(Elimination::ProductTransport(path));
+                        break self.value_head(value, frozen, side)?;
+                    }
+                    spine.push(Elimination::Transport(value));
+                    break self.value_head(path, frozen, side)?;
+                },
+                // A ride stuck at the table stands on its flow: a defined
+                // flow unfolds where the dialogue names it, as a transport's
+                // path does.
+                Some(&Computation::Ride { flow, .. }) => {
+                    spine.push(Elimination::Ride(focus));
+                    break self.value_head(flow, frozen, side)?;
+                },
+                // A path transport stuck at the table stands on its path, as
+                // a ride stands on its flow.
+                Some(&Computation::PathTransport { path, .. }) => {
+                    spine.push(Elimination::PathTransport(focus));
+                    break self.value_head(path, frozen, side)?;
+                },
+                // A telescope transport stuck at the table stands on its
+                // path, as the engine's spine holds it on the path's neutral.
+                Some(&Computation::TelescopeTransport { path, .. }) => {
+                    spine.push(Elimination::TelescopeTransport(focus));
+                    break self.value_head(path, frozen, side)?;
+                },
+                Some(&Computation::Lambda(body)) if spine.is_empty() => {
+                    return Ok(Shape::Lambda(body));
+                },
+                Some(&Computation::With(ref components)) if spine.is_empty() => {
+                    return Ok(Shape::With(components.clone()));
+                },
+                Some(&Computation::Fixpoint { body, .. }) if spine.is_empty() => {
+                    return Ok(Shape::Fixpoint(body, Vec::new()));
+                },
+                // A fixpoint takes its leading arguments, the applications
+                // directly over it; applied past them to a neutral argument it
+                // is stuck on that argument's head: the application over its
+                // last leading argument becomes the fixpoint's elimination, and
+                // the argument's head the neutral's. Short of its staged
+                // argument it stands at no gate.
+                Some(&Computation::Fixpoint { body, evidence }) => {
+                    let staged = usize::from(evidence.gate());
+                    let mut leading = Vec::with_capacity(staged);
+                    let mut applied = focus;
+                    while leading.len() < staged {
+                        match spine.pop() {
+                            Some(Elimination::Apply(argument)) => {
+                                leading.push(argument);
+                                applied = applications.pop().ok_or_else(unreadable)?;
+                            },
+                            None => return Ok(Shape::Fixpoint(body, leading)),
+                            Some(_) => return Err(unreadable()),
+                        }
+                    }
+                    let argument = match spine.pop() {
+                        Some(Elimination::Apply(argument)) => argument,
+                        None => return Ok(Shape::Fixpoint(body, leading)),
+                        Some(_) => return Err(unreadable()),
+                    };
+                    spine.push(Elimination::Fixpoint(applied));
+                    break self.value_head(argument, frozen, side)?;
+                },
+                Some(&Computation::Return(value)) if spine.is_empty() => {
+                    return Ok(Shape::Return(value));
+                },
+                Some(&Computation::ReturnAll(ref values)) if spine.is_empty() => {
+                    return Ok(Shape::ReturnAll(values.clone()));
+                },
+                Some(&Computation::BindAll { bound, arity, body }) => {
+                    spine.push(Elimination::BindAll(arity, body));
+                    focus = bound;
+                },
+                Some(&Computation::Application(head, argument)) => {
+                    spine.push(Elimination::Apply(argument));
+                    applications.push(focus);
+                    focus = head;
+                },
+                Some(&Computation::Bind(bound, body)) => {
+                    spine.push(Elimination::Bind(body));
+                    focus = bound;
+                },
+                Some(&Computation::Project(component, pair)) => {
+                    spine.push(Elimination::Project(component));
+                    focus = pair;
+                },
+                Some(&Computation::Force(value)) => {
+                    spine.push(Elimination::Force);
+                    let head = self.value_head(value, frozen, side)?;
+                    break head;
+                },
+                Some(&Computation::Case { scrutinee, .. }) => {
+                    spine.push(Elimination::Case(focus));
+                    let head = self.value_head(scrutinee, frozen, side)?;
+                    break head;
+                },
+                // A telescope ride or a related application that did not
+                // reduce has no trace alphabet of its own: the replay reads it
+                // as unreadable.
+                Some(
+                    &(Computation::Lambda(_)
+                    | Computation::With(..)
+                    | Computation::Return(_)
+                    | Computation::ReturnAll(_)
+                    | Computation::TelescopeRide { .. }
+                    | Computation::RelatedApplication { .. }),
+                )
+                | None => {
+                    return Err(unreadable());
+                },
+            }
+        };
+        spine.reverse();
+        Ok(Shape::Neutral(head, spine))
+    }
+
+    /// The head a forced, scrutinized or statically applied value stands for.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a variable's or a constant's head.
+    /// - provides: the head half of [`Self::shape`].
+    /// - fails: [`ReplayRefusal::Unreadable`] on any other value.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a forced variable and a statically applied defined
+    ///   constant replay as neutral heads; a non-head value is refused by the
+    ///   local observer. The witnesses distinguish variable identity from the
+    ///   named constant rule.
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    /// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
+    /// - witness: `path_universe::tests::no_k`
+    #[spec(ensures: |ret| ret == match self.arena.value(value) {
+        Some(&Value::Variable(index)) => Ok(Head::Variable(index)),
+        Some(&Value::Constant(constant)) => Ok(self.peeked_head(constant, frozen, side)),
+        _ => Err(unreadable()),
+    })]
+    fn value_head(
+        &self,
+        value: ValueId,
+        frozen: &Frozen,
+        side: ConversionSide,
+    ) -> Result<Head, Stop>
+    {
+        match self.arena.value(value) {
+            Some(&Value::Variable(index)) => Ok(Head::Variable(index)),
+            Some(&Value::Constant(constant)) => Ok(self.head(constant, frozen, side)),
+            Some(
+                &(Value::PathRefl(_)
+                | Value::Constructor { .. }
+                | Value::Record(_)
+                | Value::Restrict { .. }
+                | Value::PathProduct(..)
+                | Value::SessionPath { .. }
+                | Value::SessionFlow { .. }
+                | Value::PathEquiv { .. }
+                | Value::Univalence { .. }
+                | Value::Literal(_)
+                | Value::Tuple(..)
+                | Value::ListNil
+                | Value::ListCons(..)
+                | Value::Injection(..)
+                | Value::Thunk(_)
+                | Value::Lift { .. }
+                | Value::Quote(_)
+                | Value::QuoteComputation(_)
+                | Value::StaticApplication(..)
+                | Value::Here { .. }
+                | Value::Stay { .. }
+                | Value::ForwardFlow { .. }
+                | Value::FunctionFlow { .. }
+                | Value::Then { .. }
+                | Value::FlowProduct(..)
+                | Value::Higher { .. }
+                | Value::HigherEvaluation { .. }
+                | Value::QuantifiedEvaluation { .. }
+                | Value::Returned(_)),
+            )
+            | None => Err(unreadable()),
+        }
+    }
+
+    /// The head `constant` makes on `side`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Status::Opaque`] without a body, [`Status::Frozen`] when
+    ///   `side` froze it, [`Status::Defined`] otherwise; an operator body is a
+    ///   body.
+    /// - provides: the status the constant rules read.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: body, operator, explicit opaque, and out-of-range
+    ///   entries are observed on both sides before and after freezing; opacity
+    ///   takes precedence over frozen membership.
+    /// - witness: `replay::tests::frozen_heads_are_side_local_and_opacity_takes_precedence`
+    #[spec(ensures: |ret| ret == Head::Constant(constant,
+        if self.unfoldings.peeked(constant) == Unfoldable::Opaque { Status::Opaque }
+        else if frozen.side(side).contains(&constant) { Status::Frozen }
+        else { Status::Defined }))]
+    fn head(
+        &self,
+        constant: ConstantIndex,
+        frozen: &Frozen,
+        side: ConversionSide,
+    ) -> Head
+    {
+        Head::Constant(
+            constant,
+            Self::status(self.unfoldings.unfolding(constant), constant, frozen, side),
+        )
+    }
+
+    /// As [`Self::head`], read through the support of the check that runs
+    /// without moving it: for a specification clause.
+    ///
+    /// # Specification
+    /// trivial.
+    fn peeked_head(
+        &self,
+        constant: ConstantIndex,
+        frozen: &Frozen,
+        side: ConversionSide,
+    ) -> Head
+    {
+        Head::Constant(
+            constant,
+            Self::status(self.unfoldings.peeked(constant), constant, frozen, side),
+        )
+    }
+
+    /// The status of `constant`, which unfolds as `unfoldable`, on `side`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn status(
+        unfoldable: Unfoldable,
+        constant: ConstantIndex,
+        frozen: &Frozen,
+        side: ConversionSide,
+    ) -> Status
+    {
+        match unfoldable {
+            Unfoldable::Opaque => Status::Opaque,
+            Unfoldable::Body(_) | Unfoldable::Operator { .. }
+                if frozen.side(side).contains(&constant) =>
+            {
+                Status::Frozen
+            },
+            Unfoldable::Body(_) | Unfoldable::Operator { .. } => Status::Defined,
+        }
+    }
+
+    /// Replace the head constant `constant` on `side` by its body.
+    ///
+    /// # Specification
+    /// - requires: `side`'s head is `constant`, defined.
+    /// - ensures: a value side becomes its δ- or δβ-reduct, as
+    ///   [`Self::unfold_value`] gives it; a computation side keeps its spine
+    ///   over the body.
+    /// - provides: the δ-step, and the δβ-step of a static definition.
+    /// - fails: a refusal when `constant` has no body, the side has no head, or
+    ///   an operator heads a computation.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: named-head traces distinguish the rewritten side and
+    ///   preserve the opposite side; operator instantiation preserves parameter
+    ///   order and ambient indices. The postcondition frames polarity and the
+    ///   untouched side without replaying substitution.
+    /// - witness: `replay::tests::an_unfolding_fires_only_where_the_trace_names_its_head`
+    /// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
+    #[spec(
+        captures: before = (goal.side(side), goal.side(opposite(side))),
+        ensures: |ret| goal.side(opposite(side)) == before.1 && if ret.is_ok() {
+            self.unfoldings.peeked(constant) != Unfoldable::Opaque
+                && matches!((before.0, goal.side(side)), (Term::Value(_), Term::Value(_)) | (Term::Computation(_), Term::Computation(_)))
+        } else { goal.side(side) == before.0 },
+    )]
+    fn unfold(
+        &mut self,
+        goal: &mut Goal,
+        side: ConversionSide,
+        constant: ConstantIndex,
+    ) -> Result<(), Stop>
+    {
+        let reduct = self.unfold_term(goal.side(side), constant)?;
+        goal.set(side, reduct);
+        Ok(())
+    }
+
+    /// The δ- or δβ-reduct of `term`, whose head is the defined `constant`:
+    /// the one δ-step a trace's `Unfold` and the endpoint reading both fire.
+    ///
+    /// # Specification
+    /// - requires: `term`'s head is `constant`, defined.
+    /// - ensures: a value its δ- or δβ-reduct, as [`Self::unfold_value`] gives
+    ///   it; a computation its spine over the body, a ride's body standing as
+    ///   its flow, a path transport's or a telescope transport's path its
+    ///   δ-reduct and a stuck fixpoint's staged argument its body, past its
+    ///   leading arguments; of `term`'s polarity either way.
+    /// - provides: the term half of [`Self::unfold`], shared with
+    ///   [`Self::normalize_returned`].
+    /// - fails: as [`Self::unfold`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Termination
+    /// - reason: the `loop` descending the head path and the `while let` loop
+    ///   rebuilding it, not recursion.
+    /// - measure: the focus's arena position while descending, and the frames
+    ///   left while rebuilding.
+    ///
+    /// # Cost
+    /// - allocation: the frames of the head path, growth within the term's
+    ///   spine
+    /// - allocation: the rebuilt spine over the body, durable by the arena's
+    ///   identifiers
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the trace's named-head unfoldings of
+    ///   [`Self::unfold`], a ride's named flow among them, a definition at a
+    ///   returned endpoint's head, read at a mode switch, and a constant at a
+    ///   staged fixpoint's gate past its leading argument.
+    /// - witness: `replay::tests::an_unfolding_fires_only_where_the_trace_names_its_head`
+    /// - witness: `replay::tests::a_ride_unfolds_its_flow_where_the_dialogue_names_it`
+    /// - witness: `replay::tests::a_path_transport_unfolds_its_path_where_the_dialogue_names_it`
+    /// - witness: `replay::tests::a_staged_fixpoint_unfolds_the_constant_at_its_staged_argument_3387`
+    /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
+    #[spec(ensures: |ret| match ret {
+        Ok(reduct) => self.unfoldings.peeked(constant) != Unfoldable::Opaque
+            && matches!((term, reduct), (Term::Value(_), Term::Value(_)) | (Term::Computation(_), Term::Computation(_))),
+        Err(_) => true,
+    })]
+    fn unfold_term(
+        &mut self,
+        term: Term,
+        constant: ConstantIndex,
+    ) -> Result<Term, Stop>
+    {
+        let unfolding = self.unfoldings.unfolding(constant);
+        let start = match term {
+            Term::Value(value) => return Ok(Term::Value(self.unfold_value(value, unfolding)?)),
+            Term::Computation(computation) => computation,
+        };
+        // An operator classifies codes, so it is never forced or scrutinized:
+        // only a body stands at a computation's head.
+        let Unfoldable::Body(body) = unfolding
+        else {
+            return Err(unreadable());
+        };
+        let mut frames = Vec::new();
+        let mut focus = start;
+        let mut rebuilt = loop {
+            match self.arena.computation(focus) {
+                Some(&Computation::DataCase {
+                    motive,
+                    ref branches,
+                    equations,
+                    ..
+                }) => {
+                    break self.arena.computation_data_case_with_equations(
+                        body,
+                        motive,
+                        branches.clone(),
+                        equations,
+                    );
+                },
+                Some(&Computation::SigmaSplit {
+                    motive,
+                    body: split,
+                    ..
+                }) => {
+                    break self.arena.computation_sigma_split(body, motive, split);
+                },
+                Some(&Computation::RecordProjection(_, ref label)) => {
+                    break self
+                        .arena
+                        .computation_record_projection(body, label.clone());
+                },
+                Some(&Computation::TupleProjection(_, component)) => {
+                    break self.arena.computation_tuple_projection(body, component);
+                },
+                Some(&Computation::ListFold {
+                    element,
+                    result,
+                    on_nil,
+                    on_cons,
+                    ..
+                }) => {
+                    break self
+                        .arena
+                        .computation_list_fold(element, result, body, on_nil, on_cons);
+                },
+                Some(&Computation::ListCase {
+                    on_nil, on_cons, ..
+                }) => {
+                    break self.arena.computation_list_case(body, on_nil, on_cons);
+                },
+                Some(&Computation::Transport(path, value)) => {
+                    break if matches!(self.arena.value(path), Some(&Value::PathProduct(..))) {
+                        self.arena.computation_transport(path, body)
+                    }
+                    else {
+                        self.arena.computation_transport(body, value)
+                    };
+                },
+                Some(&Computation::Ride { motive, value, .. }) => {
+                    break self.arena.computation_ride(motive, body, value);
+                },
+                // A transport stands on its path, as [`Self::shape`] reads it.
+                Some(&Computation::PathTransport {
+                    motive,
+                    path,
+                    value,
+                }) => {
+                    let path = self.unfold_value(path, unfolding)?;
+                    break self.arena.computation_path_transport(motive, path, value);
+                },
+                Some(&Computation::TelescopeTransport {
+                    motive,
+                    path,
+                    start,
+                    over,
+                    value,
+                }) => {
+                    let path = self.unfold_value(path, unfolding)?;
+                    break self
+                        .arena
+                        .computation_telescope_transport(motive, path, start, over, value);
+                },
+                Some(&Computation::Application(head, argument)) => {
+                    frames.push(Frame::Apply(argument));
+                    focus = head;
+                },
+                Some(&Computation::Bind(bound, next)) => {
+                    frames.push(Frame::Bind(next));
+                    focus = bound;
+                },
+                Some(&Computation::BindAll {
+                    bound,
+                    arity,
+                    body: next,
+                }) => {
+                    frames.push(Frame::BindAll(arity, next));
+                    focus = bound;
+                },
+                Some(&Computation::Project(component, pair)) => {
+                    frames.push(Frame::Project(component));
+                    focus = pair;
+                },
+                Some(&Computation::Force(_)) => break self.arena.computation_force(body),
+                Some(&Computation::Case { ref branches, .. }) => {
+                    let branches = branches.clone();
+                    break self.arena.computation_case(body, &branches);
+                },
+                // A stuck fixpoint's head is its staged argument, past its
+                // leading ones, as [`Self::shape`] reads it: the constant
+                // unfolds in the application at that argument, the leading
+                // ones applied beneath it as they stood.
+                Some(&Computation::Fixpoint { evidence, .. }) => {
+                    let staged = usize::from(evidence.gate());
+                    let mut applied = focus;
+                    for _leading in 0 .. staged {
+                        let Some(Frame::Apply(argument)) = frames.pop()
+                        else {
+                            return Err(unreadable());
+                        };
+                        applied = self.arena.computation_application(applied, argument);
+                    }
+                    let Some(Frame::Apply(_)) = frames.pop()
+                    else {
+                        return Err(unreadable());
+                    };
+                    break self.arena.computation_application(applied, body);
+                },
+                Some(
+                    &(Computation::Lambda(_)
+                    | Computation::With(..)
+                    | Computation::Return(_)
+                    | Computation::ReturnAll(_)
+                    | Computation::TelescopeRide { .. }
+                    | Computation::RelatedApplication { .. }),
+                )
+                | None => {
+                    return Err(unreadable());
+                },
+            }
+        };
+        while let Some(frame) = frames.pop() {
+            rebuilt = self.wrap(rebuilt, frame);
+        }
+        Ok(Term::Computation(rebuilt))
+    }
+
+    /// The reduct of a value side headed by a defined constant, under the
+    /// side's static applications.
+    ///
+    /// # Specification
+    /// - requires: `unfolding` is how the constant at `value`'s head unfolds.
+    /// - ensures: for a body, the body under every static application of the
+    ///   side, in order; for an operator of `n` parameters, its body with its
+    ///   binders instantiated at the side's first `n` arguments — the last
+    ///   argument at the innermost binder, each argument shifted past the
+    ///   binders still standing outside it — under the remaining applications.
+    /// - provides: δ at a value, and the δβ-step of a static definition: one
+    ///   saturated instance of the operator, reduced by substitution.
+    /// - fails: [`ReplayRefusal::Unreadable`] when the head is not a constant,
+    ///   the constant is opaque, or an operator has fewer arguments than
+    ///   parameters.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop descending the head path and the two
+    ///   `for` loops over finite argument slices, not recursion.
+    /// - measure: the focus's arena position while descending; then the
+    ///   arguments left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by an operator of two parameters at its two
+    ///   arguments, in order and swapped, at an argument open in the ambient
+    ///   context, through an alias whose body stands under the spine, and short
+    ///   of its arguments.
+    /// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
+    #[spec(ensures: |ret| match ret {
+        | Ok(reduct) => self.arena.value(reduct).is_some(),
+        | Err(_) => true,
+    })]
+    fn unfold_value(
+        &mut self,
+        value: ValueId,
+        unfolding: Unfoldable,
+    ) -> Result<ValueId, Stop>
+    {
+        let mut arguments = Vec::new();
+        let mut focus = value;
+        while let Some(&Value::StaticApplication(head, argument)) = self.arena.value(focus) {
+            arguments.push(argument);
+            focus = head;
+        }
+        arguments.reverse();
+        if !matches!(self.arena.value(focus), Some(&Value::Constant(_))) {
+            return Err(unreadable());
+        }
+        let (mut reduct, consumed) = match unfolding {
+            Unfoldable::Opaque => return Err(unreadable()),
+            Unfoldable::Body(body) => (body, 0_usize),
+            Unfoldable::Operator { parameters, body } => {
+                let count =
+                    usize::try_from(u32::from(parameters)).map_err(|_overflow| unreadable())?;
+                let Some(instantiated) = arguments.get(.. count)
+                else {
+                    return Err(unreadable());
+                };
+                let mut reduct = body;
+                for (outside, &argument) in instantiated.iter().enumerate().rev() {
+                    let binders = u32::try_from(outside).map_err(|_overflow| unreadable())?;
+                    let carried = shift_value(
+                        self.arena,
+                        &mut self.table,
+                        &mut self.memo,
+                        argument,
+                        BinderDepth::default(),
+                        BinderDepth::from(binders),
+                    );
+                    reduct = substitute_value(
+                        self.arena,
+                        &mut self.table,
+                        &mut self.memo,
+                        reduct,
+                        carried,
+                    );
+                }
+                (reduct, count)
+            },
+        };
+        for &argument in arguments.get(consumed ..).unwrap_or_default() {
+            reduct = self.arena.value_static_application(reduct, argument);
+        }
+        Ok(reduct)
+    }
+
+    /// Put `term` in weak head form by the reductions that need no choice.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a value unchanged; a computation reduced by β, a forced
+    ///   thunk, a returner met by a bind, an injection met by a case, a lazy
+    ///   pairing met by a projection, a fixpoint carrying replayed
+    ///   structural-descent evidence applied to a constructor, an elimination
+    ///   met by a returned endpoint — a fixpoint applied to one among them —
+    ///   which binds the endpoint's computation and eliminates what it returns,
+    ///   that computation read first under [`Reduction::Endpoint`] when the
+    ///   reading is plain — a reading stopped at a call a definition heads
+    ///   bound once over the whole term, so every occurrence of that endpoint
+    ///   node reads the one value the call returns — and the element-identity
+    ///   transport and related application steps of
+    ///   [`crate::element_identity`], and under [`Reduction::Endpoint`] a bind
+    ///   over a call stuck at a variable or an opaque head read through: the
+    ///   innermost such bind whose continuation, run with the call as a
+    ///   returned endpoint for its value, returns or stops at a call a
+    ///   definition or a binder heads, a binder's call holding no bind, which
+    ///   then stands as the reading — a continuation stuck at such a bind of
+    ///   its own read the same way first, a bind whose continuation eliminates
+    ///   its own variable at its head passed over, and the next bind out tried
+    ///   over both when it does neither — until none fires at its head, and the
+    ///   original id when none fired at all.
+    /// - provides: the search-free reductions the trace never records.
+    /// - fails: [`Stop::Budget`] on a term that reduces past the budget;
+    ///   [`Stop::PartialFixpoint`] when a fixpoint without evidence stands at
+    ///   its gate — applied to a canonical argument, under a bind or under a
+    ///   projection; [`ReplayRefusal::Unreadable`] on a dangling computation or
+    ///   a value inspected by its reduction; a value root itself is left for
+    ///   shape checking.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Budget`], [`Stop::PartialFixpoint`] or [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: beta, force, bind, and injection reductions settle
+    ///   before decisions; a reduced head retains application and bind frames,
+    ///   while a self-application exhausts a finite budget. These observations
+    ///   bound weak-head behavior, not normalization completeness.
+    /// - witness: `replay::tests::the_replay_reduces_before_it_reads_a_decision`
+    /// - witness: `replay::tests::reduced_heads_retain_application_and_bind_frames`
+    /// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
+    /// - witness: `tests::recursive_data::a_fixpoint_computes_at_a_constructor_and_replays`
+    /// - witness: `tests::recursive_data::a_partial_fixpoint_declines_at_its_gate`
+    /// - witness: `path_universe::tests::transport_computes`
+    /// - witness: `path_universe::tests::refl_collapses`
+    /// - witness: `replay::tests::native_list_fold_reduces_without_capturing_outer_variables`
+    /// - witness: `replay::tests::a_projection_runs_its_side_of_a_pairing`
+    /// - witness: `replay::tests::an_endpoint_reads_a_bind_through_its_stuck_call`
+    /// - witness: `replay::tests::an_endpoint_reads_a_bind_handing_its_stuck_call_to_a_definition_761`
+    /// - witness: `replay::tests::an_endpoint_reads_a_bind_handing_its_stuck_call_to_a_binder_2773`
+    /// - witness: `replay::tests::an_endpoint_passes_over_a_bind_its_own_elimination_built`
+    /// - witness: `replay::tests::a_decode_reads_as_the_quote_its_code_returns`
+    /// - witness: `replay::tests::an_endpoint_continuation_is_spent_only_with_its_frames`
+    /// - witness: `replay::tests::an_eliminated_endpoint_reads_a_bind_through_its_stuck_call`
+    /// - witness: `replay::tests::an_endpoint_read_twice_runs_its_call_once_1747`
+    #[spec(
+        captures: before = self.spent,
+        ensures: |ret| match term {
+            Term::Value(_) => ret == Ok(term) && self.spent == before,
+            Term::Computation(_) => match ret {
+                Ok(Term::Computation(computation)) => self.spent > before && self.spent <= self.budget && self.arena.computation(computation).is_some(),
+                Err(Stop::Budget) => self.spent >= self.budget,
+                Err(Stop::Refused(_) | Stop::PartialFixpoint) => true,
+                Ok(Term::Value(_)) => false,
+            },
+        },
+    )]
+    fn whnf(
+        &mut self,
+        term: Term,
+        reduction: Reduction,
+    ) -> Result<Term, Stop>
+    {
+        self.reduce(term, reduction, Unloading::AtTheHead)
+    }
+
+    /// [`Self::whnf`]'s reduction, its environment read back into its state as
+    /// `unloading` says: once, at the weak head, which the kernel runs, or
+    /// after every step, which is the substituting reduction the first is
+    /// tested against.
+    ///
+    /// The focus and each frame's argument or continuation are closures over
+    /// the cells this reduction pushes ([`environment`]). Every rule that
+    /// would substitute pushes a cell instead; a rule inspecting a value reads
+    /// it through the cells; the transport rules and a returned endpoint's
+    /// machinery read closed terms, so the state is unloaded before them.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::whnf`].
+    /// - ensures: as [`Self::whnf`]; the two unloadings reach α-equal weak
+    ///   heads, or stop alike, after the same charges.
+    /// - provides: the weak-head machine under an environment.
+    /// - fails: as [`Self::whnf`].
+    /// - panics: none.
+    /// - executable: none — [`Self::whnf`]'s attribute checks every reduction
+    ///   the kernel runs, and the two unloadings' agreement relates two runs,
+    ///   which the property witness observes.
+    ///
+    /// # Errors
+    /// [`Stop::Budget`], [`Stop::PartialFixpoint`] or [`Stop::Refused`].
+    ///
+    /// # Termination
+    /// - reason: the inner `loop` below, which takes one step per iteration;
+    ///   the `'reading` loop, which re-enters it to run a bind's continuation
+    ///   and after each reading; the `loop` choosing the next bind, which pops
+    ///   one attempt per failed turn, passes one bind frame per bind passed
+    ///   over, and ends at a push or at the last pop; the `'endpoints` loop,
+    ///   which resumes a plain reading once its met endpoint is read, a reading
+    ///   once its held operand's run ends, re-entering a run after each δ-step
+    ///   it takes and at each endpoint it returns, and a reading once a
+    ///   returned path's run ends, and an endpoint reading suspends none; the
+    ///   `for` loops over a data case's fields and equations; and the `while
+    ///   let` loop rebuilding the head path.
+    /// - measure: the budget left, which every inner iteration charges and
+    ///   every `'reading` iteration enters; then the attempts and the runs
+    ///   held, finite because each was pushed by a charged iteration, and a
+    ///   returned path run at most once for each continuation that moves along
+    ///   it; then the frames left; then the one suspended reading.
+    ///
+    /// # Cost
+    /// - allocation: the machine's frames, cells, attempts, runs and branch
+    ///   arguments, growth within the budget left
+    /// - allocation: the terms each step and the unloading mint, durable by the
+    ///   arena's identifiers
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over generated terms reaching every instantiation
+    ///   site, with arguments read in environments of their own, the two
+    ///   unloadings reach α-equal weak heads or stop alike after the same
+    ///   charges, and the unload at the head mints fewer nodes than one at
+    ///   every step.
+    /// - witness: `replay::tests::the_environment_reduction_agrees_with_the_substituting_one`
+    /// - witness: `replay::tests::a_chain_of_beta_steps_walks_its_reduct_once`
+    /// - witness: `replay::tests::a_held_path_runs_over_its_operand_as_it_was_3734`
+    /// - witness: `replay::tests::an_endpoint_reads_past_a_cong_chain_to_the_bind_outside_it_4129`
+    /// - witness: `replay::tests::a_transport_along_a_stuck_composite_moves_along_each_path_in_order`
+    fn reduce(
+        &mut self,
+        term: Term,
+        reduction: Reduction,
+        unloading: Unloading,
+    ) -> Result<Term, Stop>
+    {
+        let Term::Computation(start) = term
+        else {
+            return Ok(term);
+        };
+        // The cells this reduction pushes where the substituting one walked
+        // its reduct: every environment below is a list of them.
+        let mut cells = Environments::default();
+        let mut frames: Vec<Closure<Frame>> = Vec::new();
+        let mut focus = Closure::closed(start);
+        let mut progress = Progress::Unchanged;
+        // The binds an endpoint reading is trying, outermost first, while the
+        // innermost one's continuation reduces in `focus` and `frames`. A
+        // continuation stuck at a bind of its own is read the same way, one
+        // attempt deeper.
+        let mut attempts: Vec<Attempt> = Vec::new();
+        // A plain reading waiting while the computation of a returned endpoint
+        // it met is read as an endpoint: that computation is pure, so a bind
+        // over a stuck call in it reads through, as the producer's evaluator
+        // reads the value the endpoint stands for. An endpoint reading never
+        // suspends, so one is held at most.
+        let mut reduction = reduction;
+        let mut suspended: Option<Suspended> = None;
+        // The computations running in place of the readings that met them,
+        // innermost last: an append runs its held operand before it reads the
+        // operand's word, a stuck composite's transport runs a returned path
+        // before it reads the path's legs, and the reading waits on what the
+        // run comes to.
+        let mut runs: Vec<Run> = Vec::new();
+        // The continuations whose returned path ran to no composite: each
+        // runs once.
+        let mut whole: BTreeSet<ComputationId> = BTreeSet::new();
+        // The arguments a data case's branch applies to, refilled at each case.
+        let mut arguments: Vec<ValueId> = Vec::new();
+        'endpoints: loop {
+            'reading: loop {
+                loop {
+                    self.charge()?;
+                    match unloading {
+                        Unloading::AtTheHead => {},
+                        #[cfg(test)]
+                        Unloading::EveryStep => {
+                            focus = Closure::closed(self.unload(&mut cells, focus));
+                            for frame in &mut frames {
+                                *frame = Closure::closed(self.unload_frame(&mut cells, *frame));
+                            }
+                        },
+                    }
+                    // An elimination meeting a returned endpoint runs the
+                    // endpoint's computation and eliminates
+                    // what it returns: `E[c] ⇝ c to x. E[x]`.
+                    // That machinery reads closed terms, so the state is
+                    // unloaded first.
+                    if let Some(inspected) = self.inspected(focus.node)
+                        && let Some(&Value::Returned(_)) = self
+                            .arena
+                            .value(cells.resolve(self.arena, focus.with(inspected)).node)
+                    {
+                        let elimination = self.unload(&mut cells, focus);
+                        let mut outer = self.unload_frames(&mut cells, &mut frames);
+                        let endpoint = self.inspected(elimination).ok_or_else(unreadable)?;
+                        let Some(&Value::Returned(returned)) = self.arena.value(endpoint)
+                        else {
+                            return Err(unreadable());
+                        };
+                        if reduction == Reduction::Plain {
+                            suspended = Some(Suspended {
+                                elimination,
+                                endpoint,
+                                returned,
+                                frames: outer,
+                            });
+                            reduction = Reduction::Endpoint;
+                            focus = Closure::closed(returned);
+                            progress = Progress::Unchanged;
+                            continue;
+                        }
+                        let bind = self.bind_returned(elimination, returned)?;
+                        focus = Closure::closed(self.absorbed(bind, &mut outer)?);
+                        frames = outer.into_iter().map(Closure::closed).collect();
+                        progress = Progress::Reduced;
+                        continue;
+                    }
+                    // The transport rules read their operands closed.
+                    if focus.environment != Environment::EMPTY
+                        && matches!(
+                            self.arena.computation(focus.node),
+                            Some(
+                                Computation::Transport(..)
+                                    | Computation::PathTransport { .. }
+                                    | Computation::TelescopeTransport { .. }
+                                    | Computation::Ride { .. }
+                                    | Computation::TelescopeRide { .. }
+                                    | Computation::RelatedApplication { .. }
+                            )
+                        )
+                    {
+                        focus = Closure::closed(self.unload(&mut cells, focus));
+                    }
+                    match self.arena.computation(focus.node) {
+                        Some(&Computation::DataCase {
+                            scrutinee,
+                            ref branches,
+                            equations,
+                            ..
+                        }) => {
+                            let matched = cells.resolve(self.arena, focus.with(scrutinee));
+                            match self.arena.value(matched.node) {
+                                Some(&Value::Constructor {
+                                    datatype,
+                                    tag,
+                                    ref fields,
+                                    ..
+                                }) => {
+                                    let branch =
+                                        *branches.get(usize::from(tag)).ok_or_else(unreadable)?;
+                                    let field_count = fields.len();
+                                    // The branch applies to each field, then to
+                                    // each
+                                    // index equation's reflexivity, all read
+                                    // where
+                                    // the constructor is.
+                                    arguments.clear();
+                                    for position in 0 .. field_count {
+                                        self.charge()?;
+                                        let Some(&Value::Constructor { ref fields, .. }) =
+                                            self.arena.value(matched.node)
+                                        else {
+                                            return Err(unreadable());
+                                        };
+                                        arguments
+                                            .push(*fields.get(position).ok_or_else(unreadable)?);
+                                    }
+                                    // Each index equation is reflexivity at the
+                                    // constructor's own index, which its
+                                    // datatype
+                                    // states after the parameters.
+                                    let Some(&ValueType::Data {
+                                        arguments: ref indices,
+                                        ..
+                                    }) = self.arena.value_type(datatype)
+                                    else {
+                                        return Err(unreadable());
+                                    };
+                                    let first = indices
+                                        .len()
+                                        .checked_sub(usize::from(equations))
+                                        .ok_or_else(unreadable)?;
+                                    let points =
+                                        indices.get(first ..).ok_or_else(unreadable)?.to_vec();
+                                    for point in points {
+                                        self.charge()?;
+                                        arguments.push(self.arena.value_here(point));
+                                    }
+                                    // Each argument stands as the application
+                                    // frame
+                                    // the substituting reduction's next steps
+                                    // decompose its application into, charged
+                                    // as
+                                    // each of those steps is.
+                                    for &argument in arguments.iter().rev() {
+                                        self.charge()?;
+                                        frames.push(matched.with(Frame::Apply(argument)));
+                                    }
+                                    focus = focus.with(branch);
+                                    progress = Progress::Reduced;
+                                },
+                                Some(_) => break,
+                                None => return Err(unreadable()),
+                            }
+                        },
+                        // A dependent split of a pair enters its body with the two
+                        // components for its two binders, the outer binder first.
+                        Some(&Computation::SigmaSplit {
+                            scrutinee, body, ..
+                        }) => {
+                            let pair = cells.resolve(self.arena, focus.with(scrutinee));
+                            match self.arena.value(pair.node).map(Value::components) {
+                                Some(Some(&[first, second])) => {
+                                    let outer =
+                                        cells.push(self.arena, focus.environment, pair.with(first));
+                                    let environment =
+                                        cells.push(self.arena, outer, pair.with(second));
+                                    focus = Closure {
+                                        node: body,
+                                        environment,
+                                    };
+                                    progress = Progress::Reduced;
+                                },
+                                Some(None) => break,
+                                Some(Some(_)) | None => return Err(unreadable()),
+                            }
+                        },
+                        Some(&Computation::RecordProjection(record, ref label)) => {
+                            let read = cells.resolve(self.arena, focus.with(record));
+                            match self.arena.value(read.node) {
+                                Some(&Value::Record(ref fields)) => {
+                                    let value = *fields.get(label).ok_or_else(unreadable)?;
+                                    focus = read.with(self.arena.computation_return(value));
+                                    progress = Progress::Reduced;
+                                },
+                                // A restriction keeps its record value's other
+                                // fields: their projection reads the value's.
+                                Some(&Value::Restrict { value, ref fixed }) => {
+                                    if fixed.contains_key(label) {
+                                        return Err(unreadable());
+                                    }
+                                    focus = read.with(
+                                        self.arena
+                                            .computation_record_projection(value, label.clone()),
+                                    );
+                                    progress = Progress::Reduced;
+                                },
+                                Some(_) => break,
+                                None => return Err(unreadable()),
+                            }
+                        },
+                        Some(&Computation::TupleProjection(tuple, component)) => {
+                            let read = cells.resolve(self.arena, focus.with(tuple));
+                            match self.arena.value(read.node).map(Value::components) {
+                                Some(Some(components)) => {
+                                    let value = *components
+                                        .get(usize::from(component))
+                                        .ok_or_else(unreadable)?;
+                                    focus = read.with(self.arena.computation_return(value));
+                                    progress = Progress::Reduced;
+                                },
+                                Some(None) => break,
+                                None => return Err(unreadable()),
+                            }
+                        },
+                        // A fold on a cell runs its cell branch on the head and the
+                        // tail's fold, the branch binding the head outside the
+                        // folded result the bind delivers.
+                        Some(&Computation::ListFold {
+                            list,
+                            on_nil,
+                            on_cons,
+                            ..
+                        }) => {
+                            let read = cells.resolve(self.arena, focus.with(list));
+                            match self.arena.value(read.node) {
+                                Some(&Value::ListNil) => {
+                                    focus = focus.with(on_nil);
+                                    progress = Progress::Reduced;
+                                },
+                                Some(&Value::ListCons(head, tail)) => {
+                                    let headed =
+                                        cells.push(self.arena, focus.environment, read.with(head));
+                                    frames.push(Closure {
+                                        node: Frame::Bind(on_cons),
+                                        environment: headed,
+                                    });
+                                    focus = cells
+                                        .fold_over(
+                                            (&mut *self.arena, &mut self.table, &mut self.memo),
+                                            focus,
+                                            read.with(tail),
+                                        )
+                                        .ok_or_else(unreadable)?;
+                                    progress = Progress::Reduced;
+                                },
+                                Some(_) => break,
+                                None => return Err(unreadable()),
+                            }
+                        },
+                        // A list case on a cell enters its cell branch with the head
+                        // and the tail for its two binders, the head outermost.
+                        Some(&Computation::ListCase {
+                            list,
+                            on_nil,
+                            on_cons,
+                            ..
+                        }) => {
+                            let read = cells.resolve(self.arena, focus.with(list));
+                            match self.arena.value(read.node) {
+                                Some(&Value::ListNil) => {
+                                    focus = focus.with(on_nil);
+                                    progress = Progress::Reduced;
+                                },
+                                Some(&Value::ListCons(head, tail)) => {
+                                    let headed =
+                                        cells.push(self.arena, focus.environment, read.with(head));
+                                    let environment =
+                                        cells.push(self.arena, headed, read.with(tail));
+                                    focus = Closure {
+                                        node: on_cons,
+                                        environment,
+                                    };
+                                    progress = Progress::Reduced;
+                                },
+                                Some(_) => break,
+                                None => return Err(unreadable()),
+                            }
+                        },
+                        Some(&Computation::Transport(path, value)) => {
+                            match crate::path_universe::beta(
+                                self.arena,
+                                crate::path_universe::Transport { path, value },
+                            )
+                            .map_err(|_unreadable_term| unreadable())?
+                            {
+                                crate::path_universe::Reduction::Reduced(reduct) => {
+                                    focus = Closure::closed(reduct);
+                                    progress = Progress::Reduced;
+                                },
+                                crate::path_universe::Reduction::Stuck => break,
+                            }
+                        },
+                        Some(&Computation::PathTransport {
+                            motive,
+                            path,
+                            value,
+                        }) => {
+                            let term = crate::element_identity::ElementTransport {
+                                motive,
+                                path,
+                                value,
+                            };
+                            match crate::element_identity::transport_beta(
+                                self.arena,
+                                &mut self.table,
+                                &mut self.memo,
+                                term,
+                            )
+                            .map_err(|_unreadable_term| unreadable())?
+                            {
+                                crate::path_universe::Reduction::Reduced(reduct) => {
+                                    focus = Closure::closed(reduct);
+                                    progress = Progress::Reduced;
+                                },
+                                crate::path_universe::Reduction::Stuck => {
+                                    // The append runs a held operand before it
+                                    // reads the operand's word: the run reads
+                                    // as an endpoint in place of this reading,
+                                    // which waits on what it comes to.
+                                    if let Some(operand) =
+                                        crate::words::held_operand(self.arena, self.evaluator, term)
+                                    {
+                                        let outer = self.unload_frames(&mut cells, &mut frames);
+                                        runs.push(Run::Held(HeldRun {
+                                            transport: term,
+                                            operand,
+                                            frames: outer,
+                                            attempts: core::mem::take(&mut attempts),
+                                            reduction,
+                                            reading: self.held_reading(operand),
+                                        }));
+                                        reduction = Reduction::Endpoint;
+                                        focus = Closure::closed(operand);
+                                        progress = Progress::Unchanged;
+                                        continue;
+                                    }
+                                    match self.transport_along_word(term) {
+                                        crate::path_universe::Reduction::Reduced(reduct) => {
+                                            focus = Closure::closed(reduct);
+                                            progress = Progress::Reduced;
+                                        },
+                                        crate::path_universe::Reduction::Stuck => break,
+                                    }
+                                },
+                            }
+                        },
+                        Some(&Computation::TelescopeTransport {
+                            motive,
+                            path,
+                            start,
+                            over,
+                            value,
+                        }) => {
+                            let term = crate::element_identity::TelescopeStep {
+                                motive,
+                                path,
+                                start,
+                                over,
+                                value,
+                            };
+                            match crate::element_identity::telescope_beta(
+                                self.arena,
+                                &mut self.table,
+                                &mut self.memo,
+                                term,
+                            )
+                            .map_err(|_unreadable_term| unreadable())?
+                            {
+                                crate::path_universe::Reduction::Reduced(reduct) => {
+                                    focus = Closure::closed(reduct);
+                                    progress = Progress::Reduced;
+                                },
+                                crate::path_universe::Reduction::Stuck => {
+                                    match crate::element_identity::unit_fibre_beta(
+                                        self.arena,
+                                        self.unfoldings,
+                                        term,
+                                    )
+                                    .map_err(|_unreadable_term| unreadable())?
+                                    {
+                                        crate::path_universe::Reduction::Reduced(reduct) => {
+                                            focus = Closure::closed(reduct);
+                                            progress = Progress::Reduced;
+                                        },
+                                        crate::path_universe::Reduction::Stuck => break,
+                                    }
+                                },
+                            }
+                        },
+                        Some(&Computation::Ride {
+                            motive,
+                            flow,
+                            value,
+                        }) => {
+                            let term = crate::flow_universe::reduce::RideStep {
+                                motive,
+                                flow,
+                                value,
+                            };
+                            match crate::flow_universe::reduce::ride_beta(
+                                self.arena,
+                                &mut self.table,
+                                &mut self.memo,
+                                term,
+                            )
+                            .map_err(|_unreadable_term| unreadable())?
+                            {
+                                crate::path_universe::Reduction::Reduced(reduct) => {
+                                    focus = Closure::closed(reduct);
+                                    progress = Progress::Reduced;
+                                },
+                                crate::path_universe::Reduction::Stuck => break,
+                            }
+                        },
+                        Some(&Computation::TelescopeRide {
+                            motive,
+                            flow,
+                            over,
+                            value,
+                            ..
+                        }) => {
+                            let term = crate::flow_universe::reduce::TelescopeRideStep {
+                                motive,
+                                flow,
+                                over,
+                                value,
+                            };
+                            match crate::flow_universe::reduce::telescope_ride_beta(
+                                self.arena,
+                                &mut self.table,
+                                &mut self.memo,
+                                term,
+                            )
+                            .map_err(|_unreadable_term| unreadable())?
+                            {
+                                crate::path_universe::Reduction::Reduced(reduct) => {
+                                    focus = Closure::closed(reduct);
+                                    progress = Progress::Reduced;
+                                },
+                                crate::path_universe::Reduction::Stuck => break,
+                            }
+                        },
+                        Some(&Computation::RelatedApplication {
+                            path,
+                            left,
+                            right,
+                            body,
+                            ..
+                        }) => {
+                            let term = crate::element_identity::RelatedStep {
+                                path,
+                                left,
+                                right,
+                                body,
+                            };
+                            match crate::element_identity::related_beta(
+                                self.arena,
+                                &mut self.table,
+                                &mut self.memo,
+                                term,
+                            )
+                            .map_err(|_unreadable_term| unreadable())?
+                            {
+                                crate::path_universe::Reduction::Reduced(reduct) => {
+                                    focus = Closure::closed(reduct);
+                                    progress = Progress::Reduced;
+                                },
+                                crate::path_universe::Reduction::Stuck => break,
+                            }
+                        },
+                        Some(&Computation::Application(head, argument)) => {
+                            frames.push(focus.with(Frame::Apply(argument)));
+                            focus = focus.with(head);
+                        },
+                        Some(&Computation::Bind(bound, body)) => {
+                            frames.push(focus.with(Frame::Bind(body)));
+                            focus = focus.with(bound);
+                        },
+                        Some(&Computation::BindAll { bound, arity, body }) => {
+                            frames.push(focus.with(Frame::BindAll(arity, body)));
+                            focus = focus.with(bound);
+                        },
+                        Some(&Computation::Project(component, pair)) => {
+                            frames.push(focus.with(Frame::Project(component)));
+                            focus = focus.with(pair);
+                        },
+                        // A projection of a lazy pairing runs the component it
+                        // names; a pairing under no projection is in weak head
+                        // form.
+                        Some(&Computation::With(ref components)) => {
+                            match frames.last().map(|frame| frame.node) {
+                                Some(Frame::Project(component)) => {
+                                    let Some(&selected) = components.get(usize::from(component))
+                                    else {
+                                        return Err(unreadable());
+                                    };
+                                    frames.pop();
+                                    focus = focus.with(selected);
+                                    progress = Progress::Reduced;
+                                },
+                                Some(Frame::Apply(_) | Frame::Bind(_) | Frame::BindAll(..))
+                                | None => {
+                                    break;
+                                },
+                            }
+                        },
+                        Some(&Computation::Force(value)) => {
+                            let read = cells.resolve(self.arena, focus.with(value));
+                            match self.arena.value(read.node) {
+                                Some(&Value::Thunk(body)) => {
+                                    focus = read.with(body);
+                                    progress = Progress::Reduced;
+                                },
+                                // A literal identity test forced and applied to
+                                // two literals of its base answers as the
+                                // checker's evaluator does: the left summand of
+                                // `1 + 1` when it holds, the right when not.
+                                Some(&Value::Constant(constant)) => {
+                                    let answered = self
+                                        .unfoldings
+                                        .literal_identity(constant)
+                                        .and_then(|test| {
+                                            let [.., ref second, ref first] = *frames.as_slice()
+                                            else {
+                                                return None;
+                                            };
+                                            let (Frame::Apply(left), Frame::Apply(right)) =
+                                                (first.node, second.node)
+                                            else {
+                                                return None;
+                                            };
+                                            let left = cells.resolve(self.arena, first.with(left));
+                                            let right =
+                                                cells.resolve(self.arena, second.with(right));
+                                            match (
+                                                self.arena.value(left.node),
+                                                self.arena.value(right.node),
+                                            ) {
+                                                (
+                                                    Some(&Value::Literal(ref left)),
+                                                    Some(&Value::Literal(ref right)),
+                                                ) => test.answer(left, right),
+                                                _ => None,
+                                            }
+                                        });
+                                    let Some(summand) = answered
+                                    else {
+                                        break;
+                                    };
+                                    frames.truncate(frames.len().saturating_sub(2));
+                                    let unit = self.arena.value_unit();
+                                    let injected = self.arena.value_injection(summand, unit);
+                                    focus =
+                                        Closure::closed(self.arena.computation_return(injected));
+                                    progress = Progress::Reduced;
+                                },
+                                Some(_) => break,
+                                None => return Err(unreadable()),
+                            }
+                        },
+                        // A case over an injection selects the branch its summand
+                        // names; the empty sum's elimination has none and stays stuck.
+                        Some(&Computation::Case {
+                            scrutinee,
+                            ref branches,
+                        }) => {
+                            let read = cells.resolve(self.arena, focus.with(scrutinee));
+                            match self.arena.value(read.node) {
+                                Some(&Value::Injection(summand, payload)) => {
+                                    let Some(&branch) = branches.get(usize::from(summand))
+                                    else {
+                                        break;
+                                    };
+                                    let environment = cells.push(
+                                        self.arena,
+                                        focus.environment,
+                                        read.with(payload),
+                                    );
+                                    focus = Closure {
+                                        node: branch,
+                                        environment,
+                                    };
+                                    progress = Progress::Reduced;
+                                },
+                                Some(_) => break,
+                                None => return Err(unreadable()),
+                            }
+                        },
+                        Some(&Computation::Lambda(body)) => match frames.last().copied() {
+                            Some(Closure {
+                                node: Frame::Apply(argument),
+                                environment,
+                            }) => {
+                                frames.pop();
+                                let environment =
+                                    cells.push(self.arena, focus.environment, Closure {
+                                        node: argument,
+                                        environment,
+                                    });
+                                focus = Closure {
+                                    node: body,
+                                    environment,
+                                };
+                                progress = Progress::Reduced;
+                            },
+                            Some(Closure {
+                                node: Frame::Bind(_) | Frame::BindAll(..) | Frame::Project(_),
+                                ..
+                            })
+                            | None => break,
+                        },
+                        // A fixpoint unfolds at its gate: applied to a canonical
+                        // argument at its staged position, the `<` direction, or
+                        // under a bind or a projection observing its result, the
+                        // `>` direction. Conversion unfolds only a structural
+                        // fixpoint, and only at a constructor; at a partial
+                        // fixpoint's gate it declines rather than refutes. A
+                        // partial fixpoint whose body never reads its own binder
+                        // is a definition: unfolding it substitutes nothing and
+                        // cannot recur, so it unfolds at that gate (#2833). A
+                        // joint fixpoint's gate stands under the projection that
+                        // selects a component, at that component's position. A
+                        // ruled definition's fixpoint unfolds at the partial gate
+                        // too. Its admitted rules terminate, and each unfolding
+                        // takes one step of a rule. A guarded fixpoint gates on
+                        // no argument: it unfolds where a bind observes its
+                        // result, the scrutinee of a case in call-by-push-value,
+                        // and nowhere else. Its guard keeps every call of it
+                        // under a constructor, so one unfolding answers one
+                        // constructor, which the bind consumes; conversion takes
+                        // one step for each observation and terminates.
+                        Some(&Computation::Fixpoint { body, evidence }) => {
+                            let (position, projected) = match evidence {
+                                FixpointEvidence::Joint { .. } => {
+                                    match frames.last().map(|frame| frame.node) {
+                                        Some(Frame::Project(component)) => {
+                                            match evidence.component(component) {
+                                                Some(position) => (usize::from(position), 1_usize),
+                                                None => return Err(unreadable()),
+                                            }
+                                        },
+                                        Some(
+                                            Frame::Apply(_) | Frame::Bind(_) | Frame::BindAll(..),
+                                        )
+                                        | None => break,
+                                    }
+                                },
+                                FixpointEvidence::Partial
+                                | FixpointEvidence::StructuralDescent
+                                | FixpointEvidence::Staged { .. } => {
+                                    (usize::from(evidence.gate()), 0_usize)
+                                },
+                                // No argument is the gate, so the walk passes
+                                // every application to the frame above them.
+                                FixpointEvidence::Guarded => (usize::MAX, 0_usize),
+                            };
+                            // The argument at the staged position, read through
+                            // the cells: that many applications down the stack,
+                            // every frame above it an application too.
+                            let mut reached = None;
+                            let mut observed = false;
+                            for (offset, frame) in frames.iter().rev().skip(projected).enumerate() {
+                                match frame.node {
+                                    Frame::Apply(argument) => {
+                                        if offset == position {
+                                            let read =
+                                                cells.resolve(self.arena, frame.with(argument));
+                                            reached = Some((offset, read));
+                                            break;
+                                        }
+                                    },
+                                    Frame::Bind(_) | Frame::BindAll(..) | Frame::Project(_) => {
+                                        observed = true;
+                                        break;
+                                    },
+                                }
+                            }
+                            // A fixpoint's gate inspects its argument, so a
+                            // returned
+                            // endpoint there runs first: `fix f c ⇝ c to x. fix
+                            // f x`. That machinery
+                            // reads closed terms, so the state is
+                            // unloaded first.
+                            if let Some((offset, argument)) = reached
+                                && let Some(&Value::Returned(_)) = self.arena.value(argument.node)
+                            {
+                                let mut applied = self.unload(&mut cells, focus);
+                                let mut outer = self.unload_frames(&mut cells, &mut frames);
+                                // A joint fixpoint's projection stands between
+                                // it and
+                                // its arguments, and stays there.
+                                if projected > 0_usize {
+                                    let Some(Frame::Project(component)) = outer.pop()
+                                    else {
+                                        return Err(unreadable());
+                                    };
+                                    applied = self.arena.computation_project(component, applied);
+                                }
+                                let mut endpoint = None;
+                                for _argument in 0 ..= offset {
+                                    let Some(Frame::Apply(argument)) = outer.pop()
+                                    else {
+                                        return Err(unreadable());
+                                    };
+                                    applied = self.arena.computation_application(applied, argument);
+                                    endpoint = Some(argument);
+                                }
+                                let Some(endpoint) = endpoint
+                                else {
+                                    return Err(unreadable());
+                                };
+                                let Some(&Value::Returned(returned)) = self.arena.value(endpoint)
+                                else {
+                                    return Err(unreadable());
+                                };
+                                if reduction == Reduction::Plain {
+                                    suspended = Some(Suspended {
+                                        elimination: applied,
+                                        endpoint,
+                                        returned,
+                                        frames: outer,
+                                    });
+                                    reduction = Reduction::Endpoint;
+                                    focus = Closure::closed(returned);
+                                    progress = Progress::Unchanged;
+                                    continue;
+                                }
+                                let bind = self.bind_returned(applied, returned)?;
+                                focus = Closure::closed(self.absorbed(bind, &mut outer)?);
+                                frames = outer.into_iter().map(Closure::closed).collect();
+                                progress = Progress::Reduced;
+                                continue;
+                            }
+                            let gate = match reached {
+                                Some((_, argument)) => match self.arena.value(argument.node) {
+                                    Some(&Value::Constructor { .. }) => Gate::Constructor,
+                                    Some(
+                                        &(Value::Variable(_)
+                                        | Value::Constant(_)
+                                        | Value::StaticApplication(..)),
+                                    ) => Gate::Shut,
+                                    Some(_) => Gate::Canonical,
+                                    None => return Err(unreadable()),
+                                },
+                                None if observed => Gate::Observed,
+                                None => Gate::Shut,
+                            };
+                            match (evidence, gate) {
+                                (
+                                    FixpointEvidence::StructuralDescent
+                                    | FixpointEvidence::Staged { .. }
+                                    | FixpointEvidence::Joint { .. },
+                                    Gate::Constructor,
+                                )
+                                | (FixpointEvidence::Guarded, Gate::Observed) => {
+                                    let recursive = focus.with(self.arena.value_thunk(focus.node));
+                                    let environment =
+                                        cells.push(self.arena, focus.environment, recursive);
+                                    focus = Closure {
+                                        node: body,
+                                        environment,
+                                    };
+                                    progress = Progress::Reduced;
+                                },
+                                (
+                                    FixpointEvidence::Partial,
+                                    Gate::Constructor | Gate::Canonical | Gate::Observed,
+                                ) => {
+                                    if innermost(self.arena.computation_support(body))
+                                        != BinderUse::Ignored
+                                        && self.unfoldings.terminates(focus.node).is_none()
+                                    {
+                                        return Err(Stop::PartialFixpoint);
+                                    }
+                                    let recursive = focus.with(self.arena.value_thunk(focus.node));
+                                    let environment =
+                                        cells.push(self.arena, focus.environment, recursive);
+                                    focus = Closure {
+                                        node: body,
+                                        environment,
+                                    };
+                                    progress = Progress::Reduced;
+                                },
+                                (
+                                    FixpointEvidence::StructuralDescent
+                                    | FixpointEvidence::Staged { .. }
+                                    | FixpointEvidence::Joint { .. },
+                                    Gate::Canonical | Gate::Observed | Gate::Shut,
+                                )
+                                | (FixpointEvidence::Partial, Gate::Shut)
+                                | (
+                                    FixpointEvidence::Guarded,
+                                    Gate::Constructor | Gate::Canonical | Gate::Shut,
+                                ) => break,
+                            }
+                        },
+                        Some(&Computation::Return(value)) => match frames.last().copied() {
+                            Some(Closure {
+                                node: Frame::Bind(body),
+                                environment,
+                            }) => {
+                                frames.pop();
+                                let environment =
+                                    cells.push(self.arena, environment, focus.with(value));
+                                focus = Closure {
+                                    node: body,
+                                    environment,
+                                };
+                                progress = Progress::Reduced;
+                            },
+                            Some(Closure {
+                                node: Frame::Apply(_) | Frame::BindAll(..) | Frame::Project(_),
+                                ..
+                            })
+                            | None => break,
+                        },
+                        // A return of several values meets a bind of as many: the
+                        // values fill its binders in order, the first outermost.
+                        Some(&Computation::ReturnAll(ref values)) => match frames.last().copied() {
+                            Some(Closure {
+                                node: Frame::BindAll(arity, body),
+                                environment,
+                            }) if usize::from(arity) == values.len() => {
+                                frames.pop();
+                                let mut extended = environment;
+                                for &value in values {
+                                    extended = cells.push(self.arena, extended, focus.with(value));
+                                }
+                                focus = Closure {
+                                    node: body,
+                                    environment: extended,
+                                };
+                                progress = Progress::Reduced;
+                            },
+                            Some(_) | None => break,
+                        },
+                        None => return Err(unreadable()),
+                    }
+                }
+                // A bind over a stuck link whose path a definition names holds
+                // the link as its endpoint, and the append of the link outside
+                // runs it ([`Self::bound_link`]): the run reads in place of
+                // this reading, which waits on what it comes to.
+                if let Some((transport, operand)) =
+                    self.bound_link(&mut cells, focus, &mut frames)?
+                {
+                    let outer = self.unload_frames(&mut cells, &mut frames);
+                    runs.push(Run::Held(HeldRun {
+                        transport,
+                        operand,
+                        frames: outer,
+                        attempts: core::mem::take(&mut attempts),
+                        reduction,
+                        reading: HeldReading::Operand,
+                    }));
+                    reduction = Reduction::Endpoint;
+                    focus = Closure::closed(operand);
+                    progress = Progress::Unchanged;
+                    continue;
+                }
+                // A transport along a stuck composite moves its operand along
+                // each of the composite's paths in order, as the evaluator's
+                // `AlongThen` row moves it. A returned path runs first, as the
+                // evaluator evaluates a path before it reads it: the run reads
+                // as an endpoint in place of this reading, which waits on what
+                // it comes to.
+                match self.along_composite(&mut cells, focus, &mut frames, &whole) {
+                    AlongComposite::Moved(moved) => {
+                        focus = moved;
+                        progress = Progress::Reduced;
+                        continue;
+                    },
+                    AlongComposite::Runs(leg) => {
+                        let stuck = self.unload(&mut cells, focus);
+                        let outer = self.unload_frames(&mut cells, &mut frames);
+                        runs.push(Run::Path(PathRun {
+                            leg,
+                            focus: stuck,
+                            frames: outer,
+                            attempts: core::mem::take(&mut attempts),
+                            reduction,
+                            progress,
+                        }));
+                        reduction = Reduction::Endpoint;
+                        focus = Closure::closed(leg.path);
+                        progress = Progress::Unchanged;
+                        continue;
+                    },
+                    AlongComposite::Stays => {},
+                }
+                let mut next = match attempts.last() {
+                    Some(_)
+                        if frames.is_empty()
+                            && matches!(
+                                self.arena.computation(focus.node),
+                                Some(&(Computation::Return(_) | Computation::ReturnAll(_)))
+                            ) =>
+                    {
+                        // The continuation returned, one value or several: its
+                        // bind is spent.
+                        if let Some(tried) = attempts.pop() {
+                            frames = tried.outer.into_iter().map(Closure::closed).collect();
+                        }
+                        progress = Progress::Reduced;
+                        continue;
+                    },
+                    Some(_) | None if reduction == Reduction::Endpoint => {
+                        let call = self.unload(&mut cells, focus);
+                        (
+                            call,
+                            self.unload_frames(&mut cells, &mut frames),
+                            progress,
+                            true,
+                        )
+                    },
+                    Some(_) | None => break,
+                };
+                loop {
+                    let (call, mut outer, before, first) = next;
+                    let (call, bind) = self.next_bind(call, &mut outer);
+                    match bind {
+                        // A stuck transport chained into another transport is a
+                        // `cong` chain, left whole for `fuse` to compose: reading
+                        // through it rebuilds the chain over its own returned leaf
+                        // without end. A link transporting along or of the
+                        // chain's endpoint stays over the chain below, and the
+                        // next bind out is read over both.
+                        Some(bind)
+                            if !first
+                                || matches!(
+                                    self.shape(
+                                        Term::Computation(call),
+                                        &Frozen::default(),
+                                        ConversionSide::Left
+                                    ),
+                                    Ok(Shape::Neutral(
+                                        Head::Variable(_) | Head::Constant(_, Status::Opaque),
+                                        ref spine
+                                    )) if !(matches!(spine.as_slice(), [.., Elimination::PathTransport(_)])
+                                        && matches!(
+                                            self.arena.computation(bind.body()),
+                                            Some(&Computation::PathTransport { .. })
+                                        )
+                                        && self.continuation_of(bind) != Continuation::Eliminates)
+                                )
+                                || self.reading == Reading::Forced
+                                    && self.shut_recursion(call).is_some() =>
+                        {
+                            if matches!(
+                                self.continuation_of(bind),
+                                Continuation::Eliminates | Continuation::Returns
+                            ) {
+                                // Read through, this bind restores the
+                                // elimination
+                                // of a returned endpoint it came from, which
+                                // binds
+                                // the same call again: it never returns; or it
+                                // is the call's
+                                // own η-expansion, which the goal reads
+                                // back as the call and expands again. It stays
+                                // over its call, and the next bind out is tried
+                                // over both.
+                                let call = self.wrap(call, bind.frame());
+                                next = (call, outer, before, false);
+                                continue;
+                            }
+                            // The continuation runs with the call as a returned
+                            // endpoint for each value it binds: a bind of one
+                            // holds the call, and a bind of several holds, at
+                            // each binder, the call read to that result.
+                            let environment = self.read_through(&mut cells, call, bind);
+                            focus = Closure {
+                                node: bind.body(),
+                                environment,
+                            };
+                            attempts.push(Attempt {
+                                outer,
+                                call,
+                                bind,
+                                progress: before,
+                            });
+                            continue 'reading;
+                        },
+                        unread => {
+                            // No bind is left, or a definition heads the call:
+                            // this reading stands as it is.
+                            if let Some(bind) = unread {
+                                outer.push(bind.frame());
+                            }
+                            let Some(tried) = attempts.pop()
+                            else {
+                                frames = outer.into_iter().map(Closure::closed).collect();
+                                focus = Closure::closed(call);
+                                progress = before;
+                                break 'reading;
+                            };
+                            // The enclosing continuation stopped at a call a
+                            // definition heads, which the conversion unfolds by
+                            // a recorded step, or at a call a binder heads,
+                            // which no step unfolds: the reading is that call,
+                            // under the eliminations outside the bind. A bind
+                            // over a binder's call is no such stop: an
+                            // elimination of the continuation's own endpoint
+                            // builds one, binding the same call again.
+                            let stop = self.shape(
+                                Term::Computation(call),
+                                &Frozen::default(),
+                                ConversionSide::Left,
+                            );
+                            if matches!(
+                                stop,
+                                Ok(Shape::Neutral(Head::Constant(_, Status::Defined), _))
+                            ) || matches!(stop, Ok(Shape::Neutral(Head::Variable(_), ref spine))
+                                    if !spine.iter().any(|elimination| matches!(*elimination, Elimination::Bind(_))))
+                            {
+                                frames = tried
+                                    .outer
+                                    .into_iter()
+                                    .chain(outer)
+                                    .map(Closure::closed)
+                                    .collect();
+                                focus = Closure::closed(call);
+                                progress = Progress::Reduced;
+                                continue 'reading;
+                            }
+                            // The enclosing continuation did not return: its
+                            // bind stays over its
+                            // call, and the next bind out is tried
+                            // over both.
+                            let call = self.wrap(tried.call, tried.bind.frame());
+                            next = (call, tried.outer, tried.progress, false);
+                        },
+                    }
+                }
+            }
+            let held = match runs.pop() {
+                // A returned path's run is read. Where it sticks at a
+                // composite, the frame moving along it moves along each of the
+                // composite's paths in order; anywhere else the frame stays,
+                // and its path runs no more.
+                Some(Run::Path(run)) => {
+                    let read = if progress == Progress::Unchanged {
+                        run.leg.path
+                    }
+                    else {
+                        self.rebuild(&mut cells, focus, &mut frames)
+                    };
+                    let mut outer = run.frames;
+                    if let Some((first, second)) = self.legs(read) {
+                        let then = self.along_lifted(run.leg.family, second);
+                        let moved = self.along_lifted(run.leg.family, first);
+                        outer.splice(run.leg.at ..= run.leg.at, [
+                            Frame::Bind(then),
+                            Frame::Bind(moved),
+                        ]);
+                        progress = Progress::Reduced;
+                    }
+                    else {
+                        whole.insert(run.leg.frame);
+                        progress = run.progress;
+                    }
+                    focus = Closure::closed(run.focus);
+                    frames = outer.into_iter().map(Closure::closed).collect();
+                    attempts = run.attempts;
+                    reduction = run.reduction;
+                    continue 'endpoints;
+                },
+                Some(Run::Held(run)) => Some(run),
+                None => None,
+            };
+            // A held operand's run is read. A definition heading the operand
+            // unfolds and the run goes on, as the evaluator's run unfolds what
+            // it meets and records no decision for it. An endpoint a call's
+            // run returns is read on into its computation, holding every call
+            // there, as the evaluator evaluates a returned endpoint. One a
+            // bind's or a transport's run returns reads by the evaluator's one
+            // rule for a resumed endpoint ([`Self::resumed`]). A value it
+            // returns moves along the path, and so does a transport the
+            // evaluator holds as a value, held. A run that sticks leaves the
+            // operand as it was, and the transport runs its returned path
+            // first, or its operand; the conversion unfolds what the operand
+            // holds later, by a recorded step.
+            if let Some(run) = held {
+                let read = if progress == Progress::Unchanged {
+                    run.operand
+                }
+                else {
+                    self.rebuild(&mut cells, focus, &mut frames)
+                };
+                let reduct = match self.run_step(read, run.reading) {
+                    RunStep::Reads(computation, reading) => {
+                        focus = Closure::closed(computation);
+                        frames.clear();
+                        progress = Progress::Reduced;
+                        runs.push(Run::Held(HeldRun { reading, ..run }));
+                        continue 'endpoints;
+                    },
+                    RunStep::Unfolds(constant) => {
+                        let Term::Computation(unfolded) =
+                            self.unfold_refolded(Term::Computation(read), constant)?
+                        else {
+                            return Err(unreadable());
+                        };
+                        focus = Closure::closed(unfolded);
+                        frames.clear();
+                        progress = Progress::Reduced;
+                        runs.push(Run::Held(run));
+                        continue 'endpoints;
+                    },
+                    RunStep::RunsPath(transport, call, constant) => {
+                        let Term::Computation(unfolded) =
+                            self.unfold_refolded(Term::Computation(call), constant)?
+                        else {
+                            return Err(unreadable());
+                        };
+                        let Some(&Computation::PathTransport { motive, value, .. }) =
+                            self.arena.computation(transport)
+                        else {
+                            return Err(unreadable());
+                        };
+                        let path = self.arena.value_returned(unfolded);
+                        let moved = self.arena.computation_path_transport(motive, path, value);
+                        focus = Closure::closed(moved);
+                        frames.clear();
+                        progress = Progress::Reduced;
+                        runs.push(Run::Held(HeldRun {
+                            reading: HeldReading::Returned,
+                            ..run
+                        }));
+                        continue 'endpoints;
+                    },
+                    RunStep::Returns(value) => self.arena.computation_path_transport(
+                        run.transport.motive,
+                        run.transport.path,
+                        value,
+                    ),
+                    RunStep::Holds(transport) => {
+                        let held = self.arena.value_returned(transport);
+                        self.arena.computation_path_transport(
+                            run.transport.motive,
+                            run.transport.path,
+                            held,
+                        )
+                    },
+                    RunStep::Sticks => {
+                        if let Some(reduct) = crate::words::run_path(
+                            self.arena,
+                            &mut self.table,
+                            &mut self.memo,
+                            run.transport,
+                        ) {
+                            reduct
+                        }
+                        else {
+                            let crate::path_universe::Reduction::Reduced(reduct) =
+                                crate::words::transport_word(
+                                    self.arena,
+                                    &mut self.table,
+                                    &mut self.memo,
+                                    self.evaluator,
+                                    run.transport,
+                                )
+                            else {
+                                return Err(unreadable());
+                            };
+                            reduct
+                        }
+                    },
+                };
+                focus = Closure::closed(reduct);
+                frames = run.frames.into_iter().map(Closure::closed).collect();
+                attempts = run.attempts;
+                reduction = run.reduction;
+                progress = Progress::Reduced;
+                continue 'endpoints;
+            }
+            // The endpoint's computation is read: the suspended plain reading
+            // binds what it came to and goes on. A reading stopped
+            // at a call a definition heads waits for the conversion
+            // to unfold that call by a recorded step, so it is
+            // bound once over the whole term, every occurrence of
+            // the endpoint's node reading the bind's variable: the call then
+            // runs once for all of them, as the producer's held
+            // endpoint keeps its one unfolding for every
+            // elimination of it.
+            let Some(held) = suspended.take()
+            else {
+                break 'endpoints;
+            };
+            let read = if progress == Progress::Unchanged {
+                held.returned
+            }
+            else {
+                self.rebuild(&mut cells, focus, &mut frames)
+            };
+            if matches!(
+                self.shape(
+                    Term::Computation(read),
+                    &Frozen::default(),
+                    ConversionSide::Left
+                ),
+                Ok(Shape::Neutral(Head::Constant(_, Status::Defined), _))
+            ) {
+                let mut whole = held.elimination;
+                let mut outer = held.frames;
+                while let Some(frame) = outer.pop() {
+                    whole = self.wrap(whole, frame);
+                }
+                let shared = crate::rewrite::share_endpoint(
+                    self.arena,
+                    &mut self.table,
+                    &mut self.memo,
+                    whole,
+                    held.endpoint,
+                );
+                focus = Closure::closed(self.arena.computation_bind(read, shared));
+                frames = Vec::new();
+            }
+            else {
+                let bind = self.bind_returned(held.elimination, read)?;
+                let mut outer = held.frames;
+                focus = Closure::closed(self.absorbed(bind, &mut outer)?);
+                frames = outer.into_iter().map(Closure::closed).collect();
+            }
+            reduction = Reduction::Plain;
+            progress = Progress::Reduced;
+        }
+        if progress == Progress::Unchanged {
+            return Ok(term);
+        }
+        Ok(Term::Computation(self.rebuild(
+            &mut cells,
+            focus,
+            &mut frames,
+        )))
+    }
+
+    /// The value `computation` inspects, when it is an elimination that runs a
+    /// returned endpoint there first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn inspected(
+        &self,
+        computation: ComputationId,
+    ) -> Option<ValueId>
+    {
+        if let Some(
+            &(Computation::DataCase {
+                scrutinee: inspected,
+                ..
+            }
+            | Computation::Case {
+                scrutinee: inspected,
+                ..
+            }
+            | Computation::SigmaSplit {
+                scrutinee: inspected,
+                ..
+            }
+            | Computation::ListFold {
+                list: inspected, ..
+            }
+            | Computation::ListCase {
+                list: inspected, ..
+            }
+            | Computation::RecordProjection(inspected, _)
+            | Computation::TupleProjection(inspected, _)
+            | Computation::Force(inspected)),
+        ) = self.arena.computation(computation)
+        {
+            Some(inspected)
+        }
+        else {
+            None
+        }
+    }
+
+    /// `focus` read back outside every binder of its environment.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unload(
+        &mut self,
+        cells: &mut Environments,
+        focus: Closure<ComputationId>,
+    ) -> ComputationId
+    {
+        cells.unload_computation(
+            (&mut *self.arena, &mut self.table, &mut self.memo),
+            focus,
+            BinderDepth::NONE,
+        )
+    }
+
+    /// `frame` read back outside every binder of its environment.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unload_frame(
+        &mut self,
+        cells: &mut Environments,
+        frame: Closure<Frame>,
+    ) -> Frame
+    {
+        cells.unload_frame((&mut *self.arena, &mut self.table, &mut self.memo), frame)
+    }
+
+    /// Every frame of `frames` read back, innermost last, leaving `frames`
+    /// empty.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unload_frames(
+        &mut self,
+        cells: &mut Environments,
+        frames: &mut Vec<Closure<Frame>>,
+    ) -> Vec<Frame>
+    {
+        core::mem::take(frames)
+            .into_iter()
+            .map(|frame| self.unload_frame(cells, frame))
+            .collect()
+    }
+
+    /// `focus` under `frames`, every one read back: the weak head a reduction
+    /// stops at, unloaded once.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rebuild(
+        &mut self,
+        cells: &mut Environments,
+        focus: Closure<ComputationId>,
+        frames: &mut Vec<Closure<Frame>>,
+    ) -> ComputationId
+    {
+        let mut whole = self.unload(cells, focus);
+        while let Some(frame) = frames.pop() {
+            let frame = self.unload_frame(cells, frame);
+            whole = self.wrap(whole, frame);
+        }
+        whole
+    }
+
+    /// The innermost bind among `outer`, of one value or of several, popped,
+    /// with `call` under the frames inside it; or, with no bind among them,
+    /// `call` under all of them.
+    ///
+    /// # Specification
+    /// - requires: `outer` holds the frames over `call`, innermost last.
+    /// - ensures: the call under every frame popped before the bind, and the
+    ///   bind's frame; with no bind, `outer` empty.
+    /// - provides: the next bind out an endpoint reading tries in
+    ///   [`Self::whnf`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop popping `outer`, not recursion.
+    /// - measure: the frames left in `outer`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an endpoint's bind over a fixpoint stuck at a
+    ///   variable reads with the call under the application inside the bind;
+    ///   reading the fixpoint alone as the call leaves the endpoint apart.
+    /// - witness: `replay::tests::an_endpoint_reads_a_bind_through_its_stuck_call`
+    #[spec(
+        captures: entry = outer.len(),
+        ensures: |ret| (ret.1.is_some() && outer.len() < entry) || (ret.1.is_none() && outer.is_empty()),
+    )]
+    fn next_bind(
+        &mut self,
+        call: ComputationId,
+        outer: &mut Vec<Frame>,
+    ) -> (ComputationId, Option<Bound>)
+    {
+        let mut call = call;
+        while let Some(frame) = outer.pop() {
+            match frame {
+                Frame::Bind(body) => return (call, Some(Bound::One(body))),
+                Frame::BindAll(arity, body) => return (call, Some(Bound::Several(arity, body))),
+                Frame::Apply(_) | Frame::Project(_) => call = self.wrap(call, frame),
+            }
+        }
+        (call, None)
+    }
+
+    /// The environment the continuation of `bind` over the stuck `call` runs
+    /// in when an endpoint reading reads through it: a bind of one value holds
+    /// `⟨call⟩`, and a bind of `n` values holds `⟨(x₁ … xₙ) ← call; return
+    /// xᵢ⟩` at its `i`-th binder, the first outermost, as a return of `n`
+    /// values fills them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn read_through(
+        &mut self,
+        cells: &mut Environments,
+        call: ComputationId,
+        bind: Bound,
+    ) -> Environment
+    {
+        let Bound::Several(arity, _) = bind
+        else {
+            let leaf = self.arena.value_returned(call);
+            return cells.push(self.arena, Environment::EMPTY, Closure::closed(leaf));
+        };
+        let mut environment = Environment::EMPTY;
+        // De Bruijn indices address no more binders than `u32` counts.
+        let width = u32::try_from(usize::from(arity)).unwrap_or(u32::MAX);
+        for result in (0 .. width).rev() {
+            let variable = self.arena.value_variable(DeBruijnIndex::from(result));
+            let read = self.arena.computation_return(variable);
+            let result = self.arena.computation_bind_all(call, arity, read);
+            let leaf = self.arena.value_returned(result);
+            environment = cells.push(self.arena, environment, Closure::closed(leaf));
+        }
+        environment
+    }
+
+    /// What the body of `bind` does with its own bound variables at its head:
+    /// eliminates one, as the continuation `E[x]` of a bind
+    /// [`Self::bind_returned`] builds, returns them as they are, or anything
+    /// else.
+    ///
+    /// # Specification
+    /// - requires: `bind` is a bind frame, of one value or of several.
+    /// - ensures: [`Continuation::Eliminates`] exactly when the body, under any
+    ///   applications whose head is no fixpoint and any projections of a lazy
+    ///   pairing — the context [`Self::absorbed`] moves under the bind — is a
+    ///   force, a projection, a case, a data case, a dependent split or a list
+    ///   fold inspecting a variable the bind binds, a fixpoint applied to one,
+    ///   or a transport along one or of one — the continuation the transport
+    ///   rows build when they run a returned path or operand;
+    ///   [`Continuation::Returns`] exactly when the body is `return` of a
+    ///   variable the bind binds, or the return of all of them in their order.
+    /// - provides: the binds an endpoint reading in [`Self::whnf`] passes over:
+    ///   run with the call as a returned endpoint, an eliminating continuation
+    ///   meets that endpoint at its head and binds the same call again, so it
+    ///   never returns, and a reading nested into it would never end; read
+    ///   through, a returning one is the call's η-expansion folded back, or one
+    ///   of its results read, which the goal expands again without end.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an endpoint whose recursive call waits on another
+    ///   call stuck at a variable reads as its arm's constructor over both, as
+    ///   the engine reads it; nesting into the bind a fixpoint's gate builds
+    ///   loops until the budget declines the endpoint. An endpoint that reads
+    ///   one result of a stuck call stays over its bind.
+    /// - witness: `replay::tests::an_endpoint_passes_over_a_bind_its_own_elimination_built`
+    /// - witness: `replay::tests::an_endpoint_stays_over_the_eta_expansion_of_its_stuck_call_473`
+    /// - witness: `replay::tests::an_endpoint_stays_over_the_run_of_its_transported_operand_473`
+    /// - witness: `tests::native_formers::a_recursive_call_under_a_bind_of_several_values_reads_as_its_call_5070`
+    #[spec(ensures: |ret| ret == Continuation::Other || self.arena.computation(bind.body()).is_some())]
+    fn continuation_of(
+        &self,
+        bind: Bound,
+    ) -> Continuation
+    {
+        let count = usize::from(bind.count());
+        // The variables the bind binds are the innermost `count`.
+        let bound = |value: ValueId| {
+            matches!(self.arena.value(value), Some(&Value::Variable(index))
+                if usize::try_from(u32::from(index)).is_ok_and(|at| at < count))
+        };
+        let mut body = bind.body();
+        loop {
+            match self.arena.computation(body) {
+                Some(&Computation::Application(head, _))
+                    if !matches!(
+                        self.arena.computation(head),
+                        Some(&Computation::Fixpoint { .. })
+                    ) =>
+                {
+                    body = head;
+                },
+                Some(&Computation::Project(_, inner)) => body = inner,
+                _ => break,
+            }
+        }
+        let inspected = if let Some(
+            &(Computation::DataCase {
+                scrutinee: inspected,
+                ..
+            }
+            | Computation::Case {
+                scrutinee: inspected,
+                ..
+            }
+            | Computation::SigmaSplit {
+                scrutinee: inspected,
+                ..
+            }
+            | Computation::ListFold {
+                list: inspected, ..
+            }
+            | Computation::RecordProjection(inspected, _)
+            | Computation::TupleProjection(inspected, _)
+            | Computation::Force(inspected)),
+        ) = self.arena.computation(body)
+        {
+            inspected
+        }
+        else if let Some(&Computation::Application(head, argument)) = self.arena.computation(body)
+            && let Some(&Computation::Fixpoint { .. }) = self.arena.computation(head)
+        {
+            argument
+        }
+        else if let Some(&Computation::PathTransport { path, value, .. }) =
+            self.arena.computation(body)
+        {
+            if bound(path) || bound(value) {
+                return Continuation::Eliminates;
+            }
+            return Continuation::Other;
+        }
+        else if let Some(&Computation::Return(returned)) = self.arena.computation(body) {
+            if bound(returned) {
+                return Continuation::Returns;
+            }
+            return Continuation::Other;
+        }
+        else if let Some(&Computation::ReturnAll(ref returned)) = self.arena.computation(body) {
+            // The binders in their order, the first outermost.
+            let in_order = returned.len() == count
+                && returned.iter().rev().enumerate().all(|(at, &value)| {
+                    u32::try_from(at).is_ok_and(|at| {
+                        self.arena.value(value) == Some(&Value::Variable(DeBruijnIndex::from(at)))
+                    })
+                });
+            if in_order {
+                return Continuation::Returns;
+            }
+            return Continuation::Other;
+        }
+        else {
+            return Continuation::Other;
+        };
+        if bound(inspected) {
+            Continuation::Eliminates
+        }
+        else {
+            Continuation::Other
+        }
+    }
+
+    /// `body` with its innermost binder instantiated at `value`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn instantiate(
+        &mut self,
+        body: ComputationId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        substitute_computation(self.arena, &mut self.table, &mut self.memo, body, value)
+    }
+
+    /// `elimination`, whose inspected value is a returned endpoint, as the
+    /// bind running `returned` and eliminating what it returns.
+    ///
+    /// # Specification
+    /// - requires: `elimination` is a force, a case, a data case, a dependent
+    ///   split, a list fold, a projection or a fixpoint's application, and
+    ///   `returned` the computation of the returned endpoint it inspects.
+    /// - ensures: `returned to x. E[x]`, where `E` is the elimination shifted
+    ///   past the new binder and `x` stands where the endpoint stood.
+    /// - provides: the elimination rule of a returned endpoint: a pure
+    ///   returner's value is the one its computation binds.
+    /// - fails: [`ReplayRefusal::Unreadable`] when `elimination` is no such
+    ///   form.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Cost
+    /// - allocation: the shifted elimination, its continuation and the bind,
+    ///   durable by the arena's identifiers
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a force and a case over a returned endpoint reduce to
+    ///   what forcing or casing its returned value gives, and a stuck one stays
+    ///   the bind; a fixpoint applied to a call it waits on unfolds that call.
+    /// - witness: `element_identity::tests::a_returned_endpoint_replays_as_its_computation`
+    /// - witness: `replay::tests::a_fixpoint_at_a_returned_endpoint_runs_the_endpoint_first`
+    /// - witness: `replay::tests::each_elimination_runs_the_returned_endpoint_it_meets`
+    #[spec(ensures: |ret| match ret {
+        Ok(bind) => matches!(self.arena.computation(bind), Some(&Computation::Bind(bound, _)) if bound == returned),
+        Err(_) => true,
+    })]
+    fn bind_returned(
+        &mut self,
+        elimination: ComputationId,
+        returned: ComputationId,
+    ) -> Result<ComputationId, Stop>
+    {
+        let shifted = shift_computation(
+            self.arena,
+            &mut self.table,
+            &mut self.memo,
+            elimination,
+            BinderDepth::NONE,
+            BinderDepth::NONE.deeper(),
+        );
+        let bound = self.arena.value_variable(DeBruijnIndex::from(0_u32));
+        let continuation = match self.arena.computation(shifted) {
+            Some(&Computation::Force(_)) => self.arena.computation_force(bound),
+            Some(&Computation::RecordProjection(_, ref label)) => {
+                let label = label.clone();
+                self.arena.computation_record_projection(bound, label)
+            },
+            Some(&Computation::TupleProjection(_, component)) => {
+                self.arena.computation_tuple_projection(bound, component)
+            },
+            Some(&Computation::Case { ref branches, .. }) => {
+                let branches = branches.clone();
+                self.arena.computation_case(bound, &branches)
+            },
+            Some(&Computation::DataCase {
+                motive,
+                ref branches,
+                equations,
+                ..
+            }) => {
+                let branches = branches.clone();
+                self.arena
+                    .computation_data_case_with_equations(bound, motive, branches, equations)
+            },
+            Some(&Computation::SigmaSplit { motive, body, .. }) => {
+                self.arena.computation_sigma_split(bound, motive, body)
+            },
+            Some(&Computation::ListFold {
+                element,
+                result,
+                on_nil,
+                on_cons,
+                ..
+            }) => self
+                .arena
+                .computation_list_fold(element, result, bound, on_nil, on_cons),
+            Some(&Computation::Application(head, _)) => {
+                self.arena.computation_application(head, bound)
+            },
+            _ => return Err(unreadable()),
+        };
+        Ok(self.arena.computation_bind(returned, continuation))
+    }
+
+    /// `bind`, a bind [`Self::bind_returned`] built, with the applications and
+    /// projections innermost on `frames` moved under its binder after the
+    /// elimination: `E[c] ⇝ c to x. E[x]` over the whole elimination context,
+    /// up to the first bind frame.
+    ///
+    /// # Specification
+    /// - requires: `bind` is a bind.
+    /// - ensures: `bind` itself when no application or projection is innermost
+    ///   on `frames`; otherwise a bind over the same computation whose
+    ///   continuation is `bind`'s under those frames, each shifted past the
+    ///   binder, innermost first, and `frames` without them.
+    /// - provides: the elimination rule of a returned endpoint read whole, so a
+    ///   bind written over the same call compares with it as a bind.
+    /// - fails: [`ReplayRefusal::Unreadable`] when `bind` is no bind.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a returned endpoint forced and applied converts with
+    ///   a bind written over its call whose continuation forces and applies the
+    ///   bound value.
+    /// - witness: `replay::tests::a_forced_applied_endpoint_converts_with_a_bind_over_its_call_2326`
+    #[spec(ensures: |ret| ret.is_err() || frames.last().is_none_or(|frame| matches!(frame, Frame::Bind(_) | Frame::BindAll(..))))]
+    fn absorbed(
+        &mut self,
+        bind: ComputationId,
+        frames: &mut Vec<Frame>,
+    ) -> Result<ComputationId, Stop>
+    {
+        let Some(&Computation::Bind(bound, mut continuation)) = self.arena.computation(bind)
+        else {
+            return Err(unreadable());
+        };
+        let mut moved = false;
+        while let Some(&frame) = frames.last() {
+            let shifted = match frame {
+                Frame::Apply(argument) => Frame::Apply(shift_value(
+                    self.arena,
+                    &mut self.table,
+                    &mut self.memo,
+                    argument,
+                    BinderDepth::NONE,
+                    BinderDepth::NONE.deeper(),
+                )),
+                Frame::Project(component) => Frame::Project(component),
+                Frame::Bind(_) | Frame::BindAll(..) => break,
+            };
+            let _popped = frames.pop();
+            continuation = self.wrap(continuation, shifted);
+            moved = true;
+        }
+        if !moved {
+            return Ok(bind);
+        }
+        Ok(self.arena.computation_bind(bound, continuation))
+    }
+
+    /// The normal form of `value` as an endpoint: a returned endpoint is what
+    /// its computation returns, normalized again, and any other value itself.
+    ///
+    /// The computation reduces by [`Self::whnf`]'s search-free steps under
+    /// `reduction`. At a stuck head naming a definition,
+    /// [`DefinedHead::Unfold`] takes the δ-step [`Self::unfold_term`]
+    /// fires, the one step the head admits, and [`DefinedHead::Hold`]
+    /// stops. Unfolding, this is the kernel's own evaluator, not a
+    /// conversion: the normal form goes on to [`convert_values`], or to the
+    /// walk of a compared pair of motives. Holding, it is the reading any
+    /// other compared pair's set-aside endpoints take
+    /// ([`Self::endpoints_alike`]), which no decision lets unfold a
+    /// definition. A computation that reaches no `return` stays a returned
+    /// endpoint, over what it reduced to, so both readings keep one
+    /// stuck reduct.
+    ///
+    /// # Specification
+    /// - requires: `value` lives in the arena.
+    /// - ensures: the first value that is no returned endpoint along the chain
+    ///   of returned values, or a returned endpoint whose computation is stuck,
+    ///   at no defined head under [`DefinedHead::Unfold`]; `value` itself when
+    ///   nothing reduced.
+    /// - provides: the normal form [`read_endpoints`] converts, and the side
+    ///   [`Self::endpoints_alike`] compares.
+    /// - fails: [`Stop::Budget`] past the budget; [`Stop::PartialFixpoint`] at
+    ///   a partial fixpoint's gate; [`ReplayRefusal::Unreadable`] on a dangling
+    ///   node or a definition that does not unfold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Termination
+    /// - reason: the outer `while let` over the chain of returned values and
+    ///   the inner `loop` over one computation's reduction, not recursion.
+    /// - measure: the budget left, which every inner iteration charges, and the
+    ///   outer loop advances only after an inner one.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an endpoint returning through a definition reads as
+    ///   its value, a stuck endpoint reads as itself, and a definition the
+    ///   reading may not unfold leaves the endpoint apart from its value.
+    ///   Holding, an endpoint whose bind reads through to a binder's call reads
+    ///   as that call.
+    /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
+    /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
+    /// - witness: `replay::tests::a_stuck_endpoint_reads_as_what_it_reduced_to`
+    /// - witness: `replay::tests::a_compared_pair_reads_an_endpoint_through_its_bind_to_a_binder_call_3969`
+    #[spec(ensures: |ret| match ret {
+        Ok(read) => self.arena.value(read).is_some(),
+        Err(Stop::Budget) => self.spent >= self.budget,
+        Err(_) => true,
+    })]
+    fn normalize_returned(
+        &mut self,
+        value: ValueId,
+        reduction: Reduction,
+        defined: DefinedHead,
+    ) -> Result<ValueId, Stop>
+    {
+        let mut value = value;
+        while let Some(&Value::Returned(computation)) = self.arena.value(value) {
+            let mut term = Term::Computation(computation);
+            loop {
+                self.charge()?;
+                term = self.whnf(term, reduction)?;
+                let Term::Computation(reduced) = term
+                else {
+                    return Err(unreadable());
+                };
+                if let Some(&Computation::Return(returned)) = self.arena.computation(reduced) {
+                    value = returned;
+                    break;
+                }
+                if defined == DefinedHead::Unfold
+                    && let Ok(Shape::Neutral(Head::Constant(constant, Status::Defined), _)) =
+                        self.shape(term, &Frozen::default(), ConversionSide::Left)
+                {
+                    term = self.unfold_refolded(term, constant)?;
+                    continue;
+                }
+                return Ok(if reduced == computation {
+                    value
+                }
+                else {
+                    self.arena.value_returned(reduced)
+                });
+            }
+        }
+        Ok(value)
+    }
+
+    /// The fixpoint the definition `constant`'s body suspends, a recursive
+    /// definition's: its open body and the evidence it carries.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Some((b, e))` exactly when `constant` unfolds to a thunk
+    ///   over `fix f. b` carrying `e`; `None` otherwise.
+    /// - provides: the recursive-definition test [`Self::unfold_refolded`],
+    ///   [`Self::shut_recursion`] and [`Self::run_step`] share.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a recursive call stuck at a variable, one a
+    ///   constructor opens and a call of a definition with no fixpoint observe
+    ///   each answer.
+    /// - witness: `tests::native_formers::a_recursive_call_stuck_at_a_variable_reads_as_its_call_473`
+    /// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
+    /// - witness: `replay::tests::a_held_path_runs_over_its_operand_as_it_was_3734`
+    #[spec(ensures: |ret| ret.is_none() || matches!(self.unfoldings.peeked(constant), Unfoldable::Body(_)))]
+    fn suspended_fixpoint(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<(ComputationId, FixpointEvidence)>
+    {
+        let Unfoldable::Body(body) = self.unfoldings.unfolding(constant)
+        else {
+            return None;
+        };
+        let Some(&Value::Thunk(suspended)) = self.arena.value(body)
+        else {
+            return None;
+        };
+        let Some(&Computation::Fixpoint {
+            body: open,
+            evidence,
+        }) = self.arena.computation(suspended)
+        else {
+            return None;
+        };
+        Some((open, evidence))
+    }
+
+    /// The argument `call` passes at the gate of a fixpoint carrying
+    /// `evidence`, counted from its first argument.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the argument at [`FixpointEvidence::gate`] among those
+    ///   `call`'s spine of applications passes, first argument first; `None`
+    ///   when it passes no more.
+    /// - provides: the gate [`Self::shut_recursion`] and [`Self::run_step`]
+    ///   test.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// - reason: two `while let` loops down the application spine, not
+    ///   recursion.
+    /// - measure: the focus's arena position.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call stuck at a variable and one a constructor
+    ///   opens, each gated on its first argument, observe the argument read. A
+    ///   staged gate past the first argument is outside this evidence.
+    /// - witness: `tests::native_formers::a_recursive_call_stuck_at_a_variable_reads_as_its_call_473`
+    /// - witness: `replay::tests::a_held_path_runs_over_its_operand_as_it_was_3734`
+    #[spec(ensures: |ret| ret.is_none_or(|argument| self.arena.value(argument).is_some()))]
+    fn gate(
+        &self,
+        call: ComputationId,
+        evidence: FixpointEvidence,
+    ) -> Option<ValueId>
+    {
+        let mut passed = 0_usize;
+        let mut head = call;
+        while let Some(&Computation::Application(function, _)) = self.arena.computation(head) {
+            passed = passed.saturating_add(1);
+            head = function;
+        }
+        // The spine holds its last argument outermost, so the gate stands
+        // that many applications in from the arguments after it.
+        let mut after = passed.checked_sub(usize::from(evidence.gate()).saturating_add(1))?;
+        let mut focus = call;
+        while let Some(&Computation::Application(function, argument)) =
+            self.arena.computation(focus)
+        {
+            let Some(left) = after.checked_sub(1)
+            else {
+                return Some(argument);
+            };
+            after = left;
+            focus = function;
+        }
+        None
+    }
+
+    /// The definition `call` recurses into when its head forces a recursive
+    /// definition whose gate no constructor opens: `spin(x)` for a variable
+    /// `x`.
+    ///
+    /// Such a call is stuck at a variable as surely as one headed by it: a
+    /// δ-step only reaches the same fixpoint stuck at the same argument. The
+    /// evaluator holds it as the call its source wrote, and the forced
+    /// reading, which follows no trace, reads through a bind over it as it
+    /// reads through one over a variable's call, rather than leave the δ-step
+    /// in its normal form.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Some(k)` exactly when `call`, under its applications, forces
+    ///   the constant `k`, `k`'s body is a suspended fixpoint
+    ///   ([`Self::suspended_fixpoint`]), and the argument at the fixpoint's
+    ///   gate ([`Self::gate`]) is a variable, a constant or a static
+    ///   application; `None` otherwise.
+    /// - provides: the forced reading's read-through test in [`Self::whnf`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop down the application spine, not
+    ///   recursion.
+    /// - measure: the focus's arena position.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `spin(S(x)) then spin(a)` reads at the mode switch as
+    ///   `loop ∷ (spin(x) then spin(a))`, the recursive call held as written;
+    ///   δ-stepped, it reads as the bare fixpoint at `x` and the sides stay
+    ///   apart.
+    /// - witness: `tests::native_formers::a_recursive_call_stuck_at_a_variable_reads_as_its_call_473`
+    #[spec(ensures: |ret| ret.is_none_or(|constant| self.unfoldings.peeked(constant) != Unfoldable::Opaque))]
+    fn shut_recursion(
+        &self,
+        call: ComputationId,
+    ) -> Option<ConstantIndex>
+    {
+        let mut head = call;
+        while let Some(&Computation::Application(function, _)) = self.arena.computation(head) {
+            head = function;
+        }
+        let Some(&Computation::Force(forced)) = self.arena.computation(head)
+        else {
+            return None;
+        };
+        let Some(&Value::Constant(constant)) = self.arena.value(forced)
+        else {
+            return None;
+        };
+        let (_, evidence) = self.suspended_fixpoint(constant)?;
+        match self.arena.value(self.gate(call, evidence)?) {
+            Some(&(Value::Variable(_) | Value::Constant(_) | Value::StaticApplication(..))) => {
+                Some(constant)
+            },
+            Some(_) | None => None,
+        }
+    }
+
+    /// The step the evaluator's run of a held operand takes at the weak head
+    /// `read` it stopped at, reading as `reading` names.
+    ///
+    /// The evaluator's append runs a held operand — a call such as `spin(Z)`,
+    /// held as an endpoint — before it reads the operand's word, unfolding
+    /// what the run meets, and records no decision for it: the dialogue under
+    /// a stuck transport names no unfolding. An endpoint a call's run returns
+    /// is evaluated, its computation run and every call there held: the
+    /// level-two whisker's `⟨tr(…, here(…))⟩` runs on to `here(…)`. A run
+    /// that reaches a transport the evaluator holds as a value returns it
+    /// held, as the evaluator's `step_path_transport` returns it. An
+    /// endpoint the run of a bind or a transport returns is read by
+    /// [`Self::resumed`], the evaluator's one rule for it. A run that sticks
+    /// at a head no definition unfolds, or at a call an endpoint holds,
+    /// leaves the operand as it was, and the transport stands on its held
+    /// path: `H(b) then ⟨ap(G, here(b))⟩` on `ap`, and `assoc(f, g, h) then
+    /// ⟨whiskerRight(…)⟩` on `whiskerRight`, which the dialogue unfolds next.
+    /// [`Self::reduce`] runs the operand by its search-free steps and takes
+    /// the step this names at each weak head the run reaches.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Returns(v)` when `read` is `return v` and `v` is no returned
+    ///   endpoint; `Reads(c, Returned)` when `read` is `return ⟨c⟩` and
+    ///   `reading` is no operand; the step [`Self::resumed`] reads at `c` when
+    ///   `read` is `return ⟨c⟩` and `reading` is an operand; `Holds(read)` when
+    ///   `reading` is a call or an operand and `read` is a
+    ///   [`crate::element_identity::held_transport`]; `Unfolds(k)` when
+    ///   `reading` is a call or an operand, the definition `k` heads `read`,
+    ///   and a constructor opens its gate if `k` is a recursive definition;
+    ///   `Sticks` otherwise.
+    /// - provides: the replay's reading of the evaluator's held-operand run.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `spin(Z) then spin(a)` replays as `spin(a)`; left
+    ///   held, the call sticks the bind that runs it and the replay refuses
+    ///   what the checker accepted. A call whose run sticks past a definition
+    ///   stays as it was under a held path; run into its body, the operand
+    ///   leaves nothing for the unfolding the checker records. An endpoint a
+    ///   call's run returns, left unread, keeps the operand held where the
+    ///   checker's run reached reflexivity; its calls unfolded, the operand
+    ///   runs past what the checker held. A held transport read as stuck keeps
+    ///   the operand as it was, and the replay refuses what the checker
+    ///   accepted.
+    /// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
+    /// - witness: `replay::tests::a_held_path_runs_over_its_operand_as_it_was_3734`
+    /// - witness: `replay::tests::a_held_run_reads_on_into_an_endpoint_it_returns_4228`
+    /// - witness: `replay::tests::an_operand_s_run_runs_the_call_it_returns_4412`
+    /// - witness: `replay::tests::a_bind_over_a_link_on_a_named_univalence_runs_it_6321`
+    #[spec(ensures: |ret| match ret {
+        RunStep::Returns(read) => self.arena.value(read).is_some(),
+        RunStep::Holds(held) => held == read,
+        RunStep::Reads(read, next) => self.arena.computation(read).is_some() && next != HeldReading::Operand,
+        RunStep::RunsPath(transport, call, _) => self.arena.computation(transport).is_some() && self.held_reading(call) == HeldReading::Call,
+        RunStep::Unfolds(_) | RunStep::Sticks => true,
+    })]
+    fn run_step(
+        &self,
+        read: ComputationId,
+        reading: HeldReading,
+    ) -> RunStep
+    {
+        if let Some(&Computation::Return(returned)) = self.arena.computation(read) {
+            if let Some(&Value::Returned(computation)) = self.arena.value(returned) {
+                return match reading {
+                    HeldReading::Operand => self.resumed(computation),
+                    HeldReading::Call | HeldReading::Returned => {
+                        RunStep::Reads(computation, HeldReading::Returned)
+                    },
+                };
+            }
+            return RunStep::Returns(returned);
+        }
+        if reading == HeldReading::Returned {
+            return RunStep::Sticks;
+        }
+        // A transport the evaluator holds is a value, and the run ends there.
+        if bool::from(crate::element_identity::held_transport(self.arena, read)) {
+            return RunStep::Holds(read);
+        }
+        let Ok(Shape::Neutral(Head::Constant(constant, Status::Defined), _)) = self.shape(
+            Term::Computation(read),
+            &Frozen::default(),
+            ConversionSide::Left,
+        )
+        else {
+            return RunStep::Sticks;
+        };
+        // A recursive definition's run stays held at a gate no constructor
+        // opens, `spin(x)` for a variable `x`: the evaluator's run answers
+        // nothing there and leaves the operand as it is, and so does this.
+        if let Some((_, evidence)) = self.suspended_fixpoint(constant)
+            && !self.gate(read, evidence).is_some_and(|argument| {
+                matches!(self.arena.value(argument), Some(&Value::Constructor { .. }))
+            })
+        {
+            return RunStep::Sticks;
+        }
+        RunStep::Unfolds(constant)
+    }
+
+    /// The step the evaluator's run takes at the endpoint `⟨c⟩` the run of a
+    /// bind or a transport returns, `c` being `endpoint`.
+    ///
+    /// The evaluator's run stance resumes a returned endpoint by one rule
+    /// (`eval::resume_returned`), and this reads it on the kernel's terms.
+    /// A definition heading `c` unfolds, so a call runs on as a call: the
+    /// evaluator evaluates the operand to that held call, and its append
+    /// runs it. A transport stuck on a held call of a definition runs that
+    /// call (`runs_on`) when the append does not read its family, which is
+    /// any but `y. Path[.A = C](a, y)`: `back(assoc(…))` reads on to `here(…)`.
+    /// Anywhere else the evaluator delivers what `c` returns, and a run that
+    /// returns nothing leaves a held endpoint (`read_from`,
+    /// `held_endpoint`). A transport along a reflexivity at a point no
+    /// endpoint holds returns, and so does a transport along a held path
+    /// whose run is such a transport. A reflexivity at `⟨c′⟩` holds `c′`'s
+    /// run, and so does the evaluator.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Reads(c, Call)` when `c` is a call; `RunsPath(c, h, k)` when
+    ///   `c` is a path transport along `⟨h⟩` in a family
+    ///   [`crate::words::singleton`] does not read, `h` a call the definition
+    ///   `k` heads; `Reads(c, Returned)` when `c` is a path transport along
+    ///   `here(p)` with `p` no `Value::Returned`, or along `⟨t⟩` with `t` a
+    ///   transport this reads so; `Sticks` otherwise.
+    /// - provides: [`Self::run_step`]'s reading of an endpoint an operand's run
+    ///   returns.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — read on as a returned endpoint is, by the kernel's
+    ///   steps alone, `coneSuspended3` closes at reflexivities before the
+    ///   unfolding the checker records, and the near-miss witnesses below read
+    ///   on where the evaluator holds. A call left held keeps the middle call
+    ///   of `(p₁ then p₂) then p₃` that the checker's append runs, and the
+    ///   replay refuses `ComparedShared`. A transport left held on its path's
+    ///   call keeps `back(assoc(…))` where the checker's run reached
+    ///   reflexivity. A transport along a reflexivity, left held, keeps the
+    ///   whisker of `cylinderCompositeAtHere` where the checker's run moved it,
+    ///   and the whisker along `cylinderStackAtHere`'s reversed square too.
+    /// - witness: `replay::tests::an_operand_s_run_runs_the_call_it_returns_4412`
+    /// - witness: `replay::tests::a_returned_transport_runs_its_held_path_s_call_4413`
+    /// - witness: `replay::tests::a_returned_transport_along_a_reflexivity_reads_on_4419`
+    /// - witness: `replay::tests::a_returned_transport_along_a_held_reflexivity_reads_on_4435`
+    /// - witness: `replay::tests::a_held_run_reads_on_into_an_endpoint_it_returns_4228`
+    #[spec(ensures: |ret| match ret {
+        RunStep::Reads(read, next) => read == endpoint && next != HeldReading::Operand,
+        RunStep::RunsPath(transport, call, _) => transport == endpoint && self.held_reading(call) == HeldReading::Call,
+        RunStep::Returns(_) | RunStep::Holds(_) | RunStep::Unfolds(_) => false,
+        RunStep::Sticks => true,
+    })]
+    fn resumed(
+        &self,
+        endpoint: ComputationId,
+    ) -> RunStep
+    {
+        if self.held_reading(endpoint) == HeldReading::Call {
+            return RunStep::Reads(endpoint, HeldReading::Call);
+        }
+        // The walk descends one held path per step through an acyclic arena,
+        // so it ends at the first path no endpoint holds.
+        let mut transport = endpoint;
+        loop {
+            let Some(&Computation::PathTransport { motive, path, .. }) =
+                self.arena.computation(transport)
+            else {
+                return RunStep::Sticks;
+            };
+            match self.arena.value(path) {
+                Some(&Value::Here { point, .. }) => {
+                    return match self.arena.value(point) {
+                        Some(&Value::Returned(_)) | None => RunStep::Sticks,
+                        Some(_) => RunStep::Reads(endpoint, HeldReading::Returned),
+                    };
+                },
+                Some(&Value::Returned(call))
+                    if transport == endpoint
+                        && crate::words::singleton(self.arena, motive).is_none()
+                        && self.held_reading(call) == HeldReading::Call =>
+                {
+                    let Ok(Shape::Neutral(Head::Constant(constant, Status::Defined), _)) = self
+                        .shape(
+                            Term::Computation(call),
+                            &Frozen::default(),
+                            ConversionSide::Left,
+                        )
+                    else {
+                        return RunStep::Sticks;
+                    };
+                    return RunStep::RunsPath(endpoint, call, constant);
+                },
+                Some(&Value::Returned(along)) => transport = along,
+                Some(_) | None => return RunStep::Sticks,
+            }
+        }
+    }
+
+    /// How a held operand's run first reads `operand`: as a call when a
+    /// definition forced and applied is all it is, as an operand otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Call` exactly when `operand` is `force k` applied to zero or
+    ///   more arguments for a constant `k`; `Operand` otherwise, a bind or a
+    ///   transport among them. Never `Returned`.
+    /// - provides: the reading [`Self::run_step`] starts a held run at.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the whisker `⟨force w⟩` reads as a call and its run
+    ///   reads on to reflexivity; read as an operand, it stays held and the
+    ///   replay refuses what the checker accepted. The bind `⟨y ← force w;
+    ///   return y⟩` reads as an operand; read as a call, the run reads on past
+    ///   the transport the checker's dialogue holds.
+    /// - witness: `replay::tests::a_held_run_reads_on_into_an_endpoint_it_returns_4228`
+    #[spec(ensures: |ret| ret != HeldReading::Returned)]
+    fn held_reading(
+        &self,
+        operand: ComputationId,
+    ) -> HeldReading
+    {
+        // The walk descends one application per step through an acyclic
+        // arena, so it ends at the operand's head.
+        let mut head = operand;
+        while let Some(&Computation::Application(function, _)) = self.arena.computation(head) {
+            head = function;
+        }
+        match self.arena.computation(head) {
+            Some(&Computation::Force(forced))
+                if matches!(self.arena.value(forced), Some(&Value::Constant(_))) =>
+            {
+                HeldReading::Call
+            },
+            Some(_) | None => HeldReading::Operand,
+        }
+    }
+
+    /// One transport step along a word where
+    /// [`crate::element_identity::transport_beta`] sticks and the append holds
+    /// no operand to run: a held path read by the append rows, then
+    /// [`crate::words::transport_word`].
+    ///
+    /// The evaluator holds an endpoint's call at the first definition it is
+    /// stuck on, and a held path never runs: its append reads the operand's
+    /// word, `tr(P, ⟨spin(a)⟩, loop ∷ p) ⇝ loop ∷ ⟨tr(P, ⟨spin(a)⟩, p)⟩`. A
+    /// returned path whose computation a definition heads is that held path,
+    /// so it takes [`crate::words::appended`]'s rows before
+    /// [`crate::words::transport_word`] would run it first; any other
+    /// returned path runs first, as the evaluator runs every value it does
+    /// not hold. A held operand runs before either, in [`Self::reduce`].
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`crate::words::appended`]'s reduct when the path is `⟨c⟩`
+    ///   with `c` stuck at a defined head and the append rows read the operand;
+    ///   [`crate::words::transport_word`]'s answer otherwise.
+    /// - provides: the replay's reading of transport along a word.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `spin(S(x)) then spin(a)` replays as `loop ∷ (spin(x)
+    ///   then spin(a))`, as the checker reads it; run first, the held `spin(a)`
+    ///   sticks the bind and the replay refuses what the checker accepted.
+    /// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
+    #[spec(ensures: |ret| match ret {
+        crate::path_universe::Reduction::Reduced(reduct) => self.arena.computation(reduct).is_some(),
+        crate::path_universe::Reduction::Stuck => true,
+    })]
+    fn transport_along_word(
+        &mut self,
+        term: crate::element_identity::ElementTransport,
+    ) -> crate::path_universe::Reduction
+    {
+        if let Some(&Value::Returned(along)) = self.arena.value(term.path)
+            && let Ok(Shape::Neutral(Head::Constant(_, Status::Defined), _)) = self.shape(
+                Term::Computation(along),
+                &Frozen::default(),
+                ConversionSide::Left,
+            )
+            && let crate::path_universe::Reduction::Reduced(reduct) =
+                crate::words::appended(self.arena, self.evaluator, term)
+        {
+            return crate::path_universe::Reduction::Reduced(reduct);
+        }
+        crate::words::transport_word(
+            self.arena,
+            &mut self.table,
+            &mut self.memo,
+            self.evaluator,
+            term,
+        )
+    }
+
+    /// `computation` under `frame`.
+    ///
+    /// # Specification
+    /// - requires: the computation and the frame children live in the arena.
+    /// - ensures: an application keeps the computation as its head and the
+    ///   frame argument; a bind keeps it as the bound term and the frame body;
+    ///   a projection keeps it as the projected pairing and the frame side.
+    /// - provides: reconstruction of the unreduced outer elimination path.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a beta-reduced head under an application, a bind or a
+    ///   projection remains convertible to the explicitly retained frame;
+    ///   dropping or exchanging the frame changes that verdict.
+    /// - witness: `replay::tests::reduced_heads_retain_application_and_bind_frames`
+    /// - witness: `replay::tests::a_projection_runs_its_side_of_a_pairing`
+    #[spec(ensures: |ret| self.arena.computation(ret) == Some(&match frame {
+        Frame::Apply(argument) => Computation::Application(computation, argument),
+        Frame::Bind(body) => Computation::Bind(computation, body),
+        Frame::BindAll(arity, body) => Computation::BindAll { bound: computation, arity, body },
+        Frame::Project(component) => Computation::Project(component, computation),
+    }))]
+    fn wrap(
+        &mut self,
+        computation: ComputationId,
+        frame: Frame,
+    ) -> ComputationId
+    {
+        match frame {
+            Frame::Apply(argument) => self.arena.computation_application(computation, argument),
+            Frame::Bind(body) => self.arena.computation_bind(computation, body),
+            Frame::BindAll(arity, body) => {
+                self.arena.computation_bind_all(computation, arity, body)
+            },
+            Frame::Project(component) => self.arena.computation_project(component, computation),
+        }
+    }
+
+    /// Close a goal owing `owed` at `verdict`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Ok` exactly when the two agree.
+    /// - provides: every leaf's check against its owed verdict.
+    /// - fails: [`ReplayRefusal::Contradicted`] when they differ.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: the same equal and rigidly separated pairs are
+    ///   replayed under both claims, distinguishing acceptance from a
+    ///   contradiction at the consumed decision.
+    /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+    #[spec(ensures: |ret| ret == if owed == verdict {
+        Ok(())
+    } else {
+        Err(Stop::Refused(ReplayRefusal::Contradicted { at: self.at() }))
+    })]
+    fn close(
+        &self,
+        owed: Expect,
+        verdict: Expect,
+    ) -> Result<(), Stop>
+    {
+        if owed == verdict {
+            return Ok(());
+        }
+        Err(Stop::Refused(ReplayRefusal::Contradicted { at: self.at() }))
+    }
+
+    /// Charge one step.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: an available step is charged exactly once; an exhausted
+    ///   budget is refused without changing the successful-step count.
+    /// - provides: the replay's single bound.
+    /// - fails: [`Stop::Budget`] when no step remains, including at the counter
+    ///   ceiling.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Budget`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: zero, one, and maximum budgets distinguish the last
+    ///   admitted step from every subsequent refusal; this bounds the counter
+    ///   transition, not the work within a replay step.
+    /// - witness: `replay::tests::budget_exhaustion_survives_the_counter_ceiling`
+    #[spec(
+        captures: before = self.spent,
+        ensures: |ret| if before < self.budget {
+            ret == Ok(()) && self.spent == before.saturating_add(1)
+        } else {
+            ret == Err(Stop::Budget) && self.spent == before
+        },
+    )]
+    fn charge(&mut self) -> Result<(), Stop>
+    {
+        if self.spent >= self.budget {
+            return Err(Stop::Budget);
+        }
+        self.spent = self.spent.saturating_add(1);
+        Ok(())
+    }
+
+    /// The next decision, unread.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the next decision is observed without advancing its position.
+    /// - provides: lookahead shared by dispatch and refusal attribution.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: repeated lookahead preserves both a pending decision
+    ///   and the trace end; the reported position cannot wrap.
+    /// - witness: `replay::tests::trace_consumption_preserves_the_end_and_position_ceiling`
+    #[spec(
+        captures: before = self.position,
+        ensures: |ret| self.position == before && match ret {
+            Next::End => self.trace.size_hint() == (0, Some(0)),
+            Next::Decision(_) => self.trace.size_hint().0 > 0,
+        },
+    )]
+    fn peek(&mut self) -> Next
+    {
+        match self.trace.peek() {
+            Some(&decision) => Next::Decision(decision),
+            None => Next::End,
+        }
+    }
+
+    /// Read past the next decision.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a present decision advances the position with saturation; an
+    ///   exhausted trace leaves the position unchanged.
+    /// - provides: the consumed-prefix index carried by refusals.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: consuming the last decision and then the end separates
+    ///   advancement from exhaustion, including at the position ceiling.
+    /// - witness: `replay::tests::trace_consumption_preserves_the_end_and_position_ceiling`
+    #[spec(
+        captures: before = self.position,
+        ensures: self.position >= before && self.position <= before.saturating_add(1),
+    )]
+    fn take(&mut self)
+    {
+        if self.trace.next().is_some() {
+            self.position = self.position.saturating_add(1);
+        }
+    }
+
+    /// The position of the next unread decision.
+    ///
+    /// # Specification
+    /// trivial.
+    fn at(&self) -> TracePosition
+    {
+        TracePosition::from(self.position)
+    }
+
+    /// The refusal for `next` read where it does not apply.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: an available decision is inapplicable at this position; an
+    ///   absent decision is exhausted rather than attributed to a slot.
+    /// - provides: the distinction between a wrong decision and a missing one.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a missing eta decision and a wrong-side eta decision
+    ///   produce different refusals after the same force prefix.
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    #[spec(ensures: |ret| match (next, ret) {
+        (Next::Decision(_), Stop::Refused(ReplayRefusal::Inapplicable { at })) => usize::from(at) == self.position,
+        (Next::End, Stop::Refused(ReplayRefusal::Exhausted)) => true,
+        _ => false,
+    })]
+    fn refuse(
+        &self,
+        next: Next,
+    ) -> Stop
+    {
+        match next {
+            Next::Decision(_) => Stop::Refused(ReplayRefusal::Inapplicable { at: self.at() }),
+            Next::End => Stop::Refused(ReplayRefusal::Exhausted),
+        }
+    }
+}
+
+/// The rule two shapes select.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Rule::Constants`] when either head is a defined constant; else
+///   [`Rule::Force`] for a thunk against a thunk or a neutral; [`Rule::Eta`]
+///   for a lambda against a neutral; [`Rule::ProductEta`] for a lazy pairing
+///   against a neutral; else [`Rule::Structural`].
+/// - provides: the rule table's dispatch, in the engine's order.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3: the finite product of former, thunk, lambda, lazy pairing,
+///   return, and variable or constant head statuses observes constant priority,
+///   force priority, both eta sides, and structural fallback independently of
+///   term depth.
+/// - witness: `replay::tests::rule_dispatch_respects_constant_priority_and_eta_side`
+#[spec(ensures: |ret| {
+    let defined = [left, right].iter().any(|shape| matches!(shape, &&Shape::Neutral(Head::Constant(_, Status::Defined), _)));
+    let force = matches!((left, right), (&Shape::Thunk(_), &(Shape::Thunk(_) | Shape::Neutral(..))) | (&Shape::Neutral(..), &Shape::Thunk(_)));
+    let eta_left = matches!((left, right), (&Shape::Neutral(..), &Shape::Lambda(_)));
+    let eta_right = matches!((left, right), (&Shape::Lambda(_), &Shape::Neutral(..)));
+    let pairing_left = matches!((left, right), (&Shape::Neutral(..), &Shape::With(..)));
+    let pairing_right = matches!((left, right), (&Shape::With(..), &Shape::Neutral(..)));
+    match ret {
+        Rule::Constants => defined,
+        Rule::Force => !defined && force,
+        Rule::Eta(ConversionSide::Left) => !defined && !force && eta_left,
+        Rule::Eta(ConversionSide::Right) => !defined && !force && eta_right,
+        Rule::ProductEta(ConversionSide::Left) => !defined && pairing_left,
+        Rule::ProductEta(ConversionSide::Right) => !defined && pairing_right,
+        Rule::Structural => !defined && !force && !eta_left && !eta_right && !pairing_left && !pairing_right,
+    }
+})]
+fn rule(
+    left: &Shape,
+    right: &Shape,
+) -> Rule
+{
+    let defined = |shape: &Shape| {
+        matches!(
+            shape,
+            &Shape::Neutral(Head::Constant(_, Status::Defined), _)
+        )
+    };
+    if defined(left) || defined(right) {
+        return Rule::Constants;
+    }
+    match (left, right) {
+        (&Shape::Thunk(_), &(Shape::Thunk(_) | Shape::Neutral(..)))
+        | (&Shape::Neutral(..), &Shape::Thunk(_)) => Rule::Force,
+        (&Shape::Lambda(_), &Shape::Neutral(..)) => Rule::Eta(ConversionSide::Right),
+        (&Shape::Neutral(..), &Shape::Lambda(_)) => Rule::Eta(ConversionSide::Left),
+        (&Shape::With(..), &Shape::Neutral(..)) => Rule::ProductEta(ConversionSide::Right),
+        (&Shape::Neutral(..), &Shape::With(..)) => Rule::ProductEta(ConversionSide::Left),
+        (
+            &(Shape::Former
+            | Shape::Thunk(_)
+            | Shape::Lambda(_)
+            | Shape::With(..)
+            | Shape::Fixpoint(..)
+            | Shape::Return(_)
+            | Shape::ReturnAll(_)
+            | Shape::Neutral(..)),
+            _,
+        ) => Rule::Structural,
+    }
+}
+
+/// The commuting conversion of `F` two shapes still owe.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`BindRule::Normal`] unless both shapes are neutral over one head
+///   no δ-rule can unfold; otherwise [`BindRule::Reassociate`] naming the first
+///   side whose spine stacks two binds in a row, the left before the right;
+///   else [`BindRule::ReturnEta`] naming the side whose spine is one
+///   elimination shorter than the other's when the other's ends in a bind; else
+///   [`BindRule::Normal`].
+/// - provides: the order both the engine and the replay normalize a pair's
+///   binds in, so the trace names each rewrite where the replay meets it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3: a stacked pair on either side, a spine one bind short on
+///   either side, and a pair already normal each select a different rule;
+///   reading the right side first or expanding a spine more than one bind short
+///   changes the trace the engine's derivation must name.
+/// - witness: `replay::tests::the_laws_of_bind_replay_by_name`
+/// - witness: `replay::tests::a_bind_rule_rewrites_only_under_one_settled_head`
+#[spec(ensures: |ret| {
+    let stacked = |spine: &[Elimination]| spine.windows(2).any(|pair| matches!(pair, &[Elimination::Bind(_), Elimination::Bind(_)]));
+    let ends = |spine: &[Elimination]| matches!(spine.last(), Some(&Elimination::Bind(_)));
+    match (left, right) {
+        (&Shape::Neutral(one, ref left_spine), &Shape::Neutral(other, ref right_spine))
+            if one == other && !matches!(one, Head::Constant(_, Status::Defined)) =>
+            ret == if stacked(left_spine) {
+                BindRule::Reassociate(ConversionSide::Left)
+            } else if stacked(right_spine) {
+                BindRule::Reassociate(ConversionSide::Right)
+            } else if left_spine.len().checked_add(1) == Some(right_spine.len()) && ends(right_spine) {
+                BindRule::ReturnEta(ConversionSide::Left)
+            } else if right_spine.len().checked_add(1) == Some(left_spine.len()) && ends(left_spine) {
+                BindRule::ReturnEta(ConversionSide::Right)
+            } else {
+                BindRule::Normal
+            },
+        _ => ret == BindRule::Normal,
+    }
+})]
+fn bind_rule(
+    left: &Shape,
+    right: &Shape,
+) -> BindRule
+{
+    let (&Shape::Neutral(one, ref left_spine), &Shape::Neutral(other, ref right_spine)) =
+        (left, right)
+    else {
+        return BindRule::Normal;
+    };
+    if one != other || matches!(one, Head::Constant(_, Status::Defined)) {
+        return BindRule::Normal;
+    }
+    let stacked = |spine: &[Elimination]| {
+        spine
+            .windows(2)
+            .any(|pair| matches!(pair, &[Elimination::Bind(_), Elimination::Bind(_)]))
+    };
+    let ends = |spine: &[Elimination]| matches!(spine.last(), Some(&Elimination::Bind(_)));
+    if stacked(left_spine) {
+        return BindRule::Reassociate(ConversionSide::Left);
+    }
+    if stacked(right_spine) {
+        return BindRule::Reassociate(ConversionSide::Right);
+    }
+    if left_spine.len().checked_add(1) == Some(right_spine.len()) && ends(right_spine) {
+        return BindRule::ReturnEta(ConversionSide::Left);
+    }
+    if right_spine.len().checked_add(1) == Some(left_spine.len()) && ends(left_spine) {
+        return BindRule::ReturnEta(ConversionSide::Right);
+    }
+    BindRule::Normal
+}
+
+/// The continuation a call bound last into stands under, when `shape` is one:
+/// a variable forced, applied and projected, then bound.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some(continuation)` exactly when `shape` is a neutral headed by
+///   a variable whose spine's last elimination is a bind into `continuation`
+///   and whose other eliminations force, apply or project; `None` otherwise.
+///   Whether the continuation reads its binder is the caller's question.
+/// - provides: the shape half of the discard.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Replay::discard`].
+/// - witness: `replay::tests::an_unread_call_replays_as_its_continuation`
+#[spec(ensures: |ret| ret.is_none() || matches!(*shape, Shape::Neutral(Head::Variable(_), ref spine)
+    if matches!(spine.last(), Some(&Elimination::Bind(continuation)) if ret == Some(continuation))))]
+fn unread_call(shape: &Shape) -> Option<ComputationId>
+{
+    let Shape::Neutral(Head::Variable(_), ref spine) = *shape
+    else {
+        return None;
+    };
+    let (&Elimination::Bind(continuation), prefix) = spine.split_last()?
+    else {
+        return None;
+    };
+    prefix
+        .iter()
+        .all(|elimination| {
+            matches!(
+                *elimination,
+                Elimination::Force | Elimination::Apply(_) | Elimination::Project(_)
+            )
+        })
+        .then_some(continuation)
+}
+
+/// The continuation a computation that returns is bound last into, when
+/// `shape` is one: a call as [`unread_call`] reads it, or one transport along
+/// a path variable, which returns the value it moves (#4011).
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some(continuation)` exactly when [`unread_call`] answers it, or
+///   when `shape` is a neutral headed by a variable whose spine is one path
+///   transport and then a bind into `continuation`; `None` otherwise. Whether
+///   the continuation reads its binder is the caller's question.
+/// - provides: the shape half of the hold.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Replay::hold`].
+/// - witness: `replay::tests::a_held_transport_replays_as_its_continuation_at_its_endpoint_4011`
+#[spec(ensures: |ret| ret.is_none() || matches!(*shape, Shape::Neutral(Head::Variable(_), ref spine)
+    if matches!(spine.last(), Some(&Elimination::Bind(continuation)) if ret == Some(continuation))))]
+fn held_bind(shape: &Shape) -> Option<ComputationId>
+{
+    if let Some(continuation) = unread_call(shape) {
+        return Some(continuation);
+    }
+    let Shape::Neutral(Head::Variable(_), ref spine) = *shape
+    else {
+        return None;
+    };
+    match *spine.as_slice() {
+        [
+            Elimination::PathTransport(_),
+            Elimination::Bind(continuation),
+        ] => Some(continuation),
+        _ => None,
+    }
+}
+
+/// The variable whose call `body` passes the value it binds on to: under its
+/// applications, a force of a variable other than its binder.
+///
+/// The forced reading holds a bind only over such a continuation. Held, a
+/// continuation that eliminates its binder at its head meets the returned
+/// endpoint as its operand, and [`Replay::whnf`] runs that operand first, back
+/// into the bind it was: `tr(P, w, ⟨c⟩)` reads as `c to y. tr(P↑, w↑, y)`. A
+/// recorded `Hold` consumes its decision, so it cannot cycle so.
+///
+/// # Specification
+/// - requires: nothing; a body the arena does not hold passes nothing on.
+/// - ensures: `Some(function)` exactly when `body`, under its applications, is
+///   a force of `function`, a variable whose index is not 0; `None` otherwise.
+/// - provides: the forced reading's condition on the hold.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the answer walks the arena's applications, which a
+///   predicate could only walk again; the witnesses hold it to stated terms.
+///
+/// # Termination
+/// - reason: the `while let` walks the body's applications to their head, not
+///   recursion.
+/// - measure: the applications left above the head.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the forced reading holds a call passed on to another
+///   variable's call, and reads a transport held over its endpoint as the bind
+///   `whnf` makes of it, where holding it cycles until the budget.
+/// - witness: `replay::tests::a_held_call_replays_as_its_continuation_at_its_endpoint`
+/// - witness: `replay::tests::a_held_transport_replays_as_its_continuation_at_its_endpoint_4011`
+fn passed_to(
+    arena: &TermArena,
+    body: ComputationId,
+) -> Option<ValueId>
+{
+    let mut head = body;
+    while let Some(&Computation::Application(function, _)) = arena.computation(head) {
+        head = function;
+    }
+    let &Computation::Force(function) = arena.computation(head)?
+    else {
+        return None;
+    };
+    let binder = DeBruijnIndex::from(0_u32);
+    matches!(arena.value(function), Some(&Value::Variable(index)) if index != binder)
+        .then_some(function)
+}
+
+/// The premises two spines decompose into, innermost elimination first.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a refuting leaf when the spines differ in length or in any
+///   elimination's kind, or two stuck fixpoints in the number of leading
+///   arguments they hold; else an application's or a static application's
+///   arguments, a bind's continuations, a sum case's two branches and a
+///   dependent split's bodies, in spine order. A native data case first
+///   compares its quoted motive, then its ordinary branch functions; a ride or
+///   a path transport compares its quoted motive, then its value; a telescope
+///   transport compares its quoted motive, then its start, its path over and
+///   its value; a stuck fixpoint compares its fixpoint, then its leading
+///   arguments in order; a force, a matching record projection or a projection
+///   of one lazy-product side contributes none. Each quoted motive is a
+///   [`Premise::motives`], read at a defined head by unfolding.
+/// - provides: the decomposition of two neutrals over one head.
+/// - fails: unreadable native metadata when a retained source is missing or
+///   malformed.
+/// - panics: none.
+///
+/// # Errors
+/// Returns an unreadable replay refusal for missing or ill-shaped native
+/// sources.
+///
+/// # Cost
+/// - allocation: the premises that pair the two spines' motives and branches,
+///   growth within the spines' eliminations and their branches
+///
+/// # Adequacy
+/// - hypothesis: L3: case branches followed by an application distinguish
+///   subgoal order; two rides along one flow refute at their values' subgoal,
+///   not their motives'; two path transports along one path whose motives close
+///   over different environments convert by their premises; unequal spine
+///   lengths and application-versus-bind kinds refute without a decision; empty
+///   spines close positively. The fixtures do not enumerate all mixed spines.
+/// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
+/// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
+/// - witness: `path_universe::tests::refl_collapses`
+/// - witness: `replay::tests::a_lazy_pairing_meets_a_neutral_by_its_projections`
+/// - witness: `replay::tests::a_ride_unfolds_its_flow_where_the_dialogue_names_it`
+/// - witness: `replay::tests::two_stuck_path_transports_compare_by_motive_and_value`
+/// - witness: `replay::tests::two_stuck_telescope_transports_compare_by_motive_start_over_and_value`
+/// - witness: `replay::tests::the_forced_loop_compares_children_only_where_the_shapes_agree`
+/// - witness: `replay::tests::a_stuck_fixpoint_compares_its_leading_arguments_626`
+#[spec(ensures: |ret| {
+    let compatible = left.len() == right.len() && left.iter().zip(right).all(|(one, other)| match (*one,*other) {
+        (Elimination::RecordProjection(a),Elimination::RecordProjection(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::RecordProjection(_,a)),Some(Computation::RecordProjection(_,b))) if a == b),
+        (Elimination::TupleProjection(a),Elimination::TupleProjection(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::TupleProjection(_,a)),Some(Computation::TupleProjection(_,b))) if a == b),
+        (Elimination::DataCase(a),Elimination::DataCase(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::DataCase{branches:a,..}),Some(Computation::DataCase{branches:b,..})) if a.len() == b.len()),
+        (Elimination::Case(a),Elimination::Case(b)) => {
+            let width = |case: ComputationId| match *arena.computation(case)? { Computation::Case { ref branches, .. } => Some(branches.len()), Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Application(..) | Computation::Return(_) | Computation::ReturnAll(_) | Computation::Bind(..) | Computation::BindAll { .. } | Computation::Force(_) | Computation::SigmaSplit { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Ride { .. } | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::With(..) | Computation::Project(..) | Computation::Fixpoint { .. } => None };
+            width(a).is_some() && width(a) == width(b)
+        },
+        (Elimination::Project(a), Elimination::Project(b)) => a == b,
+        (Elimination::BindAll(a, _), Elimination::BindAll(b, _)) => a == b,
+        (Elimination::Fixpoint(a), Elimination::Fixpoint(b)) => matches!((fixpoint_chain(arena, a), fixpoint_chain(arena, b)), (Some((_, ref ones)), Some((_, ref others))) if ones.len() == others.len()),
+        _ => core::mem::discriminant(one) == core::mem::discriminant(other),
+    });
+    match ret {
+Err(Stop::Refused(ReplayRefusal::Unreadable)) => true,
+Err(_) => false,
+Ok(Structure::Leaf(Expect::NotConvertible)) => !compatible,
+Ok(Structure::Leaf(Expect::Convertible)) => compatible && left.iter().all(|one| matches!(*one, Elimination::Force | Elimination::RecordProjection(_) | Elimination::TupleProjection(_) | Elimination::Project(_)) || matches!(*one, Elimination::Case(case) if arena.computation(case).is_some_and(|node| matches!(*node, Computation::Case { ref branches, .. } if branches.is_empty())))),
+Ok(Structure::Premises(ref premises)) => compatible && !premises.is_empty() && {
+            let mut pending = premises.iter();
+            let ordered = left.iter().zip(right).all(|(one, other)| match (*one, *other) {
+                (Elimination::Force, Elimination::Force) | (Elimination::RecordProjection(_),Elimination::RecordProjection(_)) | (Elimination::TupleProjection(_),Elimination::TupleProjection(_)) | (Elimination::Project(_), Elimination::Project(_)) => true,
+                (Elimination::Case(a),Elimination::Case(b)) => {
+if let Some(left_node) = arena.computation(a) && let Computation::Case{branches:ref a,..} = *left_node && let Some(right_node) = arena.computation(b) && let Computation::Case{branches:ref b,..} = *right_node { a.iter().zip(b.iter()).all(|(a,b)| pending.next() == Some(&Premise::computations(*a,*b))) }
+ else { false }
+},
+                (Elimination::DataCase(a),Elimination::DataCase(b)) => { let (matched_left_value, matched_right_value) = (arena.computation(a),arena.computation(b));
+if let Some(matched_left_node) = matched_left_value && let Computation::DataCase{motive:ref a_motive,branches:ref a,..} = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Computation::DataCase{motive:ref b_motive,branches:ref b,..} = *matched_right_node { pending.next().is_some_and(|premise| matches!((premise.left,premise.right),(Term::Value(left),Term::Value(right)) if arena.value(left) == Some(&Value::QuoteComputation(*a_motive)) && arena.value(right) == Some(&Value::QuoteComputation(*b_motive)))) && a.iter().zip(b).all(|(a,b)| pending.next() == Some(&Premise::computations(*a,*b))) }
+ else { false }
+},
+                (Elimination::Ride(a), Elimination::Ride(b)) => if let (Some(&Computation::Ride { motive: a_motive, value: a_value, .. }), Some(&Computation::Ride { motive: b_motive, value: b_value, .. })) = (arena.computation(a), arena.computation(b)) {
+                    pending.next().is_some_and(|premise| matches!((premise.left, premise.right), (Term::Value(left), Term::Value(right)) if arena.value(left) == Some(&Value::Quote(a_motive)) && arena.value(right) == Some(&Value::Quote(b_motive))))
+                        && pending.next() == Some(&Premise::values(a_value, b_value))
+                } else { false },
+                (Elimination::PathTransport(a), Elimination::PathTransport(b)) => if let (Some(&Computation::PathTransport { motive: a_motive, value: a_value, .. }), Some(&Computation::PathTransport { motive: b_motive, value: b_value, .. })) = (arena.computation(a), arena.computation(b)) {
+                    pending.next().is_some_and(|premise| matches!((premise.left, premise.right), (Term::Value(left), Term::Value(right)) if arena.value(left) == Some(&Value::Quote(a_motive)) && arena.value(right) == Some(&Value::Quote(b_motive))))
+                        && pending.next() == Some(&Premise::values(a_value, b_value))
+                } else { false },
+                (Elimination::TelescopeTransport(a), Elimination::TelescopeTransport(b)) => if let (Some(&Computation::TelescopeTransport { motive: a_motive, start: a_start, over: a_over, value: a_value, .. }), Some(&Computation::TelescopeTransport { motive: b_motive, start: b_start, over: b_over, value: b_value, .. })) = (arena.computation(a), arena.computation(b)) {
+                    pending.next().is_some_and(|premise| matches!((premise.left, premise.right), (Term::Value(left), Term::Value(right)) if arena.value(left) == Some(&Value::QuoteComputation(a_motive)) && arena.value(right) == Some(&Value::QuoteComputation(b_motive))))
+                        && pending.next() == Some(&Premise::values(a_start, b_start))
+                        && pending.next() == Some(&Premise::values(a_over, b_over))
+                        && pending.next() == Some(&Premise::values(a_value, b_value))
+                } else { false },
+                (Elimination::Transport(one), Elimination::Transport(other)) | (Elimination::ProductTransport(one), Elimination::ProductTransport(other)) | (Elimination::Apply(one), Elimination::Apply(other)) | (Elimination::StaticApply(one), Elimination::StaticApply(other)) => pending.next() == Some(&Premise::values(one, other)),
+                (Elimination::Bind(one), Elimination::Bind(other)) | (Elimination::BindAll(_, one), Elimination::BindAll(_, other)) => pending.next() == Some(&Premise::computations(one, other)),
+                (Elimination::Fixpoint(one), Elimination::Fixpoint(other)) => matches!((fixpoint_chain(arena, one), fixpoint_chain(arena, other)), (Some((one, ref ones)), Some((other, ref others)))
+                    if pending.next() == Some(&Premise::computations(one, other)) && ones.iter().zip(others).all(|(&a, &b)| pending.next() == Some(&Premise::values(a, b)))),
+                (Elimination::SigmaSplit(a), Elimination::SigmaSplit(b)) => matches!((arena.computation(a), arena.computation(b)), (Some(&Computation::SigmaSplit { body: one, .. }), Some(&Computation::SigmaSplit { body: other, .. })) if pending.next() == Some(&Premise::computations(one, other))),
+                (Elimination::ListFold(one_left, one_right), Elimination::ListFold(other_left, other_right))
+                | (Elimination::ListCase(one_left, one_right), Elimination::ListCase(other_left, other_right)) =>
+                    pending.next() == Some(&Premise::computations(one_left, other_left)) && pending.next() == Some(&Premise::computations(one_right, other_right)),
+                _ => false,
+            });
+            ordered && pending.next().is_none()
+        },
+}
+})]
+fn spines(
+    arena: &mut TermArena,
+    left: &[Elimination],
+    right: &[Elimination],
+) -> Result<Structure, Stop>
+{
+    if left.len() != right.len() {
+        return Ok(Structure::Leaf(Expect::NotConvertible));
+    }
+    let mut premises = Vec::new();
+    for (&one, &other) in left.iter().zip(right) {
+        match (one, other) {
+            (Elimination::DataCase(a_case), Elimination::DataCase(b_case)) => {
+                let (Some(left_node), Some(right_node)) =
+                    (arena.computation(a_case), arena.computation(b_case))
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::DataCase {
+                    motive: ref a_motive,
+                    branches: ref a,
+                    ..
+                } = *left_node
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::DataCase {
+                    motive: ref b_motive,
+                    branches: ref b,
+                    ..
+                } = *right_node
+                else {
+                    return Err(unreadable());
+                };
+                if a.len() != b.len() {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+                let (a_motive, b_motive) = (*a_motive, *b_motive);
+                let a_quote = arena.value_quote_computation(a_motive);
+                let b_quote = arena.value_quote_computation(b_motive);
+                premises.push(Premise::motives(a_quote, b_quote));
+                let (Some(left_node), Some(right_node)) =
+                    (arena.computation(a_case), arena.computation(b_case))
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::DataCase {
+                    branches: ref a, ..
+                } = *left_node
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::DataCase {
+                    branches: ref b, ..
+                } = *right_node
+                else {
+                    return Err(unreadable());
+                };
+                premises.extend(a.iter().zip(b).map(|(a, b)| Premise::computations(*a, *b)));
+            },
+            (Elimination::RecordProjection(a), Elimination::RecordProjection(b)) => {
+                let (Some(left_node), Some(right_node)) =
+                    (arena.computation(a), arena.computation(b))
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::RecordProjection(_, ref a) = *left_node
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::RecordProjection(_, ref b) = *right_node
+                else {
+                    return Err(unreadable());
+                };
+                if a != b {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+            },
+            (Elimination::TupleProjection(a), Elimination::TupleProjection(b)) => {
+                let (Some(left_node), Some(right_node)) =
+                    (arena.computation(a), arena.computation(b))
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::TupleProjection(_, a) = *left_node
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::TupleProjection(_, b) = *right_node
+                else {
+                    return Err(unreadable());
+                };
+                if a != b {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+            },
+            // Two sum cases of one arity compare branch by branch; the empty
+            // sum's elimination contributes nothing.
+            (Elimination::Case(a_case), Elimination::Case(b_case)) => {
+                let (Some(left_node), Some(right_node)) =
+                    (arena.computation(a_case), arena.computation(b_case))
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::Case {
+                    branches: ref a, ..
+                } = *left_node
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::Case {
+                    branches: ref b, ..
+                } = *right_node
+                else {
+                    return Err(unreadable());
+                };
+                if a.len() != b.len() {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+                premises.extend(a.iter().zip(b).map(|(a, b)| Premise::computations(*a, *b)));
+            },
+            (Elimination::Force, Elimination::Force) => {},
+            (Elimination::Transport(a), Elimination::Transport(b))
+            | (Elimination::ProductTransport(a), Elimination::ProductTransport(b))
+            | (Elimination::Apply(a), Elimination::Apply(b))
+            | (Elimination::StaticApply(a), Elimination::StaticApply(b)) => {
+                premises.push(Premise::values(a, b));
+            },
+            // Two rides along one neutral flow compare their motives as
+            // codes, as the engine's spines compare them, then their values.
+            (Elimination::Ride(a), Elimination::Ride(b)) => {
+                let (
+                    Some(&Computation::Ride {
+                        motive: a_motive,
+                        value: a_value,
+                        ..
+                    }),
+                    Some(&Computation::Ride {
+                        motive: b_motive,
+                        value: b_value,
+                        ..
+                    }),
+                ) = (arena.computation(a), arena.computation(b))
+                else {
+                    return Err(unreadable());
+                };
+                let a_quote = arena.value_quote(a_motive);
+                let b_quote = arena.value_quote(b_motive);
+                premises.extend([
+                    Premise::motives(a_quote, b_quote),
+                    Premise::values(a_value, b_value),
+                ]);
+            },
+            // Two path transports along one neutral path compare as two rides
+            // do: their motives as codes, then their values.
+            (Elimination::PathTransport(a), Elimination::PathTransport(b)) => {
+                let (
+                    Some(&Computation::PathTransport {
+                        motive: a_motive,
+                        value: a_value,
+                        ..
+                    }),
+                    Some(&Computation::PathTransport {
+                        motive: b_motive,
+                        value: b_value,
+                        ..
+                    }),
+                ) = (arena.computation(a), arena.computation(b))
+                else {
+                    return Err(unreadable());
+                };
+                let a_quote = arena.value_quote(a_motive);
+                let b_quote = arena.value_quote(b_motive);
+                premises.extend([
+                    Premise::motives(a_quote, b_quote),
+                    Premise::values(a_value, b_value),
+                ]);
+            },
+            // Two telescope transports along one neutral path compare their
+            // motives as codes, as the engine's spines compare them, then
+            // their starts, their paths over and their values.
+            (Elimination::TelescopeTransport(a), Elimination::TelescopeTransport(b)) => {
+                let (
+                    Some(&Computation::TelescopeTransport {
+                        motive: a_motive,
+                        start: a_start,
+                        over: a_over,
+                        value: a_value,
+                        ..
+                    }),
+                    Some(&Computation::TelescopeTransport {
+                        motive: b_motive,
+                        start: b_start,
+                        over: b_over,
+                        value: b_value,
+                        ..
+                    }),
+                ) = (arena.computation(a), arena.computation(b))
+                else {
+                    return Err(unreadable());
+                };
+                let a_quote = arena.value_quote_computation(a_motive);
+                let b_quote = arena.value_quote_computation(b_motive);
+                premises.extend([
+                    Premise::motives(a_quote, b_quote),
+                    Premise::values(a_start, b_start),
+                    Premise::values(a_over, b_over),
+                    Premise::values(a_value, b_value),
+                ]);
+            },
+            (Elimination::Bind(a), Elimination::Bind(b)) => {
+                premises.push(Premise::computations(a, b));
+            },
+            // Two binds of several values compare by their continuations,
+            // each under as many binders; a different count is apart.
+            (Elimination::BindAll(a_arity, a), Elimination::BindAll(b_arity, b)) => {
+                if a_arity != b_arity {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+                premises.push(Premise::computations(a, b));
+            },
+            (Elimination::Fixpoint(a), Elimination::Fixpoint(b)) => {
+                let (Some((one, ones)), Some((other, others))) =
+                    (fixpoint_chain(arena, a), fixpoint_chain(arena, b))
+                else {
+                    return Err(unreadable());
+                };
+                if ones.len() != others.len() {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+                premises.push(Premise::computations(one, other));
+                premises.extend(
+                    ones.iter()
+                        .zip(&others)
+                        .map(|(&first, &second)| Premise::values(first, second)),
+                );
+            },
+            (Elimination::ListFold(a, b), Elimination::ListFold(c, d))
+            | (Elimination::ListCase(a, b), Elimination::ListCase(c, d)) => {
+                premises.extend([Premise::computations(a, c), Premise::computations(b, d)]);
+            },
+            // Two dependent splits compare by their bodies under the two
+            // component binders; the motives are annotations no reduction
+            // reads.
+            (Elimination::SigmaSplit(a), Elimination::SigmaSplit(b)) => {
+                let (
+                    Some(&Computation::SigmaSplit { body: one, .. }),
+                    Some(&Computation::SigmaSplit { body: other, .. }),
+                ) = (arena.computation(a), arena.computation(b))
+                else {
+                    return Err(unreadable());
+                };
+                premises.push(Premise::computations(one, other));
+            },
+            // Two projections of one side add no premise; the two sides of
+            // the lazy product are apart.
+            (Elimination::Project(a), Elimination::Project(b)) => {
+                if a != b {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+            },
+            (
+                Elimination::DataCase(_)
+                | Elimination::SigmaSplit(_)
+                | Elimination::RecordProjection(_)
+                | Elimination::TupleProjection(_)
+                | Elimination::Project(_)
+                | Elimination::Transport(_)
+                | Elimination::ProductTransport(_)
+                | Elimination::Ride(_)
+                | Elimination::PathTransport(_)
+                | Elimination::TelescopeTransport(_)
+                | Elimination::Force
+                | Elimination::Apply(_)
+                | Elimination::Bind(_)
+                | Elimination::BindAll(..)
+                | Elimination::Case(..)
+                | Elimination::ListFold(..)
+                | Elimination::ListCase(..)
+                | Elimination::StaticApply(_)
+                | Elimination::Fixpoint(_),
+                _,
+            ) => return Ok(Structure::Leaf(Expect::NotConvertible)),
+        }
+    }
+    Ok(Structure::of(premises))
+}
+
+/// The fixpoint a stuck fixpoint's elimination stands on and the leading
+/// arguments it holds, first to last: `fix a₀ … aₖ₋₁` read as `fix` and `[a₀,
+/// …, aₖ₋₁]`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some` exactly when `applied` is a fixpoint under zero or more
+///   applications, with that fixpoint and the applications' arguments in the
+///   order they apply; `None` for a dangling node or another head.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `loop` below, which descends application heads, not recursion.
+/// - measure: the arena position of the focus, which falls at every descent
+///   because a child is minted before its parent.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a fixpoint staged at its second binder, stuck on a
+///   variable past a leading argument, compares its leading argument after its
+///   fixpoint, and two such stuck forms with different leading arguments are
+///   apart.
+/// - witness: `replay::tests::a_stuck_fixpoint_compares_its_leading_arguments_626`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|&(fixpoint, _)| matches!(arena.computation(fixpoint), Some(&Computation::Fixpoint { .. }))))]
+fn fixpoint_chain(
+    arena: &TermArena,
+    applied: ComputationId,
+) -> Option<(ComputationId, Vec<ValueId>)>
+{
+    let mut leading = Vec::new();
+    let mut focus = applied;
+    loop {
+        let node = arena.computation(focus)?;
+        if let &Computation::Application(head, argument) = node {
+            leading.push(argument);
+            focus = head;
+            continue;
+        }
+        if !matches!(*node, Computation::Fixpoint { .. }) {
+            return None;
+        }
+        leading.reverse();
+        return Some((focus, leading));
+    }
+}
+
+#[cfg(test)]
+mod tests;

@@ -1,0 +1,740 @@
+//! Host operation signatures, without a host implementation.
+//!
+//! Payload records are represented by ordered products until record types are
+//! available at this seam. `Exec.exec` takes `(program, (args, mode))` and
+//! returns `(stdout, (stderr, exit_code))`; `Fs.write` takes `(path, contents)`
+//! and `Fs.stat` returns `(kind, size)`. List fields use the native List
+//! former.
+//!
+//! `Ring` is the completion ring's buffer pool: `alloc` takes a byte length
+//! and replies a buffer, which its performer holds live, and `free` takes one
+//! back. The native handler is where a host registers the area the buffers
+//! live in; a source handler shadowing it mints each buffer its `alloc`
+//! clause resumes with and reclaims each one its `free` clause receives, so a
+//! closed program serves its own buffers.
+//!
+//! `Partial` is divergence: an interface with no operation, which a
+//! computation's row holds when the computation may run forever. A partial
+//! fixpoint other than a ruled operation's introduces it; no handler eliminates
+//! it, and a row is subsumed into one holding it as into one holding any other
+//! interface. The empty row is the row of a computation that returns.
+//!
+//! `Console` is the process's output: `print` takes a string and replies the
+//! unit once the host has written it as one line. The host at a program's entry
+//! writes it to standard output; a host capturing it, as a test's does, keeps
+//! the lines instead, and the program runs unchanged under either.
+//!
+//! `Stderr` is the process's error stream: `eprint` takes a string and replies
+//! the unit once the host has written it as one line to standard error.
+//! `Stdin` is its input: `read_line` takes the unit and replies the next line
+//! with its newline kept, so the end of input is the empty string and an empty
+//! line is a newline alone. The three standard streams are three interfaces,
+//! as `cap-std` holds three handles, so a handler of one covers its own
+//! operations alone.
+//!
+//! `Net` is a stream to a peer. `connect` takes the peer, its key spelled in
+//! hex and then any `@<ip:port>` the dialer may try, and replies a stream;
+//! `accept` takes the unit and replies the dialing peer's key and a stream;
+//! `transmit` takes a stream and a frame and replies the unit; `receive` takes
+//! a stream and replies the next frame; `disconnect` takes a stream back. The
+//! names stay off the session keywords `send`, `recv` and `close`. A stream is
+//! an integer naming a location the host holds: it never crosses, and a host
+//! refuses one it does not hold. A frame is a string because the boundary has
+//! no byte-sequence layout yet, so a frame that is not UTF-8 is refused.
+//!
+//! `Reals` is the exact reals of `theory-exact-reals`. `admit` takes the
+//! canonical bytes of a plan, spelled in lowercase hexadecimal, and replies a
+//! plan; `enclose` takes a plan and a precision `k` and replies the lower and
+//! the upper end of an enclosure of the plan's root no wider than `2^-k`, each
+//! spelled `<mantissa>p<exponent>` for `mantissa · 2^exponent`. A plan is an
+//! integer naming a validated plan the host holds, as a stream is: it never
+//! crosses, and a host refuses one it does not hold. The host validates the
+//! bytes at each `admit`, and it replies only an enclosure whose certificate
+//! the checker replays.
+//!
+//! `decide` takes a plan whose root is an open proposition, such as `a < b`,
+//! and a budget of quanta. It replies the name of the outcome and a machine,
+//! an integer as a plan is. `step` runs one more quantum of a machine.
+//! `checkpoint` spells an undecided machine and its plan in lowercase
+//! hexadecimal, and `restore` validates that text again and replies a new
+//! machine. The name is not `resume`, a keyword of the surface. `report`
+//! replies nine work counters of a machine in a list. The first three are the
+//! quanta, the obligations and the steps of its certificate. The other six are
+//! the frontier, the cache hits, the regions, the checker steps, the
+//! checkpoints and the cancellations. Only `holds` and `fails` carry evidence,
+//! and each other outcome is a named stop, never false.
+//!
+//! `Rand` is the entropy source of the operating system. `draw` takes a width
+//! `n` with `1 ≤ n ≤ 64` and replies an integer uniform over `[0, 2^n)`. The
+//! host declines any other width, and a draw holds no state on the host.
+//!
+//! Each interface lives in its API's module, as Rust's `std` places
+//! `io::Result`, and its name is its path: the module, then `Eff`. The
+//! standard streams and the ring sit under `std.io`, the process's execution
+//! and its early exit under `std.process`, and the filesystem, the
+//! environment, the network, the exact reals and randomness each in a module
+//! of its own. A source names an interface where it imports the module, as
+//! `import std.io;` for `std.io.Console.Eff`, and the module names its own
+//! (#4523). `Partial` names the partiality monad and stays ambient by its bare
+//! name until `std.partial.Eff` reads by its path.
+//!
+//! | Interface | Path |
+//! | --- | --- |
+//! | the console | `std.io.Console.Eff` |
+//! | standard error | `std.io.Stderr.Eff` |
+//! | standard input | `std.io.Stdin.Eff` |
+//! | the ring | `std.io.Ring.Eff` |
+//! | the filesystem | `std.fs.Eff` |
+//! | the environment | `std.env.Eff` |
+//! | the network | `std.net.Eff` |
+//! | the exact reals | `std.reals.Eff` |
+//! | randomness | `std.rand.Eff` |
+//! | execution | `std.process.Exec.Eff` |
+//! | early exit | `std.process.Exit.Eff` |
+//! | divergence | `Partial` |
+//!
+//! No two interfaces share an operation name, so an operation names its
+//! interface: [`HostSignatures::offering`] finds it, and
+//! [`HostSignatures::authority`] builds the capability authority granting a
+//! set of bare operation names, each under the interface that offers it.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: [`access`], the
+//!   operations that change nothing on the host, which two forked halves may
+//!   share.
+
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_kernel_term::BaseType;
+use quenchant_shape::shape::Maybe;
+
+use super::EffectConflict;
+use super::EffectName;
+use super::EffectOp;
+use super::EffectRow;
+use super::EffectSig;
+use super::OperationName;
+use super::capability::RestrictionError;
+use crate::CoreArena;
+
+/// The process execution interface.
+pub const EXEC: &str = "std.process.Exec.Eff";
+/// The filesystem interface.
+pub const FS: &str = "std.fs.Eff";
+/// The early process-exit interface.
+pub const PROC: &str = "std.process.Exit.Eff";
+/// The read-only process environment interface.
+pub const ENV: &str = "std.env.Eff";
+/// The completion ring's buffer interface.
+pub const RING: &str = "std.io.Ring.Eff";
+/// The divergence interface, with no operation.
+pub const PARTIAL: &str = "Partial";
+/// The console interface: a line written to the process's output.
+pub const CONSOLE: &str = "std.io.Console.Eff";
+/// The error stream interface: a line written to the process's standard
+/// error.
+pub const STDERR: &str = "std.io.Stderr.Eff";
+/// The input interface: a line read from the process's standard input.
+pub const STDIN: &str = "std.io.Stdin.Eff";
+/// The network interface: a stream to a peer named by its key.
+pub const NET: &str = "std.net.Eff";
+/// The exact reals interface: a plan admitted, its root enclosed, and an open
+/// root decided by a resumable machine.
+pub const REALS: &str = "std.reals.Eff";
+/// The randomness interface: fair bits drawn from the entropy source of the
+/// operating system.
+pub const RAND: &str = "std.rand.Eff";
+/// The names of the twelve interfaces, in the order
+/// [`HostSignatures::interfaces`] returns them.
+pub const INTERFACES: [&str; 12] = [
+    EXEC, FS, PROC, ENV, RING, PARTIAL, CONSOLE, STDERR, STDIN, NET, REALS, RAND,
+];
+
+/// The `std` module each host interface lives in, beside the interface: the
+/// module a source imports to name it (#4523). [`PARTIAL`] lives in none and
+/// stays ambient.
+pub const HOMES: [(&str, &str); 11] = [
+    (EXEC, "std.process"),
+    (FS, "std.fs"),
+    (PROC, "std.process"),
+    (ENV, "std.env"),
+    (RING, "std.io"),
+    (CONSOLE, "std.io"),
+    (STDERR, "std.io"),
+    (STDIN, "std.io"),
+    (NET, "std.net"),
+    (REALS, "std.reals"),
+    (RAND, "std.rand"),
+];
+
+quenchant_shape::reason_enum! {
+    /// Why a name has no `std` module a source imports to name it.
+    pub mod homed {
+        /// The reason no module is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The name is ambient, as [`super::PARTIAL`] is, or no host interface.
+            Ambient,
+        }
+    }
+}
+
+/// The `std` module a source imports to name the host interface `name`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the module [`HOMES`] holds beside `name`; the ambient absence for
+///   [`PARTIAL`] and for a name no host interface carries.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the console's home is `std.io`, execution's is
+///   `std.process`, and `Partial` has none.
+/// - witness: `effect::host::tests::each_host_interface_but_partial_lives_in_a_std_module_4523`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(module) => HOMES.contains(&(name.as_ref(), module.0)),
+    Maybe::Absent(_) => HOMES.iter().all(|&(interface, _)| interface != name.as_ref()),
+})]
+#[inline]
+pub fn home(name: &EffectName) -> Maybe<HostHome, homed::Absent>
+{
+    HOMES
+        .into_iter()
+        .find_map(|(interface, module)| (interface == name.as_ref()).then_some(HostHome(module)))
+        .map_or(Maybe::Absent(homed::Absent::Ambient), Maybe::Present)
+}
+
+/// The `std` module a host interface lives in, spelled as an import writes
+/// it: `std.io` for the console.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HostHome(&'static str);
+
+impl AsRef<str> for HostHome
+{
+    /// Borrow the module's path.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &str
+    {
+        self.0
+    }
+}
+
+impl core::fmt::Display for HostHome
+{
+    /// Writes the module's path.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.write_str(self.0)
+    }
+}
+
+/// The twelve interfaces, sharing their arena-owned payload and reply types.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HostSignatures
+{
+    /// Run a command and capture its output or inherit the terminal.
+    pub exec: EffectSig,
+    /// Read and mutate the host filesystem.
+    pub fs: EffectSig,
+    /// Exit the process; this operation does not resume at the host boundary.
+    pub proc: EffectSig,
+    /// Read environment variables and the executable search path.
+    pub env: EffectSig,
+    /// Allocate a buffer the ring fills, and free one back.
+    pub ring: EffectSig,
+    /// Run forever: no operation, and no handler.
+    pub partial: EffectSig,
+    /// Write a line to the console.
+    pub console: EffectSig,
+    /// Write a line to standard error.
+    pub stderr: EffectSig,
+    /// Read a line from standard input.
+    pub stdin: EffectSig,
+    /// Open, accept, write, read and close a stream to a peer.
+    pub net: EffectSig,
+    /// Admit a plan of exact reals, and enclose its root.
+    pub reals: EffectSig,
+    /// Draw fair bits from the entropy source of the operating system.
+    pub rand: EffectSig,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why the host declares nothing for a name.
+    pub mod declared {
+        /// The host has no interface by the name, or none offering the
+        /// operation.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Nothing the host declares answers the name.
+            Undeclared,
+        }
+    }
+}
+
+/// Why an authority over host operations could not be formed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AuthorityError
+{
+    /// No host interface offers this operation.
+    Undeclared(OperationName),
+    /// An interface's restriction refused an operation: one named twice.
+    Restriction(RestrictionError),
+    /// The restrictions conflict as one authority.
+    Conflict(EffectConflict),
+}
+
+/// The divergence interface's signature. It has no operation, so it names no
+/// type and needs no arena.
+///
+/// # Specification
+/// - ensures: the signature named [`PARTIAL`] with no operation, equal to the
+///   host table's.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the host table's divergence interface is this one.
+/// - witness: `effect::host::tests::host_interfaces_pin_names_payloads_and_replies`
+#[spec(ensures: |ret| ret.name().as_ref() == PARTIAL && ret.operations().len() == 0_usize)]
+#[inline]
+#[must_use]
+pub fn partiality() -> EffectSig
+{
+    EffectSig(alloc::sync::Arc::new(super::Signature {
+        name: PARTIAL.into(),
+        operations: alloc::collections::BTreeMap::new(),
+    }))
+}
+
+/// The host operations that only read, each by its interface and its name.
+/// Each observes the host and changes nothing another task could observe, so
+/// two tasks may perform them on one interface at once. Every other host
+/// operation changes the file system, the process, the ring, the console or
+/// a stream.
+const READING: [(&str, &str); 7] = [
+    (FS, "read"),
+    (FS, "glob"),
+    (FS, "stat"),
+    (FS, "cwd"),
+    (FS, "ls_files"),
+    (ENV, "get"),
+    (ENV, "path"),
+];
+
+/// How a host operation meets the host.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum HostAccess
+{
+    /// The operation observes the host and changes nothing another task
+    /// could observe.
+    Reads,
+    /// The operation may change what another task observes.
+    Changes,
+}
+
+/// How `operation` of the interface named `interface` meets the host.
+///
+/// An operation of an interface the host does not declare changes the state
+/// its handler holds, whatever its name.
+///
+/// # Specification
+/// - ensures: [`HostAccess::Reads`] only for an operation of [`FS`] or [`ENV`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `std.fs.Eff`'s `read` reads and its `write` changes, on
+///   one interface; `std.process.Exec.Eff`'s `exec` changes; an operation named
+///   `read` of an interface the host does not declare changes.
+/// - witness: `effect::host::tests::an_operation_reads_the_host_only_when_it_changes_nothing`
+#[spec(ensures: |ret| ret == HostAccess::Changes || interface.as_ref() == FS || interface.as_ref() == ENV)]
+#[inline]
+#[must_use]
+pub fn access(
+    interface: &EffectName,
+    operation: &OperationName,
+) -> HostAccess
+{
+    if READING.contains(&(interface.as_ref(), operation.as_ref())) {
+        HostAccess::Reads
+    }
+    else {
+        HostAccess::Changes
+    }
+}
+
+impl HostSignatures
+{
+    /// Mint the host interfaces over shared native value types.
+    ///
+    /// # Specification
+    /// - requires: nothing; the arena may already hold unrelated terms.
+    /// - ensures: every operation payload and reply resolves in this arena;
+    ///   list-valued fields are native Lists, and no signature is executed.
+    ///   Each interface carries the name [`INTERFACES`] holds at its place.
+    /// - fails: conflicting operation names in the signature table.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns the signature constructor's conflict if a table repeats a name.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each interface's name, its operation names in order
+    ///   and their payload and reply types are compared with independently
+    ///   minted types; a swapped payload and reply, a missing operation or a
+    ///   product in place of a List changes an answer.
+    /// - witness: `effect::host::tests::host_interfaces_pin_names_payloads_and_replies`
+    #[spec(ensures: |ret| ret.as_ref().is_ok_and(|host|
+        [&host.exec, &host.fs, &host.proc, &host.env, &host.ring, &host.partial, &host.console, &host.stderr, &host.stdin, &host.net, &host.reals, &host.rand].iter().all(|signature|
+            signature.operations().all(|operation|
+                arena.value_type(operation.payload).is_some()
+                    && arena.value_type(operation.reply).is_some()))
+            && host.interfaces().iter().zip(INTERFACES).all(|(signature, name)| signature.name().as_ref() == name)
+            && host.partial.operations().len() == 0_usize) || ret.is_err())]
+    #[inline]
+    pub fn new(arena: &mut CoreArena) -> Result<Self, EffectConflict>
+    {
+        let string = arena.value_type_base(BaseType::String);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let unit = arena.value_type_unit();
+        let buffer = arena.value_type_buffer();
+        let strings = arena.value_type_list(string);
+        let args_mode = arena.value_type_product(&[strings, string]);
+        let command = arena.value_type_product(&[string, args_mode]);
+        let error_status = arena.value_type_product(&[string, integer]);
+        let output = arena.value_type_product(&[string, error_status]);
+        let write = arena.value_type_product(&[string, string]);
+        let stat = error_status;
+        let exec = EffectSig::new(EXEC.into(), [EffectOp {
+            name: "exec".into(),
+            payload: command,
+            reply: output,
+        }])?;
+        let fs = EffectSig::new(FS.into(), [
+            EffectOp {
+                name: "read".into(),
+                payload: string,
+                reply: string,
+            },
+            EffectOp {
+                name: "write".into(),
+                payload: write,
+                reply: unit,
+            },
+            EffectOp {
+                name: "glob".into(),
+                payload: string,
+                reply: strings,
+            },
+            EffectOp {
+                name: "stat".into(),
+                payload: string,
+                reply: stat,
+            },
+            EffectOp {
+                name: "mkdir".into(),
+                payload: string,
+                reply: unit,
+            },
+            EffectOp {
+                name: "tempdir".into(),
+                payload: unit,
+                reply: string,
+            },
+            EffectOp {
+                name: "cwd".into(),
+                payload: unit,
+                reply: string,
+            },
+            EffectOp {
+                name: "ls_files".into(),
+                payload: string,
+                reply: strings,
+            },
+        ])?;
+        let proc = EffectSig::new(PROC.into(), [EffectOp {
+            name: "exit".into(),
+            payload: integer,
+            reply: unit,
+        }])?;
+        let env = EffectSig::new(ENV.into(), [
+            EffectOp {
+                name: "get".into(),
+                payload: string,
+                reply: string,
+            },
+            EffectOp {
+                name: "path".into(),
+                payload: unit,
+                reply: strings,
+            },
+        ])?;
+        let ring = EffectSig::new(RING.into(), [
+            EffectOp {
+                name: "alloc".into(),
+                payload: integer,
+                reply: buffer,
+            },
+            EffectOp {
+                name: "free".into(),
+                payload: buffer,
+                reply: unit,
+            },
+        ])?;
+        let partial = partiality();
+        let console = EffectSig::new(CONSOLE.into(), [EffectOp {
+            name: "print".into(),
+            payload: string,
+            reply: unit,
+        }])?;
+        let stderr = EffectSig::new(STDERR.into(), [EffectOp {
+            name: "eprint".into(),
+            payload: string,
+            reply: unit,
+        }])?;
+        let stdin = EffectSig::new(STDIN.into(), [EffectOp {
+            name: "read_line".into(),
+            payload: unit,
+            reply: string,
+        }])?;
+        let accepted = arena.value_type_product(&[string, integer]);
+        let frame = arena.value_type_product(&[integer, string]);
+        let net = EffectSig::new(NET.into(), [
+            EffectOp {
+                name: "connect".into(),
+                payload: string,
+                reply: integer,
+            },
+            EffectOp {
+                name: "accept".into(),
+                payload: unit,
+                reply: accepted,
+            },
+            EffectOp {
+                name: "transmit".into(),
+                payload: frame,
+                reply: unit,
+            },
+            EffectOp {
+                name: "receive".into(),
+                payload: integer,
+                reply: string,
+            },
+            EffectOp {
+                name: "disconnect".into(),
+                payload: integer,
+                reply: unit,
+            },
+        ])?;
+        let precision = arena.value_type_product(&[integer, integer]);
+        let endpoints = arena.value_type_product(&[string, string]);
+        let budgeted = arena.value_type_product(&[integer, integer]);
+        let verdict = arena.value_type_product(&[string, integer]);
+        let counters = arena.value_type_list(integer);
+        let reals = EffectSig::new(REALS.into(), [
+            EffectOp {
+                name: "admit".into(),
+                payload: string,
+                reply: integer,
+            },
+            EffectOp {
+                name: "enclose".into(),
+                payload: precision,
+                reply: endpoints,
+            },
+            EffectOp {
+                name: "decide".into(),
+                payload: budgeted,
+                reply: verdict,
+            },
+            EffectOp {
+                name: "step".into(),
+                payload: integer,
+                reply: verdict,
+            },
+            EffectOp {
+                name: "checkpoint".into(),
+                payload: integer,
+                reply: string,
+            },
+            EffectOp {
+                name: "restore".into(),
+                payload: string,
+                reply: integer,
+            },
+            EffectOp {
+                name: "report".into(),
+                payload: integer,
+                reply: counters,
+            },
+        ])?;
+        let rand = EffectSig::new(RAND.into(), [EffectOp {
+            name: "draw".into(),
+            payload: integer,
+            reply: integer,
+        }])?;
+        Ok(Self {
+            exec,
+            fs,
+            proc,
+            env,
+            ring,
+            partial,
+            console,
+            stderr,
+            stdin,
+            net,
+            reals,
+            rand,
+        })
+    }
+
+    /// The twelve interfaces, in the order the host declares them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn interfaces(&self) -> [&EffectSig; 12]
+    {
+        [
+            &self.exec,
+            &self.fs,
+            &self.proc,
+            &self.env,
+            &self.ring,
+            &self.partial,
+            &self.console,
+            &self.stderr,
+            &self.stdin,
+            &self.net,
+            &self.reals,
+            &self.rand,
+        ]
+    }
+
+    /// The interface named `name`.
+    ///
+    /// # Specification
+    /// - ensures: the interface whose name is `name`; the undeclared absence
+    ///   for any other name.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each interface's own name and an undeclared one.
+    /// - witness: `effect::host::tests::an_operation_names_the_interface_offering_it`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(found) => found.name() == name,
+        | Maybe::Absent(_) => self.interfaces().iter().all(|each| each.name() != name),
+    })]
+    #[inline]
+    pub fn named(
+        &self,
+        name: &EffectName,
+    ) -> Maybe<&EffectSig, declared::Absent>
+    {
+        self.interfaces()
+            .into_iter()
+            .find(|interface| interface.name() == name)
+            .map_or(Maybe::Absent(declared::Absent::Undeclared), Maybe::Present)
+    }
+
+    /// The interface offering `operation`.
+    ///
+    /// # Specification
+    /// - ensures: the one interface declaring `operation`; the undeclared
+    ///   absence when none does.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — operations of two interfaces each find their own, and
+    ///   an operation of none is undeclared.
+    /// - witness: `effect::host::tests::an_operation_names_the_interface_offering_it`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(found) => matches!(found.operation(operation), Maybe::Present(_)),
+        | Maybe::Absent(_) => self.interfaces().iter().all(|each| matches!(each.operation(operation), Maybe::Absent(_))),
+    })]
+    #[inline]
+    pub fn offering(
+        &self,
+        operation: &OperationName,
+    ) -> Maybe<&EffectSig, declared::Absent>
+    {
+        self.interfaces()
+            .into_iter()
+            .find(|interface| matches!(interface.operation(operation), Maybe::Present(_)))
+            .map_or(Maybe::Absent(declared::Absent::Undeclared), Maybe::Present)
+    }
+
+    /// The authority granting exactly `operations`, each under the interface
+    /// offering it.
+    ///
+    /// # Specification
+    /// - ensures: one restriction per interface any operation belongs to, in
+    ///   host order, granting the named operations of it with their types.
+    /// - fails: an operation no interface offers, or one named twice.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`AuthorityError::Undeclared`]: the first operation no interface
+    ///   offers.
+    /// - [`AuthorityError::Restriction`]: an operation named twice.
+    /// - [`AuthorityError::Conflict`]: never for this table, whose restrictions
+    ///   are one per interface.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — operations of two interfaces in mixed order, an
+    ///   undeclared one and a repeated one, each asserted as the exact
+    ///   authority or error.
+    /// - witness: `effect::host::tests::an_operation_names_the_interface_offering_it`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |authority| authority.signatures().all(|restricted| matches!(self.named(restricted.name()), Maybe::Present(_)))))]
+    #[inline]
+    pub fn authority<'name, Operations>(
+        &self,
+        operations: Operations,
+    ) -> Result<EffectRow, AuthorityError>
+    where
+        Operations: IntoIterator<Item = &'name OperationName>,
+    {
+        let mut offered: Vec<(&EffectName, &OperationName)> = Vec::new();
+        for operation in operations {
+            let Maybe::Present(interface) = self.offering(operation)
+            else {
+                return Err(AuthorityError::Undeclared(operation.clone()));
+            };
+            offered.push((interface.name(), operation));
+        }
+        let mut restrictions = Vec::new();
+        for interface in self.interfaces() {
+            let mut granted = offered
+                .iter()
+                .filter(|&&(held, _)| held == interface.name())
+                .map(|&(_, operation)| operation)
+                .peekable();
+            if granted.peek().is_some() {
+                restrictions.push(
+                    interface
+                        .restrict(granted)
+                        .map_err(AuthorityError::Restriction)?,
+                );
+            }
+        }
+
+        EffectRow::authority(&restrictions).map_err(AuthorityError::Conflict)
+    }
+}
+
+#[cfg(test)]
+mod tests;

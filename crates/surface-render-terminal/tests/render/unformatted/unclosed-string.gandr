@@ -1,0 +1,2 @@
+def s : String ;
+def s = "abc ;
