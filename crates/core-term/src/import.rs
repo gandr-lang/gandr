@@ -808,6 +808,11 @@ impl<'source, 'target> TypeImporter<'source, 'target>
     /// # Errors
     /// As [`Self::value_type`].
     ///
+    /// # Cost
+    /// - allocation: the images and the explicit stack of the walk, and each
+    ///   node minted in the target, growth within the source graph that `root`
+    ///   reaches
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::value_type`] and [`Self::value`].
     /// - witness: `import::tests::dependent_annotations_preserve_sharing_across_arenas`
