@@ -1987,6 +1987,10 @@ impl Graph
     ///   usable; a sibling's is.
     /// - witness: `component::tests::a_cycle_and_a_missing_path_leave_their_imports_unresolved`
     /// - witness: `component::tests::a_component_lays_each_source_once`
+    ///
+    /// # Cost
+    /// - allocation: the reach of each source and the list of targets of each
+    ///   source, durable by the returned lists
     #[spec(ensures: |ref ret| ret.len() == self.read.len())]
     fn usable(&self) -> Vec<Vec<Position>>
     {

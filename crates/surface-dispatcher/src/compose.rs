@@ -5656,6 +5656,10 @@ pub fn item_layout(
 /// - hypothesis: L3 — the corpus closures and each closure inside them, the
 ///   prelude and the imports of each source included.
 /// - witness: `tests::locality::sweeps::a_sub_closure_keeps_the_checkpoints_of_its_fresh_check_6522`
+///
+/// # Cost
+/// - allocation: the count of each source's items and the runs with their items
+///   and imports, durable by the returned runs
 #[spec(ensures: |ret| ret.len() == module.unit().sources().len())]
 #[inline]
 #[must_use]

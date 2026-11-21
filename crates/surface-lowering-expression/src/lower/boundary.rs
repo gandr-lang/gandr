@@ -342,6 +342,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     ///   reaches it through a source in between.
     /// - witness: `gandr-surface-lowering::lower::boundary::tests::a_boundary_block_takes_the_slot_its_check_runs_in_2901`
     /// - witness: `gandr-surface-lowering::lower::boundary::tests::a_check_reads_its_names_where_the_imports_reach_them_4698`
+    ///
+    /// # Cost
+    /// - allocation: the visited set and the queue of the walk, growth within
+    ///   the unit's sources
     fn boundary_home(
         &self,
         site: Site,

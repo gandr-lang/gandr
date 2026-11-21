@@ -363,6 +363,9 @@ pub fn damage(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the path of the library, setup
 #[inline]
 pub fn profiled()
 {
