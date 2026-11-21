@@ -1,0 +1,52 @@
+//! No case tells two constants apart that a rule joins.
+//!
+//! A rule that joins two constants makes them one value. A case that gives
+//! them two answers gives one value two answers. A pair of rules that sends
+//! each constant to the other one has no last rewrite.
+//!
+//! The checker refuses a case whose arms differ on the two sides of the rule.
+//! It refuses a case with no arm for the two joined constants. The path order
+//! refuses the pair of rules, because no order puts each constant above the
+//! other one.
+//!
+//! - see: #8330
+
+// `Hollow`.
+import "../../model/desc/rule-symmetry-apart.gandr";
+
+// `Signal` and `Wire`.
+import "../../model/desc/rule-keeps-count.gandr";
+
+/// The two joined lamps have two levels, so the case does not respect the
+/// rule.
+///
+/// - see: #8330
+@[refuses("RuleNotRespected")]
+def torn(s : Terms Signal) -> Terms Wire =
+  match s where
+    | Signal.red => Wire.high
+    | Signal.amber => Wire.low
+    | Signal.green => Wire.high
+
+/// The two joined lamps are one term, so the case needs an arm.
+///
+/// - see: #8330
+@[refuses("NotApart")]
+def joinedApart(e : Path[.A = Terms Signal] Signal.amber Signal.green) -> Hollow =
+  match e {}
+
+/// Two rules that send each lamp to the other one.
+///
+/// - see: #8330
+@[refuses("RulesUnoriented")]
+theory Flicker where
+  /// The lamps.
+  sort L : Type;
+  /// The first lamp.
+  oper dim : L;
+  /// The second lamp.
+  oper lit : L;
+  /// The first lamp rewrites to the second one.
+  rule up : dim ==> lit;
+  /// The second lamp rewrites to the first one.
+  rule down : lit ==> dim;
