@@ -1,0 +1,52 @@
+/// This source states integer addition and its path laws.
+/// It follows cubical Agda's `Cubical/Data/Int`.
+///
+/// The sum recurses on its second summand.
+/// Zero is a unit, and successor and predecessor move through the sum.
+///
+/// The commutativity proof relates both operand orders.
+/// The winding-number source uses these integer laws.
+///
+/// - see: #427 — `plusComm`
+
+// The integers, one successor more and one predecessor more.
+import "./circle-base.gandr";
+
+/// The `plus` function adds two integers by recursion on its second argument.
+pub def rec plus(a : Int, b : Int) -> Int =
+  match b where
+    | Z => a
+    | S(x) => S (plus[<] a x)
+    | P(x) => P (plus[<] a x)
+
+/// The `plusS` proof moves a left successor through the sum.
+/// It is cubical's `sucℤ+`, by induction on the right summand.
+pub def rec plusS(a : Int, b : Int) -> Path (plus (S a) b) (S (plus a b)) =
+  match b where
+    | Z => Path.here (S a)
+    | S(x) => Path.ap up (plusS[<] a x)
+    | P(x) => Path.ap down (plusS[<] a x)
+
+/// The `plusP` proof moves a left predecessor through the sum.
+/// It is cubical's `predℤ+`, by the same induction as `plusS`.
+pub def rec plusP(a : Int, b : Int) -> Path (plus (P a) b) (P (plus a b)) =
+  match b where
+    | Z => Path.here (P a)
+    | S(x) => Path.ap up (plusP[<] a x)
+    | P(x) => Path.ap down (plusP[<] a x)
+
+/// The `plusZ` proof makes zero a left sum unit.
+pub def rec plusZ(b : Int) -> Path (plus Z b) b =
+  match b where
+    | Z => Path.here Z
+    | S(x) => Path.ap up (plusZ[<] x)
+    | P(x) => Path.ap down (plusZ[<] x)
+
+/// The `plusComm` proof relates the two operand orders.
+/// It is cubical's `+Comm`, and `Int` is a set, so the endpoints of its arms
+/// alone respect the rules of `Int`.
+pub def rec plusComm(a : Int, b : Int) -> Path (plus a b) (plus b a) =
+  match b where
+    | Z => Path.back (plusZ a)
+    | S(x) => Path.step (Path.ap up (plusComm[<] a x)) (Path.back (plusS x a))
+    | P(x) => Path.step (Path.ap down (plusComm[<] a x)) (Path.back (plusP x a))

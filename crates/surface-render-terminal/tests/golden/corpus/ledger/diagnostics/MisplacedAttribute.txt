@@ -1,0 +1,8 @@
+error[MisplacedAttribute]: the attribute `deprecated` stands on a declaration, not on a constructor
+  ╭▸ corpus/ledger/diagnostics/MisplacedAttribute.gandr:7:5
+  │
+7 │   @[deprecated]
+  │     ━━━━━━━━━━ an attribute at another place
+  │
+  ├ note: `Flag` is refused with MisplacedAttribute, as its expectation states
+  ╰ help: write `deprecated` before a declaration

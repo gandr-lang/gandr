@@ -1,0 +1,41 @@
+error[UnresolvedName]: `sub` is not defined
+   ╭▸ corpus/pathological/interop/boundary/source-handler.gandr:41:12
+   │
+41 │     | oper sub(p, k) => k p.0
+   │            ━━━ not found in this scope
+   │
+   ├ note: `lacked` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `sub`, or import the module that exports it
+
+error[OutOfFragment.Arity]: the handle expression cannot take 1 operands
+   ╭▸ corpus/pathological/interop/boundary/source-handler.gandr:49:12
+   │
+49 │     | oper add(k) => k 0u32
+   │            ━━━ the wrong number of operands
+   │
+   ├ note: `miscounted` is refused with OutOfFragment.Arity, as its expectation states
+   ╰ help: give the form its declared number of operands
+
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/interop/boundary/source-handler.gandr:57:28
+   │
+27 │      def add(x : u32, n : u32) -> u32;
+   │                  ─── the type it synthesises
+   ┆
+54 │ ┌  def widened() -> u32 =
+55 │ │┌   handle b : Boundary { quadrupled 21u32 } with {
+56 │ ││     | pure(r) => r
+57 │ ││     | oper add(p, k) => k (p.0 + p.1)
+   │ ││                         ┬──┯━━───────
+   │ ││                         │  │
+   │ ││                         │  its type does not convert: expected `Integer`, found `u32`
+   │ ││                         │  checked against `u32`; while checking the first argument of this operation
+   │ ││                         checked against `-F u32`; while judging the value this returns
+58 │ ││   }
+   │ ││   │
+   │ └│───│
+   │  └───checked against `() -> u32`; while checking the body of this thunk
+   │      checked against `-F u32`; while checking an operation clause of this handler; binds b : u32 * u32, _ : Stack (-F u32) (-F u32)
+   │
+   ├ note: `widened` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
