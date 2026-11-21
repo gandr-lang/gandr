@@ -1,0 +1,18 @@
+error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/layouts/truth-in-one-bit.gandr:89:20
+   │
+86 │    def there(t : Terms Truth) -> Path (decode (encode t)) t =
+   │    │         ─ checked against `(a : Terms Truth) -> -F (Path[.A = Terms Truth] (decode (encode a)) a)`; while checking the body of this function; binds t : Terms Truth
+   │ ┌──┘
+   │ │
+87 │ │┌   match t where
+88 │ ││     | Truth.no => Path.here Truth.no
+89 │ ││     | Truth.yes => Path.here Truth.yes
+   │ ││                    ┯━━━━━━━━━━━━━━━━━│
+   │ └│────────────────────│─────────────────│
+   │  └────────────────────│─────────────────checked against `(a : Terms Truth) -> Path[.A = Terms Truth] (decode (encode a)) a`; while checking the body of this thunk
+   │                       │                 checked against `-F (Path[.A = Terms Truth] (decode (encode t)) t)`; while finishing the type of this
+   │                       not both endpoints of the path
+   │
+   ├ note: `there` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
