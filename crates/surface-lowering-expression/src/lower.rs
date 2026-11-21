@@ -146,6 +146,7 @@ use crate::attribute::PayloadForm;
 use crate::attribute::PayloadVerdict;
 use crate::attribute::RegisteredAttribute;
 use crate::attribute::deprecation;
+use crate::attribute::formatting;
 use crate::attribute::members;
 use crate::attribute::names;
 use crate::attribute::payload;
@@ -20213,6 +20214,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                         Maybe::Absent(absent) => Maybe::Absent(absent),
                     },
                     AttributeSchema::MarkerOrRecord(_) => match deprecation(arena, value) {
+                        Maybe::Present(_) => Maybe::Present((Vec::new(), Vec::new())),
+                        Maybe::Absent(absent) => Maybe::Absent(absent),
+                    },
+                    AttributeSchema::Record(_) => match formatting(arena, value) {
                         Maybe::Present(_) => Maybe::Present((Vec::new(), Vec::new())),
                         Maybe::Absent(absent) => Maybe::Absent(absent),
                     },
