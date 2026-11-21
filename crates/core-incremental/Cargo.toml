@@ -1,0 +1,80 @@
+[package]
+name = "gandr-core-incremental"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Incremental checking over the core judgement: the item seam, the conservative footprint, validated resume, content-addressed checkpoints and the synthesis stream"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "incremental", "memoization", "type-checking"]
+categories = ["caching", "compilers"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The crate answers for the core judgement one item at a time. So it reads the
+# checker's declaration input, verdicts and support, and the core vocabulary
+# with the leaves that it shares with the kernel. The check-memo seam is the
+# one memo that the batch and incremental runs share. The order-maintenance
+# structure carries item identity across revisions.
+#
+# BLAKE3 is the digest family of the storage tier's content addresses. This
+# crate uses it directly, because this layer sits below storage. The file
+# backend needs `std`. A univalence statement's stratum and descriptions
+# persist in the site crate's vocabulary and the description names. The
+# content table's interner indexes its nodes in a `hashbrown` table under
+# `foldhash`'s fixed seed, the grammar's label-index pair.
+#
+# The pinned anodized facade supplies core-only specification helpers. It does
+# not enable its logic/BigInt feature. The kernel's admission policy is what a
+# program hands each pass's tier. The checkpoint store publishes its records
+# through the one writer. A checkpoint keeps a reflexivity's dialogues, so it
+# reads the conversion trace's decisions and the normaliser's trace nodes.
+#
+# A checkpoint shares the kernel's evidence and dialogues in the blocks of the
+# data crate.
+[dependencies]
+anodized.workspace = true
+blake3.workspace = true
+foldhash.workspace = true
+gandr-core-checker.workspace = true
+gandr-core-content.workspace = true
+gandr-core-nbe.workspace = true
+gandr-core-publish.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-check-memo.workspace = true
+gandr-kernel-conversion-trace.workspace = true
+gandr-kernel-core.workspace = true
+gandr-kernel-data.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-theory-levitation.workspace = true
+gandr-theory-order-maintenance.workspace = true
+gandr-theory-sites.workspace = true
+hashbrown.workspace = true
+quenchant-shape.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+# The build script reads the checker's refusals with `syn` and the mirror's
+# table with `toml`, and writes the store's refusal mirror from them.
+[build-dependencies]
+syn.workspace = true
+toml.workspace = true
+
+# `instrument` tells a checkpoint observer each item that a pass adopts or
+# judges, with the checker's memo tally and the arena nodes of the item's step,
+# for the counts layer of the editor's instrument. Off, the pass tells the
+# observer nothing per item and reads no tally.
+[features]
+instrument = ["gandr-core-checker/instrument"]
+
+[lints]
+workspace = true
