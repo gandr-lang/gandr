@@ -9268,3 +9268,44 @@ fn an_ascribed_case_writes_its_answer_2089()
         );
     }
 }
+
+/// #8336: the type grammar reads the endpoints of a path, a bridge and a flow
+/// over a universe as types written juxtaposed, so each one stands in a slot
+/// that admits an atom alone. An applied family there, `Maybe Nat`, a family
+/// the lowering names juxtaposed, `Terms Truth`, and one it mints as a call,
+/// `Terms(Mag)`, take their parentheses, as they do over any other carrier.
+#[test]
+fn an_applied_endpoint_over_a_universe_is_parenthesised_8336()
+{
+    let names = [
+        Name::from("Terms Truth"),
+        Name::from("Maybe"),
+        Name::from("Nat"),
+        Name::from("Terms(Mag)"),
+    ];
+    let mut core = CoreArena::new();
+    let universe = small_universe(&mut core);
+    let terms = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let terms = core.value_quote(terms);
+    let nat = core.value_type_data(ConstantIndex::from(2_usize), Vec::new());
+    let nat = core.value_quote(nat);
+    let maybe_nat = core.value_type_data(ConstantIndex::from(1_usize), vec![nat]);
+    let maybe_nat = core.value_quote(maybe_nat);
+    let minted = core.value_type_data(ConstantIndex::from(3_usize), Vec::new());
+    let minted = core.value_quote(minted);
+    let path = core.value_type_path(universe, terms, terms);
+    let bridge = core.value_type_bridge(universe, maybe_nat, minted);
+    let flow = core.value_type_flow(universe, terms, maybe_nat);
+    let source = CoreSource::new(&core, &names);
+    for (root, spelling) in [
+        (path, "Path[.A = Type] (Terms Truth) (Terms Truth)"),
+        (bridge, "Bridge[.A = Type] (Maybe Nat) (Terms Mag)"),
+        (flow, "Flow[.A = Type](Terms Truth, Maybe Nat)"),
+    ] {
+        assert_eq!(
+            spelled(&source, Root::Type(CoreNode::ValueType(root))),
+            faithful(Written(spelling)),
+            "{root:?} spells as the grammar reads it"
+        );
+    }
+}
