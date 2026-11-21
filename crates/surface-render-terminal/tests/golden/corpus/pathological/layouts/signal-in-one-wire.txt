@@ -1,0 +1,33 @@
+error[NoFiller.Omitted]: the module omits this law, and its sides do not convert, so nothing discharges it
+   ╭▸ corpus/pathological/layouts/signal-in-one-wire.gandr:23:1
+   │
+23 │ ┏ module SignalTorn : Model(Signal) where
+24 │ ┃   /// The carrier, a term of one wire.
+25 │ ┃   type L = Terms Wire;
+26 │ ┃   /// Red is the high level.
+   ┆ ┇
+30 │ ┃   /// Green is the high level.
+31 │ ┃   def green : Terms Wire = Wire.high;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a law whose sides do not convert: found `() -> Path[.A = Terms Wire] SignalTorn.amber SignalTorn.green`
+   │
+   ├ note: `calm` is refused with NoFiller.Omitted, as its expectation states
+   ╰ help: prove the law by a definition at its type, or admit it where the host asserts it
+
+error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
+   ╭▸ corpus/pathological/layouts/signal-in-one-wire.gandr:38:3
+   │
+37 │    def encodeBare(s : Terms Signal) -> Terms Wire =
+   │    │              ─ checked against `Terms Signal -> -F Terms Wire`; while checking the body of this function; binds s : Terms Signal
+   │ ┌──┘
+   │ │
+38 │ │┏   match s where
+39 │ │┃     | Signal.red => SignalInWire.red
+40 │ │┃     | Signal.amber => SignalInWire.amber
+41 │ │┃     | Signal.green => SignalInWire.green
+   │ │┃                                        ╿
+   │ └┃────────────────────────────────────────│
+   │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `Terms Signal -> Terms Wire`; while checking the body of this thunk
+   │                                           a case its datatype's rules do not admit
+   │
+   ├ note: `encodeBare` is refused with RuleNotRespected, as its expectation states
+   ╰ help: give the arms equal results on the terms that each of the datatype's rules identifies

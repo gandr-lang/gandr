@@ -1,0 +1,48 @@
+//! A signal in one wire: its layout gives two joined lamps one level.
+//!
+//! A type states that two of its constants are one value. A layout of the
+//! type must give those two constants one bit pattern. A layout that gives
+//! them two patterns tells one value apart from itself.
+//!
+//! The layout is a module that models the theory of the signal, and its
+//! carrier is the terms of one wire. The rule is a member of the module that
+//! holds a path between the two levels. The encoder is a case on the lamps,
+//! and each arm names a member of the module. The encoder names the law, so
+//! the case respects the rule.
+//!
+//! - see: #8333
+
+// `Signal` and `Wire`.
+import "../desc/rule-keeps-count.gandr";
+
+/// The layout of a signal in one wire. Its carrier is the terms of `Wire`.
+pub module SignalInWire : Model(Signal) where
+  /// The carrier, a term of one wire.
+  type L = Terms Wire;
+  /// Red is the high level.
+  def red : Terms Wire = Wire.high;
+  /// Amber is the low level.
+  def amber : Terms Wire = Wire.low;
+  /// Green is the low level.
+  def green : Terms Wire = Wire.low;
+  /// The rule holds: the two joined lamps have one level.
+  def calm() -> Path amber green = Path.here Wire.low;
+
+/// The encoder: the case on the lamps into the layout. It rests on the law
+/// of the layout.
+///
+/// - see: #8333
+@[respects(*{SignalInWire.calm})]
+pub def encode(s : Terms Signal) -> Terms Wire =
+  match s where
+    | Signal.red => SignalInWire.red
+    | Signal.amber => SignalInWire.amber
+    | Signal.green => SignalInWire.green
+
+/// The amber lamp runs to the low level.
+@[runs("Wire.low")]
+def amberEncoded() -> Terms Wire = encode Signal.amber;
+
+/// The encoder gives the two joined lamps one level.
+def encodedAlike : Path[.A = Terms Wire] (encode Signal.amber) (encode Signal.green) = Path.here
+  Wire.low;
