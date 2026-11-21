@@ -3813,9 +3813,16 @@ where
     }
 
     /// A value headed by a constructor of a presented type, rewritten to its
-    /// normal form once its returned leaves are read; a reflexivity at a
-    /// looped point read as its empty word when `reflexive` is
-    /// [`Reflexive::Worded`]; every other term unchanged.
+    /// normal form once its returned leaves are read; a `return` of such a
+    /// value as the `return` of that normal form; a reflexivity at a looped
+    /// point read as its empty word when `reflexive` is [`Reflexive::Worded`];
+    /// every other term unchanged.
+    ///
+    /// A value goal with a returned endpoint on one side is read as a goal
+    /// between computations before this step, so its other side stands under a
+    /// `return`. The rules read it there as they read it bare: `return
+    /// band(one, encode(b))` presents as `return encode(b)`, which
+    /// [`Self::returned_return`] then reads as the call it returned.
     ///
     /// The rules are the type's definition, applied by one fixed strategy, and
     /// a returned leaf reads by the kernel's own evaluator, so the step chooses
@@ -3828,11 +3835,12 @@ where
     /// - requires: nothing.
     /// - ensures: [`crate::presented::normal_form`] under the unfoldings'
     ///   presentations of what [`Self::read_returned_leaves`] gives for a
-    ///   value, a computation unchanged. Under [`Reflexive::Worded`], a
-    ///   reflexivity at the root, and a normal form that is one, read as
-    ///   [`Self::present_reflexivity`] reads them first. Every node the
-    ///   rewriting compared or copied, and every step the reading took, is
-    ///   charged to the budget.
+    ///   value; for a `return` of a value, the `return` of that form, the term
+    ///   itself when the form is the value; any other computation unchanged.
+    ///   Under [`Reflexive::Worded`], a bare reflexivity at the root, and a
+    ///   normal form that is one, read as [`Self::present_reflexivity`] reads
+    ///   them first. Every node the rewriting compared or copied, and every
+    ///   step the reading took, is charged to the budget.
     /// - provides: the presented half of weak head form, before any rule of the
     ///   table reads a value goal.
     /// - fails: [`Stop::Budget`] when the rewriting outruns the budget; as
@@ -3842,17 +3850,24 @@ where
     /// # Errors
     /// As `- fails:`.
     ///
+    /// # Cost
+    /// - allocation: the `return` of a normal form that differs from the value
+    ///   under the `return`, durable by the arena's identifiers
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the circle's words convert by their normal forms in
     ///   the forced loop, which compares a free type's constructors as before,
-    ///   and a reflexivity at the looped point meets the empty word.
+    ///   and a reflexivity at the looped point meets the empty word. A stuck
+    ///   call meets a term whose rule answers that call, and a term whose rule
+    ///   answers another leaf stays apart from it.
     /// - witness: `environment::presented_tests::the_forced_loop_converts_circle_words_by_their_normal_forms`
     /// - witness: `replay::tests::a_returned_leaf_of_a_presented_term_reads_before_the_rules`
     /// - witness: `replay::tests::a_reflexivity_at_a_looped_point_presents_as_its_empty_word_6477`
+    /// - witness: `corpus/model/desc/rule-answers-a-stuck-call.gandr`
     #[spec(
         captures: before = self.spent,
         ensures: |ret| self.spent >= before
-            && (!matches!(term, Term::Computation(_)) || ret == Ok(term))
+            && (!matches!(term, Term::Computation(id) if !matches!(self.arena.computation(id), Some(&Computation::Return(_)))) || ret == Ok(term))
             && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget),
     )]
     fn present(
@@ -3861,21 +3876,24 @@ where
         reflexive: Reflexive,
     ) -> Result<Term, Stop>
     {
-        let Term::Value(value) = term
-        else {
-            return Ok(term);
+        let (value, reflexive) = match term {
+            Term::Value(value) => (value, reflexive),
+            Term::Computation(computation) => match self.arena.computation(computation) {
+                Some(&Computation::Return(value)) => (value, Reflexive::Kept),
+                _ => return Ok(term),
+            },
         };
-        let value = match reflexive {
+        let read = match reflexive {
             Reflexive::Worded => self.present_reflexivity(value)?,
             Reflexive::Kept => value,
         };
-        let value = self.read_returned_leaves(value)?;
+        let read = self.read_returned_leaves(read)?;
         let mut fuel = RewriteFuel::from(self.budget.saturating_sub(self.spent));
         let before = u64::from(fuel);
         let normal = crate::presented::normal_form(
             self.arena,
             self.unfoldings.presentations(),
-            value,
+            read,
             &mut fuel,
         );
         self.spent = self
@@ -3886,12 +3904,19 @@ where
             self.spent = self.budget;
             return Err(Stop::Budget);
         };
-        if reflexive == Reflexive::Worded
+        let normal = if reflexive == Reflexive::Worded
             && matches!(self.arena.value(normal), Some(&Value::Here { .. }))
         {
-            return Ok(Term::Value(self.present_reflexivity(normal)?));
+            self.present_reflexivity(normal)?
         }
-        Ok(Term::Value(normal))
+        else {
+            normal
+        };
+        Ok(match term {
+            Term::Value(_) => Term::Value(normal),
+            Term::Computation(_) if normal == value => term,
+            Term::Computation(_) => Term::Computation(self.arena.computation_return(normal)),
+        })
     }
 
     /// The empty word a reflexivity at a looped point presents as; every other
