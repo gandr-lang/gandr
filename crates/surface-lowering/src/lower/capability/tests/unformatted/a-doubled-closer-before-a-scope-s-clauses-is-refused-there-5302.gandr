@@ -1,0 +1,8 @@
+def quiet(n : Integer) -> -F Integer =
+  handle c : std.process.Exit.Eff {
+    c.exit 1;
+    return n
+  }} with {
+    | pure(x) => pure x
+    | oper exit(code, k) => k *{}
+  }

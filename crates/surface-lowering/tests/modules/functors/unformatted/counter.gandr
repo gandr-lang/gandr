@@ -1,0 +1,5 @@
+module MkCounter(S : *{ type T, seed : T, next : +U[ω] (T -> -F T) }) :> *{ type T, seed : T, next : +U[ω] (T -> -F T) } where {
+  type T = S.T ;
+  def seed = S.seed ;
+  def next = S.next ;
+}
