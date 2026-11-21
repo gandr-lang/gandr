@@ -237,10 +237,10 @@ def succeeded(n : Nat) -> Nat = Succ n;
 
 def early(k : Nat) -> Nat = match k {
   | Zero => k
-  | Succ(j) => {
+  | Succ j => {
     let q = match j {
       | Zero => return j
-      | Succ(r) => pure r
+      | Succ r => pure r
     };
     pure q
   }
@@ -256,7 +256,7 @@ def nested(n : Nat) -> Nat -> Nat = thunk { fun (x) { Succ x } };
 
 def blocked(n : Nat) -> Nat = match n {
   | Zero => { let y = succeeded n; y }
-  | Succ(p) => p
+  | Succ p => p
 };
 
 def noted(n : Nat) -> Nat = return /* the argument */ n;
@@ -2529,7 +2529,7 @@ fn a_brace_body_moves_after_the_equals_6318()
 
         def rec down(n : Nat) -> Nat = match n {
           | Zero => Zero
-          | Succ(m) => down[<] m
+          | Succ m => down[<] m
         };
 
         def kept(n : Nat) -> Nat = twice n;

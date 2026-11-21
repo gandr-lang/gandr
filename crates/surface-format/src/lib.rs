@@ -997,8 +997,8 @@ fn format_once(
         ending.physical(),
     )?;
     let mut reports: Vec<Withdrawal> = Vec::new();
-    // The whole source, as the span where every type application keeps its
-    // call form once no narrower span does.
+    // The whole source, as the span where every type application and every
+    // constructor pattern keeps its call form once no narrower span does.
     let everywhere = ByteSpan::new(
         ByteOffset::from(0_usize),
         ByteOffset::from(<&str>::from(source).len()),
@@ -1034,8 +1034,9 @@ fn format_once(
             (Some(_) | None, _) => None,
         };
         // A call's parentheses that a layout block reads, `match t -> -F
-        // List(Integer) where`, are kept: every type application is written
-        // back as the call before the layout is refused.
+        // List(Integer) where`, are kept: every type application and every
+        // constructor pattern is written back as the call before the layout
+        // is refused.
         let laid = match write(
             grammar,
             tree,

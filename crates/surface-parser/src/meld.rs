@@ -2603,8 +2603,9 @@ impl<'pbg> MeldState<'pbg>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the application mold of `sort` exactly when the slope's top
-    ///   is a complete operand of `sort`, and the rest holds as
-    ///   [`Self::applies_next`] states. `None` otherwise.
+    ///   is a complete operand of `sort`, a pattern operand opens with a
+    ///   capital, and the rest holds as [`Self::applies_next`] states. `None`
+    ///   otherwise.
     /// - provides: the one test of whether a juxtaposition continues a spine.
     /// - panics: none.
     ///
@@ -2643,6 +2644,28 @@ impl<'pbg> MeldState<'pbg>
         );
         if bytes.get(last) == Some(&b'}') && !braced_value {
             return None;
+        }
+        // A pattern spine's head is a constructor, so its source opens with a
+        // capital: `Cons x rest` applies, and `_ x` or `n x` stays two
+        // operands, as a match arm's run after its pattern does. An argument
+        // that a pending application holds, as `x` in `Cons x`, reads the
+        // spine on the application's left.
+        if sort == Sort::Pattern {
+            let spine = match *self.stack.split_last()?.1 {
+                [
+                    ..,
+                    ref left,
+                    Cell {
+                        role: Role::Operator { mold, .. },
+                        ..
+                    },
+                ] if mold == application => left,
+                _ => top,
+            };
+            let head = usize::try_from(spine.start).ok()?;
+            if !bytes.get(head).is_some_and(u8::is_ascii_uppercase) {
+                return None;
+            }
         }
         // The root holds declarations alone, so two words side by side there
         // are strays, never an application.

@@ -4,10 +4,10 @@ def succeeded(n : Nat) -> -F Nat = return Succ n;
 
 def early(k : Nat) -> -F Nat = match k {
   | Zero => return k
-  | Succ(j) => {
+  | Succ j => {
     let q = match j {
       | Zero => return j
-      | Succ(r) => pure r
+      | Succ r => pure r
     };
     pure q
   }
@@ -23,7 +23,7 @@ def nested(n : Nat) -> -F (+U (Nat -> -F Nat)) = return thunk { fun (x) { return
 
 def blocked(n : Nat) -> -F Nat = match n {
   | Zero => { let y = succeeded n; return y }
-  | Succ(p) => p
+  | Succ p => p
 };
 
 def noted(n : Nat) -> -F Nat = return /* the argument */ n;

@@ -1111,8 +1111,8 @@ struct Respelling<'run, 'source>
     reducts: &'source Reducts,
     /// The spans of the top-level forms whose reducts stay as written.
     unreduced: &'run [ByteSpan],
-    /// The spans of the top-level forms whose type applications keep their
-    /// call form.
+    /// The spans of the top-level forms whose type applications and
+    /// constructor patterns keep their call form.
     called: &'run [ByteSpan],
     /// Each nested form respelled, by position.
     spelled: BTreeMap<NodeIndex, Spelled<'source>>,
@@ -1224,9 +1224,9 @@ pub struct Rewrites<'run, 'source>
     pub reducts: &'source Reducts,
     /// The spans of the top-level forms whose reducts stay as written.
     pub unreduced: &'run [ByteSpan],
-    /// The spans of the top-level forms whose type applications keep their
-    /// call form: a juxtaposition there lowers to other core, or the text
-    /// with it does not parse.
+    /// The spans of the top-level forms whose type applications and
+    /// constructor patterns keep their call form: a juxtaposition there
+    /// lowers to other core, or the text with it does not parse or lay out.
     pub called: &'run [ByteSpan],
 }
 
@@ -2333,10 +2333,10 @@ impl<'source> Respelling<'_, 'source>
                 out.place(&self.operand(path), Band::Atom);
                 Band::Application
             },
-            (RewriteName::ConstructorPattern, Direction::Sugar | Direction::Desugar) => {
-                self.juxtaposed_pattern(&mut out, parts)?
-            },
-            (RewriteName::TypeApplication, Direction::Sugar | Direction::Desugar) => {
+            (
+                RewriteName::ConstructorPattern | RewriteName::TypeApplication,
+                Direction::Sugar | Direction::Desugar,
+            ) => {
                 if self
                     .called
                     .iter()
@@ -2344,7 +2344,12 @@ impl<'source> Respelling<'_, 'source>
                 {
                     return None;
                 }
-                self.juxtaposed_type(&mut out, parts)?
+                if name == RewriteName::ConstructorPattern {
+                    self.juxtaposed_pattern(&mut out, parts)?
+                }
+                else {
+                    self.juxtaposed_type(&mut out, parts)?
+                }
             },
             (RewriteName::BodyAfterEquals, Direction::Sugar | Direction::Desugar) => {
                 let rule = self.rule(at)?;
