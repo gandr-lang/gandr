@@ -55,7 +55,7 @@ ENV RUSTUP_HOME=/opt/ci/.rustup \
 # counts the pin missing until all are present. With the version file off,
 # mise leaves rust alone and rustup serves `RUSTUP_TOOLCHAIN` from the layer
 # below; no workflow sets this variable, so it holds in every container job.
-ENV MISE_DISABLE_TOOLS=cargo:bindgen-cli,cargo:hotpath,github:j178/prek,github:max-sixty/worktrunk,github:nektos/act,github:orhun/git-cliff \
+ENV MISE_DISABLE_TOOLS=cargo:bindgen-cli,cargo:hotpath,github:gandr-lang/toolchains-llvm,github:j178/prek,github:max-sixty/worktrunk,github:nektos/act,github:orhun/git-cliff \
     MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS= \
     MISE_CARGO_BINSTALL_QUICKINSTALL=true \
     MISE_CARGO_BINSTALL_NATIVE=true

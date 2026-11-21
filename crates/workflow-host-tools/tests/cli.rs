@@ -322,8 +322,8 @@ fn a_host_that_lacks_no_tool_exits_zero_and_clears_its_needs()
 }
 
 /// Run `host-tools llvm` in `directory`, with the pin `pin` in its lock, a
-/// rustc of LLVM `rustc`, and a mise that lists `listing`, with shell
-/// built-ins only.
+/// rustc of LLVM `rustc`, and a mise that lists `listing` and disables the
+/// tools of the JSON list `disabled`, with shell built-ins only.
 ///
 /// # Specification
 /// trivial.
@@ -332,6 +332,7 @@ fn llvm(
     pin: &str,
     rustc: &str,
     listing: &str,
+    disabled: &str,
 ) -> std::process::Output
 {
     use std::os::unix::fs::PermissionsExt as _;
@@ -351,7 +352,9 @@ fn llvm(
         ),
         (
             "mise",
-            format!("#!/bin/sh\ncase \"$1\" in\nls) printf '%s\\n' '{listing}' ;;\nesac\n"),
+            format!(
+                "#!/bin/sh\ncase \"$1\" in\nls) printf '%s\\n' '{listing}' ;;\nsettings) printf '%s\\n' '{disabled}' ;;\nesac\n"
+            ),
         ),
     ];
     for (name, text) in programs {
@@ -397,7 +400,7 @@ fn the_check_passes_at_the_pin()
 {
     let directory = scratch();
     let listing = tree(&directory, "23.1.6+rev0", "23.1.6");
-    let output = llvm(&directory, "23.1.6+rev0", "23.1.1", &listing);
+    let output = llvm(&directory, "23.1.6+rev0", "23.1.1", &listing, "[]");
     assert_eq!(output.status.code(), Some(0_i32), "{output:?}");
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
@@ -414,7 +417,7 @@ fn a_pin_of_another_major_release_is_refused_by_both_releases()
 {
     let directory = scratch();
     let listing = tree(&directory, "22.1.8+rev0", "22.1.8");
-    let output = llvm(&directory, "22.1.8+rev0", "23.1.1", &listing);
+    let output = llvm(&directory, "22.1.8+rev0", "23.1.1", &listing, "[]");
     assert_eq!(output.status.code(), Some(2_i32));
     assert_eq!(String::from_utf8_lossy(&output.stdout), "");
     assert_eq!(
@@ -429,7 +432,7 @@ fn a_tree_of_another_release_is_refused_by_both_releases()
 {
     let directory = scratch();
     let listing = tree(&directory, "23.1.6+rev0", "23.1.5");
-    let output = llvm(&directory, "23.1.6+rev0", "23.1.1", &listing);
+    let output = llvm(&directory, "23.1.6+rev0", "23.1.1", &listing, "[]");
     assert_eq!(output.status.code(), Some(2_i32));
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
@@ -447,14 +450,33 @@ fn a_tree_of_another_release_is_refused_by_both_releases()
 fn a_platform_that_takes_no_tree_reads_the_major_release_alone()
 {
     let directory = scratch();
-    let output = llvm(&directory, "23.1.6+rev0", "23.1.1", "{}");
+    let output = llvm(&directory, "23.1.6+rev0", "23.1.1", "{}", "[]");
     assert_eq!(output.status.code(), Some(0_i32), "{output:?}");
     let platform = format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH);
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
         format!(
-            "LLVM 23.1.6 of the pin and LLVM 23.1.1 of rustc share their major release, and {platform} takes no tree of the pin\n"
+            "LLVM 23.1.6 of the pin and LLVM 23.1.1 of rustc share their major release. No tree is read: the release serves no archive for {platform}\n"
         )
+    );
+    std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn a_host_that_disables_the_toolchain_reads_the_major_release_and_names_the_cause()
+{
+    let directory = scratch();
+    let output = llvm(
+        &directory,
+        "23.1.6+rev0",
+        "23.1.1",
+        "{}",
+        "[\"github:j178/prek\", \"github:gandr-lang/toolchains-llvm\"]",
+    );
+    assert_eq!(output.status.code(), Some(0_i32), "{output:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "LLVM 23.1.6 of the pin and LLVM 23.1.1 of rustc share their major release. No tree is read: mise's disable_tools holds github:gandr-lang/toolchains-llvm\n"
     );
     std::fs::remove_dir_all(&directory).unwrap();
 }
@@ -464,7 +486,7 @@ fn a_platform_with_no_install_of_its_tree_is_refused()
 {
     let directory = scratch();
     let listing = "{\"github:gandr-lang/toolchains-llvm\": [{\"version\": \"23.1.6+rev0\", \"installed\": false, \"install_path\": \"/absent\"}]}";
-    let output = llvm(&directory, "23.1.6+rev0", "23.1.1", listing);
+    let output = llvm(&directory, "23.1.6+rev0", "23.1.1", listing, "[]");
     assert_eq!(output.status.code(), Some(2_i32));
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),

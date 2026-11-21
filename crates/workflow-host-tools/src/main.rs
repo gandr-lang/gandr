@@ -309,14 +309,16 @@ enum Query
 /// Read the release of the pinned LLVM toolchain in `mise.lock` of the
 /// working directory against the release of rustc's LLVM, then against the
 /// tree that mise holds for this host, and print one line when they agree.
-/// A platform that takes no tree of the pin reads the major release alone.
+/// With no tree, the check reads the major release alone, and its line names
+/// the cause: mise's `disable_tools` holds the toolchain, or the release
+/// serves no archive for the platform.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Cost
-/// - allocation: the lock, the texts of `rustc -vV`, of the listing and of the
-///   tree's file, and the printed line, diagnostic
+/// - allocation: the lock, the texts of `rustc -vV`, of the listing, of the
+///   disabled tools and of the tree's file, and the printed line, diagnostic
 fn check_llvm() -> Result<(), HostToolsError>
 {
     let key = ToolKey::from(llvm::KEY);
@@ -328,11 +330,17 @@ fn check_llvm() -> Result<(), HostToolsError>
     let rustc = llvm::Release::of_rustc(&ask(Query::Rustc)?)?;
     llvm::agree(pin, rustc)?;
     let platform = Platform::host();
+    let off = disabled(&Json::from(ask(Query::Disabled)?.as_str()))?;
+    if off.contains(&key) {
+        return say(format_args!(
+            "LLVM {pin} of the pin and LLVM {rustc} of rustc share their major release. No tree is read: mise's disable_tools holds {key}"
+        ));
+    }
     let listing = Listing::read(&Json::from(ask(Query::Tools)?.as_str()))?;
     let Some(entry) = listing.entries(&key).first()
     else {
         return say(format_args!(
-            "LLVM {pin} of the pin and LLVM {rustc} of rustc share their major release, and {platform} takes no tree of the pin"
+            "LLVM {pin} of the pin and LLVM {rustc} of rustc share their major release. No tree is read: the release serves no archive for {platform}"
         ));
     };
     if !entry.installed {
