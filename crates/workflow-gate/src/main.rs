@@ -2,17 +2,9 @@
 //!
 //! # Boundaries
 //!
-//! `gate inputs list <commit> <scope> <check>` prints the inputs of the check
-//! over the scope at the commit, one per line: a path, a tab and its object.
-//! `gate inputs digest --commit <commit>... --check <check>... <scope>`
-//! prints one line for each commit and each check: the commit, the check and
-//! the SHA-256 of that list, with tabs between them.
-//!
-//! `gate verdict key [--tree <tree>] <check>...` prints the key of the
-//! verdict of each check, one line of JSON each. `gate verdict read
-//! <check>...` reads which check holds on the tree of `HEAD`, by the inputs of
-//! its base or by a signed record of a pass on the remote. It prints one line
-//! for each fact to standard error.
+//! The commands `inputs list`, `inputs digest`, `verdict key`, `verdict read`,
+//! `verdict write` and `verdict publish` are the rows of the table of
+//! `README.md`, with what each prints.
 //!
 //! `--tables <directory>` names the directory of `inputs.json`,
 //! `verdicts.json` and the scope script. `--times` prints each part of the
@@ -24,6 +16,7 @@
 //! |Variable|What it gives|
 //! |---|---|
 //! |`GATE_BASE`|the base of the change|
+//! |`GATE_HELD`|the checks that a gate held, which a write signs no record of|
 //! |`GATE_SCOPE`|the scope of each check of a key|
 //! |`GATE_VERDICT_RUSTC`|another compiler than `rustc`|
 //! |`GATE_VERDICT_POLICY`|the revision of the policy|
@@ -38,7 +31,8 @@
 //!
 //! - `0`: the lines were printed, or each check of a read holds; also `--help`
 //!   and `--version`.
-//! - `1`: a read holds no record of a check, so the job runs it.
+//! - `1`: a read holds no record of a check, so the job runs it; or a write
+//!   signs no record after two attempts.
 //! - `2`: a refusal — a failed call of git, of Cargo, of mise, of GitHub or of
 //!   the compiler, a table that does not read, a check with no task or with no
 //!   row of a verdict, a read with no signing key, or standard output closed;
@@ -59,6 +53,8 @@ use gandr_workflow_gate::Parts;
 use gandr_workflow_gate::ReadRequest;
 use gandr_workflow_gate::Request;
 use gandr_workflow_gate::Scope;
+use gandr_workflow_gate::SendRequest;
+use gandr_workflow_gate::WriteRequest;
 
 /// The exit code of a read that holds no record of a check.
 const RUNS: u8 = 1;
@@ -147,6 +143,22 @@ enum Verdict
         /// A check's task name; repeat for each.
         #[arg(required = true)]
         checks: Vec<Check>,
+    },
+    /// Sign one record of the checks that a gate ran on a tree, and name it by
+    /// the ref of each check.
+    Write
+    {
+        /// The tree that the gate passed on.
+        tree: Commit,
+        /// A check's task name that the gate ran; repeat for each.
+        #[arg(required = true)]
+        checks: Vec<Check>,
+    },
+    /// Push the records of the tree of a commit, in one push.
+    Publish
+    {
+        /// The commit whose tree the records name.
+        commit: Commit,
     },
 }
 
@@ -263,6 +275,34 @@ fn main() -> ExitCode
         .map(|reading| {
             let _written = std::io::stderr().lock().write_all(reading.lines.as_bytes());
             (String::new(), reading.end)
+        }),
+        Top::Verdict(Verdict::Write { tree, checks }) => gandr_workflow_gate::write(
+            &WriteRequest {
+                tree,
+                checks,
+                held: given("GATE_HELD").map_or_else(Default::default, |held| {
+                    held.split_whitespace().map(Check::from).collect()
+                }),
+                base: given("GATE_BASE").map(|base| Commit::from(base.as_str())),
+                scope: Scope::from(given("GATE_SCOPE").as_deref().unwrap_or("--workspace")),
+                tables: cli.tables,
+            },
+            &parts,
+        )
+        .map(|writing| {
+            let _written = std::io::stderr().lock().write_all(writing.lines.as_bytes());
+            (String::new(), writing.end)
+        }),
+        Top::Verdict(Verdict::Publish { commit }) => gandr_workflow_gate::send(
+            &SendRequest {
+                commit,
+                remote: given("GATE_VERDICT_REMOTE").unwrap_or_else(|| "origin".to_owned()),
+            },
+            &parts,
+        )
+        .map(|sent| {
+            let _written = std::io::stderr().lock().write_all(sent.lines.as_bytes());
+            (String::new(), sent.end)
         }),
     };
     let mut errors = std::io::stderr().lock();

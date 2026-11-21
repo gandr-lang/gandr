@@ -4,7 +4,7 @@
 # of `check:clippy-arch` on the tree of HEAD, pushes it and reads it as a
 # runner does. The last cases take a record of the inputs of `check:dylint`
 # and of `check:clippy-plain-only`, in a scratch workspace of three crates.
-# - see: #7684, `verdict.bash`
+# - see: #7684, `crates/workflow-gate`
 #
 # A stub compiler and a fixed policy revision stand for the toolchain, so no
 # case builds or reaches the network. Each case signs through `ssh-keygen`,
@@ -12,7 +12,10 @@
 # each read of a job's records fails there.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
-verdict=$here/verdict.bash
+# The program `gate`, which reads its tables beside this file. A scratch
+# repository holds no tables of its own.
+gate_verdict() { "$here/tool.bash" gandr-workflow-gate gate --tables "$here" verdict "$@"; }
+verdict=gate_verdict
 push=$here/push.bash
 source "$here/../cases/scratch.bash"
 scratch=$(mktemp -d)
@@ -113,8 +116,8 @@ got=$(
   signer once "$scratch/retry-once-bin"
   tree=$(git rev-parse 'HEAD^{tree}')
   status=0
-  output=$(PATH="$scratch/retry-once-bin:$PATH" GATE_VERDICT_CASE_FAILURE="$scratch/retry-once.failed" \
-    GATE_VERDICT_CASE_GIT="$(command -v git)" "$verdict" write "$tree" check:clippy-arch 2>&1) || status=$?
+  output=$(GATE_VERDICT_CASE_GIT="$(command -v git)" PATH="$scratch/retry-once-bin:$PATH" \
+    GATE_VERDICT_CASE_FAILURE="$scratch/retry-once.failed" "$verdict" write "$tree" check:clippy-arch 2>&1) || status=$?
   "$verdict" publish HEAD > /dev/null 2>&1
   if [[ $status == 0 && -e $scratch/retry-once.failed && $output == *"signing attempt 1 of 2 failed"* ]]; then
     reads
@@ -129,11 +132,11 @@ got=$(
   signer always "$scratch/retry-always-bin"
   tree=$(git rev-parse 'HEAD^{tree}')
   status=0
-  output=$(PATH="$scratch/retry-always-bin:$PATH" GATE_VERDICT_CASE_GIT="$(command -v git)" \
+  output=$(GATE_VERDICT_CASE_GIT="$(command -v git)" PATH="$scratch/retry-always-bin:$PATH" \
     "$verdict" write "$tree" check:clippy-arch 2>&1) || status=$?
   ref=$(git for-each-ref --count=1 refs/verdicts/)
   if [[ $status == 1 && -z $ref && $output == *"record did not sign after 2 attempts"* \
-    && $output == *"verdict.bash write"* ]]; then
+    && $output == *"gate verdict write"* ]]; then
     echo refused
   else
     printf 'status %s, ref %s, output %s\n' "$status" "$ref" "$output"

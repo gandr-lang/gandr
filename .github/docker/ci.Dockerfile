@@ -31,7 +31,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # `git verify-commit` reads the SSH signature of a gate's record through
 # `ssh-keygen`, which openssh-client holds. `git` only recommends that
 # package, so the list names it.
-# - see: `.config/gate-scope/verdict.bash`
+# - see: `crates/workflow-gate`
 #
 # The liburing crate of `gandr-runtime-uring` runs bindgen in its build.
 # Bindgen needs libclang-dev, until a later unit removes that crate.

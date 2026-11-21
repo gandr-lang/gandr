@@ -5170,7 +5170,7 @@ fi
 # with `fatal error in commit_refs_rules`. So the records go first, and the
 # hook then finds each of them on the remote.
 # - see: #8270, `.config/gate-scope/push.bash`
-"$config_dir/gate-scope/verdict.bash" publish HEAD \
+"$config_dir/gate-scope/tool.bash" gandr-workflow-gate gate verdict publish HEAD \
   || echo "pr:open: the records of the head were not sent before the push; the push hook sends them" >&2
 git push --quiet --force-with-lease -u origin HEAD
 hold=${usage_hold:-}

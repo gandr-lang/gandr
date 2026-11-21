@@ -9,5 +9,5 @@ head=${PRE_COMMIT_TO_REF:-}
 [[ -n $head && ! $head =~ ^0+$ ]] || exit 0
 [[ ${PRE_COMMIT_REMOTE_BRANCH:-refs/heads/} == refs/heads/* ]] || exit 0
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
-"$here/verdict.bash" publish "$head" \
+"$here/tool.bash" gandr-workflow-gate gate --tables "$here" verdict publish "$head" \
   || echo "verdict: the records of the pushed head were not sent, so the hosted jobs run their checks again (#8166)" >&2

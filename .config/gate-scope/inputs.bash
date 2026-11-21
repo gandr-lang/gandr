@@ -7,7 +7,7 @@
 #
 # The program `gate` computes the list of the inputs and its digest. This
 # script holds the test of a run alone.
-# - see: #7684, #8273, `verdict.bash`, `crates/workflow-gate/README.md`
+# - see: #7684, #8273, `crates/workflow-gate/README.md`
 #
 # The inputs of a scope, each a path and its object at a commit:
 #   - each crate of the scope and of its dependency closure, by the object of
