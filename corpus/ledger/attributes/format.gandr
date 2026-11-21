@@ -1,0 +1,4 @@
+/// `format`: states the spelling of the declared name in each markup, one
+/// optional text for each of `latex`, `typst` and `md`.
+@[format(*{.latex = "\\varepsilon", .typst = "epsilon", .md = "ε"})]
+def unit = 0;

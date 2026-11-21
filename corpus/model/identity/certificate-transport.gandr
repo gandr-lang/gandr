@@ -1,0 +1,55 @@
+/// This source identifies confluence certificates as paths in a presented type.
+///
+/// The integer critical pair reaches one join by two certificates.
+/// The presented type identifies those certificates and
+/// separates unrelated ones.
+///
+/// Univalence equates certificate types with convertible boundaries.
+/// A certificate consumer then crosses that equality unchanged.
+///
+/// - cites: [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]
+/// - cites: [Behr-2022-tracelet_hopf_algebras_decomposition_spaces_extended_abstract]
+///
+/// [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]: https://arxiv.org/abs/1308.0729 "Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
+/// [Behr-2022-tracelet_hopf_algebras_decomposition_spaces_extended_abstract]: https://doi.org/10.4204/EPTCS.372.23 "Behr and Kock, Tracelet Hopf Algebras and Decomposition Spaces"
+
+// The presented integers and `up`.
+import "./circle-base.gandr";
+
+/// The root rule gives a certificate from `S(P(S x))` to `S x`.
+def atRoot(x : Int) -> Path[.A = Int] (S (P (S x))) (S x) =
+  Path.here (S x)
+
+/// The inner rule gives the same certificate through `up`.
+def inside(x : Int) -> Path[.A = Int] (S (P (S x))) (S x) =
+  Path.ap up (Path.here x)
+
+/// The rules identify both peak certificates with reflexivity at the join.
+def identified(x : Int) -> Path[.A = Path[.A = Int] (S (P (S x))) (S x)] (atRoot x) (inside x) =
+  Path.here (atRoot x)
+
+/// The `ua` path identifies the peak and join certificate types.
+def certificates(x : Int) -> Path[.A = Type] (Path[.A = Int] (S (P (S x))) (S x)) (
+  Path[.A = Int] (S x) (S x)
+) =
+  ua (*{
+    fun (c) { c },
+    *{
+      *{fun (c) { c }, fun (c) { Path.here c }},
+      *{fun (c) { c }, fun (c) { Path.here c }}
+    }
+  })
+
+/// Transport carries a peak certificate consumer to the same join consumer.
+def carried(x : Int, f : Path[.A = Int] (S (P (S x))) (S x) -> Int) -> Path[
+  .A = Path[.A = Int] (S x) (S x) -> Int
+] (Path.walk (fun (X) { X -> Int }) (certificates x) f) fun (d) { f d } =
+  Path.here (fun (d) { f d })
+
+/// The carried consumer transports `S(Z)` along a join certificate.
+@[runs("S Z")]
+def carriedRun() -> Int =
+  let g = Path.walk (fun (X) { X -> Int }) (certificates Z) (fun (c) {
+    Path.walk (fun (y) { Int }) c (S Z)
+  })
+  g (Path.here (S Z))

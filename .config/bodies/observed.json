@@ -1,0 +1,248 @@
+[
+  {
+    "name": "#3758: a body working no defect owes no observation",
+    "input": {
+      "defect": false,
+      "body": "Closes #9",
+      "transcripts": []
+    },
+    "output": ""
+  },
+  {
+    "name": "#3758: a defect with no transcript owes the observation and names both commands",
+    "input": {
+      "defect": true,
+      "body": "Closes #9\n\nThe regression is `judgement::tests::reflexivity_checks_by_endpoint_conversion`.",
+      "transcripts": []
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue; a refusal of a check commits the check's transcript, its command, issue, head and exit before and after.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#3758: a transcript of a debug task stopped at a breakpoint in the test the body names discharges it, naming the stop",
+    "input": {
+      "defect": true,
+      "body": "Closes #9\n\nThe regression is `judgement::tests::reflexivity_checks_by_endpoint_conversion`.",
+      "transcripts": [
+        {
+          "path": "crates/core-checker/tests/debug-traces/judgement.tests.reflexivity_checks_by_endpoint_conversion.txt",
+          "text": "test: judgement::tests::reflexivity_checks_by_endpoint_conversion\npackage: gandr-core-checker\ncommand: mise run debug:refusal EndpointMismatch gandr-core-checker judgement::tests::reflexivity_checks_by_endpoint_conversion\n\n(lldb) run\n* thread #2, name = 'judgement::test', stop reason = breakpoint 3.1\n    frame #0: 0x0000555556364cb6 gandr_core_checker`<gandr_core_checker::judgement::Machine>::reaches::{closure#0} at judgement.rs:10390:32\n(lldb) bt 24\n* thread #2, name = 'judgement::test', stop reason = breakpoint 3.1\n  * frame #0: 0x0000555556364cb6 gandr_core_checker`<gandr_core_checker::judgement::Machine>::reaches::{closure#0} at judgement.rs:10390:32\n"
+        }
+      ]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [x] observed — `crates/core-checker/tests/debug-traces/judgement.tests.reflexivity_checks_by_endpoint_conversion.txt` stops `judgement::tests::reflexivity_checks_by_endpoint_conversion` at `judgement.rs:10390:32`.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#5341: a stop in a frame of the optimised standard library is read before lldb's ` [opt]` mark",
+    "input": {
+      "defect": true,
+      "body": "Closes #9\n\nThe regression is `recheck::tests::a_hover_splits`.",
+      "transcripts": [
+        {
+          "path": "crates/surface-lsp/tests/debug-traces/recheck.tests.a_hover_splits.txt",
+          "text": "test: recheck::tests::a_hover_splits\npackage: gandr-surface-lsp\ncommand: mise run debug:test gandr-surface-lsp recheck::tests::a_hover_splits\n\n(lldb) run\n* thread #2, name = 'recheck::tests', stop reason = breakpoint 1.1\n    frame #0: 0x0000000103813da8 gandr_surface_lsp-68fb3854266909c2`__rustc::rust_panic at panicking.rs:887:25 [opt]\n"
+        }
+      ]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [x] observed — `crates/surface-lsp/tests/debug-traces/recheck.tests.a_hover_splits.txt` stops `recheck::tests::a_hover_splits` at `panicking.rs:887:25`.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#5341: a breakpoint with no frame 0 line still witnesses nothing",
+    "input": {
+      "defect": true,
+      "body": "Closes #9\n\nThe regression is `recheck::tests::a_hover_splits`.",
+      "transcripts": [
+        {
+          "path": "crates/surface-lsp/tests/debug-traces/recheck.tests.a_hover_splits.txt",
+          "text": "test: recheck::tests::a_hover_splits\npackage: gandr-surface-lsp\ncommand: mise run debug:test gandr-surface-lsp recheck::tests::a_hover_splits\n\n(lldb) run\n* thread #2, name = 'recheck::tests', stop reason = breakpoint 1.1\n [opt]\n"
+        }
+      ]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue; a refusal of a check commits the check's transcript, its command, issue, head and exit before and after.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#3758: a transcript of a test the body does not name witnesses nothing",
+    "input": {
+      "defect": true,
+      "body": "Closes #9\n\nThe regression is `judgement::tests::another_test`.",
+      "transcripts": [
+        {
+          "path": "crates/core-checker/tests/debug-traces/judgement.tests.reflexivity_checks_by_endpoint_conversion.txt",
+          "text": "test: judgement::tests::reflexivity_checks_by_endpoint_conversion\npackage: gandr-core-checker\ncommand: mise run debug:test gandr-core-checker judgement::tests::reflexivity_checks_by_endpoint_conversion\n\n* thread #2, stop reason = breakpoint 1.1\n    frame #0: 0x0000555556364cb6 gandr_core_checker`reaches at judgement.rs:10390:32\n"
+        }
+      ]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue; a refusal of a check commits the check's transcript, its command, issue, head and exit before and after.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#3758: a transcript where lldb never stopped, the test passing through, witnesses nothing",
+    "input": {
+      "defect": true,
+      "body": "The regression is `judgement::tests::reflexivity_checks_by_endpoint_conversion`.",
+      "transcripts": [
+        {
+          "path": "crates/core-checker/tests/debug-traces/judgement.tests.reflexivity_checks_by_endpoint_conversion.txt",
+          "text": "test: judgement::tests::reflexivity_checks_by_endpoint_conversion\npackage: gandr-core-checker\ncommand: mise run debug:test gandr-core-checker judgement::tests::reflexivity_checks_by_endpoint_conversion\n\n(lldb) run\nProcess 7 exited with status = 0 (0x00000000)\n"
+        }
+      ]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue; a refusal of a check commits the check's transcript, its command, issue, head and exit before and after.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#3758: a transcript written by hand, no debug task its command, witnesses nothing",
+    "input": {
+      "defect": true,
+      "body": "The regression is `judgement::tests::reflexivity_checks_by_endpoint_conversion`.",
+      "transcripts": [
+        {
+          "path": "crates/core-checker/tests/debug-traces/judgement.tests.reflexivity_checks_by_endpoint_conversion.txt",
+          "text": "test: judgement::tests::reflexivity_checks_by_endpoint_conversion\npackage: gandr-core-checker\ncommand: lldb by hand\n\n* thread #2, stop reason = breakpoint 1.1\n    frame #0: 0x0000555556364cb6 gandr_core_checker`reaches at judgement.rs:10390:32\n"
+        }
+      ]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue; a refusal of a check commits the check's transcript, its command, issue, head and exit before and after.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#3784: a change touching no Rust is witnessed by the case it adds whose name cites the issue the body closes",
+    "input": {
+      "defect": true,
+      "body": "Closes #9\n\nThe splice reads the block from the environment.",
+      "transcripts": [],
+      "paths": [".config/bodies/observed.awk", ".config/bodies/splice.json"],
+      "cases": [
+        {
+          "path": ".config/bodies/splice.json",
+          "name": "#9: a block of several lines replaces the stale one"
+        }
+      ]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [x] observed — `.config/bodies/splice.json` records `#9: a block of several lines replaces the stale one`, the change touching no Rust.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#3784: a case citing the issue witnesses nothing when the change touches Rust",
+    "input": {
+      "defect": true,
+      "body": "Closes #9",
+      "transcripts": [],
+      "paths": [".config/bodies/splice.json", "crates/core-checker/src/judgement.rs"],
+      "cases": [
+        {
+          "path": ".config/bodies/splice.json",
+          "name": "#9: a block of several lines replaces the stale one"
+        }
+      ]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue; a refusal of a check commits the check's transcript, its command, issue, head and exit before and after.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#3784: a case citing another issue than the one the body closes witnesses nothing",
+    "input": {
+      "defect": true,
+      "body": "Closes #9",
+      "transcripts": [],
+      "paths": [".config/bodies/splice.json"],
+      "cases": [{ "path": ".config/bodies/splice.json", "name": "#10: another case" }]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue; a refusal of a check commits the check's transcript, its command, issue, head and exit before and after.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#5760: a Rustless output group migration records observed evidence",
+    "input": {
+      "defect": true,
+      "body": "Closes #5760",
+      "transcripts": [],
+      "paths": [
+        "corpus/ledger/features/several-outputs.gandr",
+        "corpus/model/desc/many-out-op.gandr",
+        "corpus/model/distribution/ping.gandr",
+        ".config/bodies/observed.json"
+      ],
+      "cases": [
+        {
+          "path": ".config/bodies/observed.json",
+          "name": "#5760: output group sources record their settled verdict"
+        }
+      ]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [x] observed — `.config/bodies/observed.json` records `#5760: output group sources record their settled verdict`, the change touching no Rust.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#7643: a check's transcript, refusing before and passing after, witnesses the issue the body works",
+    "input": {
+      "defect": true,
+      "body": "Advances #9",
+      "transcripts": [
+        {
+          "path": "crates/p/tests/debug-traces/check-dylint-9.txt",
+          "text": "command: mise run check:dylint\nissue: #9\nbefore: 704594f0a7\nexit: 1\nerror: `f` states an allocation in neither form\n  --> crates/p/src/lib.rs:4:1\nafter: 6e9450ebc0\nexit: 0\n"
+        }
+      ],
+      "paths": ["crates/p/src/lib.rs", "crates/p/tests/debug-traces/check-dylint-9.txt"],
+      "cases": []
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [x] observed — `crates/p/tests/debug-traces/check-dylint-9.txt` records `mise run check:dylint` refusing at `704594f0a7` with exit 1, and passing at `6e9450ebc0`.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#7643: a check's transcript that still fails after witnesses nothing",
+    "input": {
+      "defect": true,
+      "body": "Closes #9",
+      "transcripts": [
+        {
+          "path": "crates/p/tests/debug-traces/check-dylint-9.txt",
+          "text": "command: mise run check:dylint\nissue: #9\nbefore: 704594f0a7\nexit: 1\nerror: `f` states an allocation in neither form\nafter: 6e9450ebc0\nexit: 1\n"
+        }
+      ],
+      "paths": ["crates/p/src/lib.rs"],
+      "cases": []
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue; a refusal of a check commits the check's transcript, its command, issue, head and exit before and after.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#7643: a check's transcript with no refusing line witnesses nothing",
+    "input": {
+      "defect": true,
+      "body": "Closes #9",
+      "transcripts": [
+        {
+          "path": "crates/p/tests/debug-traces/check-dylint-9.txt",
+          "text": "command: mise run check:dylint\nissue: #9\nbefore: 704594f0a7\nexit: 1\n \nafter: 6e9450ebc0\nexit: 0\n"
+        }
+      ],
+      "paths": ["crates/p/src/lib.rs"],
+      "cases": []
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue; a refusal of a check commits the check's transcript, its command, issue, head and exit before and after.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#7643: a check's transcript of an issue the body does not work witnesses nothing",
+    "input": {
+      "defect": true,
+      "body": "Closes #9",
+      "transcripts": [
+        {
+          "path": "crates/p/tests/debug-traces/check-dylint-10.txt",
+          "text": "command: mise run check:dylint\nissue: #10\nbefore: 704594f0a7\nexit: 1\nerror: `f` states an allocation in neither form\nafter: 6e9450ebc0\nexit: 0\n"
+        }
+      ],
+      "paths": ["crates/p/src/lib.rs"],
+      "cases": []
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue; a refusal of a check commits the check's transcript, its command, issue, head and exit before and after.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#7643: a transcript of a command that is no check witnesses nothing",
+    "input": {
+      "defect": true,
+      "body": "Closes #9",
+      "transcripts": [
+        {
+          "path": "crates/p/tests/debug-traces/cargo-9.txt",
+          "text": "command: cargo check -p p\nissue: #9\nbefore: 704594f0a7\nexit: 101\nerror[E0432]: unresolved import\nafter: 6e9450ebc0\nexit: 0\n"
+        }
+      ],
+      "paths": ["crates/p/src/lib.rs"],
+      "cases": []
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue; a refusal of a check commits the check's transcript, its command, issue, head and exit before and after.\n<!-- gandr-observed:end -->"
+  }
+]

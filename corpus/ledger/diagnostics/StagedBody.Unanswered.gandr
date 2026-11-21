@@ -1,0 +1,6 @@
+/// `StagedBody.Unanswered`: a `thir` mark whose file holds an escape. The
+/// dispatcher stages a mark only when its two texts hold no escape, so no
+/// staged answer matches the mark.
+@[refuses("StagedBody.Unanswered")]
+@[thir(("example\t.rs", "identity"))]
+def identityBody : Integer;

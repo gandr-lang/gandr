@@ -1,0 +1,3495 @@
+//! Recursive nominal blocks, structural fixpoints typed by stages and gated
+//! fixpoint unfolding through admission and replay.
+
+use alloc::alloc::Global;
+use alloc::collections::BTreeMap;
+use alloc::string::String;
+
+use anodized::spec;
+use gandr_kernel_conversion_trace::ConversionDecision;
+use gandr_kernel_core::CheckedId;
+use gandr_kernel_core::EngineClaim;
+use gandr_kernel_core::Environment;
+use gandr_kernel_core::ExpectedComputationShape;
+use gandr_kernel_core::KernelError;
+use gandr_kernel_core::KernelVerdict;
+use gandr_kernel_core::ReplayBudget;
+use gandr_kernel_core::ReplayDecline;
+use gandr_kernel_core::ReplayNode;
+use gandr_kernel_core::ReplaySides;
+use gandr_kernel_core::Unfoldings;
+use gandr_kernel_core::replay;
+use gandr_kernel_core::stage_order::below;
+use gandr_kernel_data::SmallVec;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::CompTypeId;
+use gandr_kernel_term::Component;
+use gandr_kernel_term::ComputationId;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorTag;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldLabel;
+use gandr_kernel_term::FieldPosition;
+use gandr_kernel_term::FixpointEvidence;
+use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::JointPositions;
+use gandr_kernel_term::LevelSignature;
+use gandr_kernel_term::OccurrenceSite;
+use gandr_kernel_term::ParameterPosition;
+use gandr_kernel_term::PathEvidence;
+use gandr_kernel_term::Stage;
+use gandr_kernel_term::StageId;
+use gandr_kernel_term::StagedPosition;
+use gandr_kernel_term::Standing;
+use gandr_kernel_term::Summand;
+use gandr_kernel_term::TermArena;
+use gandr_kernel_term::ValueId;
+use gandr_kernel_term::ValueTypeId;
+use gandr_kernel_term::session::Evidence;
+
+/// Where a one-parameter block's one field places the family `T A`, `A`
+/// its parameter, beside `List`, whose parameter is strictly positive,
+/// and `Test`, whose parameter is consumed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Placement
+{
+    /// `T A`.
+    Direct,
+    /// `U (F (T A))`: the returner's result.
+    Returned,
+    /// `U (Π (x : 1). F (T A))`: a dependent function's codomain.
+    Codomain,
+    /// `T A × 1`.
+    Product,
+    /// `T A + 1`.
+    Sum,
+    /// `{ x : T A }`.
+    Record,
+    /// `[T A]`.
+    List,
+    /// `Σ (x : 1). T A`.
+    Sigma,
+    /// `U (F (T A) & F 1)`.
+    With,
+    /// `List ⌜T A⌝`: through a strictly positive parameter.
+    Nested,
+    /// `U (T A → F 1)`: under a function's domain, one stage below.
+    Domain,
+    /// `U (U (T A → F 1) → F 1)`: under two domains.
+    TwoDomains,
+    /// `T ⌜1⌝`: at an argument other than its parameter.
+    NonUniform,
+    /// `U (T ⌜1⌝ → F 1)`: at another argument under a domain.
+    NonUniformDomain,
+    /// `Test ⌜T A⌝`: through a consumed parameter.
+    Consumed,
+    /// `U (Test ⌜T A⌝ → F 1)`: through a consumed parameter under a
+    /// domain.
+    ConsumedDomain,
+    /// `Lift (T A)`: the family lifted, a type no stage reaches.
+    Lifted,
+    /// A declaration after the block's own position.
+    Later,
+    /// The family in its own parameter telescope.
+    Parameter,
+    /// `T A ⇒ 1`: the family in a static function's domain, a term position.
+    StaticDomain,
+    /// `Path[.A = T A]((), ())`: the family as a path type's carrier.
+    PathCarrier,
+    /// `Path[.A = U](⌜T A⌝, ⌜1⌝)`: the family quoted at a path type's endpoint.
+    PathEndpoint,
+    /// `⌜T A⌝ = ⌜1⌝`: the family quoted in a path universe.
+    PathUniverse,
+    /// `⌜T A⌝ ~> ⌜1⌝`: the family quoted in a flow universe.
+    FlowUniverse,
+    /// `Path[.A = U](h, ⌜1⌝)`: the family quoted inside the endpoint `h`.
+    Held(Holder),
+}
+
+/// A value or computation former holding the quoted family `c = ⌜T A⌝`
+/// inside a path type's endpoint, a term position whatever the former.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Holder
+{
+    /// `*{.a = c}`.
+    Record,
+    /// `c ⊗ c`.
+    PathProduct,
+    /// `c ⊗~ c`.
+    FlowProduct,
+    /// `c :: nil`.
+    Cons,
+    /// `c c`, statically applied.
+    StaticApplication,
+    /// `refl c`.
+    Refl,
+    /// `stay c`.
+    Stay,
+    /// `inl c`.
+    Injection,
+    /// `lift c`.
+    Lift,
+    /// `⌜F (T A)⌝`.
+    QuotedComputation,
+    /// `thunk (c.a)`.
+    RecordProjection,
+    /// `thunk (c.0)`.
+    TupleProjection,
+    /// `thunk (x <- return c; return ())`.
+    Bind,
+    /// `thunk ⟨return c⟩`.
+    With,
+    /// `thunk (transport c c)`.
+    Transport,
+    /// `ua c`.
+    Univalence,
+    /// `here c`.
+    Here,
+    /// `⌜Flow[.A = 1](c, c)⌝`.
+    QuotedFlow,
+    /// `⌜Bridge[.A = 1](c, c)⌝`.
+    QuotedBridge,
+    /// `⌜El c⌝`, a computation type.
+    QuotedElement,
+    /// `⌜D c⌝`, a codata type over the first declaration.
+    QuotedCodata,
+    /// `thunk (case c of { return () })`.
+    Case,
+    /// `thunk (case c return F 1 of { return () })`.
+    DataCase,
+    /// `thunk (split c return F 1 as (_, _) in return ())`.
+    SigmaSplit,
+    /// `thunk ⟨return c⟩.0`.
+    Project,
+    /// `thunk (fold c { nil ↦ return (); _ :: _ ↦ return () })`.
+    ListFold,
+    /// `thunk (case c of { nil ↦ return (); _ :: _ ↦ return () })`.
+    ListCase,
+    /// `thunk (transport (T A) along c of c)`.
+    PathTransport,
+    /// `thunk (ride (T A) c c)`.
+    Ride,
+    /// `thunk (transport (F (T A)) along c from c over c of c)`.
+    TelescopeTransport,
+    /// `thunk (ride (F (T A)) c from c over c of c)`.
+    TelescopeRide,
+    /// `thunk (apply c at (c, c) by c in return ())`.
+    RelatedApplication,
+    /// A function flow from `c` to `c`.
+    FunctionFlow,
+    /// A forward flow translating by `c` with the output `c`.
+    ForwardFlow,
+    /// A session path over the payload paths `c`.
+    SessionPath,
+    /// A session flow over the payload paths `c`.
+    SessionFlow,
+    /// An equivalence with `c` forward and `c` backward.
+    Equivalence,
+    /// `⌜(T A) at a stage⌝`.
+    QuotedStaged,
+}
+
+/// `holder` around the quoted family, a value holding it: `own` is `T A`
+/// and `code` its quote.
+///
+/// # Specification
+/// trivial.
+fn held(
+    arena: &mut TermArena,
+    holder: Holder,
+    (own, code): (ValueTypeId, ValueId),
+) -> ValueId
+{
+    let unit = arena.value_unit();
+    let computation = match holder {
+        Holder::Record => {
+            return arena.value_record(BTreeMap::from([(
+                FieldLabel::from(String::from("a")),
+                code,
+            )]));
+        },
+        Holder::PathProduct => return arena.value_path_product(code, code),
+        Holder::FlowProduct => return arena.value_flow_product(code, code),
+        Holder::Cons => {
+            let nil = arena.value_list_nil();
+            return arena.value_list_cons(code, nil);
+        },
+        Holder::StaticApplication => return arena.value_static_application(code, code),
+        Holder::Refl => return arena.value_path_refl(code),
+        Holder::Stay => return arena.value_stay(code),
+        Holder::Injection => return arena.value_injection(Summand::from(0_usize), code),
+        Holder::Lift => return arena.value_lift(Level::zero(), code),
+        Holder::QuotedComputation => {
+            let returner = arena.comp_type_returner(own);
+            return arena.value_quote_computation(returner);
+        },
+        Holder::RecordProjection => {
+            arena.computation_record_projection(code, FieldLabel::from(String::from("a")))
+        },
+        Holder::TupleProjection => {
+            arena.computation_tuple_projection(code, Component::from(0_usize))
+        },
+        Holder::Bind => {
+            let returned = arena.computation_return(code);
+            let after = arena.computation_return(unit);
+            arena.computation_bind(returned, after)
+        },
+        Holder::With => {
+            let returned = arena.computation_return(code);
+            arena.computation_with(&[returned])
+        },
+        Holder::Transport => arena.computation_transport(code, code),
+        Holder::Univalence => return arena.value_univalence(code),
+        Holder::Here => return arena.value_here(code),
+        Holder::QuotedFlow => {
+            let one = arena.value_type_unit();
+            let flow = arena.value_type_flow(one, code, code);
+            return arena.value_quote(flow);
+        },
+        Holder::QuotedBridge => {
+            let one = arena.value_type_unit();
+            let bridge = arena.value_type_bridge(one, code, code);
+            return arena.value_quote(bridge);
+        },
+        Holder::QuotedElement => {
+            let element = arena.comp_type_element(code, Level::zero());
+            return arena.value_quote_computation(element);
+        },
+        Holder::QuotedCodata => {
+            let codata = arena.comp_type_codata(
+                ConstantIndex::from(0_usize),
+                SmallVec::<_, 0, Global>::from_iter([code]),
+            );
+            return arena.value_quote_computation(codata);
+        },
+        Holder::Case => {
+            let arm = arena.computation_return(unit);
+            arena.computation_case(code, &[arm])
+        },
+        Holder::DataCase => {
+            let arm = arena.computation_return(unit);
+            let one = arena.value_type_unit();
+            let motive = arena.comp_type_returner(one);
+            arena.computation_data_case(code, motive, SmallVec::<_, 0, Global>::from_iter([arm]))
+        },
+        Holder::SigmaSplit => {
+            let body = arena.computation_return(unit);
+            let one = arena.value_type_unit();
+            let motive = arena.comp_type_returner(one);
+            arena.computation_sigma_split(code, motive, body)
+        },
+        Holder::Project => {
+            let returned = arena.computation_return(code);
+            arena.computation_project(Component::from(0_usize), returned)
+        },
+        Holder::ListFold => {
+            let (on_nil, on_cons) = (
+                arena.computation_return(unit),
+                arena.computation_return(unit),
+            );
+            arena.computation_list_fold(own, own, code, on_nil, on_cons)
+        },
+        Holder::ListCase => {
+            let (on_nil, on_cons) = (
+                arena.computation_return(unit),
+                arena.computation_return(unit),
+            );
+            arena.computation_list_case(code, on_nil, on_cons)
+        },
+        Holder::PathTransport => arena.computation_path_transport(own, code, code),
+        Holder::Ride => arena.computation_ride(own, code, code),
+        Holder::TelescopeTransport => {
+            let motive = arena.comp_type_returner(own);
+            arena.computation_telescope_transport(motive, code, code, code, code)
+        },
+        Holder::TelescopeRide => {
+            let motive = arena.comp_type_returner(own);
+            arena.computation_telescope_ride(motive, code, code, code, code)
+        },
+        Holder::RelatedApplication => {
+            let body = arena.computation_return(unit);
+            arena.computation_related_application(code, (code, code), code, body)
+        },
+        Holder::FunctionFlow => {
+            let one = arena.value_type_unit();
+            let flow = arena.value_type_flow(one, code, code);
+            return arena.value_function_flow(flow, code, code);
+        },
+        Holder::ForwardFlow => {
+            let one = arena.value_type_unit();
+            let flow = arena.value_type_flow(one, code, code);
+            return arena.value_forward_flow(
+                flow,
+                code,
+                Box::from([code]),
+                gandr_kernel_data::ThinShared::from_header_and_iter((), []),
+            );
+        },
+        Holder::SessionPath => {
+            let one = arena.value_type_unit();
+            return arena.value_session_path(
+                one,
+                gandr_kernel_data::Shared::new(Evidence::default()),
+                code,
+            );
+        },
+        Holder::SessionFlow => {
+            let one = arena.value_type_unit();
+            return arena.value_session_flow(
+                one,
+                gandr_kernel_data::Shared::new(Evidence::default()),
+                code,
+            );
+        },
+        Holder::Equivalence => {
+            let one = arena.value_type_unit();
+            return arena.value_path_equiv(
+                one,
+                code,
+                code,
+                gandr_kernel_data::Shared::new(PathEvidence::default()),
+            );
+        },
+        Holder::QuotedStaged => {
+            let staged = arena.value_type_staged(own, Stage::At(StageId::from(0_usize)));
+            return arena.value_quote(staged);
+        },
+    };
+    arena.value_thunk(computation)
+}
+
+/// A fixpoint at `Nat → F Nat` whose body exercises one stage rule.
+#[derive(Clone, Copy, Debug)]
+enum Claim
+{
+    /// `λx. case x of { zero ↦ return zero; succ ↦ λp. (force rec) p }`.
+    Descends,
+    /// `λy. (force rec) y`: the call at the parameter itself.
+    NotCase,
+    /// The `succ` branch calls the self reference at the scrutinee.
+    AtScrutinee,
+    /// `λx. case x of { zero ↦ return zero; succ ↦ λp. case p of { zero ↦
+    /// return zero; succ ↦ λq. (force rec) (succ q) } }`: a value rebuilt
+    /// below the stage.
+    Rebuilt,
+    /// The same, calling at `succ p`: the scrutinee rebuilt.
+    RebuiltAtScrutinee,
+    /// The `succ` branch calls the self reference at `zero`, with its
+    /// field `p` below the stage.
+    NullaryUnderField,
+    /// The `zero` branch calls the self reference at `zero`, with nothing
+    /// below the stage.
+    NullaryUnderZero,
+    /// The `succ` branch hands the self reference itself, and its field,
+    /// to the helper at this position, which takes any function out of
+    /// `Nat`.
+    Handed(ConstantIndex),
+}
+
+/// The motive a derived `Nat` eliminator targets.
+#[derive(Clone, Copy, Debug)]
+enum Motive
+{
+    /// `F Nat`.
+    Returner,
+    /// `Nat → F Nat`, the motive `plus` recurses at.
+    Function,
+}
+
+/// The trace closing one goal on alpha equality or rigid separation.
+///
+/// # Specification
+/// trivial.
+fn shared() -> [ConversionDecision<ReplayNode>; 1]
+{
+    [ConversionDecision::ComparedShared {
+        left: ReplayNode::Other,
+        right: ReplayNode::Other,
+    }]
+}
+
+/// Admit `Nat`: `zero`, and `succ` over the family itself.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the returned identifier names a checked data declaration at the
+///   environment's next position.
+/// - panics: if the strictly positive block is refused.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a direct self occurrence is admitted at the block's own
+///   position.
+/// - witness: `tests::recursive_data::recursive_blocks_are_admitted`
+#[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position)]
+fn nat(environment: &mut Environment) -> CheckedId
+{
+    let position = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([]));
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([own]),
+        ]),
+        kind,
+    );
+    environment
+        .add_decl(declaration)
+        .expect("Nat is strictly positive")
+}
+
+/// Admit `List A`: `nil`, and `cons` over an element and the family at
+/// its parameter.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the returned identifier names a checked one-parameter data
+///   declaration at the environment's next position.
+/// - panics: if the strictly positive, uniform block is refused.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a parameterized self occurrence at the parameter variable
+///   is admitted.
+/// - witness: `tests::recursive_data::recursive_blocks_are_admitted`
+#[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position)]
+fn list(environment: &mut Environment) -> CheckedId
+{
+    let position = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let parameter = arena.value_variable(DeBruijnIndex::from(0));
+    let element = arena.value_type_element(parameter, Level::zero());
+    // The tail stands past the head's binder: the parameter is one out.
+    let past_head = arena.value_variable(DeBruijnIndex::from(1));
+    let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([past_head]));
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([universe]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([element, own]),
+        ]),
+        universe,
+    );
+    environment
+        .add_decl(declaration)
+        .expect("List is strictly positive and uniform")
+}
+
+/// Admit `Tree`: `leaf`, and `node` over a function field `U (Nat → F
+/// Tree)`.
+///
+/// # Specification
+/// - requires: `nat` names an admitted data declaration.
+/// - ensures: the returned identifier names a checked data declaration at the
+///   environment's next position.
+/// - panics: if the strictly positive block is refused.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a self occurrence at a thunked function's returner is
+///   admitted.
+/// - witness: `tests::recursive_data::recursive_blocks_are_admitted`
+#[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position)]
+fn tree(
+    environment: &mut Environment,
+    nat: ConstantIndex,
+) -> CheckedId
+{
+    let position = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([]));
+    let returner = arena.comp_type_returner(own);
+    let branching = arena.comp_type_arrow(nat_type, returner);
+    let field = arena.value_type_thunk(branching);
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([field]),
+        ]),
+        kind,
+    );
+    environment
+        .add_decl(declaration)
+        .expect("Tree is strictly positive")
+}
+
+/// `U (domain → returns)`: a thunked function from `domain`.
+///
+/// # Specification
+/// trivial.
+fn consuming(
+    arena: &mut TermArena,
+    domain: ValueTypeId,
+    returns: CompTypeId,
+) -> ValueTypeId
+{
+    let function = arena.comp_type_arrow(domain, returns);
+    arena.value_type_thunk(function)
+}
+
+/// Admit `Test A`: `test` over one function `U (El A → F 1)`, so the
+/// parameter stands under a domain and is not strictly positive.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the returned identifier names a checked one-parameter data
+///   declaration at the environment's next position.
+/// - panics: if the declaration is refused.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a family nested through `Test`'s parameter is refused
+///   where one nested through `List`'s is admitted.
+/// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
+#[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position)]
+fn consumed(environment: &mut Environment) -> CheckedId
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let parameter = arena.value_variable(DeBruijnIndex::from(0));
+    let element = arena.value_type_element(parameter, Level::zero());
+    let unit = arena.value_type_unit();
+    let returns = arena.comp_type_returner(unit);
+    let field = consuming(arena, element, returns);
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([universe]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([field])]),
+        universe,
+    );
+    environment.add_decl(declaration).expect("Test is admitted")
+}
+
+/// Admit `List` and `Test`, then offer a one-parameter block whose one
+/// field places the family as `placement` names.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the block, at position 2, or its refusal, one of the occurrence
+///   refusals.
+/// - panics: if `List` or `Test` is refused.
+///
+/// # Errors
+/// The kernel's refusal of the block.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each placement differs from `T A` in one former, so its
+///   verdict is that former's.
+/// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error,
+        KernelError::NegativeOccurrence(_)
+        | KernelError::NestedOccurrence(_)
+        | KernelError::IndexOccurrence(_)
+        | KernelError::NonUniformOccurrence(_)
+        | KernelError::CrossBlockReference { .. }), |id| usize::from(id.position()) == 2))]
+fn placed(placement: Placement) -> Result<CheckedId, KernelError>
+{
+    let mut environment = Environment::new();
+    let list = list(&mut environment).position();
+    let consumed = consumed(&mut environment).position();
+    let position = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let unit = arena.value_type_unit();
+    let returns = arena.comp_type_returner(unit);
+    let parameter = arena.value_variable(DeBruijnIndex::from(0));
+    let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([parameter]));
+    // Past one binder the parameter is one out.
+    let past = arena.value_variable(DeBruijnIndex::from(1));
+    let own_past = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([past]));
+    let code = arena.value_quote(own);
+    let one = arena.value_quote(unit);
+    let mut parameters = SmallVec::<_, 0, Global>::from_iter([universe]);
+    let field = match placement {
+        Placement::Direct => own,
+        Placement::Returned => {
+            let returner = arena.comp_type_returner(own);
+            arena.value_type_thunk(returner)
+        },
+        Placement::Codomain => {
+            let returner = arena.comp_type_returner(own_past);
+            let function = arena.comp_type_pi(unit, returner);
+            arena.value_type_thunk(function)
+        },
+        Placement::Product => arena.value_type_product(&[own, unit]),
+        Placement::Sum => arena.value_type_sum(&[own, unit]),
+        Placement::Record => {
+            arena.value_type_record(BTreeMap::from([(FieldLabel::from(String::from("x")), own)]))
+        },
+        Placement::List => arena.value_type_list(own),
+        Placement::Sigma => arena.value_type_sigma(unit, own_past),
+        Placement::With => {
+            let first = arena.comp_type_returner(own);
+            let both = arena.comp_type_with(&[first, returns]);
+            arena.value_type_thunk(both)
+        },
+        Placement::Nested => {
+            arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([code]))
+        },
+        Placement::Domain => consuming(arena, own, returns),
+        Placement::TwoDomains => {
+            let inner = consuming(arena, own, returns);
+            consuming(arena, inner, returns)
+        },
+        Placement::NonUniform => {
+            arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([one]))
+        },
+        Placement::NonUniformDomain => {
+            let other = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([one]));
+            consuming(arena, other, returns)
+        },
+        Placement::Consumed => {
+            arena.value_type_data(consumed, SmallVec::<_, 0, Global>::from_iter([code]))
+        },
+        Placement::ConsumedDomain => {
+            let tested =
+                arena.value_type_data(consumed, SmallVec::<_, 0, Global>::from_iter([code]));
+            consuming(arena, tested, returns)
+        },
+        Placement::Lifted => arena.value_type_lift(own, Level::zero()),
+        Placement::Later => {
+            let later = usize::from(position)
+                .checked_add(1)
+                .expect("a later position");
+            arena.value_type_data(
+                ConstantIndex::from(later),
+                SmallVec::<_, 0, Global>::from_iter([]),
+            )
+        },
+        Placement::Parameter => {
+            parameters.push(own);
+            unit
+        },
+        Placement::StaticDomain => arena.value_type_static_pi(own, unit),
+        Placement::PathCarrier => {
+            let point = arena.value_unit();
+            arena.value_type_path(own, point, point)
+        },
+        Placement::PathEndpoint => arena.value_type_path(universe, code, one),
+        Placement::PathUniverse => arena.value_type_path_universe(code, one),
+        Placement::FlowUniverse => arena.value_type_flow_universe(code, one),
+        Placement::Held(holder) => {
+            let held = held(arena, holder, (own, code));
+            arena.value_type_path(universe, held, one)
+        },
+    };
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        parameters,
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([field])]),
+        universe,
+    );
+    environment.add_decl(declaration)
+}
+
+/// What a consumer of `Chain` applies the test a link holds to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Consumer
+{
+    /// The chain before the link, one stage below it.
+    Before,
+    /// The link itself: Curry's consumer.
+    Itself,
+    /// The link itself, through a helper that takes the test at its
+    /// declared type.
+    Handed,
+}
+
+/// Admit `Chain`, `start` and `link : (prev : Chain, test : U (Chain → F
+/// 1))`, and `apply : U (U (Chain → F 1) → Chain → F 1)`, `λg. λx.
+/// (force g) x`; then offer `λc. case c of { start ↦ return (); link ↦
+/// λprev test. … }`, applying `test` to what `consumer` names.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the consumer is admitted exactly when it applies the test to the
+///   chain before the link, and otherwise refused as `StageNotBelow`.
+/// - panics: if `Chain` or `apply` is refused.
+///
+/// # Errors
+/// The kernel's refusal of the consumer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the consumers differ only in the value the test is
+///   applied to.
+/// - witness: `tests::recursive_data::a_negative_occurrence_below_the_stage_declares`
+/// - witness: `tests::recursive_data::currys_consumer_is_refused_at_its_call`
+#[spec(ensures: |ret| ret.is_ok() == (consumer == Consumer::Before)
+        && (ret.is_ok() || matches!(ret, Err(KernelError::StageNotBelow { .. }))))]
+fn chain(consumer: Consumer) -> Result<CheckedId, KernelError>
+{
+    let mut environment = Environment::new();
+    let chain = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let own = arena.value_type_data(chain, SmallVec::<_, 0, Global>::from_iter([]));
+    let unit = arena.value_type_unit();
+    let returns = arena.comp_type_returner(unit);
+    let test = consuming(arena, own, returns);
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([own, test]),
+        ]),
+        kind,
+    );
+    environment
+        .add_decl(declaration)
+        .expect("Chain is stratified");
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let own = arena.value_type_data(chain, SmallVec::<_, 0, Global>::from_iter([]));
+    let unit = arena.value_type_unit();
+    let returns = arena.comp_type_returner(unit);
+    let test = consuming(arena, own, returns);
+    let tested = arena.comp_type_arrow(own, returns);
+    let handing = arena.comp_type_arrow(test, tested);
+    let declared = arena.value_type_thunk(handing);
+    let argument = arena.value_variable(DeBruijnIndex::from(0));
+    let applied = call(arena, DeBruijnIndex::from(1), argument);
+    let body = arena.computation_lambda(applied);
+    let body = arena.computation_lambda(body);
+    let value = arena.value_thunk(body);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    let apply = environment
+        .add_decl(declaration)
+        .expect("apply is admitted")
+        .position();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let own = arena.value_type_data(chain, SmallVec::<_, 0, Global>::from_iter([]));
+    let unit = arena.value_type_unit();
+    let returns = arena.comp_type_returner(unit);
+    let done = arena.value_unit();
+    let on_start = arena.computation_return(done);
+    // Under the link's fields: `test` 0, `prev` 1, `c` 2.
+    let applied = match consumer {
+        Consumer::Before => {
+            let prev = arena.value_variable(DeBruijnIndex::from(1));
+            call(arena, DeBruijnIndex::from(0), prev)
+        },
+        Consumer::Itself => {
+            let link = arena.value_variable(DeBruijnIndex::from(2));
+            call(arena, DeBruijnIndex::from(0), link)
+        },
+        Consumer::Handed => {
+            let helper = arena.value_constant(apply);
+            let forced = arena.computation_force(helper);
+            let test = arena.value_variable(DeBruijnIndex::from(0));
+            let handed = arena.computation_application(forced, test);
+            let link = arena.value_variable(DeBruijnIndex::from(2));
+            arena.computation_application(handed, link)
+        },
+    };
+    let on_link = arena.computation_lambda(applied);
+    let on_link = arena.computation_lambda(on_link);
+    let scrutinee = arena.value_variable(DeBruijnIndex::from(0));
+    let case = arena.computation_data_case(
+        scrutinee,
+        returns,
+        SmallVec::<_, 0, Global>::from_iter([on_start, on_link]),
+    );
+    let body = arena.computation_lambda(case);
+    let declared = consuming(arena, own, returns);
+    let value = arena.value_thunk(body);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment.add_decl(declaration)
+}
+
+/// The former a link's test is held in, and the elimination that reads it
+/// back.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Wrapper
+{
+    /// `*{t : test}`, read by `w.t`.
+    Record,
+    /// `test × 1`, read by `w.0`.
+    Product,
+    /// `test + 1`, read by a case.
+    Sum,
+    /// `Σ(_ : test). 1`, read by a split.
+    Sigma,
+    /// `List test`, its head read by a list case.
+    List,
+    /// `U ⟨Chain → F 1⟩`, read by projecting the forced pair.
+    With,
+    /// `U (Π(_ : 1). Chain → F 1)`, read by applying it to `()`.
+    Pi,
+}
+
+/// Admit `Chain` with `link : (prev : Chain, held : W test)`, `W` the
+/// wrapper and `test` at `U (Chain → F 1)`; then offer `λc. case c of {
+/// start ↦ return (); link ↦ λprev held. … }`, reading the test out of
+/// `held` and applying it to what `consumer` names.
+///
+/// # Specification
+/// - requires: `consumer` is not [`Consumer::Handed`].
+/// - ensures: the consumer is admitted exactly when it applies the test to the
+///   chain before the link, and otherwise refused as `StageNotBelow`.
+/// - panics: if `Chain` is refused.
+///
+/// # Errors
+/// The kernel's refusal of the consumer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the consumers differ only in the value the test is
+///   applied to, and the wrappers only in the former the field's stage is
+///   rebuilt through.
+/// - witness: `tests::recursive_data::a_wrapped_test_is_staged_through_its_wrapper`
+#[spec(requires: consumer != Consumer::Handed,
+       ensures: |ret| ret.is_ok() == (consumer == Consumer::Before)
+        && (ret.is_ok() || matches!(ret, Err(KernelError::StageNotBelow { .. }))))]
+fn wrapped_chain(
+    wrapper: Wrapper,
+    consumer: Consumer,
+) -> Result<CheckedId, KernelError>
+{
+    let mut environment = Environment::new();
+    let chain = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let own = arena.value_type_data(chain, SmallVec::<_, 0, Global>::from_iter([]));
+    let held = wrapping(arena, wrapper, own);
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([own, held]),
+        ]),
+        kind,
+    );
+    environment
+        .add_decl(declaration)
+        .expect("Chain is stratified");
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let own = arena.value_type_data(chain, SmallVec::<_, 0, Global>::from_iter([]));
+    let unit = arena.value_type_unit();
+    let returns = arena.comp_type_returner(unit);
+    let done = arena.value_unit();
+    let on_start = arena.computation_return(done);
+    let applied = unwrapped(arena, wrapper, consumer);
+    let on_link = arena.computation_lambda(applied);
+    let on_link = arena.computation_lambda(on_link);
+    let scrutinee = arena.value_variable(DeBruijnIndex::from(0));
+    let case = arena.computation_data_case(
+        scrutinee,
+        returns,
+        SmallVec::<_, 0, Global>::from_iter([on_start, on_link]),
+    );
+    let body = arena.computation_lambda(case);
+    let declared = consuming(arena, own, returns);
+    let value = arena.value_thunk(body);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment.add_decl(declaration)
+}
+
+/// The link's second field: the test `U (Chain → F 1)` held in `wrapper`.
+///
+/// # Specification
+/// trivial.
+fn wrapping(
+    arena: &mut TermArena,
+    wrapper: Wrapper,
+    own: ValueTypeId,
+) -> ValueTypeId
+{
+    let unit = arena.value_type_unit();
+    let returns = arena.comp_type_returner(unit);
+    let tested = arena.comp_type_arrow(own, returns);
+    let test = arena.value_type_thunk(tested);
+    match wrapper {
+        Wrapper::Record => arena.value_type_record(BTreeMap::from([(
+            FieldLabel::from(String::from("t")),
+            test,
+        )])),
+        Wrapper::Product => arena.value_type_product(&[test, unit]),
+        Wrapper::Sum => arena.value_type_sum(&[test, unit]),
+        Wrapper::Sigma => arena.value_type_sigma(test, unit),
+        Wrapper::List => arena.value_type_list(test),
+        Wrapper::With => {
+            let with = arena.comp_type_with(&[tested]);
+            arena.value_type_thunk(with)
+        },
+        Wrapper::Pi => {
+            let pi = arena.comp_type_pi(unit, tested);
+            arena.value_type_thunk(pi)
+        },
+    }
+}
+
+/// The link branch's body under `held` 0, `prev` 1, `c` 2: the test read
+/// out of `held` and applied to `prev` or, for Curry's consumer, to `c`.
+///
+/// # Specification
+/// trivial.
+fn unwrapped(
+    arena: &mut TermArena,
+    wrapper: Wrapper,
+    consumer: Consumer,
+) -> ComputationId
+{
+    // The variable the test is applied to, `binders` binders below `held`.
+    let target = |arena: &mut TermArena, binders: u32| {
+        let index = match (consumer, binders) {
+            (Consumer::Before, 0) => 1,
+            (Consumer::Before, 1) | (Consumer::Itself | Consumer::Handed, 0) => 2,
+            (Consumer::Before, _) | (Consumer::Itself | Consumer::Handed, 1) => 3,
+            (Consumer::Itself | Consumer::Handed, _) => 4,
+        };
+        arena.value_variable(DeBruijnIndex::from(index))
+    };
+    let held = arena.value_variable(DeBruijnIndex::from(0));
+    let unit = arena.value_unit();
+    match wrapper {
+        Wrapper::Record | Wrapper::Product => {
+            let read = if wrapper == Wrapper::Record {
+                arena.computation_record_projection(held, FieldLabel::from(String::from("t")))
+            }
+            else {
+                arena.computation_tuple_projection(held, Component::from(0_usize))
+            };
+            let argument = target(arena, 1);
+            let applied = call(arena, DeBruijnIndex::from(0), argument);
+            arena.computation_bind(read, applied)
+        },
+        Wrapper::Sum => {
+            let argument = target(arena, 1);
+            let applied = call(arena, DeBruijnIndex::from(0), argument);
+            let on_unit = arena.computation_return(unit);
+            arena.computation_case(held, &[applied, on_unit])
+        },
+        Wrapper::Sigma => {
+            let argument = target(arena, 2);
+            let applied = call(arena, DeBruijnIndex::from(1), argument);
+            let one = arena.value_type_unit();
+            let returns = arena.comp_type_returner(one);
+            arena.computation_sigma_split(held, returns, applied)
+        },
+        Wrapper::List => {
+            let argument = target(arena, 2);
+            let applied = call(arena, DeBruijnIndex::from(1), argument);
+            let on_nil = arena.computation_return(unit);
+            arena.computation_list_case(held, on_nil, applied)
+        },
+        Wrapper::With => {
+            let forced = arena.computation_force(held);
+            let projected = arena.computation_project(Component::from(0_usize), forced);
+            let argument = target(arena, 0);
+            arena.computation_application(projected, argument)
+        },
+        Wrapper::Pi => {
+            let forced = arena.computation_force(held);
+            let instantiated = arena.computation_application(forced, unit);
+            let argument = target(arena, 0);
+            arena.computation_application(instantiated, argument)
+        },
+    }
+}
+
+/// `λx. case x [F Nat] of { zero ↦ on_zero; succ ↦ on_successor }`.
+///
+/// # Specification
+/// trivial.
+fn case_on_argument(
+    arena: &mut TermArena,
+    returner: CompTypeId,
+    on_zero: ComputationId,
+    on_successor: ComputationId,
+) -> ComputationId
+{
+    let argument = arena.value_variable(DeBruijnIndex::from(0));
+    let case = arena.computation_data_case(
+        argument,
+        returner,
+        SmallVec::<_, 0, Global>::from_iter([on_zero, on_successor]),
+    );
+    arena.computation_lambda(case)
+}
+
+/// `λx. case x of { zero ↦ return zero; succ ↦ λp. case p of { zero ↦
+/// return zero; succ ↦ λq. (force rec) (succ v) } }`, `v` the variable
+/// `field` under `q` 0, `p` 1, `x` 2, `rec` 3.
+///
+/// # Specification
+/// trivial.
+fn two_deep(
+    arena: &mut TermArena,
+    (nat, nat_type, returner, returned): (ConstantIndex, ValueTypeId, CompTypeId, ComputationId),
+    field: DeBruijnIndex,
+) -> ComputationId
+{
+    let field = arena.value_variable(field);
+    let rebuilt = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([field]),
+    );
+    let recursive = arena.value_variable(DeBruijnIndex::from(3));
+    let forced = arena.computation_force(recursive);
+    let called = arena.computation_application(forced, rebuilt);
+    let on_inner = arena.computation_lambda(called);
+    let inner_scrutinee = arena.value_variable(DeBruijnIndex::from(0));
+    let inner = arena.computation_data_case(
+        inner_scrutinee,
+        returner,
+        SmallVec::<_, 0, Global>::from_iter([returned, on_inner]),
+    );
+    let on_outer = arena.computation_lambda(inner);
+    case_on_argument(arena, returner, returned, on_outer)
+}
+
+/// `(force rec) argument`, `rec` the variable `recursive`.
+///
+/// # Specification
+/// trivial.
+fn call(
+    arena: &mut TermArena,
+    recursive: DeBruijnIndex,
+    argument: ValueId,
+) -> ComputationId
+{
+    let recursive = arena.value_variable(recursive);
+    let forced = arena.computation_force(recursive);
+    arena.computation_application(forced, argument)
+}
+
+/// Offer `fix rec. M` at `Nat → F Nat` with the body a claim names and the
+/// evidence given.
+///
+/// # Specification
+/// - requires: `nat` names the admitted `Nat`, and a handed claim's position
+///   names [`apply`]'s definition.
+/// - ensures: admitted when the evidence is structural and every call stands
+///   below the fixpoint's stage; refused as `StageNotBelow` when a structural
+///   call does not, and as `PartialFixpoint` when the evidence is partial: its
+///   body names its binder at a type ending in a returner.
+/// - panics: none.
+///
+/// # Errors
+/// The kernel's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each refused claim differs from an admitted one in the
+///   one argument its call takes.
+/// - witness: `tests::recursive_data::a_recursion_descends_on_its_first_parameter`
+/// - witness: `tests::recursive_data::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
+/// - witness: `tests::recursive_data::a_nullary_argument_needs_a_value_below_the_stage`
+/// - witness: `tests::recursive_data::a_self_reference_never_stands_for_an_unstaged_function`
+#[spec(ensures: |ret| ret.is_ok() == (evidence != FixpointEvidence::Partial
+            && matches!(claim, Claim::Descends | Claim::Rebuilt | Claim::NullaryUnderField))
+        && (ret.is_ok() || matches!(ret, Err(KernelError::StageNotBelow { .. } | KernelError::PartialFixpoint { .. }))))]
+fn claim(
+    environment: &mut Environment,
+    nat: ConstantIndex,
+    claim: Claim,
+    evidence: FixpointEvidence,
+) -> Result<CheckedId, KernelError>
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let returner = arena.comp_type_returner(nat_type);
+    let classifier = arena.comp_type_arrow(nat_type, returner);
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let returned = arena.computation_return(zero);
+    // Under the fixpoint's body: `rec` is 0. Under its λ: `x` 0, `rec`
+    // 1. Under the `succ` branch's field: `p` 0, `x` 1, `rec` 2.
+    let body = match claim {
+        Claim::Descends => {
+            let field = arena.value_variable(DeBruijnIndex::from(0));
+            let called = call(arena, DeBruijnIndex::from(2), field);
+            let on_successor = arena.computation_lambda(called);
+            case_on_argument(arena, returner, returned, on_successor)
+        },
+        Claim::NotCase => {
+            let argument = arena.value_variable(DeBruijnIndex::from(0));
+            let called = call(arena, DeBruijnIndex::from(1), argument);
+            arena.computation_lambda(called)
+        },
+        Claim::AtScrutinee => {
+            let scrutinee = arena.value_variable(DeBruijnIndex::from(1));
+            let called = call(arena, DeBruijnIndex::from(2), scrutinee);
+            let on_successor = arena.computation_lambda(called);
+            case_on_argument(arena, returner, returned, on_successor)
+        },
+        Claim::Rebuilt => two_deep(
+            arena,
+            (nat, nat_type, returner, returned),
+            DeBruijnIndex::from(0),
+        ),
+        Claim::RebuiltAtScrutinee => two_deep(
+            arena,
+            (nat, nat_type, returner, returned),
+            DeBruijnIndex::from(1),
+        ),
+        Claim::NullaryUnderField => {
+            let called = call(arena, DeBruijnIndex::from(2), zero);
+            let on_successor = arena.computation_lambda(called);
+            case_on_argument(arena, returner, returned, on_successor)
+        },
+        Claim::NullaryUnderZero => {
+            let called = call(arena, DeBruijnIndex::from(1), zero);
+            let on_successor = arena.computation_lambda(returned);
+            case_on_argument(arena, returner, called, on_successor)
+        },
+        Claim::Handed(apply) => {
+            let helper = arena.value_constant(apply);
+            let forced = arena.computation_force(helper);
+            let recursive = arena.value_variable(DeBruijnIndex::from(2));
+            let handed = arena.computation_application(forced, recursive);
+            let field = arena.value_variable(DeBruijnIndex::from(0));
+            let called = arena.computation_application(handed, field);
+            let on_successor = arena.computation_lambda(called);
+            case_on_argument(arena, returner, returned, on_successor)
+        },
+    };
+    let fixpoint = arena.computation_fixpoint(body, evidence);
+    let declared = arena.value_type_thunk(classifier);
+    let value = arena.value_thunk(fixpoint);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment.add_decl(declaration)
+}
+
+/// Admit `apply : U (U (Nat → F Nat) → Nat → F Nat)`, `λg. λx. (force g)
+/// x`: a helper that may call its function at any natural number.
+///
+/// # Specification
+/// - requires: `nat` names the admitted `Nat`.
+/// - ensures: the returned identifier names the admitted definition.
+/// - panics: if the kernel refuses it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a helper over unstaged functions, which a self reference
+///   never stands for.
+/// - witness: `tests::recursive_data::a_self_reference_never_stands_for_an_unstaged_function`
+#[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position)]
+fn apply(
+    environment: &mut Environment,
+    nat: ConstantIndex,
+) -> CheckedId
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let returner = arena.comp_type_returner(nat_type);
+    let function = arena.comp_type_arrow(nat_type, returner);
+    let thunked = arena.value_type_thunk(function);
+    let applying = arena.comp_type_arrow(thunked, function);
+    let declared = arena.value_type_thunk(applying);
+    // Under λg λx: `x` 0, `g` 1.
+    let argument = arena.value_variable(DeBruijnIndex::from(0));
+    let called = call(arena, DeBruijnIndex::from(1), argument);
+    let inner = arena.computation_lambda(called);
+    let outer = arena.computation_lambda(inner);
+    let value = arena.value_thunk(outer);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment
+        .add_decl(declaration)
+        .expect("apply checks without a fixpoint")
+}
+
+/// Offer the loop `fix rec. force rec` at `F 1` with the evidence given.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: refused: a structural one, with no arrow to recurse on, wanting
+///   one; a partial one as a loop at a returner.
+/// - panics: none.
+///
+/// # Errors
+/// The kernel's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a fixpoint at a non-function type opens no stage when
+///   structural, and is no partial loop the kernel's fragment admits.
+/// - witness: `tests::recursive_data::a_structural_fixpoint_needs_an_arrow_to_recurse_on`
+#[spec(ensures: |ret| matches!(ret, Err(KernelError::ComputationShapeMismatch { expected: ExpectedComputationShape::Arrow, .. }))
+        || (evidence == FixpointEvidence::Partial && matches!(ret, Err(KernelError::PartialFixpoint { .. }))))]
+fn loop_at_unit(
+    environment: &mut Environment,
+    evidence: FixpointEvidence,
+) -> Result<CheckedId, KernelError>
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let unit = arena.value_type_unit();
+    let returner = arena.comp_type_returner(unit);
+    let recursive = arena.value_variable(DeBruijnIndex::from(0));
+    let forced = arena.computation_force(recursive);
+    let fixpoint = arena.computation_fixpoint(forced, evidence);
+    let declared = arena.value_type_thunk(returner);
+    let value = arena.value_thunk(fixpoint);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment.add_decl(declaration)
+}
+
+/// Admit `Nat`'s eliminator derived at a closed motive `C`:
+/// `λm_z. λm_s. fix rec. λx. case x [C] of { zero ↦ force m_z; succ ↦ λp.
+/// (force m_s) p (thunk ((force rec) p)) }`.
+///
+/// # Specification
+/// - requires: `nat` names the admitted `Nat`.
+/// - ensures: the eliminator is admitted at `U C → U (Nat → U C → C) → Nat →
+///   C`.
+/// - panics: if the kernel refuses it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a direct field's hypothesis replays as descent.
+/// - witness: `tests::recursive_data::derived_eliminators_are_admitted`
+#[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position)]
+fn nat_eliminator(
+    environment: &mut Environment,
+    nat: ConstantIndex,
+    motive: Motive,
+) -> CheckedId
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let returner = arena.comp_type_returner(nat_type);
+    let motive = match motive {
+        Motive::Returner => returner,
+        Motive::Function => arena.comp_type_arrow(nat_type, returner),
+    };
+    let hypothesis = arena.value_type_thunk(motive);
+    let after_field = arena.comp_type_arrow(hypothesis, motive);
+    let successor = arena.comp_type_arrow(nat_type, after_field);
+    let zero_method = arena.value_type_thunk(motive);
+    let successor_method = arena.value_type_thunk(successor);
+    let target = arena.comp_type_arrow(nat_type, motive);
+    let after_zero = arena.comp_type_arrow(successor_method, target);
+    let classifier = arena.comp_type_arrow(zero_method, after_zero);
+    // `zero`: `x` 0, `rec` 1, `m_s` 2, `m_z` 3.
+    let zero_handler = arena.value_variable(DeBruijnIndex::from(3));
+    let on_zero = arena.computation_force(zero_handler);
+    // `succ`: `p` 0, `x` 1, `rec` 2, `m_s` 3.
+    let field = arena.value_variable(DeBruijnIndex::from(0));
+    let recursive = arena.value_variable(DeBruijnIndex::from(2));
+    let successor_handler = arena.value_variable(DeBruijnIndex::from(3));
+    let forced_recursive = arena.computation_force(recursive);
+    let call = arena.computation_application(forced_recursive, field);
+    let induction = arena.value_thunk(call);
+    let forced_handler = arena.computation_force(successor_handler);
+    let with_field = arena.computation_application(forced_handler, field);
+    let applied = arena.computation_application(with_field, induction);
+    let on_successor = arena.computation_lambda(applied);
+    let argument = arena.value_variable(DeBruijnIndex::from(0));
+    let case = arena.computation_data_case(
+        argument,
+        motive,
+        SmallVec::<_, 0, Global>::from_iter([on_zero, on_successor]),
+    );
+    let over_argument = arena.computation_lambda(case);
+    let fixpoint = arena.computation_fixpoint(over_argument, FixpointEvidence::StructuralDescent);
+    let over_successor = arena.computation_lambda(fixpoint);
+    let over_zero = arena.computation_lambda(over_successor);
+    let declared = arena.value_type_thunk(classifier);
+    let value = arena.value_thunk(over_zero);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment
+        .add_decl(declaration)
+        .expect("Nat's derived eliminator")
+}
+
+/// Admit `plus m n` by `Nat`'s eliminator at `Nat → F Nat`.
+///
+/// # Specification
+/// - requires: `eliminator` names `Nat`'s eliminator at `Nat → F Nat`.
+/// - ensures: `plus` is admitted at `Nat → Nat → F Nat`.
+/// - panics: if the kernel refuses it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a definition by eliminator applies it to methods whose
+///   hypothesis is a thunked function.
+/// - witness: `tests::recursive_data::derived_eliminators_are_admitted`
+#[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position)]
+fn plus(
+    environment: &mut Environment,
+    nat: ConstantIndex,
+    eliminator: ConstantIndex,
+) -> CheckedId
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let returner = arena.comp_type_returner(nat_type);
+    let motive = arena.comp_type_arrow(nat_type, returner);
+    let classifier = arena.comp_type_arrow(nat_type, motive);
+    let innermost = arena.value_variable(DeBruijnIndex::from(0));
+    let first = arena.value_variable(DeBruijnIndex::from(1));
+    // `m_z = thunk (λn. return n)`.
+    let identity = arena.computation_return(innermost);
+    let on_zero = arena.computation_lambda(identity);
+    let zero_method = arena.value_thunk(on_zero);
+    // `m_s = thunk (λp. λih. λn. r ← (force ih) n; return (succ r))`.
+    let forced = arena.computation_force(first);
+    let call = arena.computation_application(forced, innermost);
+    let successor = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([innermost]),
+    );
+    let returned = arena.computation_return(successor);
+    let bound = arena.computation_bind(call, returned);
+    let over_n = arena.computation_lambda(bound);
+    let over_hypothesis = arena.computation_lambda(over_n);
+    let over_field = arena.computation_lambda(over_hypothesis);
+    let successor_method = arena.value_thunk(over_field);
+    // `λm. (force elim) m_z m_s m`.
+    let constant = arena.value_constant(eliminator);
+    let head = arena.computation_force(constant);
+    let with_zero = arena.computation_application(head, zero_method);
+    let with_successor = arena.computation_application(with_zero, successor_method);
+    let applied = arena.computation_application(with_successor, innermost);
+    let over_m = arena.computation_lambda(applied);
+    let declared = arena.value_type_thunk(classifier);
+    let value = arena.value_thunk(over_m);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment
+        .add_decl(declaration)
+        .expect("plus by eliminator")
+}
+
+/// Admit `List`'s eliminator derived at `F Nat`, over its parameter.
+///
+/// # Specification
+/// - requires: `list` and `nat` name the admitted `List` and `Nat`.
+/// - ensures: the eliminator is admitted at `Π (A : Type). U (F Nat) → U (El A
+///   → List A → U (F Nat) → F Nat) → List A → F Nat`.
+/// - panics: if the kernel refuses it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — descent replays through a parameterized family, at the
+///   second of two fields.
+/// - witness: `tests::recursive_data::derived_eliminators_are_admitted`
+#[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position)]
+fn list_eliminator(
+    environment: &mut Environment,
+    list: ConstantIndex,
+    nat: ConstantIndex,
+) -> CheckedId
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let parameter = arena.value_variable(DeBruijnIndex::from(0));
+    let element = arena.value_type_element(parameter, Level::zero());
+    let list_type = arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([parameter]));
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let returner = arena.comp_type_returner(nat_type);
+    let hypothesis = arena.value_type_thunk(returner);
+    let after_tail = arena.comp_type_arrow(hypothesis, returner);
+    let after_element = arena.comp_type_arrow(list_type, after_tail);
+    let cons = arena.comp_type_arrow(element, after_element);
+    let nil_method = arena.value_type_thunk(returner);
+    let cons_method = arena.value_type_thunk(cons);
+    let target = arena.comp_type_arrow(list_type, returner);
+    let after_nil = arena.comp_type_arrow(cons_method, target);
+    let over_parameter = arena.comp_type_arrow(nil_method, after_nil);
+    let classifier = arena.comp_type_pi(universe, over_parameter);
+    // `nil`: `x` 0, `rec` 1, `m_cons` 2, `m_nil` 3.
+    let nil_handler = arena.value_variable(DeBruijnIndex::from(3));
+    let on_nil = arena.computation_force(nil_handler);
+    // `cons`: `t` 0, `a` 1, `x` 2, `rec` 3, `m_cons` 4.
+    let tail = arena.value_variable(DeBruijnIndex::from(0));
+    let head = arena.value_variable(DeBruijnIndex::from(1));
+    let recursive = arena.value_variable(DeBruijnIndex::from(3));
+    let cons_handler = arena.value_variable(DeBruijnIndex::from(4));
+    let forced_recursive = arena.computation_force(recursive);
+    let call = arena.computation_application(forced_recursive, tail);
+    let induction = arena.value_thunk(call);
+    let forced_handler = arena.computation_force(cons_handler);
+    let with_head = arena.computation_application(forced_handler, head);
+    let with_tail = arena.computation_application(with_head, tail);
+    let applied = arena.computation_application(with_tail, induction);
+    let over_head = arena.computation_lambda(applied);
+    let on_cons = arena.computation_lambda(over_head);
+    let argument = arena.value_variable(DeBruijnIndex::from(0));
+    let case = arena.computation_data_case(
+        argument,
+        returner,
+        SmallVec::<_, 0, Global>::from_iter([on_nil, on_cons]),
+    );
+    let over_argument = arena.computation_lambda(case);
+    let fixpoint = arena.computation_fixpoint(over_argument, FixpointEvidence::StructuralDescent);
+    let over_cons = arena.computation_lambda(fixpoint);
+    let over_nil = arena.computation_lambda(over_cons);
+    let over_type = arena.computation_lambda(over_nil);
+    let declared = arena.value_type_thunk(classifier);
+    let value = arena.value_thunk(over_type);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment
+        .add_decl(declaration)
+        .expect("List's derived eliminator")
+}
+
+/// Admit `length` by `List`'s eliminator at `F Nat`.
+///
+/// # Specification
+/// - requires: `eliminator` names `List`'s eliminator at `F Nat`.
+/// - ensures: `length` is admitted at `Π (A : Type). List A → F Nat`.
+/// - panics: if the kernel refuses it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a definition by eliminator instantiates its parameter
+///   before its methods.
+/// - witness: `tests::recursive_data::derived_eliminators_are_admitted`
+#[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position)]
+fn length(
+    environment: &mut Environment,
+    list: ConstantIndex,
+    nat: ConstantIndex,
+    eliminator: ConstantIndex,
+) -> CheckedId
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let innermost = arena.value_variable(DeBruijnIndex::from(0));
+    let outer = arena.value_variable(DeBruijnIndex::from(1));
+    let list_type = arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([innermost]));
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let returner = arena.comp_type_returner(nat_type);
+    let measured = arena.comp_type_arrow(list_type, returner);
+    let classifier = arena.comp_type_pi(universe, measured);
+    // `m_nil = thunk (return zero)`.
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let returned_zero = arena.computation_return(zero);
+    let nil_method = arena.value_thunk(returned_zero);
+    // `m_cons = thunk (λa. λt. λih. r ← force ih; return (succ r))`.
+    let forced = arena.computation_force(innermost);
+    let successor = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([innermost]),
+    );
+    let returned = arena.computation_return(successor);
+    let bound = arena.computation_bind(forced, returned);
+    let over_hypothesis = arena.computation_lambda(bound);
+    let over_tail = arena.computation_lambda(over_hypothesis);
+    let over_head = arena.computation_lambda(over_tail);
+    let cons_method = arena.value_thunk(over_head);
+    // `λA. λxs. (force elim) A m_nil m_cons xs`: `xs` 0, `A` 1.
+    let constant = arena.value_constant(eliminator);
+    let head = arena.computation_force(constant);
+    let with_type = arena.computation_application(head, outer);
+    let with_nil = arena.computation_application(with_type, nil_method);
+    let with_cons = arena.computation_application(with_nil, cons_method);
+    let applied = arena.computation_application(with_cons, innermost);
+    let over_list = arena.computation_lambda(applied);
+    let over_type = arena.computation_lambda(over_list);
+    let declared = arena.value_type_thunk(classifier);
+    let value = arena.value_thunk(over_type);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment
+        .add_decl(declaration)
+        .expect("length by eliminator")
+}
+
+/// Admit `Tree`'s eliminator derived at `F Nat`, whose `node` hypothesis
+/// runs the function field before recursing:
+/// `thunk (λy. t ← (force f) y; (force rec) t)`.
+///
+/// # Specification
+/// - requires: `tree` and `nat` name the admitted `Tree` and `Nat`.
+/// - ensures: the eliminator is admitted at `U (F Nat) → U (U (Nat → F Tree) →
+///   U (Nat → F Nat) → F Nat) → Tree → F Nat`.
+/// - panics: if the kernel refuses it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — descent replays through a function field's result under
+///   its own binder and a bind.
+/// - witness: `tests::recursive_data::derived_eliminators_are_admitted`
+#[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position)]
+fn tree_eliminator(
+    environment: &mut Environment,
+    tree: ConstantIndex,
+    nat: ConstantIndex,
+) -> CheckedId
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let tree_type = arena.value_type_data(tree, SmallVec::<_, 0, Global>::from_iter([]));
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let returner = arena.comp_type_returner(nat_type);
+    let tree_returner = arena.comp_type_returner(tree_type);
+    let branching = arena.comp_type_arrow(nat_type, tree_returner);
+    let field_type = arena.value_type_thunk(branching);
+    let induction_type = arena.comp_type_arrow(nat_type, returner);
+    let hypothesis = arena.value_type_thunk(induction_type);
+    let after_field = arena.comp_type_arrow(hypothesis, returner);
+    let node = arena.comp_type_arrow(field_type, after_field);
+    let leaf_method = arena.value_type_thunk(returner);
+    let node_method = arena.value_type_thunk(node);
+    let target = arena.comp_type_arrow(tree_type, returner);
+    let after_leaf = arena.comp_type_arrow(node_method, target);
+    let classifier = arena.comp_type_arrow(leaf_method, after_leaf);
+    // `leaf`: `x` 0, `rec` 1, `m_node` 2, `m_leaf` 3.
+    let leaf_handler = arena.value_variable(DeBruijnIndex::from(3));
+    let on_leaf = arena.computation_force(leaf_handler);
+    // Under the bind: `t` 0, `y` 1, `f` 2, `x` 3, `rec` 4.
+    let result = arena.value_variable(DeBruijnIndex::from(0));
+    let recursive = arena.value_variable(DeBruijnIndex::from(4));
+    let forced_recursive = arena.computation_force(recursive);
+    let call = arena.computation_application(forced_recursive, result);
+    // Under `λy`: `y` 0, `f` 1.
+    let point = arena.value_variable(DeBruijnIndex::from(0));
+    let branch_field = arena.value_variable(DeBruijnIndex::from(1));
+    let forced_field = arena.computation_force(branch_field);
+    let run = arena.computation_application(forced_field, point);
+    let bound = arena.computation_bind(run, call);
+    let over_point = arena.computation_lambda(bound);
+    let induction = arena.value_thunk(over_point);
+    // `node`: `f` 0, `x` 1, `rec` 2, `m_node` 3.
+    let field = arena.value_variable(DeBruijnIndex::from(0));
+    let node_handler = arena.value_variable(DeBruijnIndex::from(3));
+    let forced_handler = arena.computation_force(node_handler);
+    let with_field = arena.computation_application(forced_handler, field);
+    let applied = arena.computation_application(with_field, induction);
+    let on_node = arena.computation_lambda(applied);
+    let argument = arena.value_variable(DeBruijnIndex::from(0));
+    let case = arena.computation_data_case(
+        argument,
+        returner,
+        SmallVec::<_, 0, Global>::from_iter([on_leaf, on_node]),
+    );
+    let over_argument = arena.computation_lambda(case);
+    let fixpoint = arena.computation_fixpoint(over_argument, FixpointEvidence::StructuralDescent);
+    let over_node = arena.computation_lambda(fixpoint);
+    let over_leaf = arena.computation_lambda(over_node);
+    let declared = arena.value_type_thunk(classifier);
+    let value = arena.value_thunk(over_leaf);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment
+        .add_decl(declaration)
+        .expect("Tree's derived eliminator")
+}
+
+/// `fix rec. λx. case x [F Nat] of { zero ↦ return zero; succ ↦ λp. r ←
+/// (force rec) p; return (succ (succ r)) }`, carrying `evidence`.
+///
+/// # Specification
+/// trivial.
+fn double(
+    arena: &mut TermArena,
+    nat: ConstantIndex,
+    evidence: FixpointEvidence,
+) -> ComputationId
+{
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let returner = arena.comp_type_returner(nat_type);
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let on_zero = arena.computation_return(zero);
+    let field = arena.value_variable(DeBruijnIndex::from(0));
+    let recursive = arena.value_variable(DeBruijnIndex::from(2));
+    let forced = arena.computation_force(recursive);
+    let call = arena.computation_application(forced, field);
+    let once = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([field]),
+    );
+    let twice = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([once]),
+    );
+    let returned = arena.computation_return(twice);
+    let bound = arena.computation_bind(call, returned);
+    let on_successor = arena.computation_lambda(bound);
+    let body = case_on_argument(arena, returner, on_zero, on_successor);
+    arena.computation_fixpoint(body, evidence)
+}
+
+/// The numerals `0 … 4` over the admitted `Nat`.
+///
+/// # Specification
+/// trivial.
+fn numerals(
+    arena: &mut TermArena,
+    nat: ConstantIndex,
+) -> [ValueId; 5]
+{
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let one = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([zero]),
+    );
+    let two = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([one]),
+    );
+    let three = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([two]),
+    );
+    let four = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([three]),
+    );
+    [zero, one, two, three, four]
+}
+
+#[test]
+fn recursive_blocks_are_admitted()
+{
+    let mut environment = Environment::new();
+    let nat = nat(&mut environment);
+    let list = list(&mut environment);
+    let tree = tree(&mut environment, nat.position());
+    for admitted in [nat, list, tree] {
+        assert_eq!(environment.audit(admitted).axioms(), []);
+    }
+}
+
+/// A field may name the one before it: `Box : Type₁ { put : (a : Type₀,
+/// x : El a) }` admits; a `put` whose second field is an element of the
+/// code its first gives checks, and one whose second field is a code
+/// instead is refused at that field's type.
+#[test]
+fn dependent_fields_are_admitted()
+{
+    let mut environment = Environment::new();
+    let position = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let small = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let one = Level::zero().succ().expect("the successor of zero");
+    let large = arena.value_type_universe(GroundSort::Value, one);
+    let code = arena.value_variable(DeBruijnIndex::from(0));
+    let element = arena.value_type_element(code, Level::zero());
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([
+            small, element,
+        ])]),
+        large,
+    );
+    let boxed = environment
+        .add_decl(declaration)
+        .expect("a field may name the one before it");
+    assert_eq!(boxed.position(), position);
+    assert_eq!(environment.audit(boxed).axioms(), []);
+    let put = |environment: &mut Environment, quoted: bool| {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let datatype = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([]));
+        let unit = arena.value_type_unit();
+        let code = arena.value_quote(unit);
+        let second = if quoted { code } else { arena.value_unit() };
+        let constructor = arena.value_constructor(
+            position,
+            datatype,
+            ConstructorTag::from(0),
+            SmallVec::<_, 0, Global>::from_iter([code, second]),
+        );
+        let declaration = staging.def(LevelSignature::monomorphic(), datatype, constructor);
+        environment.add_decl(declaration).map(|_admitted| ())
+    };
+    assert_eq!(
+        put(&mut environment, false),
+        Ok(()),
+        "the unit value is an element of the unit's code"
+    );
+    assert!(
+        matches!(
+            put(&mut environment, true),
+            Err(KernelError::ValueTypeMismatch(_))
+        ),
+        "a code is no element of the unit's code"
+    );
+}
+
+/// Every placeable former admits the family it places, at a strictly
+/// positive position and under domains alike; what no stage reaches is
+/// refused by the occurrence it is.
+#[test]
+fn accessibility_is_decided_on_every_former()
+{
+    for placement in [
+        Placement::Direct,
+        Placement::Returned,
+        Placement::Codomain,
+        Placement::Product,
+        Placement::Sum,
+        Placement::Record,
+        Placement::List,
+        Placement::Sigma,
+        Placement::With,
+        Placement::Nested,
+        Placement::Domain,
+        Placement::TwoDomains,
+    ] {
+        let admitted = placed(placement);
+        assert!(admitted.is_ok(), "{placement:?}: {admitted:?}");
+    }
+    let field = OccurrenceSite::Field {
+        tag: ConstructorTag::from(0),
+        field: FieldPosition::from(0),
+    };
+    for (placement, refusal) in [
+        (
+            Placement::NonUniform,
+            KernelError::NonUniformOccurrence(field),
+        ),
+        (
+            Placement::NonUniformDomain,
+            KernelError::NegativeOccurrence(field),
+        ),
+        (Placement::Consumed, KernelError::NestedOccurrence(field)),
+        (
+            Placement::ConsumedDomain,
+            KernelError::NegativeOccurrence(field),
+        ),
+        (Placement::Lifted, KernelError::IndexOccurrence(field)),
+        (Placement::Later, KernelError::CrossBlockReference {
+            site: field,
+            index: ConstantIndex::from(3_usize),
+        }),
+        (
+            Placement::Parameter,
+            KernelError::IndexOccurrence(OccurrenceSite::Parameter(ParameterPosition::from(1))),
+        ),
+        (Placement::StaticDomain, KernelError::IndexOccurrence(field)),
+        (Placement::PathCarrier, KernelError::IndexOccurrence(field)),
+        (Placement::PathEndpoint, KernelError::IndexOccurrence(field)),
+        (Placement::PathUniverse, KernelError::IndexOccurrence(field)),
+        (Placement::FlowUniverse, KernelError::IndexOccurrence(field)),
+    ] {
+        assert_eq!(placed(placement).map(drop), Err(refusal), "{placement:?}");
+    }
+    for holder in [
+        Holder::Record,
+        Holder::PathProduct,
+        Holder::FlowProduct,
+        Holder::Cons,
+        Holder::StaticApplication,
+        Holder::Refl,
+        Holder::Stay,
+        Holder::Injection,
+        Holder::Lift,
+        Holder::QuotedComputation,
+        Holder::RecordProjection,
+        Holder::TupleProjection,
+        Holder::Bind,
+        Holder::With,
+        Holder::Transport,
+        Holder::Univalence,
+        Holder::Here,
+        Holder::QuotedFlow,
+        Holder::QuotedBridge,
+        Holder::QuotedElement,
+        Holder::QuotedCodata,
+        Holder::Case,
+        Holder::DataCase,
+        Holder::SigmaSplit,
+        Holder::Project,
+        Holder::ListFold,
+        Holder::ListCase,
+        Holder::PathTransport,
+        Holder::Ride,
+        Holder::TelescopeTransport,
+        Holder::TelescopeRide,
+        Holder::RelatedApplication,
+        Holder::FunctionFlow,
+        Holder::ForwardFlow,
+        Holder::SessionPath,
+        Holder::SessionFlow,
+        Holder::Equivalence,
+        Holder::QuotedStaged,
+    ] {
+        assert_eq!(
+            placed(Placement::Held(holder)).map(drop),
+            Err(KernelError::IndexOccurrence(field)),
+            "{holder:?}"
+        );
+    }
+}
+
+/// `Chain`'s test consumes the family under a domain, so a link's test
+/// takes chains one stage below the link: the block declares, and a
+/// consumer applying the test to the chain before the link is admitted.
+#[test]
+fn a_negative_occurrence_below_the_stage_declares()
+{
+    let admitted = chain(Consumer::Before);
+    assert!(admitted.is_ok(), "{admitted:?}");
+}
+
+/// Curry's consumer applies a link's test to the link itself, at no
+/// stage the test takes: refused at the call, written directly or
+/// through a helper.
+#[test]
+fn currys_consumer_is_refused_at_its_call()
+{
+    for consumer in [Consumer::Itself, Consumer::Handed] {
+        let refused = chain(consumer);
+        assert!(
+            matches!(
+                refused,
+                Err(KernelError::StageNotBelow {
+                    found: Standing::Top,
+                    ..
+                })
+            ),
+            "{consumer:?}: {refused:?}"
+        );
+    }
+}
+
+/// A link's test held inside a wrapper is staged through the wrapper: the
+/// consumer that unwraps it and applies it to the chain before the link is
+/// admitted, and the one that applies it to the link itself is refused at
+/// its call, whichever former holds the test.
+#[test]
+fn a_wrapped_test_is_staged_through_its_wrapper()
+{
+    for wrapper in [
+        Wrapper::Record,
+        Wrapper::Product,
+        Wrapper::Sum,
+        Wrapper::Sigma,
+        Wrapper::List,
+        Wrapper::With,
+        Wrapper::Pi,
+    ] {
+        let admitted = wrapped_chain(wrapper, Consumer::Before);
+        assert!(admitted.is_ok(), "{wrapper:?}: {admitted:?}");
+        let refused = wrapped_chain(wrapper, Consumer::Itself);
+        assert!(
+            matches!(
+                refused,
+                Err(KernelError::StageNotBelow {
+                    found: Standing::Top,
+                    ..
+                })
+            ),
+            "{wrapper:?}: {refused:?}"
+        );
+    }
+}
+
+/// Admit `Rose`, `node : (kids : List ⌜Rose⌝)`: the family nested through
+/// `List`'s strictly positive parameter.
+///
+/// # Specification
+/// - requires: `list` names the admitted `List`.
+/// - ensures: the returned identifier names a checked data declaration at the
+///   environment's next position.
+/// - panics: if the block is refused.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a family nested through a strictly positive parameter
+///   declares.
+/// - witness: `tests::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
+#[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position)]
+fn rose(
+    environment: &mut Environment,
+    list: ConstantIndex,
+) -> CheckedId
+{
+    let rose = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let own = arena.value_type_data(rose, SmallVec::<_, 0, Global>::from_iter([]));
+    let code = arena.value_quote(own);
+    let kids = arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([code]));
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([kids])]),
+        kind,
+    );
+    environment
+        .add_decl(declaration)
+        .expect("Rose nests through a strictly positive parameter")
+}
+
+/// `Rose`, `node : (kids : List ⌜Rose⌝)`, nests the family through
+/// `List`'s strictly positive parameter: the block declares, and a node
+/// with no children is a rose.
+#[test]
+fn a_nested_occurrence_through_a_strictly_positive_parameter_declares()
+{
+    let mut environment = Environment::new();
+    let list = list(&mut environment).position();
+    let rose = rose(&mut environment, list).position();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let own = arena.value_type_data(rose, SmallVec::<_, 0, Global>::from_iter([]));
+    let code = arena.value_quote(own);
+    let kids = arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([code]));
+    let none = arena.value_constructor(
+        list,
+        kids,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let sprig = arena.value_constructor(
+        rose,
+        own,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([none]),
+    );
+    let declaration = staging.def(LevelSignature::monomorphic(), own, sprig);
+    let defined = environment.add_decl(declaration);
+    assert!(defined.is_ok(), "{defined:?}");
+}
+
+/// `(force head) arguments…`, applied left to right.
+///
+/// # Specification
+/// trivial.
+fn spine(
+    arena: &mut TermArena,
+    head: ValueId,
+    arguments: &[ValueId],
+) -> ComputationId
+{
+    let forced = arena.computation_force(head);
+    arguments.iter().fold(forced, |applied, &argument| {
+        arena.computation_application(applied, argument)
+    })
+}
+
+/// Admit `map : U (Π a. Π b. U (El a → F (El b)) → List a → F (List b))`,
+/// `λa λb λg. fix m. λxs. case xs { nil ↦ return nil; cons ↦ λx λrest. y ←
+/// (force g) x; r ← (force m) rest; return (cons y r) }`.
+///
+/// # Specification
+/// - requires: `list` names the admitted `List`.
+/// - ensures: the returned identifier names the admitted definition.
+/// - panics: if the kernel refuses it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the generic map a rose tree's measure recurses through.
+/// - witness: `tests::recursive_data::a_type_parameter_instantiates_at_a_staged_code`
+#[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position)]
+fn map(
+    environment: &mut Environment,
+    list: ConstantIndex,
+) -> CheckedId
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let declared = {
+        // Under Π a Π b: `a` 1, `b` 0.
+        let a = arena.value_variable(DeBruijnIndex::from(1));
+        let b = arena.value_variable(DeBruijnIndex::from(0));
+        let source = arena.value_type_element(a, Level::zero());
+        let target = arena.value_type_element(b, Level::zero());
+        let into = arena.comp_type_returner(target);
+        let step = arena.comp_type_arrow(source, into);
+        let step = arena.value_type_thunk(step);
+        let from = arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([a]));
+        let to = arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([b]));
+        let into_list = arena.comp_type_returner(to);
+        let last = arena.comp_type_arrow(from, into_list);
+        let middle = arena.comp_type_arrow(step, last);
+        let inner = arena.comp_type_pi(kind, middle);
+        let outer = arena.comp_type_pi(kind, inner);
+        arena.value_type_thunk(outer)
+    };
+    // Under λxs: `xs` 0, `m` 1, `g` 2, `b` 3, `a` 4; the motive binds the
+    // scrutinee once more.
+    let motive = {
+        let b = arena.value_variable(DeBruijnIndex::from(4));
+        let to = arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([b]));
+        arena.comp_type_returner(to)
+    };
+    let on_nil = {
+        let b = arena.value_variable(DeBruijnIndex::from(3));
+        let to = arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([b]));
+        let nil = arena.value_constructor(
+            list,
+            to,
+            ConstructorTag::from(0),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
+        arena.computation_return(nil)
+    };
+    let on_cons = {
+        // Under λx λrest: `rest` 0, `x` 1, `m` 3, `g` 4.
+        let head = arena.value_variable(DeBruijnIndex::from(1));
+        let mapped = call(arena, DeBruijnIndex::from(4), head);
+        // Under `y`: `rest` 1, `m` 4.
+        let rest = arena.value_variable(DeBruijnIndex::from(1));
+        let recursed = call(arena, DeBruijnIndex::from(4), rest);
+        // Under `r`: `r` 0, `y` 1, `b` 7.
+        let element = arena.value_variable(DeBruijnIndex::from(7));
+        let to = arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([element]));
+        let image = arena.value_variable(DeBruijnIndex::from(1));
+        let images = arena.value_variable(DeBruijnIndex::from(0));
+        let cons = arena.value_constructor(
+            list,
+            to,
+            ConstructorTag::from(1),
+            SmallVec::<_, 0, Global>::from_iter([image, images]),
+        );
+        let returned = arena.computation_return(cons);
+        let inner = arena.computation_bind(recursed, returned);
+        let outer = arena.computation_bind(mapped, inner);
+        let rest_lambda = arena.computation_lambda(outer);
+        arena.computation_lambda(rest_lambda)
+    };
+    let xs = arena.value_variable(DeBruijnIndex::from(0));
+    let case = arena.computation_data_case(
+        xs,
+        motive,
+        SmallVec::<_, 0, Global>::from_iter([on_nil, on_cons]),
+    );
+    let lambda = arena.computation_lambda(case);
+    let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
+    let g_lambda = arena.computation_lambda(fixpoint);
+    let b_lambda = arena.computation_lambda(g_lambda);
+    let a_lambda = arena.computation_lambda(b_lambda);
+    let value = arena.value_thunk(a_lambda);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment
+        .add_decl(declaration)
+        .expect("map descends on its list")
+}
+
+/// What a rose tree's measure hands `map` beside its own claim.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Children
+{
+    /// The node's own field, at the stage the case bound it.
+    Field,
+    /// A one-element list of the node itself, at the plain `List ⌜Rose⌝`.
+    Forged,
+}
+
+/// Offer `size : U (Rose → F Nat)`, `fix s. λt. case t { node ↦ λkids. _ ←
+/// (force map) ⌜Rose⌝ ⌜Nat⌝ s children; return 1 }`: the claim handed to
+/// `map` is the self binder, as a source's unapplied claim lowers, and the
+/// codes the plain ones a source writes.
+///
+/// # Specification
+/// - requires: `nat`, `list`, `rose` and `map` name the admitted declarations
+///   of those names.
+/// - ensures: admitted exactly for the node's own field.
+/// - panics: none.
+///
+/// # Errors
+/// The kernel's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the field and the forged list differ in the one argument
+///   whose type stages `map`'s element.
+/// - witness: `tests::recursive_data::a_type_parameter_instantiates_at_a_staged_code`
+/// - witness: `tests::recursive_data::a_claim_at_the_scrutinee_through_map_is_refused`
+#[spec(ensures: |ret| ret.is_ok() == (children == Children::Field))]
+fn size(
+    environment: &mut Environment,
+    (nat, list, rose, map): (ConstantIndex, ConstantIndex, ConstantIndex, ConstantIndex),
+    children: Children,
+) -> Result<CheckedId, KernelError>
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let rose_type = arena.value_type_data(rose, SmallVec::<_, 0, Global>::from_iter([]));
+    let returner = arena.comp_type_returner(nat_type);
+    let classifier = arena.comp_type_arrow(rose_type, returner);
+    let rose_code = arena.value_quote(rose_type);
+    let nat_code = arena.value_quote(nat_type);
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let one = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([zero]),
+    );
+    let counted = arena.computation_return(one);
+    // The node's arm under `kids` 0, `t` 1, `s` 2.
+    let listed = match children {
+        Children::Field => arena.value_variable(DeBruijnIndex::from(0)),
+        Children::Forged => {
+            let kids =
+                arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([rose_code]));
+            let nil = arena.value_constructor(
+                list,
+                kids,
+                ConstructorTag::from(0),
+                SmallVec::<_, 0, Global>::from_iter([]),
+            );
+            let node = arena.value_variable(DeBruijnIndex::from(1));
+            arena.value_constructor(
+                list,
+                kids,
+                ConstructorTag::from(1),
+                SmallVec::<_, 0, Global>::from_iter([node, nil]),
+            )
+        },
+    };
+    let claim = arena.value_variable(DeBruijnIndex::from(2));
+    let head = arena.value_constant(map);
+    let mapped = spine(arena, head, &[rose_code, nat_code, claim, listed]);
+    let on_node = arena.computation_bind(mapped, counted);
+    let on_node = arena.computation_lambda(on_node);
+    let node = arena.value_variable(DeBruijnIndex::from(0));
+    let case = arena.computation_data_case(
+        node,
+        returner,
+        SmallVec::<_, 0, Global>::from_iter([on_node]),
+    );
+    let lambda = arena.computation_lambda(case);
+    let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
+    let declared = arena.value_type_thunk(classifier);
+    let value = arena.value_thunk(fixpoint);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment.add_decl(declaration)
+}
+
+/// Admit `apply_at : U (Π a. Π b. U (El a → F (El b)) → El a → F (El b))`,
+/// `λa λb λf λx. (force f) x`: a function applied at one type parameter.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the returned identifier names the admitted definition.
+/// - panics: if the kernel refuses it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the generic helper a recursion hands its claim and its
+///   argument to.
+/// - witness: `tests::recursive_data::a_type_parameter_instantiates_at_a_staged_code`
+#[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position)]
+fn apply_at(environment: &mut Environment) -> CheckedId
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    // Under Π a Π b: `a` 1, `b` 0.
+    let a = arena.value_variable(DeBruijnIndex::from(1));
+    let b = arena.value_variable(DeBruijnIndex::from(0));
+    let source = arena.value_type_element(a, Level::zero());
+    let target = arena.value_type_element(b, Level::zero());
+    let into = arena.comp_type_returner(target);
+    let function = arena.comp_type_arrow(source, into);
+    let thunked = arena.value_type_thunk(function);
+    let applying = arena.comp_type_arrow(thunked, function);
+    let inner = arena.comp_type_pi(kind, applying);
+    let outer = arena.comp_type_pi(kind, inner);
+    let declared = arena.value_type_thunk(outer);
+    // Under λa λb λf λx: `x` 0, `f` 1.
+    let argument = arena.value_variable(DeBruijnIndex::from(0));
+    let called = call(arena, DeBruijnIndex::from(1), argument);
+    let value = (0_u8 .. 4).fold(called, |body, _binder| arena.computation_lambda(body));
+    let value = arena.value_thunk(value);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment
+        .add_decl(declaration)
+        .expect("apply_at checks without a fixpoint")
+}
+
+/// Offer `count : U (Nat → F Nat)`, `fix c. λn. case n { zero ↦ return
+/// zero; succ ↦ λp. (force apply_at) ⌜Nat⌝ ⌜Nat⌝ c v }`, `v` the variable
+/// `handed` under `p` 0, `n` 1, `c` 2.
+///
+/// # Specification
+/// - requires: `nat` and `apply_at` name the admitted declarations of those
+///   names.
+/// - ensures: admitted exactly for the predecessor `p`.
+/// - panics: none.
+///
+/// # Errors
+/// The kernel's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the predecessor and the parameter differ in the stage
+///   they instantiate `apply_at`'s parameter at.
+/// - witness: `tests::recursive_data::a_type_parameter_instantiates_at_a_staged_code`
+/// - witness: `tests::recursive_data::a_claim_at_the_scrutinee_through_map_is_refused`
+#[spec(ensures: |ret| ret.is_ok() == (handed == DeBruijnIndex::from(0)))]
+fn count(
+    environment: &mut Environment,
+    (nat, apply_at): (ConstantIndex, ConstantIndex),
+    handed: DeBruijnIndex,
+) -> Result<CheckedId, KernelError>
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let returner = arena.comp_type_returner(nat_type);
+    let classifier = arena.comp_type_arrow(nat_type, returner);
+    let nat_code = arena.value_quote(nat_type);
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let returned = arena.computation_return(zero);
+    let claim = arena.value_variable(DeBruijnIndex::from(2));
+    let handed = arena.value_variable(handed);
+    let head = arena.value_constant(apply_at);
+    let counted = spine(arena, head, &[nat_code, nat_code, claim, handed]);
+    let on_successor = arena.computation_lambda(counted);
+    let body = case_on_argument(arena, returner, returned, on_successor);
+    let fixpoint = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
+    let declared = arena.value_type_thunk(classifier);
+    let value = arena.value_thunk(fixpoint);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment.add_decl(declaration)
+}
+
+/// A type argument is the plain code on the wire, and the kernel
+/// re-derives its stage from the argument that holds it: a rose tree's
+/// children instantiate `map`'s element at their stage, and a predecessor
+/// `apply_at`'s parameter at its own, so the claim handed beside them takes
+/// them (#393).
+#[test]
+fn a_type_parameter_instantiates_at_a_staged_code()
+{
+    let mut environment = Environment::new();
+    let nat = nat(&mut environment).position();
+    let list = list(&mut environment).position();
+    let rose = rose(&mut environment, list).position();
+    let map = map(&mut environment, list).position();
+    let sized = size(&mut environment, (nat, list, rose, map), Children::Field);
+    assert!(sized.is_ok(), "{sized:?}");
+    let apply_at = apply_at(&mut environment).position();
+    let counted = count(&mut environment, (nat, apply_at), DeBruijnIndex::from(0));
+    assert!(counted.is_ok(), "{counted:?}");
+}
+
+/// The node itself in a list of its own holds it at no stage, so `map`'s
+/// element stays the plain code and the claim refuses at the top; the
+/// parameter itself handed to `apply_at` instantiates it at the parameter's
+/// own stage, which the claim's bound does not reach.
+#[test]
+fn a_claim_at_the_scrutinee_through_map_is_refused()
+{
+    let mut environment = Environment::new();
+    let nat = nat(&mut environment).position();
+    let list = list(&mut environment).position();
+    let rose = rose(&mut environment, list).position();
+    let map = map(&mut environment, list).position();
+    let root = Stage::At(StageId::from(0_usize));
+    assert_eq!(
+        size(&mut environment, (nat, list, rose, map), Children::Forged).map(drop),
+        Err(KernelError::StageNotBelow {
+            found: Standing::Top,
+            bound: below(root),
+        })
+    );
+    let apply_at = apply_at(&mut environment).position();
+    assert_eq!(
+        count(&mut environment, (nat, apply_at), DeBruijnIndex::from(1)).map(drop),
+        Err(KernelError::StageNotBelow {
+            found: Standing::Staged(root),
+            bound: below(root),
+        })
+    );
+}
+
+/// What a predecessor's successor arm returns.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Returning
+{
+    /// The field `p`, below the argument.
+    Field,
+    /// `succ n`, one step above the argument.
+    Successor,
+}
+
+/// Offer `pred : U (Nat → F Nat)`, `fix f. λn. case n { zero ↦ return zero;
+/// succ ↦ λp. return v }`, `v` what `returning` names under `p` 0, `n` 1.
+///
+/// # Specification
+/// trivial.
+fn predecessor(
+    environment: &mut Environment,
+    nat: ConstantIndex,
+    returning: Returning,
+) -> CheckedId
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let returner = arena.comp_type_returner(nat_type);
+    let classifier = arena.comp_type_arrow(nat_type, returner);
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let returned = arena.computation_return(zero);
+    let value = match returning {
+        Returning::Field => arena.value_variable(DeBruijnIndex::from(0)),
+        Returning::Successor => {
+            let argument = arena.value_variable(DeBruijnIndex::from(1));
+            arena.value_constructor(
+                nat,
+                nat_type,
+                ConstructorTag::from(1),
+                SmallVec::<_, 0, Global>::from_iter([argument]),
+            )
+        },
+    };
+    let given = arena.computation_return(value);
+    let on_successor = arena.computation_lambda(given);
+    let body = case_on_argument(arena, returner, returned, on_successor);
+    let fixpoint = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
+    let declared = arena.value_type_thunk(classifier);
+    let value = arena.value_thunk(fixpoint);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment
+        .add_decl(declaration)
+        .expect("a predecessor checks")
+}
+
+/// Offer `halve : U (Nat → F Nat)`, `fix h. λn. case n { zero ↦ return zero;
+/// succ ↦ λp. q ← (force pred) p; (force h) q }`: under `q` 0, `p` 1, `n` 2,
+/// `h` 3.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// The kernel's refusal.
+fn halve_through(
+    environment: &mut Environment,
+    (nat, pred): (ConstantIndex, ConstantIndex),
+) -> Result<CheckedId, KernelError>
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let returner = arena.comp_type_returner(nat_type);
+    let classifier = arena.comp_type_arrow(nat_type, returner);
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let returned = arena.computation_return(zero);
+    let head = arena.value_constant(pred);
+    let field = arena.value_variable(DeBruijnIndex::from(0));
+    let predecessor = spine(arena, head, &[field]);
+    let bound = arena.value_variable(DeBruijnIndex::from(0));
+    let recursed = call(arena, DeBruijnIndex::from(3), bound);
+    let bind = arena.computation_bind(predecessor, recursed);
+    let on_successor = arena.computation_lambda(bind);
+    let body = case_on_argument(arena, returner, returned, on_successor);
+    let fixpoint = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
+    let declared = arena.value_type_thunk(classifier);
+    let value = arena.value_thunk(fixpoint);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment.add_decl(declaration)
+}
+
+/// A predecessor returning its field returns at its argument's stage, so a
+/// recursion on the predecessor of its own field descends; one returning a
+/// successor of its argument returns at no stage, and the same recursion is
+/// refused at the top.
+#[test]
+fn a_result_follows_the_parameter_it_recurses_on()
+{
+    let mut environment = Environment::new();
+    let nat = nat(&mut environment).position();
+    let pred = predecessor(&mut environment, nat, Returning::Field).position();
+    let halved = halve_through(&mut environment, (nat, pred));
+    assert!(halved.is_ok(), "{halved:?}");
+    let bumped = predecessor(&mut environment, nat, Returning::Successor).position();
+    assert_eq!(
+        halve_through(&mut environment, (nat, bumped)).map(drop),
+        Err(KernelError::StageNotBelow {
+            found: Standing::Top,
+            bound: below(Stage::At(StageId::from(0_usize))),
+        })
+    );
+}
+
+#[test]
+fn a_recursion_descends_on_its_first_parameter()
+{
+    let mut environment = Environment::new();
+    let nat = nat(&mut environment).position();
+    let admitted = claim(
+        &mut environment,
+        nat,
+        Claim::Descends,
+        FixpointEvidence::StructuralDescent,
+    )
+    .expect("a call at the scrutinised constructor's field descends");
+    assert_eq!(environment.audit(admitted).axioms(), []);
+    let root = Stage::At(StageId::from(0_usize));
+    for fixture in [Claim::NotCase, Claim::AtScrutinee] {
+        assert_eq!(
+            claim(
+                &mut environment,
+                nat,
+                fixture,
+                FixpointEvidence::StructuralDescent
+            ),
+            Err(KernelError::StageNotBelow {
+                found: Standing::Staged(root),
+                bound: below(root),
+            }),
+            "{fixture:?}"
+        );
+        assert!(
+            matches!(
+                claim(&mut environment, nat, fixture, FixpointEvidence::Partial),
+                Err(KernelError::PartialFixpoint { .. })
+            ),
+            "nor does it check as partial: the fragment's calls return ({fixture:?})"
+        );
+    }
+}
+
+#[test]
+fn a_structural_fixpoint_needs_an_arrow_to_recurse_on()
+{
+    let mut environment = Environment::new();
+    assert!(matches!(
+        loop_at_unit(&mut environment, FixpointEvidence::StructuralDescent),
+        Err(KernelError::ComputationShapeMismatch {
+            expected: ExpectedComputationShape::Arrow,
+            ..
+        })
+    ));
+    assert!(
+        matches!(
+            loop_at_unit(&mut environment, FixpointEvidence::Partial),
+            Err(KernelError::PartialFixpoint { .. })
+        ),
+        "nor does a loop at F 1 check as partial: it never returns"
+    );
+}
+
+/// Where a two-parameter recursion over `Nat` and `1` recurses.
+#[derive(Clone, Copy, Debug)]
+enum Telescope
+{
+    /// `Nat → 1 → F Nat`, on its first parameter.
+    First,
+    /// `1 → Nat → F Nat`, on its second.
+    Second,
+    /// `Π(u : 1). Nat → F Nat`, on its second, under a dependent binder.
+    UnderPi,
+}
+
+/// Admit the recursion `telescope` names: a case on the `Nat` parameter
+/// returning zero, or calling itself at the successor's field with the unit
+/// parameter handed on.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// The kernel's refusal of the recursion.
+fn telescoped(
+    environment: &mut Environment,
+    nat: ConstantIndex,
+    telescope: Telescope,
+) -> Result<CheckedId, KernelError>
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let one = arena.value_type_unit();
+    let returner = arena.comp_type_returner(nat_type);
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let returned = arena.computation_return(zero);
+    // Under the successor's field `p`: `p` 0, the inner parameter 1, the
+    // outer 2, `rec` 3.
+    let field = arena.value_variable(DeBruijnIndex::from(0));
+    let recursive = arena.value_variable(DeBruijnIndex::from(3));
+    let forced = arena.computation_force(recursive);
+    let (classifier, scrutinee, arguments, evidence) = match telescope {
+        Telescope::First => {
+            let inner = arena.comp_type_arrow(one, returner);
+            let unit = arena.value_variable(DeBruijnIndex::from(1));
+            (
+                arena.comp_type_arrow(nat_type, inner),
+                DeBruijnIndex::from(1),
+                [field, unit],
+                FixpointEvidence::StructuralDescent,
+            )
+        },
+        Telescope::Second | Telescope::UnderPi => {
+            let inner = arena.comp_type_arrow(nat_type, returner);
+            let unit = arena.value_variable(DeBruijnIndex::from(2));
+            let classifier = match telescope {
+                Telescope::UnderPi => arena.comp_type_pi(one, inner),
+                Telescope::First | Telescope::Second => arena.comp_type_arrow(one, inner),
+            };
+            (
+                classifier,
+                DeBruijnIndex::from(0),
+                [unit, field],
+                FixpointEvidence::Staged {
+                    position: StagedPosition::from(1_usize),
+                },
+            )
+        },
+    };
+    let [first, second] = arguments;
+    let applied = arena.computation_application(forced, first);
+    let called = arena.computation_application(applied, second);
+    let on_successor = arena.computation_lambda(called);
+    let scrutinee = arena.value_variable(scrutinee);
+    let case = arena.computation_data_case(
+        scrutinee,
+        returner,
+        SmallVec::<_, 0, Global>::from_iter([returned, on_successor]),
+    );
+    let inner = arena.computation_lambda(case);
+    let outer = arena.computation_lambda(inner);
+    let fixpoint = arena.computation_fixpoint(outer, evidence);
+    let declared = arena.value_type_thunk(classifier);
+    let value = arena.value_thunk(fixpoint);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment.add_decl(declaration)
+}
+
+/// A recursion descends on the parameter its evidence names, wherever that
+/// parameter stands in the telescope: first before another arrow, second
+/// after an arrow, or second under a dependent binder.
+#[test]
+fn a_recursion_descends_on_the_parameter_its_evidence_names()
+{
+    for telescope in [Telescope::First, Telescope::Second, Telescope::UnderPi] {
+        let mut environment = Environment::new();
+        let nat = nat(&mut environment).position();
+        let admitted = telescoped(&mut environment, nat, telescope);
+        assert!(admitted.is_ok(), "{telescope:?}: {admitted:?}");
+    }
+}
+
+#[test]
+fn a_call_on_a_value_rebuilt_below_the_stage_is_admitted()
+{
+    let mut environment = Environment::new();
+    let nat = nat(&mut environment).position();
+    let admitted = claim(
+        &mut environment,
+        nat,
+        Claim::Rebuilt,
+        FixpointEvidence::StructuralDescent,
+    )
+    .expect("succ q stands below x = succ (succ q)");
+    assert_eq!(environment.audit(admitted).axioms(), []);
+    // `succ p` is `x` itself: its field `p` stands at the outer case's
+    // stage, one below the fixpoint's, where two are wanted.
+    let root = Stage::At(StageId::from(0_usize));
+    assert_eq!(
+        claim(
+            &mut environment,
+            nat,
+            Claim::RebuiltAtScrutinee,
+            FixpointEvidence::StructuralDescent
+        ),
+        Err(KernelError::StageNotBelow {
+            found: Standing::Staged(Stage::At(StageId::from(1_usize))),
+            bound: below(below(root)),
+        })
+    );
+}
+
+#[test]
+fn a_nullary_argument_needs_a_value_below_the_stage()
+{
+    let mut environment = Environment::new();
+    let nat = nat(&mut environment).position();
+    let admitted = claim(
+        &mut environment,
+        nat,
+        Claim::NullaryUnderField,
+        FixpointEvidence::StructuralDescent,
+    )
+    .expect("the field p shows the stage holds a value");
+    assert_eq!(environment.audit(admitted).axioms(), []);
+    // Under `zero` nothing in scope stands below the stage, which may be
+    // the first: `rec zero` there need not terminate.
+    let root = Stage::At(StageId::from(0_usize));
+    assert_eq!(
+        claim(
+            &mut environment,
+            nat,
+            Claim::NullaryUnderZero,
+            FixpointEvidence::StructuralDescent
+        ),
+        Err(KernelError::StageNotBelow {
+            found: Standing::Top,
+            bound: below(root),
+        })
+    );
+    assert!(
+        matches!(
+            claim(
+                &mut environment,
+                nat,
+                Claim::NullaryUnderZero,
+                FixpointEvidence::Partial,
+            ),
+            Err(KernelError::PartialFixpoint { .. })
+        ),
+        "nor does it check as partial: `rec zero` need not return"
+    );
+}
+
+#[test]
+fn a_nullary_argument_is_judged_in_each_branch_s_own_scope()
+{
+    // `succ` first: the branch whose field shows the stage holds a value
+    // is checked before the one with nothing below it, so an answer for
+    // `rec zero` kept from the first would wrongly serve the second.
+    let mut environment = Environment::new();
+    let position = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([]));
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([own]),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        ]),
+        kind,
+    );
+    let swapped = environment
+        .add_decl(declaration)
+        .expect("a successor-first Nat is strictly positive")
+        .position();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let nat_type = arena.value_type_data(swapped, SmallVec::<_, 0, Global>::from_iter([]));
+    let returner = arena.comp_type_returner(nat_type);
+    let classifier = arena.comp_type_arrow(nat_type, returner);
+    let zero = arena.value_constructor(
+        swapped,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    // Under the `succ` branch's field: `p` 0, `x` 1, `rec` 2; under the
+    // `zero` branch: `x` 0, `rec` 1.
+    let under_field = call(arena, DeBruijnIndex::from(2), zero);
+    let on_successor = arena.computation_lambda(under_field);
+    let on_zero = call(arena, DeBruijnIndex::from(1), zero);
+    let argument = arena.value_variable(DeBruijnIndex::from(0));
+    let case = arena.computation_data_case(
+        argument,
+        returner,
+        SmallVec::<_, 0, Global>::from_iter([on_successor, on_zero]),
+    );
+    let body = arena.computation_lambda(case);
+    let fixpoint = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
+    let declared = arena.value_type_thunk(classifier);
+    let value = arena.value_thunk(fixpoint);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    let root = Stage::At(StageId::from(0_usize));
+    assert_eq!(
+        environment.add_decl(declaration).map(|_admitted| ()),
+        Err(KernelError::StageNotBelow {
+            found: Standing::Top,
+            bound: below(root),
+        })
+    );
+}
+
+/// Admit `Empty` and `T = Mk (U (Empty → F T))`, then offer `fix rec. λt.
+/// (force rec) (Mk (thunk (λx. fix y. force y)))` at `T → F T` claiming
+/// `evidence`, the inner fixpoint partial.
+///
+/// # Specification
+/// trivial.
+fn thunked_call(
+    environment: &mut Environment,
+    evidence: FixpointEvidence,
+) -> Result<CheckedId, KernelError>
+{
+    let empty = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        kind,
+    );
+    let _empty = environment.add_decl(declaration)?;
+    let position = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let empty_type = arena.value_type_data(empty, SmallVec::<_, 0, Global>::from_iter([]));
+    let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([]));
+    let into = arena.comp_type_returner(own);
+    let branch = arena.comp_type_arrow(empty_type, into);
+    let field = arena.value_type_thunk(branch);
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([field])]),
+        kind,
+    );
+    let _family = environment.add_decl(declaration)?;
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([]));
+    let into = arena.comp_type_returner(own);
+    let arrow = arena.comp_type_arrow(own, into);
+    // Under λx, fix y: `y` 0.
+    let y = arena.value_variable(DeBruijnIndex::from(0));
+    let forced = arena.computation_force(y);
+    let diverging = arena.computation_fixpoint(forced, FixpointEvidence::Partial);
+    let lambda = arena.computation_lambda(diverging);
+    let thunked = arena.value_thunk(lambda);
+    let built = arena.value_constructor(
+        position,
+        own,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([thunked]),
+    );
+    // Under λt: `t` 0, `rec` 1.
+    let called = call(arena, DeBruijnIndex::from(1), built);
+    let body = arena.computation_lambda(called);
+    let fixpoint = arena.computation_fixpoint(body, evidence);
+    let declared = arena.value_type_thunk(arrow);
+    let value = arena.value_thunk(fixpoint);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment.add_decl(declaration)
+}
+
+#[test]
+fn a_thunked_field_shows_no_value_below_the_stage_598()
+{
+    // #598: `Mk`'s one recursive field is thunked, and the thunk never
+    // returns, so `Mk (…)` holds no value below the stage and nothing in
+    // scope shows the stage is above the first: `rec (Mk …)` calls itself
+    // forever.
+    let mut environment = Environment::new();
+    let root = Stage::At(StageId::from(0_usize));
+    assert_eq!(
+        thunked_call(&mut environment, FixpointEvidence::StructuralDescent).map(|_admitted| ()),
+        Err(KernelError::StageNotBelow {
+            found: Standing::Top,
+            bound: below(root),
+        })
+    );
+    let mut environment = Environment::new();
+    assert!(
+        matches!(
+            thunked_call(&mut environment, FixpointEvidence::Partial),
+            Err(KernelError::PartialFixpoint { .. })
+        ),
+        "nor does it check as partial: the call never returns"
+    );
+}
+
+#[test]
+fn a_self_reference_never_stands_for_an_unstaged_function()
+{
+    let mut environment = Environment::new();
+    let nat = nat(&mut environment).position();
+    let apply = apply(&mut environment, nat).position();
+    // `apply rec p` hands `rec` to a function that may call it at any
+    // natural number, `x` itself among them: `rec`'s domain stands below
+    // the stage, and `apply`'s at none.
+    let root = Stage::At(StageId::from(0_usize));
+    assert_eq!(
+        claim(
+            &mut environment,
+            nat,
+            Claim::Handed(apply),
+            FixpointEvidence::StructuralDescent
+        ),
+        Err(KernelError::StageNotBelow {
+            found: Standing::Top,
+            bound: below(root),
+        })
+    );
+    assert!(
+        matches!(
+            claim(
+                &mut environment,
+                nat,
+                Claim::Handed(apply),
+                FixpointEvidence::Partial,
+            ),
+            Err(KernelError::PartialFixpoint { .. })
+        ),
+        "nor does it check as partial: `apply` may call `rec` at `x` itself"
+    );
+}
+
+#[test]
+fn derived_eliminators_are_admitted()
+{
+    let mut environment = Environment::new();
+    let nat = nat(&mut environment).position();
+    let list = list(&mut environment).position();
+    let tree = tree(&mut environment, nat).position();
+    let by_nat = nat_eliminator(&mut environment, nat, Motive::Function);
+    let plus = plus(&mut environment, nat, by_nat.position());
+    let by_nat_value = nat_eliminator(&mut environment, nat, Motive::Returner);
+    let by_list = list_eliminator(&mut environment, list, nat);
+    let length = length(&mut environment, list, nat, by_list.position());
+    let by_tree = tree_eliminator(&mut environment, tree, nat);
+    for admitted in [by_nat, plus, by_nat_value, by_list, length, by_tree] {
+        assert_eq!(environment.audit(admitted).axioms(), []);
+    }
+}
+
+#[test]
+fn a_fixpoint_computes_at_a_constructor_and_replays()
+{
+    let mut environment = Environment::new();
+    let nat = nat(&mut environment).position();
+    let mut arena = environment.arena().clone();
+    let doubling = double(&mut arena, nat, FixpointEvidence::StructuralDescent);
+    let [_, _, two, three, four] = numerals(&mut arena, nat);
+    let applied = arena.computation_application(doubling, two);
+    let expected = arena.computation_return(four);
+    let wrong = arena.computation_return(three);
+    let unfoldings = Unfoldings::default();
+    assert_eq!(
+        replay(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(applied, expected),
+            EngineClaim::Convertible,
+            shared(),
+            ReplayBudget::default()
+        ),
+        KernelVerdict::Convertible
+    );
+    assert_eq!(
+        replay(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(applied, wrong),
+            EngineClaim::NotConvertible,
+            shared(),
+            ReplayBudget::default()
+        ),
+        KernelVerdict::NotConvertible
+    );
+    // At a neutral argument the fixpoint is stuck, and bare it is inert:
+    // an unfolding there would never stop, and the budget would decline.
+    let variable = arena.value_variable(DeBruijnIndex::from(0));
+    let stuck = arena.computation_application(doubling, variable);
+    for standing in [stuck, doubling] {
+        assert_eq!(
+            replay(
+                &mut arena,
+                &unfoldings,
+                ReplaySides::Computations(standing, standing),
+                EngineClaim::Convertible,
+                shared(),
+                ReplayBudget::default()
+            ),
+            KernelVerdict::Convertible
+        );
+    }
+}
+
+#[test]
+fn a_partial_fixpoint_declines_at_its_gate()
+{
+    let mut environment = Environment::new();
+    let nat = nat(&mut environment).position();
+    let mut arena = environment.arena().clone();
+    let doubling = double(&mut arena, nat, FixpointEvidence::Partial);
+    let [_, _, two, three, four] = numerals(&mut arena, nat);
+    let applied = arena.computation_application(doubling, two);
+    let expected = arena.computation_return(four);
+    let wrong = arena.computation_return(three);
+    let recursive = arena.value_variable(DeBruijnIndex::from(0));
+    let forced = arena.computation_force(recursive);
+    let looping = arena.computation_fixpoint(forced, FixpointEvidence::Partial);
+    let observed = arena.computation_bind(looping, expected);
+    let unfoldings = Unfoldings::default();
+    for (left, right, claim) in [
+        (applied, expected, EngineClaim::Convertible),
+        (applied, wrong, EngineClaim::NotConvertible),
+        (observed, expected, EngineClaim::Convertible),
+    ] {
+        assert_eq!(
+            replay(
+                &mut arena,
+                &unfoldings,
+                ReplaySides::Computations(left, right),
+                claim,
+                shared(),
+                ReplayBudget::default()
+            ),
+            KernelVerdict::Declined(ReplayDecline::PartialFixpoint)
+        );
+    }
+    let variable = arena.value_variable(DeBruijnIndex::from(0));
+    let stuck = arena.computation_application(doubling, variable);
+    assert_eq!(
+        replay(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(stuck, stuck),
+            EngineClaim::Convertible,
+            shared(),
+            ReplayBudget::default()
+        ),
+        KernelVerdict::Convertible
+    );
+}
+
+/// Where the second constructor of a universe names its decoder.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Decoded
+{
+    /// `PiC : (a : U, b : U (El(el a) → F U))`: at the field before, one
+    /// stage below the decoder's.
+    Below,
+    /// `Odd : (b : U (El(el base) → F U))`, `base : U` a definition after
+    /// the decoder: at a code no case put below the decoder's stage.
+    Level,
+    /// `Neg : (b : U (Lift U → F 1))`: no decoder, the family lifted
+    /// under a domain, which no stage reaches.
+    Negative,
+}
+
+/// Offer a universe `U` — `NatC`, and a second constructor `decoded`
+/// names — and its decoder `el : U (U → F Type)`, `fix self. λu. case u
+/// of { NatC ↦ return ⌜1⌝; _ ↦ λ…. return ⌜1⌝ }`, as one block; for
+/// [`Decoded::Level`], with `base = NatC` after the decoder.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the kernel's verdict on the block, which admits no member on a
+///   refusal and leaves a vacancy at each member's position.
+/// - panics: none.
+///
+/// # Errors
+/// The kernel's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the three blocks differ only in the second constructor's
+///   fields, so each verdict is that field's.
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
+/// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole`
+#[spec(captures: [before = environment.entries().len(), admitted = environment.entries().admitted()], ensures: |ret| ret.as_ref().map_or_else(
+        |_| environment.entries().admitted() == admitted,
+        |ids| ids.len() >= 2 && environment.entries().len() == usize::from(before).saturating_add(ids.len()),
+    ))]
+fn universe(
+    environment: &mut Environment,
+    decoded: Decoded,
+) -> Result<Vec<CheckedId>, KernelError>
+{
+    let family = ConstantIndex::from(environment.entries().len());
+    let decoder = ConstantIndex::from(usize::from(family).saturating_add(1));
+    let base = ConstantIndex::from(usize::from(family).saturating_add(2));
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let own = arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([]));
+    let returner = arena.comp_type_returner(own);
+    let named = arena.value_constant(decoder);
+    let forced = arena.computation_force(named);
+    let decoding = |arena: &mut TermArena, argument: ValueId| {
+        let call = arena.computation_application(forced, argument);
+        let code = arena.value_returned(call);
+        let decoded = arena.value_type_element(code, Level::zero());
+        let arrow = arena.comp_type_arrow(decoded, returner);
+        arena.value_type_thunk(arrow)
+    };
+    let fields = match decoded {
+        Decoded::Below => {
+            let earlier = arena.value_variable(DeBruijnIndex::from(0));
+            SmallVec::<_, 0, Global>::from_iter([own, decoding(arena, earlier)])
+        },
+        Decoded::Level => {
+            let named = arena.value_constant(base);
+            SmallVec::<_, 0, Global>::from_iter([decoding(arena, named)])
+        },
+        Decoded::Negative => {
+            let unit = arena.value_type_unit();
+            let into = arena.comp_type_returner(unit);
+            let lifted = arena.value_type_lift(own, Level::zero());
+            let arrow = arena.comp_type_arrow(lifted, into);
+            SmallVec::<_, 0, Global>::from_iter([arena.value_type_thunk(arrow)])
+        },
+    };
+    let arity = fields.len();
+    let universe = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([]), fields]),
+        kind,
+    );
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let own = arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([]));
+    let types = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let returns = arena.comp_type_returner(types);
+    let classifier = arena.comp_type_arrow(own, returns);
+    let declared = arena.value_type_thunk(classifier);
+    let unit = arena.value_type_unit();
+    let code = arena.value_quote(unit);
+    let answer = arena.computation_return(code);
+    let mut arm = answer;
+    for _field in 0 .. arity {
+        arm = arena.computation_lambda(arm);
+    }
+    let body = case_on_argument(arena, returns, answer, arm);
+    let fixpoint = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
+    let value = arena.value_thunk(fixpoint);
+    let decoding = staging.def(LevelSignature::monomorphic(), declared, value);
+    let mut members = vec![universe, decoding];
+    if decoded == Decoded::Level {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let own = arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([]));
+        let nat_code = arena.value_constructor(
+            family,
+            own,
+            ConstructorTag::from(0),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
+        members.push(staging.def(LevelSignature::monomorphic(), own, nat_code));
+    }
+    environment.add_block(members)
+}
+
+/// A universe whose constructor names its decoder at the field before is
+/// admitted with the decoder as one block, the decoder's case reading its
+/// own constant in the field as its self binder; an artifact of the block
+/// replays.
+#[test]
+fn a_mutual_block_is_admitted()
+{
+    let mut environment = Environment::new();
+    let admitted = universe(&mut environment, Decoded::Below).expect("the block is admitted");
+    assert_eq!(
+        admitted
+            .iter()
+            .map(|id| usize::from(id.position()))
+            .collect::<Vec<_>>(),
+        vec![0, 1]
+    );
+    let marked = environment
+        .entries()
+        .iter()
+        .map(|entry| {
+            gandr_kernel_term::MarkedDeclaration::new(
+                gandr_kernel_term::AdmissionMark::Checked,
+                entry.declaration().clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let replayed = Environment::replay(environment.arena().clone(), &marked)
+        .expect("the block replays as one");
+    assert_eq!(replayed.entries().len(), 2);
+}
+
+/// A block one member of which is refused is refused whole, the
+/// environment unchanged: the decoder at a place that does not descend
+/// below its own stage, and the family lifted under a function's domain.
+#[test]
+fn a_mutual_block_is_refused_whole()
+{
+    let mut environment = Environment::new();
+    let level = universe(&mut environment, Decoded::Level);
+    assert!(
+        matches!(level, Err(KernelError::StageNotBelow { .. })),
+        "{level:?}"
+    );
+    let negative = universe(&mut environment, Decoded::Negative);
+    assert!(
+        matches!(negative, Err(KernelError::NegativeOccurrence(_))),
+        "{negative:?}"
+    );
+    assert_eq!(usize::from(environment.entries().admitted()), 0_usize);
+}
+
+/// A family named through a definition of its block stands where the
+/// definition is named: `Bad` holding `U (hidden → F 1)` with `hidden =
+/// Bad` is refused as `Bad` holding `U (Bad → F 1)` is, the walk reading
+/// the definition's body, and the environment is unchanged (#602).
+#[test]
+fn a_definition_of_the_block_is_read_through_602()
+{
+    let mut environment = Environment::new();
+    let family = ConstantIndex::from(0_usize);
+    let hidden = ConstantIndex::from(1_usize);
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let named = arena.value_constant(hidden);
+    let decoded = arena.value_type_element(named, Level::zero());
+    let unit = arena.value_type_unit();
+    let into = arena.comp_type_returner(unit);
+    let arrow = arena.comp_type_arrow(decoded, into);
+    let consumer = arena.value_type_thunk(arrow);
+    let bad = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([consumer])]),
+        kind,
+    );
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let types = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let own = arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([]));
+    let quoted = arena.value_quote(own);
+    let naming = staging.def(LevelSignature::monomorphic(), types, quoted);
+    let verdict = environment.add_block(vec![bad, naming]);
+    assert_eq!(
+        verdict,
+        Err(KernelError::NegativeOccurrence(OccurrenceSite::Field {
+            tag: ConstructorTag::from(0_usize),
+            field: FieldPosition::from(0_usize),
+        }))
+    );
+    assert_eq!(usize::from(environment.entries().admitted()), 0_usize);
+}
+
+/// Where a rose tree's recursion over its block's two families calls
+/// itself.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Rose
+{
+    /// At the node's list of children, and a list's head and tail: each a
+    /// field one stage below its scrutinee.
+    Below,
+    /// At the node itself: the scrutinee, at the fixpoint's own stage.
+    Level,
+}
+
+/// Admit `Rose`, `Node : (kids : Forest) → Rose`, and `Forest`, `Nil`
+/// and `Cons : (head : Rose, tail : Forest) → Forest`, as one block; then
+/// offer the recursion over both, `fix self. λx. case x of { t ↦ case t of
+/// { Node ↦ λkids. self (inr kids) }; ts ↦ case ts of { Nil ↦ return ();
+/// Cons ↦ λhead tail. _ ← self (inl head); self (inr tail) } }`, at
+/// `U (Rose + Forest → F 1)`, `rose` naming where the node's arm calls.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the kernel's verdict on the block, then on the recursion,
+///   admitted at the position after the block's two families.
+/// - panics: none.
+///
+/// # Errors
+/// The kernel's refusal of the block or of the recursion.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the two recursions differ only in the node arm's
+///   argument, so each verdict is that argument's stage.
+/// - witness: `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|_| true, |id| usize::from(id.position()) == 2))]
+fn forest(rose: Rose) -> Result<CheckedId, KernelError>
+{
+    let mut environment = Environment::new();
+    let tree = ConstantIndex::from(0_usize);
+    let forest = ConstantIndex::from(1_usize);
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let forests = arena.value_type_data(forest, SmallVec::<_, 0, Global>::from_iter([]));
+    let node = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([forests])]),
+        kind,
+    );
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let trees = arena.value_type_data(tree, SmallVec::<_, 0, Global>::from_iter([]));
+    let forests = arena.value_type_data(forest, SmallVec::<_, 0, Global>::from_iter([]));
+    let list = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([trees, forests]),
+        ]),
+        kind,
+    );
+    let _block = environment.add_block(vec![node, list])?;
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let trees = arena.value_type_data(tree, SmallVec::<_, 0, Global>::from_iter([]));
+    let forests = arena.value_type_data(forest, SmallVec::<_, 0, Global>::from_iter([]));
+    let unit = arena.value_type_unit();
+    let returns = arena.comp_type_returner(unit);
+    // `force self (inj v)`, `self` the variable at `own`.
+    let call = |arena: &mut TermArena, own: u32, summand: usize, argument: u32| {
+        let head = arena.value_variable(DeBruijnIndex::from(own));
+        let forced = arena.computation_force(head);
+        let argument = arena.value_variable(DeBruijnIndex::from(argument));
+        let injected = arena.value_injection(gandr_kernel_term::Summand::from(summand), argument);
+        arena.computation_application(forced, injected)
+    };
+    // Under `self, x, t, kids`: the children, or the node `t` itself.
+    let node_arm = match rose {
+        Rose::Below => call(arena, 3, 1, 0),
+        Rose::Level => call(arena, 3, 0, 1),
+    };
+    let node_arm = arena.computation_lambda(node_arm);
+    let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let on_tree = arena.computation_data_case(
+        scrutinee,
+        returns,
+        SmallVec::<_, 0, Global>::from_iter([node_arm]),
+    );
+    let unit_value = arena.value_unit();
+    let on_nil = arena.computation_return(unit_value);
+    // Under `self, x, ts, head, tail`, then the bind's binder.
+    let on_head = call(arena, 4, 0, 1);
+    let on_tail = call(arena, 5, 1, 1);
+    let on_cons = arena.computation_bind(on_head, on_tail);
+    let on_cons = arena.computation_lambda(on_cons);
+    let on_cons = arena.computation_lambda(on_cons);
+    let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let on_forest = arena.computation_data_case(
+        scrutinee,
+        returns,
+        SmallVec::<_, 0, Global>::from_iter([on_nil, on_cons]),
+    );
+    let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let cased = arena.computation_case(scrutinee, &[on_tree, on_forest]);
+    let body = arena.computation_lambda(cased);
+    let fixpoint = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
+    let value = arena.value_thunk(fixpoint);
+    let both = arena.value_type_sum(&[trees, forests]);
+    let arrow = arena.comp_type_arrow(both, returns);
+    let declared = arena.value_type_thunk(arrow);
+    let size = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment.add_decl(size)
+}
+
+/// A recursion at the sum of a mutual block's two families opens one
+/// stage for both: a node's children and a list's head and tail each
+/// stand one stage below their scrutinee, so the calls on them are
+/// admitted, and a call on the node itself is refused.
+#[test]
+fn a_mutual_recursion_descends_through_its_block_s_families()
+{
+    let below = forest(Rose::Below);
+    assert!(below.is_ok(), "{below:?}");
+    let level = forest(Rose::Level);
+    assert!(
+        matches!(level, Err(KernelError::StageNotBelow { .. })),
+        "{level:?}"
+    );
+}
+
+/// Where a joint fixpoint over a rose tree's block calls itself, and what it
+/// claims.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Joint
+{
+    /// Each call one stage below its scrutinee, both components claimed at
+    /// their first parameter.
+    Below,
+    /// The node arm calls the tree component on the node itself, at the
+    /// fixpoint's own stage.
+    Level,
+    /// The claim names one component of the two.
+    Short,
+}
+
+/// Admit the rose tree's block as [`forest`] does; then offer the joint of
+/// its two recursions, `fix self. ⟨λt. case t of { Node ↦ λkids.
+/// self.1 kids }, λts. case ts of { Nil ↦ return (); Cons ↦ λhead tail. _ ←
+/// self.0 head; self.1 tail }⟩`, at `(Rose → F 1) & (Forest → F 1)`, `self.i`
+/// the projection `Project(i, force self)`, as `joint` says.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the kernel's verdict on the block, then on the joint, admitted at
+///   the position after the block's two families.
+/// - panics: none.
+///
+/// # Errors
+/// The kernel's refusal of the block or of the joint.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the three joints differ only in the node arm's call and
+///   the claim's count, so each verdict is that call's stage or that count.
+/// - witness: `tests::recursive_data::a_joint_recursion_descends_through_each_component_3879`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|_| true, |id| usize::from(id.position()) == 2))]
+fn joint_forest(joint: Joint) -> Result<CheckedId, KernelError>
+{
+    let mut environment = Environment::new();
+    let tree = ConstantIndex::from(0_usize);
+    let forest = ConstantIndex::from(1_usize);
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let forests = arena.value_type_data(forest, SmallVec::<_, 0, Global>::from_iter([]));
+    let node = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([forests])]),
+        kind,
+    );
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let trees = arena.value_type_data(tree, SmallVec::<_, 0, Global>::from_iter([]));
+    let forests = arena.value_type_data(forest, SmallVec::<_, 0, Global>::from_iter([]));
+    let list = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([trees, forests]),
+        ]),
+        kind,
+    );
+    let _block = environment.add_block(vec![node, list])?;
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let trees = arena.value_type_data(tree, SmallVec::<_, 0, Global>::from_iter([]));
+    let forests = arena.value_type_data(forest, SmallVec::<_, 0, Global>::from_iter([]));
+    let unit = arena.value_type_unit();
+    let returns = arena.comp_type_returner(unit);
+    // `Project(component, force self) v`, `self` the variable at `own`.
+    let call = |arena: &mut TermArena, own: u32, component: usize, argument: u32| {
+        let head = arena.value_variable(DeBruijnIndex::from(own));
+        let forced = arena.computation_force(head);
+        let projected = arena.computation_project(Component::from(component), forced);
+        let argument = arena.value_variable(DeBruijnIndex::from(argument));
+        arena.computation_application(projected, argument)
+    };
+    // Under `self, t, kids`: the children, or the node `t` itself.
+    let node_arm = match joint {
+        Joint::Below | Joint::Short => call(arena, 2, 1, 0),
+        Joint::Level => call(arena, 2, 0, 1),
+    };
+    let node_arm = arena.computation_lambda(node_arm);
+    let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let on_tree = arena.computation_data_case(
+        scrutinee,
+        returns,
+        SmallVec::<_, 0, Global>::from_iter([node_arm]),
+    );
+    let on_tree = arena.computation_lambda(on_tree);
+    let unit_value = arena.value_unit();
+    let on_nil = arena.computation_return(unit_value);
+    // Under `self, ts, head, tail`, then the bind's binder.
+    let on_head = call(arena, 3, 0, 1);
+    let on_tail = call(arena, 4, 1, 1);
+    let on_cons = arena.computation_bind(on_head, on_tail);
+    let on_cons = arena.computation_lambda(on_cons);
+    let on_cons = arena.computation_lambda(on_cons);
+    let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let on_forest = arena.computation_data_case(
+        scrutinee,
+        returns,
+        SmallVec::<_, 0, Global>::from_iter([on_nil, on_cons]),
+    );
+    let on_forest = arena.computation_lambda(on_forest);
+    let body = arena.computation_with(&[on_tree, on_forest]);
+    let claimed = match joint {
+        Joint::Below | Joint::Level => vec![StagedPosition::from(0_usize); 2],
+        Joint::Short => vec![StagedPosition::from(0_usize)],
+    };
+    let positions = JointPositions::new(&claimed).expect("two positions fit the claim");
+    let fixpoint = arena.computation_fixpoint(body, FixpointEvidence::Joint { positions });
+    let value = arena.value_thunk(fixpoint);
+    let on_trees = arena.comp_type_arrow(trees, returns);
+    let on_forests = arena.comp_type_arrow(forests, returns);
+    let both = arena.comp_type_with(&[on_trees, on_forests]);
+    let declared = arena.value_type_thunk(both);
+    let size = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment.add_decl(size)
+}
+
+/// A joint fixpoint at a lazy product of a mutual block's recursions opens
+/// one stage for both components: a node's children and a list's head and
+/// tail each stand one stage below their scrutinee, so the calls on them
+/// through either component are admitted; a component calling its sibling
+/// on the node itself is refused; and a claim of one position at a lazy
+/// product of two is refused.
+#[test]
+fn a_joint_recursion_descends_through_each_component_3879()
+{
+    let below = joint_forest(Joint::Below);
+    assert!(below.is_ok(), "{below:?}");
+    let level = joint_forest(Joint::Level);
+    assert!(
+        matches!(level, Err(KernelError::StageNotBelow { .. })),
+        "{level:?}"
+    );
+    let short = joint_forest(Joint::Short);
+    assert!(
+        matches!(short, Err(KernelError::JointClaimArity { .. })),
+        "{short:?}"
+    );
+}

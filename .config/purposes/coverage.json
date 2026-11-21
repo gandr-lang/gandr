@@ -1,0 +1,138 @@
+[
+  {
+    "name": "a site covers the items its module defines",
+    "input": {
+      "tags": [
+        { "crate": "core-nbe", "path": "overlay::Overlay", "kind": "struct", "tag": "sharing" }
+      ],
+      "sites": [{ "concern": "sharing", "crate": "core-nbe", "module": "overlay" }]
+    },
+    "output": ""
+  },
+  {
+    "name": "a site covers the modules below its own",
+    "input": {
+      "tags": [
+        {
+          "crate": "core-checker",
+          "path": "template::memo::Memo",
+          "kind": "struct",
+          "tag": "sharing"
+        }
+      ],
+      "sites": [{ "concern": "sharing", "crate": "core-checker", "module": "template" }]
+    },
+    "output": ""
+  },
+  {
+    "name": "a site covers the module row naming it",
+    "input": {
+      "tags": [
+        { "crate": "kernel-check-memo", "path": "digest", "kind": "module", "tag": "sharing" }
+      ],
+      "sites": [{ "concern": "sharing", "crate": "kernel-check-memo", "module": "digest" }]
+    },
+    "output": ""
+  },
+  {
+    "name": "a crate-wide site covers every entry of its crate, the crate row too",
+    "input": {
+      "tags": [
+        { "crate": "kernel-check-memo", "path": "", "kind": "crate", "tag": "sharing" },
+        {
+          "crate": "kernel-check-memo",
+          "path": "digest::ContentDigest",
+          "kind": "struct",
+          "tag": "sharing"
+        }
+      ],
+      "sites": [{ "concern": "sharing", "crate": "kernel-check-memo", "module": "" }]
+    },
+    "output": ""
+  },
+  {
+    "name": "a crate row is covered only by a crate-wide site",
+    "input": {
+      "tags": [{ "crate": "kernel-check-memo", "path": "", "kind": "crate", "tag": "sharing" }],
+      "sites": [{ "concern": "sharing", "crate": "kernel-check-memo", "module": "memo" }]
+    },
+    "output": "kernel-check-memo (crate): tagged sharing, and no sharing site of ledger/concerns.sql covers it; add the site, or correct the tag"
+  },
+  {
+    "name": "a site in another crate covers nothing here",
+    "input": {
+      "tags": [
+        {
+          "crate": "runtime-emitter",
+          "path": "world::arrive",
+          "kind": "function",
+          "tag": "sharing"
+        }
+      ],
+      "sites": [{ "concern": "sharing", "crate": "runtime-net", "module": "world" }]
+    },
+    "output": "runtime-emitter::world::arrive (function): tagged sharing, and no sharing site of ledger/concerns.sql covers it; add the site, or correct the tag"
+  },
+  {
+    "name": "a site of another concern covers nothing here",
+    "input": {
+      "tags": [
+        {
+          "crate": "workflow-lane-budget",
+          "path": "github::read_all",
+          "kind": "function",
+          "tag": "fork"
+        }
+      ],
+      "sites": [{ "concern": "sharing", "crate": "workflow-lane-budget", "module": "github" }]
+    },
+    "output": "workflow-lane-budget::github::read_all (function): tagged fork, and no fork site of ledger/concerns.sql covers it; add the site, or correct the tag"
+  },
+  {
+    "name": "a module sharing a site's name as a prefix is not below it",
+    "input": {
+      "tags": [
+        { "crate": "core-checker", "path": "templates::Draft", "kind": "struct", "tag": "sharing" }
+      ],
+      "sites": [{ "concern": "sharing", "crate": "core-checker", "module": "template" }]
+    },
+    "output": "core-checker::templates::Draft (struct): tagged sharing, and no sharing site of ledger/concerns.sql covers it; add the site, or correct the tag"
+  },
+  {
+    "name": "an item a site's parent module defines is not below the site",
+    "input": {
+      "tags": [
+        { "crate": "core-term", "path": "handler::HandlerLaw", "kind": "struct", "tag": "sharing" }
+      ],
+      "sites": [{ "concern": "sharing", "crate": "core-term", "module": "handler::subject" }]
+    },
+    "output": "core-term::handler::HandlerLaw (struct): tagged sharing, and no sharing site of ledger/concerns.sql covers it; add the site, or correct the tag"
+  },
+  {
+    "name": "each uncovered tag is its own finding, an entry tagged twice found once per concern",
+    "input": {
+      "tags": [
+        {
+          "crate": "runtime-emitter",
+          "path": "world::chunking",
+          "kind": "function",
+          "tag": "fork"
+        },
+        {
+          "crate": "runtime-emitter",
+          "path": "world::chunking",
+          "kind": "function",
+          "tag": "sharing"
+        },
+        {
+          "crate": "runtime-emitter",
+          "path": "world::arrive",
+          "kind": "function",
+          "tag": "sharing"
+        }
+      ],
+      "sites": [{ "concern": "sharing", "crate": "runtime-emitter", "module": "world::chunking" }]
+    },
+    "output": "runtime-emitter::world::chunking (function): tagged fork, and no fork site of ledger/concerns.sql covers it; add the site, or correct the tag\nruntime-emitter::world::arrive (function): tagged sharing, and no sharing site of ledger/concerns.sql covers it; add the site, or correct the tag"
+  }
+]

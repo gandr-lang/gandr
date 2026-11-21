@@ -1,0 +1,11 @@
+error[ImportShadows]: `answer` is bound by an import and again in this source
+  ╭▸ corpus/ledger/diagnostics/ImportShadows.gandr:7:5
+  │
+4 │ import "../syntax/pub-declaration.gandr";
+  │ ───────────────────────────────────────── first written here
+  ┆
+7 │ def answer = 43;
+  │     ━━━━━━ bound here and by an import
+  │
+  ├ note: `answer` is refused with ImportShadows, as its expectation states
+  ╰ help: rename the declaration or its imported binding

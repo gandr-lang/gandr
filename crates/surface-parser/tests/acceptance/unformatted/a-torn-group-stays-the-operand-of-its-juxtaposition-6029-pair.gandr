@@ -1,0 +1,1 @@
+def computedPair : Dyad (Unit -> [.A = Rung](rungId Z, Z)) unitOfComputed = MkDyad computedAt *{};
