@@ -953,3 +953,108 @@ fn a_record_of_the_tree_holds_against_its_own_base()
     );
     assert_eq!(output.status.code(), Some(1_i32));
 }
+
+#[test]
+fn a_record_of_two_keys_holds_each_and_no_third()
+{
+    let root = remote!("read-two");
+    let dir = root.parent().unwrap().to_path_buf();
+    let earlier = commit!(root, TWO, ["-m", "earlier base"]);
+    let base = commit!(root, THREE, ["-p", earlier.as_str(), "-m", "base"]);
+    let head = commit!(root, ONE, ["-p", base.as_str(), "-m", "head"]);
+    head!(root, head);
+    let signing = dir.join("signing");
+    let made = Command::new("ssh-keygen")
+        .args(["-q", "-t", "ed25519", "-N", "", "-C", "case", "-f"])
+        .arg(&signing)
+        .output()
+        .unwrap();
+    assert!(made.status.success(), "ssh-keygen: {}", err!(made));
+    let public = std::fs::read_to_string(dir.join("signing.pub")).unwrap();
+    std::fs::write(
+        dir.join("signers"),
+        format!("case@example.invalid namespaces=\"git\" {public}"),
+    )
+    .unwrap();
+    // One record of the gate holds the key of each check that passed, one
+    // key on each line, and the ref of each check names it.
+    let scope = format!("--workspace --exclude base-{}", cut!(base, 7));
+    let environment = [("GATE_BASE", base.as_str()), ("GATE_SCOPE", scope.as_str())];
+    let inputs_key = out!(key!(root, ["--tree", ONE, "check:scoped"], environment));
+    let inputs_key = inputs_key.trim_end();
+    let tree_key = out!(key!(root, ["--tree", ONE, "check:tree"], environment));
+    let tree_key = tree_key.trim_end();
+    let body = format!("{inputs_key}\n{tree_key}");
+    let signing_key = format!("user.signingkey={}", signing.display());
+    let signed = git!(root, [
+        "-c",
+        "user.name=case",
+        "-c",
+        "user.email=case@example.invalid",
+        "-c",
+        "gpg.format=ssh",
+        "-c",
+        signing_key.as_str(),
+        "commit-tree",
+        "-S",
+        ONE,
+        "-m",
+        "verdict: check:scoped check:tree pass",
+        "-m",
+        body.as_str(),
+    ]);
+    push!(root, [
+        format!(
+            "{signed}:refs/verdicts/inputs/check-scoped/{}",
+            hash!(inputs_key)
+        ),
+        format!(
+            "{signed}:refs/verdicts/{ONE}/check-tree/{}",
+            hash!(tree_key)
+        ),
+    ]);
+    let output = read!(root, ["check:scoped", "check:tree"], [
+        ("GATE_BASE", base.as_str()),
+        ("GATE_VERDICT_TRUNK_OK", base.as_str()),
+    ]);
+    assert_eq!(
+        err!(output),
+        format!(
+            "verdict: check:scoped holds on {tree}: the record {record} binds this run's key, so the check \
+             does not run again\n\
+             verdict: check:tree holds on {tree}: the record {record} binds this run's key, so the check \
+             does not run again\n",
+            tree = cut!(ONE, 12),
+            record = cut!(signed, 12)
+        )
+    );
+    assert_eq!(output.status.code(), Some(0_i32));
+    // A third key, of another policy, finds the same record under its own
+    // ref, and the record does not hold for it.
+    let third = [
+        ("GATE_BASE", base.as_str()),
+        ("GATE_SCOPE", scope.as_str()),
+        ("GATE_VERDICT_POLICY", "other-policy"),
+    ];
+    let third_key = out!(key!(root, ["--tree", ONE, "check:scoped"], third));
+    let third_key = third_key.trim_end();
+    push!(root, [format!(
+        "{signed}:refs/verdicts/inputs/check-scoped/{}",
+        hash!(third_key)
+    )]);
+    let output = read!(root, ["check:scoped"], [
+        ("GATE_BASE", base.as_str()),
+        ("GATE_VERDICT_TRUNK_OK", base.as_str()),
+        ("GATE_VERDICT_POLICY", "other-policy"),
+    ]);
+    assert_eq!(
+        err!(output),
+        format!(
+            "verdict: the record {} of check:scoped does not hold: its body is not the run's key\n\
+             verdict: no record holds check:scoped on {}, so the job runs them\n",
+            hash!(third_key),
+            cut!(ONE, 12)
+        )
+    );
+    assert_eq!(output.status.code(), Some(1_i32));
+}
