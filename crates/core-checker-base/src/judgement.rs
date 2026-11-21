@@ -6244,6 +6244,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - executable: none — the log has no observer short of the decision that
     ///   takes it, which the witness reads.
     ///
+    /// # Cost
+    /// - allocation: one map of the premises and one list of the typed fields,
+    ///   growth within the payloads of `term`
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`crate::context::CheckingContext::annotate`].
     /// - witness: `gandr-surface-dispatcher::annotate::tests::the_join_reads_each_field_and_binder_at_its_occurrence_8161`
@@ -6253,40 +6257,42 @@ impl<'context, 'arena> Machine<'context, 'arena>
         premises: &[(ValueId, ValueTypeId)],
     )
     {
-        let mut position = 0_usize;
-        loop {
-            let sent = |movement: &gandr_core_term::session::RecordedMove<ValueId>| {
-                if let gandr_core_term::session::RecordedMove::Sent(payload)
-                | gandr_core_term::session::RecordedMove::Received(payload) = *movement
-                {
-                    Some(payload)
-                }
-                else {
-                    None
-                }
-            };
-            let payload = match self.context.arena().value(term) {
-                Some(&Value::Recorded(ref moves)) => moves.iter().filter_map(sent).nth(position),
-                Some(&Value::Dialogue(ref turns)) => turns
-                    .iter()
-                    .filter_map(|turn| sent(&turn.movement))
-                    .nth(position),
-                Some(_) | None => None,
-            };
-            let Some(payload) = payload
-            else {
-                return;
-            };
-            if let Some(&(_, ty)) = premises.iter().find(|&&(held, _)| held == payload) {
-                self.context.annotate(
-                    crate::record::Site::Field(
-                        term,
-                        gandr_kernel_term::FieldPosition::from(position),
-                    ),
-                    ty,
-                );
+        let mut typed = alloc::collections::BTreeMap::new();
+        for &(payload, ty) in premises {
+            let _first = typed.entry(payload).or_insert(ty);
+        }
+        let sent = |movement: &gandr_core_term::session::RecordedMove<ValueId>| {
+            if let gandr_core_term::session::RecordedMove::Sent(payload)
+            | gandr_core_term::session::RecordedMove::Received(payload) = *movement
+            {
+                Some(payload)
             }
-            position = position.saturating_add(1);
+            else {
+                None
+            }
+        };
+        let field =
+            |(position, payload): (usize, ValueId)| typed.get(&payload).map(|&ty| (position, ty));
+        let fields: Vec<(usize, ValueTypeId)> = match self.context.arena().value(term) {
+            Some(&Value::Recorded(ref moves)) => moves
+                .iter()
+                .filter_map(sent)
+                .enumerate()
+                .filter_map(field)
+                .collect(),
+            Some(&Value::Dialogue(ref turns)) => turns
+                .iter()
+                .filter_map(|turn| sent(&turn.movement))
+                .enumerate()
+                .filter_map(field)
+                .collect(),
+            Some(_) | None => Vec::new(),
+        };
+        for (position, ty) in fields {
+            self.context.annotate(
+                crate::record::Site::Field(term, gandr_kernel_term::FieldPosition::from(position)),
+                ty,
+            );
         }
     }
 
