@@ -2519,6 +2519,37 @@ read -r held held_places table <<< "$counts"
 echo "builtins check OK: $held names in $held_places places, each with its row; $table rows of the one table, which the test of gandr-core-term reads"
 {% endraw %}'''
 
+# No item, refusal tag or comment of the tree marks a form as retired
+# (#8188). A new form replaces what it supersedes whole, so the tree keeps no
+# record of that. `.config/retired/findings.jq` names the identifiers
+# and the phrases that the check refuses, and its cases pin them. The check
+# reads each tracked text file but the recorded debug transcripts and the
+# changelog, which tell what a run or a release saw.
+# - see: #8188
+#
+# The gate prints every finding before it fails.
+["check:retired"]
+description = "No item, refusal tag or comment marks a form as retired; each finding names its file and its line"
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+failed=0
+.config/cases/run.bash 'retired' .config/retired/cases.json --program .config/retired/findings.jq || failed=1
+findings=$(git grep -n -I -i -P -e 'retired|\bold (spelling|form)' -- . \
+  ':!.config/retired/' ':!**/tests/debug-traces/**' ':!CHANGELOG.md' \
+  | jq -R -s 'split("\n")' | jq -r -f .config/retired/findings.jq)
+if [[ -n $findings ]]; then
+  printf '%s\n' "$findings" >&2
+  failed=1
+fi
+if (( failed )); then
+  echo 'retired check FAILED' >&2
+  exit 1
+fi
+echo 'retired check OK: no item, refusal tag or comment marks a form as retired'
+{% endraw %}'''
+
 # The references ledger (`ledger/references.sql`) is what `ledger:references`
 # writes from the crates' documentation, and the documentation keeps its
 # shape: a key line names a library citation key, or `vault:` and a vault

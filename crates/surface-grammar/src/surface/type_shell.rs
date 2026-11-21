@@ -527,7 +527,8 @@ fn add_type_rules(
     // `el[<](a)`, as its body writes it; the lowering reads it there and
     // refuses it anywhere else. A capitalised head never carries it, so a
     // generator's result keeps the `[` its attribute slot opens. The glued
-    // head is the old spelling of the juxtaposed application below.
+    // head stands beside the juxtaposed application below until #5330
+    // removes it.
     let mut glued = rule(
         RuleName("type_application"),
         ty,

@@ -39,7 +39,13 @@
     "gandr-surface-grammar",
     "gandr-surface-parser"
   ],
-  "light": ["check:cases", "check:deny", "check:gnu-options", "check:spec-cost-landed"],
+  "light": [
+    "check:cases",
+    "check:deny",
+    "check:gnu-options",
+    "check:retired",
+    "check:spec-cost-landed"
+  ],
   "landing": [
     "check:corpus",
     "check:corpus-comments",

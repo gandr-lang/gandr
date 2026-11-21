@@ -1,0 +1,35 @@
+[
+  {
+    "name": "an identifier Retired<Name> gives a finding at its file and line",
+    "input": ["crates/a/src/lib.rs:12:pub enum RetiredForm {", ""],
+    "output": "crates/a/src/lib.rs:12: `RetiredForm` marks a form as retired; state what the code does now, or take the item out"
+  },
+  {
+    "name": "a tag RetiredSpelling.<surface> gives a finding",
+    "input": ["corpus/x.gandr:3:@[refuses(RetiredSpelling.unit_value)]"],
+    "output": "corpus/x.gandr:3: `RetiredSpelling` marks a form as retired; state what the code does now, or take the item out"
+  },
+  {
+    "name": "each phrase gives a finding in any case, and two on one line give two",
+    "input": [
+      "crates/a/src/lib.rs:4:// The Old spelling and the retired forms leave.",
+      "ledger/syntax.md:9:| Rule | Old Form |"
+    ],
+    "output": "crates/a/src/lib.rs:4: `Old spelling` marks a form as retired; state what the code does now, or take the item out\ncrates/a/src/lib.rs:4: `retired forms` marks a form as retired; state what the code does now, or take the item out\nledger/syntax.md:9: `Old Form` marks a form as retired; state what the code does now, or take the item out"
+  },
+  {
+    "name": "the plain word gives none: a retired job, a slot that retires, an older form and a form that is old",
+    "input": [
+      "crates/b/src/pool.rs:7:// A retired job frees its slot, and the slot retires.",
+      "crates/b/src/pool.rs:8:// The older form of the queue holds; the form is old.",
+      "crates/b/src/pool.rs:9:    retired_jobs: usize,",
+      "crates/b/src/pool.rs:10:    Unretired,"
+    ],
+    "output": ""
+  },
+  {
+    "name": "no line gives no finding",
+    "input": [],
+    "output": ""
+  }
+]

@@ -2182,7 +2182,6 @@ dependencies = [
  "gandr-core-term",
  "gandr-kernel-strata",
  "gandr-kernel-term",
- "gandr-surface-grammar",
  "gandr-surface-lowering-base",
  "gandr-surface-syntax",
  "gandr-theory-levitation",
