@@ -4972,6 +4972,7 @@ INSERT INTO purpose VALUES('surface-pretty','former::Elided','enum','Names a for
 INSERT INTO purpose VALUES('surface-pretty','former::ForgetCall','struct','Holds a forgetting''s call, so the call''s sorts are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::Forgotten','struct','Holds a forgotten component, so the component''s type is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::Former','enum','Names the former a node carries, so the node''s spelling is chosen.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-pretty','former::Invoked','struct','Names whether a constant''s definition takes no input, so its run is spelled as its bare name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::Lift','struct','Counts the path levels an action stands above its map''s domain, so the map''s slot opens that many binders.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::Manifest','struct','Holds a row''s entry over a theory as written, so the row spells `T with sort C = A` and a label''s entry by its label.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::ModelSlot','struct','Holds a model''s slot, so the slot''s type is read.',NULL,'fits','sound',NULL);
