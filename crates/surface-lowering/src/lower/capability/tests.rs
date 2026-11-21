@@ -59,6 +59,7 @@ use crate::origin::Labelled;
 use crate::origin::Omitted;
 use crate::origin::ScopeAnswer;
 use crate::resolve::HeadArity;
+use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
 use crate::unit::Unit;
 
@@ -1115,6 +1116,66 @@ fn an_extern_block_beyond_the_form_is_refused_at_the_piece_2901()
             })
         )),
         "a C block is refused whole, as before"
+    );
+}
+
+/// A scope written in gandr answers the interface of an `extern` block: its
+/// clause for `add` checks, and a clause for a member the block lacks or one
+/// binding no payload for `add`'s two arguments is refused at the clause
+/// (#7859).
+#[test]
+fn a_source_handler_answers_an_extern_block_s_interface_7859()
+{
+    let text = include_str!(
+        "tests/fixtures/a-source-handler-answers-an-extern-block-s-interface-7859.gandr"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(text), &mut arena);
+    let report = judged(&module, &mut arena);
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "mocked".into()),
+            Verdict::Checked { .. }
+        ),
+        "the scope over `Boundary` checks: {:?}",
+        verdict_of(&module, &report, "mocked".into())
+    );
+    let lacked = text.rfind("sub(").map(|at| (at, at.saturating_add(3)));
+    let DeclarationOutcome::Refused(LoweringRefusal::UnresolvedName { span, name }) =
+        outcome_of(&module, "lacked".into())
+    else {
+        panic!(
+            "a clause for `sub` is refused: {:?}",
+            outcome_of(&module, "lacked".into())
+        );
+    };
+    assert_eq!(
+        (
+            name,
+            Some((usize::from(span.start()), usize::from(span.end())))
+        ),
+        (SurfaceName::from("sub"), lacked),
+        "the block declares no `sub`, refused at its clause"
+    );
+    let miscounted = text.rfind("add(k)").map(|at| (at, at.saturating_add(3)));
+    let DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment { span, boundary, .. }) =
+        outcome_of(&module, "miscounted".into())
+    else {
+        panic!(
+            "a clause binding no payload is refused: {:?}",
+            outcome_of(&module, "miscounted".into())
+        );
+    };
+    assert_eq!(
+        (
+            boundary,
+            Some((usize::from(span.start()), usize::from(span.end())))
+        ),
+        (
+            FragmentBoundary::Arity(OperandCount::from(1_usize)),
+            miscounted
+        ),
+        "`add` takes two arguments, so one binder is refused at its clause"
     );
 }
 

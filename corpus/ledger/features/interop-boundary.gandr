@@ -8,11 +8,12 @@
 /// block of fixed-width members declares an interface that its source's
 /// definitions perform and the Rust caller's host answers, and the checker
 /// admits a block carrying `boundary` against the rows it names where the block
-/// stands. An importer of the block's source reads the interface too. A value
+/// stands. An importer of the block's source reads the interface too, and a
+/// handler in gandr answers it inside its scope before the host does. A value
 /// crosses by its layout as words the Rust caller lends: a list Rust holds
 /// tagged or packed answers the `length` Rust counts, and `Option<&u32>` reads
 /// by its null niche.
-/// Not implemented: a source handler of a block's interface is refused.
+/// Not implemented: a capability type does not list the operations of a block.
 ///
 /// The Rust caller is `crates/surface-dispatcher/tests/boundary.rs`; each call
 /// below is one it makes.
@@ -20,7 +21,7 @@
 /// - see: corpus/model/interop/boundary/round-trip.gandr
 /// - see: corpus/model/interop/boundary/imported.gandr
 /// - see: corpus/model/interop/boundary/by-layout.gandr
-/// - owes: #7859
+/// - owes: #327
 
 // `double`, `less`, and the block `Boundary` with `quadrupled`.
 import "../../model/interop/boundary/round-trip.gandr";
@@ -38,3 +39,12 @@ def reversed() -> Integer = less 7 19;
 def eightfold(x : u32) -> [Boundary] u32 =
   let y = quadrupled x
   Boundary.add y y
+
+/// `eightfold` at 5, with `add` answered in gandr: the clause shadows the
+/// Rust caller's host, so the run needs none.
+@[runs("40u32")]
+def mockedEightfold() -> u32 =
+  handle b : Boundary { eightfold 5u32 } with {
+    | pure(r) => r
+    | oper add(p, k) => k (u32.wrapping_add p.0 p.1)
+  }
