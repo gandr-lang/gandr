@@ -169,9 +169,17 @@ pub struct CheckRow
     /// Whether the check reads its paths from its row of `table.json`.
     #[serde(default)]
     pub table: bool,
-    /// Each path of the check's own definition.
+    /// Each path of the check's own definition. A row that holds this member
+    /// is a row of a check of inputs, as a row of the table is.
     #[serde(default)]
-    inputs: Vec<String>,
+    pub inputs: Option<Vec<String>>,
+    /// The profile that the check builds. A row with no profile is no row of
+    /// a verdict.
+    #[serde(default)]
+    pub profile: String,
+    /// Whether the verdict of the check reads the base of its change.
+    #[serde(default)]
+    pub base: bool,
     /// Each grep of the check.
     #[serde(default)]
     pub greps: Vec<Grep>,
@@ -388,7 +396,7 @@ impl Tables
                 .map(|member| format!("{}/Cargo.toml", member.dir)),
         );
         out.extend(self.inputs.workspace.iter().cloned());
-        out.extend(row.inputs);
+        out.extend(row.inputs.unwrap_or_default());
         out.into_iter().collect()
     }
 }
