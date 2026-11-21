@@ -712,6 +712,7 @@ jobs:
       RECOVERY_FILE: ${{ github.event_name == 'schedule' && 'file' || '' }}
       RECOVERY_REPORT: recovery.out/report.txt
       REPORT_FILE: ${{ github.event_name == 'schedule' && 'file' || '' }}
+      LANDING_APP_ID: ${{ secrets.LANDING_APP_ID }}
     steps:
       - *git-checkout
       - *trust-workspace
@@ -844,10 +845,25 @@ jobs:
           GANDR_PRIVATE_NAMES: ${{ secrets.GANDR_PRIVATE_NAMES }}
           WASM_RESULT: ${{ needs.wasm.result }}
         run: mise run ci:wasm-file
+      # The lane budget reads and files with a token of the `gandr-lang` App.
+      # Its 81 requests spend the hour of the App. So the hour of the workflow
+      # token keeps its room under its ceiling of 1,000.
+      # - see: #8305, `.config/gh/calls.toml`
+      - name: mint the token that reads the runs and files the lane budget
+        id: budget-token
+        if: *own-runners
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.LANDING_APP_ID }}
+          private-key: ${{ secrets.LANDING_APP_PRIVATE_KEY }}
+          permission-actions: read
+          permission-issues: write
       - name: compare each lane with its budget
         if: *not-cancelled
         shell: bash
         env:
+          GH_TOKEN: ${{ steps.budget-token.outputs.token || github.token }}
           WAITING: ${{ needs.freshness.outputs.waiting }}
         run: |
           read -ra classes <<< "$WAITING"
