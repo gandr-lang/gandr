@@ -1,0 +1,17 @@
+error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/desc/rule-symmetry-matched.gandr:30:84
+   │
+30 │    def openSecond(x : Terms Series) -> Path (Series.both x Series.open) Series.open = Path.here
+   │ ┏━━│━━━━━━━━━━━━━━┬━━━━━━━━━━━━━━━━━━━━━━━━━━┬────────────────────────━━┬──────────━━━┛
+   │ ┃  │              │                          │                          │
+   │ ┃  │              │                          │                          an endpoint the point does not convert to
+   │ ┃  │              │                          an endpoint the point does not convert to
+   │ ┃┌─┘              checked against `(a : Terms Series) -> -F (Path[.A = Terms Series] (Series.both a Series.open) Series.open)`; while checking the body of this function; binds x : Terms Series
+   │ ┃│
+31 │ ┃│   Series.open;
+   │ ┃└─────────────╿┘ checked against `(a : Terms Series) -> Path[.A = Terms Series] (Series.both a Series.open) Series.open`; while checking the body of this thunk
+   │ ┗━━━━━━━━━━━━━━┥
+   │                not both endpoints of the path
+   │
+   ├ note: `openSecond` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints

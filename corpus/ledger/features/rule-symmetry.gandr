@@ -2,12 +2,13 @@
 /// swaps its two arguments.
 ///
 /// Implemented: the rule is admitted, and no reader rewrites by it. A model
-/// owes the law as a member, and a case on the terms owes its respect.
+/// owes the law as a member, and a case on the terms owes its respect. Each
+/// rule of the operation fires in the two orders of its arguments.
 ///
-/// Not implemented: the conversion of two terms under the law, and the match of
-/// a rule in the other order of its arguments.
+/// Not implemented: the conversion of two terms that differ by the order of
+/// two arguments where no rule fires.
 ///
-/// Each rule that rewrites decides a path as before.
+/// The kernel replays each rewriting by the match that the checker uses.
 ///
 /// - owes: #8280 — the conversion of two terms under the symmetry
 /// - see: corpus/model/desc/rule-symmetry.gandr
@@ -22,3 +23,8 @@ def leftEmpty() -> Terms Vote = poll (Tally.meet Tally.none Tally.all);
 /// The fold reads the other order of that meet to the same vote.
 @[runs("Vote.nay")]
 def rightEmpty() -> Terms Vote = poll (Tally.meet Tally.all Tally.none);
+
+/// The empty tally absorbs as the second argument, by the rule that states it
+/// as the first argument.
+def emptySecond(x : Terms Tally) -> Path (Tally.meet x Tally.none) Tally.none = Path.here
+  Tally.none;
