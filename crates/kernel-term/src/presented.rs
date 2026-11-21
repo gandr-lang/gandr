@@ -1684,6 +1684,11 @@ fn substituted(
 /// two closed terms of the sort, each a side over the sort's own constructor
 /// table holding no variable.
 ///
+/// Each end is a shared list of nodes. The cells of one presentation share
+/// their ends: the loops of a type of words hold its point by a count, one
+/// block for any count of loops. The equality and the hash read the nodes, so
+/// two cells with the same ends are equal whether or not they share a block.
+///
 /// # Specification
 /// - provides: the producer's two endpoints, unchecked; admission owns their
 ///   well-formedness.
@@ -1698,22 +1703,22 @@ fn substituted(
 pub struct FreeCell
 {
     /// The cell's source, in pre-order.
-    source: Box<[RuleNode]>,
+    source: ThinShared<(), RuleNode, Global>,
     /// The cell's target, in pre-order.
-    target: Box<[RuleNode]>,
+    target: ThinShared<(), RuleNode, Global>,
 }
 
 impl FreeCell
 {
-    /// The cell from `source` to `target`.
+    /// The cell from `source` to `target`. A loop passes one end twice.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
     pub const fn new(
-        source: Box<[RuleNode]>,
-        target: Box<[RuleNode]>,
+        source: ThinShared<(), RuleNode, Global>,
+        target: ThinShared<(), RuleNode, Global>,
     ) -> Self
     {
         Self { source, target }
@@ -1725,9 +1730,9 @@ impl FreeCell
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn source(&self) -> &[RuleNode]
+    pub fn source(&self) -> &[RuleNode]
     {
-        &self.source
+        self.source.slice()
     }
 
     /// The target, in pre-order.
@@ -1736,9 +1741,9 @@ impl FreeCell
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn target(&self) -> &[RuleNode]
+    pub fn target(&self) -> &[RuleNode]
     {
-        &self.target
+        self.target.slice()
     }
 }
 
@@ -2694,6 +2699,7 @@ mod tests
 
     use gandr_kernel_data::Count;
     use gandr_kernel_data::SmallVec;
+    use gandr_kernel_data::ThinShared;
 
     use super::Apartness;
     use super::CellFault;
@@ -2847,8 +2853,7 @@ mod tests
     #[test]
     fn a_cell_mints_its_words_and_its_cancellations()
     {
-        let base =
-            || alloc::boxed::Box::from([RuleNode::Constructor(ConstructorTag::from(0_usize))]);
+        let base = || ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(0_usize))]);
         let sort = crate::term::ConstantIndex::from(3_usize);
         let cells = FreeCells::new(
             sort,
@@ -2904,6 +2909,83 @@ mod tests
     }
 
     #[test]
+    fn the_loops_of_a_decoded_type_of_words_share_their_point_8290()
+    {
+        use gandr_kernel_data::Identity;
+
+        let node = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+        let mut arena = crate::arena::TermArena::new();
+        let mut builder = crate::decl::DeclarationBuilder::new(&mut arena);
+        let kind = builder.arena().value_type_universe(
+            crate::types::GroundSort::Value,
+            gandr_kernel_strata::Level::zero(),
+        );
+        let own = builder.arena().value_type_data(
+            crate::term::ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
+        // Each written end is a block of its own, so only the decoder shares.
+        let base = || ThinShared::from_iter([node(0)]);
+        let other = || ThinShared::from_iter([node(1), node(0)]);
+        let cells = FreeCells::new(
+            crate::term::ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::from_iter([
+                FreeCell::new(base(), base()),
+                FreeCell::new(base(), base()),
+                FreeCell::new(base(), other()),
+            ]),
+        );
+        let constructors = core::iter::once(SmallVec::<_, 0, Global>::new())
+            .chain(core::iter::repeat_with(|| SmallVec::<_, 0, Global>::from_iter([own])).take(6))
+            .collect();
+        let data = builder
+            .data(
+                crate::decl::LevelSignature::monomorphic(),
+                SmallVec::<_, 0, Global>::new(),
+                constructors,
+                kind,
+            )
+            .presented(Presentation::words(cells.clone()));
+        let declarations = [crate::decl::MarkedDeclaration::new(
+            crate::decl::AdmissionMark::Checked,
+            data,
+        )];
+        let bytes = crate::encode::encode(&arena, &declarations);
+        let decoded =
+            crate::decode::decode(bytes.as_image()).expect("the encoded artifact decodes");
+        let read = decoded
+            .declarations()
+            .first()
+            .expect("one data declaration")
+            .declaration()
+            .presentation()
+            .cells();
+        assert_eq!(read, Some(&cells), "the decoded cells are the written ones");
+        let identities = read.and_then(|read| {
+            let point = &read.cells.first()?.source;
+            Some(
+                read.cells
+                    .iter()
+                    .flat_map(|cell| [&cell.source, &cell.target])
+                    .map(|end| ThinShared::ptr_eq(point, end))
+                    .collect::<alloc::vec::Vec<_>>(),
+            )
+        });
+        assert_eq!(
+            identities,
+            Some(alloc::vec![
+                Identity::Same,
+                Identity::Same,
+                Identity::Same,
+                Identity::Same,
+                Identity::Same,
+                Identity::Distinct
+            ]),
+            "the five ends at the point share one block, and the end that differs holds its own"
+        );
+    }
+
+    #[test]
     fn cell_validation_names_each_fault()
     {
         let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
@@ -2915,7 +2997,12 @@ mod tests
                 sort,
                 pairs
                     .iter()
-                    .map(|&(source, target)| FreeCell::new(source.into(), target.into()))
+                    .map(|&(source, target)| {
+                        FreeCell::new(
+                            source.iter().copied().collect(),
+                            target.iter().copied().collect(),
+                        )
+                    })
                     .collect(),
             )
         };
@@ -3044,8 +3131,7 @@ mod tests
     /// trivial.
     fn two_loops() -> Presentation
     {
-        let base =
-            || alloc::boxed::Box::from([RuleNode::Constructor(ConstructorTag::from(0_usize))]);
+        let base = || ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(0_usize))]);
         Presentation::words(FreeCells::new(
             crate::term::ConstantIndex::from(3_usize),
             SmallVec::<_, 0, Global>::from_iter([
@@ -3201,8 +3287,7 @@ mod tests
     fn a_word_of_cells_above_dimension_one_sorts_and_counts_its_letters_6740()
     {
         use Node::C;
-        let base =
-            || alloc::boxed::Box::from([RuleNode::Constructor(ConstructorTag::from(0_usize))]);
+        let base = || ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(0_usize))]);
         let spheres = Presentation::words(
             FreeCells::new(
                 crate::term::ConstantIndex::from(3_usize),

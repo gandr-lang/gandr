@@ -2829,13 +2829,13 @@ fn a_type_of_words_round_trips_its_cells()
     use gandr_core_content::CellsRoots;
     use gandr_core_content::PresentationRoots;
     use gandr_core_term::RuleNode;
+    use gandr_kernel_data::ThinShared;
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::FreeCell;
     use gandr_kernel_term::FreeCells;
 
-    let point = |tag: usize| -> alloc::boxed::Box<[RuleNode]> {
-        [RuleNode::Constructor(ConstructorTag::from(tag))].into()
-    };
+    let point =
+        |tag: usize| ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(tag))]);
     let checkpoints = |presentation: PresentationRoots| {
         let content = crate::fixture::item_content(
             Reference::Unoccupied,

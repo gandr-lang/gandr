@@ -2451,8 +2451,11 @@ fn one_loop() -> Environment
         ConstantIndex::from(WORDS),
         SmallVec::<_, 0, Global>::from_iter([]),
     );
-    let base =
-        || -> Box<[RuleNode]> { [RuleNode::Constructor(ConstructorTag::from(0_usize))].into() };
+    let base = || {
+        gandr_kernel_data::ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(
+            0_usize,
+        ))])
+    };
     let cells = FreeCells::new(
         ConstantIndex::from(SORT),
         SmallVec::<_, 0, Global>::from_iter([FreeCell::new(base(), base())]),
@@ -2791,8 +2794,11 @@ fn one_two_cell() -> Environment
         ConstantIndex::from(WORDS),
         SmallVec::<_, 0, Global>::from_iter([]),
     );
-    let base =
-        || -> Box<[RuleNode]> { [RuleNode::Constructor(ConstructorTag::from(0_usize))].into() };
+    let base = || {
+        gandr_kernel_data::ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(
+            0_usize,
+        ))])
+    };
     let cells = FreeCells::new(
         ConstantIndex::from(SORT),
         SmallVec::<_, 0, Global>::from_iter([FreeCell::new(base(), base())]),
@@ -3182,8 +3188,11 @@ fn two_cell_and_other() -> Environment
             ConstantIndex::from(words),
             SmallVec::<_, 0, Global>::from_iter([]),
         );
-        let base =
-            || -> Box<[RuleNode]> { [RuleNode::Constructor(ConstructorTag::from(0_usize))].into() };
+        let base = || {
+            gandr_kernel_data::ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(
+                0_usize,
+            ))])
+        };
         let cells = FreeCells::new(
             ConstantIndex::from(OTHER),
             SmallVec::<_, 0, Global>::from_iter([FreeCell::new(base(), base())]),

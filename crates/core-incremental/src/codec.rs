@@ -38,6 +38,7 @@
 //! unresolved id (`UnsupportedPersistence::Dangling`); opaque content has no
 //! spelling.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use core::borrow::Borrow;
@@ -112,6 +113,7 @@ use gandr_core_term::support::Thinning;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_conversion_trace::ConversionSide;
 use gandr_kernel_conversion_trace::SubgoalPosition;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldPosition;
@@ -2512,9 +2514,11 @@ fn read_data_roots(reader: &mut Reader<'_>) -> Result<gandr_core_content::DataRo
             };
             let count = reader.count()?;
             let mut cells = Vec::new();
+            let mut scratch = Vec::new();
+            let mut last = ThinShared::default();
             for _ in 0 .. count.0 {
-                let source = read_rule_side(reader)?;
-                let target = read_rule_side(reader)?;
+                let source = read_cell_end(reader, &mut scratch, &mut last)?;
+                let target = read_cell_end(reader, &mut scratch, &mut last)?;
                 cells.push(gandr_kernel_term::FreeCell::new(source, target));
             }
             (
@@ -2571,8 +2575,33 @@ fn read_rule_side(
     reader: &mut Reader<'_>
 ) -> Result<alloc::boxed::Box<[gandr_core_term::RuleNode]>, CodecError>
 {
-    let count = reader.count()?;
     let mut side = Vec::new();
+    read_rule_nodes(reader, &mut side)?;
+    Ok(side.into_boxed_slice())
+}
+
+/// Read the nodes of one rule side onto the end of `side`: a node count, then
+/// each node's tag and ordinal.
+///
+/// # Specification
+/// - ensures: successful reads consume the count and every node in order.
+/// - fails: as [`read_rule_side`].
+/// - panics: none.
+/// - executable: none — the nodes come from the reader, so a predicate could
+///   only read them again; [`read_rule_side`] states the bytes they take.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`read_data_roots`].
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+///
+/// # Cost
+/// - allocation: the nodes of the side in `side`, growth within the bytes
+fn read_rule_nodes(
+    reader: &mut Reader<'_>,
+    side: &mut Vec<gandr_core_term::RuleNode>,
+) -> Result<(), CodecError>
+{
+    let count = reader.count()?;
     for _ in 0 .. count.0 {
         let node = match reader.tag()?.0 {
             0 => gandr_core_term::RuleNode::Constructor(gandr_core_term::ConstructorTag::from(
@@ -2587,7 +2616,45 @@ fn read_rule_side(
         };
         side.push(node);
     }
-    Ok(side.into_boxed_slice())
+    Ok(())
+}
+
+/// Read one end of a free cell, sharing the block of the end before it when
+/// the nodes repeat.
+///
+/// The loops of a type of words each start and end at its point, so each end
+/// repeats the end before it. The nodes read into `scratch`, which each end
+/// reuses. Only an end whose nodes differ from those of `last` draws a block
+/// of its own, and `last` then holds that end.
+///
+/// # Specification
+/// - ensures: the end holds the side's nodes in order, and shares the block of
+///   `last` when its nodes equal those of `last`.
+/// - fails: as [`read_rule_side`].
+/// - panics: none.
+/// - executable: none — the nodes come from the reader, so a predicate could
+///   only read them again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the loops of a type of words read back as the cells that
+///   the checkpoint wrote.
+/// - witness: `codec::tests::a_type_of_words_round_trips_its_cells`
+///
+/// # Cost
+/// - allocation: the nodes in `scratch`, and a block for each end whose nodes
+///   differ from those of the end before it, growth within the bytes
+fn read_cell_end(
+    reader: &mut Reader<'_>,
+    scratch: &mut Vec<gandr_core_term::RuleNode>,
+    last: &mut ThinShared<(), gandr_core_term::RuleNode, Global>,
+) -> Result<ThinShared<(), gandr_core_term::RuleNode, Global>, CodecError>
+{
+    scratch.clear();
+    read_rule_nodes(reader, scratch)?;
+    if last.slice() != scratch.as_slice() {
+        *last = scratch.iter().copied().collect();
+    }
+    Ok(last.clone())
 }
 
 /// Write a nominal signature's roots and shared node table.

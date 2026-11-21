@@ -55,6 +55,7 @@ use anodized::spec;
 use gandr_kernel_data::Count;
 use gandr_kernel_data::Shared;
 use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_strata::ConstraintRelation;
 use gandr_kernel_strata::LandmarkConstraint;
 use gandr_kernel_strata::Level;
@@ -3030,9 +3031,11 @@ fn decode_declaration(
                 };
                 let count = usize::from(reader.read_usize()?);
                 let mut written = SmallVec::<_, 0, Global>::new();
+                let mut scratch = SmallVec::<_, 0, Global>::new();
+                let mut last = ThinShared::default();
                 for _ in 0 .. count {
-                    let source = decode_rule_side(reader)?;
-                    let target = decode_rule_side(reader)?;
+                    let source = decode_cell_end(reader, &mut scratch, &mut last)?;
+                    let target = decode_cell_end(reader, &mut scratch, &mut last)?;
                     written.push(crate::presented::FreeCell::new(source, target));
                 }
                 cells = Some(
@@ -3284,8 +3287,38 @@ fn decode_rule_side(
     reader: &mut ByteReader<'_>
 ) -> Result<alloc::boxed::Box<[crate::presented::RuleNode]>, DecodeError>
 {
-    let count = usize::from(reader.read_usize()?);
     let mut side = SmallVec::<_, 0, Global>::new();
+    decode_rule_nodes(reader, &mut side)?;
+    Ok(side.into_boxed_slice())
+}
+
+/// Decode the nodes of one rule side onto the end of `side`: a node count,
+/// then each node's tag and ordinal.
+///
+/// # Specification
+/// - requires: nothing; the remaining bytes may be adversarial.
+/// - ensures: appends every node of the side in wire order.
+/// - fails: as [`decode_rule_side`].
+/// - panics: none.
+/// - executable: none — the nodes come from the reader, so a predicate could
+///   only decode them again; [`decode_rule_side`] states the bytes they take.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Cost
+/// - allocation: the nodes of the side in `side`, growth within the artifact's
+///   bytes
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`decode_rule_side`].
+/// - witness: `encode::tests::a_presented_data_declaration_closes_its_segment_with_its_rules`
+fn decode_rule_nodes(
+    reader: &mut ByteReader<'_>,
+    side: &mut SmallVec<crate::presented::RuleNode, 0, Global>,
+) -> Result<(), DecodeError>
+{
+    let count = usize::from(reader.read_usize()?);
     for _ in 0 .. count {
         let tag = reader.next_tag()?;
         let ordinal = reader.read_usize()?;
@@ -3310,7 +3343,49 @@ fn decode_rule_side(
         };
         side.push(node);
     }
-    Ok(side.into_boxed_slice())
+    Ok(())
+}
+
+/// Decode one end of a free cell, sharing the block of the end before it when
+/// the nodes repeat.
+///
+/// The loops of a type of words each start and end at its point, so each end
+/// repeats the end before it. The nodes decode into `scratch`, which each end
+/// reuses. Only an end whose nodes differ from those of `last` draws a block
+/// of its own, and `last` then holds that end.
+///
+/// # Specification
+/// - requires: nothing; the remaining bytes may be adversarial.
+/// - ensures: the end holds the side's nodes in wire order, and shares the
+///   block of `last` when its nodes equal those of `last`.
+/// - fails: as [`decode_rule_side`].
+/// - panics: none.
+/// - executable: none — the nodes come from the reader, so a predicate could
+///   only decode them again.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Cost
+/// - allocation: the nodes in `scratch`, and a block for each end whose nodes
+///   differ from those of the end before it, growth within the artifact's bytes
+///
+/// # Adequacy
+/// - hypothesis: L3 — the loops of a decoded type of words share one block for
+///   their point, and a cell whose ends differ holds two blocks.
+/// - witness: `presented::tests::the_loops_of_a_decoded_type_of_words_share_their_point_8290`
+fn decode_cell_end(
+    reader: &mut ByteReader<'_>,
+    scratch: &mut SmallVec<crate::presented::RuleNode, 0, Global>,
+    last: &mut ThinShared<(), crate::presented::RuleNode, Global>,
+) -> Result<ThinShared<(), crate::presented::RuleNode, Global>, DecodeError>
+{
+    scratch.clear();
+    decode_rule_nodes(reader, scratch)?;
+    if last.slice() != scratch.as_slice() {
+        *last = scratch.iter().copied().collect();
+    }
+    Ok(last.clone())
 }
 
 /// Decode one side of an operation's rule: a node count, then each node's tag

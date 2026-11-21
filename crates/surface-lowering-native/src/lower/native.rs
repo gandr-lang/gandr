@@ -391,6 +391,7 @@ use gandr_core_term::primitive::PRELUDE;
 use gandr_core_term::staged::Part;
 use gandr_kernel_data::Count;
 use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::CellIndex;
 use gandr_kernel_term::ConstantIndex;
@@ -8562,12 +8563,14 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                 constructors.extend([Vec::from([word]), Vec::from([word])]);
                 names.extend([String::from(letter), alloc::format!("back({letter})")]);
             }
+            // Each loop starts and ends at the point, so one block holds it,
+            // and each cell holds it by a count.
+            let point: ThinShared<(), gandr_core_term::RuleNode, Global> =
+                words.point.iter().copied().collect();
             let cells = words
                 .loops
                 .iter()
-                .map(|_bound| {
-                    gandr_core_term::FreeCell::new(words.point.clone(), words.point.clone())
-                })
+                .map(|_bound| gandr_core_term::FreeCell::new(point.clone(), point.clone()))
                 .collect();
             let presentation = gandr_core_term::Presentation::words(
                 gandr_core_term::FreeCells::new(family, cells).wrapped(words.reflexivities),
