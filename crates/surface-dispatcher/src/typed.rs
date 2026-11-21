@@ -2845,12 +2845,12 @@ impl TypeTable
             let (ty, standing) = match label.labelled {
                 Labelled::ValueType { ty, ref context } => {
                     let named = NamedContext(contexts.len());
-                    contexts.push(context.clone());
+                    contexts.push(context.to_vec());
                     (TypeNode::Value(ty), Standing::Named(named))
                 },
                 Labelled::CompType { ty, ref context } => {
                     let named = NamedContext(contexts.len());
-                    contexts.push(context.clone());
+                    contexts.push(context.to_vec());
                     (TypeNode::Computation(ty), Standing::Named(named))
                 },
                 Labelled::Value(value) => {

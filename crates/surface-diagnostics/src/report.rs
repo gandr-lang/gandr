@@ -822,7 +822,8 @@ impl Report<'_>
                         },
                         Maybe::Present(&Omitted::Classifier { ref family, .. }) => {
                             Maybe::Present(alloc::format!(
-                                "state the constructor's type, as `(… : {family}(…))`"
+                                "state the constructor's type, as `(… : {}(…))`",
+                                family.as_str()
                             ))
                         },
                         Maybe::Absent(_) => advice(refusal),
@@ -1555,14 +1556,16 @@ impl fmt::Display for MessageText<'_>
                 }) => match unsolved(reason) {
                     Maybe::Present(why) => write!(
                         f,
-                        "the solver cannot determine the argument `{parameter}` of `{family}` \
-                         that this constructor's place leaves open: {why}"
+                        "the solver cannot determine the argument `{parameter}` of `{}` that \
+                         this constructor's place leaves open: {why}",
+                        family.as_str()
                     ),
                     Maybe::Absent(()) => write!(
                         f,
-                        "the argument `{parameter}` of `{family}` that this constructor's place \
-                         leaves open is determined by neither its fields nor the type it is \
-                         checked against"
+                        "the argument `{parameter}` of `{}` that this constructor's place leaves \
+                         open is determined by neither its fields nor the type it is checked \
+                         against",
+                        family.as_str()
                     ),
                 },
                 Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),

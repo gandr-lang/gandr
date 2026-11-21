@@ -390,6 +390,7 @@ use gandr_core_term::primitive::Arguments;
 use gandr_core_term::primitive::PRELUDE;
 use gandr_core_term::staged::Part;
 use gandr_kernel_data::Count;
+use gandr_kernel_data::Shared;
 use gandr_kernel_data::SmallVec;
 use gandr_kernel_data::ThinShared;
 use gandr_kernel_strata::Level;
@@ -8666,7 +8667,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                     span,
                     labelled: crate::origin::Labelled::ValueType {
                         ty,
-                        context: Vec::new(),
+                        context: Default::default(),
                     },
                 });
             }
@@ -8711,7 +8712,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                 span,
                 labelled: crate::origin::Labelled::ValueType {
                     ty,
-                    context: Vec::new(),
+                    context: Default::default(),
                 },
             });
         }
@@ -13990,12 +13991,15 @@ impl<'source> NativeRef<'_, '_, 'source>
                 Maybe::Present(named) => Some(named),
                 Maybe::Absent(_) => None,
             }));
-        let family_name = self
-            .cx
-            .collected
-            .slots
-            .get(usize::from(fielded.family))
-            .map_or_else(String::new, |slot| String::from(slot.name.as_ref()));
+        // Each argument that the classifier leaves open shares the family's
+        // name.
+        let family_name = Shared::new(
+            self.cx
+                .collected
+                .slots
+                .get(usize::from(fielded.family))
+                .map_or_else(String::new, |slot| String::from(slot.name.as_ref())),
+        );
         let classified = origin.inserted(Insertion::Classifier);
         let mut arguments = Vec::with_capacity(arity);
         for (place, written) in (first ..).zip(names) {

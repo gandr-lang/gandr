@@ -1815,7 +1815,8 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
         sink.origins.record_value_type(id, origin);
         let mut states: BTreeMap<ProtocolState, ValueTypeId> = BTreeMap::new();
         let _root = states.insert(root, id);
-        let context: Vec<String> = self
+        // The labels of the session share one list of the binders' names.
+        let context = self
             .cx()
             .scope
             .telescope_names(written.frame, self.host_ref().telescope_at(origin.node()))
@@ -1849,7 +1850,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
                 span: site.at.span,
                 labelled: Labelled::ValueType {
                     ty,
-                    context: context.clone(),
+                    context: Clone::clone(&context),
                 },
             });
         }

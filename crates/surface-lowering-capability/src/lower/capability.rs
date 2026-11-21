@@ -3145,7 +3145,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
                         span: exercised.head,
                         labelled: Labelled::CompType {
                             ty,
-                            context: Vec::new(),
+                            context: Default::default(),
                         },
                     });
                 }

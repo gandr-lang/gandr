@@ -15182,7 +15182,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
         sink: &mut Sink<'_>,
     )
     {
-        let named = |frame: Frame, held: NodeIndex| -> Vec<String> {
+        let named = |frame: Frame, held: NodeIndex| {
             self.cx()
                 .scope
                 .telescope_names(frame, self.telescope_at(held))
@@ -15586,7 +15586,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 span: origin.span(),
                 labelled: Labelled::CompType {
                     ty,
-                    context: Vec::new(),
+                    context: Default::default(),
                 },
             });
         }
@@ -16170,7 +16170,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             Plan::Expansion(family, arguments) => {
                 let expanded =
                     ModelsRef::new(self.host_ref()).mint_expansion(family, arguments, sink, origin);
-                let context = |lowerer: &Self, frame| -> Vec<String> {
+                let context = |lowerer: &Self, frame| {
                     lowerer
                         .cx()
                         .scope

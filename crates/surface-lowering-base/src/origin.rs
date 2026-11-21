@@ -94,6 +94,7 @@
 //! binder, and a bind minted for a run the run's. A refusal over the rewritten
 //! terms is then published at the written node that elaborated.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -109,6 +110,8 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::pattern::PatternId;
 use gandr_core_term::pattern::Patterns;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::RuleIndex;
 use gandr_kernel_term::cover::Cover;
@@ -659,8 +662,9 @@ pub enum Omitted
     /// as no family's application (#6113).
     Classifier
     {
-        /// The family the constructor belongs to.
-        family: String,
+        /// The family the constructor belongs to, which each argument that
+        /// the constructor leaves open shares.
+        family: Shared<String, Global>,
         /// The parameter or the index the argument stands for: its name, or
         /// its place among the family's arguments, counted from one.
         parameter: String,
@@ -2962,16 +2966,18 @@ pub enum Labelled
     {
         /// The type.
         ty: ValueTypeId,
-        /// The binders' names, outermost first.
-        context: Vec<String>,
+        /// The binders' names, outermost first, which the labels of one scope
+        /// share.
+        context: ThinShared<(), String, Global>,
     },
     /// An observation's computation type, read in `context`.
     CompType
     {
         /// The type.
         ty: CompTypeId,
-        /// The binders' names, outermost first.
-        context: Vec<String>,
+        /// The binders' names, outermost first, which the labels of one scope
+        /// share.
+        context: ThinShared<(), String, Global>,
     },
     /// A record field's value, whose type the typed run judges.
     Value(ValueId),
