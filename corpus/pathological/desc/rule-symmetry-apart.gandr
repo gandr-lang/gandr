@@ -4,8 +4,8 @@
 //! wrong apartness makes each statement provable. The two orders of a meet
 //! are one term, and a rule that tears under the symmetry decides nothing.
 //!
-//! The checker compares two terms in each pairing of the arguments of a meet.
-//! It refuses a case with no arm where one pairing joins the two terms. It
+//! The checker compares two terms in each order of the arguments of a meet.
+//! It refuses a case with no arm where one order joins the two terms. It
 //! refuses each such case where a pair of rules does not join.
 //!
 //! - see: #8323
