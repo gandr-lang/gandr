@@ -3135,12 +3135,53 @@ impl<'source> Collected<'source>
         if let Maybe::Absent(_) = answered
             && let Some(prelude) = self.unit.prelude()
             && prelude != source
+            && !self.binds_written(source, name)
             && let Some(found) = lookup(prelude, name)
             && let Ok(start) = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(0_usize))
         {
             answered = Maybe::Present((found, start));
         }
         Ok(answered)
+    }
+
+    /// Whether `source` binds `name` itself, or through one of its written
+    /// imports, as a declaration of any kind.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when the top level of `source` declares a slot
+    ///   named `name`, or a written import of `source` that resolved to a
+    ///   source and opens `name` reaches a public slot of that name at its top
+    ///   level. The prelude then answers no lookup of `name`, so a source
+    ///   shadows a name of the prelude by the scope rule of each other name.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a search of the receiver's tables.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a data family that a listed import binds hides the
+    ///   prelude's type member of its name, and a name that nothing written
+    ///   binds still reads the prelude.
+    /// - witness: `gandr-surface-lowering::tests::namespace::the_prelude_answers_a_name_nothing_written_binds_2302`
+    #[inline]
+    fn binds_written(
+        &self,
+        source: SourceIndex,
+        name: SurfaceName<'source>,
+    ) -> bool
+    {
+        self.by_name
+            .contains_key(&(Container::TopLevel(source), name))
+            || self.imports.of(source).any(|import| {
+                matches!(
+                    (import.resolution(), import.opens(name)),
+                    (ImportResolution::Path(ImportTarget::Source(target)), Opens(true))
+                        if self
+                            .by_name
+                            .get(&(Container::TopLevel(target), name))
+                            .is_some_and(|&slot| self.slot_visibility(slot) == Visibility::Public)
+                )
+            })
     }
 
     /// The import of `source` that makes the unit's theory code visible to
