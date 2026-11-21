@@ -375,6 +375,7 @@ pub use crate::rule::FreeTerm;
 pub use crate::rule::Freshness;
 pub use crate::rule::RowTail;
 pub use crate::rule::RuleFace;
+pub use crate::rule::RuleReading;
 pub use crate::rule::RuleVarMeta;
 pub use crate::rule::TermArgs;
 pub use crate::rule::TermNode;

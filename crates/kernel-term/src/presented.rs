@@ -189,6 +189,26 @@ pub struct PresentedRule
     right: Box<[RuleNode]>,
 }
 
+/// How the readers of a rule table read one rule.
+///
+/// # Specification
+/// - provides: the two readings of [`PresentedRule::reading`].
+/// - panics: none.
+/// - executable: none — closed classification.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`PresentedRule::reading`].
+/// - witness: `presented::tests::a_rule_that_swaps_two_fields_is_a_symmetry`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuleReading
+{
+    /// The rule rewrites its left side to its right side.
+    Step,
+    /// The rule swaps the two fields of this constructor. No reader rewrites
+    /// by it.
+    Symmetry(ConstructorTag),
+}
+
 impl PresentedRule
 {
     /// The rule rewriting `left` to `right`.
@@ -305,6 +325,55 @@ impl PresentedRule
                 .map(|(_, slot)| slot)
                 .collect()
         })
+    }
+
+    /// How the readers of the table read this rule: as a step, or as a
+    /// symmetry of one constructor.
+    ///
+    /// # Specification
+    /// - requires: nothing — the rule may be unvalidated.
+    /// - ensures: [`RuleReading::Symmetry`] with the constructor exactly when
+    ///   the left side is that constructor over the variables `0` and `1` and
+    ///   the right side is it over `1` and `0`; [`RuleReading::Step`] for every
+    ///   other rule.
+    /// - provides: the one test of the form [`Presentation::validate`],
+    ///   [`Presentation::normalize`] and [`Presentation::converges`] share. A
+    ///   symmetry states that its constructor's two fields commute. No reader
+    ///   rewrites by it, so the constructor count that bounds the rewriting of
+    ///   the steps still falls at each rewrite.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `[c, 0, 1] ==> [c, 1, 0]` is a symmetry of `c`; the
+    ///   same sides over two constructors, over one variable twice, or with the
+    ///   right side in the written order are steps.
+    /// - witness: `presented::tests::a_rule_that_swaps_two_fields_is_a_symmetry`
+    #[spec(ensures: |ret| match ret {
+        RuleReading::Symmetry(tag) => self.left.first() == Some(&RuleNode::Constructor(tag)),
+        RuleReading::Step => true,
+    })]
+    #[inline]
+    #[must_use]
+    pub fn reading(&self) -> RuleReading
+    {
+        let (first, second) = (
+            RuleNode::Variable(RuleVariable(0)),
+            RuleNode::Variable(RuleVariable(1)),
+        );
+        match (&*self.left, &*self.right) {
+            (
+                &[RuleNode::Constructor(tag), left_first, left_second],
+                &[head, right_first, right_second],
+            ) if head == RuleNode::Constructor(tag)
+                && left_first == first
+                && left_second == second
+                && right_first == second
+                && right_second == first =>
+            {
+                RuleReading::Symmetry(tag)
+            },
+            _ => RuleReading::Step,
+        }
     }
 }
 
@@ -515,7 +584,9 @@ impl Presentation
                     return Err(refuse(RuleFault::SlotMismatch));
                 }
             }
-            if right.constructors >= left.constructors {
+            if right.constructors >= left.constructors
+                && !matches!(rule.reading(), RuleReading::Symmetry(_))
+            {
                 return Err(refuse(RuleFault::NotDecreasing));
             }
         }
@@ -651,6 +722,9 @@ impl Presentation
                     continue;
                 };
                 for rule in self.rules() {
+                    if matches!(rule.reading(), RuleReading::Symmetry(_)) {
+                        continue;
+                    }
                     let Matched::At { end, bindings } =
                         matched(term, TermPosition(start), rule.left(), arities, fuel)?
                     else {
@@ -935,11 +1009,15 @@ impl Presentation
     /// # Specification
     /// - requires: `self` passed [`Self::validate`] against the table `arities`
     ///   counts.
-    /// - ensures: [`Convergence::Converges`] exactly when every critical pair's
-    ///   two sides normalize to one term; otherwise [`Convergence::Diverges`]
-    ///   naming the first pair that does not, in written order of the
-    ///   overlapped rule, the position and the overlapping rule. Each node
-    ///   unified, built, compared or copied costs one unit of `fuel`.
+    /// - ensures: [`Convergence::Diverges`] naming the first symmetry
+    ///   ([`RuleReading::Symmetry`]) as both rules, when the table holds one:
+    ///   its two orders are two normal forms, because no reader rewrites by it.
+    ///   Otherwise [`Convergence::Converges`] exactly when every critical
+    ///   pair's two sides normalize to one term; otherwise
+    ///   [`Convergence::Diverges`] naming the first pair that does not, in
+    ///   written order of the overlapped rule, the position and the overlapping
+    ///   rule. Each node unified, built, compared or copied costs one unit of
+    ///   `fuel`.
     /// - provides: the convergence a decision over normal forms rests on: an
     ///   admitted presentation terminates, so joining every critical pair makes
     ///   it confluent (the critical pair lemma with Newman's lemma), and two
@@ -959,8 +1037,10 @@ impl Presentation
     /// # Adequacy
     /// - hypothesis: L3 — the circle's two cancellations and the integers'
     ///   converge; two rules rewriting one redex to two normal forms diverge,
-    ///   named in order; a rule overlapping itself below its root is checked.
+    ///   named in order; a rule overlapping itself below its root is checked; a
+    ///   table that holds a symmetry diverges at the symmetry.
     /// - witness: `presented::tests::critical_pairs_decide_convergence`
+    /// - witness: `presented::tests::a_rule_that_swaps_two_fields_is_a_symmetry`
     #[spec(captures: before = fuel.0, ensures: |ret| fuel.0 <= before
         && match ret {
             Ok(Convergence::Diverges { outer, inner }) => outer.0 < self.rules().len() && inner.0 < self.rules().len(),
@@ -974,6 +1054,16 @@ impl Presentation
         fuel: &mut RewriteFuel,
     ) -> Result<Convergence, Exhausted>
     {
+        if let Some(symmetry) = self
+            .rules()
+            .iter()
+            .position(|rule| matches!(rule.reading(), RuleReading::Symmetry(_)))
+        {
+            return Ok(Convergence::Diverges {
+                outer: RuleIndex(symmetry),
+                inner: RuleIndex(symmetry),
+            });
+        }
         for (outer_index, outer) in self.rules().iter().enumerate() {
             for (position, &node) in outer.left().iter().enumerate() {
                 if !matches!(node, RuleNode::Constructor(_)) {
@@ -2710,6 +2800,7 @@ mod tests
     use super::RuleFault;
     use super::RuleIndex;
     use super::RuleNode;
+    use super::RuleReading;
     use super::RuleRefusal;
     use super::RuleSlot;
     use super::RuleTerm;
@@ -3559,6 +3650,158 @@ mod tests
         );
         let mut starved = RewriteFuel::from(2_u64);
         assert_eq!(circle().converges(&arities, &mut starved), Err(Exhausted));
+    }
+
+    /// `zero`, `one`, `band(x, y)` and `bor(x, y)` over two fields of the type
+    /// itself, and `tagged(x, n)` whose second field is of another type, as
+    /// validation reads their fields.
+    ///
+    /// # Specification
+    /// trivial.
+    fn bits() -> SmallVec<SmallVec<RuleSlot<Classifier>, 0, Global>, 0, Global>
+    {
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([RuleSlot::Own, RuleSlot::Own]),
+            SmallVec::<_, 0, Global>::from_iter([RuleSlot::Own, RuleSlot::Own]),
+            SmallVec::<_, 0, Global>::from_iter([
+                RuleSlot::Own,
+                RuleSlot::Other(Classifier::Integer),
+            ]),
+        ])
+    }
+
+    /// - see: #8291
+    #[test]
+    fn a_rule_that_swaps_two_fields_is_a_symmetry()
+    {
+        let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+        let v = |ordinal: u32| RuleNode::Variable(RuleVariable::from(ordinal));
+        let table = bits();
+        let arities = [0_usize, 0, 2, 2, 2].map(FieldCount::from);
+        let symmetry = || PresentedRule::new([c(2), v(0), v(1)].into(), [c(2), v(1), v(0)].into());
+        assert_eq!(
+            symmetry().reading(),
+            RuleReading::Symmetry(ConstructorTag::from(2_usize))
+        );
+        for (left, right, fault) in [
+            (
+                &[c(2), v(0), v(1)][..],
+                &[c(2), v(0), v(1)][..],
+                RuleFault::NotDecreasing,
+            ),
+            (
+                &[c(2), v(0), v(1)],
+                &[c(3), v(1), v(0)],
+                RuleFault::NotDecreasing,
+            ),
+            (
+                &[c(2), v(0), v(0)],
+                &[c(2), v(0), v(0)],
+                RuleFault::NonLinear,
+            ),
+            (
+                &[c(2), c(0), v(0)],
+                &[c(2), v(0), c(0)],
+                RuleFault::NotDecreasing,
+            ),
+        ] {
+            let step = one(left, right);
+            assert_eq!(
+                step.rules().first().map(PresentedRule::reading),
+                Some(RuleReading::Step),
+                "{left:?} to {right:?}"
+            );
+            assert_eq!(
+                step.validate(&table),
+                Err(RuleRefusal {
+                    rule: RuleIndex::from(0_usize),
+                    fault,
+                }),
+                "a step that removes no constructor stays refused: {left:?} to {right:?}"
+            );
+        }
+        assert_eq!(
+            one(&[c(4), v(0), v(1)], &[c(4), v(1), v(0)]).validate(&table),
+            Err(RuleRefusal {
+                rule: RuleIndex::from(0_usize),
+                fault: RuleFault::SlotMismatch,
+            }),
+            "a symmetry swaps two fields of one type only"
+        );
+        let steps = || {
+            [
+                PresentedRule::new([c(2), c(0), v(0)].into(), [c(0)].into()),
+                PresentedRule::new([c(2), c(1), v(0)].into(), [v(0)].into()),
+            ]
+        };
+        let band = Presentation::new(
+            steps()
+                .into_iter()
+                .chain(core::iter::once(symmetry()))
+                .collect(),
+        );
+        assert_eq!(band.validate(&table), Ok(()));
+        let node = |tag: usize, arity: usize| RuleTerm::Constructor {
+            tag: ConstructorTag::from(tag),
+            arity: FieldCount::from(arity),
+            payload: Letter(tag),
+        };
+        let kept = |&letter: &Letter| letter;
+        let mut fuel = RewriteFuel::from(100_u64);
+        let mut absorbed: SmallVec<RuleTerm<Letter, Point>, 0, Global> =
+            SmallVec::<_, 0, Global>::from_iter([node(2, 2), node(0, 0), RuleTerm::Leaf(Point)]);
+        assert_eq!(
+            band.normalize(&arities, &mut absorbed, kept, &mut fuel),
+            Ok(Normalized::Rewritten)
+        );
+        assert_eq!(
+            absorbed,
+            [RuleTerm::Constructor {
+                tag: ConstructorTag::from(0_usize),
+                arity: FieldCount::from(0_usize),
+                payload: Letter(2),
+            }],
+            "the step with zero on the left fires beside the symmetry, and its `zero` carries the \
+             payload of the redex root"
+        );
+        let mut swapped: SmallVec<RuleTerm<Letter, Point>, 0, Global> =
+            SmallVec::<_, 0, Global>::from_iter([node(2, 2), RuleTerm::Leaf(Point), node(0, 0)]);
+        let written = swapped.clone();
+        assert_eq!(
+            band.normalize(&arities, &mut swapped, kept, &mut fuel),
+            Ok(Normalized::Unchanged),
+            "no reader rewrites by the symmetry, so the rewriting ends within its fuel"
+        );
+        assert_eq!(swapped, written);
+        let mut fuel = RewriteFuel::from(10_000_u64);
+        assert_eq!(
+            Presentation::new(steps().into_iter().collect()).converges(&arities, &mut fuel),
+            Ok(Convergence::Converges)
+        );
+        assert_eq!(
+            band.converges(&arities, &mut fuel),
+            Ok(Convergence::Diverges {
+                outer: RuleIndex::from(2_usize),
+                inner: RuleIndex::from(2_usize),
+            }),
+            "the two orders of a symmetry are two normal forms, so the table does not converge"
+        );
+        let mut terms = Terms::default();
+        let (one_bit, zero_bit) = (
+            terms.build(&[Node::C(1)], &arities),
+            terms.build(&[Node::C(0)], &arities),
+        );
+        assert_eq!(
+            band.apart(&table, (one_bit, zero_bit), |at, fields| terms
+                .read(at, fields)),
+            Apartness::Diverges {
+                outer: RuleIndex::from(2_usize),
+                inner: RuleIndex::from(2_usize),
+            },
+            "no two terms are apart by a table that holds a symmetry"
+        );
     }
 
     #[test]
