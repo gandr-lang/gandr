@@ -9987,6 +9987,10 @@ pub fn run_held(
 /// - measure: the definitions between `value` and a value that stands at none:
 ///   an admitted definition's body names earlier definitions alone.
 ///
+/// # Cost
+/// - allocation: the machine's tasks and the values of each body, growth within
+///   the bodies of the definitions
+///
 /// # Adequacy
 /// - hypothesis: L3 — `loop(named)` over the circle reads as `base` once the
 ///   leaf `named` reads as its body `unloop(base)`, and a name whose body is
