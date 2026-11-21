@@ -132,9 +132,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     (Direction::Given, true) => Err(BuiltinFault::Bodied),
                     (Direction::Found, false) => Err(BuiltinFault::Unbodied),
                     (Direction::Given, false) | (Direction::Found, true) => match (row, bound) {
-                        (Row::Atom(_), 0_usize) | (Row::Former(_), 1_usize) => Ok(row),
+                        (Row::Atom(_), 0_usize)
+                        | (Row::Former(_), 1_usize)
+                        | (Row::Native(_) | Row::Role(_), _) => Ok(row),
                         (Row::Atom(_) | Row::Former(_), _) => Err(BuiltinFault::TypeDiffers),
-                        (Row::Native(_) | Row::Role(_), _) => Ok(row),
                     },
                 },
             };

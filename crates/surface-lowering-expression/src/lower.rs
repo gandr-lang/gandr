@@ -6577,6 +6577,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::tests::a_list_literal_lowers_to_its_cons_cells_1544`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_listed_constructor_takes_the_element_type_1544`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_listed_constructor_takes_the_answered_element_type_1602`
+    ///
+    /// # Cost
+    /// - allocation: the text of a declared former's `builtin` key, setup
     #[spec(
         ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::List(_))),
     )]
@@ -11200,6 +11203,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::tests::modules::a_module_s_family_is_applied_through_its_name_3051`
     /// - witness: `gandr-surface-lowering::lower::tests::a_homed_former_reads_through_its_import_s_qualifier_4862`
     /// - witness: `gandr-surface-lowering::tests::modules::a_module_s_function_is_called_in_a_type_5213`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the path that the link reads, setup
+    /// - allocation: the text of a declared former's `builtin` key, setup
+    /// - allocation: the reached import and the carrier's plan, durable by the
+    ///   lowering
     fn applied_path(
         &mut self,
         site: Site,
@@ -12430,6 +12439,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   data family applied the same way keep their own readings.
     /// - witness: `gandr-surface-lowering::lower::tests::a_type_where_a_value_is_read_is_quoted`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_constructor_applies_to_its_fields`
+    ///
+    /// # Cost
+    /// - allocation: the text of a declared former's `builtin` key, setup
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -13048,6 +13060,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::tests::the_thunk_and_returner_heads_lower_to_their_formers`
     /// - witness: `gandr-surface-lowering::lower::tests::a_graded_bridge_is_refused_by_name`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_returner_row_names_whole_interfaces`
+    ///
+    /// # Cost
+    /// - allocation: the text of a declared former's `builtin` key, setup
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -13214,6 +13229,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::tests::the_bridge_tokens_are_compound_and_sum_is_unaffected`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_list_moves_along_a_universe_equivalence`
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
+    ///
+    /// # Cost
+    /// - allocation: the reading of the argument and the plan of the former,
+    ///   durable by the lowering
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -17264,6 +17283,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - witness: `gandr-surface-lowering::lower::tests::u_and_f_are_names`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_list_moves_along_a_universe_equivalence`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_run_rides_a_flow_between_sessions`
+    ///
+    /// # Cost
+    /// - allocation: the minted type and its origin, growth within the arena
     #[spec(
         ensures: |ret| match former {
             | TypeFormer::Thunk => match self.cx().comp_type_at(argument) {

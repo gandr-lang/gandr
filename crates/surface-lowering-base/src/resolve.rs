@@ -587,14 +587,12 @@ pub fn type_atom(name: SurfaceName<'_>) -> Maybe<TypeAtom, type_head::Absent>
 pub fn type_former(name: SurfaceName<'_>) -> Maybe<TypeFormer, type_head::Absent>
 {
     let spelled: &str = name.as_ref();
-    let found = TYPE_FORMERS
-        .into_iter()
-        .find_map(|(entry, former)| (entry == spelled).then_some(former));
-
-    found.map_or(
-        Maybe::Absent(type_head::Absent::Unregistered),
-        Maybe::Present,
-    )
+    for (entry, former) in TYPE_FORMERS {
+        if entry == spelled {
+            return Maybe::Present(former);
+        }
+    }
+    Maybe::Absent(type_head::Absent::Unregistered)
 }
 
 /// The type former `name` spells when the module spelled `module` homes it.
@@ -629,16 +627,12 @@ pub fn homed_former(
 ) -> Maybe<TypeFormer, type_head::Absent>
 {
     let (home, spelled): (&str, &str) = (module.as_ref(), name.as_ref());
-    let found = HOMED_FORMERS
-        .into_iter()
-        .find_map(|(entry, spelling, former)| {
-            (entry == home && spelling == spelled).then_some(former)
-        });
-
-    found.map_or(
-        Maybe::Absent(type_head::Absent::Unregistered),
-        Maybe::Present,
-    )
+    for (entry, spelling, former) in HOMED_FORMERS {
+        if entry == home && spelling == spelled {
+            return Maybe::Present(former);
+        }
+    }
+    Maybe::Absent(type_head::Absent::Unregistered)
 }
 
 /// The type atom `name` spells when the module spelled `module` homes it.

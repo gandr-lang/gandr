@@ -6516,6 +6516,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::list_pattern`].
     /// - witness: `gandr-surface-lowering::lower::native::tests::list_patterns_case_on_the_native_list`
+    ///
+    /// # Cost
+    /// - allocation: the text of a declared former's `builtin` key, setup
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |element| matches!(stated, Maybe::Present(_)) || matches!(*element, Maybe::Absent(_))))]
     fn listed(
         &mut self,
