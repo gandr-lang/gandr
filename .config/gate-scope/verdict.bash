@@ -53,9 +53,13 @@
 #     `GATE_VERDICT_REMOTE`, `origin` by default: each ref under the tree, and
 #     each record of inputs whose commit holds that tree.
 #   verdict.bash read <check>...
-#     Exits 0 when the remote holds a record of each <check> that this run's
-#     key matches and an allowed signer signed. Else it names each check that
-#     it holds no record of, and exits 1. For a check of inputs, the run
+#     Exits 0 when each <check> holds. A check of inputs holds with no record
+#     when its inputs at HEAD are its inputs at `GATE_BASE`, the trunk holds
+#     that base, and the change holds no task file: the base holds a pass of
+#     the check on the same inputs. The run reads no record and asks no remote for such
+#     a check. Another check holds when the remote holds a record of it that
+#     this run's key matches and an allowed signer signed. Else the run names
+#     each check that does not hold, and exits 1. For a check of inputs, the run
 #     computes its key from its own tree, its own base `GATE_BASE` and the
 #     scope against that base (`scope.bash --lints`), and fetches the one ref
 #     of that key. For another check, each run takes the base of each record
@@ -206,6 +210,9 @@ on_trunk() {
   fi
   local trunk status
   source "$here/../pr-stack/trunk.bash"
+  # The repository answers when it holds the trunk's ref with the base below
+  # it. Else GitHub answers.
+  if git merge-base --is-ancestor "$1" "origin/$trunk" 2> /dev/null; then return 0; fi
   status=$(gh api "repos/{owner}/{repo}/compare/$1...$trunk" --jq .status 2> /dev/null) || return 1
   [[ $status == ahead || $status == identical ]]
 }
@@ -287,13 +294,46 @@ case ${1:-} in
     shift
     tree=$(git rev-parse 'HEAD^{tree}')
     # The common part of the key holds for each check of this run, so the run
-    # reads it once.
-    common_key=$(common "$tree")
-    allowed=$(mktemp)
-    trap 'rm -f "$allowed"' EXIT
-    signers "$allowed"
+    # reads it once, and the allowed signers with it. A run whose checks all
+    # hold by their base reads neither.
+    common_key='' allowed='' digests=''
+    trap 'rm -rf ${allowed:+"$allowed"} ${digests:+"$digests"}' EXIT
+    prepare() {
+      if [[ -z $allowed ]]; then
+        common_key=$(common "$tree")
+        allowed=$(mktemp)
+        signers "$allowed"
+      fi
+    }
+    # A check with the inputs of its base needs no record. The base is a
+    # commit of the trunk, so it holds a pass of the check on these inputs.
+    # The digests of each check at HEAD and at the base run at one time.
+    # - see: #8265
+    # economy: `inputs.bash` reads the task's definition from the worktree
+    # alone, so a change that holds a task file holds no check by its base.
+    declare -A by_base=()
+    if [[ -n ${GATE_BASE:-} ]] && on_trunk "$GATE_BASE" && git diff --quiet "$GATE_BASE" "$tree" -- .config/mise/tasks \
+      && base_scope=${GATE_VERDICT_SCOPE:-$("$here/scope.bash" --lints 2> /dev/null)}; then
+      digests=$(mktemp -d)
+      for check in "$@"; do
+        digested "$check" || continue
+        name=$(ref_name "$check")
+        "$here/inputs.bash" digest "$tree" "$base_scope" "$check" > "$digests/$name.head" 2> /dev/null &
+        "$here/inputs.bash" digest "$GATE_BASE" "$base_scope" "$check" > "$digests/$name.base" 2> /dev/null &
+      done
+      wait
+      for check in "$@"; do
+        name=$(ref_name "$check")
+        if [[ -s $digests/$name.head && $(< "$digests/$name.head") == "$(< "$digests/$name.base")" ]]; then by_base[$check]=1; fi
+      done
+    fi
     missing=()
     for check in "$@"; do
+      if [[ -n ${by_base[$check]:-} ]]; then
+        echo "verdict: $check holds on ${tree:0:12}: its inputs are those of the base ${GATE_BASE:0:12}, which passed, so the check does not run again" >&2
+        continue
+      fi
+      prepare
       held=
       if digested "$check"; then
         # The run's own key: its tree's inputs, its base's inputs and its
