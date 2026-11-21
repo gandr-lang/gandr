@@ -297,6 +297,7 @@ pub use crate::presented::ConstructorCount;
 pub use crate::presented::Convergence;
 pub use crate::presented::Exhausted;
 pub use crate::presented::FieldCount;
+pub use crate::presented::FieldOrder;
 pub use crate::presented::FreeCell;
 pub use crate::presented::FreeCells;
 pub use crate::presented::Normalized;

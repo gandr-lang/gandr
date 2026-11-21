@@ -45,6 +45,7 @@ use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::FieldCount;
+use gandr_kernel_term::FieldOrder;
 use gandr_kernel_term::Normalized;
 use gandr_kernel_term::Presentation;
 use gandr_kernel_term::RewriteFuel;
@@ -238,6 +239,46 @@ fn declaration(
         Some(&ValueType::Data { declaration, .. }) => Ok(Some(declaration)),
         Some(_) | None => Ok(None),
     }
+}
+
+/// How the two fields of the constructor `tag` of the type that `datatype`
+/// names stand under the rules of that type.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`FieldOrder::Free`] when `datatype` names a presented
+///   declaration whose rule table holds a symmetry of `tag`;
+///   [`FieldOrder::Written`] for each other classifier.
+/// - provides: the test by which the conversion starts the choice of a pairing
+///   ([`crate::rules::Choice::Symmetric`]).
+/// - fails: as [`declaration`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two terms that differ by the order of two fields convert
+///   under a symmetry, and they do not convert under a table with no symmetry.
+/// - witness: `presented::tests::two_orders_of_two_fields_convert_under_a_symmetry_8311`
+#[spec(ensures: |ret| ret.is_ok() || ret == Err(ConversionFault::Domain(DomainFault::Dangling)))]
+pub(crate) fn field_order(
+    core: &CoreArena,
+    domain: &DomainArena,
+    definitions: Definitions<'_>,
+    datatype: ValueClosureId,
+    tag: ConstructorTag,
+) -> Result<FieldOrder, ConversionFault>
+{
+    let Some(own) = declaration(core, domain, datatype)?
+    else {
+        return Ok(FieldOrder::Written);
+    };
+    Ok(definitions
+        .presented(own)
+        .map_or(FieldOrder::Written, |presented| {
+            presented.presentation.field_order(tag)
+        }))
 }
 
 /// What reading a leaf before the rules gave.

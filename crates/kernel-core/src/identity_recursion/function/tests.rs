@@ -429,7 +429,7 @@ fn decision(step: ConversionDecision<TraceNode>) -> ConversionDecision<ReplayNod
     ConversionDecision::EtaExpand { variable, .. } => variable == ReplayNode::Other,
     ConversionDecision::Force { thunk } => thunk == ReplayNode::Other,
     ConversionDecision::ComparedShared { left, right } => left == ReplayNode::Other && right == ReplayNode::Other,
-    ConversionDecision::Decompose | ConversionDecision::NegativeSubgoal { .. } | ConversionDecision::ReturnEta { .. } | ConversionDecision::Reassociate { .. } | ConversionDecision::Discard { .. } | ConversionDecision::Hold { .. } | ConversionDecision::Evaluate | ConversionDecision::Admitted => true,
+    ConversionDecision::Decompose | ConversionDecision::DecomposeCrossed | ConversionDecision::NegativeSubgoal { .. } | ConversionDecision::ReturnEta { .. } | ConversionDecision::Reassociate { .. } | ConversionDecision::Discard { .. } | ConversionDecision::Hold { .. } | ConversionDecision::Evaluate | ConversionDecision::Admitted => true,
 }))]
 fn engine(
     arena: &mut TermArena,

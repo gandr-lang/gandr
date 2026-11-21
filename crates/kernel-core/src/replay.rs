@@ -391,6 +391,7 @@ use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldOrder;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::RewriteFuel;
 use gandr_kernel_term::TermArena;
@@ -5371,6 +5372,7 @@ where
             | ConversionDecision::Force { .. }
             | ConversionDecision::ComparedShared { .. }
             | ConversionDecision::Decompose
+            | ConversionDecision::DecomposeCrossed
             | ConversionDecision::NegativeSubgoal { .. }
             | ConversionDecision::Evaluate
             | ConversionDecision::Admitted => Err(self.refuse(next)),
@@ -6112,11 +6114,52 @@ where
     {
         let structure = self.decompose(goal, left, right)?;
         let next = self.peek();
-        if matches!(next, Next::Decision(ConversionDecision::Decompose)) {
-            if !matches!(structure, Structure::Premises(_)) {
-                return Err(self.refuse(next));
-            }
-            self.take();
+        let order = self.field_order(goal);
+        let structure = match (next, structure) {
+            (Next::Decision(ConversionDecision::Decompose), Structure::Premises(premises)) => {
+                self.take();
+                Structure::Premises(premises)
+            },
+            // The crossed pairing is a rule of the conversion only where the
+            // kernel's own rule table holds the symmetry of the constructor.
+            (
+                Next::Decision(ConversionDecision::DecomposeCrossed),
+                Structure::Premises(premises),
+            ) if order == FieldOrder::Free && goal.expect == Expect::Convertible => {
+                let &[classifiers, first, second] = premises.as_slice()
+                else {
+                    return Err(self.refuse(next));
+                };
+                self.take();
+                Structure::Premises(Vec::from([
+                    classifiers,
+                    Premise {
+                        right: second.right,
+                        ..first
+                    },
+                    Premise {
+                        right: first.right,
+                        ..second
+                    },
+                ]))
+            },
+            (
+                Next::Decision(
+                    ConversionDecision::Decompose | ConversionDecision::DecomposeCrossed,
+                ),
+                Structure::Leaf(_) | Structure::Premises(_),
+            ) => return Err(self.refuse(next)),
+            (Next::Decision(_) | Next::End, structure) => structure,
+        };
+        // A refutation through one pairing of two constructors under a
+        // symmetry is not authoritative: the other pairing may join them.
+        if goal.expect == Expect::NotConvertible
+            && order == FieldOrder::Free
+            && matches!(structure, Structure::Premises(_))
+        {
+            return Err(Stop::Refused(ReplayRefusal::NonAuthoritative {
+                at: self.at(),
+            }));
         }
         // A refutation over a presented type's term is not authoritative: a
         // leaf of its normal form may unfold into a redex, so two normal forms
@@ -6146,6 +6189,58 @@ where
             Structure::Premises(premises) => premises,
         };
         self.schedule((goal.expect, goal.reduction), premises, goals)
+    }
+
+    /// How the two fields of the two constructors of `goal` stand under the
+    /// rules of their type.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`FieldOrder::Free`] when the two sides are constructors of
+    ///   one tag with two fields, and the rule table of the left side's type
+    ///   holds a symmetry of that tag; [`FieldOrder::Written`] otherwise.
+    /// - provides: the kernel's own test of a crossed pairing. The trace names
+    ///   the pairing, and this test admits it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::structural`] for a crossed pairing.
+    /// - witness: `replay::tests::a_crossed_pairing_is_replayed_only_under_a_symmetry_8311`
+    #[spec(ensures: |ret| ret == FieldOrder::Written
+        || matches!((goal.left, goal.right), (Term::Value(_), Term::Value(_))))]
+    fn field_order(
+        &self,
+        goal: &Goal,
+    ) -> FieldOrder
+    {
+        let (Term::Value(left), Term::Value(right)) = (goal.left, goal.right)
+        else {
+            return FieldOrder::Written;
+        };
+        let (
+            Some(&Value::Constructor {
+                datatype,
+                tag,
+                ref fields,
+                ..
+            }),
+            Some(&Value::Constructor { tag: other, .. }),
+        ) = (self.arena.value(left), self.arena.value(right))
+        else {
+            return FieldOrder::Written;
+        };
+        if tag != other || fields.len() != 2 {
+            return FieldOrder::Written;
+        }
+        match self.arena.value_type(datatype) {
+            Some(&ValueType::Data { declaration, .. }) => self
+                .unfoldings
+                .presentations()
+                .presented(declaration)
+                .map_or(FieldOrder::Written, |presented| presented.field_order(tag)),
+            _ => FieldOrder::Written,
+        }
     }
 
     /// Schedule a decomposition's premises at the verdict its goal owes and

@@ -296,6 +296,7 @@ use crate::rules::Choice;
 use crate::rules::Combination;
 use crate::rules::Frozen;
 use crate::rules::Move;
+use crate::rules::Pairing;
 use crate::rules::Plan;
 use crate::rules::Settled;
 use crate::rules::Spines;
@@ -303,6 +304,7 @@ use crate::rules::Step;
 use crate::rules::Subgoal;
 use crate::rules::absorbed_eliminations;
 use crate::rules::other;
+use crate::rules::paired_subgoals;
 use crate::rules::plan;
 use crate::rules::spine_subgoals;
 
@@ -4546,10 +4548,11 @@ where
                 Choice::Different => &[Move::FreezeUnfold(ConversionSide::Left), Move::PostponeUnfold(ConversionSide::Left)],
                 Choice::Frozen { defined } => &[Move::Shortcut, Move::Unfold(defined)],
                 Choice::Lambda { defined } => &[Move::FreezeEta(defined), Move::Unfold(defined)],
+                Choice::Symmetric => &[Move::Paired, Move::Crossed],
             };
             let children = match goal.next {
-                Next::Combine(Combine::Biased(ref children)) if !matches!(choice, Choice::Frozen { .. }) => Some(children),
-                Next::Combine(Combine::Either(ref children)) if matches!(choice, Choice::Frozen { .. }) => Some(children),
+                Next::Combine(Combine::Biased(ref children)) if !matches!(choice, Choice::Frozen { .. } | Choice::Symmetric) => Some(children),
+                Next::Combine(Combine::Either(ref children)) if matches!(choice, Choice::Frozen { .. } | Choice::Symmetric) => Some(children),
                 Next::Classify | Next::Move(_) | Next::Combine(_) => None,
             };
             self.spent.0 == before.saturating_add(u64::try_from(expected.len()).unwrap_or(u64::MAX))
@@ -4603,8 +4606,11 @@ where
     ///   an unfolding records and unfolds; a frozen unfolding records `Freeze`,
     ///   freezes the head and unfolds the other side; a postponed unfolding
     ///   records `Postpone` for the other head and unfolds; a frozen
-    ///   η-expansion records `Freeze`, freezes the head and η-expands it. An
-    ///   unfolding that repeats one on its side's chain declines the goal.
+    ///   η-expansion records `Freeze`, freezes the head and η-expands it; the
+    ///   written pairing decomposes two constructors as a goal with no choice
+    ///   does, and the crossed pairing records `DecomposeCrossed` and
+    ///   decomposes them with their two fields crossed. An unfolding that
+    ///   repeats one on its side's chain declines the goal.
     /// - provides: the moves the §6.1 and §6.2 alternatives start with.
     /// - fails: every fault the move raises.
     /// - panics: none.
@@ -4691,6 +4697,24 @@ where
                 goal.frozen.freeze(side, constant);
                 self.eta(id, goal, pair, side)?;
                 Ok(Turn::Again)
+            },
+            Move::Paired => {
+                let (Glued::Value(left), Glued::Value(right)) = pair
+                else {
+                    return Err(ConversionFault::MachineInvariant);
+                };
+                let subgoals = paired_subgoals(self.domain, left, right, Pairing::Written)?;
+                self.decompose(id, goal, pair, subgoals, Collapse::Allowed)
+            },
+            Move::Crossed => {
+                let (Glued::Value(left), Glued::Value(right)) = pair
+                else {
+                    return Err(ConversionFault::MachineInvariant);
+                };
+                self.derivations
+                    .decide(id, ConversionDecision::DecomposeCrossed)?;
+                let subgoals = paired_subgoals(self.domain, left, right, Pairing::Crossed)?;
+                self.decompose(id, goal, pair, subgoals, Collapse::Never)
             },
         }
     }

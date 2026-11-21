@@ -2848,6 +2848,7 @@ impl Kernel
          let node = |node| match node { TraceNode::Constant(constant) => ReplayNode::Constant(constant), TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other };
          ret == match decision {
          ConversionDecision::Decompose => ConversionDecision::Decompose,
+         ConversionDecision::DecomposeCrossed => ConversionDecision::DecomposeCrossed,
          ConversionDecision::ReduceLeft{redex} => ConversionDecision::ReduceLeft{redex:node(redex)},
          ConversionDecision::ReduceRight{redex} => ConversionDecision::ReduceRight{redex:node(redex)},
          ConversionDecision::ConstShortcut{constant} => ConversionDecision::ConstShortcut{constant:node(constant)},
@@ -3987,6 +3988,7 @@ fn a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on_361()
             | ConversionDecision::Force { .. }
             | ConversionDecision::ComparedShared { .. }
             | ConversionDecision::Decompose
+            | ConversionDecision::DecomposeCrossed
             | ConversionDecision::NegativeSubgoal { .. }
             | ConversionDecision::Evaluate
             | ConversionDecision::Admitted => None,

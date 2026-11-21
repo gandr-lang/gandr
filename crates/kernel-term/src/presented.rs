@@ -212,6 +212,25 @@ pub enum RuleReading
     Symmetry(ConstructorTag),
 }
 
+/// How the two fields of one constructor stand under the rules of its type.
+///
+/// # Specification
+/// - provides: the two answers of [`Presentation::field_order`].
+/// - panics: none.
+/// - executable: none — closed classification.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentation::field_order`].
+/// - witness: `presented::tests::a_symmetry_frees_the_order_of_its_two_fields_8311`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum FieldOrder
+{
+    /// No rule swaps the fields: two terms agree in the written order only.
+    Written,
+    /// A symmetry swaps the two fields: the two orders are one term.
+    Free,
+}
+
 impl PresentedRule
 {
     /// The rule rewriting `left` to `right`.
@@ -487,6 +506,44 @@ impl Presentation
     pub fn rules(&self) -> &[PresentedRule]
     {
         &self.rules
+    }
+
+    /// How the two fields of the constructor `tag` stand under the rules.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`FieldOrder::Free`] when a rule of the table reads as
+    ///   [`RuleReading::Symmetry`] of `tag`, and [`FieldOrder::Written`]
+    ///   otherwise.
+    /// - provides: the one test by which a conversion may pair the two fields
+    ///   of two constructors crossed.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a table with a symmetry of one constructor gives
+    ///   `Free` for that constructor and `Written` for each other one, and a
+    ///   table with no symmetry gives `Written`.
+    /// - witness: `presented::tests::a_symmetry_frees_the_order_of_its_two_fields_8311`
+    #[spec(ensures: |ret| (ret == FieldOrder::Free)
+        == self.rules().iter().any(|rule| rule.reading() == RuleReading::Symmetry(tag)))]
+    #[inline]
+    #[must_use]
+    pub fn field_order(
+        &self,
+        tag: ConstructorTag,
+    ) -> FieldOrder
+    {
+        if self
+            .rules()
+            .iter()
+            .any(|rule| rule.reading() == RuleReading::Symmetry(tag))
+        {
+            FieldOrder::Free
+        }
+        else {
+            FieldOrder::Written
+        }
     }
 
     /// The free cells a type of words is minted over; none for every other
@@ -2989,6 +3046,7 @@ mod tests
     use super::Convergence;
     use super::Exhausted;
     use super::FieldCount;
+    use super::FieldOrder;
     use super::FreeCell;
     use super::FreeCells;
     use super::Normalized;
@@ -4004,6 +4062,33 @@ mod tests
                 inner: RuleIndex::from(2_usize),
             },
             "no two terms are apart by a table that holds a symmetry"
+        );
+    }
+
+    /// - see: #8311
+    #[test]
+    fn a_symmetry_frees_the_order_of_its_two_fields_8311()
+    {
+        let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+        let v = |ordinal: u32| RuleNode::Variable(RuleVariable::from(ordinal));
+        let step = PresentedRule::new([c(2), c(0), v(0)].into(), [c(0)].into());
+        let symmetry = PresentedRule::new([c(2), v(0), v(1)].into(), [c(2), v(1), v(0)].into());
+        let plain = Presentation::new([step.clone()].into_iter().collect());
+        let band = Presentation::new([step, symmetry].into_iter().collect());
+        assert_eq!(
+            plain.field_order(ConstructorTag::from(2_usize)),
+            FieldOrder::Written,
+            "a table with no symmetry keeps the written order"
+        );
+        assert_eq!(
+            band.field_order(ConstructorTag::from(2_usize)),
+            FieldOrder::Free,
+            "the symmetry of a constructor frees the order of its two fields"
+        );
+        assert_eq!(
+            band.field_order(ConstructorTag::from(3_usize)),
+            FieldOrder::Written,
+            "the symmetry of one constructor frees no other constructor"
         );
     }
 
