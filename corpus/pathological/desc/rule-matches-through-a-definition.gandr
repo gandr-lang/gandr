@@ -1,0 +1,32 @@
+//! A rule of a theory whose left side meets a parameter and no constant.
+//!
+//! The rule `both dark x <=> dark` needs the constant `dark` as the first
+//! argument. A parameter stands for each lamp, so the rule does not fire on
+//! it. A reader that takes a parameter for the constant admits a false path.
+//!
+//! The checker reads a leaf by its body for a definition alone. A parameter
+//! has no body, so the term keeps its form, and the checker refuses the path.
+//!
+//! - see: #8283
+
+/// The theory of a lamp.
+theory Lamp where
+  /// The states of a lamp.
+  sort L : Type;
+  /// The lamp that gives no light.
+  oper dark : L;
+  /// The lamp that gives light.
+  oper lit : L;
+  /// The light that two lamps give together in a series.
+  oper both : (x : L, y : L) --> L;
+  /// A dark lamp first gives no light.
+  rule bothDark : both dark x <=> dark;
+  /// A lit lamp first gives the light of the second.
+  rule bothLit : both lit x <=> x;
+
+/// The rule does not fire where a parameter stands first.
+///
+/// - see: #8283
+@[refuses("EndpointMismatch")]
+def absorbAny(y : Terms Lamp, x : Terms Lamp) -> Path (Lamp.both y x) Lamp.dark = Path.here
+  Lamp.dark;
