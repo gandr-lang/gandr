@@ -401,6 +401,11 @@ impl Read
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the text of the table, of the lock and of the
+    ///   configuration, and the paths of the configuration and of the logs,
+    ///   setup
     fn new(inputs: Inputs) -> Result<Self, HostToolsError>
     {
         let builds = Builds::read(&Input::read(&inputs.builds)?)?;
