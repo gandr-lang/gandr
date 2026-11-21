@@ -1,0 +1,4 @@
+module Config where {
+  module Limits where { def hard = 1; }
+  def soft = 2;
+}

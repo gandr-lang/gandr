@@ -1,0 +1,9 @@
+/// A choice, the second arm a pair.
+def choice : Integer + /* a pair */ String * Unit;
+
+def both : +U (
+  -F Integer & // eager first
+  -F String
+);
+
+def pair = *{1, /* second */ "a"};
