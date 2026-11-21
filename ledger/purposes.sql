@@ -6563,6 +6563,11 @@ INSERT INTO purpose VALUES('workflow-host-tools','lack::Source','struct','Names 
 INSERT INTO purpose VALUES('workflow-host-tools','lack::disabled','function','Reads the tools that a host disables, so the tools of a backend that needs one of them stay out of the check.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-host-tools','lack::inspect','function','Reads what an install holds, so an install with no program or with a program of another machine is found.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-host-tools','lack::lacks','function','Gives each tool of a checkout that a host lacks, so a job on a receiver stops before it uses a tool that does not run there.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-host-tools','llvm::KEY','constant','Names the key of the pinned LLVM toolchain in `mise.toml`, so the check reads its pin and its tree.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-host-tools','llvm::Release','struct','Holds a release of LLVM as major, minor and patch, so the pin, rustc''s LLVM and a tree are compared.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-host-tools','llvm::VERSION_FILE','constant','Names the file of a tree that states its release of LLVM, so the check reads the release of the tree that mise holds.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-host-tools','llvm::agree','function','Refuses a pin of another major release than rustc''s LLVM, so a link with cross-language LTO reads one major release on both sides.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-host-tools','llvm::holds','function','Refuses a tree of another release than the pin, so a host builds against the release that the tree pins.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-host-tools','lock::Lock','struct','Holds the version `mise.lock` locks for each tool, so a tool''s version is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-host-tools','names::GoArch','enum','Names an architecture as Go names it, so a Go build''s architecture is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-host-tools','names::HostName','struct','Names a host as ssh names it, so the destination of a push is read.',NULL,'fits','sound',NULL);

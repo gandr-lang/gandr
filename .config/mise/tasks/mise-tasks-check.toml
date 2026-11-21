@@ -1599,16 +1599,20 @@ fi
 echo 'readme pin OK: README.md is the owner-approved synopsis'
 '''
 
-# A link with cross-language LTO reads the bitcode of rustc's LLVM beside
-# the libraries of the pinned LLVM toolchain, and it needs one major release
-# on both sides. `host-tools llvm` reads the release of the pin in
-# `mise.lock` and the release of rustc's LLVM in `rustc -vV`, and refuses a
-# difference of their major releases by both releases. It reads the release
-# that the host's tree states in its CMake package, and refuses a tree of
-# another release than the pin. With no tree, it reads the major release
-# alone and names the cause: mise's `disable_tools` holds the toolchain, as
-# in CI until the layer of the CI image, or the release serves no archive
-# for the platform.
+# A link with cross-language LTO reads the bitcode of rustc's LLVM. It also
+# reads the libraries of the pinned LLVM toolchain. Both sides need one major
+# release.
+#
+# `host-tools llvm` reads the release of the pin in `mise.lock`. It reads the
+# release of rustc's LLVM in `rustc -vV`. It refuses a difference of their
+# major releases and names both releases. Then it reads the release that the
+# host's tree states in its CMake package. It refuses a tree of another
+# release than the pin.
+#
+# With no tree, the check reads the major release alone and names the cause.
+# Either mise's `disable_tools` holds the toolchain, or the release serves no
+# archive for the platform. CI disables the toolchain until the CI image
+# holds it in a layer.
 ["check:llvm"]
 description = "The pinned LLVM toolchain shares its major release with rustc's LLVM, and the host's tree is the pin's release"
 run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-workflow-host-tools --bin host-tools -- llvm"
