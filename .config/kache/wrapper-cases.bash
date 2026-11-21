@@ -78,5 +78,25 @@ done
 ! running "$first" || fail "#7828: the first job's drain left its daemon running"
 running "$second" || fail "#7828: the end of the first job stopped the daemon of the second job"
 
+# The drain of a job whose wrapper stands outside `RUNNER_TEMP`, as the
+# wrapper of a root container job does. The step reads the path that the job
+# set in `RUSTC_WRAPPER`, prints the summary and stops the daemon.
+# - see: #8258 — the drain finds the wrapper that the job set
+drain=$tree/.github/actions/kache-drain/post.cjs
+mkdir -p "$scratch/far" "$scratch/empty" "$scratch/stubs"
+# shellcheck disable=SC2016 # the stub expands its own arguments
+printf '#!/usr/bin/env bash\n[[ $1 == which && $2 == kache ]] || exit 1\ncommand -v kache\n' > "$scratch/stubs/mise"
+chmod +x "$scratch/stubs/mise"
+far=$(RUNNER_TEMP=$scratch/far KACHE_TRUSTED=false KACHE_USER=case KACHE_TOKEN=case "$here/kache-wrapper.bash")
+wrappers+=("$far")
+"$far" daemon start > /dev/null
+running "$far" || fail "#8258: the wrapper outside RUNNER_TEMP started no daemon"
+said=$(PATH=$scratch/stubs:$PATH RUNNER_TEMP=$scratch/empty RUSTC_WRAPPER=$far node "$drain" 2>&1) || true
+[[ $said != *'this job has no kache'* ]] || fail "#8258: the drain finds no wrapper outside RUNNER_TEMP: $said"
+! running "$far" || fail "#8258: the drain left the daemon of a wrapper outside RUNNER_TEMP running"
+said=$(PATH=$scratch/stubs:$PATH RUNNER_TEMP=$scratch/empty RUSTC_WRAPPER='' node "$drain" 2>&1) || true
+[[ $said == "kache drain: this job has no kache: no wrapper stands at $scratch/empty/kache-wrapper" ]] \
+  || fail "#8258: the drain of a job with no wrapper does not name the path that it read: $said"
+
 ((failed == 0)) || exit 1
 echo "kache-wrapper check OK: two jobs at one time each ran a daemon of their own, and the end of one left the other's running"
