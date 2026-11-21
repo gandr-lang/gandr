@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# The inputs of a check that compiles a scope, and their digest. A verdict is
-# a function of what its check reads. So a record of the verdict binds the
-# digest of those inputs, and a reader computes the digest from the tree that
-# it holds. Two trees with one digest share one record, so a merge group whose
-# base moved reads the record of its pull request's gate.
-# - see: #7684, `verdict.bash`
+# The inputs of a check that compiles a scope, and the test of a run against
+# them. A verdict is a function of what its check reads. So a record of the
+# verdict binds the digest of those inputs, and a reader computes the digest
+# from the tree that it holds. Two trees with one digest share one record, so
+# a merge group whose base moved reads the record of its pull request's gate.
+#
+# The program `gate` computes the list of the inputs and its digest. This
+# script holds the test of a run alone.
+# - see: #7684, #8273, `verdict.bash`, `crates/workflow-gate/README.md`
 #
 # The inputs of a scope, each a path and its object at a commit:
 #   - each crate of the scope and of its dependency closure, by the object of
@@ -29,19 +32,13 @@
 # shows at the first run that meets it.
 #
 # Usage:
-#   inputs.bash list <commit> <scope> <check>
-#     Prints the inputs of <check> over <scope> at <commit>, one per line: the
-#     path, a tab and its object.
-#   inputs.bash digest <commit> <scope> <check>
-#     Prints the SHA-256 of that list.
 #   inputs.bash depinfo <stamp> <scope> <directory>...
 #     Reads each dep-info file under each <directory> that is newer than the
 #     file <stamp>. Exits 1 and names each file of the tree that a unit of a
 #     workspace crate read and that the inputs of <scope> do not hold.
 #
-# `GATE_INPUTS_TABLE` names another table than `inputs.json`, and
-# `GATE_INPUTS_TASK` gives the task's definition, for the cases
-# (`verdict-cases.bash`), whose scratch repository holds no task.
+# `GATE_INPUTS_TABLE` names another table than `inputs.json`, for the cases
+# (`verdict-cases.bash`).
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 root=$(git rev-parse --show-toplevel)
@@ -90,57 +87,7 @@ paths() {
       end'
 }
 
-# The objects of the paths on stdin at <commit>, as `path<TAB>object`.
-objects() {
-  local commit=$1
-  awk -v commit="$commit" '{ path = $0; sub(/\/$/, "", path); print commit ":" path }' \
-    | git cat-file --batch-check='%(objectname)' \
-    | paste - <(cat "$paths_file") \
-    | awk -F'\t' '{ object = $1; if (object ~ / missing$/) object = "absent"; print $2 "\t" object }'
-}
-
-# The list of <check> over <scope> at <commit>.
-list() {
-  local commit=$1 scope=$2 check=$3 task
-  paths_file=$(mktemp)
-  landing_file=$(mktemp)
-  trap 'rm -f "$paths_file" "$landing_file"' RETURN
-  git show "$commit:.config/gate-scope/table.json" > "$landing_file" 2> /dev/null || echo '{}' > "$landing_file"
-  if jq -e --arg check "$check" '.checks[$check].table == true' "$here/verdicts.json" > /dev/null; then
-    # A check of the table reads no crate list, so its read needs no Cargo.
-    # The text of its two lists is an input too: a path that leaves the row
-    # changes the key.
-    echo '[]' | paths "$scope" "$check" "$landing_file" > "$paths_file"
-    objects "$commit" < "$paths_file"
-    printf 'table:%s\t%s\n' "$check" "$(jq -c --arg check "$check" '[.reads.every, (.reads.checks[$check] // [])]' "$landing_file" | sha256sum | cut -c1-64)"
-  else
-    crates | paths "$scope" "$check" "$landing_file" > "$paths_file"
-    objects "$commit" < "$paths_file"
-  fi
-  # The task's own definition: what it runs, its environment, its tools and
-  # its dependencies, as `mise` reads them in this checkout. The source path
-  # and the directory name the checkout, so the definition omits them.
-  task=${GATE_INPUTS_TASK:-$(mise tasks info "$check" --json | jq -c -S '{run, env, tools, depends}')}
-  task=$(printf '%s' "$task" | sha256sum | cut -c1-64)
-  printf 'task:%s\t%s\n' "$check" "$task"
-  jq -r --arg check "$check" '(.checks[$check].greps // [])[] | "\(.pattern)\t\(.in)"' "$here/verdicts.json" \
-    | while IFS=$'\t' read -r pattern within; do
-        found=$({ git grep -l -e "$pattern" "$commit" -- "$within" || true; } \
-          | awk -v prefix="$commit:" 'index($0, prefix) == 1 { $0 = substr($0, length(prefix) + 1) } { print }' \
-          | sha256sum | cut -c1-64)
-        printf 'grep:%s:%s\t%s\n' "$within" "$pattern" "$found"
-      done
-}
-
 case ${1:-} in
-  list)
-    (( $# == 4 )) || { echo 'usage: inputs.bash list <commit> <scope> <check>' >&2; exit 2; }
-    list "$2" "$3" "$4"
-    ;;
-  digest)
-    (( $# == 4 )) || { echo 'usage: inputs.bash digest <commit> <scope> <check>' >&2; exit 2; }
-    list "$2" "$3" "$4" | LC_ALL=C sort | sha256sum | cut -c1-64
-    ;;
   depinfo)
     (( $# >= 4 )) || { echo 'usage: inputs.bash depinfo <stamp> <scope> <directory>...' >&2; exit 2; }
     stamp=$2
@@ -202,7 +149,7 @@ case ${1:-} in
     echo "inputs: each file of the tree that the run read is an input of its scope" >&2
     ;;
   *)
-    echo 'usage: inputs.bash list|digest|depinfo …' >&2
+    echo 'usage: inputs.bash depinfo …' >&2
     exit 2
     ;;
 esac
