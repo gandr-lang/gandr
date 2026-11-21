@@ -1,13 +1,16 @@
-/// `layout-as-model` lays a truth value out in one bit. The layout is a model
-/// of the theory of truth.
+/// `layout-as-model` states the layout of a truth value in one bit. The
+/// layout is a model of the theory of truth.
 ///
-/// Implemented: the layout as a module that models the theory of its type, with
-/// the terms of a theory of one bit as its carrier. The two folds, an
-/// equivalence whose round trips the kernel replays, and its path by `ua`.
-/// Not implemented: the fold into a model as a derived function, and the fold
-/// out of the terms into a model value.
+/// Implemented: the layout is a module that models the theory of its type.
+/// Its carrier is the terms of a theory of one bit. The source holds the two
+/// folds, an equivalence, and its path by `ua`. The kernel replays the two
+/// round trips of the equivalence.
 ///
-/// Each fold is written by hand. The bits are terms, and no memory holds one.
+/// Not implemented: the tree derives no fold into a model. It has no fold out
+/// of the terms into a model value.
+///
+/// The author writes each fold by hand. The bits are terms, and no memory
+/// holds one.
 ///
 /// - owes: #4148 — the derived fold into a model module
 /// - owes: #4149 — the fold out of the terms into a model value
