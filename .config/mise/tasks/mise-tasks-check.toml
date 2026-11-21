@@ -111,6 +111,25 @@ export GATE_SCOPE
 # tree.
 source .config/pr-stack/trunk.bash
 if GATE_BASE=$(git merge-base "origin/$trunk" HEAD 2> /dev/null); then export GATE_BASE; else unset GATE_BASE; fi
+# A check with a record of a pass on these inputs does not run again. Each
+# job of a pull request reads the records in the same way. The gate reads
+# them before it starts a check, and `GATE_HELD` names each check that holds
+# one. A check of that list prints the fact and exits 0. The records bind
+# the tree of a commit, so a worktree with work that no commit holds reads
+# none.
+# - see: `.config/gate-scope/verdict.bash`, #7684
+GATE_HELD=
+if [[ -n ${GATE_BASE:-} && $tree == "$(git rev-parse 'HEAD^{tree}')" ]]; then
+  mapfile -t recorded < <(jq -r '.checks | keys[]' .config/gate-scope/verdicts.json)
+  GATE_HELD=$(.config/gate-scope/verdict.bash read "${recorded[@]}" 2>&1 \
+    | awk '$1 == "verdict:" && $3 == "holds" { printf "%s%s", sep, $2; sep = " " }') || GATE_HELD=
+  if [[ -n $GATE_HELD ]]; then
+    echo "check: a record of a pass holds for $GATE_HELD, so the gate runs none of them again" >&2
+  else
+    echo 'check: no record of a pass holds for these inputs, so each check runs' >&2
+  fi
+fi
+export GATE_HELD
 mkdir -p target/gate
 SECONDS=0
 if ! bash .config/gate-scope/check-run.bash target/gate/check.log "${checks[@]}"; then
@@ -381,6 +400,7 @@ env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ " ${GATE_HELD:-} " == *' check:clippy-enforcing '* ]]; then echo 'check:clippy-enforcing: a record of a pass holds for these inputs'; exit 0; fi
 {% set scope = env.GATE_SCOPE | default(value='--workspace') %}features=$(cargo metadata --no-deps --locked --format-version 1 | .config/policy/required.bash {{ scope }})
 # The stamp of this run: the dep-info files newer than it are this run's.
 stamp=$(mktemp)
@@ -409,6 +429,7 @@ usage = 'flag "--units <file>" help="write the units of the pass to this file as
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
+if [[ " ${GATE_HELD:-} " == *' check:clippy-plain-only '* ]]; then echo 'check:clippy-plain-only: a record of a pass holds for these inputs'; exit 0; fi
 # <package>:<test target>:<the target's directory>, one per target.
 targets=(gandr-surface-parser:tests:crates/surface-parser/tests/)
 unlisted=0
@@ -706,6 +727,7 @@ directory = "{{ config_root }}/target/embedded-sources"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ " ${GATE_HELD:-} " == *' check:dylint '* ]]; then echo 'check:dylint: a record of a pass holds for these inputs'; exit 0; fi
 rustup component add rustc-dev llvm-tools
 toolchain=$(rustup show active-toolchain | awk '{print $1}')
 revision=$(mise run --quiet workflow:revision)
@@ -2220,6 +2242,7 @@ tools.jq = "1.8.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
+if [[ " ${GATE_HELD:-} " == *' check:purposes '* ]]; then echo 'check:purposes: a record of a pass holds for these inputs'; exit 0; fi
 fresh=$(mktemp -d)
 trap 'rm -rf "$fresh"' EXIT
 failed=0
