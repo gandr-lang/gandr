@@ -265,32 +265,46 @@ fn first_redex(
     order: Order,
 ) -> Option<(Path, ValueId, ValueId)>
 {
-    // (position, path to it, children already visited)
-    let mut pending: Vec<(Position, Path, bool)> =
-        Vec::from([(Position::Value(root), Vec::new(), false)]);
-    while let Some((position, path, visited)) = pending.pop() {
+    // Each step of a path: the ancestor, the child slot taken, and the step
+    // before it. The paths of siblings share their prefix.
+    let mut steps: Vec<((Position, Slot), Option<usize>)> = Vec::new();
+    // (position, the last step of its path, children already visited)
+    let mut pending: Vec<(Position, Option<usize>, bool)> =
+        Vec::from([(Position::Value(root), None, false)]);
+    // The path whose last step is `last`, root first. Each step's earlier
+    // step was pushed before it, so the walk ends.
+    let path_to = |steps: &[((Position, Slot), Option<usize>)], last: Option<usize>| {
+        let mut path: Path = Vec::new();
+        let mut cursor = last;
+        while let Some(&(step, before)) = cursor.and_then(|index| steps.get(index)) {
+            path.push(step);
+            cursor = before;
+        }
+        path.reverse();
+        path
+    };
+    while let Some((position, last, visited)) = pending.pop() {
         let found = redex(core, position);
         match order {
             Order::Outermost => {
                 if let Some((body, argument)) = found {
-                    return Some((path, body, argument));
+                    return Some((path_to(&steps, last), body, argument));
                 }
             },
             Order::Innermost => {
                 if visited {
                     if let Some((body, argument)) = found {
-                        return Some((path, body, argument));
+                        return Some((path_to(&steps, last), body, argument));
                     }
                     continue;
                 }
-                pending.push((position, path.clone(), true));
+                pending.push((position, last, true));
             },
         }
         let below = children(core, position);
         for (slot, &child) in below.iter().enumerate().rev() {
-            let mut deeper = path.clone();
-            deeper.push((position, Slot(slot)));
-            pending.push((child, deeper, false));
+            steps.push(((position, Slot(slot)), last));
+            pending.push((child, steps.len().checked_sub(1), false));
         }
     }
     None

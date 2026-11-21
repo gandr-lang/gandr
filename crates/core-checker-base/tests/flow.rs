@@ -154,10 +154,12 @@ fn statements_decide_by_the_engine_and_replay()
         "each statement persists as the kernel's certificate over the engine's pairs: {bodies:?}"
     );
     let mut environment = gandr_kernel_core::Environment::new();
-    for (position, marked) in artifact.declarations().iter().enumerate() {
+    // The first declaration's staging takes the artifact's arena.
+    let mut arena = Some(artifact.arena().clone());
+    for marked in artifact.declarations() {
         let mut staging = environment.stage();
-        if position == 0 {
-            *staging.arena() = artifact.arena().clone();
+        if let Some(arena) = arena.take() {
+            *staging.arena() = arena;
         }
         let DeclarationContent::Def { declared, body } = *marked.declaration().content()
         else {

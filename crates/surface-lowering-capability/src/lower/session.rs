@@ -1787,6 +1787,14 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     ///   of its continuations, labels and variables at its state.
     /// - witness: `gandr-surface-lowering::lower::session::tests::a_session_type_lowers_to_its_protocol`
     /// - witness: `gandr-surface-lowering::lower::session::tests::each_state_answers_where_it_is_written`
+    ///
+    /// # Cost
+    /// - allocation: the payload types the session carries, durable by the
+    ///   arena's identifiers
+    /// - allocation: the state of each written site, growth within the sites of
+    ///   the protocol
+    /// - allocation: the names that the labels share, growth within the binders
+    ///   of the frame
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
     #[inline]
     pub fn mint_session(
@@ -1815,7 +1823,8 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
         sink.origins.record_value_type(id, origin);
         let mut states: BTreeMap<ProtocolState, ValueTypeId> = BTreeMap::new();
         let _root = states.insert(root, id);
-        let context: Vec<String> = self
+        // The labels of the session share one list of the binders' names.
+        let context = self
             .cx()
             .scope
             .telescope_names(written.frame, self.host_ref().telescope_at(origin.node()))
@@ -1849,7 +1858,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
                 span: site.at.span,
                 labelled: Labelled::ValueType {
                     ty,
-                    context: context.clone(),
+                    context: Clone::clone(&context),
                 },
             });
         }

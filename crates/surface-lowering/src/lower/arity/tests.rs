@@ -2630,7 +2630,7 @@ fn each_label_names_what_it_labels()
             Labelled::ValueType { ty, ref context } => Some((
                 written(label),
                 arena.value_type(ty).cloned(),
-                context.clone(),
+                context.to_vec(),
             )),
             Labelled::CompType { .. }
             | Labelled::Value(_)

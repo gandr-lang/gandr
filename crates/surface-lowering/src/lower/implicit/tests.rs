@@ -14,6 +14,8 @@ use gandr_core_term::Zone;
 use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::equal_type_syntax;
 use gandr_core_term::hole::HoleOrigin;
+use gandr_kernel_data::Identity;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -1063,7 +1065,9 @@ fn an_omitted_model_implicit_nominates_a_hole_per_component_739()
     let slot = Omitted::Model {
         function: String::from("stepped"),
         implicit: String::from("s"),
-        candidates: Vec::from([String::from("Up"), String::from("Tens")]),
+        candidates: [String::from("Up"), String::from("Tens")]
+            .into_iter()
+            .collect(),
     };
     assert_eq!(
         holes
@@ -1077,6 +1081,37 @@ fn an_omitted_model_implicit_nominates_a_hole_per_component_739()
             Maybe::Present(&slot)
         ],
         "one hole per component, each the slot's"
+    );
+}
+
+#[test]
+fn the_holes_of_an_omitted_model_share_one_list_of_candidates_8284()
+{
+    // The four holes of `stepped(4)` hold one list of the candidates' names,
+    // and no hole holds a copy of its own.
+    let source = format!("{STEPPED}def omitted() -> -F Integer {{ stepped 4 }}\n");
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let holes = nominated_holes(&module, &arena, SurfaceName::from("omitted"));
+    let lists = holes
+        .iter()
+        .map(|&(at, _)| match module.origins().omitted(at) {
+            Maybe::Present(&Omitted::Model { ref candidates, .. }) => candidates,
+            Maybe::Present(omitted) => panic!("each hole is the model slot's: {omitted:?}"),
+            Maybe::Absent(reason) => panic!("each hole is the model slot's: {reason:?}"),
+        })
+        .collect::<Vec<_>>();
+    let Some(&first) = lists.first()
+    else {
+        panic!("the call nominates a hole for each component");
+    };
+    assert_eq!(
+        lists
+            .iter()
+            .map(|list| ThinShared::ptr_eq(first, list))
+            .collect::<Vec<_>>(),
+        [Identity::Same; 4],
+        "the holes share one list"
     );
 }
 

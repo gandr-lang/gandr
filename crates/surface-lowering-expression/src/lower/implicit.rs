@@ -1557,6 +1557,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   theory.
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_is_answered_by_the_model_in_scope_2272`
+    ///
+    /// # Cost
+    /// - allocation: the candidates and the one list of their names that the
+    ///   holes share, growth within the modules in scope
+    /// - allocation: the entry of each hole and the planned slot with its fixed
+    ///   sorts, durable by the slot's site
     #[inline]
     pub fn plan_slot(
         &mut self,
@@ -1579,12 +1585,16 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             return Ok(());
         };
         let candidates = Models::new(self.host()).model_candidates(site, slot)?;
-        let names: Vec<String> = candidates
+        // The holes of the slot share one list of the candidates' names.
+        let names = candidates
             .iter()
             .map(|&(name, _)| String::from(name.as_ref()))
             .collect();
         for &hole in &holes {
-            let _first = self.cx_mut().model_candidates.insert(hole, names.clone());
+            let _first = self
+                .cx_mut()
+                .model_candidates
+                .insert(hole, Clone::clone(&names));
         }
         self.cx_mut()
             .planned_models

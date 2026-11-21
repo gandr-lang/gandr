@@ -1660,12 +1660,23 @@ pub fn anchors(
         *slot = Some(());
     }
     let mut anchors = Vec::new();
-    let mut queue = VecDeque::from([(top, Vec::new())]);
-    while let Some((number, path)) = queue.pop_front() {
+    // Each step of a path: the child position taken, and the step before
+    // it. The paths of siblings share their prefix.
+    let mut steps: Vec<(ChildPosition, Option<usize>)> = Vec::new();
+    let mut queue = VecDeque::from([(top, None)]);
+    while let Some((number, last)) = queue.pop_front() {
         if number != top
             && let Some(&Some(node)) = numbered.get(usize::from(number))
             && let Maybe::Present(at) = sites.discovery(node)
         {
+            // Each step's earlier step was pushed before it, so the walk ends.
+            let mut path = Vec::new();
+            let mut cursor = last;
+            while let Some(&(position, before)) = cursor.and_then(|index| steps.get(index)) {
+                path.push(position);
+                cursor = before;
+            }
+            path.reverse();
             anchors.push(Anchor { path, at });
             continue;
         }
@@ -1678,9 +1689,8 @@ pub fn anchors(
                 && slot.is_none()
             {
                 *slot = Some(());
-                let mut below = path.clone();
-                below.push(ChildPosition::from(position));
-                queue.push_back((child, below));
+                steps.push((ChildPosition::from(position), last));
+                queue.push_back((child, steps.len().checked_sub(1)));
             }
         }
     }

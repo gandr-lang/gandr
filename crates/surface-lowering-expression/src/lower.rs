@@ -15176,13 +15176,17 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - hypothesis: L3 — a record type's, a record's and a dependent arrow's
     ///   labels are each recorded with what they label.
     /// - witness: `gandr-surface-lowering::lower::arity::tests::each_label_names_what_it_labels`
+    ///
+    /// # Cost
+    /// - allocation: the names of each type's frames, which its label holds,
+    ///   durable by the origin table
     #[spec(captures: before = sink.origins.labels().len(), ensures: sink.origins.labels().len() <= before.saturating_add(self.cx().labels.len()))]
     fn record_labels(
         &self,
         sink: &mut Sink<'_>,
     )
     {
-        let named = |frame: Frame, held: NodeIndex| -> Vec<String> {
+        let named = |frame: Frame, held: NodeIndex| {
             self.cx()
                 .scope
                 .telescope_names(frame, self.telescope_at(held))
@@ -15586,7 +15590,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 span: origin.span(),
                 labelled: Labelled::CompType {
                     ty,
-                    context: Vec::new(),
+                    context: gandr_kernel_data::ThinShared::default(),
                 },
             });
         }
@@ -16170,7 +16174,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             Plan::Expansion(family, arguments) => {
                 let expanded =
                     ModelsRef::new(self.host_ref()).mint_expansion(family, arguments, sink, origin);
-                let context = |lowerer: &Self, frame| -> Vec<String> {
+                let context = |lowerer: &Self, frame| {
                     lowerer
                         .cx()
                         .scope
@@ -18469,6 +18473,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_standing_supply_opens_a_lambda_per_explicit_before_it_1498`
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_instance_is_the_one_handled_in_scope_2271`
+    ///
+    /// # Cost
+    /// - allocation: the applications, the lambdas and the injections of the
+    ///   call, durable by the arena's identifiers
+    /// - allocation: the candidates of an omitted model, which its holes share,
+    ///   durable by the origin table
     #[spec(
         captures: (written, opened, supplied) = {
             let positions = self.spread(arguments);
