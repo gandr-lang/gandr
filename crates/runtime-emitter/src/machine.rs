@@ -53,6 +53,32 @@ pub(crate) const HOST: Target = Target::LinuxRiscv64;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 pub(crate) const HOST: Target = Target::DarwinAarch64;
 
+/// Why this host runs no block: its target is none of the targets of a block.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Unhosted;
+
+/// The target of the blocks that run on this host, or [`Unhosted`] on a
+/// target that runs no block, such as wasm.
+#[cfg(any(
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(target_os = "linux", target_arch = "aarch64"),
+    all(target_os = "linux", target_arch = "riscv64"),
+    all(target_os = "macos", target_arch = "aarch64"),
+))]
+pub(crate) const HOSTED: Result<Target, Unhosted> = Ok(HOST);
+/// The target of the blocks that run on this host, or [`Unhosted`] on a
+/// target that runs no block, such as wasm.
+#[cfg(not(any(
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(target_os = "linux", target_arch = "aarch64"),
+    all(target_os = "linux", target_arch = "riscv64"),
+    all(target_os = "macos", target_arch = "aarch64"),
+)))]
+pub(crate) const HOSTED: Result<Target, Unhosted> = Err(Unhosted);
+
 /// Why a key gives no address.
 ///
 /// # Specification
