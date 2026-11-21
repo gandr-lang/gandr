@@ -1,0 +1,74 @@
+//! Corten's running example over THIR, its postcondition derived in the
+//! weakest-precondition calculus of `std.thir`
+//! [Farka-2026-corten_foundational_verification_rust_programs], 2026, § 4,
+//! Fig. 2: `example` returns early from inside `identity`'s argument. The
+//! normaliser computes each precondition and the kernel replays it, so
+//! `example` meets its specification at every value and postcondition given
+//! `identity`'s.
+//!
+//! - cites: [Farka-2026-corten_foundational_verification_rust_programs]
+//! - see: `library/std/src/thir.gandr` — the data of THIR and the calculus
+//!
+//! [Farka-2026-corten_foundational_verification_rust_programs]: https://arxiv.org/abs/2609.04372 "Farka et al., Corten: Foundational Verification of Rust Programs"
+
+// The values, the expressions over the crate's items, and the transformers.
+import std.thir (Value, Int, True, False, Expr, Lit, Param, If, Return, Call, wpFn);
+
+/// An item of the crate, which a call names. The item mark of each
+/// constructor states its Rust path, so a staged call reads as its item.
+pub data Item : Type where
+  /// `identity`, which answers its argument.
+  @[item("identity")]
+  | Identity : Item
+  /// `example`, the function under proof.
+  @[item("example")]
+  | Example : Item
+
+/// `identity`'s body, `x`.
+pub def identityBody : Expr Item = Param;
+
+/// `example`'s body, `return identity(if b { 1 } else { return 0; })`.
+pub def exampleBody : Expr Item = Return (Call Identity (If Param (Lit 1) (Return (Lit 0))));
+
+/// `identity`'s specification as a table: its call continues at its argument,
+/// and nothing meets a call of `example`.
+pub def identitySpec(g : Item, v : Value, k : Value -> Type) -> Type =
+  match g where
+    | Identity => k v
+    | Example => return Void
+
+/// `identity` meets its specification under every table: its precondition is
+/// the continuation at its argument.
+pub def identityMeets(
+  spec : (Item, Value, Value -> Type) -> Type,
+  v : Value,
+  k : Value -> Type,
+  h : identitySpec(Identity, v, k)
+) -> wpFn(Item, spec, identityBody, v, k) = h;
+
+/// `example`'s specification: the postcondition at one for true and at
+/// zero for false.
+pub def exampleSpec(b : Value, post : Value -> Type) -> Type =
+  match b where
+    | True => post (Int 1)
+    | False => post (Int 0)
+    | Int(_n) => return Void
+
+/// `example` meets its specification at every value and postcondition, given
+/// `identity`'s: Fig. 2's lemma.
+pub def exampleMeets(b : Value, post : Value -> Type) -> exampleSpec(
+  b,
+  post
+) -> wpFn(Item, identitySpec, exampleBody, b, post) =
+  match b where
+    | True => fun (h) { h }
+    | False => fun (h) { h }
+    | Int(_n) => fun (h) { h }
+
+/// At false the early return answers zero under every table: the call of
+/// `identity` is never reached.
+pub def exampleReturnsPast(
+  spec : (Item, Value, Value -> Type) -> Type,
+  post : Value -> Type
+) -> post(Int 0) -> wpFn(Item, spec, exampleBody, False, post) =
+  fun (h) { h }
