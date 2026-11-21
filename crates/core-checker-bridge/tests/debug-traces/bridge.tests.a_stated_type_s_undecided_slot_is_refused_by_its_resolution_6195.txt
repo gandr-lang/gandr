@@ -1,0 +1,56 @@
+test: bridge::tests::a_stated_type_s_undecided_slot_is_refused_by_its_resolution_6195
+package: gandr-core-checker
+command: mise run debug:test gandr-core-checker bridge::tests::a_stated_type_s_undecided_slot_is_refused_by_its_resolution_6195
+
+(lldb) target create "target/debug-trace/debug/build/gandr-core-checker/aef44759d449df47/out/gandr_core_checker-aef44759d449df47"
+Current executable set to 'target/debug-trace/debug/build/gandr-core-checker/aef44759d449df47/out/gandr_core_checker-aef44759d449df47' (x86_64).
+(lldb) settings set -- target.run-args  "bridge::tests::a_stated_type_s_undecided_slot_is_refused_by_its_resolution_6195" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = gandr_core_checker-aef44759d449df47`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x00000000020b1b08
+(lldb) run
+
+running 1 test
+test bridge::tests::a_stated_type_s_undecided_slot_is_refused_by_its_resolution_6195 ... 
+thread 'bridge::tests::a_stated_type_s_undecided_slot_is_refused_by_its_resolution_6195' (3642584) panicked at crates/core-checker/src/bridge/tests.rs:7768:5:
+two modules answer the slot the stated type decodes through: [Checked { declared: FormedValueType(ValueTypeId(3)), body: ValueId(1), evidence: Checked { conversions: ConversionCount(1) } }, Checked { declared: FormedValueType(ValueTypeId(3)), body: ValueId(3), evidence: Checked { conversions: ConversionCount(1) } }, Checked { declared: FormedValueType(ValueTypeId(4)), body: ValueId(6), evidence: Checked { conversions: ConversionCount(2) } }, Refused(TypeMismatch(Value { at: ValueId(7), synthesised: ValueTypeId(8), expected: ValueTypeId(5) })), Refused(TypeMismatch(Value { at: ValueId(7), synthesised: ValueTypeId(8), expected: ValueTypeId(6) })), Refused(TypeMismatch(Value { at: ValueId(7), synthesised: ValueTypeId(8), expected: ValueTypeId(2) }))]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 3640780 launched: 'target/debug-trace/debug/build/gandr-core-checker/aef44759d449df47/out/gandr_core_checker-aef44759d449df47' (x86_64)
+Process 3640780 stopped
+* thread #2, name = 'bridge::tests::', stop reason = breakpoint 1.1
+       frame #0: 0x0000555557605b08 gandr_core_checker-aef44759d449df47`__rustc::rust_panic at panicking.rs:887:25
+(lldb) bt 24
+* thread #2, name = 'bridge::tests::', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555557605b08 gandr_core_checker-aef44759d449df47`__rustc::rust_panic at panicking.rs:887:25
+     frame #1: 0x0000555557621f15 gandr_core_checker-aef44759d449df47`std::panicking::panic_with_hook at panicking.rs:840:5
+     frame #2: 0x0000555557605122 gandr_core_checker-aef44759d449df47`std::panicking::panic_handler::{closure#0} at panicking.rs:688:13
+     frame #3: 0x00005555575fdd79 gandr_core_checker-aef44759d449df47`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18
+     frame #4: 0x0000555557605ced gandr_core_checker-aef44759d449df47`__rustc::rust_begin_unwind at panicking.rs:679:5
+     frame #5: 0x000055555796706c gandr_core_checker-aef44759d449df47`core::panicking::panic_fmt at panicking.rs:80:14
+     frame #6: 0x0000555556bec533 gandr_core_checker-aef44759d449df47`gandr_core_checker::bridge::tests::a_stated_type_s_undecided_slot_is_refused_by_its_resolution_6195 at tests.rs:7768:5
+     frame #7: 0x0000555556b6bab7 gandr_core_checker-aef44759d449df47`gandr_core_checker::bridge::tests::a_stated_type_s_undecided_slot_is_refused_by_its_resolution_6195::{closure#0}((null)={}) at tests.rs:7699:70
+     frame #8: 0x0000555556d6bb66 gandr_core_checker-aef44759d449df47`<gandr_core_checker::bridge::tests::a_stated_type_s_undecided_slot_is_refused_by_its_resolution_6195::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #9: 0x0000555556d992fb gandr_core_checker-aef44759d449df47`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #10: 0x0000555556d992f9 gandr_core_checker-aef44759d449df47`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #11: 0x0000555556da6845 gandr_core_checker-aef44759d449df47`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #12: 0x0000555556da6840 gandr_core_checker-aef44759d449df47`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #13: 0x0000555556da6840 gandr_core_checker-aef44759d449df47`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #14: 0x0000555556da682b gandr_core_checker-aef44759d449df47`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #15: 0x0000555556da682b gandr_core_checker-aef44759d449df47`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #16: 0x0000555556da682b gandr_core_checker-aef44759d449df47`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #17: 0x0000555556da6816 gandr_core_checker-aef44759d449df47`test::run_test::{closure#0} at lib.rs:677:43
+     frame #18: 0x0000555556da1204 gandr_core_checker-aef44759d449df47`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #19: 0x0000555556da1189 gandr_core_checker-aef44759d449df47`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #20: 0x0000555556da99a2 gandr_core_checker-aef44759d449df47`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #21: 0x0000555556da9993 gandr_core_checker-aef44759d449df47`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #22: 0x0000555556da9993 gandr_core_checker-aef44759d449df47`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #23: 0x0000555556da9983 gandr_core_checker-aef44759d449df47`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

@@ -1,0 +1,462 @@
+//! The run outcome a `runs` expectation states, and what settling one asks of
+//! the caller.
+//!
+//! # The comparison is over spellings
+//!
+//! This crate holds no machine. A `runs` payload is the outcome's spelling,
+//! and the caller that composes the pipeline runs the declaration and spells
+//! what the run produced; the two compare byte for byte. The spelling is the
+//! one the toolchain prints a run's outcome in, so a stated outcome reads as
+//! what `gandr run` prints. A traced run adds each channel the run forked,
+//! by the name its fork gives it, with the web its play decomposes to,
+//! spelled as a `decomposes` payload is. A distributed run runs the
+//! declaration once for each sequence of answers to its draws, and reports
+//! each path's outcome, spelled as [`Runner::run`] spells it, with the bits
+//! its draws take.
+
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
+
+use gandr_kernel_term::ConstantIndex;
+
+use crate::distribution::Bits;
+use crate::distribution::Undistributed;
+
+/// One channel of a run: its name and the web its play decomposes to.
+///
+/// The name is the binder the fork that opened it writes at its protocol, and
+/// the web is spelled as a `decomposes` payload is: what a `traces` entry
+/// states, and what a traced run produced.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Channel
+{
+    /// The channel's name.
+    pub name: String,
+    /// The web.
+    pub web: RunSpelling,
+}
+
+/// What a traced run produced: its outcome, spelled as [`Runner::run`]
+/// spells it, and each channel it forked whose fork the source names, in the
+/// order the run forked them.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TracedRun
+{
+    /// The outcome.
+    pub run: RunSpelling,
+    /// The channels.
+    pub channels: Vec<Channel>,
+}
+
+/// A run outcome, spelled: what a `runs` payload states, and what a run
+/// produced.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RunSpelling(String);
+
+impl From<String> for RunSpelling
+{
+    /// The outcome `spelled` spells.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(spelled: String) -> Self
+    {
+        Self(spelled)
+    }
+}
+
+impl AsRef<str> for RunSpelling
+{
+    /// The spelling's text.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &str
+    {
+        &self.0
+    }
+}
+
+impl fmt::Display for RunSpelling
+{
+    /// Writes the spelling.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes the supplied outcome spelling unchanged.
+    /// - fails: returns the formatting refusal when the sink rejects the
+    ///   spelling.
+    /// - panics: none.
+    /// - executable: none — the formatter does not expose emitted text or
+    ///   readable sink state; the report consumer and a refusing sink observe
+    ///   these effects.
+    ///
+    /// # Errors
+    /// Returns `fmt::Error` when the sink refuses the spelling.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parsed run expectation and a different non-ASCII
+    ///   produced spelling; the unsettled report retains both payloads, and
+    ///   formatting the produced spelling returns the exact sink error. Losing
+    ///   either payload or swallowing a write refusal changes the observation;
+    ///   sentence wording remains unconstrained.
+    /// - witness: `run::tests::run_mismatches_expose_both_spellings_and_preserve_sink_refusal`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(&self.0)
+    }
+}
+
+/// What settling a `runs` expectation asks of the caller: run one declaration
+/// and spell its outcome.
+///
+/// # Specification
+/// - requires: an implementation owns the module and execution context for the
+///   declarations it runs.
+/// - ensures: each supplied outcome uses the spelling its toolchain gives that
+///   declaration, including a run that stops short of a value.
+/// - panics: none for an implementation satisfying the interface.
+/// - executable: none — the trait holds neither the module nor a machine or
+///   renderer. The implementing execution context supplies those observations;
+///   settlement checks when it asks for an outcome and compares the supplied
+///   spelling exactly.
+///
+/// # Adequacy
+/// - hypothesis: L3 — accepted, owed, refused and guarded declarations, with
+///   matching and mismatching run expectations; settlement and callback
+///   positions distinguish an unrequested run, a skipped requested run and a
+///   changed spelling. The external implementation owns correctness of
+///   execution and rendering.
+/// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
+/// - witness: `run::tests::run_mismatches_expose_both_spellings_and_preserve_sink_refusal`
+pub trait Runner
+{
+    /// The spelling of what running the declaration at `constant` produced.
+    ///
+    /// # Specification
+    /// - requires: `constant` is the admission position of a declaration of the
+    ///   module being settled that the checker accepted.
+    /// - ensures: the spelling the toolchain prints that declaration's run
+    ///   outcome in, a run that stops short of a value included.
+    /// - provides: the produced side of a `runs` comparison.
+    /// - fails: never; a run that cannot be carried out is an outcome of its
+    ///   own, spelled.
+    /// - panics: none.
+    /// - executable: none — the required method has no body and carries no
+    ///   module, machine or renderer with which to validate admission or
+    ///   execution. Its implementing context must establish those premises.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — accepted, owed, refused and guarded declarations with
+    ///   or without a run expectation; the requested admission positions and
+    ///   exact settlement separate extra or missing calls and spelling
+    ///   mismatches. These consumer witnesses assume a conforming execution
+    ///   context rather than proving its machine semantics.
+    /// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
+    /// - witness: `run::tests::run_mismatches_expose_both_spellings_and_preserve_sink_refusal`
+    fn run(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling;
+
+    /// The spelling of what running the declaration at `constant` produced,
+    /// though the checker refused it.
+    ///
+    /// # Specification
+    /// - requires: `constant` is the admission position of a declaration of the
+    ///   module being settled that the checker refused, and that states it runs
+    ///   beside the refusal.
+    /// - ensures: the spelling [`Self::run`] would give the declaration's
+    ///   lowered body, a run that stops short of a value or cannot be carried
+    ///   out included; the declaration alone runs refused, and a refused
+    ///   declaration it reaches stops the run as it would stop any.
+    /// - provides: the produced side of a `runs` beside a `refuses`.
+    /// - fails: never; a run that cannot be carried out is an outcome of its
+    ///   own, spelled.
+    /// - panics: none.
+    /// - executable: none — as [`Self::run`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refused declaration stating a run and one stating
+    ///   none; settlement asks only the first, and compares its spelling.
+    /// - witness: `settle::tests::a_run_beside_a_refusal_settles_only_when_both_hold`
+    fn run_refused(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling;
+
+    /// The spelling of the causal web the dialogue the declaration at
+    /// `constant` holds decomposes to.
+    ///
+    /// # Specification
+    /// - requires: `constant` is the admission position of a declaration of the
+    ///   module being settled that the checker accepted, and that states the
+    ///   web it decomposes to.
+    /// - ensures: the spelling [`Self::run`] gives `decompose` applied to the
+    ///   declaration, a run that stops short of a web included.
+    /// - provides: the produced side of a `decomposes` comparison.
+    /// - fails: never; a run that cannot be carried out is an outcome of its
+    ///   own, spelled.
+    /// - panics: none.
+    /// - executable: none — as [`Self::run`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a dialogue stating its web and one stating another;
+    ///   settlement asks the runner for each, and compares its spelling.
+    /// - witness: `settle::tests::a_web_settles_against_the_dialogue_s_decomposition_2077`
+    fn decompose(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling;
+
+    /// What running the declaration at `constant` produced, recording each
+    /// channel it forked.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::run`], and the declaration states the web a
+    ///   channel of its run plays.
+    /// - ensures: the spelling [`Self::run`] gives, and each channel the run
+    ///   forked whose fork the source names, by that name, with the web its
+    ///   play decomposes to spelled as [`Self::decompose`] spells a web, in the
+    ///   order the run forked them.
+    /// - provides: the produced side of a `traces` comparison.
+    /// - fails: never; a run that cannot be carried out is an outcome of its
+    ///   own, spelled, its channels those it forked before it stopped.
+    /// - panics: none.
+    /// - executable: none — as [`Self::run`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run stating its channel's web, one stating another,
+    ///   and one naming a channel it never forks; settlement asks the runner
+    ///   for each, and compares every stated channel.
+    /// - witness: `settle::tests::a_channel_settles_against_the_web_its_play_decomposes_to_3338`
+    fn run_traced(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> TracedRun;
+
+    /// The items the declaration at `constant` mentions, spelled as a
+    /// `reads` payload writes them ([`crate::reads_spelled`]).
+    ///
+    /// # Specification
+    /// - requires: `constant` is the admission position of a declaration of the
+    ///   module being settled that the checker accepted or read as data, and
+    ///   that states the items it reads.
+    /// - ensures: the items its footprint names, read off the roots of its
+    ///   content table; a spelling no `reads` payload writes when no footprint
+    ///   can be read.
+    /// - provides: the produced side of a `reads` comparison.
+    /// - fails: never; a footprint that cannot be read is spelled.
+    /// - panics: none.
+    /// - executable: none — as [`Self::run`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration stating the items it reads in another
+    ///   order, and one stating an item fewer; settlement asks the runner for
+    ///   each, and compares the two sets.
+    /// - witness: `settle::tests::a_reads_claim_settles_against_the_items_read_2520`
+    fn reads(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling;
+
+    /// Run the declaration at `constant` once for each sequence of answers
+    /// to its draws, depth first from the start of the run, and hand `path`
+    /// the outcome of each with the bits its draws take.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::run`], and the declaration states a distribution.
+    /// - ensures: `path` is called once for each sequence of answers, each draw
+    ///   of `n` bits answered by each integer of `[0, 2^n)` in turn, with the
+    ///   outcome spelled as [`Self::run`] spells it and the sum of the widths
+    ///   of that path's draws.
+    /// - provides: the produced side of a `distributes` comparison.
+    /// - fails: [`Undistributed::PastQuota`] at the first path whose draws pass
+    ///   `quota`, and [`Undistributed::Unanswered`] at the first path with a
+    ///   draw the exact model declines; no path past it is reported.
+    /// - panics: none.
+    /// - executable: none — as [`Self::run`].
+    ///
+    /// # Errors
+    /// [`Undistributed`] when a path draws more than `quota` bits, or when
+    /// the exact model declines a draw, naming what performs it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — four paths reaching three outcomes, a path past the
+    ///   quota, and a declined draw of a task and of a world; settlement sums
+    ///   the paths and compares the canonical spellings.
+    /// - witness: `distribution::tests::the_paths_sum_by_outcome_into_one_distribution`
+    /// - witness: `distribution::tests::a_path_past_the_quota_gives_no_distribution`
+    /// - witness: `distribution::tests::a_declined_draw_names_its_task_or_world_5712`
+    fn run_distributed(
+        &mut self,
+        constant: ConstantIndex,
+        quota: Bits,
+        path: &mut impl FnMut(RunSpelling, Bits),
+    ) -> Result<(), Undistributed>;
+}
+
+impl<Run> Runner for Run
+where
+    Run: FnMut(ConstantIndex) -> RunSpelling,
+{
+    /// Calls the closure.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        self(constant)
+    }
+
+    /// Calls the closure: a closure spells a run by position, refused or not.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run_refused(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        self(constant)
+    }
+
+    /// Calls the closure: a closure spells a decomposition by position, as
+    /// it spells a run.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn decompose(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        self(constant)
+    }
+
+    /// Calls the closure: a closure spells a run by position and records no
+    /// channel.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run_traced(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> TracedRun
+    {
+        TracedRun {
+            run: self(constant),
+            channels: Vec::new(),
+        }
+    }
+
+    /// Calls the closure: a closure spells what a declaration reads by
+    /// position, as it spells a run.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn reads(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        self(constant)
+    }
+
+    /// Calls the closure once: a closure spells a run with no draw, one path
+    /// of no bits.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run_distributed(
+        &mut self,
+        constant: ConstantIndex,
+        _quota: Bits,
+        path: &mut impl FnMut(RunSpelling, Bits),
+    ) -> Result<(), Undistributed>
+    {
+        path(self(constant), Bits::default());
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::string::String;
+    use alloc::string::ToString as _;
+    use core::fmt;
+
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_surface_syntax::SourceText;
+
+    use super::RunSpelling;
+    use crate::expectation::Outcome;
+    use crate::fixture::RefusingWriter;
+    use crate::fixture::checked;
+    use crate::root::CorpusRoot;
+    use crate::settle::Settlement;
+    use crate::settle::settle;
+
+    #[test]
+    fn run_mismatches_expose_both_spellings_and_preserve_sink_refusal()
+    {
+        let checked = checked(SourceText::from("@[ runs(\"expected\") ] def value = 3 ;"));
+        let mut runner = |_constant: ConstantIndex| RunSpelling::from(String::from("λ actual"));
+        let report = settle(
+            CorpusRoot::Fixture,
+            &checked.arena,
+            &checked.module,
+            &checked.verdicts,
+            &gandr_core_incremental::NodeKeys::new(
+                &checked.arena,
+                &crate::fixture::layout(&checked),
+            ),
+            &mut runner,
+        )
+        .expect("the fixture owns its verdicts");
+        let declaration = report.declarations().first().expect("one declared value");
+        assert_eq!(declaration.settlement(), Settlement::Unsettled);
+        let rendered = report.to_string();
+        assert!(
+            rendered.contains("expected"),
+            "a mismatch retains its expectation"
+        );
+        assert!(
+            rendered.contains("λ actual"),
+            "a mismatch retains its produced output"
+        );
+        let Outcome::Runs(spelled) = declaration.outcome()
+        else {
+            panic!("the accepted declaration was run");
+        };
+        assert_eq!(
+            fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{spelled}")),
+            Err(fmt::Error),
+            "rendering the produced output propagates a failed write"
+        );
+    }
+}
