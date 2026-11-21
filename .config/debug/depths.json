@@ -1,0 +1,38 @@
+[
+  {
+    "name": "#3809: a struct nested past the limit prints `{…}` below it",
+    "limit": 2,
+    "value": { "next": { "next": { "next": { "next": 0 } } } },
+    "summary": "{next:{next:{…}}}"
+  },
+  {
+    "name": "#3809: a tuple below the limit prints `(…)`",
+    "limit": 1,
+    "value": [[1, 2], 3],
+    "summary": "((…), 3)"
+  },
+  {
+    "name": "#3809: a field after a deep sibling prints at its own depth",
+    "limit": 2,
+    "value": { "deep": { "a": { "b": 0 } }, "flat": { "c": 0 } },
+    "summary": "{deep:{a:{…}}, flat:{c:0}}"
+  },
+  {
+    "name": "#3809: a summary that raises leaves the depth at the outermost",
+    "limit": 3,
+    "value": { "a": { "b": "raises" } },
+    "summary": "raised: the case's summary raises here"
+  },
+  {
+    "name": "a value within the limit prints whole",
+    "limit": 5,
+    "value": { "a": [1, { "b": 2 }] },
+    "summary": "{a:(1, {b:2})}"
+  },
+  {
+    "name": "a limit of 0 prints the outermost value's fields and elides every aggregate among them",
+    "limit": 0,
+    "value": { "a": { "b": 1 }, "c": 2 },
+    "summary": "{a:{…}, c:2}"
+  }
+]

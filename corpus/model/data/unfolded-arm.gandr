@@ -1,0 +1,43 @@
+//! A recursive arm can pass its call to another definition.
+//!
+//! An open argument keeps that call stuck.
+//! The arm continues into the other definition call.
+//!
+//! Each path states one recursive unfolding.
+//! Structural recursion unfolds at constructors.
+//!
+//! - see: #761 — `doubleStep`
+//! - see: `nested-call-sugar.gandr` — an arm that returns constructors over its
+//!   call converts
+//! - cites: [Abel-2004-termination_checking_with_types]
+//!
+//! [Abel-2004-termination_checking_with_types]: https://doi.org/10.1051/ita:2004015 "Abel, Termination checking with types"
+
+// The naturals the recursion takes apart.
+import "./data-base.gandr";
+
+/// Two successors over a natural.
+pub def plusTwo(n : Nat) -> Nat =
+  Succ (Succ n)
+
+/// `double` passes its recursive call to `plusTwo`.
+pub def rec double(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(m) => plusTwo (double[<] m)
+
+/// Two doubled.
+@[runs("Succ (Succ (Succ (Succ Zero)))")]
+def doubledTwo : () -> Nat = double two;
+
+/// `doubleStep` states `double` with the `plusTwo` call.
+def doubleStep(n : Nat) -> Path (double (Succ n)) (plusTwo (double n)) =
+  Path.here (plusTwo (double n))
+
+/// `doubleStepUnfolded` states that call after it unfolds.
+def doubleStepUnfolded(n : Nat) -> Path (double (Succ n)) (Succ (Succ (double n))) =
+  Path.here (Succ (Succ (double n)))
+
+/// `doubleTwoSteps` states two calls through `plusTwo`.
+def doubleTwoSteps(n : Nat) -> Path (double (Succ (Succ n))) (plusTwo (plusTwo (double n))) =
+  Path.here (plusTwo (plusTwo (double n)))

@@ -1,0 +1,2 @@
+def pair : Integer * String ;
+def choice : Integer + String ;
