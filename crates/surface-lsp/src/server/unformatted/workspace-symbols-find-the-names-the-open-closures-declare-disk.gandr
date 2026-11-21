@@ -1,0 +1,3 @@
+import "./base.gandr" ;
+def nought : Nat ;
+def nought = Zero ;

@@ -1,0 +1,58 @@
+[
+  {
+    "name": "#5839: three branches with no record take one call, and the next sweep takes none",
+    "branches": ["a", "b", "c"],
+    "merged": { "a": 7 },
+    "runs": 2,
+    "output": "calls 1, 0; aliases 3; records a b c; answers a=#7 b=- c=-"
+  },
+  {
+    "name": "#5839: a branch with a record is not asked about again, and a new branch goes alone",
+    "branches": ["a", "b", "d"],
+    "recorded": ["a", "b"],
+    "merged": { "d": 9 },
+    "runs": 1,
+    "output": "calls 1; aliases 1; records a b d; answers a=#1 b=#1 d=#9"
+  },
+  {
+    "name": "#5839: a record under an earlier head does not answer the branch at a new head",
+    "branches": ["a"],
+    "head": "c2",
+    "recorded": ["a"],
+    "merged": {},
+    "runs": 1,
+    "output": "calls 1; aliases 1; records a a; answers a=-"
+  },
+  {
+    "name": "#5839: a failed read answers null and writes no record, so the next sweep asks again",
+    "branches": ["a", "b"],
+    "merged": {},
+    "fail": true,
+    "runs": 2,
+    "output": "calls 1, 1; aliases 2 2; records none; answers a=null b=null"
+  },
+  {
+    "name": "#5839: a branch named as a number goes in as a string, and a name with a slash and a percent keeps its record apart",
+    "branches": ["5839", "feat/a%b", "feat%2Fa%25b"],
+    "merged": { "5839": 3, "feat/a%b": 4 },
+    "runs": 1,
+    "output": "calls 1; aliases 3; records 5839 feat%252Fa%2525b feat%2Fa%25b; answers 5839=#3 feat/a%b=#4 feat%2Fa%25b=-"
+  },
+  {
+    "name": "#5839: 150 branches take two calls, of 100 aliases and 50",
+    "count": 150,
+    "merged": { "branch-150": 5 },
+    "runs": 1,
+    "output": "calls 2; aliases 100 50; records 150; answers 150, branch-150=#5"
+  },
+  {
+    "name": "#5839: the answers go into the facts of their branches, and each other fact line passes through",
+    "facts": [
+      { "branch": null, "pulls": null },
+      { "branch": "a", "pulls": null },
+      { "branch": "b", "pulls": null }
+    ],
+    "answers": { "a": [{ "number": 7, "subjects": ["a own"] }] },
+    "output": "facts 3; pulls -=null a=#7 b=null"
+  }
+]

@@ -1,0 +1,87 @@
+/// This source states functorial action for a function composite.
+///
+/// Action by `G` after action by `F` equals action by their composite.
+///
+/// Based path induction proves the equality at reflexivity.
+/// The kernel rechecks the endpoint through its bind.
+///
+/// - see: #3969 — endpoint binds
+/// - see: corpus/model/identity/then-units-in-the-kernel.gandr
+/// - see: corpus/model/identity/transport-dependent.gandr
+
+/// The `actOn` function maps a path through a function.
+def actOn(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path x y) -> Path (F x) (F y) =
+  Path.ap F p
+
+/// Action by `G` after `F` equals action by their composite.
+def apComp(
+  A : Type,
+  B : Type,
+  C : Type,
+  F : A -> B,
+  G : B -> C,
+  x : A,
+  y : A,
+  p : Path x y
+) -> Path[.A = Path[.A = C] (G (F x)) (G (F y))] (actOn B C G (F x) (F y) (actOn A B F x y p)) (
+  actOn A C (fun (a : A) { G (F a) } : A -> C) x y p
+) =
+  Path.walk
+    ((v : A, k : Path[.A = A] x v) -> Path[.A = Path[.A = C] (G (F x)) (G (F v))] (actOn
+      B
+      C
+      G
+      (F x)
+      (F v)
+      (actOn A B F x v k)) (actOn A C (fun (a : A) { G (F a) } : A -> C) x v k))
+    p
+    (Path.here x)
+    (Path.here p)
+    (Path.here (Path.here (G (F x))))
+
+/// Two actions by `g` and `h` equal one action by their composite.
+def apThenThen(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  g : Path y z,
+  h : Path z w,
+  fm : Path[.A = A] x y,
+  fp : Path[.A = A] x y,
+  fa : Path[.A = Path[.A = A] x y] fm fp
+) -> Path[
+  .A = Path[.A = Path[.A = A] x w] (Path.step (Path.step fm g) h) (Path.step (Path.step fp g) h)
+] (actOn (type(Path x z)) (type(Path x w)) (fun (r : Path[.A = A] x z) {
+  Path.step r h
+} : Path x z -> Path x w) (Path.step fm g) (Path.step fp g) (
+  actOn (type(Path x y)) (type(Path x z)) (fun (q : Path[.A = A] x y) {
+    Path.step q g
+  } : Path x y -> Path x z) fm fp fa
+)) (actOn (type(Path x y)) (type(Path x w)) (fun (q : Path[.A = A] x y) {
+  Path.step (Path.step q g) h
+} : Path x y -> Path x w) fm fp fa) =
+  Path.walk
+    ((
+      kp : Path[.A = A] x y,
+      e : Path[.A = Path[.A = A] x y] fm kp
+    ) -> Path[.A = Path[.A = Path[.A = A] x w] (Path.step (Path.step fm g) h) (Path.step
+      (Path.step kp g)
+      h)] (actOn (type(Path[.A = A] x z)) (type(Path[.A = A] x w)) (fun (r : Path[.A = A] x z) {
+      Path.step r h
+    } : Path[.A = A] x z -> Path[.A = A] x w) (Path.step fm g) (Path.step kp g) (actOn
+      (type(Path[.A = A] x y))
+      (type(Path[.A = A] x z))
+      (fun (q : Path[.A = A] x y) {
+        Path.step q g
+      } : Path[.A = A] x y -> Path[.A = A] x z)
+      fm
+      kp
+      e)) (actOn (type(Path[.A = A] x y)) (type(Path[.A = A] x w)) (fun (q : Path[.A = A] x y) {
+      Path.step (Path.step q g) h
+    } : Path[.A = A] x y -> Path[.A = A] x w) fm kp e))
+    fa
+    (Path.here fm)
+    (Path.here fa)
+    (Path.here (Path.here (Path.step (Path.step fm g) h)))
