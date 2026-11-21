@@ -3,7 +3,6 @@
 //! recheck policy.
 
 use alloc::alloc::Global;
-use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
@@ -919,8 +918,10 @@ fn offer_ranked(
         Offered::Words(sort) => {
             let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
             let own = arena.value_type_data(next, SmallVec::<_, 0, Global>::from_iter([]));
-            let base = || -> Box<[RuleNode]> {
-                [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+            let base = || {
+                gandr_kernel_data::ThinShared::from_iter([RuleNode::Constructor(
+                    ConstructorTag::from(0_usize),
+                )])
             };
             let cells = FreeCells::new(
                 sort,

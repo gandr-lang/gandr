@@ -40,6 +40,7 @@ pub mod presented
     use alloc::alloc::Global;
 
     use gandr_kernel_data::SmallVec;
+    use gandr_kernel_data::ThinShared;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::Presentation;
@@ -159,14 +160,17 @@ pub mod presented
         built
     }
 
-    /// `base` as a closed rule side.
+    /// `base` as a closed end of a free cell.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the block of the one node, setup
     #[inline]
     #[must_use]
-    pub fn base() -> alloc::boxed::Box<[RuleNode]>
+    pub fn base() -> ThinShared<(), RuleNode, Global>
     {
-        [Letter::Base.node()].into()
+        ThinShared::from_iter([Letter::Base.node()])
     }
 }

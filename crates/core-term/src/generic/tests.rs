@@ -397,8 +397,10 @@ fn each_uncovered_declaration_refuses_at_its_site()
     let nested = arena.value_type_product(&[own, own]);
     let earlier = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let reading = arena.value_type_data(at(1_usize), vec![earlier]);
-    let base = || -> alloc::boxed::Box<[RuleNode]> {
-        [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+    let base = || {
+        gandr_kernel_data::ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(
+            0_usize,
+        ))])
     };
     let cells = FreeCells::new(
         at(0_usize),

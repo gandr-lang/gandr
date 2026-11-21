@@ -460,8 +460,10 @@ const MOVED: [usize; 4] = [1, 1, 2, 1];
 /// trivial.
 fn looped_cells(wraps: gandr_kernel_term::Reflexivities) -> gandr_kernel_term::FreeCells
 {
-    let base = || -> alloc::boxed::Box<[RuleNode]> {
-        [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+    let base = || {
+        gandr_kernel_data::ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(
+            0_usize,
+        ))])
     };
     gandr_kernel_term::FreeCells::new(
         ConstantIndex::from(SORT),

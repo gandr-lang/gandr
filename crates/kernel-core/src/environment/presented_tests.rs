@@ -9,6 +9,7 @@ use gandr_kernel_core_base::fixture::presented::base;
 use gandr_kernel_core_base::fixture::presented::circle;
 use gandr_kernel_core_base::fixture::presented::word;
 use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::Apartness;
 use gandr_kernel_term::ConstantIndex;
@@ -443,7 +444,7 @@ fn words_refuse_another_table_and_admit_one_type_per_point()
                     .collect()
             })
             .collect();
-        let at: alloc::boxed::Box<[RuleNode]> = [RuleNode::Constructor(point)].into();
+        let at = ThinShared::from_iter([RuleNode::Constructor(point)]);
         let cells = gandr_kernel_term::FreeCells::new(
             ConstantIndex::from(0_usize),
             SmallVec::<_, 0, Global>::from_iter([gandr_kernel_term::FreeCell::new(at.clone(), at)]),
@@ -788,8 +789,8 @@ fn words_admit_only_as_their_cells_mint_them()
     let unknown = gandr_kernel_term::FreeCells::new(
         ConstantIndex::from(0_usize),
         SmallVec::<_, 0, Global>::from_iter([gandr_kernel_term::FreeCell::new(
-            [Letter::Loop.node(), Letter::Base.node()].into(),
-            [Letter::Loop.node(), Letter::Base.node()].into(),
+            ThinShared::from_iter([Letter::Loop.node(), Letter::Base.node()]),
+            ThinShared::from_iter([Letter::Loop.node(), Letter::Base.node()]),
         )]),
     );
     assert_eq!(
