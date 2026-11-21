@@ -10,7 +10,10 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use core::fmt;
 use core::fmt::Write as _;
+use core::ops::Bound;
+use std::io::BufRead as _;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -22,6 +25,7 @@ use crate::call::Part;
 use crate::call::Parts;
 use crate::call::Program;
 use crate::call::Running;
+use crate::call::Variable;
 use crate::error::GateError;
 use crate::list::Digest;
 use crate::name::Check;
@@ -31,15 +35,14 @@ use crate::run::Ground;
 use crate::run::Request;
 use crate::run::lists_on;
 use crate::tables::CheckRow;
+use crate::tables::Form;
 use crate::verdict::Asked;
 use crate::verdict::Common;
 use crate::verdict::Digests;
 use crate::verdict::Key;
-use crate::verdict::compiler;
-use crate::verdict::feature_words;
+use crate::verdict::Shared;
 use crate::verdict::head_tree;
 use crate::verdict::rows;
-use crate::verdict::shared;
 use crate::verdict::split;
 
 /// The path of the task files. A change of one holds no check by its base.
@@ -136,6 +139,26 @@ enum Found
     Records(Vec<(String, Result<String, String>)>),
 }
 
+/// Whether the trunk holds a base.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Trunk
+{
+    /// The trunk holds the base, so the base passed.
+    Holds,
+    /// The trunk does not hold the base.
+    Lacks,
+}
+
+/// How the fetch of a read ended.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Fetch
+{
+    /// The fetch passed, or the read wanted no ref.
+    Done,
+    /// The fetch failed.
+    Failed,
+}
+
 /// The file of the allowed signers of a read. A file that the read wrote
 /// leaves at the end of the read.
 #[derive(Debug)]
@@ -169,18 +192,29 @@ impl Drop for Allowed
 }
 
 /// The first 12 characters of a name, as a line of a read shows it.
-///
-/// # Specification
-/// trivial.
-///
-/// # Adequacy
-/// - hypothesis: L2 — the last line of a read names the tree by 12 characters;
-///   the whole name changes the asserted line.
-/// - witness: `tests::cli::a_check_with_no_record_runs`
-#[inline]
-fn short(name: &str) -> &str
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Short<'name>(&'name str);
+
+impl fmt::Display for Short<'_>
 {
-    name.get(.. 12).unwrap_or(name)
+    /// Writes the first 12 characters of the name.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the last line of a read names the tree by 12
+    ///   characters; the whole name changes the asserted line.
+    /// - witness: `tests::cli::a_check_with_no_record_runs`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(self.0.get(.. 12).unwrap_or(self.0))
+    }
 }
 
 /// The first 16 digits of the SHA-256 of `key`: the last part of the ref
@@ -215,48 +249,60 @@ fn segment(check: &Check) -> String
     check.as_ref().replace(':', "-")
 }
 
-/// The text of `bytes` in base64 with its padding, as `base64 -w0` writes
-/// it.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: four letters for each three bytes, and `=` for each byte that the
-///   last group lacks.
-/// - provides: the header of the token that a hosted job gives the remote.
-/// - fails: never.
-/// - panics: none.
-/// - executable: none — the reference is `base64 -w0`, whose letters the test
-///   pins.
-///
-/// # Cost
-/// - allocation: the letters, growth within the bytes
-///
-/// # Adequacy
-/// - hypothesis: L2 — a text for each length of a last group, and the text of a
-///   token; a lost padding or a shifted letter changes a vector.
-/// - witness: `record::tests::base64_writes_each_length_of_a_last_group`
-#[inline]
-fn base64(bytes: &[u8]) -> String
+/// Bytes in base64 with its padding, as `base64 -w0` writes them.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Base64<'bytes>(&'bytes [u8]);
+
+impl fmt::Display for Base64<'_>
 {
-    let mut text = String::with_capacity(bytes.len().div_ceil(3).saturating_mul(4));
-    for group in bytes.chunks(3) {
-        let at = |place: usize| u32::from(group.get(place).copied().unwrap_or_default());
-        let bits = (at(0) << 16_u32) | (at(1) << 8_u32) | at(2);
-        for (place, shift) in [18_u32, 12, 6, 0].into_iter().enumerate() {
-            let letter = if place <= group.len() {
-                usize::try_from((bits >> shift) & 0x3f)
-                    .ok()
-                    .and_then(|value| LETTERS.get(value))
-                    .copied()
-                    .unwrap_or(b'=')
+    /// Writes the letters of the bytes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: four letters for each three bytes, and `=` for each byte that
+    ///   the last group lacks.
+    /// - provides: the header of the token that a hosted job gives the remote.
+    /// - fails: when the formatter fails.
+    /// - panics: none.
+    /// - executable: none — the reference is `base64 -w0`, whose letters the
+    ///   test pins.
+    ///
+    /// # Errors
+    /// As `fails` lists.
+    ///
+    /// # Cost
+    /// - allocation: none in steady state
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a text for each length of a last group, and the text
+    ///   of a token; a lost padding or a shifted letter changes a vector.
+    /// - witness: `record::tests::base64_writes_each_length_of_a_last_group`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        for group in self.0.chunks(3) {
+            let at = |place: usize| u32::from(group.get(place).copied().unwrap_or_default());
+            let bits = (at(0) << 16_u32) | (at(1) << 8_u32) | at(2);
+            for (place, shift) in [18_u32, 12, 6, 0].into_iter().enumerate() {
+                let letter = if place <= group.len() {
+                    usize::try_from((bits >> shift) & 0x3f)
+                        .ok()
+                        .and_then(|value| LETTERS.get(value))
+                        .copied()
+                        .unwrap_or(b'=')
+                }
+                else {
+                    b'='
+                };
+                f.write_char(char::from(letter))?;
             }
-            else {
-                b'='
-            };
-            text.push(char::from(letter));
         }
+        Ok(())
     }
-    text
 }
 
 /// The commits of `answer`, which `git cat-file --batch` printed.
@@ -283,18 +329,25 @@ fn base64(bytes: &[u8]) -> String
 fn objects(answer: &Answer) -> BTreeMap<String, Object>
 {
     let mut found = BTreeMap::new();
-    let mut rest = answer.as_ref();
-    while let Some(end) = rest.iter().position(|&byte| byte == b'\n') {
-        let head = String::from_utf8_lossy(rest.get(.. end).unwrap_or_default());
-        rest = rest.get(end.saturating_add(1) ..).unwrap_or_default();
-        let mut words = head.split(' ');
+    let mut rest: &[u8] = answer.as_ref();
+    let mut head = Vec::new();
+    loop {
+        head.clear();
+        if rest.read_until(b'\n', &mut head).unwrap_or_default() == 0 {
+            break;
+        }
+        let line = String::from_utf8_lossy(&head);
+        let mut words = line.trim_end_matches('\n').split(' ');
         let (Some(name), Some(kind), Some(size)) = (words.next(), words.next(), words.next())
         else {
             continue;
         };
         let size = size.parse::<usize>().unwrap_or_default();
-        let content = String::from_utf8_lossy(rest.get(.. size).unwrap_or_default());
-        rest = rest.get(size.saturating_add(1) ..).unwrap_or_default();
+        let (content, after) = rest
+            .split_at_checked(size)
+            .unwrap_or_else(|| (rest, <&[u8]>::default()));
+        rest = after.get(1 ..).unwrap_or_default();
+        let content = String::from_utf8_lossy(content);
         let (headers, message) = content.split_once("\n\n").unwrap_or((&content, ""));
         let mut object = Object {
             commit: kind == "commit",
@@ -315,8 +368,8 @@ fn objects(answer: &Answer) -> BTreeMap<String, Object>
     found
 }
 
-/// Each JSON value of `body`, in its order, or none when a value does not
-/// read.
+/// Each JSON value of the body of `object`, in its order, or none when a
+/// value does not read.
 ///
 /// # Specification
 /// trivial.
@@ -326,9 +379,9 @@ fn objects(answer: &Answer) -> BTreeMap<String, Object>
 ///   that is not the key; a body read as no value gives another reason.
 /// - witness: `tests::cli::a_record_with_a_body_of_another_key_does_not_hold`
 #[inline]
-fn values(body: &str) -> Option<Vec<Value>>
+fn values(object: &Object) -> Option<Vec<Value>>
 {
-    serde_json::Deserializer::from_str(body)
+    serde_json::Deserializer::from_str(&object.body)
         .into_iter::<Value>()
         .collect::<Result<Vec<Value>, _>>()
         .ok()
@@ -361,7 +414,7 @@ fn values(body: &str) -> Option<Vec<Value>>
 fn shape(
     object: Option<&Object>,
     key: &Key,
-    tree: Option<&str>,
+    tree: Option<&Commit>,
 ) -> Result<(), String>
 {
     let object = object
@@ -370,10 +423,10 @@ fn shape(
     if object.parent {
         return Err("it has a parent".to_owned());
     }
-    if tree.is_some_and(|tree| tree != object.tree) {
+    if tree.is_some_and(|tree| AsRef::<str>::as_ref(tree) != object.tree) {
         return Err("its tree is not the run's tree".to_owned());
     }
-    let body = values(&object.body).ok_or_else(|| "its body is not a key".to_owned())?;
+    let body = values(object).ok_or_else(|| "its body is not a key".to_owned())?;
     let own: Option<Value> = serde_json::from_str(key.as_ref()).ok();
     match (body.as_slice(), own.as_ref()) {
         (&[ref value], Some(own)) if value == own => Ok(()),
@@ -409,7 +462,7 @@ fn named_base(object: Option<&Object>) -> Result<String, String>
 {
     let refused = || "its body is not a key".to_owned();
     let object = object.filter(|found| found.commit).ok_or_else(refused)?;
-    let body = values(&object.body).ok_or_else(refused)?;
+    let body = values(object).ok_or_else(refused)?;
     match body.first() {
         None | Some(&Value::Null) => Ok(String::new()),
         Some(&Value::Object(ref members)) => Ok(match members.get("base") {
@@ -419,31 +472,6 @@ fn named_base(object: Option<&Object>) -> Result<String, String>
         }),
         Some(_) => Err(refused()),
     }
-}
-
-/// The words of a call of git against the remote: the header of the token
-/// when the run has one, and then `verb`.
-///
-/// # Specification
-/// trivial.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a hosted job reads the remote with its token, and no case
-///   runs in a hosted job; a read with no header in a case still lists and
-///   fetches each record.
-/// - witness: `tests::cli::a_record_of_the_tree_holds_against_its_own_base`
-#[inline]
-fn remote_words<'run>(
-    header: &'run str,
-    verb: &[&'run str],
-) -> Vec<&'run str>
-{
-    let mut words = Vec::with_capacity(verb.len().saturating_add(2));
-    if !header.is_empty() {
-        words.extend(["-c", header]);
-    }
-    words.extend_from_slice(verb);
-    words
 }
 
 /// Whether the trunk holds each of `bases`.
@@ -476,21 +504,30 @@ fn remote_words<'run>(
 fn trunk_holds(
     request: &ReadRequest,
     root: &Path,
-    bases: &BTreeSet<&str>,
+    bases: &BTreeSet<Commit>,
     parts: &Parts,
-) -> Result<BTreeMap<String, bool>, GateError>
+) -> Result<BTreeMap<Commit, Trunk>, GateError>
 {
     let mut held = BTreeMap::new();
     if let Some(ref listed) = request.trunk_holds {
-        for &base in bases {
-            let _first = held.insert(base.to_owned(), listed.split(' ').any(|word| word == base));
+        for base in bases {
+            let answer = if listed
+                .split(' ')
+                .any(|word| word == AsRef::<str>::as_ref(base))
+            {
+                Trunk::Holds
+            }
+            else {
+                Trunk::Lacks
+            };
+            let _first = held.insert(base.clone(), answer);
         }
         return Ok(held);
     }
     let trunk = format!("origin/{}", request.trunk);
     let words: Vec<[&str; 4]> = bases
         .iter()
-        .map(|&base| ["merge-base", "--is-ancestor", base, trunk.as_str()])
+        .map(|base| ["merge-base", "--is-ancestor", base.as_ref(), trunk.as_str()])
         .collect();
     let mut running = Vec::with_capacity(words.len());
     for arguments in &words {
@@ -505,9 +542,9 @@ fn trunk_holds(
         );
     }
     let mut asked = Vec::new();
-    for (&base, call) in bases.iter().zip(running) {
+    for (base, call) in bases.iter().zip(running) {
         if call.end(parts)?.status.success() {
-            let _first = held.insert(base.to_owned(), true);
+            let _first = held.insert(base.clone(), Trunk::Holds);
         }
         else {
             asked.push(base);
@@ -527,7 +564,7 @@ fn trunk_holds(
     let words: Vec<Vec<&str>> = paths
         .iter()
         .map(|path| {
-            let mut words = COMPARE.words();
+            let mut words: Vec<&str> = COMPARE.words().into_iter().map(<&str>::from).collect();
             words.extend([path.as_str(), "--jq", ".status"]);
             words
         })
@@ -547,17 +584,22 @@ fn trunk_holds(
     for (base, call) in asked.into_iter().zip(running) {
         let ended = call.end(parts)?;
         let status = String::from_utf8_lossy(ended.output.as_ref());
-        let holds = ended.status.success() && matches!(status.trim(), "ahead" | "identical");
-        let _first = held.insert(base.to_owned(), holds);
+        let answer = if ended.status.success() && matches!(status.trim(), "ahead" | "identical") {
+            Trunk::Holds
+        }
+        else {
+            Trunk::Lacks
+        };
+        let _first = held.insert(base.clone(), answer);
     }
     Ok(held)
 }
 
-/// Starts the scope script for each of `bases`: against that base, or
-/// against the base of the environment for `None`.
+/// Starts `script` for each of `bases`: against that base, or against the
+/// base of the environment for `None`.
 ///
 /// # Specification
-/// - requires: `script` names the scope script.
+/// - requires: `script` runs the scope script.
 /// - ensures: one running script for each base, in the order of `bases`.
 /// - provides: the scope of each record against its own base, at the same time
 ///   as the other programs of the read.
@@ -577,22 +619,19 @@ fn trunk_holds(
 /// - witness: `tests::cli::a_record_of_the_tree_holds_against_its_own_base`
 #[inline]
 fn start_scopes<'run>(
-    script: &'run str,
+    script: Program<'run>,
     root: &Path,
-    bases: &[Option<&str>],
+    bases: &[Option<&'run Commit>],
 ) -> Result<Vec<Running<'run>>, GateError>
 {
     let mut running = Vec::with_capacity(bases.len());
     for base in bases {
-        let program = Program {
-            part: Part::from("scope.bash --lints"),
-            name: script,
-            arguments: &["--lints"],
-            input: "",
-        };
         running.push(match *base {
-            Some(base) => program.start_with(root, &[("GATE_BASE", base)])?,
-            None => program.start(root)?,
+            Some(base) => script.start_with(root, &[Variable {
+                name: "GATE_BASE",
+                value: base.as_ref(),
+            }])?,
+            None => script.start(root)?,
         });
     }
     Ok(running)
@@ -678,7 +717,7 @@ fn prepare(
     let words: Vec<Vec<&str>> = paths
         .iter()
         .map(|path| {
-            let mut words = SIGNERS.words();
+            let mut words: Vec<&str> = SIGNERS.words().into_iter().map(<&str>::from).collect();
             words.extend([path.as_str(), "--jq", ".[].key"]);
             words
         })
@@ -828,7 +867,7 @@ struct Facts
     /// Whether a check of inputs can hold by the run's base.
     by_base: bool,
     /// The scope of the run, or none when it did not read.
-    scope: Option<String>,
+    scope: Option<Scope>,
 }
 
 impl Facts
@@ -836,8 +875,8 @@ impl Facts
     /// Reads the facts of the run's base.
     ///
     /// # Specification
-    /// - requires: the working directory is in a worktree of git, and `script`
-    ///   names the scope script.
+    /// - requires: the working directory is in a worktree of git, `script` runs
+    ///   the scope script, and `digested` holds the checks of inputs.
     /// - ensures: `by_base` when the run names a base, the trunk holds it, the
     ///   change from it to `tree` holds no task file, and the scope reads. The
     ///   scope of `GATE_VERDICT_SCOPE`, or of the script when the run names a
@@ -865,21 +904,21 @@ impl Facts
     #[inline]
     fn read(
         request: &ReadRequest,
-        script: &str,
+        script: Program<'_>,
         root: &Path,
-        tree: &str,
-        digested: bool,
+        tree: &Commit,
+        digested: &[Check],
         parts: &Parts,
     ) -> Result<Self, GateError>
     {
-        let base = request.base.as_ref().map(Commit::as_ref);
-        let own = if request.scope.is_none() && (base.is_some() || digested) {
+        let base = request.base.as_ref();
+        let own = if request.scope.is_none() && (base.is_some() || !digested.is_empty()) {
             start_scopes(script, root, &[None])?
         }
         else {
             Vec::new()
         };
-        let words = base.map(|base| ["diff", "--quiet", base, tree, "--", TASKS]);
+        let words = base.map(|base| ["diff", "--quiet", base.as_ref(), tree.as_ref(), "--", TASKS]);
         let diff = words
             .as_ref()
             .map(|arguments| {
@@ -893,10 +932,10 @@ impl Facts
             })
             .transpose()?;
         let held = match base {
-            Some(base) => trunk_holds(request, root, &BTreeSet::from([base]), parts)?
-                .get(base)
-                .copied()
-                .unwrap_or_default(),
+            Some(base) => {
+                trunk_holds(request, root, &BTreeSet::from([base.clone()]), parts)?.get(base)
+                    == Some(&Trunk::Holds)
+            },
             None => false,
         };
         let same_tasks = match diff {
@@ -904,8 +943,12 @@ impl Facts
             None => false,
         };
         let scope = match request.scope {
-            Some(ref given) => Some(AsRef::<str>::as_ref(given).to_owned()),
-            None => finish_scopes(own, parts)?.into_iter().next().flatten(),
+            Some(ref given) => Some(given.clone()),
+            None => finish_scopes(own, parts)?
+                .into_iter()
+                .next()
+                .flatten()
+                .map(|text| Scope::from(text.as_str())),
         };
         Ok(Self {
             by_base: base.is_some() && held && same_tasks && scope.is_some(),
@@ -964,10 +1007,10 @@ pub fn read(
     parts: &Parts,
 ) -> Result<Reading, GateError>
 {
-    let tree = head_tree(parts)?.to_string();
+    let tree = head_tree(parts)?;
     let ground = Ground::read(
         &Request {
-            commits: vec![Commit::from(tree.as_str())],
+            commits: vec![tree.clone()],
             checks: Vec::new(),
             scope: Scope::from("--workspace"),
             tables: request.tables.clone(),
@@ -979,15 +1022,21 @@ pub fn read(
         .tables
         .clone()
         .unwrap_or_else(|| root.join(".config/gate-scope"));
-    let script = config.join("scope.bash").to_string_lossy().into_owned();
+    let path = config.join("scope.bash").to_string_lossy().into_owned();
+    let script = Program {
+        part: Part::from("scope.bash --lints"),
+        name: &path,
+        arguments: &["--lints"],
+        input: "",
+    };
     let rows = rows(&ground.tables, &request.checks)?;
-    let named = compiler();
-    let words = feature_words(&tree);
-    let [rustc, policy, features] = shared(&named, &words);
+    let shared = Shared::new(&tree);
+    let [rustc, policy, features] = shared.programs();
     let header = request.token.as_ref().map_or_else(String::new, |token| {
+        let token = format!("x-access-token:{token}");
         format!(
             "http.https://github.com/.extraheader=AUTHORIZATION: basic {}",
-            base64(format!("x-access-token:{token}").as_bytes())
+            Base64(token.as_bytes())
         )
     });
     // The listing names each check by the prefix of its refs, so it needs no
@@ -996,18 +1045,17 @@ pub fn read(
         .checks
         .iter()
         .zip(&rows)
-        .map(|(check, row)| {
-            if row.digested() {
-                format!("refs/verdicts/inputs/{}/*", segment(check))
-            }
-            else {
-                format!("refs/verdicts/{tree}/{}/*", segment(check))
-            }
+        .map(|(check, row)| match row.form() {
+            Form::Inputs => format!("refs/verdicts/inputs/{}/*", segment(check)),
+            Form::Tree => format!("refs/verdicts/{tree}/{}/*", segment(check)),
         })
         .collect();
-    let mut verb = vec!["ls-remote", request.remote.as_str()];
-    verb.extend(patterns.iter().map(String::as_str));
-    let list_words = remote_words(&header, &verb);
+    let mut list_words: Vec<&str> = Vec::with_capacity(patterns.len().saturating_add(4));
+    if !header.is_empty() {
+        list_words.extend(["-c", header.as_str()]);
+    }
+    list_words.extend(["ls-remote", request.remote.as_str()]);
+    list_words.extend(patterns.iter().map(String::as_str));
     let lister = || Program {
         part: Part::from("git ls-remote"),
         name: "git",
@@ -1016,7 +1064,7 @@ pub fn read(
     };
     // A check of the tree never holds by its base, so its run needs the
     // common part and the listing, and they start first.
-    let tree_first = rows.iter().any(|row| !row.digested());
+    let tree_first = rows.iter().any(|row| row.form() == Form::Tree);
     let mut asked = if tree_first {
         Some(Asked::start(&root, &rustc, &policy, &features)?)
     }
@@ -1033,25 +1081,25 @@ pub fn read(
         .checks
         .iter()
         .zip(&rows)
-        .filter(|&(_, row)| row.digested())
+        .filter(|&(_, row)| row.form() == Form::Inputs)
         .map(|(check, _)| check.clone())
         .collect();
-    let facts = Facts::read(request, &script, &root, &tree, !digested.is_empty(), parts)?;
+    let facts = Facts::read(request, script, &root, &tree, &digested, parts)?;
     let (at_tree, at_base) = match facts.scope {
         Some(ref scope) if !digested.is_empty() => {
-            let mut commits = vec![Commit::from(tree.as_str())];
+            let mut commits = vec![tree.clone()];
             commits.extend(request.base.clone());
             let listed = lists_on(
                 ground.clone(),
                 &Request {
                     commits,
                     checks: digested.clone(),
-                    scope: Scope::from(scope.as_str()),
+                    scope: scope.clone(),
                     tables: request.tables.clone(),
                 },
                 parts,
             )?;
-            split(&listed, digested.len())
+            split(&listed, &digested)
         },
         _ => (BTreeMap::new(), BTreeMap::new()),
     };
@@ -1064,7 +1112,7 @@ pub fn read(
             let same = at_tree
                 .get(name)
                 .is_some_and(|held| at_base.get(name) == Some(held));
-            if facts.by_base && row.digested() && same {
+            if facts.by_base && row.form() == Form::Inputs && same {
                 Found::ByBase
             }
             else {
@@ -1073,7 +1121,7 @@ pub fn read(
         })
         .collect();
     let mut lines = String::new();
-    let base = request.base.as_ref().map_or("", Commit::as_ref);
+    let base = request.base.as_ref();
     if found.iter().all(|one| *one == Found::ByBase) {
         say(&mut lines, &request.checks, &found, &tree, base);
         return Ok(Reading {
@@ -1128,19 +1176,25 @@ pub fn read(
         common: &common,
         tree: &tree,
         root: &root,
-        script: &script,
+        script,
         header: &header,
-        scope: facts.scope.as_deref(),
+        scope: facts.scope.as_ref(),
         at_tree: &at_tree,
         at_base: &at_base,
     };
     records.find(&mut found, listing, &allowed, parts)?;
     say(&mut lines, &request.checks, &found, &tree, base);
+    // A check holds by its base, or by its first record that holds.
+    let holds = |one: &Found| match *one {
+        Found::ByBase => true,
+        Found::Records(ref records) => records.iter().any(|&(_, ref outcome)| outcome.is_ok()),
+        Found::Unscoped | Found::Unbound(_) => false,
+    };
     let missing: Vec<&str> = request
         .checks
         .iter()
         .zip(&found)
-        .filter(|&(_, one)| !held(one))
+        .filter(|&(_, one)| !holds(one))
         .map(|(check, _)| check.as_ref())
         .collect();
     if missing.is_empty() {
@@ -1153,31 +1207,12 @@ pub fn read(
         lines,
         "verdict: no record holds {} on {}, so the job runs them",
         missing.join(" "),
-        short(&tree)
+        Short(tree.as_ref())
     );
     Ok(Reading {
         lines,
         end: End::Runs,
     })
-}
-
-/// Whether the check of `found` holds.
-///
-/// # Specification
-/// trivial.
-///
-/// # Adequacy
-/// - hypothesis: L2 — a check that holds by its base and a check with no
-///   record; either read the other way changes the last line.
-/// - witness: `tests::cli::a_check_with_no_record_runs`
-#[inline]
-fn held(found: &Found) -> bool
-{
-    match *found {
-        Found::ByBase => true,
-        Found::Records(ref records) => records.iter().any(|&(_, ref outcome)| outcome.is_ok()),
-        Found::Unscoped | Found::Unbound(_) => false,
-    }
 }
 
 /// Writes the lines of each of `checks` with what the read found for it.
@@ -1207,8 +1242,8 @@ fn say(
     lines: &mut String,
     checks: &[Check],
     found: &[Found],
-    tree: &str,
-    base: &str,
+    tree: &Commit,
+    base: Option<&Commit>,
 )
 {
     for (check, one) in checks.iter().zip(found) {
@@ -1217,8 +1252,8 @@ fn say(
                 let _written = writeln!(
                     lines,
                     "verdict: {check} holds on {}: its inputs are those of the base {}, which passed, so the check does not run again",
-                    short(tree),
-                    short(base)
+                    Short(tree.as_ref()),
+                    Short(base.map_or("", Commit::as_ref))
                 );
             },
             Found::Unscoped => {
@@ -1240,8 +1275,8 @@ fn say(
                             let _written = writeln!(
                                 lines,
                                 "verdict: {check} holds on {}: the record {} binds this run's key, so the check does not run again",
-                                short(tree),
-                                short(commit)
+                                Short(tree.as_ref()),
+                                Short(commit)
                             );
                             break;
                         },
@@ -1260,7 +1295,7 @@ fn say(
 }
 
 /// Each ref of the remote that the running `listing` names, with its commit,
-/// in the order of the listing.
+/// by the name of the ref.
 ///
 /// # Specification
 /// - requires: `listing` runs `git ls-remote`.
@@ -1287,11 +1322,11 @@ fn say(
 fn listed(
     listing: Running<'_>,
     parts: &Parts,
-) -> Result<Vec<(String, String)>, GateError>
+) -> Result<BTreeMap<String, String>, GateError>
 {
     let ended = listing.end(parts)?;
     if !ended.status.success() {
-        return Ok(Vec::new());
+        return Ok(BTreeMap::new());
     }
     Ok(String::from_utf8_lossy(ended.output.as_ref())
         .lines()
@@ -1313,15 +1348,15 @@ struct Records<'run>
     /// The common part of the keys.
     common: &'run Common,
     /// The tree of the run.
-    tree: &'run str,
+    tree: &'run Commit,
     /// The root of the worktree.
     root: &'run Path,
     /// The scope script.
-    script: &'run str,
+    script: Program<'run>,
     /// The header of the token for the remote, or the empty text.
     header: &'run str,
     /// The scope of the run, or none when it did not read.
-    scope: Option<&'run str>,
+    scope: Option<&'run Scope>,
     /// The digest of each check of inputs at the tree.
     at_tree: &'run BTreeMap<String, String>,
     /// The digest of each check of inputs at the base.
@@ -1368,7 +1403,7 @@ impl Records<'_>
         parts: &Parts,
     ) -> Result<(), GateError>
     {
-        let base = self.request.base.as_ref().map_or("", Commit::as_ref);
+        let base = self.request.base.as_ref();
         // The key and the ref of each check of inputs.
         let mut keys: BTreeMap<usize, (Key, String)> = BTreeMap::new();
         for (place, (check, row)) in self.request.checks.iter().zip(self.rows).enumerate() {
@@ -1379,7 +1414,7 @@ impl Records<'_>
             if *one == Found::ByBase {
                 continue;
             }
-            if !row.digested() {
+            if row.form() == Form::Tree {
                 continue;
             }
             let Some(scope) = self.scope
@@ -1401,29 +1436,21 @@ impl Records<'_>
         let listing = listed(listing, parts)?;
         // The refs that stand, each one time, and one fetch for all of them.
         let mut wanted = BTreeSet::new();
-        for (place, one) in found.iter().enumerate() {
+        for (place, (one, check)) in found.iter().zip(&self.request.checks).enumerate() {
             if let Some(&(_, ref name)) = keys.get(&place) {
-                if listing.iter().any(|&(ref listed, _)| listed == name) {
+                if listing.contains_key(name) {
                     let _new = wanted.insert(name.clone());
                 }
             }
             else if *one != Found::ByBase && *one != Found::Unscoped {
-                let prefix = self.prefix(place);
-                for &(ref listed, _) in &listing {
-                    if listed.starts_with(&prefix) {
-                        let _new = wanted.insert(listed.clone());
-                    }
+                for (name, _) in self.under(check, &listing) {
+                    let _new = wanted.insert(name.clone());
                 }
             }
         }
         let fetched = self.fetch(&wanted, parts)?;
-        let oid = |name: &str| {
-            listing
-                .iter()
-                .find(|&&(ref listed, _)| listed == name)
-                .map_or_else(String::new, |&(_, ref commit)| commit.clone())
-        };
-        let objects = if fetched && !wanted.is_empty() {
+        let oid = |name: &str| listing.get(name).cloned().unwrap_or_default();
+        let objects = if fetched == Fetch::Done && !wanted.is_empty() {
             let mut input = String::new();
             for name in &wanted {
                 let _written = writeln!(input, "{}", oid(name));
@@ -1448,7 +1475,7 @@ impl Records<'_>
             else {
                 continue;
             };
-            *one = if fetched && wanted.contains(name) {
+            *one = if fetched == Fetch::Done && wanted.contains(name) {
                 let commit = oid(name);
                 Found::Records(vec![(
                     name.clone(),
@@ -1485,8 +1512,8 @@ impl Records<'_>
         Ok(())
     }
 
-    /// The prefix of the refs of the records of the check at `place` on the
-    /// tree.
+    /// The refs of `listing` under the prefix of the records of `check` on
+    /// the tree, with their commits, by name.
     ///
     /// # Specification
     /// trivial.
@@ -1496,24 +1523,24 @@ impl Records<'_>
     ///   check takes no record.
     /// - witness: `tests::cli::a_record_of_the_tree_holds_against_its_own_base`
     #[inline]
-    fn prefix(
+    fn under<'list>(
         &self,
-        place: usize,
-    ) -> String
+        check: &Check,
+        listing: &'list BTreeMap<String, String>,
+    ) -> Vec<(&'list String, &'list String)>
     {
-        let check = self
-            .request
-            .checks
-            .get(place)
-            .map_or_else(String::new, segment);
-        format!("refs/verdicts/{}/{check}/", self.tree)
+        let prefix = format!("refs/verdicts/{}/{}/", self.tree, segment(check));
+        listing
+            .range::<str, _>((Bound::Included(prefix.as_str()), Bound::Unbounded))
+            .take_while(|&(name, _)| name.starts_with(&prefix))
+            .collect()
     }
 
     /// Fetches each ref of `wanted` from the remote to the same ref here.
     ///
     /// # Specification
     /// - requires: the remote lists each ref of `wanted`.
-    /// - ensures: `true` when the fetch passes or no ref is wanted.
+    /// - ensures: [`Fetch::Done`] when the fetch passes or no ref is wanted.
     /// - provides: the one fetch of a read.
     /// - fails: [`GateError::Command`] when git does not start.
     /// - panics: none.
@@ -1534,33 +1561,40 @@ impl Records<'_>
         &self,
         wanted: &BTreeSet<String>,
         parts: &Parts,
-    ) -> Result<bool, GateError>
+    ) -> Result<Fetch, GateError>
     {
         if wanted.is_empty() {
-            return Ok(true);
+            return Ok(Fetch::Done);
         }
         let specs: Vec<String> = wanted
             .iter()
             .map(|name| format!("+{name}:{name}"))
             .collect();
-        let mut verb = vec![
+        let mut words: Vec<&str> = Vec::with_capacity(specs.len().saturating_add(6));
+        if !self.header.is_empty() {
+            words.extend(["-c", self.header]);
+        }
+        words.extend([
             "fetch",
             "--quiet",
             "--no-tags",
             self.request.remote.as_str(),
-        ];
-        verb.extend(specs.iter().map(String::as_str));
-        let words = remote_words(self.header, &verb);
-        Ok(Program {
+        ]);
+        words.extend(specs.iter().map(String::as_str));
+        let ended = Program {
             part: Part::from("git fetch"),
             name: "git",
             arguments: &words,
             input: "",
         }
         .start(self.root)?
-        .end(parts)?
-        .status
-        .success())
+        .end(parts)?;
+        Ok(if ended.status.success() {
+            Fetch::Done
+        }
+        else {
+            Fetch::Failed
+        })
     }
 
     /// The records of each check of the tree: the base that each names, the
@@ -1568,7 +1602,7 @@ impl Records<'_>
     ///
     /// # Specification
     /// - requires: `listing` and `objects` are the listing and the objects of
-    ///   the read, and `fetched` tells whether the fetch passed.
+    ///   the read, and `fetched` tells how the fetch ended.
     /// - ensures: for each check of the tree, each record of the listing under
     ///   its prefix, with `Ok` when the record names a base that the trunk
     ///   holds, the scope against that base reads, the hash of the key against
@@ -1596,30 +1630,31 @@ impl Records<'_>
     fn tree_records(
         &self,
         found: &mut [Found],
-        listing: &[(String, String)],
-        fetched: bool,
+        listing: &BTreeMap<String, String>,
+        fetched: Fetch,
         objects: &BTreeMap<String, Object>,
         parts: &Parts,
     ) -> Result<(), GateError>
     {
         // The base that each record names, or the reason that it names none.
-        let mut named: Vec<(usize, String, String, Result<String, String>)> = Vec::new();
-        for (place, (one, row)) in found.iter().zip(self.rows).enumerate() {
-            if row.digested() || *one == Found::ByBase {
+        let mut named: Vec<(usize, String, String, Result<Commit, String>)> = Vec::new();
+        for (place, ((one, row), check)) in found
+            .iter()
+            .zip(self.rows)
+            .zip(&self.request.checks)
+            .enumerate()
+        {
+            if row.form() == Form::Inputs || *one == Found::ByBase {
                 continue;
             }
-            let prefix = self.prefix(place);
-            for &(ref name, ref commit) in listing {
-                if !name.starts_with(&prefix) {
-                    continue;
-                }
-                let base = if fetched {
+            for (name, commit) in self.under(check, listing) {
+                let base = if fetched == Fetch::Done {
                     named_base(objects.get(commit)).and_then(|base| {
                         if base.is_empty() {
                             Err("it names no base".to_owned())
                         }
                         else {
-                            Ok(base)
+                            Ok(Commit::from(base.as_str()))
                         }
                     })
                 }
@@ -1629,39 +1664,45 @@ impl Records<'_>
                 named.push((place, name.clone(), commit.clone(), base));
             }
         }
-        let bases: BTreeSet<&str> = named
+        let bases: BTreeSet<Commit> = named
             .iter()
-            .filter_map(|&(_, _, _, ref base)| base.as_deref().ok())
+            .filter_map(|&(_, _, _, ref base)| base.as_ref().ok().cloned())
             .collect();
-        let order: Vec<Option<&str>> = if self.request.scope.is_some() {
+        let order: Vec<Option<&Commit>> = if self.request.scope.is_some() {
             Vec::new()
         }
         else {
-            bases.iter().copied().map(Some).collect()
+            bases.iter().map(Some).collect()
         };
         let running = start_scopes(self.script, self.root, &order)?;
         let trunk = trunk_holds(self.request, self.root, &bases, parts)?;
-        let scopes: BTreeMap<&str, Option<String>> = match self.request.scope {
+        let scopes: BTreeMap<&Commit, Option<Scope>> = match self.request.scope {
             Some(ref given) => bases
                 .iter()
-                .map(|&base| (base, Some(AsRef::<str>::as_ref(given).to_owned())))
+                .map(|base| (base, Some(given.clone())))
                 .collect(),
             None => bases
                 .iter()
-                .copied()
-                .zip(finish_scopes(running, parts)?)
+                .zip(
+                    finish_scopes(running, parts)?
+                        .into_iter()
+                        .map(|read| read.map(|text| Scope::from(text.as_str()))),
+                )
                 .collect(),
         };
         for &(place, ref name, ref commit, ref base) in &named {
             let outcome = base.clone().and_then(|base| {
-                if !trunk.get(&base).copied().unwrap_or_default() {
-                    return Err(format!("the trunk does not hold its base {}", short(&base)));
+                if trunk.get(&base) != Some(&Trunk::Holds) {
+                    return Err(format!(
+                        "the trunk does not hold its base {}",
+                        Short(base.as_ref())
+                    ));
                 }
-                let Some(&Some(ref scope)) = scopes.get(base.as_str())
+                let Some(&Some(ref scope)) = scopes.get(&base)
                 else {
                     return Err(format!(
                         "the scope against its base {} did not read",
-                        short(&base)
+                        Short(base.as_ref())
                     ));
                 };
                 let (Some(check), Some(row)) =
@@ -1671,7 +1712,7 @@ impl Records<'_>
                 };
                 let key = self
                     .common
-                    .line(check, row, self.tree, &base, scope, None)
+                    .line(check, row, self.tree, Some(&base), scope, None)
                     .map_err(|refusal| refusal.to_string())?;
                 let own = hash(&key);
                 if name.rsplit('/').next() != Some(own.as_str()) {
@@ -1690,7 +1731,7 @@ impl Records<'_>
 #[cfg(test)]
 mod tests
 {
-    use super::base64;
+    use super::Base64;
 
     #[test]
     fn base64_writes_each_length_of_a_last_group()
@@ -1707,7 +1748,11 @@ mod tests
             ("x-access-token:case", "eC1hY2Nlc3MtdG9rZW46Y2FzZQ=="),
         ];
         for (text, letters) in vectors {
-            assert_eq!(base64(text.as_bytes()), letters, "the base64 of {text:?}");
+            assert_eq!(
+                Base64(text.as_bytes()).to_string(),
+                letters,
+                "the base64 of {text:?}"
+            );
         }
     }
 }

@@ -21,7 +21,7 @@ The workflow crates' one boundary to GitHub's `gh`: the runner every invocation 
 
 - `run` starts a command with standard output and standard error piped, feeds it a `Feed::Body` when given one, and returns its standard output read as UTF-8 with any invalid sequence replaced.
 - `read` runs a read-only invocation as `run` does. If GitHub answers with a server error (`HTTP 5xx` on standard error), it waits `READ_PAUSE` and runs it again, for at most three attempts. Any other failure is refused after the first attempt. A write keeps `run`, since running it again could repeat it.
-- `Site` declares one call site of `gh` on one line, as `const NAME: Site = Site::new("<scope>", "<verb>");`. `.config/gh/sites.awk` reads each such line of a Rust file of a workflow crate, and `calls.toml` prices it. `Site::words` gives the words of the verb as the first arguments of `gh`, so a call has the verb of its line.
+- `Site` declares one call site of `gh` on one line, as `const NAME: Site = Site::new("<scope>", "<verb>");`. `.config/gh/sites.awk` reads each such line of a Rust file of a workflow crate, and `calls.toml` prices it. `Site::words` gives the words of the verb as the first arguments of `gh`, so a call has the verb of its line. Each word is a `Word`, whose text comes from the line alone.
 - `GitHubError::Unstarted` names an invocation that did not start, could not be fed, or could not be waited for; `GitHubError::Exited` one that exited unsuccessfully, with its status and its standard error; `GitHubError::Unread` one whose answer the caller could not parse.
 - `Invocation` spells a command as a shell does: the program and its arguments, separated by spaces.
 

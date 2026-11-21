@@ -20,6 +20,7 @@ use crate::run::Ground;
 use crate::run::Request;
 use crate::run::lists_on;
 use crate::tables::CheckRow;
+use crate::tables::Form;
 use crate::tables::Tables;
 
 /// The names of the variables whose values Cargo reads for the flags, the
@@ -427,8 +428,8 @@ pub struct Digests<'run>
 
 impl Common
 {
-    /// The key of `check` with its `row`, on `tree`, against `base`, over
-    /// `scope`.
+    /// The key of `check` with its `row`, on `tree`, against `base` or no
+    /// base, over `scope`.
     ///
     /// # Specification
     /// - requires: `digests` holds the digests of the check when its row is a
@@ -464,14 +465,14 @@ impl Common
         &self,
         check: &Check,
         row: &CheckRow,
-        tree: &str,
-        base: &str,
-        scope: &str,
+        tree: &Commit,
+        base: Option<&Commit>,
+        scope: &Scope,
         digests: Option<Digests<'_>>,
     ) -> Result<Key, GateError>
     {
         let line = Line {
-            base: digests.is_none().then_some(base),
+            base: digests.is_none().then_some(base.map_or("", Commit::as_ref)),
             base_inputs: digests.map(|held| if row.base { held.base } else { "" }),
             check: check.as_ref(),
             compiler: &self.compiler,
@@ -480,10 +481,10 @@ impl Common
             inputs: digests.map(|held| held.tree),
             policy: &self.policy,
             profile: &row.profile,
-            scope,
+            scope: scope.as_ref(),
             target: &self.target,
             target_features: &self.target_features,
-            tree: digests.is_none().then_some(tree),
+            tree: digests.is_none().then_some(tree.as_ref()),
         };
         serde_json::to_string(&line)
             .map(Key)
@@ -576,8 +577,8 @@ pub fn rows(
 /// The digest of each check at the first commit of a run, and at its second.
 ///
 /// # Specification
-/// - requires: `listed` stands in the order of the commits and then of the
-///   checks, and `count` is the count of the checks.
+/// - requires: `listed` stands in the order of the commits and then of
+///   `checks`.
 /// - ensures: the digest of each check at the first commit, and its digest at
 ///   the second commit when the run holds one.
 /// - provides: the digests that a key binds and that a read compares.
@@ -596,102 +597,97 @@ pub fn rows(
 #[must_use]
 pub fn split(
     listed: &[Listed],
-    count: usize,
+    checks: &[Check],
 ) -> (BTreeMap<String, String>, BTreeMap<String, String>)
 {
-    let mut at_tree = BTreeMap::new();
-    let mut at_base = BTreeMap::new();
-    for (place, item) in listed.iter().enumerate() {
-        let digests = if place < count {
-            &mut at_tree
+    let (at_tree, at_base) = listed.split_at(checks.len().min(listed.len()));
+    let digests = |part: &[Listed]| {
+        part.iter()
+            .map(|item| (item.check().to_string(), item.list().digest().to_string()))
+            .collect()
+    };
+    (digests(at_tree), digests(at_base))
+}
+
+/// The three programs of the common part of a run's keys: the compiler, the
+/// task of the policy, and the grep for the target features of a tree.
+#[derive(Debug)]
+pub struct Shared<'run>
+{
+    /// The compiler: `GATE_VERDICT_RUSTC`, or `rustc`.
+    compiler: String,
+    /// The words of the grep for the target features that a source of the
+    /// tree reads.
+    features: [&'run str; 8],
+}
+
+impl<'run> Shared<'run>
+{
+    /// The programs of the common part on `tree`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each case of the key names a fake compiler, and a
+    ///   tree that reads three features; `rustc` in its place, or a grep of
+    ///   another tree, changes the asserted line.
+    /// - witness: `tests::cli::a_key_is_the_line_of_the_script`
+    /// - witness: `tests::cli::a_key_holds_each_flag_and_each_feature_of_the_host`
+    #[inline]
+    #[must_use]
+    pub fn new(tree: &'run Commit) -> Self
+    {
+        Self {
+            compiler: std::env::var("GATE_VERDICT_RUSTC")
+                .unwrap_or_else(|_absent| "rustc".to_owned()),
+            features: [
+                "grep",
+                "-h",
+                "-o",
+                "-E",
+                "target_feature *= *\"[^\"]+\"",
+                tree.as_ref(),
+                "--",
+                ":(top)crates/*.rs",
+            ],
         }
-        else {
-            &mut at_base
-        };
-        let _first = digests.insert(item.check().to_string(), item.list().digest().to_string());
     }
-    (at_tree, at_base)
-}
 
-/// The words of the grep for the target features that a source of `tree`
-/// reads.
-///
-/// # Specification
-/// trivial.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a tree that reads three features; a grep of another tree,
-///   or of another path, changes the asserted features.
-/// - witness: `tests::cli::a_key_holds_each_flag_and_each_feature_of_the_host`
-#[inline]
-#[must_use]
-pub const fn feature_words(tree: &str) -> [&str; 8]
-{
-    [
-        "grep",
-        "-h",
-        "-o",
-        "-E",
-        "target_feature *= *\"[^\"]+\"",
-        tree,
-        "--",
-        ":(top)crates/*.rs",
-    ]
-}
-
-/// The compiler of a run: `GATE_VERDICT_RUSTC`, or `rustc`.
-///
-/// # Specification
-/// trivial.
-///
-/// # Adequacy
-/// - hypothesis: L2 — each case of the key names a fake compiler; `rustc` in
-///   its place changes the commit of each asserted line.
-/// - witness: `tests::cli::a_key_is_the_line_of_the_script`
-#[inline]
-#[must_use]
-pub fn compiler() -> String
-{
-    std::env::var("GATE_VERDICT_RUSTC").unwrap_or_else(|_absent| "rustc".to_owned())
-}
-
-/// The three programs of the common part: the compiler, the task of the
-/// policy, and the grep of `words`.
-///
-/// # Specification
-/// trivial.
-///
-/// # Adequacy
-/// - hypothesis: L2 — the lines of the script; a program with another name
-///   changes the commit, the policy or the features of each asserted line.
-/// - witness: `tests::cli::a_key_is_the_line_of_the_script`
-#[inline]
-#[must_use]
-pub fn shared<'run>(
-    compiler: &'run str,
-    words: &'run [&'run str],
-) -> [Program<'run>; 3]
-{
-    [
-        Program {
-            part: Part::from("rustc -vV"),
-            name: compiler,
-            arguments: &["-vV"],
-            input: "",
-        },
-        Program {
-            part: Part::from("mise run workflow:revision"),
-            name: "mise",
-            arguments: &["run", "--quiet", "workflow:revision"],
-            input: "",
-        },
-        Program {
-            part: Part::from("git grep (target features)"),
-            name: "git",
-            arguments: words,
-            input: "",
-        },
-    ]
+    /// The compiler, the task of the policy and the grep, in that order.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the lines of the script; a program with another name
+    ///   changes the commit, the policy or the features of each asserted line.
+    /// - witness: `tests::cli::a_key_is_the_line_of_the_script`
+    #[inline]
+    #[must_use]
+    pub fn programs(&self) -> [Program<'_>; 3]
+    {
+        [
+            Program {
+                part: Part::from("rustc -vV"),
+                name: &self.compiler,
+                arguments: &["-vV"],
+                input: "",
+            },
+            Program {
+                part: Part::from("mise run workflow:revision"),
+                name: "mise",
+                arguments: &["run", "--quiet", "workflow:revision"],
+                input: "",
+            },
+            Program {
+                part: Part::from("git grep (target features)"),
+                name: "git",
+                arguments: &self.features,
+                input: "",
+            },
+        ]
+    }
 }
 
 /// The key of each check of `request`, in the order of its checks.
@@ -739,7 +735,10 @@ pub fn keys(
         Some(ref tree) => tree.clone(),
         None => head_tree(parts)?,
     };
-    let base = request.base.as_ref().map_or("", Commit::as_ref);
+    let base = request
+        .base
+        .as_ref()
+        .filter(|given| !AsRef::<str>::as_ref(*given).is_empty());
     let mut asking = Request {
         commits: vec![tree.clone()],
         checks: Vec::new(),
@@ -749,17 +748,18 @@ pub fn keys(
     let ground = Ground::read(&asking, parts)?;
     let rows = rows(&ground.tables, &request.checks)?;
     for (check, row) in request.checks.iter().zip(&rows) {
-        if row.digested() {
+        if row.form() == Form::Inputs {
             asking.checks.push(check.clone());
-            if row.base && !base.is_empty() && asking.commits.len() == 1 {
-                asking.commits.push(Commit::from(base));
+            if let Some(base) = base
+                && row.base
+                && asking.commits.len() == 1
+            {
+                asking.commits.push(base.clone());
             }
         }
     }
-    let named = compiler();
-    let tree = tree.to_string();
-    let words = feature_words(&tree);
-    let [rustc, policy, features] = shared(&named, &words);
+    let shared = Shared::new(&tree);
+    let [rustc, policy, features] = shared.programs();
     // The three programs start before the lists, so they run at the same
     // time as the programs of the lists.
     let asked = Asked::start(&ground.root, &rustc, &policy, &features)?;
@@ -770,7 +770,7 @@ pub fn keys(
         lists_on(ground.clone(), &asking, parts)?
     };
     let common = Common::finish(asked, &ground.root, &rustc, parts)?;
-    let (at_tree, at_base) = split(&listed, asking.checks.len());
+    let (at_tree, at_base) = split(&listed, &asking.checks);
     request
         .checks
         .iter()
@@ -780,7 +780,7 @@ pub fn keys(
                 tree: held,
                 base: at_base.get(check.as_ref()).map_or("", String::as_str),
             });
-            common.line(check, row, &tree, base, request.scope.as_ref(), digests)
+            common.line(check, row, &tree, base, &request.scope, digests)
         })
         .collect()
 }

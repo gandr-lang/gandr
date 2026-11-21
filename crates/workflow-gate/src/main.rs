@@ -140,21 +140,6 @@ enum Verdict
     },
 }
 
-/// The value of the variable `name` when it is set and not empty.
-///
-/// # Specification
-/// trivial.
-///
-/// # Adequacy
-/// - hypothesis: L2 — a key with an empty `GATE_BASE` binds the empty base; an
-///   empty variable read as a base fetches it and refuses the run.
-/// - witness: `tests::cli::a_key_is_the_line_of_the_script`
-#[inline]
-fn given(name: &str) -> Option<String>
-{
-    std::env::var(name).ok().filter(|value| !value.is_empty())
-}
-
 /// Runs the command, prints its lines and gives the exit code.
 ///
 /// # Specification
@@ -184,6 +169,9 @@ fn main() -> ExitCode
     let start = Instant::now();
     let cli = <Cli as clap::Parser>::parse();
     let parts = Parts::default();
+    // A variable that is set and not empty: an empty `GATE_BASE` binds the
+    // empty base, as the script read it.
+    let given = |name: &str| std::env::var(name).ok().filter(|value| !value.is_empty());
     let result = match cli.command {
         Top::Inputs(Inputs::List {
             commit,

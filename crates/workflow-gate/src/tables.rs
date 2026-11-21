@@ -187,8 +187,8 @@ pub struct CheckRow
 
 impl CheckRow
 {
-    /// Whether the record of the check binds the digest of its inputs in
-    /// place of the tree: its row holds `inputs`, or it is a row of the table.
+    /// What the record of the check binds: the digest of its inputs, when its
+    /// row holds `inputs` or it is a row of the table, or else the tree.
     ///
     /// # Specification
     /// trivial.
@@ -200,10 +200,25 @@ impl CheckRow
     /// - witness: `tests::cli::a_key_is_the_line_of_the_script`
     #[inline]
     #[must_use]
-    pub const fn digested(&self) -> bool
+    pub const fn form(&self) -> Form
     {
-        self.inputs.is_some() || self.table
+        if self.inputs.is_some() || self.table {
+            Form::Inputs
+        }
+        else {
+            Form::Tree
+        }
     }
+}
+
+/// What the record of a check binds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Form
+{
+    /// The digest of the inputs of the check.
+    Inputs,
+    /// The tree of the run.
+    Tree,
 }
 
 /// `verdicts.json`: the checks that hold a record of a verdict, and the

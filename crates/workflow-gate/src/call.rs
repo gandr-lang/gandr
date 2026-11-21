@@ -251,6 +251,16 @@ pub struct Program<'call>
     pub input: &'call str,
 }
 
+/// A variable that a program reads in its environment.
+#[derive(Clone, Copy, Debug)]
+pub struct Variable<'call>
+{
+    /// The name of the variable.
+    pub name: &'call str,
+    /// Its value.
+    pub value: &'call str,
+}
+
 /// A program that runs, from its start to its answer.
 #[derive(Debug)]
 pub struct Running<'call>
@@ -322,13 +332,13 @@ impl<'call> Program<'call>
         self.start_with(cwd, &[])
     }
 
-    /// Starts the program in `cwd` with each variable of `vars` in its
+    /// Starts the program in `cwd` with each of `variables` in its
     /// environment, and does not wait for it.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: as [`Program::start`], and the program reads each name of
-    ///   `vars` with its value, over the environment of this process.
+    ///   `variables` with its value, over the environment of this process.
     /// - provides: the scope of a record against its own base, which the scope
     ///   script reads from `GATE_BASE`.
     /// - fails: [`GateError::Command`] with the program and its arguments when
@@ -351,13 +361,17 @@ impl<'call> Program<'call>
     pub fn start_with(
         self,
         cwd: &Path,
-        vars: &[(&str, &str)],
+        variables: &[Variable<'call>],
     ) -> Result<Running<'call>, GateError>
     {
         let start = Instant::now();
         let child = Command::new(self.name)
             .args(self.arguments)
-            .envs(vars.iter().copied())
+            .envs(
+                variables
+                    .iter()
+                    .map(|variable| (variable.name, variable.value)),
+            )
             .current_dir(cwd)
             .stdin(if self.input.is_empty() {
                 Stdio::null()

@@ -63,6 +63,13 @@ impl Site
     /// - witness: `tests::a_site_gives_the_words_of_its_verb`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            primitive_signature,
+            reason = "the declared line of a site names its scope and its verb as two literals in a `const`, and a `const` takes no `From`"
+        )
+    )]
     pub const fn new(
         scope: &'static str,
         verb: &'static str,
@@ -82,9 +89,9 @@ impl Site
     /// - witness: `tests::a_site_gives_the_words_of_its_verb`
     #[inline]
     #[must_use]
-    pub const fn scope(&self) -> &'static str
+    pub const fn scope(&self) -> Word
     {
-        self.scope
+        Word(self.scope)
     }
 
     /// The words of the verb as the first arguments of `gh`: `api` and
@@ -109,14 +116,41 @@ impl Site
     /// - witness: `tests::a_site_gives_the_words_of_its_verb`
     #[inline]
     #[must_use]
-    pub fn words(&self) -> Vec<&'static str>
+    pub fn words(&self) -> Vec<Word>
     {
         match self.verb.split_once(' ') {
             Some(("api", method)) if method.bytes().all(|byte| byte.is_ascii_uppercase()) => {
-                vec!["api", "--method", method]
+                vec![Word("api"), Word("--method"), Word(method)]
             },
-            _ => self.verb.split(' ').collect(),
+            _ => self.verb.split(' ').map(Word).collect(),
         }
+    }
+}
+
+/// One word of a declared site: its scope, or one word of the arguments of its
+/// verb.
+///
+/// # Specification
+/// - provides: a word that comes from a declared line and no other text.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Word(&'static str);
+
+impl From<Word> for &'static str
+{
+    /// The text of `word`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the words of a REST site; a text that is not the
+    ///   word's changes the asserted words.
+    /// - witness: `tests::a_site_gives_the_words_of_its_verb`
+    #[inline]
+    fn from(word: Word) -> Self
+    {
+        word.0
     }
 }
 
@@ -342,13 +376,14 @@ mod tests
     #[test]
     fn a_site_gives_the_words_of_its_verb()
     {
+        let text = |site: Site| -> Vec<&'static str> {
+            site.words().into_iter().map(<&str>::from).collect()
+        };
         let rest = Site::new("signers", "api GET");
-        assert_eq!(rest.scope(), "signers");
-        assert_eq!(rest.words(), ["api", "--method", "GET"]);
-        assert_eq!(Site::new("graph", "api graphql").words(), [
-            "api", "graphql"
-        ]);
-        assert_eq!(Site::new("view", "pr view").words(), ["pr", "view"]);
+        assert_eq!(<&str>::from(rest.scope()), "signers");
+        assert_eq!(text(rest), ["api", "--method", "GET"]);
+        assert_eq!(text(Site::new("graph", "api graphql")), ["api", "graphql"]);
+        assert_eq!(text(Site::new("view", "pr view")), ["pr", "view"]);
     }
 
     /// An emptied counter file of its own for the test named `$name`.
