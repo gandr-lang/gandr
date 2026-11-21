@@ -1,0 +1,7 @@
+/// `FamilyArgumentClassifier`: a type operator applied to a value where its
+/// static Pi takes a type.
+def twice : Type -> Type = fun (Y) { type(Y * Y) };
+
+@[refuses("FamilyArgumentClassifier")]
+def wrong(p : twice(1)) -> Integer =
+  1
