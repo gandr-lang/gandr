@@ -3183,17 +3183,22 @@ tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = [".config/reserved/cases.bash", ".config/reserved/check.bash .config/nextest.toml crates"]
 
-# The nightly's container jobs (#3208): `.config/nightly/jobs.jq` refuses a
-# job that starts the CI image, restores no build state and so is a step of
-# `reports`, a `reports` step a failure before it would hide, a step after
-# the lane budget, and two jobs that restore one build state at one commit
-# (#6704). Each case in `.config/nightly/cases.json` gives its refusals; then
-# `.github/workflows/nightly-sweeps.yml`'s own jobs, anchors expanded, give none.
-# The night's chain report (#6893): each case in `.config/nightly/chain.json`
-# gives the row that `chain.jq` reads from a build log, or the report and the
-# collector that `chain-night.jq` writes from the rows. Each collector body
-# that a case records passes `body:prose`, as `issue:file` reads it on a
-# runner (#7895).
+# The jobs program checks the container jobs of the night. It refuses a job
+# that starts the CI image and restores no build state. Such a job belongs in
+# `reports`. It also refuses a `reports` step that an earlier failure hides,
+# and a step after the lane budget. It refuses two jobs that restore one build
+# state at one commit.
+# - see: #3208, #6704, .config/nightly/jobs.jq
+#
+# Each case of the jobs gives its refusals. The check expands the anchors of
+# the workflow. Then the jobs of the workflow give no refusal.
+# - see: .config/nightly/cases.json, .github/workflows/nightly-sweeps.yml
+#
+# Each case of the chain report gives the rows that the chain program reads
+# from a build log. Another case gives the report and the collector that the
+# night program writes from the rows. Each collector body that a case records
+# passes `body:prose`, as `issue:file` reads it on a runner.
+# - see: #6893, #7895, .config/nightly/chain.json
 ["check:nightly"]
 description = "The nightly's reporting work runs as one job, each step after a failure still running and the lane budget last, and the chain report reads each recorded log and night as recorded"
 tools.jq = "1.8.1"

@@ -3036,27 +3036,39 @@ findings=$(jq -n --slurpfile rows "$tables/rows.json" '{rows: $rows[0], issues: 
 [[ -z "$findings" ]] || { echo "$findings"; exit 1; }
 {% endraw %}'''
 
-# Nothing private reaches a public issue or pull request body (#2530; the
-# agents' guidance, § Public and private). `body:check [--title <text>]
-# <file>...` reads the private-names list at
-# `$XDG_CONFIG_HOME/gandr-factory/private-names` (`~/.config` by default): one
-# extended regular expression per line, matched without regard to case, `#`
-# lines and blank lines skipped. The list is the owner's and never lives in
-# the tree. Where the file is absent, the check reads the same lines from the
-# value `GANDR_PRIVATE_NAMES`. A runner takes it from the repository secret
-# of that name, in the one step that files (#7895). Each match is printed
-# with its file (or `title`) and line, and the check exits 1. A runner's log
-# is public, so on a runner each match prints its file and line number and
-# none of the line's text. A missing or empty list refuses too, naming its
-# path, never a silent pass. A title that holds a JSON escape `\uXXXX` is
-# refused too (#6496, `.config/issues/title.jq`): a filer that quotes the
-# title for the shell with a JSON encoder sends the escape, and GitHub shows
-# it as text. A comment that closes or declines a unit on a probe passes
-# `--sets-aside <n>` (#6569, `.config/bodies/measured.jq`): for each
-# `## Sources` row of #n whose `saves:` claims a saving, the comment needs a
-# line `measured: <value> by <instrument>`, or it is refused. One GraphQL
-# read takes the body of #n. `pr:open` runs it on the title and the body
-# before it pushes, and `issue:file` before it files.
+# Nothing private reaches the body of a public issue or pull request.
+# - see: #2530, the agents' guidance § Public and private
+#
+# `body:check [--title <text>] <file>...` reads the private-names list. The
+# list holds one extended regular expression on each line. The check matches
+# each one without regard to case, and it skips `#` lines and blank lines. The
+# list is the owner's and never lives in the tree.
+# - see: $XDG_CONFIG_HOME/gandr-factory/private-names, ~/.config by default
+#
+# Where the file is absent, the check reads the same lines from the value
+# `GANDR_PRIVATE_NAMES`. A runner takes that value from the repository secret
+# of the same name, in the one step that files. The log of a runner is public.
+# So on a runner each match prints only its file and its line number.
+# - see: #7895
+#
+# Off a runner, each match prints its file or `title` and its line. The check
+# then exits 1. A missing or empty list refuses too, and the refusal names its
+# path.
+#
+# The check refuses a title that holds a JSON escape `\uXXXX`. A filer that
+# quotes the title for the shell with a JSON encoder sends the escape. GitHub
+# then shows it as text.
+# - see: #6496, .config/issues/title.jq
+#
+# A comment that closes or declines a unit on a probe passes `--sets-aside <n>`.
+# Each `## Sources` row of #n can claim a saving in its `saves:` cell. For each
+# such row, the comment needs a line `measured: <value> by <instrument>`. The
+# check refuses a comment without it. The check reads the body of #n in one
+# GraphQL query.
+# - see: #6569, .config/bodies/measured.jq
+#
+# `pr:open` runs the check on the title and the body before it pushes, and
+# `issue:file` runs it before it files.
 ["body:check"]
 description = "Refuse a body or a title naming anything on the private-names list, a title holding a JSON escape, and a probe comment with no measured saving"
 usage = '''

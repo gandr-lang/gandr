@@ -820,7 +820,8 @@ jobs:
           name: chain-log-riscv64
           path: ${{ runner.temp }}/chain/chain-log-riscv64
       # A step that opens a collector reads the private-names list from the
-      # secret, in its own environment alone (#7895).
+      # secret, in its own environment alone.
+      # - see: #7895
       - name: report the chain of each head
         if: *not-cancelled
         env:
