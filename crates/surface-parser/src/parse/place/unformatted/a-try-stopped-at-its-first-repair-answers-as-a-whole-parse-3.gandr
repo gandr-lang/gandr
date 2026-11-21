@@ -1,0 +1,5 @@
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  rule S(P(x) <=> x;
+}
