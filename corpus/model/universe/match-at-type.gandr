@@ -1,0 +1,35 @@
+//! This fixture writes a `match` in a type's place.
+//!
+//! The checker expands a call in a type, and the printer then writes the code
+//! of the decode as a `match`. So the reader takes that `match` back, as it
+//! takes a call.
+//!
+//! The type is the decode of the code that the match returns. A match on a
+//! constructor reduces to the type that its arm returns. A match on a variable
+//! stays stuck, and its decode stays with it. Each arm returns its code with
+//! `pure`. A `return` needs a body, and a type's place is no body.
+//!
+//! - see: #7564
+
+/// A flag that selects a type.
+data Flag : Type where
+  /// This flag selects `Integer`.
+  | Yes : Flag
+  /// This flag selects `Unit`.
+  | No : Flag
+
+/// The `flagged` function takes a value whose type is a match on the flag.
+def flagged(f : Flag, x : match f -> -F Type { | Yes => pure Integer | No => pure Unit }) -> Unit =
+  *{}
+
+/// At `Yes` the match reduces to `Integer`, so an integer is the argument.
+def atYes() -> Unit =
+  flagged Yes 7
+
+/// The `keptStuck` function returns its argument at the stuck match, which is
+/// also its result type.
+def keptStuck(
+  f : Flag,
+  x : match f -> -F Type { | Yes => pure Integer | No => pure Unit }
+) -> match f -> -F Type { | Yes => pure Integer | No => pure Unit } =
+  x

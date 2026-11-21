@@ -1,0 +1,4 @@
+data Empty : Type where {}
+def aliased(x : Empty) -> Integer = match x {};
+def bare(x : Empty) -> Integer = match x {};
+def stated(x : Empty) -> Integer = match x -> -F Integer {};

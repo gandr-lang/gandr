@@ -1,0 +1,2 @@
+import "./member.gandr";
+def far : String = Cancel.notes;
