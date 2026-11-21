@@ -1,0 +1,8 @@
+command: mise run check:witnesses
+issue: #5469
+before: bad9a8f5b8
+exit: 1
+crates/kernel-core/src/replay.rs:3866: unresolved-witness [gandr-kernel-core] `corpus/model/desc/rule-answers-a-stuck-call.gandr`: no target of this crate runs the path; it is absent or renamed
+adequacy witness resolution (G0): 4281 unresolved obligations
+after: e0be3c13e5
+exit: 0

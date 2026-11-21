@@ -1,0 +1,7 @@
+data Bit : Type where { | Low : Bit | High : Bit }
+module M where {
+  type Three = Path[.A = Integer](3, 3);
+  type Lowered = Path[.A = Bit](Low, Low);
+  def three : Three ;
+  def three = Path.here 3;
+}

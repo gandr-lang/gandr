@@ -1,0 +1,38 @@
+// A cut commits a choice to its left branch.
+//
+// The command sort carries an end grade. `bot` marks a computation that cuts.
+// `top` marks a computation that fails.
+//
+// The command face reads the law on operations.
+// A nested call reads the law on terms. Each operation carries the grade that
+// its sort fixes. A call with incompatible argument grades is ill sorted.
+//
+// - see: #640
+/// `cutLeft` chooses a cut-grade left branch over a failure.
+@[normalizes("orBot(cut, fail) ~> cut")]
+theory GradedCut where
+  sort Grade : Type;
+  sort M(g : Grade) : Type;
+
+  oper bot : Grade;
+  oper top : Grade;
+  oper cut : M bot;
+  oper fail : M top;
+  oper orBot : (x : M bot, y : M e) --> M bot;
+
+  rule cutLeft : orBot x y ==> x;
+
+/// The outer `cutLeft` law chooses the nested inner cut. The inner choice has
+/// the cut grade, so it stands as the left branch of the outer choice.
+@[normalizes("orBot(orBot(cut, fail), fail) ~> cut")]
+theory NestedCut where
+  sort Grade : Type;
+  sort M(g : Grade) : Type;
+
+  oper bot : Grade;
+  oper top : Grade;
+  oper cut : M bot;
+  oper fail : M top;
+  oper orBot : (x : M bot, y : M e) --> M bot;
+
+  rule cutLeft : orBot x y ==> x;

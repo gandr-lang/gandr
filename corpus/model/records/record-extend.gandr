@@ -1,0 +1,17 @@
+// This source tests record updates that add a field.
+//
+// An update at `b` gives `single` two fields.
+//
+// The stated types check the extended records.
+//
+// - see: `pathological/records/record-update-stale-type.gandr` — `stale`
+
+/// `single` has field `a`.
+def single = *{.a = 1};
+
+/// `pair` adds `b` with its stated result type.
+def pair : *{a : Integer, b : Integer} = *{single | .b = 2};
+
+/// `grown` returns a record that adds `b`.
+@[runs("*{.a = 1, .b = 2}")]
+def grown() -> *{a : Integer, b : Integer} = *{single | .b = 2};

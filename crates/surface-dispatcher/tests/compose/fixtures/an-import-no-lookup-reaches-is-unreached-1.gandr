@@ -1,0 +1,2 @@
+pub def eight : Integer;
+def eight = 8;
