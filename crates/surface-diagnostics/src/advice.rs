@@ -1,0 +1,1730 @@
+//! What a reader does about a refusal: the third part of the procedural form.
+//!
+//! # A refusal reads as a procedure
+//!
+//! A diagnostic states what is wrong in its message, where in its primary
+//! label, and what to do in its help: one imperative sentence, the technical
+//! vocabulary unrestricted. [`advice`] writes the help, one arm per refusal
+//! name, from the refusal alone. A face shows it as the diagnostic's `help:`
+//! line. A refusal tracked by an issue already ends with the issue that tracks
+//! it.
+//!
+//! A refusal whose name has no help yet is [`help::Absent::Unworded`]: the
+//! names are worded most-seen first, ten at a time, and the prose check's
+//! ledger holds each unworded golden until its name is worded.
+//!
+//! The alternative was a help slot on each producer's refusal, which would put
+//! a reader's advice beside the producer's own wording, where no face reads
+//! it. Reversal: a producer whose refusal alone cannot word the help, because
+//! the advice needs a fact the diagnostic does not hold, moves that name's
+//! help to the producer.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: the
+//!   directed-univalence design (§ The surface family) — `NotATranslation`'s
+//!   help declares the flow its `via` names.
+//! - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: the univalence
+//!   design (§ The trust story) — that help names who supplies a translation:
+//!   the importer, declaring the flow, or the source, publishing it.
+//! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation
+//!   ruling (§ compilation-recipe-zero-cost) — a member a flow's codomain lacks
+//!   is one declaration to write, as `SignatureMismatch.Missing`'s help says.
+
+use alloc::format;
+use alloc::string::String;
+
+use gandr_core_checker::CheckRefusalOf;
+use gandr_core_checker::EndpointMiss;
+use gandr_core_checker::ExpectedShape;
+use gandr_core_checker::Naming;
+use gandr_core_checker::UnadmittedFormer;
+use gandr_core_checker::access::AccessDefect;
+use gandr_core_checker::codata::CodataFault;
+use gandr_core_checker::session::ForkSide;
+use gandr_core_checker::session::LinearityDefectOf;
+use gandr_core_checker::session::ProtocolDefect;
+use gandr_core_checker::ua::UaDefect;
+use gandr_core_checker::worlds::Crossed;
+use gandr_core_checker::worlds::LocatedDefectOf;
+use gandr_core_checker::worlds::Predicate;
+use gandr_core_term::compose::Form;
+use gandr_core_term::effect::EffectName;
+use gandr_core_term::effect::host;
+use gandr_surface_corpus::BoundaryClause;
+use gandr_surface_corpus::CorpusRefusal;
+use gandr_surface_corpus::RefusalOf;
+use gandr_surface_lowering::BuiltinFault;
+use gandr_surface_lowering::Ending;
+use gandr_surface_lowering::FormFault;
+use gandr_surface_lowering::FormName;
+use gandr_surface_lowering::FragmentBoundary;
+use gandr_surface_lowering::FragmentSort;
+use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::MatchFault;
+use gandr_surface_lowering::Offer;
+use gandr_surface_lowering::Repair;
+use gandr_surface_lowering::StagedFault;
+use gandr_surface_lowering::WfKind;
+use gandr_surface_lowering::description::MemberFault;
+use gandr_surface_lowering::head_home;
+use gandr_surface_lowering::model::ModelFault;
+use gandr_surface_syntax::ClosingClass;
+use gandr_surface_syntax::GroutShape;
+use quenchant_shape::shape::Maybe;
+
+use crate::locus::Captor;
+use crate::message::Spoken;
+
+quenchant_shape::reason_enum! {
+    /// Why a diagnostic tells its reader nothing to do.
+    pub mod help {
+        /// The reason a diagnostic has no help.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The diagnostic reports no refusal: a goal, an unsettled
+            /// declaration or a ledger line.
+            Statement,
+            /// A warning: the edit it proposes, when it proposes one, is its
+            /// help.
+            Warning,
+            /// The refusal is another declaration's: its help is on that
+            /// declaration's diagnostic.
+            Upstream,
+            /// The refusal's name has no help worded yet.
+            Unworded,
+        }
+    }
+}
+
+/// The help of `refusal`: what its reader does about it. It names no node, so
+/// it reads a refusal under any naming of its nodes.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one imperative sentence for each worded refusal name, naming the
+///   source's own names where the refusal holds them; absent as unworded for
+///   every other name.
+/// - provides: the `help` of every refusal's diagnostic.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the sentence's mood is the prose check's to judge.
+///
+/// # Cost
+/// - allocation: the help text, diagnostic
+///
+/// # Adequacy
+/// - hypothesis: L3 — one refusal of every vocabulary name is either worded,
+///   with a one-line help, or unworded; the most-seen names are worded.
+/// - witness: `advice::tests::the_most_seen_names_are_worded_on_one_line`
+#[inline]
+pub fn advice<N>(refusal: RefusalOf<'_, N>) -> Maybe<String, help::Absent>
+where
+    N: Naming,
+{
+    match refusal {
+        RefusalOf::Lowering(refusal) => lowered(refusal),
+        RefusalOf::Checking(refusal) => checked(refusal),
+        RefusalOf::Corpus(CorpusRefusal::BoundaryUnrealised {
+            clause: BoundaryClause::Size,
+            ..
+        }) => Maybe::Present(String::from(
+            "make each member type have the size its boundary row states",
+        )),
+        RefusalOf::Corpus(CorpusRefusal::BoundaryUnrealised {
+            clause: BoundaryClause::Align,
+            ..
+        }) => Maybe::Present(String::from(
+            "make each member type align with its boundary row",
+        )),
+        RefusalOf::Corpus(CorpusRefusal::BoundaryUnrealised {
+            clause: BoundaryClause::Arity,
+            ..
+        }) => Maybe::Present(String::from(
+            "give each member the number of arguments its boundary row states",
+        )),
+        RefusalOf::Corpus(CorpusRefusal::BoundaryUnrealised {
+            clause: BoundaryClause::Members,
+            ..
+        }) => Maybe::Present(String::from(
+            "declare the number of members the boundary attribute names",
+        )),
+        RefusalOf::Corpus(CorpusRefusal::BoundaryUnrealised {
+            clause: BoundaryClause::Niche,
+            ..
+        }) => Maybe::Present(String::from(
+            "make each member type use the niche its boundary row states",
+        )),
+        RefusalOf::Corpus(_) => Maybe::Absent(help::Absent::Unworded),
+    }
+}
+
+/// The help of a lowering refusal.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the help text of a lowering refusal, diagnostic
+fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
+{
+    Maybe::Present(match refusal {
+        LoweringRefusal::UnresolvedName { name, .. } => {
+            format!("define `{name}`, or import the module that exports it")
+        },
+        LoweringRefusal::BuiltinMark { fault, .. } => String::from(match fault {
+            BuiltinFault::NoRow => "name a row of the builtin table by its key, as `string.append`",
+            BuiltinFault::Bodied => "delete the body, and the row gives the value",
+            BuiltinFault::Unbodied => "write the body that the row reads",
+            BuiltinFault::OutsideToolchain => "delete the mark. Use the declaration of `std`",
+            BuiltinFault::TypeDiffers => "write the type of the row, its arguments then its result",
+            BuiltinFault::Repeated => "delete this declaration. Use the earlier one",
+        }),
+        LoweringRefusal::StagedBody { fault, .. } => String::from(match fault {
+            StagedFault::Bodied => "delete the body, and the staged THIR gives the value",
+            StagedFault::NoReader => "install the reader of a Rust crate for the pinned toolchain",
+            StagedFault::Unanswered => {
+                "write the file and the function as two texts with no escape"
+            },
+            StagedFault::Unread(_) => "make the crate build, and name a public function of it",
+            StagedFault::Outside(_) => "write the function in the fragment of the calculus",
+            StagedFault::NotExpr => "declare the signature at `Expr` of the item type",
+            StagedFault::Unmapped { .. } => {
+                "write the path in the item mark of the constructor that stands for it"
+            },
+            StagedFault::ItemMark => "write each path one time, on a constructor with no fields",
+        }),
+        LoweringRefusal::UnresolvedDocLink { name, .. } => {
+            format!("declare `{name}`, or link to a name this source declares")
+        },
+        LoweringRefusal::DuplicateDefinition { name, .. } => {
+            format!("give each definition of `{name}` its own name, or delete one of them")
+        },
+        LoweringRefusal::UnknownMember { module, member, .. } => {
+            format!("use a member that `{module}` declares, or add `{member}` to `{module}`")
+        },
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::ForeignClaim,
+            ..
+        } => String::from("put the descent claim on its recursive function or a mutual member"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::Misplaced,
+            ..
+        } => String::from("write the form as a theory's sort member"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::NonContractive,
+            ..
+        } => String::from("put a send, receive or choice below `rec`"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::NotAFunction,
+            ..
+        } => String::from("pass a function to `Path.ap`"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::TopLevel,
+            ..
+        } => String::from("write the expression in a declaration"),
+        LoweringRefusal::OutOfFragment {
+            form: FormName::TYPE_APPLICATION,
+            sort: FragmentSort::Computation,
+            boundary: FragmentBoundary::WrongSort,
+            ..
+        } => String::from("write `return` before the type to return it as a value: `return T`"),
+        LoweringRefusal::OutOfFragment {
+            sort,
+            boundary: FragmentBoundary::WrongSort,
+            ..
+        } => format!("write {sort} in this position"),
+        LoweringRefusal::OutOfFragment {
+            form: FormName::SEND,
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } => String::from(
+            "write the endpoint and the payload after `send`, side by side: `send c v`",
+        ),
+        LoweringRefusal::OutOfFragment {
+            form: FormName::SELECT,
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } => String::from(
+            "write the endpoint and the label after `select`, side by side: `select c l`",
+        ),
+        LoweringRefusal::OutOfFragment {
+            form: FormName::RESUME,
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } => {
+            String::from("write the view and the value after `resume`, side by side: `resume v e`")
+        },
+        LoweringRefusal::OutOfFragment {
+            form: FormName::RECV_EXPRESSION,
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } => String::from("write one endpoint after `recv`: `recv c`"),
+        LoweringRefusal::OutOfFragment {
+            form: FormName::CLOSE,
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } => String::from("write one endpoint after `close`: `close c`"),
+        LoweringRefusal::OutOfFragment {
+            form: FormName::DROP,
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } => String::from("write one endpoint after `drop`: `drop c`"),
+        LoweringRefusal::OutOfFragment {
+            form: FormName::OFFER,
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } => String::from("write one endpoint after `offer`, then its arms: `offer c { … }`"),
+        LoweringRefusal::OutOfFragment {
+            form: FormName::ABORT,
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } => String::from("write one view after `abort`: `abort v`"),
+        LoweringRefusal::OutOfFragment {
+            form,
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } if form.as_ref() == "lambda_expression" => {
+            String::from("write one parameter per lambda: `fun (a) { fun (b) { … } }`")
+        },
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } => String::from("give the form its declared number of operands"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::Held,
+            ..
+        } => String::from("write a value held by a `var` statement"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::Unannotated,
+            ..
+        } => String::from("write a type annotation for the form"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::Unbound,
+            ..
+        } => String::from(
+            "bind it to a name with `let`: `let x = recv c;` or `let d = fork (c : S) t;`",
+        ),
+        LoweringRefusal::MalformedForm { form, fault, .. } => malformed(Spoken(form), fault),
+        LoweringRefusal::IllFormedDescription { kind, .. } => ill_formed(kind),
+        LoweringRefusal::RulesUncompleted { .. } => String::from(
+            "add a rule that joins the two normal forms, or remove one of the two rules",
+        ),
+        LoweringRefusal::NotATranslation { name, .. } => {
+            format!(
+                "declare `flow {name}` before this import, or import a source that publishes it"
+            )
+        },
+        LoweringRefusal::ImportCycle { .. } => {
+            String::from("remove the import that closes the cycle")
+        },
+        LoweringRefusal::SignatureMismatch {
+            signature,
+            member,
+            fault,
+            ..
+        } => match fault {
+            MatchFault::Missing => format!(
+                "drop `{member}` from `{signature}`, or declare `pub {member}` where the import reads it"
+            ),
+            MatchFault::Sort => {
+                format!("give `{member}` one type in `{signature}` and where the import reads it")
+            },
+            MatchFault::Unstated => format!(
+                "give the source's `{member}` a signature, or state only operations in `{signature}`"
+            ),
+        },
+        LoweringRefusal::UnlabelledRequirement { name, .. } => {
+            format!("write a label before it, `l : {name} with …`, and perform through `l`")
+        },
+        LoweringRefusal::UnfixedParameter {
+            constructor,
+            parameter,
+            ..
+        } => format!(
+            "write the type after the binder, `let x : … = {constructor}(…)`, to fix `{parameter}`"
+        ),
+        LoweringRefusal::DerivedComponent { member, theory, .. } => format!(
+            "delete `{member}`: the model reads it as `{theory}.{member}`, which the derivation fills"
+        ),
+        // A head a `std` module homes names its listing, and a host interface
+        // the import of its module; any other head is declared or imported.
+        LoweringRefusal::UnresolvedTypeHead { name, .. } => match head_home(name) {
+            Maybe::Present(home) => {
+                format!("write `import {home} ({name});`, the listing of `{name}` from its home")
+            },
+            Maybe::Absent(_) => match host::home(&EffectName::from(name.as_ref())) {
+                Maybe::Present(home) => {
+                    format!("write `import {home};`, the import of `{name}`'s module")
+                },
+                Maybe::Absent(_) => {
+                    format!("declare a type named `{name}`, or import the module that exports it")
+                },
+            },
+        },
+        LoweringRefusal::IllTypedPayload { name, expected, .. } => {
+            format!("give `{name}` {expected}")
+        },
+        LoweringRefusal::MisplacedAttribute { name, takes, .. } => {
+            format!("write `{name}` before {takes}")
+        },
+        LoweringRefusal::NonValuePayload { .. } => {
+            String::from("give the attribute a value payload")
+        },
+        LoweringRefusal::NonExhaustiveMatch { .. } => String::from(
+            "add an arm for the values that no arm matches, or a last arm that matches any value",
+        ),
+        LoweringRefusal::UninterfacedMember { .. } => {
+            String::from("give the theory an unfixed carrier sort and operations that return it")
+        },
+        LoweringRefusal::ViewNotPlace { .. } => {
+            String::from("return a place of `self` with type `View[m](a)`")
+        },
+        LoweringRefusal::RulesUnoriented { .. } => {
+            String::from("make the rule's right side smaller than its left in the path order")
+        },
+        LoweringRefusal::RulesNonLinear { .. } => {
+            String::from("use each variable once on the rule's left side")
+        },
+        LoweringRefusal::RulesOverlapCondition { .. } => {
+            String::from("add a rule that joins the overlap under its condition")
+        },
+        LoweringRefusal::AcrossHandler { .. } => {
+            String::from("leave the handled subject with `return`")
+        },
+        LoweringRefusal::GenericMisplaced { .. } => {
+            String::from("write `Eq.generic(T)` as a definition's whole body")
+        },
+        LoweringRefusal::InertRead { .. } => {
+            String::from("read an inert declaration only from a manifest step or inert declaration")
+        },
+        LoweringRefusal::PhaseDependence { .. } => {
+            String::from("make the static member's type depend only on static members")
+        },
+        LoweringRefusal::RulesOverlapSecondOrder { .. } => {
+            String::from("add a rule for the second-order overlap")
+        },
+        LoweringRefusal::UndescribedMember {
+            fault: MemberFault::LhsNotOperation,
+            ..
+        } => String::from("write an operation application on the rule's left side"),
+        LoweringRefusal::UndescribedMember {
+            fault: MemberFault::NoOutput,
+            ..
+        } => String::from("give the operation at least one output port"),
+        LoweringRefusal::UndescribedMember {
+            fault: MemberFault::IllSorted,
+            ..
+        } => String::from("state a law at an earlier sort that makes the two sorts one"),
+        LoweringRefusal::UndescribedMember {
+            fault: MemberFault::NoUniverse,
+            ..
+        } => String::from("classify the sort by `Type`, `Type+`, `Type[-]` or `Atom`"),
+        LoweringRefusal::UndescribedMember {
+            fault: MemberFault::UnwiredDiagram,
+            ..
+        } => String::from("give each wire of an unmarked sort one producer and one consumer"),
+        LoweringRefusal::UndescribedMember {
+            fault: MemberFault::SpiderBudget,
+            ..
+        } => String::from("split the rule into rules with fewer tied legs"),
+        LoweringRefusal::UnguardedCorecursion { .. } => {
+            String::from("write the productive self-call as a copattern arm's whole body")
+        },
+        LoweringRefusal::ModelImplicitValue { .. } => {
+            String::from("select a component from the model implicit")
+        },
+        LoweringRefusal::StrayReceiverMode { .. } => {
+            String::from("write the receiver mode only on a module member's first `self` parameter")
+        },
+        LoweringRefusal::RulesDiverge { .. } => String::from(
+            "change the overlapping rules so that they rewrite to the same constructor term",
+        ),
+        LoweringRefusal::RulesNeverComplete { .. } => String::from(
+            "add a rule that joins the normal forms without wrapping the earlier completion",
+        ),
+        LoweringRefusal::BareFeedback { .. } => {
+            String::from("observe the port's sort before feeding it back")
+        },
+        LoweringRefusal::AmbiguousMethod { .. } => {
+            String::from("call the intended method through its module")
+        },
+        LoweringRefusal::AmbiguousConstructor { .. } => {
+            String::from("write the constructor through the family you mean, `Family.Name`")
+        },
+        LoweringRefusal::DescentOnSeveralParameters { .. } => {
+            String::from("mark descent on one parameter in each recursive call")
+        },
+        LoweringRefusal::CellNotALoop { .. } => {
+            String::from("write the same term on both sides of the `<->`")
+        },
+        LoweringRefusal::ForwardMemberReference { .. } => {
+            String::from("declare the referenced member before this member")
+        },
+        LoweringRefusal::FamilyTelescope { .. } => {
+            String::from("write a member kind that matches its parameters and result")
+        },
+        LoweringRefusal::ImplicitTelescope { .. } => String::from(
+            "write the telescope before a function's parameters, as in `def f[a : Type]() -> \
+             Integer { 1 }`",
+        ),
+        LoweringRefusal::ImplicitUnsupplied { .. }
+        | LoweringRefusal::ImplicitInParentheses { .. } => {
+            String::from("supply the implicit by name in square brackets")
+        },
+        LoweringRefusal::DirectedCell { .. } => {
+            String::from("write an undirected `<->` cell instead of `-->`")
+        },
+        LoweringRefusal::GenericUncovered { .. } => {
+            String::from("write an equality function for the datatype")
+        },
+        LoweringRefusal::ImportShadows { .. } => {
+            String::from("rename the declaration or its imported binding")
+        },
+        LoweringRefusal::ImportUnresolved { .. } => {
+            String::from("change the import path to a source under the root")
+        },
+        LoweringRefusal::MissingPayload { .. } => {
+            String::from("give the attribute the payload its schema requires")
+        },
+        LoweringRefusal::InstanceUnanswered { .. } => {
+            String::from("handle the interface or supply its instance by name")
+        },
+        LoweringRefusal::InstanceAmbiguous { .. } => {
+            String::from("supply the intended instance by name")
+        },
+        LoweringRefusal::MismatchedPattern { .. } => {
+            String::from("match constructors of the same datatype in every arm")
+        },
+        LoweringRefusal::ShadowedBuiltin { .. } => {
+            String::from("rename the declaration that shadows the builtin")
+        },
+        LoweringRefusal::ProjectionFromApplication { .. } => {
+            String::from("bind the application to a module before selecting its member")
+        },
+        LoweringRefusal::TelescopeCycle { .. } => {
+            String::from("order parameters so each type names only earlier parameters")
+        },
+        LoweringRefusal::RegionAsValue { .. } => {
+            String::from("name the region only in a type such as `A at r`")
+        },
+        LoweringRefusal::MethodAsValue { .. } => {
+            String::from("call the method on a held receiver, `s.f(…)`, where a value is wanted")
+        },
+        LoweringRefusal::UnknownAttribute { .. } => {
+            String::from("replace the attribute with a registered attribute")
+        },
+        LoweringRefusal::UnstatedComponent {
+            fault: ModelFault::Unbound,
+            ..
+        } => String::from("remove the component the model signature cannot state"),
+        LoweringRefusal::UnstatedComponent {
+            fault: ModelFault::Arity,
+            ..
+        } => String::from("give each sort and operation its declared number of arguments"),
+        LoweringRefusal::UnstatedComponent {
+            fault: ModelFault::IllSorted,
+            ..
+        } => String::from("write each term at the sort its position reads"),
+        LoweringRefusal::UnstatedComponent {
+            fault: ModelFault::UnknownHead,
+            ..
+        } => String::from("declare each sort and operation the component uses"),
+        LoweringRefusal::UnstatedComponent {
+            fault: ModelFault::Unsorted,
+            ..
+        } => String::from("use each variable where its sort is known"),
+        LoweringRefusal::UnderivedRule { .. } => {
+            String::from("write a rule the theory's completed rules derive")
+        },
+        LoweringRefusal::UnknownTactic { .. } => {
+            String::from("replace the tactic with a supported tactic")
+        },
+        LoweringRefusal::OutputsAsOneValue { .. } => String::from(
+            "bind the outputs with an output group, `let (s, d) = …`, or write `~ports e`",
+        ),
+        LoweringRefusal::ViewOfNoPlace { .. } => {
+            String::from("call a method that returns a place before the view block")
+        },
+        LoweringRefusal::WithoutK { .. } => {
+            String::from("use the path through `Path.walk`, `Path.back`, `Path.step` or `Path.ap`")
+        },
+        LoweringRefusal::DuplicateSignature { .. } => {
+            String::from("write one type signature for the name")
+        },
+        LoweringRefusal::DuplicateImportAlias { .. } => String::from("rename one import alias"),
+        LoweringRefusal::DuplicateAttribute { .. } => String::from("write the attribute only once"),
+        LoweringRefusal::EntryType { .. } => String::from("give `main` an allowed entry signature"),
+        LoweringRefusal::MalformedLiteral { form, .. } => {
+            format!("write a well-formed {}", Spoken(form))
+        },
+        LoweringRefusal::NoUniverseAbove { .. } => String::from("use a smaller universe level"),
+        LoweringRefusal::NotAFunctor { name, .. } => {
+            format!("declare `{name}` as a functor before this binding")
+        },
+        LoweringRefusal::NotAModel { name, .. } => {
+            format!("declare `{name}` as a model before opening it")
+        },
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::EmptyList,
+            ..
+        } => String::from("write `unit` for the unit value"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::JoinsBlock,
+            ..
+        } => String::from("remove the match result annotation"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::BareArms,
+            ..
+        } => String::from("write `where` after the match's scrutinee"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::NonUniform,
+            ..
+        } => String::from("pass the recursive call's parameters unchanged"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::NotAtResult,
+            ..
+        } => String::from("write the row only before a definition's result type"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::NotInTail,
+            ..
+        } => String::from(
+            "write the return expression in a function, lambda, thunk or copattern clause",
+        ),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::View,
+            ..
+        } => String::from("open a view with `access` before resuming or aborting it"),
+        LoweringRefusal::OutsideLoop { .. } => {
+            String::from("write `break` or `continue` in its loop body")
+        },
+        LoweringRefusal::PartialField { .. } => {
+            String::from("select a field each constructor declares")
+        },
+        LoweringRefusal::UndescribedMember {
+            fault: MemberFault::ResultArity,
+            ..
+        } => String::from("give the rule its operation's number of outputs"),
+        LoweringRefusal::UnexportedName { name, .. } => {
+            format!("export `{name}` from its source")
+        },
+        LoweringRefusal::UnlockedDependency { alias, .. } => {
+            format!("run `gandr lock` before importing `{alias}`")
+        },
+        LoweringRefusal::UnmarkedSelfReference { name, .. } => {
+            format!("mark `{name}` with a descent claim")
+        },
+        LoweringRefusal::Unreachable { .. } => {
+            String::from("remove code after every path leaves the body")
+        },
+        LoweringRefusal::NonUniformResult { .. } => String::from(
+            "declare each parameter a generator instantiates as an index, as in `data Fixed : (a : Type, n : Nat) --> Type[+, 1]`",
+        ),
+        // Unworded: a later slice words each, most-seen first.
+        LoweringRefusal::OutOfFragment { .. }
+        | LoweringRefusal::GradedBridge { .. }
+        | LoweringRefusal::UnreadAscription { .. }
+        | LoweringRefusal::UnreadCells { .. }
+        | LoweringRefusal::UnstatedComponent { .. }
+        | LoweringRefusal::UndescribedMember { .. }
+        | LoweringRefusal::RulesUndecided { .. }
+        | LoweringRefusal::BudgetExceeded { .. }
+        | LoweringRefusal::GrammarMismatch { .. }
+        | LoweringRefusal::UnknownMold { .. }
+        | LoweringRefusal::HostConflict { .. }
+        | LoweringRefusal::Unminted { .. } => return Maybe::Absent(help::Absent::Unworded),
+    })
+}
+
+/// The help of a malformed form, by its fault.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the help text, diagnostic
+fn malformed(
+    form: Spoken,
+    fault: FormFault,
+) -> String
+{
+    let opening = |close: ClosingClass| match close {
+        ClosingClass::Paren => "(",
+        ClosingClass::Bracket => "[",
+        ClosingClass::Brace => "{",
+    };
+    let closing = |close: ClosingClass| match close {
+        ClosingClass::Paren => ")",
+        ClosingClass::Bracket => "]",
+        ClosingClass::Brace => "}",
+    };
+    match fault {
+        FormFault::Repaired(Repair::Grout(GroutShape::Convex)) => {
+            String::from("write the missing term")
+        },
+        FormFault::Repaired(Repair::Grout(GroutShape::Prefix | GroutShape::Postfix))
+        | FormFault::MissingOperand => String::from("write the missing operand"),
+        FormFault::Repaired(Repair::Grout(GroutShape::Infix)) => {
+            String::from("write an operator between the two terms")
+        },
+        FormFault::Repaired(Repair::Keyword(stray)) => match stray.offer {
+            Offer::Capitalised(offer) => format!("write `{}` instead", offer.as_ref()),
+            Offer::Unspelled => {
+                format!("write a term in place of `{}`", stray.written.as_ref())
+            },
+        },
+        FormFault::Repaired(Repair::ReservedName(word)) => {
+            format!("choose another name in place of `{}`", word.as_ref())
+        },
+        FormFault::Repaired(Repair::GhostClose(close)) => {
+            format!("add the closing `{}`", closing(close))
+        },
+        FormFault::Repaired(Repair::Unended(Ending::Tile(tile))) => {
+            format!("add the closing `{}`", tile.as_ref())
+        },
+        FormFault::Repaired(Repair::Unended(Ending::Unnamed)) => format!("finish the {form}"),
+        FormFault::Repaired(Repair::Diverged(Ending::Tile(tile))) => {
+            format!("write `{}` here", tile.as_ref())
+        },
+        FormFault::Repaired(Repair::Diverged(Ending::Unnamed)) | FormFault::ExtraOperand => {
+            String::from("remove the extra operand")
+        },
+        FormFault::MisplacedTile => {
+            format!("move the keyword or symbol to its place in the {form}")
+        },
+        FormFault::ExtraClose(close) => format!("remove the extra `{}`", closing(close)),
+        FormFault::ExtraOpen(close) => {
+            format!("remove the extra `{}`, or close it", opening(close))
+        },
+        FormFault::Misspelt(keyword) => {
+            format!(
+                "write the keyword `{}` in place of this word",
+                keyword.as_ref()
+            )
+        },
+        FormFault::MisspeltOperator(operator) => {
+            format!(
+                "write the operator `{}` in place of this run",
+                operator.as_ref()
+            )
+        },
+        FormFault::NotAName => String::from("write a name before the `@`"),
+        FormFault::BareIndex => String::from("write the index as the selector `.#[ … ]`"),
+        FormFault::PositionalAfterNamed => {
+            String::from("write the positional entries before the named ones")
+        },
+        FormFault::PositionalPastBlock => {
+            String::from("remove the entry, or match it to an implicit of the block")
+        },
+        FormFault::CompoundPositional => {
+            String::from("supply the value by name, as `.n = …` with the implicit's name for `n`")
+        },
+        FormFault::SuppliedTwice => String::from("remove one of the two entries"),
+        FormFault::MissingOpen(close) => {
+            format!(
+                "add the `{}` that this `{}` closes",
+                opening(close),
+                closing(close)
+            )
+        },
+    }
+}
+
+/// The help of an ill-formed description, by its kind.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the help text of an ill-formed description, diagnostic
+fn ill_formed(kind: WfKind) -> String
+{
+    String::from(match kind {
+        WfKind::OutOfSignatureRule => {
+            "declare the operation in the signature, or write the rule over operations it declares"
+        },
+        WfKind::UnboundRhsVariable => {
+            "bind the variable on the rule's left-hand side, or remove it from the right-hand side"
+        },
+        WfKind::ArityDoesNotCompose => "make each map of the bridge arity compose with the next",
+        WfKind::DeclaresDerivedMetadata => "remove the declaration, which the rules derive",
+        WfKind::DerivedBoundaryMismatch => {
+            "make the declared sphere fix the boundary that the wiring derives"
+        },
+        WfKind::CyclicCircuitWiring => "change the rule so that no port reaches itself",
+        WfKind::UnknownRewritePort => {
+            "declare the rewrite in the rule's telescope, or apply a rewrite that it declares"
+        },
+        WfKind::CircuitDerivationBudget => "split the rule's wiring into smaller rules",
+        WfKind::DuplicateSortName => "give each sort its own name",
+        WfKind::UnknownResultSort => {
+            "declare the sort, or target a sort that the signature declares"
+        },
+        WfKind::UnknownVarSort => {
+            "declare the sort, or recurse at a sort that the signature declares"
+        },
+        WfKind::UnknownPortSort => {
+            "declare the sort in the signature, or put a builtin type at the port"
+        },
+        WfKind::SortPolarityDisagreement => "give the sort the polarity of its declaration",
+        WfKind::MisplacedResults => {
+            "move the results tuple to the root of the rule's right-hand side"
+        },
+        WfKind::NonRepresentableBinder => "bind the variable over a declared, representable sort",
+        WfKind::SplitCircuitOutputs => "read all the outputs of the many-out node together",
+        WfKind::SharedCircuitPort => {
+            "let one node bind the port. Give each other node its own port."
+        },
+        WfKind::DuplicateFaceName => "give each face of the boundary its own name",
+        WfKind::FaceOutsideShape => "put in the face only names that the boundary lists",
+        WfKind::FacePosetPastBudget => {
+            "name fewer faces, or faces that share more of their meets, so that the poset fits \
+             its budget"
+        },
+        WfKind::UnsortedBinding => {
+            "use the variable where a port binds it over the same sorts, with one argument for \
+             each variable it binds"
+        },
+        WfKind::MisplacedAbstraction => {
+            "abstract names only in an argument at a port that binds as many"
+        },
+        WfKind::AtomResult => "return a sort that is not an atom sort",
+        WfKind::NonAtomAbstraction => {
+            "abstract over an atom sort, or bind the variable with `(x : S) ->` instead"
+        },
+        WfKind::UnknownFreshness => {
+            "name in the condition an atom that the rule abstracts and a variable that its left \
+             side binds"
+        },
+        WfKind::Capture => "state the atom fresh for the variable with `where { | a # q }`",
+        WfKind::MisplacedAtom => {
+            "name the atom only inside `bind a . t`, at a port of the sort that it abstracts"
+        },
+        WfKind::UndecidedCondition => {
+            "put the variable under the same abstractions at each of its occurrences"
+        },
+    })
+}
+
+/// The help of a checker refusal.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the help text of a checker refusal, diagnostic
+fn checked<N>(refusal: CheckRefusalOf<N>) -> Maybe<String, help::Absent>
+where
+    N: Naming,
+{
+    Maybe::Present(match refusal {
+        CheckRefusalOf::TypeMismatch(_) => String::from(
+            "change the term or the type it is checked against, so that the two types agree",
+        ),
+        CheckRefusalOf::CapabilityAmplified(_) => String::from("use the required capability"),
+        CheckRefusalOf::EndpointMismatch {
+            miss: EndpointMiss::Unshown,
+            ..
+        } => String::from(
+            "give `Path.here` a point that both endpoints convert to, or change the endpoints",
+        ),
+        CheckRefusalOf::EndpointMismatch {
+            miss: EndpointMiss::Budget,
+            ..
+        } => String::from(
+            "state the equation through lemmas that each unfold less, or split the computation \
+             into steps the conversion settles one at a time",
+        ),
+        CheckRefusalOf::StageNotBelow { .. } => String::from(
+            "recurse on a field of the parameter, which a match takes apart, and not on the \
+             parameter itself",
+        ),
+        CheckRefusalOf::OutOfFragment {
+            former: UnadmittedFormer::Stage,
+            ..
+        } => String::from("write the kernel-visible type without a stage"),
+        CheckRefusalOf::Access {
+            defect: AccessDefect::Escaped { by },
+            ..
+        } => format!(
+            "use the view outside {}, or open the `access` inside it",
+            Captor(by)
+        ),
+        CheckRefusalOf::Access {
+            defect: AccessDefect::Lent,
+            ..
+        } => String::from("use the held value only after the `access` that lends it ends"),
+        CheckRefusalOf::Access {
+            defect: AccessDefect::HeldCopied,
+            ..
+        } => String::from("wrap the `var[1]` read in `access ... resume`"),
+        CheckRefusalOf::Access {
+            defect: AccessDefect::HeldShared,
+            ..
+        } => String::from("assign an in-place value to the `var[1]` hold"),
+        CheckRefusalOf::Access {
+            defect: AccessDefect::KeptEscaped,
+            ..
+        } => String::from("return a value that the scope's own region does not keep"),
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::AsValue { .. },
+            ..
+        } => String::from("use the endpoint only in a session action"),
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::Residue { endpoint, .. },
+            ..
+        } => String::from(match endpoint.side {
+            ForkSide::Placed => {
+                "end the endpoint's protocol before the body of the function that takes it ends"
+            },
+            ForkSide::Child | ForkSide::Parent | ForkSide::Received => {
+                "close the endpoint before the fork half or receive body that bound it ends"
+            },
+        }),
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::ArmsDisagree { .. },
+            ..
+        } => String::from("leave each arm with the same endpoint states"),
+        CheckRefusalOf::RuleNotRespected { .. } => String::from(
+            "give the arms equal results on the terms that each of the datatype's rules \
+             identifies",
+        ),
+        CheckRefusalOf::LoopNotRespected { .. } => {
+            String::from("make the case respect each loop of its sort")
+        },
+        CheckRefusalOf::NotApart { .. } => {
+            String::from("write an arm for the path, because its endpoints can be equal")
+        },
+        CheckRefusalOf::CompoundEndpoint { .. } => {
+            String::from("return a value without effects from the path endpoint")
+        },
+        CheckRefusalOf::NegativeOccurrence(_) => String::from(
+            "apply the datatype there only to its own parameters, one stage below its \
+             constructor",
+        ),
+        CheckRefusalOf::NestedOccurrence(_) => String::from(
+            "place the datatype only where each enclosing type holds it strictly positively",
+        ),
+        CheckRefusalOf::PointwiseDistinct { .. } => {
+            String::from("make both functions return the same value at every input")
+        },
+        CheckRefusalOf::UaInequivalent {
+            defect: UaDefect::Cardinality { .. },
+            ..
+        } => String::from("give both descriptions the same number of generators at each corolla"),
+        CheckRefusalOf::UaInequivalent {
+            defect: UaDefect::Tables { .. },
+            ..
+        } => String::from("give each corolla exactly one translator on each side"),
+        CheckRefusalOf::UaInequivalent {
+            defect: UaDefect::NotNatural { .. },
+            ..
+        } => String::from("make each `ua` translator commute with every corolla symmetry"),
+        CheckRefusalOf::RunNotAdmitted { .. } => String::from(
+            "change the run so that each move is one that the protocol admits at that point",
+        ),
+        CheckRefusalOf::UndecidedCoverage(_) => {
+            String::from("replace the pattern hole with a pattern")
+        },
+        CheckRefusalOf::AbsentRecordField(_) => String::from("select a declared record field"),
+        CheckRefusalOf::ImplicitUnsolved { .. } => {
+            String::from("supply the implicit by name in brackets before the parentheses")
+        },
+        CheckRefusalOf::Located {
+            defect:
+                LocatedDefectOf::Immobile {
+                    crossed: Crossed::Result | Crossed::Constant,
+                    predicate: Predicate::Mobile,
+                    ..
+                },
+            ..
+        } => String::from(
+            "return data or a handle from the migration, or mark the abstract type `mobile` in \
+             its signature",
+        ),
+        CheckRefusalOf::Located {
+            defect:
+                LocatedDefectOf::Immobile {
+                    crossed: Crossed::Result | Crossed::Constant,
+                    predicate: Predicate::Open,
+                    ..
+                },
+            ..
+        } => String::from(
+            "hold data in the handle, or an abstract type that its signature marks `mobile`",
+        ),
+        CheckRefusalOf::Located {
+            defect:
+                LocatedDefectOf::Immobile {
+                    crossed: Crossed::Capture,
+                    ..
+                },
+            ..
+        } => String::from(
+            "capture only data in a thunk the migration returns, or mark the abstract type \
+             `mobile` in its signature",
+        ),
+        CheckRefusalOf::Located {
+            defect:
+                LocatedDefectOf::Immobile {
+                    crossed: Crossed::Homed,
+                    ..
+                },
+            ..
+        } => String::from(
+            "call the declaration before the migration returns, and return what it answers",
+        ),
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::Elsewhere { .. },
+            ..
+        } => String::from("open the value at its binder with `let x at w`"),
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::OpenedElsewhere { .. },
+            ..
+        } => String::from("write the handle's own world after `at`"),
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::NotAHandle { .. },
+            ..
+        } => String::from("give `let x at w` a value that has a handle type"),
+        CheckRefusalOf::BridgeAtSealedType { .. } => String::from(
+            "give the abstract type an `identity` attribute that names its relation, or relate \
+             points of a type that is not sealed",
+        ),
+        CheckRefusalOf::ComposeNotAShape { pasting, .. } => String::from(match pasting.form() {
+            Form::Chain(_) => {
+                "write a stratum of degree at least 2m - 1 and bound at least 2m + 1 for a chain \
+                 of m cells"
+            },
+            Form::Columns(_) => {
+                "write a stratum whose bound holds the level-two shape and whose degree reaches \
+                 its degree"
+            },
+            Form::Tree { level, .. } if usize::from(level) <= 4 => {
+                "write a stratum whose bound holds the pasting and whose degree reaches its degree"
+            },
+            Form::Tree { .. } => "write the pasting at level four or below",
+        }),
+        CheckRefusalOf::ComposeDoesNotFill {
+            seam: gandr_core_term::compose::Seam::Outer,
+            ..
+        } => String::from("start each cell at the point where the cell before it ends"),
+        CheckRefusalOf::ComposeDoesNotFill {
+            seam: gandr_core_term::compose::Seam::Column(_),
+            defect: gandr_theory_sites::Unfilled::Profile { .. },
+            ..
+        } => String::from(
+            "write a 2-cell at this place, or give its column the height 0 to hold one 1-cell",
+        ),
+        CheckRefusalOf::ComposeDoesNotFill {
+            seam: gandr_core_term::compose::Seam::Column(_),
+            ..
+        } => String::from(
+            "start each 2-cell of a column at the 1-cell where the 2-cell before it ends",
+        ),
+        CheckRefusalOf::NoFiller { .. } => String::from(
+            "ask for the square the generator makes, with its sides composites of the cells and \
+             at least one cell a path of paths",
+        ),
+        CheckRefusalOf::UndischargedLaw { .. } => String::from(
+            "prove the law by a definition at its type, or admit it where the host asserts it",
+        ),
+        CheckRefusalOf::UnassertedLaw { .. } => String::from("prove the law"),
+        CheckRefusalOf::ShapeMismatch {
+            wanted: ExpectedShape::EmptySum,
+            ..
+        } => String::from("delete the injection, because the empty sum has no summand to name"),
+        CheckRefusalOf::ShapeMismatch {
+            wanted: ExpectedShape::Summand,
+            ..
+        } => String::from("name a summand that the sum declares"),
+        CheckRefusalOf::ShapeMismatch {
+            wanted: ExpectedShape::Positional,
+            ..
+        } => String::from("split the record by label, as `*{.label = name, …}`"),
+        CheckRefusalOf::ShapeMismatch { .. } => String::from(
+            "change the term or the type it is checked against, so that the type has the required \
+             shape",
+        ),
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::Closed { .. },
+            ..
+        } => String::from("move the action before the `close`, or delete it"),
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::BufferUnreturned { .. },
+            ..
+        } => String::from(
+            "hand the buffer back with a `send`, an operation or a resumption before the body ends",
+        ),
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::Captured { by, .. },
+            ..
+        } => format!("use the endpoint outside {}", Captor(by)),
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::BufferReturnedTwice { .. },
+            ..
+        } => String::from("return the buffer only once"),
+        CheckRefusalOf::Access {
+            defect: AccessDefect::HeldCaptured { by },
+            ..
+        } => format!(
+            "use the held value outside {}, or declare its `var` inside it",
+            Captor(by)
+        ),
+        CheckRefusalOf::Access {
+            defect: AccessDefect::Kept,
+            ..
+        } => String::from("write the value only after the scope that keeps its shared view ends"),
+        CheckRefusalOf::Access {
+            defect: AccessDefect::Consumed,
+            ..
+        } => String::from("use the held value before the consumed method call"),
+        CheckRefusalOf::Access {
+            defect: AccessDefect::Unindexed,
+            ..
+        } => String::from("access a list before indexing it"),
+        CheckRefusalOf::HandlerUnlawful { .. } => {
+            String::from("change the handler's clauses so that they satisfy the law")
+        },
+        CheckRefusalOf::ModelUnanswered { .. } => String::from(
+            "declare a module that is a model of the theory at these types, or supply one by name \
+             in brackets",
+        ),
+        CheckRefusalOf::RuleNotPresentable { .. } => String::from(
+            "write each rule with a declared constructor at its head and its declared field count",
+        ),
+        CheckRefusalOf::NotSynthesisable { .. } => {
+            String::from("write a type ascription for this form")
+        },
+        CheckRefusalOf::ModelAmbiguous { .. } => {
+            String::from("supply the intended model by name in brackets before the parentheses")
+        },
+        CheckRefusalOf::NonCovariantMotive { .. } => {
+            String::from("use the moving endpoint only where a run of it is produced")
+        },
+        CheckRefusalOf::Codata {
+            fault: CodataFault::KindNotUniverse,
+            ..
+        } => String::from("give the codata declaration a computation universe as its kind"),
+        CheckRefusalOf::Codata {
+            fault: CodataFault::Occurrence,
+            ..
+        } => String::from(
+            "write the codata type only as an observation's result, with its parameters in order",
+        ),
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::CapabilityMissing { .. },
+            ..
+        } => String::from("migrate with the target world's capability"),
+        CheckRefusalOf::TacticRefused { .. } => {
+            String::from("replace the tactic with a proof term")
+        },
+        CheckRefusalOf::CapabilityEscaped { .. } => {
+            String::from("keep the capability inside its scope")
+        },
+        CheckRefusalOf::UnenclosedRun { .. } => {
+            String::from("write the run in a function's body, where the body can run its effects")
+        },
+        CheckRefusalOf::StagesDisagree { .. } => {
+            String::from("change the call's arguments so that they stand at one stage")
+        },
+        CheckRefusalOf::SessionMismatch {
+            defect: ProtocolDefect::Action { .. },
+            ..
+        } => String::from("change the endpoint action or protocol so that they agree"),
+        CheckRefusalOf::SessionMismatch {
+            defect: ProtocolDefect::Arms,
+            ..
+        } => String::from("handle every label of the endpoint's protocol exactly once"),
+        CheckRefusalOf::Access {
+            defect: AccessDefect::Spent,
+            ..
+        } => String::from("use the view before its `resume` or `abort`"),
+        CheckRefusalOf::Access {
+            defect: AccessDefect::ReadOnly,
+            ..
+        } => String::from("end the shared view with its body, without `resume` or `abort`"),
+        CheckRefusalOf::Access {
+            defect: AccessDefect::UnwindEffect,
+            ..
+        } => String::from("remove the effect from the `unwind`"),
+        CheckRefusalOf::SessionNotEquivalent { .. } => {
+            String::from("make the two protocols bisimilar at every step")
+        },
+        CheckRefusalOf::RoundTripDistinct { .. } => {
+            String::from("make each `equiv` round trip return its input")
+        },
+        CheckRefusalOf::SessionNotSubtype { .. } => String::from(
+            "make the source protocol select no more and offer no less than the target",
+        ),
+        CheckRefusalOf::OpenSessionPayload { .. } => {
+            String::from("bind the session payload inside the run's protocol")
+        },
+        CheckRefusalOf::Access {
+            defect: AccessDefect::Unended,
+            ..
+        } => String::from("end the access body with `resume` or `abort`"),
+        CheckRefusalOf::AtomTransport { .. } => {
+            String::from("add a transport law to the abstract type's identity attribute")
+        },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::BufferRead { .. },
+            ..
+        } => String::from("return the buffer with `send`, the operation or `resume`"),
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::CapabilityCaptured { .. },
+            ..
+        } => String::from("move the `migrate` outside the thunk that captures its capability"),
+        CheckRefusalOf::CapabilityForged { .. } => {
+            String::from("pass a capability that a hold binds or the host grants")
+        },
+        CheckRefusalOf::CapabilityConsumable(_) => {
+            String::from("remove the capability's `[1]` grade")
+        },
+        CheckRefusalOf::Boundary { .. } => {
+            String::from("write the boundary flow in the direction its position's variance permits")
+        },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::ContinuationAsValue { .. },
+            ..
+        } => String::from("use the continuation only with `resume` or `abandon`"),
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::ContinuationCaptured { .. },
+            ..
+        } => String::from("move the continuation outside the construct that captures it"),
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::ContinuationUnspent { .. },
+            ..
+        } => String::from("end the continuation once with `resume` or `abandon`"),
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::ContinuationUsedTwice { .. },
+            ..
+        } => String::from("end the continuation only once"),
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::LinearSlotConsumed { .. },
+            ..
+        } => String::from("use the linear parameter once, or take it at `->` instead of `⊸`"),
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::LinearSlotUnconsumed { .. },
+            ..
+        } => String::from("use the linear parameter exactly once on every path through the body"),
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::ShadowCaptured { .. },
+            ..
+        } => String::from(
+            "use the linear parameter outside the thunk, loop or fold that captures it",
+        ),
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::ComonoidAbsent { .. },
+            ..
+        } => String::from(
+            "take the qubit as a linear function's parameter, `(q : Qubit) ⊸ …`. Only a measurement gives a value that a binder can copy",
+        ),
+        CheckRefusalOf::MultiplicityUnsupported { .. } => {
+            String::from("write the linear arrow with no multiplicity, which is one")
+        },
+        CheckRefusalOf::DataFieldLevel { .. } => {
+            String::from("lower each constructor field to its datatype's universe")
+        },
+        CheckRefusalOf::DataKindNotUniverse(_) => {
+            String::from("give the data declaration a universe kind")
+        },
+        CheckRefusalOf::DependentBind { .. } => {
+            String::from("bind a computation whose result type ignores its value")
+        },
+        CheckRefusalOf::DialogueInverted { .. } => {
+            String::from("log each send before its matching receipt")
+        },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::UsedTwice { .. },
+            ..
+        } => String::from("use the endpoint only once in this action"),
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::EntryNamed { .. },
+            ..
+        } => String::from("call a non-entry declaration instead"),
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::HoldElsewhere { .. },
+            ..
+        } => String::from("migrate to the handle's world before using `hold`"),
+        CheckRefusalOf::DialogueUnmatched { .. } => {
+            String::from("make each dialogue receipt match its sent value")
+        },
+        CheckRefusalOf::MissingRecordField { .. } => String::from("add the record's missing field"),
+        CheckRefusalOf::PatchOutsideBase { .. } => {
+            String::from("fix only the fields that the base record holds")
+        },
+        CheckRefusalOf::FixedFieldDiffers { .. } => {
+            String::from("state the value the type fixes, or omit the field")
+        },
+        CheckRefusalOf::LevelMismatch { .. } => {
+            String::from("lower the code to the expected universe")
+        },
+        CheckRefusalOf::IndexOccurrence(_) => {
+            String::from("remove the datatype from the field's index")
+        },
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::MarkUnfounded { .. },
+            ..
+        } => String::from("remove `mobile` or use a representation that crosses"),
+        CheckRefusalOf::Undecided { .. } => {
+            String::from("write code whose unfolding the checker can decide")
+        },
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::UndeclaredWorld { .. },
+            ..
+        } => String::from("declare the named world with `world w ;`"),
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::Unrestricted,
+            ..
+        } => String::from("open the endpoint with `fork` or `recv`"),
+        CheckRefusalOf::SessionMismatch {
+            defect: ProtocolDefect::Label,
+            ..
+        } => String::from("select a label the endpoint's protocol offers"),
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::Unlocated,
+            ..
+        } => String::from("give the declaration a world with `@[ entry(w) ]`"),
+        CheckRefusalOf::Access {
+            defect: AccessDefect::Moved,
+            ..
+        } => String::from("end the view with `resume` after reading its value"),
+        CheckRefusalOf::AbsentTupleComponent(_) => {
+            String::from("select a component that the tuple has")
+        },
+        CheckRefusalOf::AbstractKindNotUniverse(_) => {
+            String::from("give the abstract type a universe as its kind")
+        },
+        CheckRefusalOf::CapabilityOutsideAuthority { .. } => {
+            String::from("use an operation the capability grants")
+        },
+        CheckRefusalOf::Codata {
+            fault: CodataFault::ObservationLevel,
+            ..
+        } => String::from("lower each observation type to the codata declaration's universe"),
+        CheckRefusalOf::FamilyArgumentClassifier { .. } => {
+            String::from("give each type operator argument its parameter's kind")
+        },
+        CheckRefusalOf::CrossBlockReference { .. } => {
+            String::from("declare the referenced datatype before this datatype")
+        },
+        CheckRefusalOf::Codata {
+            fault: CodataFault::Undeclared,
+            ..
+        } => String::from("declare the codata type before naming it"),
+        CheckRefusalOf::Codata {
+            fault: CodataFault::WithoutObservations,
+            ..
+        } => String::from("declare at least one codata observation"),
+        CheckRefusalOf::FamilyArity { .. } => {
+            String::from("give the type operator its declared number of arguments")
+        },
+        CheckRefusalOf::FootprintsOverlap { .. } => {
+            String::from("give each fork half separate authority")
+        },
+        CheckRefusalOf::HandlerCoverage { .. } => {
+            String::from("handle each interface operation exactly once")
+        },
+        CheckRefusalOf::LiteralAmbiguous { .. } => {
+            String::from("apply the intended literal model reader by name")
+        },
+        CheckRefusalOf::LoopUndecided { .. } => {
+            String::from("simplify the loop obligation until the checker decides it")
+        },
+        CheckRefusalOf::NonUniformOccurrence(_) => {
+            String::from("apply the datatype only to its own parameters")
+        },
+        CheckRefusalOf::NotADataType(_) => String::from("use a declared datatype"),
+        CheckRefusalOf::NotAnAbstractType(_) => {
+            String::from("admit the abstract type before using it")
+        },
+        CheckRefusalOf::NotOver { .. } => {
+            String::from("start `Path.walk` with an identity over the path")
+        },
+        CheckRefusalOf::Access {
+            defect: AccessDefect::NotAView,
+            ..
+        } => String::from("open the value with `access` before resuming it"),
+        CheckRefusalOf::Access {
+            defect: AccessDefect::NotHeld,
+            ..
+        } => String::from("open a value with `var` before accessing it"),
+        CheckRefusalOf::UaInequivalent {
+            defect: UaDefect::NotInverse { .. },
+            ..
+        } => String::from("make the `ua` translators inverse"),
+        CheckRefusalOf::RepresentationAboveKind { .. } => {
+            String::from("seal a representation within its abstract type's universe")
+        },
+        CheckRefusalOf::PathCode(_) => {
+            String::from("use a quoted closed first-order code at each end")
+        },
+        CheckRefusalOf::SessionCodeExpected { .. } => {
+            String::from("give the session identity two session types")
+        },
+        CheckRefusalOf::SortMismatch { .. } => String::from("use a code of the expected sort"),
+        CheckRefusalOf::StageNotCarried { .. } => {
+            String::from("transport the recursive value only along a set")
+        },
+        CheckRefusalOf::UaInequivalent {
+            defect: UaDefect::PastTheBound { .. },
+            ..
+        } => String::from("use a corolla within the `ua` catalogue bound"),
+        CheckRefusalOf::StaticClassifierExpected { .. } => {
+            String::from("give each type parameter a universe or kind")
+        },
+        CheckRefusalOf::StaticLambdaArgument { .. } => {
+            String::from("pass a value instead of a type operator")
+        },
+        CheckRefusalOf::UnknownConstant { .. } => {
+            String::from("use a declaration with a known type")
+        },
+        CheckRefusalOf::UaInequivalent {
+            defect: UaDefect::Stuck { .. },
+            ..
+        } => String::from("make each `ua` translator return a target element"),
+        CheckRefusalOf::UaInequivalent {
+            defect: UaDefect::UnknownGenerator { .. },
+            ..
+        } => String::from("name only generators of the `ua` description"),
+        CheckRefusalOf::BuiltinRepeated { .. } => {
+            String::from("remove the `builtin` mark from one of the two declarations")
+        },
+        CheckRefusalOf::BuiltinMisplaced(_) => String::from(
+            "mark a datatype with `irSignature` or `irPair`, and a definition with `irArgs` or \
+             `irDecode`",
+        ),
+        CheckRefusalOf::BuiltinNotCanonical { .. } => {
+            String::from("write the holder in the canonical form of its role")
+        },
+        // Unworded: a later slice words each, most-seen first.
+        CheckRefusalOf::SealSiteRepeated(_)
+        | CheckRefusalOf::DataArgumentArity(_)
+        | CheckRefusalOf::UnknownConstructor { .. }
+        | CheckRefusalOf::ConstructorArity(_)
+        | CheckRefusalOf::NonExhaustiveDataCase(_)
+        | CheckRefusalOf::UnknownOperation { .. }
+        | CheckRefusalOf::ShiftWithoutReset { .. }
+        | CheckRefusalOf::DependentStack { .. }
+        | CheckRefusalOf::FunextUnsupported { .. }
+        | CheckRefusalOf::EquivUnsupported { .. }
+        | CheckRefusalOf::UncertifiedStratum { .. }
+        | CheckRefusalOf::OutsideFold { .. }
+        | CheckRefusalOf::UaUncertified { .. }
+        | CheckRefusalOf::ComposeUncertified { .. }
+        | CheckRefusalOf::FillUncertified { .. }
+        | CheckRefusalOf::GeneratorFamilyUnsupported { .. }
+        | CheckRefusalOf::EffectSignatureConflict { .. }
+        | CheckRefusalOf::OutOfFragment { .. }
+        | CheckRefusalOf::UnboundIndex { .. }
+        | CheckRefusalOf::BudgetExceeded { .. }
+        | CheckRefusalOf::DanglingNode { .. }
+        | CheckRefusalOf::AdmissionOrder { .. }
+        | CheckRefusalOf::MachineInvariant
+        | CheckRefusalOf::Linearity { .. }
+        | CheckRefusalOf::Codata { .. }
+        | CheckRefusalOf::Located { .. }
+        | CheckRefusalOf::CapabilityUngranted { .. }
+        | CheckRefusalOf::RideUnsupported { .. }
+        | CheckRefusalOf::ForwardUnsupported { .. } => {
+            return Maybe::Absent(help::Absent::Unworded);
+        },
+    })
+}
+
+/// The refusal names the procedural rewrite has worded, each on one line.
+#[cfg(test)]
+mod tests
+{
+    use quenchant_shape::shape::Maybe;
+
+    use super::advice;
+    use super::help;
+    use crate::message::tests::one_of_every_name;
+
+    /// The names the procedural rewrite has worded: the most-seen first,
+    /// then the names worded as their goldens regenerated.
+    const WORDED: [&str; 249] = [
+        "TypeMismatch",
+        "MalformedForm",
+        "EndpointMismatch",
+        "IllFormedDescription",
+        "StageNotBelow",
+        "UnresolvedName",
+        "OutOfFragment.WrongSort",
+        "ViewEscaped",
+        "UnknownMember",
+        "DuplicateDefinition",
+        "HeldLent",
+        "ImplicitUnsolved",
+        "NegativeOccurrence",
+        "NotApart",
+        "RuleNotRespected",
+        "RunNotAdmitted",
+        "UndecidedCoverage",
+        "KeptEscaped",
+        "LinearResidue",
+        "RulesUncompleted",
+        "Immobile",
+        "NotOpen",
+        "Immobile.Capture",
+        "Immobile.Homed",
+        "NotOpen.Capture",
+        "NotOpen.Homed",
+        "NotATranslation",
+        "SignatureMismatch.Sort",
+        "BridgeAtSealedType",
+        "UnlabelledRequirement",
+        "UnfixedParameter",
+        "ComposeNotAShape",
+        "ComposeDoesNotFill",
+        "NoFiller",
+        "NoFiller.Omitted",
+        "DerivedComponent",
+        "UnenclosedRun",
+        "UnresolvedTypeHead",
+        "UsedAfterClose",
+        "ModelUnanswered",
+        "NonExhaustiveMatch",
+        "ShapeMismatch",
+        "BufferUnreturned",
+        "HandlerUnlawful",
+        "HeldCaptured",
+        "HeldKept",
+        "IllTypedPayload",
+        "MisplacedAttribute",
+        "ModelAmbiguous",
+        "NonCovariantMotive",
+        "NotSynthesisable",
+        "OutOfFragment.Arity",
+        "RuleNotPresentable",
+        "RulesNonLinear",
+        "RulesOverlapCondition",
+        "RulesUnoriented",
+        "UninterfacedMember",
+        "ViewNotPlace",
+        "AbsentRecordField",
+        "AcrossHandler",
+        "ArmsDisagree",
+        "CapabilityAmplified",
+        "GenericMisplaced",
+        "HeldCopied",
+        "InertRead",
+        "OutOfFragment.Stage",
+        "PhaseDependence",
+        "RulesOverlapSecondOrder",
+        "TacticRefused",
+        "UndescribedMember.LhsNotOperation",
+        "UndescribedMember.IllSorted",
+        "UndescribedMember.NoUniverse",
+        "UnguardedCorecursion",
+        "UnprovenLaw.Admitted",
+        "BufferReturnedTwice",
+        "CapabilityEscaped",
+        "CapabilityMissing",
+        "CapturedEndpoint",
+        "CodataKindNotUniverse",
+        "CodataOccurrence",
+        "CompoundEndpoint",
+        "Elsewhere",
+        "EndpointAsValue",
+        "HeldConsumed",
+        "HeldShared",
+        "ImportCycle",
+        "LoopNotRespected",
+        "ModelImplicitValue",
+        "OutOfFragment.Held",
+        "OutOfFragment.Unannotated",
+        "RulesDiverge",
+        "RulesNeverComplete",
+        "SessionMismatch",
+        "SessionNotEquivalent",
+        "StagesDisagree",
+        "StrayReceiverMode",
+        "UnwindEffect",
+        "ViewReadOnly",
+        "ViewSpent",
+        "AmbiguousMethod",
+        "AmbiguousConstructor",
+        "AtomTransport",
+        "BareFeedback",
+        "Boundary",
+        "BoundaryUnrealised.Size",
+        "BufferRead",
+        "CapabilityCaptured",
+        "CapabilityConsumable",
+        "CapabilityForged",
+        "ViewUnended",
+        "CellNotALoop",
+        "ContinuationAsValue",
+        "ContinuationCaptured",
+        "ContinuationUnspent",
+        "ContinuationUsedTwice",
+        "DataFieldLevel",
+        "DataKindNotUniverse",
+        "DependentBind",
+        "DescentOnSeveralParameters",
+        "DialogueInverted",
+        "DialogueUnmatched",
+        "DirectedCell",
+        "EndpointUsedTwice",
+        "EntryNamed",
+        "FamilyTelescope",
+        "ForwardMemberReference",
+        "GenericUncovered",
+        "HoldElsewhere",
+        "ImplicitTelescope",
+        "ImplicitInParentheses",
+        "ImplicitUnsupplied",
+        "ImportShadows",
+        "ImportUnresolved",
+        "IndexOccurrence",
+        "InstanceAmbiguous",
+        "InstanceUnanswered",
+        "LevelMismatch",
+        "MarkUnfounded",
+        "MismatchedPattern",
+        "MissingPayload",
+        "MissingRecordField",
+        "PatchOutsideBase",
+        "NestedOccurrence",
+        "NonValuePayload",
+        "NotAHandle",
+        "NotNatural",
+        "OfferArms",
+        "OpenSessionPayload",
+        "OpenedElsewhere",
+        "OutOfFragment.ForeignClaim",
+        "OutOfFragment.Misplaced",
+        "OutOfFragment.NonContractive",
+        "OutOfFragment.NotAFunction",
+        "OutOfFragment.TopLevel",
+        "PlaceUnindexed",
+        "PointwiseDistinct",
+        "ProjectionFromApplication",
+        "MethodAsValue",
+        "RegionAsValue",
+        "RoundTripDistinct",
+        "SessionNotSubtype",
+        "ShadowedBuiltin",
+        "TelescopeCycle",
+        "Undecided",
+        "UndeclaredWorld",
+        "UnderivedRule",
+        "UnknownAttribute",
+        "UnknownTactic",
+        "OutputsAsOneValue",
+        "Unlocated",
+        "UnofferedLabel",
+        "UnrestrictedEndpoint",
+        "UnresolvedDocLink",
+        "UnstatedComponent.Arity",
+        "UnstatedComponent.IllSorted",
+        "UnstatedComponent.UnknownHead",
+        "UnstatedComponent.Unsorted",
+        "UnstatedComponent.Unbound",
+        "ViewMoved",
+        "ViewOfNoPlace",
+        "WithoutK",
+        "AbsentTupleComponent",
+        "AbstractKindNotUniverse",
+        "BoundaryUnrealised.Align",
+        "BoundaryUnrealised.Arity",
+        "BoundaryUnrealised.Members",
+        "BoundaryUnrealised.Niche",
+        "CapabilityOutsideAuthority",
+        "CodataObservationLevel",
+        "CodataUndeclared",
+        "CodataWithoutObservations",
+        "CorollaCardinality",
+        "CorollaTables",
+        "CrossBlockReference",
+        "DuplicateAttribute",
+        "DuplicateImportAlias",
+        "DuplicateSignature",
+        "EntryType",
+        "FamilyArgumentClassifier",
+        "FamilyArity",
+        "FootprintsOverlap",
+        "HandlerCoverage",
+        "LiteralAmbiguous",
+        "LoopUndecided",
+        "MalformedLiteral",
+        "NoUniverseAbove",
+        "NonUniformOccurrence",
+        "NotADataType",
+        "NotAFunctor",
+        "NotAModel",
+        "NotAView",
+        "NotAnAbstractType",
+        "NotHeld",
+        "NotInverse",
+        "NotOver",
+        "OutOfFragment.EmptyList",
+        "OutOfFragment.JoinsBlock",
+        "OutOfFragment.NonUniform",
+        "OutOfFragment.NotAtResult",
+        "OutOfFragment.NotInTail",
+        "OutOfFragment.View",
+        "OutsideLoop",
+        "PartialField",
+        "PastTheBound",
+        "PathCode",
+        "RepresentationAboveKind",
+        "SessionCodeExpected",
+        "SortMismatch",
+        "StageNotCarried",
+        "StaticClassifierExpected",
+        "StaticLambdaArgument",
+        "TranslatorStuck",
+        "UndescribedMember.ResultArity",
+        "UnexportedName",
+        "UnknownConstant",
+        "UnknownGenerator",
+        "UnlockedDependency",
+        "UnmarkedSelfReference",
+        "Unreachable",
+        "BuiltinMark.Repeated",
+        "BuiltinMark.Misplaced",
+        "BuiltinMark.NotCanonical",
+        "FixedFieldDiffers",
+        "LinearSlotConsumed",
+        "LinearSlotUnconsumed",
+        "ShadowCaptured",
+        "ComonoidAbsent",
+        "MultiplicityUnsupported",
+        "NonUniformResult",
+    ];
+
+    /// Every worded name has a one-line help that opens with a lowercase verb.
+    /// Every other name is unworded.
+    #[test]
+    fn the_most_seen_names_are_worded_on_one_line()
+    {
+        let mut seen: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
+        for refusal in one_of_every_name() {
+            let name = alloc::format!("{}", refusal.name());
+            match advice(refusal) {
+                Maybe::Present(help) => {
+                    assert!(WORDED.contains(&name.as_str()), "{name} is worded: {help}");
+                    assert!(!help.contains('\n'), "{name}'s help is one line: {help}");
+                    assert!(
+                        help.starts_with(|first: char| first.is_ascii_lowercase()),
+                        "{name}'s help opens with its verb: {help}"
+                    );
+                    seen.push(name);
+                },
+                Maybe::Absent(reason) => {
+                    assert_eq!(reason, help::Absent::Unworded, "{name}");
+                    assert!(!WORDED.contains(&name.as_str()), "{name} has no help");
+                },
+            }
+        }
+        for name in WORDED {
+            assert!(
+                seen.iter().any(|held| held == name),
+                "{name} is reached by a refusal of the vocabulary"
+            );
+        }
+    }
+}
