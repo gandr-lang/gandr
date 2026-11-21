@@ -1,0 +1,57 @@
+test: algebra::a_forced_spine_of_blocks_resolves_each_state_once_6747
+package: gandr-surface-layout
+command: mise run debug:test gandr-surface-layout algebra::a_forced_spine_of_blocks_resolves_each_state_once_6747
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-layout/baab3e253f481283/out/tests-baab3e253f481283"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-layout/baab3e253f481283/out/tests-baab3e253f481283' (arm64).
+(lldb) settings set -- target.run-args  "algebra::a_forced_spine_of_blocks_resolves_each_state_once_6747" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = tests-baab3e253f481283`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x00000001001171e8
+(lldb) run
+
+running 1 test
+test algebra::a_forced_spine_of_blocks_resolves_each_state_once_6747 ... 
+thread 'algebra::a_forced_spine_of_blocks_resolves_each_state_once_6747' (30187278) panicked at crates/surface-layout/tests/algebra.rs:1615:10:
+the spine renders within the default ceilings: LimitExceeded { kind: FrontierEntries, limit: LimitBound { bound: 4000000 } }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: tests-baab3e253f481283 was compiled with optimization - stepping may behave oddly; variables may not be available
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 47085 launched: 'target/debug-trace/debug/build/gandr-surface-layout/baab3e253f481283/out/tests-baab3e253f481283' (arm64)
+Process 47085 stopped
+* thread #2, name = 'algebra::a_forced_spine_of_blocks_resolves_each_state_once_6747', stop reason = breakpoint 1.1
+       frame #0: 0x00000001001171e8 tests-baab3e253f481283`__rustc::rust_panic at panicking.rs:887:25 [opt]
+(lldb) bt 24
+* thread #2, name = 'algebra::a_forced_spine_of_blocks_resolves_each_state_once_6747', stop reason = breakpoint 1.1
+   * frame #0: 0x00000001001171e8 tests-baab3e253f481283`__rustc::rust_panic at panicking.rs:887:25 [opt]
+     frame #1: 0x00000001000f1be4 tests-baab3e253f481283`std::panicking::panic_with_hook at panicking.rs:840:5 [opt]
+     frame #2: 0x00000001000dc118 tests-baab3e253f481283`std::panicking::panic_handler::{closure#0} at panicking.rs:688:13 [opt]
+     frame #3: 0x00000001000d43cc tests-baab3e253f481283`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18 [opt]
+     frame #4: 0x00000001000dc7fc tests-baab3e253f481283`__rustc::rust_begin_unwind at panicking.rs:679:5 [opt]
+     frame #5: 0x0000000100118e38 tests-baab3e253f481283`core::panicking::panic_fmt at panicking.rs:80:14 [opt]
+     frame #6: 0x0000000100118bc4 tests-baab3e253f481283`core::result::unwrap_failed at result.rs:1871:5 [opt]
+     frame #7: 0x00000001000367d4 tests-baab3e253f481283`<core::result::Result<gandr_surface_layout::render::Rendered, gandr_surface_layout::error::RenderError>>::expect(self=Err(LimitExceeded{kind:FrontierEntries, limit:{bound:4000000}}), msg="the spine renders within the default ceilings") at result.rs:1184:23
+     frame #8: 0x0000000100012c6c tests-baab3e253f481283`tests::algebra::a_forced_spine_of_blocks_resolves_each_state_once_6747 at algebra.rs:1615:10
+     frame #9: 0x00000001000044a8 tests-baab3e253f481283`tests::algebra::a_forced_spine_of_blocks_resolves_each_state_once_6747::{closure#0}((null)={}) at algebra.rs:1582:60
+     frame #10: 0x0000000100032d54 tests-baab3e253f481283`<tests::algebra::a_forced_spine_of_blocks_resolves_each_state_once_6747::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #11: 0x0000000100047658 tests-baab3e253f481283`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #12: 0x0000000100047650 tests-baab3e253f481283`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #13: 0x0000000100052b74 tests-baab3e253f481283`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #14: 0x0000000100052b68 tests-baab3e253f481283`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #15: 0x0000000100052b68 tests-baab3e253f481283`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #16: 0x0000000100052b64 tests-baab3e253f481283`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #17: 0x0000000100052b64 tests-baab3e253f481283`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #18: 0x0000000100052b64 tests-baab3e253f481283`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #19: 0x0000000100052b58 tests-baab3e253f481283`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #20: 0x000000010004d568 tests-baab3e253f481283`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+     frame #21: 0x000000010004d504 tests-baab3e253f481283`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #22: 0x0000000100055038 tests-baab3e253f481283`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #23: 0x0000000100055028 tests-baab3e253f481283`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

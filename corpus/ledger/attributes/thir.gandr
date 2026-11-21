@@ -1,0 +1,7 @@
+/// `thir`: its two texts name a Rust file beside the source and a function of
+/// that file, whose staged THIR is the signature's value. The dispatcher stages
+/// a mark only when its texts hold no escape. This file holds one, so the mark
+/// has no staged answer, with a reader and with none.
+@[refuses("StagedBody.Unanswered")]
+@[thir(("example\t.rs", "identity"))]
+def identityBody : Integer;

@@ -1,0 +1,28 @@
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/modules/port-sort-scope.gandr:22:37
+   │
+21 │ ┌   @[refuses("TypeMismatch")]
+22 │ │   def say(flag : Bool) -> Integer = 0;
+   │ └───────────┬─────────────────────────┯┘ checked against `Bool -> String`; while checking the body of this thunk
+   │             │                         │
+   │             │                         its type does not convert: expected `String`, found `Integer`
+   │             checked against `Bool -> -F String`; while checking the body of this function; binds flag : Bool
+   │
+   ├ note: `say` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
+
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/modules/port-sort-scope.gandr:21:3
+   │
+18 │   module Quiet : Model(Shout) where
+   │                        ───── the type it synthesises
+   ┆
+21 │ ┏   @[refuses("TypeMismatch")]
+22 │ ┃   def say(flag : Bool) -> Integer = 0;
+   │ ┃                                      ╿
+   │ ┃                                      │
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━its type does not convert: expected `Bool -> Integer`, found `Bool -> String`
+   │                                        the type it is checked against
+   │
+   ├ note: `say` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
