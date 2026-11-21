@@ -653,7 +653,7 @@ unproduced = [
   { rule = "bind_expression", reason = "the lowering names no former for this term (`former_of` is `Unadmitted`), so no core term carries it: a theory's rule term reads it as an abstraction" },
   { rule = "circuit_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "codata_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
-  { rule = "constructor_pattern.juxtaposed", reason = "a pattern: core keeps none; a case keeps an arm's constructor and its binders, which the printer writes as `constructor_pattern`. The call form leaves the grammar in the third landing of #8057, and the printer writes this rule then" },
+  { rule = "constructor_pattern", reason = "the call form of a constructor pattern: the printer writes an arm juxtaposed, as `constructor_pattern.juxtaposed`, and the call form leaves the grammar in the third landing of #8057" },
   { rule = "data_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "def_value", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "derived_rule_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },

@@ -882,7 +882,7 @@ fn a_body_names_its_match_arms_by_their_constructors_809()
             presentation.unspelled().iter().copied().collect::<Vec<_>>()
         ),
         (
-            String::from("rec a { fun (b) { match b { | Zero => b | Succ(c) => a c } } }"),
+            String::from("rec a { fun (b) { match b { | Zero => b | Succ c => a c } } }"),
             vec![Unspelled::Notation(Notation::Fixpoint)]
         ),
         "each arm is written under the constructor it matches: {:?}",
@@ -942,14 +942,14 @@ fn a_shadowed_constructor_spells_by_its_family_2428()
     )
     .expect("the body lays out")
     .to_string();
-    for written in ["Theory.App(", "Theory.Var(", " Oper("] {
+    for written in ["| Theory.App ", "| Theory.Var ", "| Oper "] {
         assert!(
             printed.contains(written),
             "the arms write `{written}`: {printed}"
         );
     }
     assert!(
-        !printed.contains(" App(") && !printed.contains(" Var("),
+        !printed.contains("| App ") && !printed.contains("| Var "),
         "no shadowed constructor is written bare: {printed}"
     );
 }
