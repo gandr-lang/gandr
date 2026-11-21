@@ -1,0 +1,36 @@
+[package]
+name = "gandr-runtime-rust-reader"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.100"
+description = "The reader of a Rust crate on rustc's own libraries: each requested function's symbol, convention and layouts, as an entry of the record"
+readme = "README.md"
+repository = "https://github.com/gandr-lang/gandr"
+license = "Apache-2.0 WITH LLVM-exception"
+publish = false
+
+[package.metadata.rust-analyzer]
+rustc_private = true
+
+# The reader links rustc's own libraries, so it is no member of the root
+# workspace, whose builds never need the `rustc-dev` component. Its lints are
+# the root's walls that reach a driver: Clippy's groups and the denied
+# warnings.
+[workspace]
+
+[[bin]]
+name = "gandr-rust-reader"
+path = "src/main.rs"
+
+# The record crate holds the form that the reader writes, and it links no
+# library of rustc.
+[dependencies]
+gandr-runtime-rust-record = { path = "../runtime-rust-record" }
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+
+[lints.rust]
+unsafe_code = "forbid"
+warnings = "deny"

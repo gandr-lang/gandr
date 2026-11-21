@@ -1,0 +1,11 @@
+@[thir(("a.rs", "f"))]
+def f : Integer;
+
+@[thir(("a\t.rs", "g"))]
+def g : Integer;
+
+@[thir(("b.rs", "h"))]
+def h : Integer;
+
+@[thir(("a.rs", "k"))]
+def k : Integer;

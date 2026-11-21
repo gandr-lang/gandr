@@ -1,0 +1,62 @@
+[package]
+name = "gandr-kernel-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The kernel's defunctionalized checking machine, structural conversion, admission choke point, the content-keyed check memo wired as the default path, and the sequential replay of conversion traces"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["content-addressing", "gandr", "kernel", "memoization", "type-checker"]
+categories = ["compilers"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The certified trusted base uses kernel crates and core/alloc. Pinned
+# arithmetic and absence types add no runtime allocation or std dependency.
+# The conversion-decision seam is the vocabulary the replay reads an engine's
+# trace in. The anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled. BLAKE3 keys a recalled verdict by what the
+# declaration reads and by the kernel's whole input, and Ed25519 signs and
+# verifies the receipt that attests it.
+# The level context asks the potential maintenance of the
+# dynamic-graph crate for a model of a declaration's difference constraints,
+# over the graph crate's ids. That crate proposes and adds no trust: the
+# landmark poset validates the model before it admits. Dev-dependencies are
+# outside shipped trust.
+[dependencies]
+anodized.workspace = true
+blake3.workspace = true
+ed25519-dalek.workspace = true
+gandr-kernel-check-memo.workspace = true
+gandr-kernel-conversion-trace.workspace = true
+gandr-kernel-core-base.workspace = true
+gandr-kernel-data.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-theory-dynamic-graphs.workspace = true
+gandr-theory-graphs.workspace = true
+quenchant-arith.workspace = true
+quenchant-shape.workspace = true
+
+[dev-dependencies]
+gandr-core-nbe.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-core-base = { workspace = true, features = ["fixture"] }
+proptest.workspace = true
+
+[features]
+default = []
+# The count of the frames that the checks of the process pop, which
+# `gandr check --counts` prints for the small-device bench (#7359). Off, no
+# count is compiled and a pop reads nothing.
+counts = []
+
+[lints]
+workspace = true

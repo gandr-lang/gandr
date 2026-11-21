@@ -1,0 +1,2 @@
+def s = "a  ${  b }	c" ;
+def k = (  ?hole  ) ;
