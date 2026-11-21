@@ -1,30 +1,40 @@
 //! `gate`: the bookkeeping of a landing's gate as one program.
 //!
+//! # Boundaries
+//!
 //! `gate inputs list <commit> <scope> <check>` prints the inputs of the check
 //! over the scope at the commit, one per line: a path, a tab and its object.
 //! `gate inputs digest --commit <commit>... --check <check>... <scope>`
 //! prints one line for each commit and each check: the commit, the check and
 //! the SHA-256 of that list, with tabs between them.
+//!
 //! `gate verdict key [--tree <tree>] <check>...` prints the key of the
-//! verdict of each check, one line of JSON each. `GATE_BASE` names the base
-//! of the change and `GATE_SCOPE` the scope of each check.
-//! `GATE_VERDICT_RUSTC` names another compiler than `rustc`, and
-//! `GATE_VERDICT_POLICY` gives the revision of the policy.
-//! `gate verdict read <check>...` reads which check holds on the tree of
-//! `HEAD`, by the inputs of its base `GATE_BASE` or by a signed record of a
-//! pass on the remote `GATE_VERDICT_REMOTE`, `origin` by default. It prints
-//! one line for each fact to standard error. `GATE_VERDICT_SCOPE` gives the
-//! scope of the read, `GATE_VERDICT_SIGNERS` names a file of allowed signers,
-//! and `GATE_VERDICT_TRUNK_OK` lists the bases that the trunk holds.
+//! verdict of each check, one line of JSON each. `gate verdict read
+//! <check>...` reads which check holds on the tree of `HEAD`, by the inputs of
+//! its base or by a signed record of a pass on the remote. It prints one line
+//! for each fact to standard error.
 //!
 //! `--tables <directory>` names the directory of `inputs.json`,
 //! `verdicts.json` and the scope script. `--times` prints each part of the
 //! run to standard error: the sum of its times, the count of its calls and
-//! its name. `GATE_INPUTS_TABLE` names another table than `inputs.json`, and
-//! `GATE_INPUTS_TASK` gives the definition of each task, for the cases of a
-//! scratch repository that holds no task.
+//! its name.
 //!
-//! # Exit codes
+//! The variables of the environment that the commands read are these.
+//!
+//! |Variable|What it gives|
+//! |---|---|
+//! |`GATE_BASE`|the base of the change|
+//! |`GATE_SCOPE`|the scope of each check of a key|
+//! |`GATE_VERDICT_RUSTC`|another compiler than `rustc`|
+//! |`GATE_VERDICT_POLICY`|the revision of the policy|
+//! |`GATE_VERDICT_REMOTE`|the remote of the records, `origin` by default|
+//! |`GATE_VERDICT_SCOPE`|the scope of a read|
+//! |`GATE_VERDICT_SIGNERS`|a file of allowed signers|
+//! |`GATE_VERDICT_TRUNK_OK`|the bases that the trunk holds|
+//! |`GATE_INPUTS_TABLE`|another table than `inputs.json`|
+//! |`GATE_INPUTS_TASK`|the definition of each task, for a scratch repository that holds no task|
+//!
+//! The exit codes are these.
 //!
 //! - `0`: the lines were printed, or each check of a read holds; also `--help`
 //!   and `--version`.
