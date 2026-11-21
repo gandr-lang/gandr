@@ -1,0 +1,48 @@
+//! This source defines a first-order model of `theory Nat`.
+//!
+//! A first-order model is an algebra for its signature
+//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics].
+//!
+//! The model provides one carrier for each sort. The model provides one
+//! function for each operation.
+//! A source model of `Nat` has a record type. The syntax model, counting model
+//! and `Model(Nat)` module inhabit that type.
+//!
+//! - see: #640
+//! - cites: [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]
+//!
+//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories"
+
+// The naturals' signature, `theory Nat`.
+import "./second-order-signatures.gandr";
+
+/// The naturals as data: the syntax model's carrier, its constructors the
+/// operations.
+pub data N : Type where
+  | Z : N
+  | S : (n : N) --> N
+
+/// The syntax model as a `Model(Nat)` module: the carrier is the data and
+/// each operation its constructor.
+module SyntaxNat : Model(Nat) where
+  type Nat = N;
+  def zero : N = Z;
+  def succ(n : N) -> N = S n;
+
+/// The module packed into the record type of `Nat`'s models: its carrier and
+/// its two operations, in the order `Model(Nat)` mints them.
+def syntaxModel : *{nat : Type, zero : nat, succ : nat -> nat} = *{
+  N,
+  *{SyntaxNat.zero, SyntaxNat.succ}
+};
+
+/// A second model, on the integers: zero is `0` and the successor adds one.
+def countingModel : *{nat : Type, zero : nat, succ : nat -> nat} = *{
+  Integer,
+  *{0, fun (n) { n + 1 }}
+};
+
+/// The syntax model's successor at its zero builds the data's one: the
+/// module's operations run.
+@[runs("S Z")]
+def one() -> N = SyntaxNat.succ SyntaxNat.zero;
