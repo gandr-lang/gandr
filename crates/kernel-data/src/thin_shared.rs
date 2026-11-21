@@ -63,8 +63,9 @@ struct Head<H, T>
 }
 
 /// An item of the greatest alignment that the static empty block serves. A
-/// head over it has the count and the length where a head over any item of
-/// an alignment up to 16 has them, and its items at the same offset.
+/// head over any item has the count and the length where a head over it has
+/// them. A head over an item of an alignment up to 16 places its items within
+/// the static block or at its end, at an offset of that alignment.
 ///
 /// # Specification
 /// trivial.
@@ -658,7 +659,7 @@ impl<T> Default for ThinShared<(), T, Global>
         const {
             assert!(
                 align_of::<T>() <= align_of::<Aligned>()
-                    && offset_of!(Head<(), T>, items) == offset_of!(Head<(), Aligned>, items),
+                    && offset_of!(Head<(), T>, items) <= size_of::<Head<(), Aligned>>(),
                 "the static empty block serves an item of an alignment up to 16"
             );
         }
@@ -666,8 +667,9 @@ impl<T> Default for ThinShared<(), T, Global>
         {
             EMPTY.count.join();
             // The pointer keeps the provenance of the whole static. A head over
-            // `T` reads the count and the length where the static holds them,
-            // and its items, of which there are none, at the same offset.
+            // `T` reads the count and the length where the static holds them.
+            // Its items, of which there are none, lie within the static or at
+            // its end. A target of 32 bits places them before the static's own.
             Self {
                 head: NonNull::from(&EMPTY).cast(),
                 alloc: Global,

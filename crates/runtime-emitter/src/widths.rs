@@ -80,6 +80,8 @@ pub(crate) enum Unblocked
 {
     /// No description gives the row: it is no machine operation of a width.
     Undescribed,
+    /// This host runs no block: its target is none of the targets of a block.
+    Unhosted,
     /// The block compiler refused the row's description.
     Refused(Refusal),
 }
@@ -286,7 +288,8 @@ fn three_address(
 /// - ensures: `Ok` exactly for a row with a machine operation whose description
 ///   the block compiler compiles for this host; its key names the compiled
 ///   block, and its bits ask for the answer in the row's form.
-/// - fails: [`Unblocked::Undescribed`] for a row with no machine operation, and
+/// - fails: [`Unblocked::Undescribed`] for a row with no machine operation,
+///   [`Unblocked::Unhosted`] on a host that runs no block, and
 ///   [`Unblocked::Refused`] with the block compiler's refusal.
 /// - executable: none — a compile is a process of the assembler.
 ///
@@ -307,8 +310,9 @@ pub(crate) fn block(primitive: Primitive) -> Result<WidthBlock, Unblocked>
     let operation = primitive
         .machine_operation()
         .ok_or(Unblocked::Undescribed)?;
+    let host = machine::HOSTED.map_err(|_unhosted| Unblocked::Unhosted)?;
     let compiled = BLOCKS
-        .compile(&description(machine::HOST, operation))
+        .compile(&description(host, operation))
         .map_err(Unblocked::Refused)?;
     Ok(WidthBlock {
         key: compiled.key,
