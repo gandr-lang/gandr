@@ -178,8 +178,10 @@ fn chain(
     count: Count,
 ) -> LoweredChain
 {
-    let base = || -> alloc::boxed::Box<[RuleNode]> {
-        [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+    let base = || {
+        gandr_kernel_data::ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(
+            0_usize,
+        ))])
     };
     let cells = FreeCells::new(
         ConstantIndex::from(SORT),
@@ -401,8 +403,10 @@ fn two_sphere(core: &mut CoreArena) -> (Sphere, LoweredChain)
     let at_cell = core.computation_return(named);
     let identity_body = by_cases(core, vec![at_point, at_cell]);
     let squash_body = by_cases(core, vec![at_point]);
-    let base = || -> alloc::boxed::Box<[RuleNode]> {
-        [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+    let base = || {
+        gandr_kernel_data::ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(
+            0_usize,
+        ))])
     };
     let cells = FreeCells::new(
         ConstantIndex::from(sort),
@@ -512,8 +516,10 @@ fn onto_other(
     );
     let lambda = core.computation_lambda(case);
     let onto = core.value_thunk(lambda);
-    let base = || -> alloc::boxed::Box<[RuleNode]> {
-        [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+    let base = || {
+        gandr_kernel_data::ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(
+            0_usize,
+        ))])
     };
     let cells = FreeCells::new(
         ConstantIndex::from(OTHER_SORT),
@@ -641,8 +647,10 @@ fn transport_along_a_cell_carries_a_loop_past_two_empty_images_6741()
     );
     let lambda = core.computation_lambda(case);
     let flat = core.value_thunk(lambda);
-    let base = || -> alloc::boxed::Box<[RuleNode]> {
-        [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+    let base = || {
+        gandr_kernel_data::ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(
+            0_usize,
+        ))])
     };
     let loops = FreeCells::new(
         ConstantIndex::from(OTHER_SORT),

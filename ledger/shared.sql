@@ -59,6 +59,8 @@ INSERT INTO shared VALUES('crates/kernel-term/src/encode.rs','Names.named','read
 INSERT INTO shared VALUES('crates/kernel-term/src/encode.rs','Names.places','read only',NULL,'The first place of each key, which the names write once and each read of them shares.');
 INSERT INTO shared VALUES('crates/kernel-term/src/encode.rs','Places.0','read only',NULL,'The admission place of each position, which its encoding writes once.');
 INSERT INTO shared VALUES('crates/kernel-term/src/operation_rules.rs','OperationRules.0','read only',NULL,'The rules of an operation, which its declaration writes once.');
+INSERT INTO shared VALUES('crates/kernel-term/src/presented.rs','FreeCell.source','read only',NULL,'The source of a free cell, which the cells of one presentation share and none writes.');
+INSERT INTO shared VALUES('crates/kernel-term/src/presented.rs','FreeCell.target','read only',NULL,'The target of a free cell, which the cells of one presentation share and none writes.');
 INSERT INTO shared VALUES('crates/kernel-term/src/presented.rs','Presentation.cells','read only',NULL,'The free cells of a presentation, which its declaration writes once.');
 INSERT INTO shared VALUES('crates/kernel-term/src/presented.rs','Presentation.rules','read only',NULL,'The rules of a presentation, which its declaration writes once.');
 INSERT INTO shared VALUES('crates/kernel-term/src/term.rs','Value.dialogues','read only',NULL,'A payload of a value node, which its node writes once.');

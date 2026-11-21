@@ -5492,9 +5492,8 @@ mod tests
             crate::ConstantIndex::from(0_usize),
             SmallVec::<_, 0, Global>::new(),
         );
-        let base = || {
-            alloc::boxed::Box::from([RuleNode::Constructor(crate::ConstructorTag::from(0_usize))])
-        };
+        let base =
+            || ThinShared::from_iter([RuleNode::Constructor(crate::ConstructorTag::from(0_usize))]);
         let cells = FreeCells::new(
             crate::ConstantIndex::from(0_usize),
             SmallVec::<_, 0, Global>::from_iter([FreeCell::new(base(), base())]),

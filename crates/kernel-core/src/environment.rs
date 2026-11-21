@@ -10834,8 +10834,10 @@ mod tests
             .add_decl(staged)
             .expect("the one-point sort admits")
             .position();
-        let point = || -> alloc::boxed::Box<[RuleNode]> {
-            [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+        let point = || {
+            gandr_kernel_data::ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(
+                0_usize,
+            ))])
         };
         let cells = FreeCells::new(
             sort,

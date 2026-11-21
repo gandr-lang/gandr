@@ -3494,8 +3494,10 @@ fn looped_replay(
     dialogue: &[ConversionDecision<ReplayNode>],
 ) -> KernelVerdict
 {
-    let base = || -> alloc::boxed::Box<[RuleNode]> {
-        [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+    let base = || {
+        gandr_kernel_data::ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(
+            0_usize,
+        ))])
     };
     let mut environment = Environment::new();
     let mut staging = environment.stage();
@@ -3664,7 +3666,7 @@ fn a_named_loop_arm_answers_its_word_5489()
     let own = staging
         .arena()
         .value_type_data(words, SmallVec::<_, 0, Global>::new());
-    let point = || -> alloc::boxed::Box<[RuleNode]> { [RuleNode::Constructor(base)].into() };
+    let point = || gandr_kernel_data::ThinShared::from_iter([RuleNode::Constructor(base)]);
     let cells = gandr_kernel_term::FreeCells::new(
         sort,
         SmallVec::<_, 0, Global>::from_iter([gandr_kernel_term::FreeCell::new(point(), point())]),

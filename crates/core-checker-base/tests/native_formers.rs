@@ -26,6 +26,7 @@ use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
@@ -748,8 +749,7 @@ fn a_loop_is_a_word_at_its_path_in_both_checkers()
     let own = arena.value_type_data(words, vec![]);
     let point = arena.value_constructor(sort, carrier, ConstructorTag::from(0_usize), vec![]);
     let path = arena.value_type_path(carrier, point, point);
-    let base =
-        || -> Box<[RuleNode]> { [RuleNode::Constructor(ConstructorTag::from(0_usize))].into() };
+    let base = || ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(0_usize))]);
     let cells = FreeCells::new(sort, SmallVec::from_iter([FreeCell::new(base(), base())]));
     let table = || vec![vec![], vec![own], vec![own]];
     // The one-point sort, and the words of one loop at its point.
@@ -890,8 +890,7 @@ fn one_loop(arena: &mut CoreArena) -> (Vec<Declaration>, OneLoop)
     let own = arena.value_type_data(words, vec![]);
     let point = arena.value_constructor(sort, carrier, ConstructorTag::from(0_usize), vec![]);
     let path = arena.value_type_path(carrier, point, point);
-    let base =
-        || -> Box<[RuleNode]> { [RuleNode::Constructor(ConstructorTag::from(0_usize))].into() };
+    let base = || ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(0_usize))]);
     let cells = FreeCells::new(sort, SmallVec::from_iter([FreeCell::new(base(), base())]));
     let empty = arena.value_constructor(words, own, ConstructorTag::from(0_usize), vec![]);
     let letter = arena.value_constructor(words, own, ConstructorTag::from(1_usize), vec![empty]);

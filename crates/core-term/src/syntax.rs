@@ -5058,8 +5058,10 @@ mod tests
         let own = arena.value_type_data(words, alloc::vec![]);
         let point =
             arena.value_constructor(sort, carrier, ConstructorTag::from(0_usize), alloc::vec![]);
-        let base = || -> alloc::boxed::Box<[RuleNode]> {
-            [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+        let base = || {
+            gandr_kernel_data::ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(
+                0_usize,
+            ))])
         };
         let cells = FreeCells::new(
             sort,
@@ -5183,8 +5185,10 @@ mod tests
         let own = arena.value_type_data(words, alloc::vec![]);
         let point =
             arena.value_constructor(sort, carrier, ConstructorTag::from(0_usize), alloc::vec![]);
-        let base = || -> alloc::boxed::Box<[RuleNode]> {
-            [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+        let base = || {
+            gandr_kernel_data::ThinShared::from_iter([RuleNode::Constructor(ConstructorTag::from(
+                0_usize,
+            ))])
         };
         let cells = FreeCells::new(
             sort,
