@@ -15,5 +15,5 @@ def deeper() -> Integer = {
   let a = 1;
   let b = a;
   let c = b;
-  match c { | _ => match c { | _ => fromZero () } }
+  match c { | _ => match c { | _ => fromZero } }
 };

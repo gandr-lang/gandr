@@ -2535,13 +2535,15 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     ///   `frame`.
     /// - ensures: for a name, the type its binder or declaration was written
     ///   with, a thunk, under `frame`, a binder's type owned by the declaration
-    ///   the selection belongs to; for a call, the callee's written result, as
-    ///   `Native::called_result` reads it, a computation under the outermost
-    ///   frame; for a chain of selections rooted at either, the family the last
-    ///   link's observation returns when its written result is its own family,
-    ///   as [`ModelsRef::observed_family`] reads it, each link observed off
-    ///   what the link before it is. Nothing otherwise, and nothing for a link
-    ///   its family does not have, which that link's own reading refuses.
+    ///   the selection belongs to; for a call, and for the bare name of a
+    ///   definition of no input, which is its call, the callee's written
+    ///   result, as `Native::called_result` reads it, a computation under the
+    ///   outermost frame; for a chain of selections rooted at either, the
+    ///   family the last link's observation returns when its written result is
+    ///   its own family, as [`ModelsRef::observed_family`] reads it, each link
+    ///   observed off what the link before it is. Nothing otherwise, and
+    ///   nothing for a link its family does not have, which that link's own
+    ///   reading refuses.
     /// - fails: [`LoweringRefusal::BudgetExceeded`]; the root name's and the
     ///   callee's resolution refusals; a written type's own malformation.
     /// - panics: none.
@@ -2603,7 +2605,19 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
         else {
             return Ok(None);
         };
-        let mut subject = if matches!(self.cx().form_at(root)?, Some((_, Former::Name))) {
+        let named = matches!(self.cx().form_at(root)?, Some((_, Former::Name)));
+        // The bare name of a definition of no input is its call, so it is
+        // observed at its written result, as a call is.
+        let run = if named {
+            self.host().called_result(site, frame, root)?
+        }
+        else {
+            None
+        };
+        let mut subject = if let Some(result) = run {
+            Subject::Written(result.node, Thunked(false), Frame::Outermost)
+        }
+        else if named {
             let named = Site {
                 at: root,
                 name: FormName::IDENTIFIER,

@@ -6,4 +6,4 @@ def function : Integer -> Integer;
 def applied() -> Integer = become (force function) 1;
 def untouched() -> Integer = 3;
 def holder() -> Integer = become force suspended;
-def kept() -> (() -> Integer) = holder;
+def kept() -> (() -> Integer) = thunk { holder };

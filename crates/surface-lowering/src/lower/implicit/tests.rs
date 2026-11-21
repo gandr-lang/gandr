@@ -1294,7 +1294,7 @@ fn a_model_slot_one_module_answers_checks_as_supplied_739()
 #[test]
 fn an_omitted_manifest_model_implicit_files_its_fixed_sorts_2317()
 {
-    // `fromZero()` over `Model(Counter) with sort C = Integer`, with `Up` over
+    // `fromZero` over `Model(Counter) with sort C = Integer`, with `Up` over
     // the integers and `Flips` over flags in scope: the slot binds no hole for
     // `C`, so it files the integers' code and each candidate its own
     // carrier's, and the call checks as `Up` alone answers it.
@@ -1320,7 +1320,7 @@ fn an_omitted_manifest_model_implicit_files_its_fixed_sorts_2317()
 #[test]
 fn a_call_deeper_than_its_callee_s_fixed_sort_files_its_slot_4403()
 {
-    // `fromZero()` stands under two matches, deeper than `Integer` stands in
+    // `fromZero` stands under two matches, deeper than `Integer` stands in
     // `fromZero`'s signature: the slot still files the integers' code.
     let source = include_str!(
         "tests/fixtures/a-call-deeper-than-its-callee-s-fixed-sort-files-its-slot-4403.gandr"
@@ -1449,14 +1449,14 @@ fn a_row_label_naming_a_region_binder_is_its_instance_2271()
 #[test]
 fn an_omitted_instance_is_the_one_handled_in_scope_2271()
 {
-    // `say()` inside one scope passes its capability, as `say[.out = a]()`
+    // `say` inside one scope passes its capability, as `say[.out = a]`
     // does; inside a function whose row labels an instance, it passes that.
     let source = format!(
         include_str!(
             "tests/unformatted/an-omitted-instance-is-the-one-handled-in-scope-2271.gandr"
         ),
-        handled("a".into(), SourceText::from("say(); pure 0")),
-        handled("a".into(), SourceText::from("say[.out = a](); pure 0")),
+        handled("a".into(), SourceText::from("say; pure 0")),
+        handled("a".into(), SourceText::from("say[.out = a]; pure 0")),
         SAY = SAY,
     );
     let mut arena = CoreArena::new();
@@ -1479,7 +1479,7 @@ fn an_omitted_instance_is_the_one_handled_in_scope_2271()
 #[test]
 fn an_omitted_instance_is_refused_when_none_or_several_stand_2271()
 {
-    let inner = handled("b".into(), SourceText::from("say(); pure 0"));
+    let inner = handled("b".into(), SourceText::from("say; pure 0"));
     let source = format!(
         include_str!(
             "tests/unformatted/an-omitted-instance-is-refused-when-none-or-several-stand-2271.gandr"

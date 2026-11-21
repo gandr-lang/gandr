@@ -1502,7 +1502,7 @@ fn a_row_names_a_theory_at_the_sorts_it_fixes_2844()
             "def labelled() -> -F [st : State with sort S = Integer] Integer {{ st.get }}\n",
             "def after() -> -F [st : State with sort S = Integer, out : std.io.Console.Eff] Integer {{ out.print \"x\"; st.get }}\n",
             "def whole() -> -F [State with sort S = Integer, std.io.Console.Eff] Unit {{ std.io.Console.print \"x\" }}\n",
-            "def discharged() -> -F Integer {{ handle s : State with sort S = Integer {{ labelled () }} with {{ | pure(x) => pure x | oper get(k) => k 7 | oper put(v, k) => k *{{}} }} }}\n",
+            "def discharged() -> -F Integer {{ handle s : State with sort S = Integer {{ labelled }} with {{ | pure(x) => pure x | oper get(k) => k 7 | oper put(v, k) => k *{{}} }} }}\n",
             "def undeclared() -> -F [st : State with sort T = Integer] Integer {{ st.get }}\n",
             "def hosted() -> -F [std.io.Console.Eff with sort S = Integer] Unit {{ pure *{{}} }}\n",
             "def twice() -> -F [st : State with sort S = Integer with sort S = Integer] Integer {{ st.get }}\n",
