@@ -1,0 +1,69 @@
+test: machine::tests::a_forked_snapshot_keeps_the_parent_8144
+package: gandr-core-nbe
+command: mise run debug:test gandr-core-nbe machine::tests::a_forked_snapshot_keeps_the_parent_8144 --at crates/core-nbe/src/machine/tests.rs:7947
+
+(lldb) target create "target/debug-trace/debug/build/gandr-core-nbe/4182e8e1f0ca6958/out/gandr_core_nbe-4182e8e1f0ca6958"
+Current executable set to 'target/debug-trace/debug/build/gandr-core-nbe/4182e8e1f0ca6958/out/gandr_core_nbe-4182e8e1f0ca6958' (x86_64).
+(lldb) settings set -- target.run-args  "machine::tests::a_forked_snapshot_keeps_the_parent_8144" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --file crates/core-nbe/src/machine/tests.rs --line 7947
+Breakpoint 1: where = gandr_core_nbe-4182e8e1f0ca6958`gandr_core_nbe::machine::tests::a_forked_snapshot_keeps_the_parent_8144 + 139 at tests.rs:7947:5, address = 0x0000000000a192bb
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_core_nbe-4182e8e1f0ca6958`__rustc::rust_panic + 8 at panicking.rs:883:16, address = 0x000000000175b518
+(lldb) run
+
+running 1 test
+test machine::tests::a_forked_snapshot_keeps_the_parent_8144 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 652477 launched: 'target/debug-trace/debug/build/gandr-core-nbe/4182e8e1f0ca6958/out/gandr_core_nbe-4182e8e1f0ca6958' (x86_64)
+Process 652477 stopped
+* thread #2, name = 'machine::tests:', stop reason = breakpoint 1.1
+       frame #0: 0x0000555555f6d2bb gandr_core_nbe-4182e8e1f0ca6958`gandr_core_nbe::machine::tests::a_forked_snapshot_keeps_the_parent_8144 at tests.rs:7947:5
+(lldb) bt 24
+* thread #2, name = 'machine::tests:', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555555f6d2bb gandr_core_nbe-4182e8e1f0ca6958`gandr_core_nbe::machine::tests::a_forked_snapshot_keeps_the_parent_8144 at tests.rs:7947:5
+     frame #1: 0x0000555555f58a07 gandr_core_nbe-4182e8e1f0ca6958`gandr_core_nbe::machine::tests::a_forked_snapshot_keeps_the_parent_8144::{closure#0}((null)={}) at tests.rs:7943:45
+     frame #2: 0x00005555560801f6 gandr_core_nbe-4182e8e1f0ca6958`<gandr_core_nbe::machine::tests::a_forked_snapshot_keeps_the_parent_8144::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #3: 0x000055555613875b gandr_core_nbe-4182e8e1f0ca6958`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #4: 0x0000555556138759 gandr_core_nbe-4182e8e1f0ca6958`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:701:18
+     frame #5: 0x0000555556145935 gandr_core_nbe-4182e8e1f0ca6958`test::run_test_in_process::{closure#0} at lib.rs:724:74 [inlined]
+     frame #6: 0x0000555556145930 gandr_core_nbe-4182e8e1f0ca6958`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #7: 0x0000555556145930 gandr_core_nbe-4182e8e1f0ca6958`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:573:43 [inlined]
+     frame #8: 0x000055555614591b gandr_core_nbe-4182e8e1f0ca6958`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #9: 0x000055555614591b gandr_core_nbe-4182e8e1f0ca6958`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #10: 0x000055555614591b gandr_core_nbe-4182e8e1f0ca6958`test::run_test_in_process at lib.rs:724:27 [inlined]
+     frame #11: 0x0000555556145906 gandr_core_nbe-4182e8e1f0ca6958`test::run_test::{closure#0} at lib.rs:645:43
+     frame #12: 0x0000555556140324 gandr_core_nbe-4182e8e1f0ca6958`test::run_test::{closure#1} at lib.rs:675:41 [inlined]
+     frame #13: 0x00005555561402a9 gandr_core_nbe-4182e8e1f0ca6958`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #14: 0x00005555561489c2 gandr_core_nbe-4182e8e1f0ca6958`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #15: 0x00005555561489b3 gandr_core_nbe-4182e8e1f0ca6958`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #16: 0x00005555561489b3 gandr_core_nbe-4182e8e1f0ca6958`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:573:43 [inlined]
+     frame #17: 0x00005555561489a3 gandr_core_nbe-4182e8e1f0ca6958`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #18: 0x00005555561489a3 gandr_core_nbe-4182e8e1f0ca6958`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #19: 0x00005555561489a3 gandr_core_nbe-4182e8e1f0ca6958`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #20: 0x0000555556148994 gandr_core_nbe-4182e8e1f0ca6958`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #21: 0x0000555556cd28ff gandr_core_nbe-4182e8e1f0ca6958`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2314:9 [inlined]
+     frame #22: 0x0000555556cd28f8 gandr_core_nbe-4182e8e1f0ca6958`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:127:17
+     frame #23: 0x00007ffff7cacef1 libc.so.6`start_thread(arg=<unavailable>) at pthread_create.c:454:8
+(lldb) frame variable --depth 3
+(gandr_core_nbe::machine::Snapshot<alloc::vec::Vec<u8, alloc::alloc::Global>>) child = Shared(strong=2, weak=1) {
+  0 = strong=2, weak=1 {
+    data = size=1 {
+      [0] = 1
+    }
+  }
+}
+(alloc::rcs::arc::Arc<alloc::vec::Vec<unsigned char, alloc::alloc::Global>, alloc::alloc::Global>) parent = strong=2, weak=1 {
+  data = size=1 {
+    [0] = 1
+  }
+}
+(lldb) up
+frame #1: 0x0000555555f58a07 gandr_core_nbe-4182e8e1f0ca6958`gandr_core_nbe::machine::tests::a_forked_snapshot_keeps_the_parent_8144::{closure#0}((null)={}) at tests.rs:7943:45
+(lldb) frame variable --depth 3
+(gandr_core_nbe::machine::tests::a_forked_snapshot_keeps_the_parent_8144::{closure_env#0} *)  = 0x00007ffff7bc94f6 {}

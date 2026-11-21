@@ -1,0 +1,17 @@
+{
+  "checks": {
+    "check:scoped": {
+      "profile": "case",
+      "base": true,
+      "inputs": [".config/tool/"],
+      "greps": [{ "pattern": "needle", "in": "crates" }]
+    },
+    "check:table": {
+      "profile": "case",
+      "table": true
+    },
+    "check:tree": {
+      "profile": "test"
+    }
+  }
+}
