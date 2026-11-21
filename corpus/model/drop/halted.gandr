@@ -1,0 +1,94 @@
+//! `halted` holds an open access across an operation with no continuation.
+//!
+//! An overflow must stop the computation. The cleanup of each open access must
+//! still run, as it runs after `abandon k`.
+//!
+//! A clause of such an operation abandons the continuation, then gives its
+//! body. So the cleanup of the access runs, as it runs where a clause writes
+//! `abandon k` itself. Each pair of examples gives one answer.
+//!
+//! - see: #7968 — an operation with no continuation
+//! - see: `unwound.gandr` — the cleanup after `abandon k`
+
+// The import provides native finite lists.
+import std.list (List);
+// The import provides the early-exit host interface.
+import std.process;
+
+/// A halt with a code, which no handler resumes.
+theory Halt.Eff where
+  /// The code of the halt.
+  sort R : Type+;
+  /// The carrier, the answer of the handler.
+  sort C : Type;
+  /// Halt with `code`.
+  oper halt : (code : R) --> C;
+
+/// A run reports blame when it calls the owed `afterHalt` declaration.
+@[owes(1)]
+def afterHalt : Integer -> Unit;
+
+/// Halt with the code 1. The site stands at `Integer`, the type that it is
+/// checked against.
+def halting() -> [h : Halt.Eff with sort R = Integer] Integer =
+  h.halt 1
+
+/// Cleanup calls `afterHalt` after a halt inside an open access.
+/// The blame shows that the abandonment runs the cleanup.
+@[runs("blame: `afterHalt` is owed its body")]
+def halted() -> Integer =
+  var x = 1
+  let r : Integer = handle h : Halt.Eff with sort R = Integer {
+    access x as v { let _ = halting (); resume v 5 } unwind { afterHalt 1 };
+    pure 0
+  } with {
+    | pure(y) => pure y
+    | oper halt(code) => pure 7
+  };
+  pure x
+
+/// The same access across an exit whose clause abandons `k` itself.
+@[runs("blame: `afterHalt` is owed its body")]
+def abandoned() -> Integer =
+  var x = 1
+  let r : Integer = handle c : std.process.Exit.Eff {
+    access x as v { let _ = c.exit 1; resume v 5 } unwind { afterHalt 1 };
+    pure 0
+  } with {
+    | pure(y) => pure y
+    | oper exit(code, k) => { abandon k; pure 7 }
+  };
+  pure x
+
+/// The function creates a two-element list with its argument first.
+def pairOf(a : Integer) -> List Integer =
+  pure cons a (cons 2 nil)
+
+/// Cleanup reads a list before the enclosing scope reads it again, after a
+/// halt. Both retain the list.
+@[runs("cons 9 (cons 1 (cons 2 nil))")]
+def haltedKept() -> List Integer =
+  let ys = pairOf 1
+  var x = 1
+  let r : Integer = handle h : Halt.Eff with sort R = Integer {
+    access x as v { let _ = halting (); resume v 5 } unwind { let _ = ys; pure *{} };
+    pure 0
+  } with {
+    | pure(y) => pure y
+    | oper halt(code) => pure 7
+  };
+  pure cons 9 ys
+
+/// The same list across an exit whose clause abandons `k` itself.
+@[runs("cons 9 (cons 1 (cons 2 nil))")]
+def abandonedKept() -> List Integer =
+  let ys = pairOf 1
+  var x = 1
+  let r : Integer = handle c : std.process.Exit.Eff {
+    access x as v { let _ = c.exit 1; resume v 5 } unwind { let _ = ys; pure *{} };
+    pure 0
+  } with {
+    | pure(y) => pure y
+    | oper exit(code, k) => { abandon k; pure 7 }
+  };
+  pure cons 9 ys

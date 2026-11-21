@@ -1,0 +1,20 @@
+//! Either forms a sum of two types.
+//!
+//! Each constructor injects one side.
+//!
+//! A match selects the arm of its constructor.
+//!
+//! - cites: [MartinLof-1984-intuitionistic_type_theory]
+//!
+//! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
+
+/// The sum of `a` and `b`: a value of either side, tagged by its constructor.
+data Either(a : Type, b : Type) : Type where
+  | Left : (x : a) --> Either a b
+  | Right : (y : b) --> Either a b
+
+/// The left side of a left injection, or zero for a right one.
+def from_left() -> Integer =
+  match (Left 5 : Either Integer String) where
+    | Left(x) => x
+    | Right(y) => 0

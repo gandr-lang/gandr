@@ -1,0 +1,7 @@
+data Nat : Type where
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+
+def apply2(f : (a : Nat, b : Nat) -> Nat) -> Nat = f Zero (Succ Zero)
+
+def passed : () -> Nat = apply2 (fun (a, b) { a });

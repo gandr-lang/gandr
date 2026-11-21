@@ -1,0 +1,8 @@
+error[InertRead]: `shown` reads the inert `label`; only another inert declaration reads one
+   ╭▸ corpus/ledger/diagnostics/InertRead.gandr:15:13
+   │
+15 │ def shown = Box.label;
+   │             ━━━━━━━━━ an inert read
+   │
+   ├ note: `shown` is refused with InertRead, as its expectation states
+   ╰ help: read an inert declaration only from a manifest step or inert declaration
