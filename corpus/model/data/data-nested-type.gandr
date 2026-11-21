@@ -18,4 +18,4 @@ def sum_first() -> Integer =
 
 /// A call of `sum_first`.
 @[runs("7")]
-def first_summed() -> Integer = sum_first ();
+def first_summed() -> Integer = sum_first;

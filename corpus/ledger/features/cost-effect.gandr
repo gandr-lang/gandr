@@ -43,7 +43,7 @@ def countedSteps() -> (Nat -> Nat) -> Nat =
   } with Counting
 
 /// The count of the steps is three.
-def costsThree : Path (countOf (countedSteps ())) (3 : Nat) = Path.here (3 : Nat);
+def costsThree : Path (countOf (countedSteps)) (3 : Nat) = Path.here (3 : Nat);
 
 /// Whether the count of the steps is at most `n`.
 def within(n : Nat) -> Bool =
@@ -74,8 +74,8 @@ module Erased : Model(Cost.Eff) with sort N = Nat -> Nat where
 /// The steps under the erasing model.
 def erasedSteps() -> Integer =
   handle cost : Cost.Eff with sort N = Nat -> Nat {
-    threeSteps ()
+    threeSteps
   } with Erased
 
 /// Erased, the steps answer as the program does with no charge.
-def erasedAnswer : Path (erasedSteps ()) 7 = Path.here 7;
+def erasedAnswer : Path (erasedSteps) 7 = Path.here 7;

@@ -21,4 +21,4 @@ def started() -> Integer = Origin.zero ();
 
 /// `restarted` calls `started`.
 @[runs("0")]
-def restarted() -> Integer = started ();
+def restarted() -> Integer = started;

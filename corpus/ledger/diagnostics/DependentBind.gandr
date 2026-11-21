@@ -6,7 +6,7 @@ def one() -> Integer =
 @[refuses("DependentBind")]
 def bound() -> Integer =
   let p = {
-    let n = one ();
+    let n = one;
     pure Path.here n
   };
   pure 1

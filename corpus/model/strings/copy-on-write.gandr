@@ -74,20 +74,20 @@ pub def long() -> [Partial] Repr = own (repeatOnto 97 24 (Nil : List Integer));
 
 /// `alone` appends `!` to an unshared long string and copies no buffer.
 @[runs("0")]
-def alone() -> [Partial] Integer = { let s = force long; copies (push s 33) };
+def alone() -> [Partial] Integer = { let s = long; copies (push s 33) };
 
 /// `shared` appends `!` to a copied long string.
 /// The write copies one buffer.
 @[runs("1")]
 def shared() -> [Partial] Integer =
-  let s = force long
+  let s = long
   let c = copy s
   copies (push c 33)
 
 /// `untouched` preserves the original bytes after a copy receives `!`.
 @[runs("25")]
 def untouched() -> [Partial] Integer =
-  let s = force long
+  let s = long
   let c = copy s
   let w = push c 33
   count (bytes s)
@@ -95,7 +95,7 @@ def untouched() -> [Partial] Integer =
 /// `grown` counts the copied string after it receives `!`.
 @[runs("26")]
 def grown() -> [Partial] Integer =
-  let s = force long
+  let s = long
   let c = copy s
   let w = push c 33
   let t = written w

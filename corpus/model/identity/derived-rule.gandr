@@ -76,5 +76,5 @@ def invMulParity() -> Path One One =
 def overDerived(
   M : Bit -> Type,
   v : M One
-) -> Path (Path.walk (fun (b) { M b }) (invMulParity ()) v) v =
+) -> Path (Path.walk (fun (b) { M b }) (invMulParity) v) v =
   Path.here v

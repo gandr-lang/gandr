@@ -47,7 +47,7 @@ pub def eBounds() -> [std.reals.Eff] String =
 @[runs("\"holds holds\"")]
 def eBoundsModelled() -> String =
   handle r : std.reals.Eff {
-    eBounds ()
+    eBounds
   } with {
     | pure(x) => pure x
     | oper admit(plan, k) => k 0
@@ -62,6 +62,6 @@ def eBoundsModelled() -> String =
 /// The entry: decide the two bounds within 16 quanta each, print the
 /// verdicts, and exit with 0.
 def main() -> [std.reals.Eff, std.io.Console.Eff] Integer =
-  let verdicts = eBounds ()
+  let verdicts = eBounds
   std.io.Console.print verdicts
   0

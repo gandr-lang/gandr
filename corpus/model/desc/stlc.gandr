@@ -197,7 +197,7 @@ def redex() -> Tm (Extend Empty Base) Base =
 /// The redex has four nodes: an application, an abstraction and two
 /// variables.
 @[runs("4")]
-def redexSize() -> Integer = size (Extend Empty Base) Base (redex ());
+def redexSize() -> Integer = size (Extend Empty Base) Base (redex);
 
 /// Environments: a semantic value for each entry of `g`, at the context `d`.
 pub data SemEnv : (g : Ctx, d : Ctx) --> Type where

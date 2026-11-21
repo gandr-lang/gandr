@@ -61,4 +61,4 @@ def negative() -> f64 =
 
 /// The exponential above, returned.
 @[runs("1.6487212707001282f64")]
-def exponential() -> f64 = grown ();
+def exponential() -> f64 = grown;

@@ -167,6 +167,9 @@ enum Use<'cursor>
     Operands([NodeIndex; 2]),
     /// Standing where no call applies it, passed or returned as a value.
     Standing,
+    /// The bare name of a definition of no input, which runs it: a call that
+    /// writes no explicit argument.
+    Run,
 }
 
 /// The atom a resident of an instantiation slot spells. The slot molds a
@@ -994,6 +997,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             };
             (SlotIndex::from(usize::from(constant)), name)
         };
+        // A definition of no input runs where its name, or its supply, stands,
+        // so a call of it is the call of what that run returns.
+        if matches!(used, Use::Called(_)) && self.cx().collected.no_input.contains(&slot) {
+            return Ok(arity::Planned(false));
+        }
         if !positional.is_empty() {
             let Some(block) = self.cx().collected.written_implicits.get(&slot)
             else {
@@ -1207,6 +1215,63 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         Ok(planned)
     }
 
+    /// Plan the bare name at `site`, read under `frame`, of the definition of
+    /// no input at `slot` and `constant` as its call: `tile`, the name's own
+    /// tile, planned as the declaration and read as the call's head, and
+    /// `site` as the call [`Self::supply_declared`] plans with no explicit
+    /// argument.
+    ///
+    /// # Specification
+    /// - requires: `site` is the bare name of the definition, read as a
+    ///   computation under `frame`, and `tile` is its identifier tile.
+    /// - ensures: [`arity::Planned`] true exactly when the definition has
+    ///   implicits, instances or stage binders: `site` is then the definition
+    ///   applied to an omitted entry for each of them, as a call that writes
+    ///   none supplies it, and `tile` its head, planned as the constant and
+    ///   left unread. False, with nothing changed, for a definition with none.
+    /// - fails: as [`Self::supply_declared`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    #[spec(
+        captures: start = self.cx().operands.mark(),
+        ensures: |ret| match ret {
+            Ok(arity::Planned(true)) => matches!(
+                self.cx().plans.get(site.at.node),
+                Some(&Plan::Application(head, _)) if head == tile.node
+            ) && self.cx().plans.get(tile.node) == Some(&Plan::Constant(constant)),
+            Ok(arity::Planned(false)) => self.cx().operands.mark() == start,
+            Err(_) => true,
+        },
+    )]
+    #[inline]
+    pub fn ran_name(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        (tile, name): (Placed, SurfaceName<'source>),
+        (slot, constant): (SlotIndex, ConstantIndex),
+    ) -> Result<arity::Planned, LoweringRefusal<'source>>
+    {
+        let planned =
+            self.supply_declared(site, frame, (tile, name), slot, BTreeMap::new(), Use::Run)?;
+        if planned == arity::Planned(true) {
+            // The tile stands as the call's head, forced as a named head is;
+            // it is no form of its own, so it is planned here and left unread.
+            let head = Site {
+                at: tile,
+                reading: Reading::Head(frame),
+                ..site
+            };
+            let _frame = self.require(head, Produced::Value)?;
+            self.plan(head, Plan::Constant(constant));
+            self.read(tile.node, Reading::Unread);
+        }
+
+        Ok(planned)
+    }
+
     /// Plan `site`, whose head `inner` names the declaration at `slot` as
     /// `name`, as the supply `supplied` writes, applied as `used` says.
     ///
@@ -1296,6 +1361,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 written.extend(operands);
                 false
             },
+            Use::Run => false,
             Use::Standing => true,
         };
         let explicit = entries
@@ -1336,6 +1402,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         // `applyAt[.i = k]` is `λ f. λ x. applyAt[.i = k](f, x)`.
         let mut opened = 0_usize;
         if standing {
+            // A supply of a definition of no input is its run: at a call's
+            // head, it stands nested under a force, as a call does.
+            if self.cx().collected.no_input.contains(&slot) {
+                let _fresh = self.cx_mut().invoked.insert(site.at.node);
+            }
             let _frame = self.require(site, Produced::Computation)?;
             opened = if stage_supplied {
                 self.cx()
