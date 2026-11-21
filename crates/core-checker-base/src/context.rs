@@ -1707,8 +1707,6 @@ impl<'arena> CheckingContext<'arena>
     ///   unchanged when `ty` is the unknown type: it tells focusing nothing,
     ///   and a later run of the body can give the site its type.
     /// - panics: none.
-    /// - executable: none — the log has no observer short of the decision that
-    ///   takes it, which the witness reads.
     ///
     /// # Cost
     /// - allocation: one entry of the log, growth within the binds and the
