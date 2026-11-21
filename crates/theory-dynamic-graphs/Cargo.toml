@@ -1,0 +1,31 @@
+[package]
+name = "gandr-theory-dynamic-graphs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Insertion-only topological orders and feasible offset valuations"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["constraints", "graphs", "incremental"]
+categories = ["algorithms", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+[dependencies]
+anodized.workspace = true
+gandr-theory-graphs.workspace = true
+gandr-theory-order-maintenance.workspace = true
+quenchant-shape.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

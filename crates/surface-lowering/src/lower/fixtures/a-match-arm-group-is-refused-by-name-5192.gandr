@@ -1,0 +1,3 @@
+def first(p : *{Integer, Integer}) -> Integer =
+  match p where
+    | (a, b) => a

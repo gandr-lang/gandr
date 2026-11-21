@@ -1,0 +1,4 @@
+theory Plain where {
+  sort Lift(A : Type) : Type;
+  sort Cell : Type;
+}
