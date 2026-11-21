@@ -1,0 +1,98 @@
+test: editor::scenarios::the_erasure_s_parts_over_its_nights_check_every_text_the_whole_erasure_checks_3850
+package: gandr-surface-lsp
+command: mise run debug:test gandr-surface-lsp editor::scenarios::the_erasure_s_parts_over_its_nights_check_every_text_the_whole_erasure_checks_3850 --break erase_lines
+
+(lldb) target create "target/debug-trace/debug/deps/tests-286b9bac57e73d8c"
+Current executable set to 'target/debug-trace/debug/deps/tests-286b9bac57e73d8c' (x86_64).
+(lldb) settings set -- target.run-args  "editor::scenarios::the_erasure_s_parts_over_its_nights_check_every_text_the_whole_erasure_checks_3850" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex erase_lines
+Breakpoint 1: 5 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-286b9bac57e73d8c`__rustc::rust_panic + 8 at panicking.rs:875:25, address = 0x0000000004c4d848
+(lldb) run
+
+running 1 test
+test editor::scenarios::the_erasure_s_parts_over_its_nights_check_every_text_the_whole_erasure_checks_3850 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 2048 launched: 'target/debug-trace/debug/deps/tests-286b9bac57e73d8c' (x86_64)
+Process 2048 stopped
+* thread #2, name = 'editor::scenari', stop reason = breakpoint 1.4
+       frame #0: 0x0000555556647a22 tests-286b9bac57e73d8c`<tests::editor::editing::Session>::erase_lines(self={uri:"file:///strict/erased-whole.gandr", buffer:{text:"def held0 = absent0 ;\ndef held1 = absent1 ;\ndef held2 = absent2 ;\ndef held3 = absent3 ;\ndef held4 = absent4 ;\ndef held5 = absent5 ;\ndef held6 = absent6 ;\ndef held7 = absent7 ;\ndef held8 = absent8 ;\n", cursor:{0:198}, typing:Assisted, pending:size=0, history:size=0}, client:{connection:Served({frames:{inner:{…}}, flushed:{inner:{…}}, written:strong=2, weak=0, serving:{0:{…}}}), requests:8}, oracle:Keystroke, version:1, keystrokes:0, published:Array(size=9), answers:size=1}, stride={0:1}, floor={0:0}) at typist.rs:162:5
+   159 	    ///   deletion spanning newlines that the server applied differently shows
+   160 	    ///   in the differential answers of the next keystroke.
+   161 	    /// - witness: `tests::editor::scenarios::sweeps::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful`
+-> 162 	    #[spec(ensures: self.buffer().text().0.is_empty())]
+    	    ^
+   163 	    pub fn erase_lines(
+   164 	        &mut self,
+   165 	        stride: Stride,
+(lldb) bt 24
+* thread #2, name = 'editor::scenari', stop reason = breakpoint 1.4
+   * frame #0: 0x0000555556647a22 tests-286b9bac57e73d8c`<tests::editor::editing::Session>::erase_lines(self={uri:"file:///strict/erased-whole.gandr", buffer:{text:"def held0 = absent0 ;\ndef held1 = absent1 ;\ndef held2 = absent2 ;\ndef held3 = absent3 ;\ndef held4 = absent4 ;\ndef held5 = absent5 ;\ndef held6 = absent6 ;\ndef held7 = absent7 ;\ndef held8 = absent8 ;\n", cursor:{0:198}, typing:Assisted, pending:size=0, history:size=0}, client:{connection:Served({frames:{inner:{…}}, flushed:{inner:{…}}, written:strong=2, weak=0, serving:{0:{…}}}), requests:8}, oracle:Keystroke, version:1, keystrokes:0, published:Array(size=9), answers:size=1}, stride={0:1}, floor={0:0}) at typist.rs:162:5
+     frame #1: 0x00005555566bfc11 tests-286b9bac57e73d8c`tests::editor::scenarios::the_erasure_s_parts_over_its_nights_check_every_text_the_whole_erasure_checks_3850 at scenarios.rs:1126:11
+     frame #2: 0x00005555566aa687 tests-286b9bac57e73d8c`tests::editor::scenarios::the_erasure_s_parts_over_its_nights_check_every_text_the_whole_erasure_checks_3850::{closure#0}((null)={}) at scenarios.rs:1109:88
+     frame #3: 0x00005555565a5b96 tests-286b9bac57e73d8c`<tests::editor::scenarios::the_erasure_s_parts_over_its_nights_check_every_text_the_whole_erasure_checks_3850::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x00005555566c435b tests-286b9bac57e73d8c`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #5: 0x00005555566c4359 tests-286b9bac57e73d8c`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:724:18
+     frame #6: 0x00005555566d19b5 tests-286b9bac57e73d8c`test::run_test_in_process::{closure#0} at lib.rs:747:74 [inlined]
+     frame #7: 0x00005555566d19b0 tests-286b9bac57e73d8c`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #8: 0x00005555566d19b0 tests-286b9bac57e73d8c`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:575:43 [inlined]
+     frame #9: 0x00005555566d199b tests-286b9bac57e73d8c`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #10: 0x00005555566d199b tests-286b9bac57e73d8c`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #11: 0x00005555566d199b tests-286b9bac57e73d8c`test::run_test_in_process at lib.rs:747:27 [inlined]
+     frame #12: 0x00005555566d1986 tests-286b9bac57e73d8c`test::run_test::{closure#0} at lib.rs:668:43
+     frame #13: 0x00005555566cc514 tests-286b9bac57e73d8c`test::run_test::{closure#1} at lib.rs:698:41 [inlined]
+     frame #14: 0x00005555566cc499 tests-286b9bac57e73d8c`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #15: 0x00005555566d4af2 tests-286b9bac57e73d8c`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #16: 0x00005555566d4ae3 tests-286b9bac57e73d8c`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #17: 0x00005555566d4ae3 tests-286b9bac57e73d8c`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:575:43 [inlined]
+     frame #18: 0x00005555566d4ad3 tests-286b9bac57e73d8c`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #19: 0x00005555566d4ad3 tests-286b9bac57e73d8c`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #20: 0x00005555566d4ad3 tests-286b9bac57e73d8c`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #21: 0x00005555566d4ac4 tests-286b9bac57e73d8c`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #22: 0x000055555a1c0aef tests-286b9bac57e73d8c`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2273:9 [inlined]
+     frame #23: 0x000055555a1c0ae8 tests-286b9bac57e73d8c`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:118:17
+(lldb) frame variable --depth 3
+(tests::editor::editing::Session *) self = 0x00007ffff79fdee0 {uri:"file:///strict/erased-whole.gandr", buffer:{text:"def held0 = absent0 ;\ndef held1 = absent1 ;\ndef held2 = absent2 ;\ndef held3 = absent3 ;\ndef held4 = absent4 ;\ndef held5 = absent5 ;\ndef held6 = absent6 ;\ndef held7 = absent7 ;\ndef held8 = absent8 ;\n", cursor:{0:198}, typing:Assisted, pending:size=0, history:size=0}, client:{connection:Served({frames:{inner:{…}}, flushed:{inner:{…}}, written:strong=2, weak=0, serving:{0:{…}}}), requests:8}, oracle:Keystroke, version:1, keystrokes:0, published:Array(size=9), answers:size=1}
+(tests::editor::typist::Stride) stride = {0:1}
+(tests::editor::buffer::Offset) floor = {0:0}
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x00005555566bfc11 tests-286b9bac57e73d8c`tests::editor::scenarios::the_erasure_s_parts_over_its_nights_check_every_text_the_whole_erasure_checks_3850 at scenarios.rs:1126:11
+   1123	        Typing::Assisted,
+   1124	        Oracle::Keystroke,
+   1125	    );
+-> 1126	    whole.erase_lines(Stride(1), Offset(0));
+    	          ^
+   1127	    let wanted = counts(whole.answers());
+   1128	    whole.closes_over_streams();
+   1129	    assert_eq!(
+(lldb) frame variable --depth 3
+(&str) text = "def held0 = absent0 ;\ndef held1 = absent1 ;\ndef held2 = absent2 ;\ndef held3 = absent3 ;\ndef held4 = absent4 ;\ndef held5 = absent5 ;\ndef held6 = absent6 ;\ndef held7 = absent7 ;\ndef held8 = absent8 ;\n" {
+  [0] = 'd'
+  [1] = 'e'
+  [2] = 'f'
+  [3] = ' '
+  [4] = 'h'
+  [5] = 'e'
+  [6] = 'l'
+  [7] = 'd'
+  [8] = '0'
+  [9] = ' '
+  [10] = '='
+  [11] = ' '
+  [12] = 'a'
+  [13] = 'b'
+  [14] = 's'
+  [15] = 'e'
+  ...
+}
+(tests::editor::scenarios::the_erasure_s_parts_over_its_nights_check_every_text_the_whole_erasure_checks_3850::{closure_env#0}) counts = {}
+(tests::editor::editing::Session) whole = {uri:"file:///strict/erased-whole.gandr", buffer:{text:"def held0 = absent0 ;\ndef held1 = absent1 ;\ndef held2 = absent2 ;\ndef held3 = absent3 ;\ndef held4 = absent4 ;\ndef held5 = absent5 ;\ndef held6 = absent6 ;\ndef held7 = absent7 ;\ndef held8 = absent8 ;\n", cursor:{0:198}, typing:Assisted, pending:size=0, history:size=0}, client:{connection:Served({frames:{inner:{…}}, flushed:{inner:{…}}, written:strong=2, weak=0, serving:{0:{…}}}), requests:8}, oracle:Keystroke, version:1, keystrokes:0, published:Array(size=9), answers:size=1}
+*** Some of the displayed variables have more members than the debugger will show by default. To show all of them, you can either use the --show-all-children option to frame variable or raise the limit by changing the target.max-children-count setting.
