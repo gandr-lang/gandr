@@ -1,0 +1,56 @@
+test: native_formers::a_patched_type_with_no_free_field_holds_the_empty_record_5680
+package: gandr-core-checker
+command: mise run debug:test gandr-core-checker native_formers::a_patched_type_with_no_free_field_holds_the_empty_record_5680
+
+(lldb) target create "target/debug-trace/debug/build/gandr-core-checker/d85fd4553a9dbf5b/out/tests-d85fd4553a9dbf5b"
+Current executable set to 'target/debug-trace/debug/build/gandr-core-checker/d85fd4553a9dbf5b/out/tests-d85fd4553a9dbf5b' (x86_64).
+(lldb) settings set -- target.run-args  "native_formers::a_patched_type_with_no_free_field_holds_the_empty_record_5680" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = tests-d85fd4553a9dbf5b`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x0000000001a7ba48
+(lldb) run
+
+running 1 test
+test native_formers::a_patched_type_with_no_free_field_holds_the_empty_record_5680 ... 
+thread 'native_formers::a_patched_type_with_no_free_field_holds_the_empty_record_5680' (763918) panicked at crates/core-checker/tests/native_formers.rs:2368:5:
+`*{}` checks at a patch with no free field: Refused(TypeMismatch(Value { at: ValueId(1), synthesised: ValueTypeId(4), expected: ValueTypeId(2) }))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 763811 launched: 'target/debug-trace/debug/build/gandr-core-checker/d85fd4553a9dbf5b/out/tests-d85fd4553a9dbf5b' (x86_64)
+Process 763811 stopped
+* thread #2, name = 'native_formers:', stop reason = breakpoint 1.1
+       frame #0: 0x0000555556fcfa48 tests-d85fd4553a9dbf5b`__rustc::rust_panic at panicking.rs:887:25
+(lldb) bt 24
+* thread #2, name = 'native_formers:', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555556fcfa48 tests-d85fd4553a9dbf5b`__rustc::rust_panic at panicking.rs:887:25
+     frame #1: 0x0000555556feb275 tests-d85fd4553a9dbf5b`std::panicking::panic_with_hook at panicking.rs:840:5
+     frame #2: 0x0000555556fcf062 tests-d85fd4553a9dbf5b`std::panicking::panic_handler::{closure#0} at panicking.rs:688:13
+     frame #3: 0x0000555556fc7dd9 tests-d85fd4553a9dbf5b`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18
+     frame #4: 0x0000555556fcfc2d tests-d85fd4553a9dbf5b`__rustc::rust_begin_unwind at panicking.rs:679:5
+     frame #5: 0x0000555557008bec tests-d85fd4553a9dbf5b`core::panicking::panic_fmt at panicking.rs:80:14
+     frame #6: 0x0000555555b5054b tests-d85fd4553a9dbf5b`tests::native_formers::a_patched_type_with_no_free_field_holds_the_empty_record_5680 at native_formers.rs:2368:5
+     frame #7: 0x0000555555b15187 tests-d85fd4553a9dbf5b`tests::native_formers::a_patched_type_with_no_free_field_holds_the_empty_record_5680::{closure#0}((null)={}) at native_formers.rs:2347:67
+     frame #8: 0x0000555555c643f6 tests-d85fd4553a9dbf5b`<tests::native_formers::a_patched_type_with_no_free_field_holds_the_empty_record_5680::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #9: 0x0000555555cd6cdb tests-d85fd4553a9dbf5b`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #10: 0x0000555555cd6cd9 tests-d85fd4553a9dbf5b`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #11: 0x0000555555ce4225 tests-d85fd4553a9dbf5b`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #12: 0x0000555555ce4220 tests-d85fd4553a9dbf5b`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #13: 0x0000555555ce4220 tests-d85fd4553a9dbf5b`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #14: 0x0000555555ce420b tests-d85fd4553a9dbf5b`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #15: 0x0000555555ce420b tests-d85fd4553a9dbf5b`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #16: 0x0000555555ce420b tests-d85fd4553a9dbf5b`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #17: 0x0000555555ce41f6 tests-d85fd4553a9dbf5b`test::run_test::{closure#0} at lib.rs:677:43
+     frame #18: 0x0000555555cdebe4 tests-d85fd4553a9dbf5b`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #19: 0x0000555555cdeb69 tests-d85fd4553a9dbf5b`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #20: 0x0000555555ce7382 tests-d85fd4553a9dbf5b`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #21: 0x0000555555ce7373 tests-d85fd4553a9dbf5b`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #22: 0x0000555555ce7373 tests-d85fd4553a9dbf5b`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #23: 0x0000555555ce7363 tests-d85fd4553a9dbf5b`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

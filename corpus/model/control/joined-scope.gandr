@@ -1,0 +1,45 @@
+// This source shows scopes that join after match arms.
+//
+// One arm can hold a slot or fork while another arm returns.
+//
+// Each local end runs the remaining block inside its arm scope.
+//
+// - see: ../../pathological/control/accessor-loop-nested.gandr
+
+/// The naturals, for the matches below.
+data Nat : Type where
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+
+/// The arm `c` shadows the outer `c`.
+/// The rest reads the outer value.
+def shadowed(rounds : Nat) -> Integer =
+  var c = 100
+  let settled = match rounds where
+    | Zero => return 7
+    | Succ(fewer) => { var c = 1; access c as v { resume v (v + 1) }; pure c }
+  pure c
+
+/// Past the arm that holds, the rest reads the outer count.
+@[runs("100")]
+def shadowedHeld : () -> Integer = shadowed (Succ Zero);
+
+/// The early exit leaves before the rest runs.
+@[runs("7")]
+def shadowedExited : () -> Integer = shadowed Zero;
+
+/// The arm forks, and its parent end closes before the rest: the rest reads
+/// the held count, not the end.
+def forked(rounds : Nat) -> Integer =
+  var c = 100
+  let settled = match rounds where
+    | Zero => return 7
+    | Succ(fewer) => { let desk = fork (seat : end) { close seat }; close desk }
+  pure c
+
+/// A fork in an arm whose block ends at the unit the match settles.
+def forkPastAnExit(rounds : Nat) -> Unit =
+  let settled = match rounds where
+    | Zero => return *{}
+    | Succ(fewer) => { let desk = fork (seat : end) { close seat }; close desk }
+  settled
