@@ -1,0 +1,134 @@
+# An `Arc` of a slice takes the thin shared block of the kernel's data, with a
+# unit header, over the global allocator. The holder is one word, and the
+# block keeps one count and the items behind the header. It dereferences to
+# the slice, as the `Arc` does.
+id: arc-slice-is-thin-shared
+language: Rust
+severity: hint
+message: the thin shared block of the kernel's data, its allocator named at the site
+rule:
+  all:
+    - kind: generic_type
+    - has:
+        field: type
+        regex: ^(?:(?:alloc|std)::sync::)?Arc$
+    - has:
+        field: type_arguments
+        pattern: $ARGUMENTS
+        regex: ^<\[[\s\S]*\]>$
+    - not:
+        inside:
+          kind: mod_item
+          regex: ^mod tests
+          stopBy: end
+transform:
+  ITEMS:
+    replace:
+      source: $ARGUMENTS
+      replace: ^<\[(?<item>[\s\S]*)\]>$
+      by: <(), $item, Global>
+fix: ThinShared$ITEMS
+---
+# An `Arc` of a sized value in a type takes the shared pointer of the kernel's
+# data over the global allocator. The pointer keeps one count and no weak
+# count, and it is `Send` and `Sync` as `Arc` is. An `Arc` of a slice is the
+# rule before.
+id: arc-is-shared
+language: Rust
+severity: hint
+message: the shared pointer of the kernel's data, its allocator named at the site
+rule:
+  all:
+    - kind: generic_type
+    - has:
+        field: type
+        regex: ^(?:(?:alloc|std)::sync::)?Arc$
+    - has:
+        field: type_arguments
+        pattern: $ARGUMENTS
+    - not:
+        has:
+          field: type_arguments
+          regex: ^<str>$
+    - not:
+        has:
+          field: type_arguments
+          regex: ^<dyn
+transform:
+  ITEMS:
+    replace:
+      source: $ARGUMENTS
+      replace: ^<(?<items>[\s\S]*)>$
+      by: <$items, Global>
+fix: Shared$ITEMS
+---
+# A call of an associated function of `Arc` that the shared pointer holds under
+# the same name. `strong_count` answers `Holders` and `ptr_eq` answers
+# `Identity`, so a site that reads them as a number or a `bool` is the second
+# phase's.
+id: arc-call-is-shared-call
+language: Rust
+severity: hint
+message: the shared pointer of the kernel's data, its allocator named at the site
+rule:
+  all:
+    - kind: scoped_identifier
+    - has:
+        field: path
+        regex: ^(?:(?:alloc|std)::sync::)?Arc$
+    - has:
+        field: name
+        pattern: $NAME
+        regex: ^(?:new|clone|make_mut|get_mut|try_unwrap|ptr_eq|strong_count)$
+    - not:
+        inside:
+          kind: mod_item
+          regex: ^mod tests
+          stopBy: end
+fix: Shared::$NAME
+---
+# The import of `Arc` in a file that imports neither the global allocator nor
+# `Vec`, whose rule imports the allocator.
+id: arc-import-is-shared-import-with-global
+language: Rust
+severity: hint
+message: the shared pointer of the kernel's data, its allocator named at the site
+rule:
+  all:
+    - kind: use_declaration
+    - regex: ^use (?:alloc|std)::sync::Arc;$
+    - not:
+        inside:
+          kind: source_file
+          has:
+            kind: use_declaration
+            regex: ^use (?:alloc::alloc::Global|(?:alloc|std)::vec::Vec);$
+    - not:
+        inside:
+          kind: mod_item
+          regex: ^mod tests
+          stopBy: end
+fix: |-
+  use alloc::alloc::Global;
+  use gandr_kernel_data::Shared;
+---
+# The import of `Arc` in a file that imports the global allocator, or `Vec`.
+id: arc-import-is-shared-import
+language: Rust
+severity: hint
+message: the shared pointer of the kernel's data, its allocator named at the site
+rule:
+  all:
+    - kind: use_declaration
+    - regex: ^use (?:alloc|std)::sync::Arc;$
+    - inside:
+        kind: source_file
+        has:
+          kind: use_declaration
+          regex: ^use (?:alloc::alloc::Global|(?:alloc|std)::vec::Vec);$
+    - not:
+        inside:
+          kind: mod_item
+          regex: ^mod tests
+          stopBy: end
+fix: use gandr_kernel_data::Shared;

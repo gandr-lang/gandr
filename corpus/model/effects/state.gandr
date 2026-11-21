@@ -1,0 +1,70 @@
+// This source defines theories and rules of global state.
+//
+// `get` passes state to its continuation. `put` replaces state before its
+// continuation.
+// The laws are the global-state rules of § 2.1 of the cited work. The path
+// order orients each rule.
+//
+// The checker tests overlaps between the state rules. Each overlap joins in
+// the second-order reading.
+//
+// Limits: the checker refuses the law `getPut` beside these laws in the
+// pathological twin.
+//
+// - see: #2116 — `StatePutLaws`, `StateGetGet`
+// - see: #1934 — `StateLaws`
+// - see: `../specification/state-wp.gandr` — a state-passing handler checked
+//   against `StateLaws`
+// - cites: [e.k.Cooper-2023-marriage_effects_rewrites], § 2.1 — the laws of
+//   global state
+//
+// [e.k.Cooper-2023-marriage_effects_rewrites]: https://arxiv.org/abs/2302.02462 "Cooper, The marriage of effects and rewrites"
+
+/// `State.Eff` declares state reads and stores.
+pub theory State.Eff where
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S). C) --> C;
+  oper put : (s : S, k : C) --> C;
+
+/// `StatePutGet` stores a value before it reads that value.
+pub theory StatePutGet where
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S). C) --> C;
+  oper put : (s : S, k : C) --> C;
+  rule putGet : put s (get (bind t. (k t))) <=> put s (k s);
+
+/// `StatePutPut` keeps the second stored value.
+pub theory StatePutPut where
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S). C) --> C;
+  oper put : (s : S, k : C) --> C;
+  rule putPut : put s (put u k) <=> put u k;
+
+/// `StatePutLaws` combines the put-get and put-put rules.
+pub theory StatePutLaws where
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S). C) --> C;
+  oper put : (s : S, k : C) --> C;
+  rule putGet : put s (get (bind t. (k t))) <=> put s (k s);
+  rule putPut : put s (put u k) <=> put u k;
+
+/// `StateGetGet` turns two reads into one shared read.
+pub theory StateGetGet where
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S). C) --> C;
+  rule getGet : get (bind s. (get (bind t. (k s t)))) <=> get (bind s. (k s s));
+
+/// `StateLaws` combines three global-state rules.
+pub theory StateLaws where
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S). C) --> C;
+  oper put : (s : S, k : C) --> C;
+  rule putGet : put s (get (bind t. (k t))) <=> put s (k s);
+  rule putPut : put s (put u k) <=> put u k;
+  rule getGet : get (bind s. (get (bind t. (k s t)))) <=> get (bind s. (k s s));
