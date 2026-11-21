@@ -3,8 +3,8 @@
 ///
 /// Implemented: the rule is admitted, and no reader rewrites by it. A model
 /// owes the law as a member, and a case on the terms owes its respect.
-/// Not implemented: the conversion under the law. A term whose arguments stand
-/// in the other order does not match the left side of a rule.
+/// Not implemented: the conversion under the law, and a rule that fires in the
+/// other order of its two arguments.
 ///
 /// Each rule that rewrites decides a path as before.
 ///

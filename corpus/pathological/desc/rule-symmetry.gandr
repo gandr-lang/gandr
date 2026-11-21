@@ -6,9 +6,9 @@
 //! over the terms must give them one result. Without a proof, a program can
 //! tell the two orders apart.
 //!
-//! The checker reads the symmetry as it reads each rule. A model that leaves
-//! the law out is refused where its two sides do not convert. A fold that
-//! states no respect of the law is refused at its case.
+//! The checker reads the symmetry as it reads each rule. A model that omits
+//! the law is refused where its two sides do not convert. A fold that states
+//! no respect of the law is refused at its case.
 //!
 //! - see: #8291
 
@@ -44,8 +44,8 @@ def agree(a : Terms Vote, b : Terms Vote) -> Terms Vote =
     | Vote.nay => Vote.nay
     | Vote.aye => b
 
-/// A model that leaves the symmetry out. Its two sides do not convert, so
-/// nothing proves the law, and the module is refused.
+/// A model that omits the symmetry. Its two sides do not convert, so nothing
+/// proves the law, and the module is refused.
 ///
 /// - see: #8291
 @[refuses("NoFiller.Omitted")]
@@ -63,8 +63,8 @@ module TallyUnproved : Model(Tally) where
   /// The unit law holds by computation.
   def meetAll(x : Terms Vote) -> Path (meet all x) x = Path.here x;
 
-/// A fold that states no respect of a rule. Its arms respect the two rules
-/// that rewrite by computation. The two orders of a meet do not convert.
+/// A fold that states no respect of a rule. The two orders of a meet do not
+/// convert, so the case is refused.
 ///
 /// - see: #8291
 @[refuses("RuleNotRespected")]

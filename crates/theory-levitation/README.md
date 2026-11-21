@@ -130,6 +130,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 
 - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ The declaration) — a sort's index ranges over the host's types.
 - `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — anchor: the performance programme (§ performance-picture) — a name of the code is an id into its description's table, so a copy of a term copies no text.
+- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the presented-spaces plan (§ presented-spaces-normal-forms) — a rule that swaps the two arguments of one operation is a symmetry, and the path order passes it with no orientation.
 
 ## License
 
