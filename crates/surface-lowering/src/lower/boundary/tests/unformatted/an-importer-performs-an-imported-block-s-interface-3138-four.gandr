@@ -1,0 +1,2 @@
+import "./block.gandr";
+pub def four(x : u32) -> [Boundary] u32 = { let y = twice x; Boundary.add y y };

@@ -1,0 +1,5 @@
+/// `loop_expression`: a loop.
+def tick(n : Integer) -> Unit =
+  *{}
+def spin(n : Integer) -> [Partial] Integer =
+  loop { tick n; }

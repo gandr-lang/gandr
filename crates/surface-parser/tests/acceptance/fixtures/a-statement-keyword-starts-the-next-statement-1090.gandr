@@ -1,0 +1,15 @@
+def swapped() -> -F Unit {
+  handle c : Proc {
+    handle e : Proc {
+      let d : Cap {exit} at e c ;
+      let f : Cap {exit} at c = e ;
+      return *{}
+    } with {
+      | pure(x) => return x
+      | oper exit(code, k) => return *{}
+    }
+  } with {
+    | pure(x) => return x
+    | oper exit(code, k) => return *{}
+  }
+}
