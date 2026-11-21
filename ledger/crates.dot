@@ -123,6 +123,7 @@ digraph crates {
     "workflow-build-state";
     "workflow-coverage-guard";
     "workflow-debt-ledger";
+    "workflow-gate";
     "workflow-github";
     "workflow-host-tools";
     "workflow-hotpath-guard";
