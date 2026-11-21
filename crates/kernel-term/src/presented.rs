@@ -1149,7 +1149,8 @@ impl Presentation
                         continue;
                     }
                     let sites = symmetric_sites(inner.left(), &symmetric);
-                    for swaps in 0 .. orders(&sites) {
+                    let Swaps(count) = orders(&sites);
+                    for swaps in 0 .. count {
                         // A rule overlaps its own left side at the root in
                         // the written order by one term, which is no pair.
                         if swaps == 0 && position == 0 && inner_index == outer_index {
@@ -1606,19 +1607,19 @@ impl Compared
 /// - hypothesis: L3 — as [`compared_under`].
 /// - witness: `presented::tests::a_symmetry_keeps_apartness_of_distinct_classes_8323`
 #[spec(ensures: |ret| ret.len() == term.len())]
-fn subterm_ends<L>(term: &[RuleTerm<(), L>]) -> SmallVec<usize, 0, Global>
+fn subterm_ends<L>(term: &[RuleTerm<(), L>]) -> SmallVec<TermPosition, 0, Global>
 {
-    let mut ends = SmallVec::<usize, 0, Global>::new();
-    ends.resize(Count::from(term.len()), term.len());
+    let mut ends = SmallVec::<TermPosition, 0, Global>::new();
+    ends.resize(Count::from(term.len()), TermPosition(term.len()));
     for at in (0 .. term.len()).rev() {
         let mut end = at.saturating_add(1);
         if let Some(&RuleTerm::Constructor { arity, .. }) = term.get(at) {
             for _field in 0 .. usize::from(arity) {
-                end = ends.get(end).copied().unwrap_or(term.len());
+                end = ends.get(end).map_or(term.len(), |&TermPosition(next)| next);
             }
         }
         if let Some(slot) = ends.get_mut(at) {
-            *slot = end;
+            *slot = TermPosition(end);
         }
     }
     ends
@@ -1694,7 +1695,9 @@ where
                     Compared::Unsettled
                 }
             };
-            let end_of = |ends: &[usize], at: usize| ends.get(at).copied().unwrap_or(usize::MAX);
+            let end_of = |ends: &[TermPosition], at: usize| {
+                ends.get(at).map_or(usize::MAX, |&TermPosition(end)| end)
+            };
             let result = match (left.get(one), right.get(other)) {
                 (
                     Some(&RuleTerm::Constructor { tag, arity, .. }),
@@ -1747,7 +1750,8 @@ where
             }
         }
     }
-    let whole = left_ends.first() == Some(&left.len()) && right_ends.first() == Some(&width);
+    let whole = left_ends.first() == Some(&TermPosition(left.len()))
+        && right_ends.first() == Some(&TermPosition(width));
     Ok(if whole {
         cells.first().copied().unwrap_or(Compared::Unsettled)
     }
@@ -3209,7 +3213,8 @@ fn matched_under<C, L>(
         return Ok(written);
     }
     let sites = symmetric_sites(left, symmetric);
-    for swaps in 1 .. orders(&sites) {
+    let Swaps(count) = orders(&sites);
+    for swaps in 1 .. count {
         let order = reordered(left, &sites, Swaps(swaps), arities, fuel)?;
         let found = matched(term, start, &order, arities, fuel)?;
         if matches!(found, Matched::At { .. }) {
@@ -3250,16 +3255,19 @@ fn symmetric_sites(
         .collect()
 }
 
-/// How many orders a left side with the nodes `sites` under a symmetry has.
+/// One past the last selection of swaps of a left side with the nodes `sites`
+/// under a symmetry: the count of its orders.
 ///
 /// # Specification
 /// trivial.
-fn orders(sites: &[TermPosition]) -> usize
+fn orders(sites: &[TermPosition]) -> Swaps
 {
-    u32::try_from(sites.len())
-        .ok()
-        .and_then(|nodes| 1_usize.checked_shl(nodes))
-        .unwrap_or(usize::MAX)
+    Swaps(
+        u32::try_from(sites.len())
+            .ok()
+            .and_then(|nodes| 1_usize.checked_shl(nodes))
+            .unwrap_or(usize::MAX),
+    )
 }
 
 /// `left` with the two arguments in the other order at each node of `sites`
