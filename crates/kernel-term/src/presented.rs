@@ -720,7 +720,7 @@ impl Presentation
         L: Copy,
         F: Fn(&C) -> C,
     {
-        let symmetric: SmallVec<ConstructorTag, 0, Global> = self
+        let mut symmetric: SmallVec<ConstructorTag, 0, Global> = self
             .rules()
             .iter()
             .filter_map(|rule| match rule.reading() {
@@ -728,6 +728,7 @@ impl Presentation
                 RuleReading::Step => None,
             })
             .collect();
+        symmetric.sort_unstable();
         let mut outcome = Normalized::Unchanged;
         let mut cursor = term.len();
         'rewrite: loop {
@@ -2823,8 +2824,9 @@ struct Swaps(usize);
 /// each of its nodes whose constructor `symmetric` holds.
 ///
 /// # Specification
-/// - requires: `left` is a validated left side; each tag of `symmetric` is the
-///   constructor of a validated symmetry, so it has two fields.
+/// - requires: `left` is a validated left side; `symmetric` is in ascending
+///   order, and each of its tags is the constructor of a validated symmetry, so
+///   it has two fields.
 /// - ensures: the outcome of [`matched`] on `left` as written when that
 ///   matches, when `symmetric` is empty, or when the root of `left` does not
 ///   meet the node at `start`. Otherwise the outcome of [`matched`] on the
@@ -2881,9 +2883,9 @@ fn matched_under<C, L>(
     let sites: SmallVec<TermPosition, 0, Global> = left
         .iter()
         .enumerate()
-        .filter(
-            |&(_, &node)| matches!(node, RuleNode::Constructor(tag) if symmetric.contains(&tag)),
-        )
+        .filter(|&(_, &node)| {
+            matches!(node, RuleNode::Constructor(tag) if symmetric.binary_search(&tag).is_ok())
+        })
         .map(|(at, _)| TermPosition(at))
         .collect();
     let orders = u32::try_from(sites.len())
@@ -2961,8 +2963,8 @@ fn reordered(
         }
         let swapped = fields == 2
             && sites
-                .iter()
-                .position(|&TermPosition(site)| site == at)
+                .binary_search_by_key(&at, |&TermPosition(site)| site)
+                .ok()
                 .and_then(|site| u32::try_from(site).ok())
                 .and_then(|bit| swaps.checked_shr(bit))
                 .is_some_and(|rest| rest & 1 == 1);
