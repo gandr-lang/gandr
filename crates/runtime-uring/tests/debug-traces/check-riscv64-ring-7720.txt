@@ -1,0 +1,10 @@
+command: mise run check:riscv64-ring
+issue: #7720
+before: 921ece2862
+exit: 101
+error: failed to run custom build command for `axboe-liburing v2.15.3`
+  thread 'main' (3932915) panicked at <cargo home>/registry/src/index.crates.io-1949cf8c6b5b557f/bindgen-0.71.1/codegen/mod.rs:937:25:
+  assertion `left == right` failed: Target platform requires `--no-size_t-is-usize`. The size of `ssize_t` (4) does not match the target pointer size (8)
+[check:riscv64-ring] ERROR task failed
+after: 70f330b6ab
+exit: 0

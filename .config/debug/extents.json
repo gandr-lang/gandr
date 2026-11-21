@@ -1,0 +1,62 @@
+[
+  {
+    "name": "#3823: a `&str` at its function's entry, its length a pointer read as 0x555555777433 bytes, is past mapped memory",
+    "regions": [
+      { "base": "0x555555554000", "end": "0x5555583a0000", "readable": true },
+      { "base": "0x5555583a0000", "end": "0x5555583c1000", "readable": true },
+      { "base": "0x5555583c1000", "end": "0x7ffff7800000", "readable": false },
+      { "base": "0x7ffff7800000", "end": "0x7ffff7a00000", "readable": true }
+    ],
+    "address": "0x5555583a1010",
+    "size": "0x555555777433",
+    "covered": false
+  },
+  {
+    "name": "#3823: a string of 0x20 bytes inside the heap is covered",
+    "regions": [{ "base": "0x5555583a0000", "end": "0x5555583c1000", "readable": true }],
+    "address": "0x5555583a1010",
+    "size": "0x20",
+    "covered": true
+  },
+  {
+    "name": "#3823: an extent across two adjacent readable regions is covered",
+    "regions": [
+      { "base": "0x555555554000", "end": "0x5555583a0000", "readable": true },
+      { "base": "0x5555583a0000", "end": "0x5555583c1000", "readable": true }
+    ],
+    "address": "0x55555839fff0",
+    "size": "0x20",
+    "covered": true
+  },
+  {
+    "name": "#3823: an extent running into an unreadable guard page is past mapped memory",
+    "regions": [
+      { "base": "0x7ffff7800000", "end": "0x7ffff7a00000", "readable": true },
+      { "base": "0x7ffff7a00000", "end": "0x7ffff7a01000", "readable": false }
+    ],
+    "address": "0x7ffff79ffff0",
+    "size": "0x20",
+    "covered": false
+  },
+  {
+    "name": "#3823: an extent past the last region lldb names is past mapped memory",
+    "regions": [{ "base": "0x7ffff7800000", "end": "0x7ffff7a00000", "readable": true }],
+    "address": "0x7ffff79ffff0",
+    "size": "0x20",
+    "covered": false
+  },
+  {
+    "name": "#3823: an empty extent at a null pointer reads nothing and is covered",
+    "regions": [],
+    "address": "0x0",
+    "size": "0x0",
+    "covered": true
+  },
+  {
+    "name": "#3823: a length of 0xffffffffffffffff runs past the address space",
+    "regions": [{ "base": "0x0", "end": "0x10000000000000000", "readable": true }],
+    "address": "0x5555583a1010",
+    "size": "0xffffffffffffffff",
+    "covered": false
+  }
+]
