@@ -3307,6 +3307,97 @@ fn a_returned_leaf_of_a_presented_term_reads_before_the_rules()
     assert_ne!(verdict(Presentation::default()), KernelVerdict::Convertible);
 }
 
+#[test]
+fn a_rule_answers_a_stuck_call_under_a_return_8278()
+{
+    // The bits have the rule `band(one, x) → x`. The stuck call `encode(b)`
+    // meets `band(one, ⟨encode(b)⟩)`. The goal has a returned endpoint. So the
+    // term stands as `return band(one, ⟨encode(b)⟩)`. The rules read it there
+    // as `return ⟨encode(b)⟩`, which is the call. The same term over the call
+    // on `c` stays apart. The pair over free bits stays apart also.
+    let (one, band) = (ConstructorTag::from(1_usize), ConstructorTag::from(2_usize));
+    let x = RuleNode::Variable(RuleVariable::from(0_u32));
+    let (b, c) = (DeBruijnIndex::from(0_u32), DeBruijnIndex::from(1_u32));
+    let rules = Presentation::new(SmallVec::<_, 0, Global>::from_iter([PresentedRule::new(
+        [RuleNode::Constructor(band), RuleNode::Constructor(one), x].into(),
+        [x].into(),
+    )]));
+    let verdict = |presentation: Presentation, answered: DeBruijnIndex| {
+        let mut environment = Environment::new();
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let own = staging.arena().value_type_data(
+            ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
+        let staged = staging
+            .data(
+                LevelSignature::monomorphic(),
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([
+                    SmallVec::<_, 0, Global>::from_iter([]),
+                    SmallVec::<_, 0, Global>::from_iter([]),
+                    SmallVec::<_, 0, Global>::from_iter([own, own]),
+                ]),
+                kind,
+            )
+            .presented(presentation);
+        let _bits = environment.add_decl(staged).expect("the bits admit");
+        let mut arena = environment.arena().clone();
+        let own = arena.value_type_data(
+            ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
+        let encode = arena.value_constant(ConstantIndex::from(1_usize));
+        let call = |arena: &mut TermArena, argument: DeBruijnIndex| {
+            let forced = arena.computation_force(encode);
+            let argument = arena.value_variable(argument);
+            let applied = arena.computation_application(forced, argument);
+            arena.value_returned(applied)
+        };
+        let stuck = call(&mut arena, b);
+        let leaf = call(&mut arena, answered);
+        let unit = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            own,
+            one,
+            SmallVec::<_, 0, Global>::new(),
+        );
+        let term = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            own,
+            band,
+            SmallVec::<_, 0, Global>::from_iter([unit, leaf]),
+        );
+        let unfoldings = Unfoldings::new(alloc::vec![Unfoldable::Opaque, Unfoldable::Opaque])
+            .presenting(Presentations::of(environment.entries()));
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Values(stuck, term),
+            EngineClaim::Convertible,
+            &[SHARED],
+        )
+    };
+    assert_eq!(verdict(rules.clone(), b), KernelVerdict::Convertible);
+    assert_eq!(
+        verdict(rules, c),
+        refused(ReplayRefusal::Contradicted {
+            at: TracePosition::from(1),
+        }),
+        "the rule answers another call"
+    );
+    assert_eq!(
+        verdict(Presentation::default(), b),
+        refused(ReplayRefusal::Contradicted {
+            at: TracePosition::from(0),
+        }),
+        "free bits have no rule"
+    );
+}
+
 /// A side of a pair at the point of one loop's words, over the sort at
 /// constant 0 (`Base` at tag 0, `Other` at tag 1), the loop's words at 1, the
 /// 2-cell's words at 2 and `ident`, the identity on the sort, at 3.
