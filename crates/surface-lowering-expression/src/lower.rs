@@ -5704,6 +5704,14 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// # Cost
     /// - allocation: the name's mark in [`Context::invoked`], growth within the
     ///   source's nodes
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bare and a qualified run are the force of the
+    ///   declaration, in a value and where a type is read, and `thunk { now }`
+    ///   is the constant alone.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_call_of_no_arguments_is_the_call_the_source_wrote_364`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_bare_name_of_no_input_where_a_type_is_read_decodes_its_run_8079`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_thunk_of_a_bare_name_of_no_input_is_its_constant_8079`
     #[spec(
         ensures: |ret| ret.is_err()
             || match resolved {
