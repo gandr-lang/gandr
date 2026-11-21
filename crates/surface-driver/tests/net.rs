@@ -89,6 +89,25 @@ fn two_processes_exchange_a_ping_3186()
 /// to its key.
 const HOST_SECRET: &str = "0303030303030303030303030303030303030303030303030303030303030303";
 
+/// The configuration home of a run over a scratch tree, under `scratch`,
+/// whose `[library] std` names the checkout's `library/std`. A scratch tree
+/// lays out a part of the corpus with no standard library of its own.
+///
+/// # Specification
+/// trivial.
+fn profiled(scratch: &Scratch) -> std::path::PathBuf
+{
+    let library = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../library/std");
+    let file = scratch.file(
+        Path::new("configuration/gandr/config.toml"),
+        Text::from(format!("[library]\nstd = \"{}\"\n", library.display()).as_str()),
+    );
+    file.parent()
+        .and_then(Path::parent)
+        .expect("a configuration home")
+        .to_path_buf()
+}
+
 /// `gandr host` of the migration model hosts its world `far` on the socket
 /// `--net-bind` names, under the key `GANDR_NET_SECRET` holds; `gandr run`
 /// binding `far` to that key and socket ships it both migrations. The run
@@ -232,7 +251,7 @@ fn two_processes_run_the_far_world_from_their_site_and_manifold_3374()
     let key = Secret::from_str(HOST_SECRET)
         .expect("the secret is hex")
         .node_id();
-    let unconfigured = std::env::temp_dir().join("gandr-driver-unconfigured");
+    let profile = profiled(&scratch);
     let mut hosting = Command::new(env!("CARGO_BIN_EXE_gandr"));
     hosting
         .arg("host")
@@ -245,7 +264,7 @@ fn two_processes_run_the_far_world_from_their_site_and_manifold_3374()
         .arg(&model)
         .env("GANDR_SECRET_FAR", HOST_SECRET)
         .env_remove("GANDR_NET_SECRET")
-        .env("XDG_CONFIG_HOME", &unconfigured)
+        .env("XDG_CONFIG_HOME", &profile)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut host = hosting.spawn().expect("the host starts");
@@ -254,7 +273,7 @@ fn two_processes_run_the_far_world_from_their_site_and_manifold_3374()
         .arg("--manifold")
         .arg(&manifold)
         .arg(&model)
-        .env("XDG_CONFIG_HOME", &unconfigured)
+        .env("XDG_CONFIG_HOME", &profile)
         .output()
         .expect("the runner runs");
     if ran.status.code() != Some(42_i32) {
@@ -294,7 +313,7 @@ fn two_processes_run_the_far_world_from_their_site_and_manifold_3374()
         let output = Command::new(env!("CARGO_BIN_EXE_gandr"))
             .args(arguments)
             .env_remove("GANDR_NET_SECRET")
-            .env("XDG_CONFIG_HOME", &unconfigured)
+            .env("XDG_CONFIG_HOME", &profile)
             .output()
             .expect("the refused command runs");
         (
@@ -363,7 +382,7 @@ fn two_processes_print_at_the_far_site_of_offers_3546()
         "corpus/model/deployments/offers.manifold.gandr",
         &read("corpus/model/deployments/offers.manifold.gandr"),
     );
-    let unconfigured = std::env::temp_dir().join("gandr-driver-unconfigured");
+    let profile = profiled(&scratch);
     let mut hosting = Command::new(env!("CARGO_BIN_EXE_gandr"));
     hosting
         .arg("host")
@@ -376,7 +395,7 @@ fn two_processes_print_at_the_far_site_of_offers_3546()
         .arg(&model)
         .env("GANDR_SECRET_FAR", HOST_SECRET)
         .env_remove("GANDR_NET_SECRET")
-        .env("XDG_CONFIG_HOME", &unconfigured)
+        .env("XDG_CONFIG_HOME", &profile)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut host = hosting.spawn().expect("the host starts");
@@ -385,7 +404,7 @@ fn two_processes_print_at_the_far_site_of_offers_3546()
         .arg("--manifold")
         .arg(&manifold)
         .arg(&model)
-        .env("XDG_CONFIG_HOME", &unconfigured)
+        .env("XDG_CONFIG_HOME", &profile)
         .output()
         .expect("the runner runs");
     if ran.status.code() != Some(42_i32) {
@@ -451,7 +470,7 @@ fn a_host_reads_its_site_s_secret_by_name_3375()
     let key = Secret::from_str(HOST_SECRET)
         .expect("the secret is hex")
         .node_id();
-    let unconfigured = std::env::temp_dir().join("gandr-driver-unconfigured");
+    let profile = profiled(&scratch);
     let hosting = |variables: &[(&str, &str)]| {
         let mut command = Command::new(env!("CARGO_BIN_EXE_gandr"));
         command
@@ -460,7 +479,7 @@ fn a_host_reads_its_site_s_secret_by_name_3375()
             .arg(&site)
             .env_remove("GANDR_NET_SECRET")
             .env_remove("GANDR_SECRET_FAR")
-            .env("XDG_CONFIG_HOME", &unconfigured);
+            .env("XDG_CONFIG_HOME", &profile);
         for &(name, value) in variables {
             command.env(name, value);
         }

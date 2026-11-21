@@ -592,6 +592,7 @@ impl Annotations
                 | LoweringRefusal::UnexportedName { declared, .. }
                 | LoweringRefusal::ImportUnresolved { refused: declared, .. }
                 | LoweringRefusal::ImportCycle { refused: declared, .. }
+                | LoweringRefusal::ImportNoStandard { refused: declared, .. }
                 | LoweringRefusal::SignatureMismatch { refused: declared, .. }
                 | LoweringRefusal::NotATranslation { refused: declared, .. }
                 | LoweringRefusal::BareFeedback { rule: declared, .. } =>
@@ -654,6 +655,9 @@ impl Annotations
                 refused: declared, ..
             }
             | LoweringRefusal::ImportCycle {
+                refused: declared, ..
+            }
+            | LoweringRefusal::ImportNoStandard {
                 refused: declared, ..
             }
             | LoweringRefusal::SignatureMismatch {

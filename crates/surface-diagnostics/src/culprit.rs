@@ -187,6 +187,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::ShadowedBuiltin { .. } => "shadows a builtin",
         LoweringRefusal::ImportUnresolved { .. } => "names no source this root holds",
         LoweringRefusal::ImportCycle { .. } => "leads back to this source",
+        LoweringRefusal::ImportNoStandard { .. } => "finds no standard library",
         LoweringRefusal::UnlockedDependency { .. } => "no module or locked dependency of this name",
         LoweringRefusal::SignatureMismatch { fault, .. } => match fault {
             MatchFault::Missing => "a member the import finds no declaration of",
@@ -780,6 +781,7 @@ mod tests
             LoweringRefusal::ShadowedBuiltin { .. } => "shadows a builtin",
             LoweringRefusal::ImportUnresolved { .. } => "names no source this root holds",
             LoweringRefusal::ImportCycle { .. } => "leads back to this source",
+            LoweringRefusal::ImportNoStandard { .. } => "finds no standard library",
             LoweringRefusal::UnlockedDependency { .. } => {
                 "no module or locked dependency of this name"
             },
@@ -1011,6 +1013,10 @@ mod tests
                 refused: at,
             },
             LoweringRefusal::ImportCycle {
+                span: at,
+                refused: at,
+            },
+            LoweringRefusal::ImportNoStandard {
                 span: at,
                 refused: at,
             },

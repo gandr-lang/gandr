@@ -3224,6 +3224,11 @@ impl<'source> Collected<'source>
     /// - hypothesis: L3 — a module member read through a direct import and
     ///   through an import of an import.
     /// - witness: `gandr-surface-lowering::tests::namespace::each_import_a_name_is_read_through_is_reached`
+    ///
+    /// # Cost
+    /// - allocation: the spans found and the seen set and stack of the walk,
+    ///   growth within the import closure of `source`
+    /// - allocation: the reached imports, durable by the receiver
     #[inline]
     pub fn reach_declaring(
         &mut self,
@@ -3251,7 +3256,10 @@ impl<'source> Collected<'source>
                     |further| match further.resolution() {
                         ImportResolution::Path(ImportTarget::Source(next)) => Some(next),
                         ImportResolution::Path(
-                            ImportTarget::Unresolved | ImportTarget::Cycle | ImportTarget::Unlocked,
+                            ImportTarget::Unresolved
+                            | ImportTarget::Cycle
+                            | ImportTarget::Unlocked
+                            | ImportTarget::NoStandard,
                         )
                         | ImportResolution::Foreign => None,
                     },

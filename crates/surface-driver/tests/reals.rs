@@ -292,16 +292,22 @@ fn a_configured_profile_bounds_the_run_5704()
 {
     let scratch = Scratch::new(Path::new("reals-profile-5704"));
     let source = scratch.file(Path::new("fine.gandr"), Text::from(FINE));
-    let home = |profile: &str| {
+    let library = format!(
+        "[library]\nstd = \"{}\"\n",
+        repository().join("library/std").display()
+    );
+    let configured = |name: &str, text: &str| {
         let file = scratch.file(
-            &Path::new(profile).join("gandr/config.toml"),
-            Text::from(format!("[reals]\nprofile = \"{profile}\"\n").as_str()),
+            &Path::new(name).join("gandr/config.toml"),
+            Text::from(format!("{library}{text}").as_str()),
         );
         file.parent()
             .and_then(Path::parent)
             .expect("a configuration home")
             .to_path_buf()
     };
+    let home =
+        |profile: &str| configured(profile, &format!("\n[reals]\nprofile = \"{profile}\"\n"));
     let run_under = |home: &Path, source: &Path| {
         Command::new(env!("CARGO_BIN_EXE_gandr"))
             .arg("run")
@@ -311,7 +317,7 @@ fn a_configured_profile_bounds_the_run_5704()
             .output()
             .expect("the run starts")
     };
-    let unconfigured = run(&source);
+    let unconfigured = run_under(&configured("plain", ""), &source);
     let ends = String::from_utf8_lossy(&unconfigured.stdout).into_owned();
     assert_eq!(
         unconfigured.status.code(),

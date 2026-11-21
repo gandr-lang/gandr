@@ -250,6 +250,7 @@ impl LoweringRefusal<'_>
             | Self::DuplicateImportAlias { .. }
             | Self::ImportUnresolved { .. }
             | Self::ImportCycle { .. }
+            | Self::ImportNoStandard { .. }
             | Self::UnlockedDependency { .. }
             | Self::SignatureMismatch { .. }
             | Self::ImportShadows { .. }
@@ -334,6 +335,7 @@ impl LoweringRefusal<'_>
             | Self::DuplicateImportAlias { .. }
             | Self::ImportUnresolved { .. }
             | Self::ImportCycle { .. }
+            | Self::ImportNoStandard { .. }
             | Self::UnlockedDependency { .. }
             | Self::SignatureMismatch { .. }
             | Self::ImportShadows { .. }
@@ -836,7 +838,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 84_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 85_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -1186,6 +1188,10 @@ mod tests
                 method: SurfaceName::from("first"),
                 mode: crate::module::ReceiverMode::Deduced,
             },
+            LoweringRefusal::ImportNoStandard {
+                span: empty,
+                refused: empty,
+            },
         ]
     }
 
@@ -1273,6 +1279,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::PASTING_READING),
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,

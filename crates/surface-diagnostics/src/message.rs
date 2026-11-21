@@ -318,6 +318,9 @@ fn lowered(
         LoweringRefusal::ImportCycle { .. } => f.write_str(
             "this import leads back to this source, so its declarations are not read",
         ),
+        LoweringRefusal::ImportNoStandard { .. } => f.write_str(
+            "this import of `std` finds no standard library: the profile names none, and no directory above this source holds one, so this source's declarations are not read",
+        ),
         LoweringRefusal::UnlockedDependency { alias, .. } => write!(
             f,
             "`{alias}` is no module of this package and no dependency its lock records: run `gandr lock` to lock the coordinate it imports"
@@ -1920,6 +1923,10 @@ pub mod tests
                 refused: span,
             },
             LoweringRefusal::ImportCycle {
+                span,
+                refused: span,
+            },
+            LoweringRefusal::ImportNoStandard {
                 span,
                 refused: span,
             },

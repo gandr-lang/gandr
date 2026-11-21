@@ -381,6 +381,7 @@ fn a_script_runs_through_what_it_imports_2970()
 #[test]
 fn a_script_passes_its_arguments_to_its_entry_1881()
 {
+    gandr_surface_dispatcher::fixture::profiled();
     let counted =
         include_str!("run/fixtures/a-script-passes-its-arguments-to-its-entry-1881-counted.gandr");
     let file = Scratch::write(Path::new("arguments"), SourceText::from(counted));
@@ -475,6 +476,7 @@ fn run_source_file_surfaces_a_source_failure_unchanged()
 #[test]
 fn a_script_pings_over_its_network_3186()
 {
+    gandr_surface_dispatcher::fixture::profiled();
     let loopback = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
     let mut server =
         Endpoint::bind(&Binding::new(Secret::generate()).at(loopback)).expect("loopback binds");
@@ -557,6 +559,7 @@ const ROOT_TWO: &str = "4758525001000b000000000000000100000000020000000000000000
 #[test]
 fn a_script_encloses_the_square_root_of_two_5700()
 {
+    gandr_surface_dispatcher::fixture::profiled();
     let exemplar =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/reals/sqrt-two.gandr");
     let mut console = Captured::default();
@@ -651,6 +654,7 @@ fn a_script_encloses_the_square_root_of_two_5700()
 #[test]
 fn a_script_draws_fair_bits_5707()
 {
+    gandr_surface_dispatcher::fixture::profiled();
     let exemplar =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/probability/draws.gandr");
     let mut console = Captured::default();
@@ -729,6 +733,7 @@ fn a_script_draws_fair_bits_5707()
 #[test]
 fn a_script_s_profile_bounds_its_run_5704()
 {
+    gandr_surface_dispatcher::fixture::profiled();
     let scratch = Scratch::write(
         Path::new("reals-profile-5704"),
         SourceText::from(include_str!(
@@ -795,6 +800,7 @@ fn a_script_s_profile_bounds_its_run_5704()
 #[test]
 fn a_script_decides_comparisons_through_reals_5703()
 {
+    gandr_surface_dispatcher::fixture::profiled();
     let reals = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/reals");
     for (exemplar, printed) in [
         ("comparison.gandr", &["holds"][..]),
@@ -1180,6 +1186,7 @@ fn fetched(lines: &[String]) -> Vec<ChunkCount>
 #[test]
 fn a_second_migration_of_an_edited_list_fetches_what_changed_3365()
 {
+    gandr_surface_dispatcher::fixture::profiled();
     let listed = (1 ..= LISTED)
         .map(|element| element.to_string())
         .collect::<Vec<_>>()
