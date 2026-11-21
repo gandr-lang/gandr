@@ -1,0 +1,653 @@
+//! An import written at a signature, `import hello : Greeting ;` (#3098): the
+//! source's `pub` interface, which its `pub` declarations infer (#533's ruling
+//! of 2026-10-26), is matched against the theory the import names, member by
+//! member, by name and by type.
+//!
+//! Each operation or constant of the signature needs a `pub` declaration of
+//! its name at the top of the imported source, written at the type the member
+//! derives as a model component: the type a module ascribed `Model(T)` checks
+//! the member at (#746), read with no sort of `T` fixed. The two types are
+//! compared as syntax, so the match is decided where the import is lowered,
+//! before anything reads through it. A signature naming fewer members than
+//! the interface holds settles; one naming a member the source does not
+//! export, or holds at another type, refuses every declaration of the
+//! importing source at the import, naming the member, as an import whose list
+//! names what its module does not declare refuses them.
+//!
+//! An import read through a renaming, `import hello : Greeting renaming {
+//! answer as reply }`, matches each member of the signature against the
+//! source's member the renaming reads for it. Each pair must read a `pub`
+//! member of the source, and its name must be fresh: a member of the source
+//! that no pair renames keeps its name, so a pair may not give that name to
+//! another member.
+//!
+//! The match reads written types only. A declaration with no signature has no
+//! type before the checker synthesises one, and a signature's sort, law or
+//! nested model has no type the match compares, so either is refused as
+//! unstated rather than matched by name alone. The match is coercive (the
+//! record's `module-and-package-design.md` § invariants): the import binds
+//! the signature's members and no other, so a name the signature does not
+//! state is unknown through the import even where the source exports it.
+//!
+//! # Alternatives and reversal
+//!
+//! - Matching through the checker, the import's reads each ascribed the
+//!   member's type: declined, because a mismatch would then be the checker's
+//!   type error at each read rather than a refusal at the import, and an unread
+//!   member would never be matched at all.
+//! - A stated advertisement, an interface file or an ascription of the root
+//!   (#587): the follow-on, ascribed against the inferred interface this match
+//!   reads.
+
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_term::CertificateEquality;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::equal_type_syntax;
+use gandr_surface_lowering_base::lower::families::Families;
+use gandr_surface_syntax::ByteSpan;
+use quenchant_shape::shape::Maybe;
+
+use super::Fields;
+use super::Members;
+use super::Minting;
+use super::Models;
+use super::ModelsRef;
+use crate::error::LoweringRefusal;
+use crate::error::MatchFault;
+use crate::form::Placed;
+use crate::import::ImportResolution;
+use crate::import::ImportSignature;
+use crate::import::Renaming;
+use crate::import::RenamingFault;
+use crate::import::Translation;
+use crate::lower::DeclarationOutcome;
+use crate::lower::Sink;
+use crate::model::ModelForm;
+use crate::module::BodyScope;
+use crate::module::Container;
+use crate::module::Functor;
+use crate::module::SlotIndex;
+use crate::module::Stratum;
+use crate::module::TheoryPath;
+use crate::origin::Origin;
+use crate::resolve::SurfaceName;
+use crate::slot::Visibility;
+use crate::unit::ImportTarget;
+use crate::unit::SourceIndex;
+
+/// What the match of a signature against an interface came to, when it does
+/// not hold.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Unmatched<'source>
+{
+    /// A member the interface does not hold, and how.
+    Member(SurfaceName<'source>, MatchFault),
+    /// The signature names no theory the import's source reads: the refusal
+    /// naming the theory's name.
+    Unnamed(LoweringRefusal<'source>),
+}
+
+/// What an import's match came to, when it does not hold: the theory named
+/// at `span` is not held, and how.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Verdict<'source>
+{
+    /// The bytes of the theory's name in the import, or of the flow's name
+    /// for the flow's domain.
+    span: ByteSpan,
+    /// The theory.
+    theory: SurfaceName<'source>,
+    /// How it is not held.
+    unmatched: Unmatched<'source>,
+}
+
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host, F>
+{
+    /// Refuse every declaration of the current source whose import is
+    /// written at a signature its source's `pub` interface does not hold, or
+    /// read through a flow that does not carry it there.
+    ///
+    /// # Specification
+    /// - requires: the current source's collection and mint have run, and its
+    ///   imports' sources are lowered.
+    /// - ensures: for each import of the current source written at a signature
+    ///   and resolved to a source, every slot whose name stands in the current
+    ///   source holds, as a fault, the first refusal the match finds. An import
+    ///   read as written is matched by [`ModelsRef::unmatched`]:
+    ///   [`LoweringRefusal::SignatureMismatch`] at the signature's name, naming
+    ///   the member, or the refusal of a signature naming no theory. An import
+    ///   read through a renaming has its pairs checked first by
+    ///   [`ModelsRef::unrenamed`], then is matched as one read as written, each
+    ///   member read through the renaming. An import read through a flow has
+    ///   its source matched against the flow's domain, refused at the flow's
+    ///   name, then the signature against the flow's codomain by
+    ///   [`ModelsRef::uncovered`], refused at the signature's name, and the
+    ///   flow's instance over a refused source declares nothing. A slot of a
+    ///   functor's template, which declares nothing, is not refused, and a slot
+    ///   already refused, or already faulted, keeps its own.
+    /// - fails: never; a refusal is carried by each declaration.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an import at the interface whole and one at fewer
+    ///   members settle; one at a member the source lacks, one at another type
+    ///   and one at a member the source writes no type for refuse each
+    ///   declaration of the importer by name; an import via a flow whose domain
+    ///   the source holds and whose codomain holds the signature settles, and
+    ///   each of the three refusals of a translation names its site; an import
+    ///   through a renaming settles, and a pair reading no member or giving a
+    ///   name the source keeps is refused at the pair.
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_at_a_narrower_signature_settles_3098`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_at_a_wider_signature_refuses_its_source_3098`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
+    #[spec(
+        captures: before = self.cx().collected.slots.len(),
+        ensures: self.cx().collected.slots.len() == before,
+    )]
+    #[inline]
+    pub fn match_signatures(
+        &mut self,
+        sink: &mut Sink<'_>,
+    )
+    {
+        let source = self.cx().current.source;
+        let mut refusals = Vec::new();
+        let mut untranslated = Vec::new();
+        for import in self.cx().collected.imports.declarations() {
+            let (
+                &Maybe::Present(ref signature),
+                ImportResolution::Path(ImportTarget::Source(target)),
+            ) = (import.signature(), import.resolution())
+            else {
+                continue;
+            };
+            if import.source() != source {
+                continue;
+            }
+            let verdict = match signature.via {
+                Maybe::Present(ref translation) => {
+                    self.shared()
+                        .untranslated(signature, translation, target, sink)
+                },
+                Maybe::Absent(_) => match self.shared().unrenamed(signature, target) {
+                    Maybe::Present(verdict) => Maybe::Present(verdict),
+                    Maybe::Absent(_) => match self.shared().unmatched(
+                        &signature.prefix,
+                        signature.named,
+                        &signature.renaming,
+                        target,
+                        sink,
+                    ) {
+                        Maybe::Present(unmatched) => Maybe::Present(Verdict {
+                            span: signature.named.span,
+                            theory: signature.name,
+                            unmatched,
+                        }),
+                        Maybe::Absent(held) => Maybe::Absent(held),
+                    },
+                },
+            };
+            if let Maybe::Present(verdict) = verdict {
+                refusals.push(verdict);
+                if let Maybe::Present(Translation {
+                    instance: Maybe::Present(instance),
+                    ..
+                }) = signature.via
+                {
+                    untranslated.push(instance);
+                }
+            }
+        }
+        self.cx_mut().untranslated.extend(untranslated);
+        let cx = self.cx_mut();
+        for verdict in refusals {
+            for (index, slot) in cx.collected.slots.iter().enumerate() {
+                if cx.collected.unit.source_at(slot.named.span.start()) != source
+                    || cx.collected.stratum_of(slot.container) != Stratum::Module
+                    || matches!(slot.refusal, Maybe::Present(_))
+                {
+                    continue;
+                }
+                let refusal = match verdict.unmatched {
+                    Unmatched::Member(member, fault) => LoweringRefusal::SignatureMismatch {
+                        span: verdict.span,
+                        signature: verdict.theory,
+                        member,
+                        fault,
+                        refused: slot.named.span,
+                    },
+                    Unmatched::Unnamed(refusal) => refusal,
+                };
+                let _first = cx.faults.entry(SlotIndex::from(index)).or_insert(refusal);
+            }
+        }
+    }
+}
+
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'host, F>
+{
+    /// What the import at `signature`, read through `translation`, of the
+    /// source `target`, does not hold.
+    ///
+    /// # Specification
+    /// - requires: `target` is lowered.
+    /// - ensures: absent when the `via` name resolves to no flow, an import the
+    ///   collection already refused; else the first member of the flow's domain
+    ///   [`Self::unmatched`] finds `target` does not hold, at the flow's name;
+    ///   else the first member of `signature` [`Self::uncovered`] finds the
+    ///   flow's codomain does not hold, at the signature's name; absent when
+    ///   both hold.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::unmatched`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Models::match_signatures`].
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
+    fn untranslated(
+        &self,
+        signature: &ImportSignature<'source>,
+        translation: &Translation<'source>,
+        target: SourceIndex,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<Verdict<'source>, matched::Absent>
+    {
+        let Maybe::Present(flow) = translation.flow
+        else {
+            return Maybe::Absent(matched::Absent::Untranslated);
+        };
+        let Some(&Functor {
+            scope:
+                BodyScope::Domain {
+                    ref domain,
+                    ref codomain,
+                },
+            ..
+        }) = self.cx().collected.functors.get(usize::from(flow))
+        else {
+            return Maybe::Absent(matched::Absent::Untranslated);
+        };
+        if let Maybe::Present(unmatched) = self.unmatched(
+            &domain.prefix,
+            domain.named,
+            &Renaming::default(),
+            target,
+            sink,
+        ) {
+            return Maybe::Present(Verdict {
+                span: translation.named.span,
+                theory: self.cx().name_at(domain.named),
+                unmatched,
+            });
+        }
+        match self.uncovered(signature, codomain, sink) {
+            Maybe::Present(unmatched) => Maybe::Present(Verdict {
+                span: signature.named.span,
+                theory: signature.name,
+                unmatched,
+            }),
+            Maybe::Absent(held) => Maybe::Absent(held),
+        }
+    }
+
+    /// The first pair of the renaming the import at `signature` is read
+    /// through that the source `target` refuses.
+    ///
+    /// # Specification
+    /// - requires: `target` is collected.
+    /// - ensures: the first pair [`Renaming::unrenamable`] refuses over the
+    ///   names of `target`'s `pub` top-level declarations:
+    ///   [`MatchFault::Missing`] at the pair's member read, naming it, for a
+    ///   member the source does not publish, and
+    ///   [`LoweringRefusal::DuplicateDefinition`] at the pair's name, beside
+    ///   the source's declaration of it, for a name the source keeps; absent
+    ///   when every pair holds, or none is written.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the members are a range of the name table, which a
+    ///   clause would walk whole.
+    ///
+    /// # Clause cost
+    /// - bound: one range of the name table over `target`'s top level, then
+    ///   each pair against those names once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Models::match_signatures`].
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
+    fn unrenamed(
+        &self,
+        signature: &ImportSignature<'source>,
+        target: SourceIndex,
+    ) -> Maybe<Verdict<'source>, matched::Absent>
+    {
+        if signature.renamed.is_empty() {
+            return Maybe::Absent(matched::Absent::Held);
+        }
+        let published: Vec<(SurfaceName<'source>, SlotIndex)> = self
+            .cx()
+            .collected
+            .by_name
+            .range((Container::TopLevel(target), SurfaceName::from("")) ..)
+            .take_while(|&(&(container, _), _)| container == Container::TopLevel(target))
+            .filter(|&(_, &slot)| self.cx().collected.slot_visibility(slot) == Visibility::Public)
+            .map(|(&(_, name), &slot)| (name, slot))
+            .collect();
+        let members: Vec<SurfaceName<'source>> = published.iter().map(|&(name, _)| name).collect();
+        let Maybe::Present((at, fault)) = signature.renaming.unrenamable(&members)
+        else {
+            return Maybe::Absent(matched::Absent::Held);
+        };
+        let (Some(&(read, given)), Some(&(member, named))) = (
+            signature.renamed.get(usize::from(at)),
+            signature.renaming.pairs().get(usize::from(at)),
+        )
+        else {
+            return Maybe::Absent(matched::Absent::Held);
+        };
+        let unmatched = match fault {
+            RenamingFault::Missing => Unmatched::Member(member, MatchFault::Missing),
+            RenamingFault::Clash => {
+                let first = published
+                    .iter()
+                    .find(|&&(name, _)| name == named)
+                    .and_then(|&(_, slot)| self.cx().collected.slots.get(usize::from(slot)))
+                    .map_or(given.span, |entry| entry.named.span);
+                Unmatched::Unnamed(LoweringRefusal::DuplicateDefinition {
+                    span: given.span,
+                    name: named,
+                    first,
+                })
+            },
+        };
+        Maybe::Present(Verdict {
+            span: read.span,
+            theory: signature.name,
+            unmatched,
+        })
+    }
+
+    /// The first member of the theory `named`, after the modules `prefix`,
+    /// the `pub` interface of `target` does not hold, in the theory's order,
+    /// each member read through `renaming`.
+    ///
+    /// # Specification
+    /// - requires: `target` is lowered.
+    /// - ensures: absent when every member of the theory is an operation or a
+    ///   constant whose name, read through `renaming`, a `pub` declaration at
+    ///   the top of `target` bears, that declaration's written type
+    ///   syntactically the type the member derives with no sort fixed;
+    ///   otherwise the first member that is not: [`MatchFault::Missing`] for
+    ///   one no `pub` declaration bears, [`MatchFault::Sort`] for one written
+    ///   at another type, and [`MatchFault::Unstated`] for one with no written
+    ///   type, or that is a sort, a law or a nested model, or whose type does
+    ///   not mint. A theory `named` does not name, or that presents no model
+    ///   signature, is the refusal its lookup gives, or unstated at the
+    ///   theory's name.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the verdict is the match itself, member by member
+    ///   over the derived signature and the target's slots; a clause would
+    ///   restate it whole.
+    ///
+    /// # Cost
+    /// - allocation: the derived signature and the expected types it mints,
+    ///   diagnostic.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Models::match_signatures`].
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_at_a_wider_signature_refuses_its_source_3098`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
+    fn unmatched(
+        &self,
+        prefix: &[(ByteSpan, SurfaceName<'source>)],
+        named: Placed,
+        renaming: &Renaming<SurfaceName<'source>>,
+        target: SourceIndex,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<Unmatched<'source>, matched::Absent>
+    {
+        let name = self.cx().name_at(named);
+        let presentation = match self.cx().collected.presented_theory_in(
+            named.span.start(),
+            prefix,
+            named.span,
+            name,
+        ) {
+            Ok((theory, presentation)) => (theory, presentation),
+            Err(refusal) => return Maybe::Present(Unmatched::Unnamed(refusal)),
+        };
+        let Ok(derived) = self.cx().collected.derived(presentation.0, presentation.1)
+        else {
+            return Maybe::Present(Unmatched::Member(name, MatchFault::Unstated));
+        };
+        let minting = Minting {
+            members: Members::Fields(Fields {
+                before: &[],
+                binds: &[],
+                manifests: &[],
+            }),
+            ported: self.cx().collected.port_sorts_of(derived.theory),
+            origin: Origin::new(named.node, named.span),
+        };
+        for component in &derived.components {
+            let member = self.cx().name_at(component.named);
+            let fault = |fault| Maybe::Present(Unmatched::Member(member, fault));
+            let Some(position) = self
+                .cx()
+                .collected
+                .by_name
+                .get(&(Container::TopLevel(target), *renaming.read(&member)))
+                .copied()
+                .filter(|&position| {
+                    self.cx().collected.slot_visibility(position) == Visibility::Public
+                })
+            else {
+                return fault(MatchFault::Missing);
+            };
+            let Ok(ref form @ (ModelForm::Operation { .. } | ModelForm::Constant(_))) =
+                component.form
+            else {
+                return fault(MatchFault::Unstated);
+            };
+            let Maybe::Present(declared) = self.written_type(position)
+            else {
+                return fault(MatchFault::Unstated);
+            };
+            let Ok(expected) = self.mint_form(form, &minting, sink)
+            else {
+                return fault(MatchFault::Unstated);
+            };
+            if equal_type_syntax(sink.arena, expected, declared) != CertificateEquality::Equal {
+                return fault(MatchFault::Sort);
+            }
+        }
+
+        Maybe::Absent(matched::Absent::Held)
+    }
+
+    /// The first member of `signature` the flow's codomain `codomain` does
+    /// not produce, in the signature's order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: absent when every member of the signature's theory is an
+    ///   operation or a constant the codomain's theory states under its name,
+    ///   at a type syntactically the member's, each derived with no sort fixed;
+    ///   otherwise the first member that is not: [`MatchFault::Missing`] for
+    ///   one the codomain does not state, [`MatchFault::Sort`] for one it
+    ///   states at another type, [`MatchFault::Unstated`] for a sort, a law, a
+    ///   nested model or a type that does not mint. A theory either name does
+    ///   not name is the refusal its lookup gives.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::unmatched`].
+    ///
+    /// # Cost
+    /// - allocation: the two derived signatures and the types they mint,
+    ///   diagnostic.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Models::match_signatures`].
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
+    fn uncovered(
+        &self,
+        signature: &ImportSignature<'source>,
+        codomain: &TheoryPath<'source>,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<Unmatched<'source>, matched::Absent>
+    {
+        let derived = |prefix: &[(ByteSpan, SurfaceName<'source>)], named: Placed| {
+            let name = self.cx().name_at(named);
+            match self.cx().collected.presented_theory_in(
+                named.span.start(),
+                prefix,
+                named.span,
+                name,
+            ) {
+                Ok((theory, presentation)) => self
+                    .cx()
+                    .collected
+                    .derived(theory, presentation)
+                    .map_err(|_underived| Unmatched::Member(name, MatchFault::Unstated)),
+                Err(refusal) => Err(Unmatched::Unnamed(refusal)),
+            }
+        };
+        let stated = match derived(&signature.prefix, signature.named) {
+            Ok(stated) => stated,
+            Err(unmatched) => return Maybe::Present(unmatched),
+        };
+        let produced = match derived(&codomain.prefix, codomain.named) {
+            Ok(produced) => produced,
+            Err(unmatched) => return Maybe::Present(unmatched),
+        };
+        let minting = |named: Placed, ported| Minting {
+            members: Members::Fields(Fields {
+                before: &[],
+                binds: &[],
+                manifests: &[],
+            }),
+            ported,
+            origin: Origin::new(named.node, named.span),
+        };
+        // The codomain's components by name, the first of each name kept.
+        let mut made_by_name = BTreeMap::new();
+        for made in &produced.components {
+            let _first = made_by_name
+                .entry(self.cx().name_at(made.named))
+                .or_insert(made);
+        }
+        for component in &stated.components {
+            let member = self.cx().name_at(component.named);
+            let fault = |fault| Maybe::Present(Unmatched::Member(member, fault));
+            let Some(&made) = made_by_name.get(&member)
+            else {
+                return fault(MatchFault::Missing);
+            };
+            let (
+                &Ok(ref form @ (ModelForm::Operation { .. } | ModelForm::Constant(_))),
+                &Ok(ref made_form @ (ModelForm::Operation { .. } | ModelForm::Constant(_))),
+            ) = (&component.form, &made.form)
+            else {
+                return fault(MatchFault::Unstated);
+            };
+            let (Ok(expected), Ok(found)) = (
+                self.mint_form(
+                    form,
+                    &minting(
+                        signature.named,
+                        self.cx().collected.port_sorts_of(stated.theory),
+                    ),
+                    sink,
+                ),
+                self.mint_form(
+                    made_form,
+                    &minting(
+                        codomain.named,
+                        self.cx().collected.port_sorts_of(produced.theory),
+                    ),
+                    sink,
+                ),
+            )
+            else {
+                return fault(MatchFault::Unstated);
+            };
+            if equal_type_syntax(sink.arena, expected, found) != CertificateEquality::Equal {
+                return fault(MatchFault::Sort);
+            }
+        }
+
+        Maybe::Absent(matched::Absent::Held)
+    }
+
+    /// The type the declaration at `position` is written at.
+    ///
+    /// # Specification
+    /// - requires: the declaration's source is lowered.
+    /// - ensures: the declared type of a declaration whose outcome carries one,
+    ///   completed or not; absent for one that has none — a definition with no
+    ///   signature, a refused declaration, a family or a module.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Models::match_signatures`].
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_at_a_wider_signature_refuses_its_source_3098`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || usize::from(position) < self.cx().collected.slots.len())]
+    fn written_type(
+        &self,
+        position: SlotIndex,
+    ) -> Maybe<ValueTypeId, unwritten::Absent>
+    {
+        let Some(slot) = self.cx().collected.slots.get(usize::from(position))
+        else {
+            return Maybe::Absent(unwritten::Absent::Unwritten);
+        };
+        match self.host_ref().outcome(position, slot) {
+            Maybe::Present(
+                DeclarationOutcome::Completed { declared_type, .. }
+                | DeclarationOutcome::Uncompleted { declared_type },
+            ) => Maybe::Present(declared_type),
+            Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(unwritten::Absent::Unwritten),
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a signature's match finds nothing to refuse.
+    mod matched {
+        /// The reason the match holds.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The interface holds every member at the member's type.
+            Held,
+            /// The import is read via a name no flow bears, and the
+            /// collection refuses it before any match.
+            Untranslated,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a declaration has no written type the match reads.
+    mod unwritten {
+        /// The reason none is read.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Its outcome carries no declared type.
+            Unwritten,
+        }
+    }
+}

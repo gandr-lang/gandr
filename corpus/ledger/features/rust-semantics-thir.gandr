@@ -1,0 +1,67 @@
+/// `rust-semantics-thir` derives the postconditions of Corten's `example` and
+/// its buddy allocator's `pop` from THIR written as data.
+///
+/// Implemented: THIR's literal, parameter, conditional, return and call as data
+/// and as a theory's operations, the weakest-precondition axioms as its rules,
+/// fired by an inspected call, and `example` meeting its
+/// specification given `identity`'s.
+/// Implemented: THIR's place reads, writes and option match as data, and the
+/// allocator's `pop` meeting its free-list specification.
+/// Not implemented: a `rustc` driver that stages THIR, and the
+/// allocator's other functions.
+///
+/// The calculus is the specification monad of THIR's control effect, one
+/// postcondition for a value and one for a `return`.
+/// A function's guard is the effect's handler, so a `return` inside a call's
+/// argument skips the call.
+///
+/// - owes: #327 — a `rustc` driver that stages THIR
+/// - see: corpus/model/interop/thir/example.gandr
+/// - see: corpus/model/interop/thir/buddy-pop.gandr
+
+// `Value`, `Int`, `False`, `Expr` and `wpFn`.
+import std.thir (Value, Int, False, Expr, wpFn);
+
+// `Item`, `exampleBody`, `exampleSpec`, `exampleMeets`, `exampleReturnsPast`
+// and `identitySpec`.
+import "../../model/interop/thir/example.gandr";
+
+// `Nat`.
+import "../../model/data/data-base.gandr";
+
+// `Vals`, `Ixs`, `freeAt`, `wpMemFn`, `popBody`, `popEnv`, `popPost`, `Own`,
+// `Whole`, `buddy` and `popMeets`.
+import "../../model/interop/thir/buddy-pop.gandr";
+
+/// `example`'s body paired with evidence that its transformer is below its
+/// specification at every value and postcondition.
+def exampleSpecified : *{
+  m : Expr Item,
+  meets : (b : Value, post : Value -> Type, exampleSpec(b, post)) -> wpFn(Item, identitySpec, m, b, post)
+} = *{exampleBody, fun (b) { fun (post) { fun (h) {
+  let meets = exampleMeets b post;
+  meets h
+} } }};
+
+/// At false the return inside `identity`'s argument answers zero, whatever a
+/// call of `identity` needs.
+def returnsPast(
+  spec : (Item, Value, Value -> Type) -> Type,
+  post : Value -> Type
+) -> post(Int 0) -> wpFn(Item, spec, exampleBody, False, post) =
+  exampleReturnsPast spec post
+
+/// From the free list of `order`, `pop` answers its head and leaves
+/// the rest free.
+def popSpecified(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> freeAt(
+  blocks,
+  heads,
+  order,
+  ixs
+) -> wpMemFn(
+  popBody,
+  popEnv(order),
+  popPost(blocks, heads, order, ixs),
+  Own Zero Whole buddy(blocks, heads)
+) =
+  popMeets blocks heads order ixs

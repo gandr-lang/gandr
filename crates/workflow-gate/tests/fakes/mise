@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# A fake `mise` for the cases of `gate`. `mise tasks ls` prints the file that
+# `FAKE_MISE_TASKS` names, and each other call fails.
+set -euo pipefail
+[[ "${1:-} ${2:-}" == 'tasks ls' ]] || { echo "fake mise: no answer for: $*" >&2; exit 64; }
+exec cat "$FAKE_MISE_TASKS"

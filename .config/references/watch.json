@@ -1,0 +1,1696 @@
+[
+  {
+    "name": "each seed reads its new works: a follow-up shares an author and the topic, a citing work names what it cites, a held author's work names the author, and a venue's work is kept on a term (#2544)",
+    "input": {
+      "cited_works": [
+        {
+          "id": "https://openalex.org/W1",
+          "doi": null,
+          "display_name": "Elaborating dependent (co)pattern matching",
+          "publication_date": "2020-01-01",
+          "authorships": [
+            {
+              "author": {
+                "id": "https://openalex.org/A10",
+                "display_name": "Jesper Cockx"
+              }
+            },
+            {
+              "author": {
+                "id": "https://openalex.org/A11",
+                "display_name": "Andreas Abel"
+              }
+            }
+          ],
+          "primary_location": {
+            "source": {
+              "id": "https://openalex.org/S1",
+              "display_name": "Journal of Functional Programming"
+            }
+          },
+          "primary_topic": {
+            "id": "https://openalex.org/T7"
+          }
+        }
+      ],
+      "held": ["W2"],
+      "held_authors": ["A20"],
+      "terms": [
+        {
+          "name": "rewriting",
+          "match": "\\brewrit\\w*"
+        }
+      ],
+      "seeds": {
+        "cited": [
+          {
+            "id": "https://openalex.org/W100",
+            "doi": "https://doi.org/10.1145/9999",
+            "display_name": "Copattern matching, revisited",
+            "publication_date": "2026-10-30",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A10",
+                  "display_name": "Jesper Cockx"
+                }
+              },
+              {
+                "author": {
+                  "id": "https://openalex.org/A12",
+                  "display_name": "New Coauthor"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1", "https://openalex.org/W50"]
+          },
+          {
+            "id": "https://openalex.org/W101",
+            "doi": null,
+            "display_name": "A study citing copatterns",
+            "publication_date": "2026-10-29",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A30",
+                  "display_name": "Somebody Else"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1"]
+          }
+        ],
+        "authors": [
+          {
+            "id": "https://openalex.org/W102",
+            "doi": null,
+            "display_name": "Held author writes",
+            "publication_date": "2026-10-28",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T3"
+            }
+          },
+          {
+            "id": "https://openalex.org/W100",
+            "doi": "https://doi.org/10.1145/9999",
+            "display_name": "Copattern matching, revisited",
+            "publication_date": "2026-10-30",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A10",
+                  "display_name": "Jesper Cockx"
+                }
+              },
+              {
+                "author": {
+                  "id": "https://openalex.org/A12",
+                  "display_name": "New Coauthor"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1", "https://openalex.org/W50"]
+          }
+        ],
+        "venues": [
+          {
+            "id": "https://openalex.org/W103",
+            "doi": null,
+            "display_name": "Strategic rewriting for dependent types",
+            "publication_date": "2026-10-27",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A40",
+                  "display_name": "V One"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "LICS"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W104",
+            "doi": null,
+            "display_name": "Unrelated databases",
+            "publication_date": "2026-10-26",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A41",
+                  "display_name": "V Two"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "LICS"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W102",
+            "doi": null,
+            "display_name": "Held author writes",
+            "publication_date": "2026-10-28",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T3"
+            }
+          }
+        ]
+      },
+      "reported": [],
+      "dismissed": [],
+      "cap": 200,
+      "per_author": 3,
+      "library": []
+    },
+    "output": {
+      "followups": [
+        {
+          "id": "W100",
+          "title": "Copattern matching, revisited",
+          "date": "2026-10-30",
+          "venue": "Journal of Functional Programming",
+          "doi": "10.1145/9999",
+          "link": "https://doi.org/10.1145/9999",
+          "authors": "Jesper Cockx, New Coauthor",
+          "because": "follows Elaborating dependent (co)pattern matching"
+        }
+      ],
+      "cited": [
+        {
+          "id": "W101",
+          "title": "A study citing copatterns",
+          "date": "2026-10-29",
+          "venue": "Journal of Functional Programming",
+          "doi": null,
+          "link": "https://openalex.org/W101",
+          "authors": "Somebody Else",
+          "because": "cites Elaborating dependent (co)pattern matching"
+        }
+      ],
+      "authors": [
+        {
+          "id": "W102",
+          "title": "Held author writes",
+          "date": "2026-10-28",
+          "venue": "Journal of Functional Programming",
+          "doi": null,
+          "link": "https://openalex.org/W102",
+          "authors": "Held Person",
+          "because": "by Held Person"
+        }
+      ],
+      "venues": [
+        {
+          "id": "W103",
+          "title": "Strategic rewriting for dependent types",
+          "date": "2026-10-27",
+          "venue": "LICS",
+          "doi": null,
+          "link": "https://openalex.org/W103",
+          "authors": "V One",
+          "because": "LICS, on rewriting"
+        }
+      ],
+      "versions": [],
+      "capped": null,
+      "reported": ["W100", "W101", "W102", "W103"]
+    }
+  },
+  {
+    "name": "a second run a week on, its state holding every work the first reported, reports no new row (#2544)",
+    "input": {
+      "cited_works": [
+        {
+          "id": "https://openalex.org/W1",
+          "doi": null,
+          "display_name": "Elaborating dependent (co)pattern matching",
+          "publication_date": "2020-01-01",
+          "authorships": [
+            {
+              "author": {
+                "id": "https://openalex.org/A10",
+                "display_name": "Jesper Cockx"
+              }
+            },
+            {
+              "author": {
+                "id": "https://openalex.org/A11",
+                "display_name": "Andreas Abel"
+              }
+            }
+          ],
+          "primary_location": {
+            "source": {
+              "id": "https://openalex.org/S1",
+              "display_name": "Journal of Functional Programming"
+            }
+          },
+          "primary_topic": {
+            "id": "https://openalex.org/T7"
+          }
+        }
+      ],
+      "held": ["W2"],
+      "held_authors": ["A20"],
+      "terms": [
+        {
+          "name": "rewriting",
+          "match": "\\brewrit\\w*"
+        }
+      ],
+      "seeds": {
+        "cited": [
+          {
+            "id": "https://openalex.org/W100",
+            "doi": "https://doi.org/10.1145/9999",
+            "display_name": "Copattern matching, revisited",
+            "publication_date": "2026-10-30",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A10",
+                  "display_name": "Jesper Cockx"
+                }
+              },
+              {
+                "author": {
+                  "id": "https://openalex.org/A12",
+                  "display_name": "New Coauthor"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1", "https://openalex.org/W50"]
+          },
+          {
+            "id": "https://openalex.org/W101",
+            "doi": null,
+            "display_name": "A study citing copatterns",
+            "publication_date": "2026-10-29",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A30",
+                  "display_name": "Somebody Else"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1"]
+          }
+        ],
+        "authors": [
+          {
+            "id": "https://openalex.org/W102",
+            "doi": null,
+            "display_name": "Held author writes",
+            "publication_date": "2026-10-28",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T3"
+            }
+          },
+          {
+            "id": "https://openalex.org/W100",
+            "doi": "https://doi.org/10.1145/9999",
+            "display_name": "Copattern matching, revisited",
+            "publication_date": "2026-10-30",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A10",
+                  "display_name": "Jesper Cockx"
+                }
+              },
+              {
+                "author": {
+                  "id": "https://openalex.org/A12",
+                  "display_name": "New Coauthor"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1", "https://openalex.org/W50"]
+          }
+        ],
+        "venues": [
+          {
+            "id": "https://openalex.org/W103",
+            "doi": null,
+            "display_name": "Strategic rewriting for dependent types",
+            "publication_date": "2026-10-27",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A40",
+                  "display_name": "V One"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "LICS"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W104",
+            "doi": null,
+            "display_name": "Unrelated databases",
+            "publication_date": "2026-10-26",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A41",
+                  "display_name": "V Two"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "LICS"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W102",
+            "doi": null,
+            "display_name": "Held author writes",
+            "publication_date": "2026-10-28",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T3"
+            }
+          }
+        ]
+      },
+      "reported": ["W100", "W101", "W102", "W103"],
+      "dismissed": [],
+      "cap": 200,
+      "per_author": 3,
+      "library": []
+    },
+    "output": {
+      "followups": [],
+      "cited": [],
+      "authors": [],
+      "venues": [],
+      "versions": [],
+      "capped": null,
+      "reported": []
+    }
+  },
+  {
+    "name": "a work the vault ledger's paper table holds, by its OpenAlex id or by its DOI, never reappears (#2544)",
+    "input": {
+      "cited_works": [
+        {
+          "id": "https://openalex.org/W1",
+          "doi": null,
+          "display_name": "Elaborating dependent (co)pattern matching",
+          "publication_date": "2020-01-01",
+          "authorships": [
+            {
+              "author": {
+                "id": "https://openalex.org/A10",
+                "display_name": "Jesper Cockx"
+              }
+            },
+            {
+              "author": {
+                "id": "https://openalex.org/A11",
+                "display_name": "Andreas Abel"
+              }
+            }
+          ],
+          "primary_location": {
+            "source": {
+              "id": "https://openalex.org/S1",
+              "display_name": "Journal of Functional Programming"
+            }
+          },
+          "primary_topic": {
+            "id": "https://openalex.org/T7"
+          }
+        }
+      ],
+      "held": ["W2"],
+      "held_authors": ["A20"],
+      "terms": [
+        {
+          "name": "rewriting",
+          "match": "\\brewrit\\w*"
+        }
+      ],
+      "seeds": {
+        "cited": [
+          {
+            "id": "https://openalex.org/W100",
+            "doi": "https://doi.org/10.1145/9999",
+            "display_name": "Copattern matching, revisited",
+            "publication_date": "2026-10-30",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A10",
+                  "display_name": "Jesper Cockx"
+                }
+              },
+              {
+                "author": {
+                  "id": "https://openalex.org/A12",
+                  "display_name": "New Coauthor"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1", "https://openalex.org/W50"]
+          },
+          {
+            "id": "https://openalex.org/W101",
+            "doi": null,
+            "display_name": "A study citing copatterns",
+            "publication_date": "2026-10-29",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A30",
+                  "display_name": "Somebody Else"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1"]
+          }
+        ],
+        "authors": [
+          {
+            "id": "https://openalex.org/W102",
+            "doi": null,
+            "display_name": "Held author writes",
+            "publication_date": "2026-10-28",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T3"
+            }
+          },
+          {
+            "id": "https://openalex.org/W100",
+            "doi": "https://doi.org/10.1145/9999",
+            "display_name": "Copattern matching, revisited",
+            "publication_date": "2026-10-30",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A10",
+                  "display_name": "Jesper Cockx"
+                }
+              },
+              {
+                "author": {
+                  "id": "https://openalex.org/A12",
+                  "display_name": "New Coauthor"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1", "https://openalex.org/W50"]
+          }
+        ],
+        "venues": [
+          {
+            "id": "https://openalex.org/W103",
+            "doi": null,
+            "display_name": "Strategic rewriting for dependent types",
+            "publication_date": "2026-10-27",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A40",
+                  "display_name": "V One"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "LICS"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W104",
+            "doi": null,
+            "display_name": "Unrelated databases",
+            "publication_date": "2026-10-26",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A41",
+                  "display_name": "V Two"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "LICS"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W102",
+            "doi": null,
+            "display_name": "Held author writes",
+            "publication_date": "2026-10-28",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T3"
+            }
+          }
+        ]
+      },
+      "reported": [],
+      "dismissed": [
+        {
+          "openalex": "W101",
+          "doi": null
+        },
+        {
+          "openalex": "W999",
+          "doi": "10.1145/9999"
+        }
+      ],
+      "cap": 200,
+      "per_author": 3,
+      "library": []
+    },
+    "output": {
+      "followups": [],
+      "cited": [],
+      "authors": [
+        {
+          "id": "W102",
+          "title": "Held author writes",
+          "date": "2026-10-28",
+          "venue": "Journal of Functional Programming",
+          "doi": null,
+          "link": "https://openalex.org/W102",
+          "authors": "Held Person",
+          "because": "by Held Person"
+        }
+      ],
+      "venues": [
+        {
+          "id": "W103",
+          "title": "Strategic rewriting for dependent types",
+          "date": "2026-10-27",
+          "venue": "LICS",
+          "doi": null,
+          "link": "https://openalex.org/W103",
+          "authors": "V One",
+          "because": "LICS, on rewriting"
+        }
+      ],
+      "versions": [],
+      "capped": null,
+      "reported": ["W102", "W103"]
+    }
+  },
+  {
+    "name": "a library work and a cited work are no new works, whatever seed returns them (#2544)",
+    "input": {
+      "cited_works": [
+        {
+          "id": "https://openalex.org/W1",
+          "doi": null,
+          "display_name": "Elaborating dependent (co)pattern matching",
+          "publication_date": "2020-01-01",
+          "authorships": [
+            {
+              "author": {
+                "id": "https://openalex.org/A10",
+                "display_name": "Jesper Cockx"
+              }
+            },
+            {
+              "author": {
+                "id": "https://openalex.org/A11",
+                "display_name": "Andreas Abel"
+              }
+            }
+          ],
+          "primary_location": {
+            "source": {
+              "id": "https://openalex.org/S1",
+              "display_name": "Journal of Functional Programming"
+            }
+          },
+          "primary_topic": {
+            "id": "https://openalex.org/T7"
+          }
+        }
+      ],
+      "held": ["W2"],
+      "held_authors": ["A20"],
+      "terms": [
+        {
+          "name": "rewriting",
+          "match": "\\brewrit\\w*"
+        }
+      ],
+      "seeds": {
+        "cited": [],
+        "authors": [
+          {
+            "id": "https://openalex.org/W2",
+            "doi": null,
+            "display_name": "A held paper",
+            "publication_date": "2026-10-25",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W1",
+            "doi": null,
+            "display_name": "Elaborating dependent (co)pattern matching",
+            "publication_date": "2020-01-01",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": null
+          }
+        ],
+        "venues": []
+      },
+      "reported": [],
+      "dismissed": [],
+      "cap": 200,
+      "per_author": 3,
+      "library": []
+    },
+    "output": {
+      "followups": [],
+      "cited": [],
+      "authors": [],
+      "venues": [],
+      "versions": [],
+      "capped": null,
+      "reported": []
+    }
+  },
+  {
+    "name": "past its cap the held authors' seed keeps each author's newest works and states both counts (#2544)",
+    "input": {
+      "cited_works": [
+        {
+          "id": "https://openalex.org/W1",
+          "doi": null,
+          "display_name": "Elaborating dependent (co)pattern matching",
+          "publication_date": "2020-01-01",
+          "authorships": [
+            {
+              "author": {
+                "id": "https://openalex.org/A10",
+                "display_name": "Jesper Cockx"
+              }
+            },
+            {
+              "author": {
+                "id": "https://openalex.org/A11",
+                "display_name": "Andreas Abel"
+              }
+            }
+          ],
+          "primary_location": {
+            "source": {
+              "id": "https://openalex.org/S1",
+              "display_name": "Journal of Functional Programming"
+            }
+          },
+          "primary_topic": {
+            "id": "https://openalex.org/T7"
+          }
+        }
+      ],
+      "held": ["W2"],
+      "held_authors": ["A20", "A21"],
+      "terms": [
+        {
+          "name": "rewriting",
+          "match": "\\brewrit\\w*"
+        }
+      ],
+      "seeds": {
+        "cited": [],
+        "authors": [
+          {
+            "id": "https://openalex.org/W200",
+            "doi": null,
+            "display_name": "Paper 0",
+            "publication_date": "2026-10-10",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W201",
+            "doi": null,
+            "display_name": "Paper 1",
+            "publication_date": "2026-10-11",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W202",
+            "doi": null,
+            "display_name": "Paper 2",
+            "publication_date": "2026-10-12",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W203",
+            "doi": null,
+            "display_name": "Paper 3",
+            "publication_date": "2026-10-13",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W204",
+            "doi": null,
+            "display_name": "Paper 4",
+            "publication_date": "2026-10-14",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A21",
+                  "display_name": "Other Held"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W205",
+            "doi": null,
+            "display_name": "Paper 5",
+            "publication_date": "2026-10-15",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A21",
+                  "display_name": "Other Held"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": null
+          }
+        ],
+        "venues": []
+      },
+      "reported": [],
+      "dismissed": [],
+      "cap": 3,
+      "per_author": 2,
+      "library": []
+    },
+    "output": {
+      "followups": [],
+      "cited": [],
+      "authors": [
+        {
+          "id": "W205",
+          "title": "Paper 5",
+          "date": "2026-10-15",
+          "venue": "Journal of Functional Programming",
+          "doi": null,
+          "link": "https://openalex.org/W205",
+          "authors": "Other Held",
+          "because": "by Other Held"
+        },
+        {
+          "id": "W204",
+          "title": "Paper 4",
+          "date": "2026-10-14",
+          "venue": "Journal of Functional Programming",
+          "doi": null,
+          "link": "https://openalex.org/W204",
+          "authors": "Other Held",
+          "because": "by Other Held"
+        },
+        {
+          "id": "W203",
+          "title": "Paper 3",
+          "date": "2026-10-13",
+          "venue": "Journal of Functional Programming",
+          "doi": null,
+          "link": "https://openalex.org/W203",
+          "authors": "Held Person",
+          "because": "by Held Person"
+        },
+        {
+          "id": "W202",
+          "title": "Paper 2",
+          "date": "2026-10-12",
+          "venue": "Journal of Functional Programming",
+          "doi": null,
+          "link": "https://openalex.org/W202",
+          "authors": "Held Person",
+          "because": "by Held Person"
+        }
+      ],
+      "venues": [],
+      "versions": [],
+      "capped": {
+        "before": 6,
+        "after": 4
+      },
+      "reported": ["W202", "W203", "W204", "W205"]
+    }
+  },
+  {
+    "name": "a citing work that shares no author, or no topic, with the work it cites is no follow-up (#2544)",
+    "input": {
+      "cited_works": [
+        {
+          "id": "https://openalex.org/W1",
+          "doi": null,
+          "display_name": "Elaborating dependent (co)pattern matching",
+          "publication_date": "2020-01-01",
+          "authorships": [
+            {
+              "author": {
+                "id": "https://openalex.org/A10",
+                "display_name": "Jesper Cockx"
+              }
+            },
+            {
+              "author": {
+                "id": "https://openalex.org/A11",
+                "display_name": "Andreas Abel"
+              }
+            }
+          ],
+          "primary_location": {
+            "source": {
+              "id": "https://openalex.org/S1",
+              "display_name": "Journal of Functional Programming"
+            }
+          },
+          "primary_topic": {
+            "id": "https://openalex.org/T7"
+          }
+        }
+      ],
+      "held": ["W2"],
+      "held_authors": ["A20"],
+      "terms": [
+        {
+          "name": "rewriting",
+          "match": "\\brewrit\\w*"
+        }
+      ],
+      "seeds": {
+        "cited": [
+          {
+            "id": "https://openalex.org/W300",
+            "doi": null,
+            "display_name": "Same authors, other topic",
+            "publication_date": "2026-10-20",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A10",
+                  "display_name": "Jesper Cockx"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T8"
+            },
+            "referenced_works": ["https://openalex.org/W1"]
+          },
+          {
+            "id": "https://openalex.org/W301",
+            "doi": null,
+            "display_name": "Same topic, other authors",
+            "publication_date": "2026-10-21",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A31",
+                  "display_name": "X"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1"]
+          }
+        ],
+        "authors": [],
+        "venues": []
+      },
+      "reported": [],
+      "dismissed": [],
+      "cap": 200,
+      "per_author": 3,
+      "library": []
+    },
+    "output": {
+      "followups": [],
+      "cited": [
+        {
+          "id": "W301",
+          "title": "Same topic, other authors",
+          "date": "2026-10-21",
+          "venue": "Journal of Functional Programming",
+          "doi": null,
+          "link": "https://openalex.org/W301",
+          "authors": "X",
+          "because": "cites Elaborating dependent (co)pattern matching"
+        },
+        {
+          "id": "W300",
+          "title": "Same authors, other topic",
+          "date": "2026-10-20",
+          "venue": "Journal of Functional Programming",
+          "doi": null,
+          "link": "https://openalex.org/W300",
+          "authors": "Jesper Cockx",
+          "because": "cites Elaborating dependent (co)pattern matching"
+        }
+      ],
+      "authors": [],
+      "venues": [],
+      "versions": [],
+      "capped": null,
+      "reported": ["W300", "W301"]
+    }
+  },
+  {
+    "name": "a work a library entry holds by an arXiv location, a HAL location, or its title and first author, accents folded, is reported once as a version naming the entry, never as a new work; each row links its arXiv version, else its HAL one, else its DOI (#4709)",
+    "input": {
+      "cited_works": [],
+      "held": [],
+      "held_authors": ["A1"],
+      "terms": [],
+      "seeds": {
+        "cited": [],
+        "authors": [
+          {
+            "id": "https://openalex.org/W501",
+            "doi": "https://doi.org/10.1007/978-94-007-0954-6_2",
+            "display_name": "Call-By-Push-Value: A Subsuming Paradigm",
+            "publication_date": "2026-10-02",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A9",
+                  "display_name": "Paul Blain Levy"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "display_name": "A Venue"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T1"
+            },
+            "locations": []
+          },
+          {
+            "id": "https://openalex.org/W502",
+            "doi": "https://doi.org/10.1145/3776695",
+            "display_name": "A Lazy, Concurrent Convertibility Checker",
+            "publication_date": "2026-10-03",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A9",
+                  "display_name": "Nathanaëlle Courant"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "display_name": "A Venue"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T1"
+            },
+            "locations": [
+              {
+                "landing_page_url": "https://doi.org/10.1145/3776695",
+                "pdf_url": null
+              },
+              {
+                "landing_page_url": "http://arxiv.org/abs/2510.18418v2",
+                "pdf_url": null
+              },
+              {
+                "landing_page_url": "https://hal.science/hal-05322705",
+                "pdf_url": null
+              }
+            ]
+          },
+          {
+            "id": "https://openalex.org/W503",
+            "doi": "https://doi.org/10.23638/lmcs-15(1:3)2019",
+            "display_name": "Probabilistic Call By Push Value",
+            "publication_date": "2026-10-04",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A9",
+                  "display_name": "Thomas Ehrhard"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "display_name": "A Venue"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T1"
+            },
+            "locations": [
+              {
+                "landing_page_url": "https://hal.science/hal-01345847v3",
+                "pdf_url": null
+              }
+            ]
+          },
+          {
+            "id": "https://openalex.org/W504",
+            "doi": "https://doi.org/10.1145/3408983",
+            "display_name": "Elaboration with first-class implicit function types",
+            "publication_date": "2026-10-05",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A9",
+                  "display_name": "András Kovács"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "display_name": "A Venue"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T1"
+            },
+            "locations": []
+          },
+          {
+            "id": "https://openalex.org/W505",
+            "doi": "https://doi.org/10.1000/new-one",
+            "display_name": "A New Construction",
+            "publication_date": "2026-10-06",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A1",
+                  "display_name": "Ada Held"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "display_name": "A Venue"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T1"
+            },
+            "locations": [
+              {
+                "landing_page_url": "https://doi.org/10.1000/new-one",
+                "pdf_url": null
+              },
+              {
+                "landing_page_url": "https://hal.science/hal-04000001",
+                "pdf_url": null
+              },
+              {
+                "landing_page_url": "https://arxiv.org/abs/2610.00001v1",
+                "pdf_url": null
+              }
+            ]
+          },
+          {
+            "id": "https://openalex.org/W506",
+            "doi": "https://doi.org/10.1000/new-two",
+            "display_name": "Another New Construction",
+            "publication_date": "2026-10-07",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A1",
+                  "display_name": "Ada Held"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "display_name": "A Venue"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T1"
+            },
+            "locations": [
+              {
+                "landing_page_url": "https://inria.hal.science/hal-04000002v2",
+                "pdf_url": null
+              }
+            ]
+          },
+          {
+            "id": "https://openalex.org/W507",
+            "doi": "https://doi.org/10.1000/new-three",
+            "display_name": "A Third New Construction",
+            "publication_date": "2026-10-08",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A1",
+                  "display_name": "Ada Held"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "display_name": "A Venue"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T1"
+            },
+            "locations": [
+              {
+                "landing_page_url": "https://doi.org/10.1000/new-three",
+                "pdf_url": null
+              }
+            ]
+          }
+        ],
+        "venues": []
+      },
+      "reported": [],
+      "dismissed": [],
+      "cap": 200,
+      "per_author": 3,
+      "library": [
+        {
+          "key": "Levy-1999-call_by_push_value",
+          "doi": "10.1007/3-540-48959-2_17",
+          "title": "Call-by-Push-Value: A Subsuming Paradigm",
+          "arxiv": "",
+          "hal": "",
+          "family": "Levy"
+        },
+        {
+          "key": "Courant-2025-lazy_concurrent_convertibility_checker",
+          "doi": "",
+          "title": "A Lazy, Concurrent Convertibility Checker",
+          "arxiv": "2510.18418",
+          "hal": "",
+          "family": "Courant"
+        },
+        {
+          "key": "Ehrhard-2016-probabilistic_call_by_push_value",
+          "doi": "",
+          "title": "Probabilistic call by push value",
+          "arxiv": "",
+          "hal": "hal-01345847",
+          "family": "Ehrhard"
+        },
+        {
+          "key": "Kovacs-2020-elaboration_first_class_implicit_function_types",
+          "doi": "",
+          "title": "Elaboration with First-Class Implicit Function Types",
+          "arxiv": "",
+          "hal": "",
+          "family": "Kov\\'acs"
+        }
+      ]
+    },
+    "output": {
+      "followups": [],
+      "cited": [],
+      "authors": [
+        {
+          "id": "W507",
+          "title": "A Third New Construction",
+          "date": "2026-10-08",
+          "venue": "A Venue",
+          "doi": "10.1000/new-three",
+          "link": "https://doi.org/10.1000/new-three",
+          "authors": "Ada Held",
+          "because": "by Ada Held"
+        },
+        {
+          "id": "W506",
+          "title": "Another New Construction",
+          "date": "2026-10-07",
+          "venue": "A Venue",
+          "doi": "10.1000/new-two",
+          "link": "https://hal.science/hal-04000002",
+          "authors": "Ada Held",
+          "because": "by Ada Held"
+        },
+        {
+          "id": "W505",
+          "title": "A New Construction",
+          "date": "2026-10-06",
+          "venue": "A Venue",
+          "doi": "10.1000/new-one",
+          "link": "https://arxiv.org/abs/2610.00001",
+          "authors": "Ada Held",
+          "because": "by Ada Held"
+        }
+      ],
+      "venues": [],
+      "versions": [
+        {
+          "id": "W504",
+          "title": "Elaboration with first-class implicit function types",
+          "date": "2026-10-05",
+          "venue": "A Venue",
+          "doi": "10.1145/3408983",
+          "link": "https://doi.org/10.1145/3408983",
+          "authors": "András Kovács",
+          "because": "a version of `Kovacs-2020-elaboration_first_class_implicit_function_types`"
+        },
+        {
+          "id": "W503",
+          "title": "Probabilistic Call By Push Value",
+          "date": "2026-10-04",
+          "venue": "A Venue",
+          "doi": "10.23638/lmcs-15(1:3)2019",
+          "link": "https://hal.science/hal-01345847",
+          "authors": "Thomas Ehrhard",
+          "because": "a version of `Ehrhard-2016-probabilistic_call_by_push_value`"
+        },
+        {
+          "id": "W502",
+          "title": "A Lazy, Concurrent Convertibility Checker",
+          "date": "2026-10-03",
+          "venue": "A Venue",
+          "doi": "10.1145/3776695",
+          "link": "https://arxiv.org/abs/2510.18418",
+          "authors": "Nathanaëlle Courant",
+          "because": "a version of `Courant-2025-lazy_concurrent_convertibility_checker`"
+        },
+        {
+          "id": "W501",
+          "title": "Call-By-Push-Value: A Subsuming Paradigm",
+          "date": "2026-10-02",
+          "venue": "A Venue",
+          "doi": "10.1007/978-94-007-0954-6_2",
+          "link": "https://doi.org/10.1007/978-94-007-0954-6_2",
+          "authors": "Paul Blain Levy",
+          "because": "a version of `Levy-1999-call_by_push_value`"
+        }
+      ],
+      "capped": null,
+      "reported": ["W501", "W502", "W503", "W504", "W505", "W506", "W507"]
+    }
+  },
+  {
+    "name": "a work sharing a library entry's title under another first author is a new work, not a version (#4709)",
+    "input": {
+      "cited_works": [],
+      "held": [],
+      "held_authors": ["A1"],
+      "terms": [],
+      "seeds": {
+        "cited": [],
+        "authors": [
+          {
+            "id": "https://openalex.org/W508",
+            "doi": "https://doi.org/10.1000/same-title",
+            "display_name": "Call-By-Push-Value: A Subsuming Paradigm",
+            "publication_date": "2026-10-09",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A1",
+                  "display_name": "Ada Held"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "display_name": "A Venue"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T1"
+            },
+            "locations": []
+          }
+        ],
+        "venues": []
+      },
+      "reported": [],
+      "dismissed": [],
+      "cap": 200,
+      "per_author": 3,
+      "library": [
+        {
+          "key": "Levy-1999-call_by_push_value",
+          "doi": "10.1007/3-540-48959-2_17",
+          "title": "Call-by-Push-Value: A Subsuming Paradigm",
+          "arxiv": "",
+          "hal": "",
+          "family": "Levy"
+        },
+        {
+          "key": "Courant-2025-lazy_concurrent_convertibility_checker",
+          "doi": "",
+          "title": "A Lazy, Concurrent Convertibility Checker",
+          "arxiv": "2510.18418",
+          "hal": "",
+          "family": "Courant"
+        },
+        {
+          "key": "Ehrhard-2016-probabilistic_call_by_push_value",
+          "doi": "",
+          "title": "Probabilistic call by push value",
+          "arxiv": "",
+          "hal": "hal-01345847",
+          "family": "Ehrhard"
+        },
+        {
+          "key": "Kovacs-2020-elaboration_first_class_implicit_function_types",
+          "doi": "",
+          "title": "Elaboration with First-Class Implicit Function Types",
+          "arxiv": "",
+          "hal": "",
+          "family": "Kov\\'acs"
+        }
+      ]
+    },
+    "output": {
+      "followups": [],
+      "cited": [],
+      "authors": [
+        {
+          "id": "W508",
+          "title": "Call-By-Push-Value: A Subsuming Paradigm",
+          "date": "2026-10-09",
+          "venue": "A Venue",
+          "doi": "10.1000/same-title",
+          "link": "https://doi.org/10.1000/same-title",
+          "authors": "Ada Held",
+          "because": "by Ada Held"
+        }
+      ],
+      "venues": [],
+      "versions": [],
+      "capped": null,
+      "reported": ["W508"]
+    }
+  }
+]
