@@ -1713,6 +1713,10 @@ pub struct Collected<'source>
     /// kept apart from the descriptions that a layer can share.
     pub port_sorts:
         BTreeMap<NodeIndex, Vec<(gandr_theory_levitation::Name, TypeComponent<'source>)>>,
+    /// The parameters each builtin type signature binds, `type List(a : Type)
+    /// : Type ;`, by the member's held slot. A signature that binds none has
+    /// no entry.
+    pub builtin_parameters: BTreeMap<SlotIndex, Vec<FamilyParameter>>,
 }
 
 quenchant_shape::reason_enum! {
@@ -3886,6 +3890,7 @@ pub fn begin_collection<'source>(
         boundaries: BTreeMap::new(),
         requirements: BTreeMap::new(),
         offers: BTreeMap::new(),
+        builtin_parameters: BTreeMap::new(),
     })
 }
 
@@ -14274,7 +14279,8 @@ impl<'source> LoweredModule<'source>
                     },
                     Maybe::Present(
                         gandr_core_term::builtin::Row::Native(_)
-                        | gandr_core_term::builtin::Row::Atom(_),
+                        | gandr_core_term::builtin::Row::Atom(_)
+                        | gandr_core_term::builtin::Row::Former(_),
                     )
                     | Maybe::Absent(_) => {
                         Maybe::Absent(gandr_kernel_term::builtin_role::Absent::Unnamed)

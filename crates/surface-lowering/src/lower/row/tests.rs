@@ -164,6 +164,72 @@ fn a_type_signature_under_builtin_reads_its_atom_8073()
     );
 }
 
+/// #8074: a type signature of `std` with one parameter and no body, which a
+/// `builtin` mark binds to the row of a former, applies that former. A list
+/// literal checks at the declared former, and a list of words and a number do
+/// not.
+#[test]
+fn a_type_signature_with_a_parameter_reads_its_former_8074()
+{
+    let text = include_str!(
+        "tests/unformatted/a-type-signature-with-a-parameter-reads-its-former-8074.gandr"
+    );
+    let mut arena = CoreArena::new();
+    let module = preluded(SourceText::from(text), &homed(), &mut arena);
+    let report = judged(&module, &mut arena);
+    let verdicts: Vec<bool> = report
+        .judged()
+        .iter()
+        .map(|judged| {
+            matches!(
+                judged.verdict(),
+                gandr_core_checker::Verdict::Checked { .. }
+            )
+        })
+        .collect();
+    assert_eq!(
+        verdicts,
+        vec![true, false, false],
+        "`three` checks, and `words` and `number` are refused: {report:?}"
+    );
+}
+
+/// #8074: a former's row binds one parameter and an atom's row binds none. A
+/// type signature that binds another count is refused at its mark, as of a
+/// type that is not the row's.
+#[test]
+fn a_builtin_type_signature_binds_the_parameters_of_its_row_8074()
+{
+    let text = include_str!(
+        "tests/unformatted/a-builtin-type-signature-binds-the-parameters-of-its-row-8074.gandr"
+    );
+    let mark = |n| {
+        let start = text
+            .match_indices("builtin(")
+            .nth(n)
+            .map_or(0_usize, |(at, _)| at);
+        let end = text
+            .get(start ..)
+            .and_then(|rest| rest.find(')'))
+            .map_or(start, |close| {
+                start.saturating_add(close).saturating_add(1_usize)
+            });
+        ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).expect("a mark's span")
+    };
+    let mut arena = CoreArena::new();
+    let module = preluded(SourceText::from(text), &homed(), &mut arena);
+    for (name, n) in [("Bare", 0_usize), ("Wide", 1_usize)] {
+        assert_eq!(
+            refusal_of(&module, SurfaceName::from(name)),
+            LoweringRefusal::BuiltinMark {
+                span: mark(n),
+                fault: BuiltinFault::TypeDiffers,
+            },
+            "`{name}` binds a count of parameters that its row does not"
+        );
+    }
+}
+
 /// #8139: a port at a name that no scope of its source binds refuses its
 /// theory at the name's bytes, with the reason that the description read gave
 /// before the resolve. A result and an input are refused alike.
