@@ -1,0 +1,27 @@
+test: lower::implicit::tests::the_holes_of_an_omitted_model_share_one_list_of_candidates_8284
+package: gandr-surface-lowering
+command: mise run debug:test gandr-surface-lowering lower::implicit::tests::the_holes_of_an_omitted_model_share_one_list_of_candidates_8284
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-lowering/6abbbc1496e69426/out/gandr_surface_lowering-6abbbc1496e69426"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-lowering/6abbbc1496e69426/out/gandr_surface_lowering-6abbbc1496e69426' (x86_64).
+(lldb) settings set -- target.run-args  "lower::implicit::tests::the_holes_of_an_omitted_model_share_one_list_of_candidates_8284" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = gandr_surface_lowering-6abbbc1496e69426`__rustc::rust_panic + 8 at panicking.rs:883:16, address = 0x0000000003138b58
+(lldb) run
+
+running 1 test
+test lower::implicit::tests::the_holes_of_an_omitted_model_share_one_list_of_candidates_8284 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 674 filtered out; finished in 0.02s
+
+Process 1328978 launched: 'target/debug-trace/debug/build/gandr-surface-lowering/6abbbc1496e69426/out/gandr_surface_lowering-6abbbc1496e69426' (x86_64)
+Process 1328978 exited with status = 0 (0x00000000)
+(lldb) bt 24
+error: Command requires a process which is currently stopped.
