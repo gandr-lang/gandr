@@ -1425,6 +1425,8 @@ enum Frame
     /// types, the result-stack suffix from `base`.
     NativeTuple
     {
+        /// The tuple, whose fields the product types (#8161).
+        term: ValueId,
         /// The result-stack suffix owned by this tuple.
         base: usize,
     },
@@ -5123,6 +5125,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let owner = self.owner;
                 self.frames.push(Waiting {
                     frame: Frame::NativeTuple {
+                        term,
                         base: self.native_types.len(),
                     },
                     owner,
@@ -5682,6 +5685,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             Value::ListCons(first, second) => {
                 let element = self.list_expected(term, expected)?;
+                self.context.annotate(
+                    crate::record::Site::Field(
+                        term,
+                        gandr_kernel_term::FieldPosition::from(0_usize),
+                    ),
+                    element,
+                );
+                self.context.annotate(
+                    crate::record::Site::Field(
+                        term,
+                        gandr_kernel_term::FieldPosition::from(1_usize),
+                    ),
+                    expected,
+                );
                 self.wait(Frame::PairSecond { second, expected });
                 Ok(Step::Descend(Goal::Value {
                     term: first,
@@ -5810,6 +5827,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         },
                         Components::Unknown(unknown) => unknown,
                     };
+                    self.context.annotate(
+                        crate::record::Site::Field(
+                            term,
+                            gandr_kernel_term::FieldPosition::from(index),
+                        ),
+                        factor,
+                    );
                     self.frames.push(Waiting {
                         frame: Frame::NativeNext(Goal::Value {
                             term: component,
@@ -5998,6 +6022,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     },
                     Components::Unknown(unknown) => unknown,
                 };
+                self.context.annotate(
+                    crate::record::Site::Field(
+                        term,
+                        gandr_kernel_term::FieldPosition::from(0_usize),
+                    ),
+                    summand,
+                );
                 self.wait(Frame::InjectionPayload);
                 Ok(Step::Descend(Goal::Value {
                     term: value,
@@ -6127,6 +6158,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         let premises = crate::flow::run_premises(self.context, term, expected)?;
+        self.annotate_payloads(term, &premises);
         let owner = self.owner;
         self.frames.extend(
             premises
@@ -6176,6 +6208,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         let premises = crate::flow::dialogue_premises(self.context, term, expected)?;
+        self.annotate_payloads(term, &premises);
         let owner = self.owner;
         self.frames.extend(
             premises
@@ -6190,6 +6223,63 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }),
         );
         Ok(Step::Ascend(Produced::Checked))
+    }
+
+    /// Log the type of each payload field of the run or the dialogue `term`,
+    /// by the premise that checks that payload (#8161).
+    ///
+    /// # Specification
+    /// - requires: `premises` pairs payloads of `term` with their types.
+    /// - ensures: each payload field of `term` whose payload a premise names is
+    ///   logged at the first such premise's type; no other field is.
+    /// - panics: none.
+    /// - executable: none — the log has no observer short of the decision that
+    ///   takes it, which the witness reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::context::CheckingContext::annotate`].
+    /// - witness: `module::tests::a_bind_and_a_pair_give_their_annotations_8161`
+    fn annotate_payloads(
+        &mut self,
+        term: ValueId,
+        premises: &[(ValueId, ValueTypeId)],
+    )
+    {
+        let mut position = 0_usize;
+        loop {
+            let sent = |movement: &gandr_core_term::session::RecordedMove<ValueId>| {
+                if let gandr_core_term::session::RecordedMove::Sent(payload)
+                | gandr_core_term::session::RecordedMove::Received(payload) = *movement
+                {
+                    Some(payload)
+                }
+                else {
+                    None
+                }
+            };
+            let payload = match self.context.arena().value(term) {
+                Some(&Value::Recorded(ref moves)) => moves.iter().filter_map(sent).nth(position),
+                Some(&Value::Dialogue(ref turns)) => turns
+                    .iter()
+                    .filter_map(|turn| sent(&turn.movement))
+                    .nth(position),
+                Some(_) | None => None,
+            };
+            let Some(payload) = payload
+            else {
+                return;
+            };
+            if let Some(&(_, ty)) = premises.iter().find(|&&(held, _)| held == payload) {
+                self.context.annotate(
+                    crate::record::Site::Field(
+                        term,
+                        gandr_kernel_term::FieldPosition::from(position),
+                    ),
+                    ty,
+                );
+            }
+            position = position.saturating_add(1);
+        }
     }
 
     /// Whether the argument `argument` a computation applies at a static Pi is
@@ -7336,6 +7426,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 ));
             },
         };
+        self.context
+            .annotate(crate::record::Site::Binder(bound), result);
         let direction = match direction {
             Direction::Synthesise => Direction::Synthesise,
             Direction::Check(expected) => {
@@ -7749,6 +7841,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
         };
         self.read_by_a_type(left);
         let fibre = instantiate_value_type(self.context.arena_mut(), second, left);
+        self.context.annotate(
+            crate::record::Site::Field(term, gandr_kernel_term::FieldPosition::from(0_usize)),
+            first,
+        );
+        self.context.annotate(
+            crate::record::Site::Field(term, gandr_kernel_term::FieldPosition::from(1_usize)),
+            fibre,
+        );
         self.wait(Frame::PairSecond {
             second: right,
             expected: fibre,
@@ -9704,20 +9804,38 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 if self.native_types.len().checked_sub(base) != Some(fields.len()) {
                     return Err(CheckRefusal::MachineInvariant);
                 }
-                let fields = fields
+                let fields: alloc::collections::BTreeMap<_, _> = fields
                     .keys()
                     .cloned()
                     .zip(self.native_types.drain(base ..))
                     .collect();
+                for (index, &ty) in fields.values().enumerate() {
+                    self.context.annotate(
+                        crate::record::Site::Field(
+                            term,
+                            gandr_kernel_term::FieldPosition::from(index),
+                        ),
+                        ty,
+                    );
+                }
                 let record = self.context.arena_mut().value_type_record(fields);
                 Ok(Step::Ascend(Produced::ValueType(record.into())))
             },
-            (Frame::NativeTuple { base }, Produced::Checked) => {
-                let product = self.context.arena_mut().value_type_product(
-                    self.native_types
-                        .get(base ..)
-                        .ok_or(CheckRefusal::MachineInvariant)?,
-                );
+            (Frame::NativeTuple { term, base }, Produced::Checked) => {
+                let components = self
+                    .native_types
+                    .get(base ..)
+                    .ok_or(CheckRefusal::MachineInvariant)?;
+                for (index, &ty) in components.iter().enumerate() {
+                    self.context.annotate(
+                        crate::record::Site::Field(
+                            term,
+                            gandr_kernel_term::FieldPosition::from(index),
+                        ),
+                        ty,
+                    );
+                }
+                let product = self.context.arena_mut().value_type_product(components);
                 self.native_types.truncate(base);
                 Ok(Step::Ascend(Produced::ValueType(product.into())))
             },

@@ -824,6 +824,23 @@ impl Machine<'_, '_>
                 owner,
             });
         }
+        // Each field checked at the type the record type wants there gives
+        // that type (#8161). The goals queued above stand last field first.
+        let mut index = 0_usize;
+        for waiting in self.frames.get(depth ..).unwrap_or_default().iter().rev() {
+            if let Frame::NativeNext(Goal::Value { direction, .. }) = waiting.frame {
+                if let Direction::Check(expected) = direction {
+                    self.context.annotate(
+                        crate::record::Site::Field(
+                            term,
+                            gandr_kernel_term::FieldPosition::from(index),
+                        ),
+                        expected,
+                    );
+                }
+                index = index.saturating_add(1);
+            }
+        }
         // A field the literal holds at a fixed label is the value the type
         // fixes there, or the literal contradicts its type. A refusal takes
         // back the field checks queued above.

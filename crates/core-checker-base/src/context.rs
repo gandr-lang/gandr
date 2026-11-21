@@ -531,6 +531,11 @@ pub struct CheckingContext<'arena>
     /// The term judgements and type formations a typed run finished, in the
     /// order finished, when one is recording.
     typings: Option<crate::record::Kept>,
+    /// The value type that the declaration under way gives each binder of a
+    /// bind and each field of a structural former, in the order given
+    /// (#8161). The declaration's decision takes the log when its judgement
+    /// ends, so a checkpoint copies no entry.
+    annotations: Vec<crate::record::Annotation>,
     /// The types whose formations a recording keeps, and which of them it
     /// has kept.
     formations: Wanted,
@@ -946,6 +951,7 @@ impl<'arena> CheckingContext<'arena>
             foreseen: Vec::new(),
             grants: crate::capability::Grants::Unbounded,
             typings: None,
+            annotations: Vec::new(),
             formations: Wanted::All,
             stages: gandr_kernel_core::stage_order::StageOrder::default(),
             supplies: Vec::new(),
@@ -1042,6 +1048,7 @@ impl<'arena> CheckingContext<'arena>
             ref foreseen,
             ref grants,
             ref typings,
+            annotations: _,
             ref formations,
             ref stages,
             ref supplies,
@@ -1262,6 +1269,7 @@ impl<'arena> CheckingContext<'arena>
             foreseen,
             grants,
             typings,
+            annotations: Vec::new(),
             formations,
             stages,
             supplies,
@@ -1686,6 +1694,82 @@ impl<'arena> CheckingContext<'arena>
             log.typings
                 .push(self.readings.read_back(self.arena, typing));
         }
+    }
+
+    /// Log `ty` as the value type of `site`, read under the binders open now,
+    /// and read back as written as [`Self::keep_typing`] reads a typing
+    /// (#8161).
+    ///
+    /// # Specification
+    /// - requires: `ty` is read under the intuitionistic binders open now.
+    /// - ensures: the log grows by one entry: `site` and `ty` read back as
+    ///   written, at the depth less the copies open below it.
+    /// - panics: none.
+    /// - executable: none — the log has no observer short of the decision that
+    ///   takes it, which the witness reads.
+    ///
+    /// # Cost
+    /// - allocation: one entry of the log, growth within the binds and the
+    ///   fields of the declaration's body
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bind and a pair give the type of the binder and of
+    ///   each field, and a declaration with neither gives none.
+    /// - witness: `module::tests::a_bind_and_a_pair_give_their_annotations_8161`
+    #[spec(
+        captures: before = self.annotations.len(),
+        ensures: self.annotations.len() == before.saturating_add(1),
+    )]
+    pub(crate) fn annotate(
+        &mut self,
+        site: crate::record::Site,
+        ty: ValueTypeId,
+    )
+    {
+        let term = match site {
+            crate::record::Site::Binder(at) => TermNode::Computation(at),
+            crate::record::Site::Field(at, _) => TermNode::Value(at),
+        };
+        let read = self.readings.read_back(self.arena, crate::record::Typing {
+            term,
+            ty: TypeNode::Value(ty),
+            depth: self.depth(Zone::Intuitionistic),
+        });
+        let site = match (site, read.term) {
+            (crate::record::Site::Binder(_), TermNode::Computation(at)) => {
+                crate::record::Site::Binder(at)
+            },
+            (crate::record::Site::Field(_, position), TermNode::Value(at)) => {
+                crate::record::Site::Field(at, position)
+            },
+            (_, TermNode::Value(_) | TermNode::Computation(_)) => site,
+        };
+        let ty = match read.ty {
+            TypeNode::Value(read) => read,
+            TypeNode::Computation(_) => ty,
+        };
+        self.annotations.push(crate::record::Annotation {
+            site,
+            ty,
+            depth: read.depth,
+        });
+    }
+
+    /// The log of [`Self::annotate`] since the last take, which this call
+    /// empties.
+    ///
+    /// # Specification
+    /// - ensures: the log is empty; the result is every entry logged since the
+    ///   last take, in the order logged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::annotate`].
+    /// - witness: `module::tests::a_bind_and_a_pair_give_their_annotations_8161`
+    #[spec(ensures: self.annotations.is_empty())]
+    pub(crate) fn take_annotations(&mut self) -> Vec<crate::record::Annotation>
+    {
+        core::mem::take(&mut self.annotations)
     }
 
     /// Keep the session type an action's endpoint stood at, when a typed run
