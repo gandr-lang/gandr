@@ -1,0 +1,73 @@
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/regions/natural.gandr:23:62
+   │
+17 │ ┌    def backwards() -> Integer =
+18 │ │      var s = 5
+   │ │      ─── checked against `-F Integer`; while checking the scope of this hold
+19 │ │┌     handle outer : std.process.Exit.Eff {
+20 │ ││       let k : (() -> Integer) at outer = access shared s as w { pure pure w };
+   │ ││       ─── checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() -> Integer) at outer
+21 │ ││┌      handle inner : std.process.Exit.Eff {
+22 │ │││        let _ : Path[.A = (() -> Integer) at inner -> (() -> Integer) at outer](
+   │ │││        ┬──     │         ──────────────────────── the type it synthesises
+   │ │││┌───────│───────┘
+   │ ││││       │
+   │ ││││       checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while checking this computation against the type it is ascribed
+23 │ ││││         thunk { fun (x) { let z : (() -> Integer) at outer = x; pass z } },
+   │ ││││         ┬───────┬─────────┬───────┬──────────────────────────┯────────────
+   │ ││││         │       │         │       │                          │
+   │ ││││         │       │         │       │                          its type does not convert: expected `(() -> Integer) at outer`, found `(() -> Integer) at inner`
+   │ ││││         │       │         │       the type it is checked against
+   │ ││││         │       │         checked against `-F ((() -> Integer) at outer)`; while finishing the type of this
+   │ ││││         │       checked against `(() -> Integer) at inner -> -F ((() -> Integer) at outer)`; while checking the body of this function; binds x : (() -> Integer) at inner
+   │ ││││         checked against `(() -> Integer) at inner -> (() -> Integer) at outer`; while checking the body of this thunk
+24 │ ││││         thunk { fun (x) { let y : (() -> Integer) at inner = pass x; pure y } }
+25 │ ││││       ) = Path.here (thunk { fun (x) { let z : (() -> Integer) at outer = x; pass z } });
+   │ │││└───────┘ formed; while checking the remaining parts of this
+   ┆ ┆┆┆
+29 │ │││        | oper exit(code, rest) => pure 0
+30 │ │││      }
+   │ ││└──────┘ checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while checking the subject of this scope under its capability; binds inner : Cap {exit}
+   ┆ ┆┆
+33 │ ││       | oper exit(code, rest) => pure 0
+34 │ ││     }
+   │ ││     │
+   │ └│─────│
+   │  └─────checked against `() -> Integer`; while checking the body of this thunk
+   │        checked against `-F Integer`; while checking the subject of this scope under its capability; binds outer : Cap {exit}
+   │
+   ├ note: `backwards` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
+
+error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/regions/natural.gandr:46:11
+   │
+38 │ ┌   def unequal() -> Integer =
+39 │ │     var s = 5
+   │ │     ─── checked against `-F Integer`; while checking the scope of this hold
+40 │ │┌    handle outer : std.process.Exit.Eff {
+41 │ ││      let k : (() -> Integer) at outer = access shared s as w { pure pure w };
+   │ ││      ─── checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() -> Integer) at outer
+42 │ ││┌     handle inner : std.process.Exit.Eff {
+43 │ │││       let _ : Path[.A = (() -> Integer) at outer -> (() -> Integer) at inner](
+   │ │││       ─── checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while finishing the type of this
+44 │ │││         thunk { fun (x) { let y : (() -> Integer) at outer = pass x; pure y } },
+   │ │││         ─────────────────────────────────────────────────────────────────────── an endpoint the point does not convert to
+45 │ │││         thunk { fun (x) { let z : (() -> Integer) at inner = x; touch z } }
+   │ │││         ─────────────────────────────────────────────────────────────────── an endpoint the point does not convert to
+46 │ │││       ) = Path.here (thunk { fun (x) { let y : (() -> Integer) at outer = pass x; pure y } });
+   │ │││           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
+   ┆ ┆┆┆
+50 │ │││       | oper exit(code, rest) => pure 0
+51 │ │││     }
+   │ ││└─────┘ checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while checking the subject of this scope under its capability; binds inner : Cap {exit}
+   ┆ ┆┆
+54 │ ││      | oper exit(code, rest) => pure 0
+55 │ ││    }
+   │ ││    │
+   │ └│────│
+   │  └────checked against `() -> Integer`; while checking the body of this thunk
+   │       checked against `-F Integer`; while checking the subject of this scope under its capability; binds outer : Cap {exit}
+   │
+   ├ note: `unequal` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints

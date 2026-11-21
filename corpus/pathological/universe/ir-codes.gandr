@@ -1,0 +1,49 @@
+// The family a code defines, and its decoder, with each refusal.
+//
+// The family holds the arguments its code asks for. Those arguments range
+// over the family itself. The decoder decodes the arguments. It reads the
+// family's elements through itself. The codes exist for these two things.
+//
+// A call computes the type of the arguments. The family thus occurs inside a
+// call in its own field. The occurrence walk refuses it. The decoder calls
+// itself through `decodeArgs`. That call stands at no stage below the code.
+// The decode of the arguments checks. Its marked call stages the code, and the
+// code's case refines the arguments' type.
+//
+// - owes: #3575 — the family a code defines, with its decoder
+// - see: `model/universe/ir-codes.gandr` — the codes and their arguments,
+//   admitted
+
+// The naturals.
+import "../../model/data/data-base.gandr";
+
+// The codes and their arguments.
+import "../../model/universe/ir-codes.gandr";
+
+/// The decode of the arguments a code asks for. The code's case refines their
+/// type, since the marked call stages the code.
+@[checks, form(explicit)]
+def rec decodeArgs(d : Type, c : IR d, x : Type, t : +U (x -> -F d), v : args(d, c, x, t)) -> d =
+  match c where
+    | Iota(e) => e
+    | SigmaC(a, f) => match v where
+      | MkSig(y, r) => decodeArgs[<] d (f y) x t r
+    | DeltaC(a, f) => match v where
+      | MkSig(h, r) => decodeArgs[<] d (f (thunk { fun (z) { t (h z) } })) x t r
+
+/// The family a code defines, and its decoder, in one block.
+rec {
+  /// The family a code defines. Its one constructor holds the arguments over
+  /// the family itself.
+  @[refuses("IndexOccurrence")]
+  data Mu(d : Type, c : IR d) : Type where {
+    /// The arguments, over the family the decoder decodes.
+    | In : (v : args(d, c, Mu d c, thunk { fun (m) { decodeMu d c m } })) --> Mu d c
+  }
+
+  /// The decoder: the decode of the arguments its constructor holds.
+  @[refuses("StageNotBelow")]
+  def rec decodeMu(d : Type, c : IR d, m : Mu d c) -> d =
+    match m where
+      | In(v) => decodeArgs d c (Mu d c) (thunk { fun (n) { decodeMu[<] d c n } }) v
+}

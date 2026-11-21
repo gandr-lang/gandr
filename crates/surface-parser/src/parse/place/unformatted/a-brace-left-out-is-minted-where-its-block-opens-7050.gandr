@@ -1,0 +1,2 @@
+def stepped(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g : Path(y, z)) -> Path[.A = A](x, z) =
+  Path.ap (fun (q) Path.step q g }) f
