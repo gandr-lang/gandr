@@ -559,7 +559,7 @@ impl Reader<'_, '_>
     /// - witness: `description::theory::tests::an_include_is_refused_at_its_member`
     /// - witness: `tests::theory::an_included_member_is_refused_at_its_include_2752`
     /// - witness: `description::theory::tests::an_extension_generates_its_signature`
-    /// - witness: `description::theory::tests::a_port_at_a_sort_nothing_declares_is_refused_2410`
+    /// - witness: `description::theory::tests::a_port_at_a_sort_nothing_declares_is_kept_for_its_scope_8139`
     /// - witness: `description::theory::tests::a_marked_merge_is_a_diagram_of_its_presentation_5763`
     /// - witness: `description::theory::tests::a_frobenius_mark_stands_on_an_unindexed_sort_5763`
     pub(super) fn signature(
@@ -3514,10 +3514,12 @@ fn surface_span(span: ByteSpan) -> SurfaceSpan
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a result naming nothing is refused at its bytes once the
-///   scope resolves it, while a declared sort, an included one and a type of
-///   the scope are read.
-/// - witness: `description::theory::tests::a_port_at_a_sort_nothing_declares_is_refused_2410`
+/// - hypothesis: L3 — a bare port at a name that no sort declares is kept with
+///   its bytes, and an indexed one is refused at the read; a result and an
+///   input that nothing binds are refused at their bytes once the scope
+///   resolves them.
+/// - witness: `description::theory::tests::a_port_at_a_sort_nothing_declares_is_kept_for_its_scope_8139`
+/// - witness: `gandr-surface-lowering::lower::row::tests::a_port_sort_no_scope_binds_is_refused_at_its_bytes_8139`
 ///
 /// # Cost
 /// - allocation: the refusals of the ports, error path
