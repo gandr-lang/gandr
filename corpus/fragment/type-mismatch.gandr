@@ -1,0 +1,2 @@
+@[refuses("TypeMismatch")]
+def wrong : Integer = "text";

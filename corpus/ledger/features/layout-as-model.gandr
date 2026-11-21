@@ -1,0 +1,32 @@
+/// `layout-as-model` states the layout of a truth value in one bit. The
+/// layout is a model of the theory of truth.
+///
+/// Implemented: the layout is a module that models the theory of its type.
+/// Its carrier is the terms of a theory of one bit. The source holds the two
+/// folds, an equivalence, and its path by `ua`. The kernel replays the two
+/// round trips of the equivalence.
+///
+/// Not implemented: the tree derives no fold into a model. It has no fold out
+/// of the terms into a model value.
+///
+/// The author writes each fold by hand. The bits are terms, and no memory
+/// holds one.
+///
+/// - owes: #4148 — the derived fold into a model module
+/// - owes: #4149 — the fold out of the terms into a model value
+/// - see: corpus/model/layouts/truth-in-one-bit.gandr
+
+// `Truth`, `Bit`, `encode`, `decode` and `bitPath`.
+import "../../model/layouts/truth-in-one-bit.gandr";
+
+/// The layout stores the true value as the constant one.
+@[runs("Bit.one")]
+def laidOut() -> Terms Bit = encode Truth.yes;
+
+/// A bit term whose rule fires reads back as the true value.
+@[runs("Truth.yes")]
+def readBack() -> Terms Truth = decode (Bit.band Bit.one (encode Truth.yes));
+
+/// A truth value moves to its bit along the path between the two types.
+@[runs("Bit.one")]
+def moved() -> Terms Bit = Path.walk (fun (X) { X }) bitPath Truth.yes;

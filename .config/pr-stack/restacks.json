@@ -1,0 +1,104 @@
+[
+  {
+    "name": "#3078: a stack whose lower pull request landed squashed is restacked from the lower's head, replaying only its own commit",
+    "lower": "squashed",
+    "held": true,
+    "output": "moved: upper's own"
+  },
+  {
+    "name": "#3078: with no landed head the restack replays the lower's first commit onto its squash and refuses, naming the branch and file, the branch unmoved",
+    "lower": "squashed",
+    "held": false,
+    "output": "refused: conflicts in upper (a.txt)"
+  },
+  {
+    "name": "#3115: an upper stacked on an open lower force-pushed since is replayed from the lower's earlier head onto its current one",
+    "lower": "rewritten",
+    "held": true,
+    "output": "moved: upper's own, lower 3 again, lower 2, lower 1"
+  },
+  {
+    "name": "#3115: an upper holding none of the rewritten lower's heads is refused, naming both branches, the upper unmoved",
+    "lower": "rewritten",
+    "held": false,
+    "output": "refused: upper does not contain lower, the branch below it, nor any of its earlier heads"
+  },
+  {
+    "name": "#6144: a lower force-pushed since moves the file the upper's own file derives from, and that row's check fails, so the restack is refused with the upper unmoved",
+    "lower": "rewritten",
+    "held": true,
+    "artifacts": [
+      {
+        "name": "the upper's file",
+        "paths": ["u.txt"],
+        "inputs": ["a.txt"],
+        "check": "false",
+        "record": "write u.txt again"
+      }
+    ],
+    "output": "refused: leaves generated artifacts stale"
+  },
+  {
+    "name": "#6144: the same replay with the row's check passing moves the upper",
+    "lower": "rewritten",
+    "held": true,
+    "artifacts": [
+      {
+        "name": "the upper's file",
+        "paths": ["u.txt"],
+        "inputs": ["a.txt"],
+        "check": "true",
+        "record": "write u.txt again"
+      }
+    ],
+    "output": "moved: upper's own, lower 3 again, lower 2, lower 1"
+  },
+  {
+    "name": "#6786: a row's check that fails with a status outside its stale ones, as nextest with a package no crate holds, refuses the restack as unreadable, not stale, with the upper unmoved",
+    "lower": "rewritten",
+    "held": true,
+    "artifacts": [
+      {
+        "name": "the upper's file",
+        "paths": ["u.txt"],
+        "inputs": ["a.txt"],
+        "check": "exit 101",
+        "stale": [100],
+        "record": "write u.txt again"
+      }
+    ],
+    "output": "refused: cannot read its generated artifacts"
+  },
+  {
+    "name": "#6786: the same row's check that fails with one of its stale statuses refuses the restack as stale",
+    "lower": "rewritten",
+    "held": true,
+    "artifacts": [
+      {
+        "name": "the upper's file",
+        "paths": ["u.txt"],
+        "inputs": ["a.txt"],
+        "check": "exit 100",
+        "stale": [100],
+        "record": "write u.txt again"
+      }
+    ],
+    "output": "refused: leaves generated artifacts stale"
+  },
+  {
+    "name": "#7485: a row's check reads the toolchain that the replayed tree pins, not the one that the seat's environment carries, so a check that needs the tree's pin passes and the upper moves",
+    "lower": "rewritten",
+    "held": true,
+    "artifacts": [
+      {
+        "name": "the upper's file",
+        "paths": ["u.txt"],
+        "inputs": ["a.txt"],
+        "check": "[ \"$RUSTUP_TOOLCHAIN\" = nightly-case ] || exit 101",
+        "stale": [100],
+        "record": "write u.txt again"
+      }
+    ],
+    "output": "moved: upper's own, lower 3 again, lower 2, lower 1"
+  }
+]

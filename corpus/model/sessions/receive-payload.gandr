@@ -1,0 +1,30 @@
+// This source parses a parenthesised payload after a receive.
+//
+// A receive reads the parenthesised type as its payload.
+// A send uses the same payload rule.
+// A sum can serve as a payload.
+// `?` marks both a receive and an unknown type.
+// Parentheses after `?` select a receive.
+//
+// An unknown type is complete.
+// No type form follows `(` after an unknown type.
+// The parser uses parentheses to select the receive form.
+//
+// - see: #1229
+
+/// A seat that receives an order, a sum written in place, and closes. The
+/// desk sends the order before the seat receives it, and the seat closes
+/// only after its receipt.
+@[
+  runs("*{}"),
+  traces(decomposes
+    seat
+    (series (event right 0) (parallel (series (event left 0) (event left 1)) (event right 1))))
+]
+def receivesAnOrder() -> Unit =
+  let desk = fork (seat : (+{go : Integer, stop : Unit}) >? end) {
+    let order = recv seat;
+    close seat
+  };
+  send desk (+{.go = 1} : +{go : Integer, stop : Unit})
+  close desk

@@ -1,0 +1,11 @@
+// An attribute block before a data family's member stands on that member's
+// constructor. An attribute that stands on a declaration alone is refused
+// there by its name and its place.
+
+/// A bit whose first constructor carries an attribute of a declaration.
+@[refuses("MisplacedAttribute")]
+data Stray : Type where
+  /// The low bit, whose block holds an attribute of a declaration.
+  @[checks]
+  | Low : Stray
+  | High : Stray

@@ -1,0 +1,9 @@
+theory S where {
+  sort S : Type;
+
+  oper f : (S) --> S;
+
+  rule r : (data x : S) ==> (z : S) {
+    node : f(x) --> (z);
+  };
+}
