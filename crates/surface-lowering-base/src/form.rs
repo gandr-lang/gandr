@@ -2961,11 +2961,8 @@ fn constructor_head(
         };
         match label {
             Ok(label)
-                if (first && label == TileName::CONSTRUCTOR)
-                    || (!first
-                        && (label == TileName::DOT
-                            || label == TileName::CONSTRUCTOR
-                            || label == TileName::IDENTIFIER)) =>
+                if label == TileName::CONSTRUCTOR
+                    || (!first && (label == TileName::DOT || label == TileName::IDENTIFIER)) =>
             {
                 read.pieces.push(Piece::Tile { label, at: placed });
             },
