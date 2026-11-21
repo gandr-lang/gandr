@@ -233,6 +233,10 @@ const HOVER_WIDTH: u32 = 80;
 /// refuses.
 const UNTYPED: &str = "The engine typed nothing here.";
 
+/// What opens the last line of a hover that knows only the rule of its tile.
+/// The coverage sweep keys a name whose hover gives only this line as a gap.
+const TILE_OF: &str = "A tile of";
+
 quenchant_shape::reason_enum! {
     /// Why a position hovers nothing.
     pub mod hovered {
@@ -1434,6 +1438,9 @@ fn stubbed<Store, Blocks>(
 /// - hypothesis: L3 — as [`stubbed`].
 /// - witness: `hover::tests::a_refused_declaration_hovers_what_the_lowering_kept_1201`
 /// - witness: `hover::tests::a_checker_refused_declaration_hovers_its_refusal_1204`
+///
+/// # Cost
+/// - allocation: the answer's text, durable by the hover that returns it
 #[spec(ensures: |ref ret| ret.1.starts_with(style.markup.opener().0) && usize::from(ret.0.end()) <= <&str>::from(quoted.text).len())]
 fn kept(
     hovering: &Hovering,
@@ -1525,7 +1532,7 @@ fn kept(
     quote(&mut code, tile.span);
     (
         tile.span,
-        format!("{}\n\nA tile of `{}`.", code.block(), tile.rule),
+        format!("{}\n\n{TILE_OF} `{}`.", code.block(), tile.rule),
     )
 }
 
@@ -3818,4 +3825,6 @@ mod tests
             );
         }
     }
+
+    mod coverage;
 }
