@@ -1760,6 +1760,18 @@ jobs:
       - *setup-rust
       - *lint-scope
       - *tree-matches-commit
+      # The binary `gate` gives the inputs of each check to the read of the
+      # records. A hosted runner keeps no binary, so the push to main builds
+      # it and saves it, and a job restores it before it reads. The launcher
+      # names the binary by the four paths of this key.
+      # - see: #8276, `.config/gate-scope/tool.bash`
+      - &restore-workflow-gate
+        name: restore the binary of the gate's reader
+        if: ${{ needs.prepare.outputs.lints == 'true' && (github.event_name == 'merge_group' || github.event_name == 'pull_request') }}
+        uses: *cache-restore
+        with:
+          path: &workflow-gate ~/.cache/gandr/tools/gate
+          key: &workflow-gate-key workflow-gate-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/workflow-gate/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml') }}
       - *read-verdicts
       - name: restore the arm64 Clippy state
         if: ${{ steps.verdict.outputs.held != 'true' }}
@@ -1802,6 +1814,7 @@ jobs:
       - *setup-rust
       - *lint-scope
       - *tree-matches-commit
+      - *restore-workflow-gate
       - *read-verdicts
       - *identify-policy
       - *restore-dylint-drivers
@@ -2714,6 +2727,15 @@ jobs:
       - *git-checkout
       # Repository gates read Git metadata inside the job container.
       - *trust-workspace
+      # This job reads the records for each change, so it restores the binary
+      # for each change.
+      # - see: #8276
+      - name: restore the binary of the gate's reader
+        if: ${{ github.event_name == 'merge_group' || github.event_name == 'pull_request' }}
+        uses: *cache-restore
+        with:
+          path: *workflow-gate
+          key: *workflow-gate-key
       # A lane's gate that passed on this change writes a signed record of
       # `check:format` and of `check:purposes`. The job reads each record with
       # git and the signature check alone, before it installs its tools. A
@@ -3105,6 +3127,44 @@ jobs:
         run: mise run ci:delete-superseded policy-state-v "$CI_STATE_KEY"
       - *save-gate-binary
       - *save-dylint-drivers
+
+  # A hosted runner keeps no binary of a workflow tool, so a job that calls
+  # the tool builds it first. This job runs on each push to main. It builds
+  # the binary `gate` when no cache entry holds it, and it saves the entry as
+  # main's.
+  #
+  # Each job that reads the records restores that entry. The key changes
+  # with the source of the tool, the root manifest, the lock file and the
+  # compiler. So most pushes find the entry and build nothing.
+  # - see: #8276, `.config/gate-scope/tool.bash`
+  promote-workflow-gate:
+    name: promote the binary of the gate's reader
+    needs: *promote-needs
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: *linux
+    permissions: *image-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - name: find the binary of the gate's reader
+        id: workflow-gate-find
+        uses: *cache-restore
+        with:
+          path: *workflow-gate
+          key: *workflow-gate-key
+          lookup-only: true
+      - *install-policy-tools
+      - name: build the binary of the gate's reader
+        id: workflow-gate-build
+        if: ${{ steps.workflow-gate-find.outputs.cache-hit != 'true' }}
+        run: mise exec -- .config/gate-scope/tool.bash gandr-workflow-gate gate --version
+      - name: save the binary of the gate's reader
+        if: ${{ env.ACT != 'true' && steps.workflow-gate-build.outcome == 'success' }}
+        uses: *cache-save
+        with:
+          path: *workflow-gate
+          key: ${{ steps.workflow-gate-find.outputs.cache-primary-key }}
 
   # The landing's Clippy state, from the queue run that linted this exact
   # commit, saved as main's in place of the state it supersedes (#2045).
