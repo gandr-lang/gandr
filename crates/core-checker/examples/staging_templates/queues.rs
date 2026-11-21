@@ -360,7 +360,7 @@ where
                 Self::Steal {
                     ref local,
                     ref injector,
-                    ref peers,
+                    peers,
                 } => local
                     .pop()
                     .or_else(|| injector.steal_batch_and_pop(local).success())
@@ -681,9 +681,10 @@ where
     let scratch = Scratch::new(workload, mode).map_err(io::Error::other)?;
     // Each worker owns its scratch, built before any worker starts, so a
     // refused build starts none.
-    let scratches = (0 .. threads.0)
-        .map(|_| Scratch::new(workload, mode).map_err(io::Error::other))
-        .collect::<io::Result<Vec<_>>>()?;
+    let scratches =
+        core::iter::repeat_with(|| Scratch::new(workload, mode).map_err(io::Error::other))
+            .take(threads.0)
+            .collect::<io::Result<Vec<_>>>()?;
     let locals: Vec<_> = core::iter::repeat_with(crossbeam_deque::Worker::new_fifo)
         .take(threads.0)
         .collect();

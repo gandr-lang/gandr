@@ -60,6 +60,7 @@ self_cell.workspace = true
 [dev-dependencies]
 gandr-core-checker.workspace = true
 gandr-kernel-core.workspace = true
+gandr-kernel-data.workspace = true
 gandr-runtime-rust-record.workspace = true
 gandr-surface-lowering-base = { workspace = true, features = ["fixture"] }
 gandr-surface-parser.workspace = true

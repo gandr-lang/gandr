@@ -2048,6 +2048,7 @@ dependencies = [
  "gandr-core-checker",
  "gandr-core-term",
  "gandr-kernel-core",
+ "gandr-kernel-data",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-runtime-rust-record",
