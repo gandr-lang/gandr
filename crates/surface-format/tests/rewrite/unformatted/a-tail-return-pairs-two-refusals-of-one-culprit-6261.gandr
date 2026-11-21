@@ -1,0 +1,6 @@
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+
+data Flag : Type where { | Up : Flag | Down : Flag }
+
+def bad(n : Nat) -> Nat -> Flag =
+  return fun (e) { e }
