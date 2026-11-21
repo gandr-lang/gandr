@@ -11,6 +11,7 @@ use gandr_workflow_github::Body;
 use gandr_workflow_github::Feed;
 use gandr_workflow_github::GitHubError;
 use gandr_workflow_github::READ_PAUSE;
+use gandr_workflow_github::Site;
 use gandr_workflow_github::read;
 use gandr_workflow_github::run;
 use serde::Deserialize;
@@ -24,6 +25,36 @@ use crate::report::Standing;
 use crate::workflows::CacheUsage;
 use crate::workflows::Timed;
 use crate::workflows::WorkflowName;
+
+/// The list of the completed runs of a workflow of a window.
+const RECENT_RUNS: Site = Site::new("recent_runs", "api GET");
+
+/// The list of the jobs of one run.
+const JOBS: Site = Site::new("samples", "api GET");
+
+/// The list of the active workflows.
+const WORKFLOW_LIST: Site = Site::new("timed", "api GET");
+
+/// The list of the completed runs of one workflow.
+const WORKFLOW_RUNS: Site = Site::new("timed", "api GET");
+
+/// The read of the cache usage of the repository.
+const CACHE_USAGE: Site = Site::new("cache_usage", "api GET");
+
+/// The search of the issue of the report.
+const LIST: Site = Site::new("file", "issue list");
+
+/// The edit of the issue of the report.
+const EDIT: Site = Site::new("file", "issue edit");
+
+/// The reopen of the closed issue of a lane over budget.
+const REOPEN: Site = Site::new("file", "issue reopen");
+
+/// The close of the open issue when each lane is within budget.
+const CLOSE: Site = Site::new("file", "issue close");
+
+/// The issue that the first lane over budget opens.
+const CREATE: Site = Site::new("file", "issue create");
 
 /// The label marking the issue the report keeps: its body is the report, and
 /// it closes once every lane is within budget.
@@ -347,17 +378,17 @@ where
 /// - witness: `tests::cli::a_daily_lane_is_sampled_over_the_scheduled_runs`
 /// - witness: `tests::cli::a_nightly_lane_is_sampled_over_the_nightly_runs`
 /// - witness: `tests::cli::a_test_lane_is_sampled_over_the_integration_dispatches`
+///
+/// # Cost
+/// - allocation: the command and the run list, growth within the count
 #[inline]
 pub fn recent_runs(
     count: RunCount,
     window: Window,
 ) -> Result<Vec<RunId>, BudgetError>
 {
-    let mut command = Command::new("gh");
+    let mut command = RECENT_RUNS.command();
     command.args([
-        "api",
-        "--method",
-        "GET",
         match window {
             Window::Landing | Window::Integration | Window::Main | Window::Scheduled => RUNS,
             Window::Nightly => NIGHTLY_RUNS,
@@ -425,26 +456,24 @@ pub fn recent_runs(
 ///   median; a run's jobs dropped or misattributed changes the report.
 /// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
 /// - witness: `tests::cli::a_summed_budget_tables_every_workflow`
+///
+/// # Cost
+/// - allocation: the command, its route and the samples, growth within the jobs
+///   of the run
 #[inline]
 pub fn samples(
     run_id: RunId,
     jobs: Jobs,
 ) -> Result<Vec<Sample>, BudgetError>
 {
-    let mut command = Command::new("gh");
-    command.args([
-        "api",
-        "--method",
-        "GET",
-        &format!("repos/{{owner}}/{{repo}}/actions/runs/{run_id}/jobs"),
-        "-f",
-        "per_page=100",
-        "--jq",
-        match jobs {
-            Jobs::Successful => JOB_QUERY,
-            Jobs::Completed => COMPLETED_JOB_QUERY,
-        },
-    ]);
+    let mut command = JOBS.command();
+    command.arg(format!(
+        "repos/{{owner}}/{{repo}}/actions/runs/{run_id}/jobs"
+    ));
+    command.args(["-f", "per_page=100", "--jq", match jobs {
+        Jobs::Successful => JOB_QUERY,
+        Jobs::Completed => COMPLETED_JOB_QUERY,
+    }]);
     let text = read(&mut command, READ_PAUSE)?;
     text.lines()
         .map(|line| {
@@ -479,20 +508,15 @@ pub fn samples(
 ///   read with a count of two; a workflow's runs attributed to another, a run's
 ///   jobs dropped or the count ignored changes the table.
 /// - witness: `tests::cli::a_summed_budget_tables_every_workflow`
+///
+/// # Cost
+/// - allocation: the commands, their routes and the timed runs, growth within
+///   the workflows
 #[inline]
 pub fn timed(count: RunCount) -> Result<Vec<(WorkflowName, Vec<Timed>)>, BudgetError>
 {
-    let mut list = Command::new("gh");
-    list.args([
-        "api",
-        "--method",
-        "GET",
-        WORKFLOWS,
-        "-f",
-        "per_page=100",
-        "--jq",
-        WORKFLOW_QUERY,
-    ]);
+    let mut list = WORKFLOW_LIST.command();
+    list.args([WORKFLOWS, "-f", "per_page=100", "--jq", WORKFLOW_QUERY]);
     let listing = read(&mut list, READ_PAUSE)?;
     let unread = |command: &Command, line: &str, what: &str| {
         BudgetError::from(GitHubError::unread(
@@ -511,11 +535,8 @@ pub fn timed(count: RunCount) -> Result<Vec<(WorkflowName, Vec<Timed>)>, BudgetE
     }
     let listed = read_all(&workflows, |&(id, _)| {
         let route = format!("repos/{{owner}}/{{repo}}/actions/workflows/{id}/runs");
-        let mut runs = Command::new("gh");
+        let mut runs = WORKFLOW_RUNS.command();
         runs.args([
-            "api",
-            "--method",
-            "GET",
             &route,
             "-f",
             "status=completed",
@@ -566,11 +587,14 @@ pub fn timed(count: RunCount) -> Result<Vec<(WorkflowName, Vec<Timed>)>, BudgetE
 /// - hypothesis: L3 — a fake `gh` reporting a usage read into the table; a
 ///   usage invented or a route misnamed changes the cache line.
 /// - witness: `tests::cli::a_summed_budget_tables_every_workflow`
+///
+/// # Cost
+/// - allocation: the command and its answer, growth within the answer
 #[inline]
 pub fn cache_usage() -> Result<CacheUsage, BudgetError>
 {
-    let mut command = Command::new("gh");
-    command.args(["api", "--method", "GET", CACHE, "--jq", CACHE_QUERY]);
+    let mut command = CACHE_USAGE.command();
+    command.args([CACHE, "--jq", CACHE_QUERY]);
     let text = read(&mut command, READ_PAUSE)?;
     text.parse::<CacheUsage>().ok().ok_or_else(|| {
         BudgetError::from(GitHubError::unread(
@@ -607,16 +631,18 @@ pub fn cache_usage() -> Result<CacheUsage, BudgetError>
 ///   invocations.
 /// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
 /// - witness: `tests::cli::an_issue_follows_the_budget_both_ways`
+///
+/// # Cost
+/// - allocation: the commands, the report's body and the answers of `gh`,
+///   growth within the report
 #[inline]
 pub fn file(
     report: &Report,
     title: &IssueTitle,
 ) -> Result<Filed, BudgetError>
 {
-    let mut list = Command::new("gh");
+    let mut list = LIST.command();
     list.args([
-        "issue",
-        "list",
         "--state",
         "all",
         "--limit",
@@ -632,9 +658,7 @@ pub fn file(
     let found = issues.into_iter().find(|issue| issue.title == title.0);
     let edit = |number: u64| {
         run(
-            Command::new("gh").args([
-                "issue",
-                "edit",
+            EDIT.command().args([
                 &number.to_string(),
                 "--body-file",
                 "-",
@@ -644,18 +668,11 @@ pub fn file(
             Feed::Body(Body::from(report.to_string())),
         )
     };
-    let act = |verb: &str, number: u64| {
-        run(
-            Command::new("gh").args(["issue", verb, &number.to_string()]),
-            Feed::Nothing,
-        )
-    };
+    let act = |site: Site, number: u64| run(site.command().arg(number.to_string()), Feed::Nothing);
     match (report.standing(), found) {
         (Standing::Over, None) => {
             let url = run(
-                Command::new("gh").args([
-                    "issue",
-                    "create",
+                CREATE.command().args([
                     "--title",
                     &title.0,
                     "--body-file",
@@ -673,13 +690,13 @@ pub fn file(
                 Ok(Filed::Updated(IssueNumber(issue.number)))
             }
             else {
-                act("reopen", issue.number)?;
+                act(REOPEN, issue.number)?;
                 Ok(Filed::Reopened(IssueNumber(issue.number)))
             }
         },
         (Standing::Within | Standing::Unmeasured, Some(issue)) if issue.state == "OPEN" => {
             edit(issue.number)?;
-            act("close", issue.number)?;
+            act(CLOSE, issue.number)?;
             Ok(Filed::Closed(IssueNumber(issue.number)))
         },
         (Standing::Within | Standing::Unmeasured, _) => Ok(Filed::Untouched),

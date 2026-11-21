@@ -45,7 +45,6 @@ use crate::lower::Sink;
 use crate::lower::Site;
 use crate::model::Dependent;
 use crate::model::ModelSignature;
-use crate::model::derive;
 use crate::module::ComponentPlace;
 use crate::module::SlotIndex;
 use crate::origin::Insertion;
@@ -471,6 +470,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// # Errors
     /// As the fails clause.
     ///
+    /// # Cost
+    /// - allocation: the minted record and its nodes, durable by the arena.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Models::mint_reducts`].
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
@@ -502,7 +504,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
         let members = presentation
             .members()
             .map_err(|_fault| Missing::Unlowered)?;
-        let signature = derive(presentation).map_err(|_fault| Missing::Unlowered)?;
+        let signature = self
+            .cx()
+            .collected
+            .derived(theory, presentation)
+            .map_err(|_fault| Missing::Unlowered)?;
         let site = Site {
             at: held.named,
             name: FormName::DECLARATION,

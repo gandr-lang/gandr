@@ -2,13 +2,19 @@
 //! stack, surface otherwise.
 
 use core::fmt;
-use std::process::Command;
 
 use gandr_workflow_github::READ_PAUSE;
+use gandr_workflow_github::Site;
 use gandr_workflow_github::read;
 
 use crate::error::BudgetError;
 use crate::report::RunId;
+
+/// The read of one run: its event, its head, its base and its branch.
+const RUN: Site = Site::new("classify", "api GET");
+
+/// The compare of the base of a run with its head.
+const COMPARE: Site = Site::new("classify", "api GET");
 
 /// The cone a landing's changed files touch.
 ///
@@ -128,14 +134,15 @@ fn file_cone(path: Path<'_>) -> Cone
 ///   budget a deep landing is held to.
 /// - witness: `tests::cli::a_run_is_classified_by_the_cone_it_touched`
 /// - witness: `tests::cli::a_run_without_a_base_is_held_deep`
+///
+/// # Cost
+/// - allocation: the commands, their routes and the changed files, growth
+///   within the compare
 #[inline]
 pub fn classify(run_id: RunId) -> Result<Cone, BudgetError>
 {
-    let mut command = Command::new("gh");
+    let mut command = RUN.command();
     command.args([
-        "api",
-        "--method",
-        "GET",
         &format!("repos/{{owner}}/{{repo}}/actions/runs/{run_id}"),
         "--jq",
         r#"(.event + "\t" + .head_sha + "\t" + (.pull_request.base.sha // "") + "\t" + (.head_branch // ""))"#,
@@ -159,11 +166,8 @@ pub fn classify(run_id: RunId) -> Result<Cone, BudgetError>
     if base.len() != 40 || !base.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Ok(Cone::Deep);
     }
-    let mut compare = Command::new("gh");
+    let mut compare = COMPARE.command();
     compare.args([
-        "api",
-        "--method",
-        "GET",
         &format!("repos/{{owner}}/{{repo}}/compare/{base}...{head}"),
         "--jq",
         r#".files[] | .filename"#,

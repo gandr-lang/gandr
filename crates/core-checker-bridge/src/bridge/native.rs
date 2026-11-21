@@ -860,20 +860,18 @@ fn graph(session: &gandr_core_term::session::SessionType) -> gandr_kernel_term::
         };
     }
     // Each task copies one protocol state into one kernel slot, under the
-    // binders the copy passed through: each a protocol position and its
-    // copy's slot.
+    // innermost binder the copy passed through. Each binder is a protocol
+    // position, its copy's slot and the binder outside it, so the tasks share
+    // the binders that they stand under.
     let mut nodes =
         gandr_kernel_data::SmallVec::<Node, 0, alloc::alloc::Global>::from_iter([Node::End]);
-    let mut tasks = alloc::vec![(
-        session.state(),
-        0_usize,
-        alloc::vec::Vec::<(ProtocolState, usize)>::new()
-    )];
+    let mut binders = alloc::vec::Vec::<(ProtocolState, usize, Option<usize>)>::new();
+    let mut tasks = alloc::vec![(session.state(), 0_usize, None::<usize>)];
     let slot = |nodes: &mut gandr_kernel_data::SmallVec<Node, 0, alloc::alloc::Global>| {
         nodes.push(Node::End);
         nodes.len().saturating_sub(1)
     };
-    while let Some((at, into, binders)) = tasks.pop() {
+    while let Some((at, into, innermost)) = tasks.pop() {
         let Some(node) = protocol.nodes().get(usize::from(at))
         else {
             continue;
@@ -881,7 +879,7 @@ fn graph(session: &gandr_core_term::session::SessionType) -> gandr_kernel_term::
         let copied = match *node {
             ProtocolNode::Send { payload, next } | ProtocolNode::Receive { payload, next } => {
                 let next_slot = slot(&mut nodes);
-                tasks.push((next, next_slot, binders));
+                tasks.push((next, next_slot, innermost));
                 if matches!(*node, ProtocolNode::Send { .. }) {
                     Node::Send(PayloadSlot(usize::from(payload)), State(next_slot))
                 }
@@ -894,7 +892,7 @@ fn graph(session: &gandr_core_term::session::SessionType) -> gandr_kernel_term::
                     .iter()
                     .map(|(name, &next)| {
                         let next_slot = slot(&mut nodes);
-                        tasks.push((next, next_slot, binders.clone()));
+                        tasks.push((next, next_slot, innermost));
                         (label(name), State(next_slot))
                     })
                     .collect();
@@ -908,23 +906,28 @@ fn graph(session: &gandr_core_term::session::SessionType) -> gandr_kernel_term::
             ProtocolNode::End => Node::End,
             ProtocolNode::Mu(body) => {
                 let body_slot = slot(&mut nodes);
-                let mut inner = binders;
-                inner.push((at, into));
-                tasks.push((body, body_slot, inner));
+                binders.push((at, into, innermost));
+                tasks.push((body, body_slot, binders.len().checked_sub(1)));
                 Node::Mu(State(body_slot))
             },
             ProtocolNode::Recur(binder) => {
-                if let Some(&(_, bound)) = binders
-                    .iter()
-                    .rev()
-                    .find(|&&(position, _)| position == binder)
-                {
+                // Each binder's outer binder was pushed before it, so the
+                // walk outward ends.
+                let mut cursor = innermost;
+                let bound = loop {
+                    match cursor.and_then(|index| binders.get(index)) {
+                        Some(&(position, bound, _)) if position == binder => break Some(bound),
+                        Some(&(_, _, outer)) => cursor = outer,
+                        None => break None,
+                    }
+                };
+                if let Some(bound) = bound {
                     Node::Var(State(bound))
                 }
                 else {
                     // The binder lies above the state: this slot is a fresh
                     // copy of it, which binds the variables inside it.
-                    tasks.push((binder, into, binders));
+                    tasks.push((binder, into, innermost));
                     continue;
                 }
             },

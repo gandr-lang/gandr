@@ -96,6 +96,10 @@
 //!   tree theorem, and the critical-pair lemma.
 //! - Jean-Pierre Jouannaud and Albert Rubio. "The Higher-Order Recursive Path
 //!   Ordering." LICS 1999 — the order on instantiations of metavariables.
+//! - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: a rule that swaps
+//!   the two arguments of one operation is a symmetry
+//!   ([`RuleReading::Symmetry`]). No reader rewrites by it, so it needs no
+//!   orientation.
 
 use alloc::collections::BTreeSet;
 use alloc::vec;
@@ -122,6 +126,7 @@ use crate::code::Name;
 use crate::desc::OperDesc;
 use crate::desc::TheoryDesc;
 use crate::rule::FreeTerm;
+use crate::rule::RuleReading;
 use crate::rule::TermView;
 
 /// How a description's rule faces stand under the path order.
@@ -140,11 +145,16 @@ pub enum Termination
 ///
 /// # Specification
 /// - ensures: [`Termination::Oriented`] exactly when [`path_greater`] over
-///   [`Precedence::of`] `desc` puts every face's left-hand side above its
-///   right-hand side; otherwise the first face, in rule order, it does not.
+///   [`Precedence::of`] `desc` puts the left-hand side of every face above its
+///   right-hand side, a symmetry ([`RuleReading::Symmetry`]) apart; otherwise
+///   the first face, in rule order, it does not.
 /// - panics: none.
 /// - intension: one precedence, then one [`path_greater`] table per face,
 ///   stopping at the first unoriented one.
+///
+/// # Cost
+/// - allocation: the precedence and the tables of the path order for each face,
+///   growth within the description's operations and the faces' terms
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the addition and two-output division families are
@@ -160,10 +170,13 @@ pub enum Termination
 #[spec(ensures: |ret| {
     let precedence = Precedence::of(desc);
     match ret {
-        Termination::Oriented => desc.rules.iter().all(|face| bool::from(path_greater(&precedence, &face.lhs, &face.rhs))),
+        Termination::Oriented => desc.rules.iter().all(|face| face.reading() == RuleReading::Symmetry
+            || bool::from(path_greater(&precedence, &face.lhs, &face.rhs))),
         Termination::Unoriented(index) => desc.rules.get(usize::from(index))
-            .is_some_and(|face| !bool::from(path_greater(&precedence, &face.lhs, &face.rhs)))
-            && desc.rules.iter().take(usize::from(index)).all(|face| bool::from(path_greater(&precedence, &face.lhs, &face.rhs))),
+            .is_some_and(|face| face.reading() != RuleReading::Symmetry
+                && !bool::from(path_greater(&precedence, &face.lhs, &face.rhs)))
+            && desc.rules.iter().take(usize::from(index)).all(|face| face.reading() == RuleReading::Symmetry
+                || bool::from(path_greater(&precedence, &face.lhs, &face.rhs))),
     }
 })]
 #[inline]
@@ -186,10 +199,16 @@ pub fn orient_rules<G>(desc: &TheoryDesc<G>) -> Termination
 /// - ensures: [`Termination::Oriented`] exactly when [`path_greater`] over
 ///   [`Precedence::with`] `desc` and `ranking` puts every left side above its
 ///   right side, `desc`'s rules, then `ranking`, then `riding`; otherwise the
-///   first rule it does not, indexed in that order.
+///   first rule it does not, indexed in that order. A face of `desc` that is a
+///   symmetry ([`RuleReading::Symmetry`]) is passed: no reader rewrites by it,
+///   so it needs no orientation.
 /// - panics: none.
 /// - intension: one precedence, then one [`path_greater`] table per rule,
 ///   stopping at the first unoriented one.
+///
+/// # Cost
+/// - allocation: the precedence and the tables of the path order for each rule,
+///   growth within the description's operations and the rules' terms
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a ranking rule calling an operation its head did not call
@@ -201,14 +220,16 @@ pub fn orient_rules<G>(desc: &TheoryDesc<G>) -> Termination
 ///   reading the precedence from the written rules alone, counting a riding
 ///   rule's calls, or indexing the derived rules from zero, changes a verdict.
 /// - witness: `termination::tests::a_derived_rule_raises_its_head_above_what_it_calls`
+/// - witness: `termination::tests::a_symmetry_needs_no_orientation_8291`
 #[spec(ensures: |ret| {
     let precedence = Precedence::with(desc, ranking);
-    let mut rules = sides(desc, ranking).chain(pairs(riding));
+    let symmetry = |index: usize| desc.rules.get(index).is_some_and(|face| face.reading() == RuleReading::Symmetry);
+    let mut rules = sides(desc, ranking).chain(pairs(riding)).enumerate();
     match ret {
-        Termination::Oriented => rules.all(|(lhs, rhs)| bool::from(path_greater(&precedence, lhs, rhs))),
+        Termination::Oriented => rules.all(|(at, (lhs, rhs))| symmetry(at) || bool::from(path_greater(&precedence, lhs, rhs))),
         Termination::Unoriented(index) => rules.clone().nth(usize::from(index))
-            .is_some_and(|(lhs, rhs)| !bool::from(path_greater(&precedence, lhs, rhs)))
-            && rules.take(usize::from(index)).all(|(lhs, rhs)| bool::from(path_greater(&precedence, lhs, rhs))),
+            .is_some_and(|(at, (lhs, rhs))| !symmetry(at) && !bool::from(path_greater(&precedence, lhs, rhs)))
+            && rules.take(usize::from(index)).all(|(at, (lhs, rhs))| symmetry(at) || bool::from(path_greater(&precedence, lhs, rhs))),
     }
 })]
 #[inline]
@@ -222,6 +243,13 @@ pub fn orient_rules_with<G>(
     let precedence = Precedence::with(desc, ranking);
     let rules = sides(desc, ranking).chain(pairs(riding));
     for (index, (lhs, rhs)) in rules.enumerate() {
+        if desc
+            .rules
+            .get(index)
+            .is_some_and(|face| face.reading() == RuleReading::Symmetry)
+        {
+            continue;
+        }
         if !bool::from(path_greater(&precedence, lhs, rhs)) {
             return Termination::Unoriented(RuleIndex::from(index));
         }
@@ -1244,6 +1272,72 @@ mod tests
             orient_rules(&nested),
             Termination::Unoriented(RuleIndex::from(0_usize)),
             "a rule nesting its own call never ends"
+        );
+    }
+
+    /// - see: #8291
+    #[test]
+    fn a_symmetry_needs_no_orientation_8291()
+    {
+        let band = |x, y| FreeTerm::op("band", [x, y]);
+        let bor = |x, y| FreeTerm::op("bor", [x, y]);
+        let with = |rule: (FreeTerm, FreeTerm)| {
+            nat([binary("band"), binary("bor")], vec![
+                (band(zero(), var("x")), zero()),
+                (band(succ(zero()), var("x")), var("x")),
+                rule,
+            ])
+        };
+        let symmetric = with((band(var("x"), var("y")), band(var("y"), var("x"))));
+        assert_eq!(
+            symmetric
+                .rules
+                .iter()
+                .map(RuleFace::reading)
+                .collect::<Vec<_>>(),
+            [RuleReading::Step, RuleReading::Step, RuleReading::Symmetry]
+        );
+        assert_eq!(
+            orient_rules(&symmetric),
+            Termination::Oriented,
+            "no order puts `band x y` above `band y x`, and the symmetry needs none"
+        );
+        for (rule, why) in [
+            (
+                (band(var("x"), var("y")), band(var("x"), var("y"))),
+                "the arguments in the written order",
+            ),
+            (
+                (band(var("x"), var("x")), band(var("x"), var("x"))),
+                "one variable two times",
+            ),
+            (
+                (band(var("x"), zero()), band(zero(), var("x"))),
+                "an argument that is no variable",
+            ),
+        ] {
+            let family = with(rule);
+            assert_eq!(
+                family.rules.last().map(RuleFace::reading),
+                Some(RuleReading::Step),
+                "{why}"
+            );
+            assert_eq!(
+                orient_rules(&family),
+                Termination::Unoriented(RuleIndex::from(2_usize)),
+                "a step stays under the order: {why}"
+            );
+        }
+        let crossed = with((band(var("x"), var("y")), bor(var("y"), var("x"))));
+        assert_eq!(
+            crossed.rules.last().map(RuleFace::reading),
+            Some(RuleReading::Step),
+            "a swap from one operation to another is a step"
+        );
+        assert_eq!(
+            orient_rules(&crossed),
+            Termination::Oriented,
+            "and the order orients it, because `band` calls `bor`"
         );
     }
 

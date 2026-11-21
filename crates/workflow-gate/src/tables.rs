@@ -551,9 +551,20 @@ impl Table
 
 /// The definition of each task, by the task's name, as the text whose digest
 /// is an input.
-#[repr(transparent)]
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Tasks(BTreeMap<String, String>);
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Tasks
+{
+    /// The definitions that mise lists, by the task's name.
+    Listed(BTreeMap<String, String>),
+    /// One definition that each of the checks shares.
+    Fixed
+    {
+        /// The checks that the definition answers.
+        checks: Vec<Check>,
+        /// The definition.
+        text: String,
+    },
+}
 
 impl Tasks
 {
@@ -607,16 +618,16 @@ impl Tasks
                 serde_json::Value::Object(picked).to_string(),
             );
         }
-        Ok(Self(out))
+        Ok(Self::Listed(out))
     }
 
-    /// The tasks of `checks`, each with the definition `text`.
+    /// The tasks of `checks`, which share the definition `text`.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: one definition for each check, growth within the checks of
+    /// - allocation: the checks and the definition, growth within the checks of
     ///   the request
     ///
     /// # Adequacy
@@ -630,13 +641,10 @@ impl Tasks
         text: &Answer,
     ) -> Self
     {
-        let text = String::from_utf8_lossy(text.as_ref());
-        Self(
-            checks
-                .iter()
-                .map(|check| (check.as_ref().to_owned(), text.clone().into_owned()))
-                .collect(),
-        )
+        Self::Fixed {
+            checks: checks.to_vec(),
+            text: String::from_utf8_lossy(text.as_ref()).into_owned(),
+        }
     }
 
     /// The line of the task of `check`: the digest of its definition.
@@ -670,12 +678,16 @@ impl Tasks
         check: &Check,
     ) -> Result<String, GateError>
     {
-        let text = self
-            .0
-            .get(check.as_ref())
-            .ok_or_else(|| GateError::Unlisted {
-                check: check.clone(),
-            })?;
+        let text = match *self {
+            Self::Listed(ref listed) => listed.get(check.as_ref()),
+            Self::Fixed {
+                ref checks,
+                ref text,
+            } => checks.contains(check).then_some(text),
+        }
+        .ok_or_else(|| GateError::Unlisted {
+            check: check.clone(),
+        })?;
         Ok(format!("task:{check}\t{}", Digest::from(text.as_bytes())))
     }
 }

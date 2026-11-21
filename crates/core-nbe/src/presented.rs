@@ -297,6 +297,69 @@ fn read_held(
     Ok(read.map_or(Held::Kept, Held::Read))
 }
 
+/// What a leaf standing at a definition reads as, the evaluation of its body
+/// charged to `fuel`.
+///
+/// A definition whose body is a constructor of the type hides a redex from
+/// the rules, as a held call does: `band(named, x)` meets no rule while
+/// `named` stands for the `zero` it is defined as.
+///
+/// # Specification
+/// - requires: `value` lives in `domain`.
+/// - ensures: [`Held::Read`] with what [`crate::eval::run_defined`] gives for
+///   `value` when that is a constructor of the declaration `own` or a held
+///   endpoint; [`Held::Kept`] when it gives nothing or another value, each
+///   evaluation step charged to `fuel`; [`Held::Exhausted`] with `fuel` at zero
+///   when the evaluation spends it.
+/// - fails: [`ConversionFault::Evaluation`] for an evaluation the evaluator
+///   refuses otherwise than on fuel; [`ConversionFault::Domain`] for a value or
+///   a closure the arena does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`crate::eval::run_defined`].
+/// - witness: `presented::tests::a_definition_under_a_presented_constructor_reads_as_its_body_8283`
+#[spec(captures: before = u64::from(*fuel), ensures: |ret| u64::from(*fuel) <= before
+    && (ret != Ok(Held::Exhausted) || u64::from(*fuel) == 0))]
+fn read_defined(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    own: ConstantIndex,
+    value: DomainValueId,
+    fuel: &mut RewriteFuel,
+) -> Result<Held, ConversionFault>
+{
+    let slice = Fuel::from(u32::try_from(u64::from(*fuel)).unwrap_or(u32::MAX));
+    let (read, left) = match crate::eval::run_defined(core, domain, definitions, slice, value) {
+        Ok(ran) => ran,
+        Err(EvalFault::OutOfFuel) => {
+            *fuel = RewriteFuel::from(0_u64);
+            return Ok(Held::Exhausted);
+        },
+        Err(fault) => return Err(ConversionFault::Evaluation(fault)),
+    };
+    let spent = u32::from(slice).saturating_sub(u32::from(left));
+    *fuel = RewriteFuel::from(u64::from(*fuel).saturating_sub(u64::from(spent)));
+    let Some(read) = read
+    else {
+        return Ok(Held::Kept);
+    };
+    let reads = match domain.value(read).copied() {
+        Some(DomainValue::Constructor { datatype, .. }) => {
+            declaration(core, domain, datatype)? == Some(own)
+        },
+        Some(_) => crate::eval::held_endpoint(domain, read)
+            .map_err(ConversionFault::Domain)?
+            .is_some(),
+        None => return Err(ConversionFault::Domain(DomainFault::Dangling)),
+    };
+    Ok(if reads { Held::Read(read) } else { Held::Kept })
+}
+
 /// Whether a value is the closed term a rule side spells.
 ///
 /// # Specification
@@ -672,7 +735,14 @@ pub fn normal_form(
                     read_any = true;
                     pending.push(read);
                 },
-                Held::Kept => term.push(RuleTerm::Leaf(id)),
+                Held::Kept => match read_defined(core, domain, definitions, own, id, fuel)? {
+                    Held::Read(read) => {
+                        read_any = true;
+                        pending.push(read);
+                    },
+                    Held::Kept => term.push(RuleTerm::Leaf(id)),
+                    Held::Exhausted => return Ok(NormalForm::Exhausted),
+                },
                 Held::Exhausted => return Ok(NormalForm::Exhausted),
             }
             continue;

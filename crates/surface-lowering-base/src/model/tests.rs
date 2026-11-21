@@ -63,7 +63,11 @@ fn derived<'source, Text>(source: Text) -> ModelSignature
 where
     Text: Into<SourceText<'source>>,
 {
-    derive(&presented(source)).unwrap()
+    derive(
+        &presented(source),
+        Maybe::Absent(super::signature_theory::Absent::Unwritten),
+    )
+    .unwrap()
 }
 
 /// A sort term as the surface spells it.
@@ -657,7 +661,11 @@ fn a_presentation_reads_its_members_off_its_value()
         "a value that codes no presentation"
     );
     assert_eq!(
-        derive(&ended).map(|model| model.components.len()),
+        derive(
+            &ended,
+            Maybe::Absent(super::signature_theory::Absent::Unwritten)
+        )
+        .map(|model| model.components.len()),
         Err(PresentationFault::Value(TheoryFault::Misplaced(
             ConstructorTag::from(1_usize)
         ))),

@@ -1729,7 +1729,7 @@ fn an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_347
     )
     .whole();
     let r = DOUBLINGS.saturating_add(3);
-    let outcome = serial.readmitted().get(r).map(|entry| &entry.outcome);
+    let outcome = serial.readmitted().get(r).map(Readmitted::outcome);
     assert!(
         matches!(
             outcome,
@@ -1810,7 +1810,7 @@ fn a_reader_of_a_refused_prediction_readmits_as_the_serial_run_7282()
     )
     .whole();
     let s = DOUBLINGS.saturating_add(4);
-    let outcome = serial.readmitted().get(s).map(|entry| &entry.outcome);
+    let outcome = serial.readmitted().get(s).map(Readmitted::outcome);
     assert!(
         matches!(
             outcome,

@@ -289,7 +289,7 @@ where
 }
 
 /// A consumer, including the worker-owned work-stealing state.
-enum Receive<T>
+enum Receive<'peers, T>
 {
     /// Native channel.
     Channel(crossbeam_channel::Receiver<T>),
@@ -304,12 +304,12 @@ enum Receive<T>
         local: crossbeam_deque::Worker<T>,
         /// Initial publication queue.
         injector: Arc<crossbeam_deque::Injector<T>>,
-        /// Peer work-stealing handles.
-        peers: Vec<crossbeam_deque::Stealer<T>>,
+        /// Peer work-stealing handles, which each worker of the pool shares.
+        peers: &'peers [crossbeam_deque::Stealer<T>],
     },
 }
 
-impl<T> Receive<T>
+impl<T> Receive<'_, T>
 where
     T: Copy,
 {
@@ -360,7 +360,7 @@ where
                 Self::Steal {
                     ref local,
                     ref injector,
-                    ref peers,
+                    peers,
                 } => local
                     .pop()
                     .or_else(|| injector.steal_batch_and_pop(local).success())
@@ -433,7 +433,7 @@ where
     (Kind::Rtrb(_), &(Send::Rtrb(_), Receive::Rtrb(_)))
     | (Kind::Ringbuf(_), &(Send::Ringbuf(_), Receive::Ringbuf(_)))
     | (Kind::Channel | Kind::Steal, &(Send::Channel(_), Receive::Channel(_)))))]
-fn pair<T>(kind: Kind) -> (Send<T>, Receive<T>)
+fn pair<T>(kind: Kind) -> (Send<T>, Receive<'static, T>)
 {
     match kind {
         Kind::Rtrb(_) => {
@@ -466,7 +466,7 @@ pub(super) struct Pool<'schema>
     /// One MPMC sender or one SPSC sender per worker.
     jobs: Vec<Send<Command>>,
     /// One MPMC receiver or one SPSC receiver per worker.
-    results: Vec<Receive<Receipt>>,
+    results: Vec<Receive<'static, Receipt>>,
     /// Used only for work stealing.
     injector: Arc<crossbeam_deque::Injector<Command>>,
     /// Worker notification handles.
@@ -616,7 +616,7 @@ impl Pool<'_>
 ///   fails the serial-oracle comparison.
 /// - witness: `admission::handoff::tests::pooled_receipts_equal_the_serial_oracle`
 fn worker(
-    mut input: Receive<Command>,
+    mut input: Receive<'_, Command>,
     mut output: Send<Receipt>,
     mut scratch: Scratch<'_>,
     workload: &[Workload],
@@ -679,19 +679,26 @@ where
     F: FnOnce(&mut Pool<'schema>) -> io::Result<()>,
 {
     let scratch = Scratch::new(workload, mode).map_err(io::Error::other)?;
+    // Each worker owns its scratch, built before any worker starts, so a
+    // refused build starts none.
+    let scratches =
+        core::iter::repeat_with(|| Scratch::new(workload, mode).map_err(io::Error::other))
+            .take(threads.0)
+            .collect::<io::Result<Vec<_>>>()?;
+    let locals: Vec<_> = core::iter::repeat_with(crossbeam_deque::Worker::new_fifo)
+        .take(threads.0)
+        .collect();
+    // The workers share the stealing handles of their peers.
+    let peers: Vec<_> = locals
+        .iter()
+        .map(crossbeam_deque::Worker::stealer)
+        .collect();
     thread::scope(|scope| {
         let wake = match wire.kind {
             Kind::Rtrb(wake) | Kind::Ringbuf(wake) => wake,
             Kind::Channel | Kind::Steal => Wake::Park,
         };
         let injector = Arc::new(crossbeam_deque::Injector::new());
-        let locals: Vec<_> = core::iter::repeat_with(crossbeam_deque::Worker::new_fifo)
-            .take(threads.0)
-            .collect();
-        let peers: Vec<_> = locals
-            .iter()
-            .map(crossbeam_deque::Worker::stealer)
-            .collect();
         let (shared_jobs, shared_input) = crossbeam_channel::bounded(CAPACITY);
         let (shared_output, shared_results) = crossbeam_channel::bounded(CAPACITY);
         let mut pool = Pool {
@@ -701,7 +708,7 @@ where
             workers: Vec::new(),
             wire,
             wake,
-            own: scratch.clone(),
+            own: scratch,
             workload,
         };
         if wire.kind == Kind::Channel {
@@ -713,7 +720,7 @@ where
         let ready = Arc::new(std::sync::Barrier::new(threads.0.saturating_add(1)));
         let parent = thread::current();
         let mut handles = Vec::new();
-        for local in locals {
+        for (local, scratch) in locals.into_iter().zip(scratches) {
             let (input, output) = match wire.kind {
                 Kind::Channel => (
                     Receive::Channel(shared_input.clone()),
@@ -723,7 +730,7 @@ where
                     Receive::Steal {
                         local,
                         injector: Arc::clone(&injector),
-                        peers: peers.clone(),
+                        peers: &peers,
                     },
                     Send::Channel(shared_output.clone()),
                 ),
@@ -735,7 +742,6 @@ where
                     (receiver, output)
                 },
             };
-            let scratch = scratch.clone();
             let parent = parent.clone();
             let ready = Arc::clone(&ready);
             let handle = scope.spawn(move || {

@@ -1078,8 +1078,9 @@ pub struct Readmitted
     constant: ConstantIndex,
     /// The declaration's origin, echoed back.
     origin: OriginToken,
-    /// What became of it.
-    outcome: Outcome,
+    /// What became of it: its own outcome, or the one that each member of a
+    /// refused block shares.
+    outcome: Held,
     /// The certificates the kernel replayed before the declaration was
     /// offered, in the order the erasure met the unfoldings.
     certificates: Vec<Replayed>,
@@ -1117,7 +1118,7 @@ impl Readmitted
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn outcome(&self) -> &Outcome
+    pub fn outcome(&self) -> &Outcome
     {
         &self.outcome
     }
@@ -1144,6 +1145,89 @@ impl Readmitted
     pub const fn took(&self) -> AdmissionCost
     {
         self.took
+    }
+}
+
+/// A declaration's outcome as its entry holds it.
+///
+/// # Specification
+/// - ensures: each read of a holder gives one outcome, whether the holder owns
+///   it or shares it.
+/// - executable: none — data declaration.
+#[derive(Clone)]
+enum Held
+{
+    /// The declaration's own outcome.
+    Own(Outcome),
+    /// The refusal or rejection that each member of a block shares.
+    Block(Shared<Outcome, Global>),
+}
+
+impl From<Outcome> for Held
+{
+    /// The declaration's own `outcome`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(outcome: Outcome) -> Self
+    {
+        Self::Own(outcome)
+    }
+}
+
+impl core::ops::Deref for Held
+{
+    type Target = Outcome;
+
+    /// The outcome, owned or shared.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn deref(&self) -> &Outcome
+    {
+        match *self {
+            Self::Own(ref outcome) => outcome,
+            Self::Block(ref shared) => shared,
+        }
+    }
+}
+
+impl PartialEq for Held
+{
+    /// Two holders are equal when their outcomes are, whether or not they
+    /// share one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        **self == **other
+    }
+}
+
+impl Eq for Held
+{
+}
+
+impl fmt::Debug for Held
+{
+    /// The outcome, as its own debug form writes it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        fmt::Debug::fmt(&**self, f)
     }
 }
 
@@ -1549,19 +1633,23 @@ impl ArtifactAudit
     ///   introduced.
     /// - witness: `bridge::tests::an_empty_ledger_readmits_an_artifact_resting_on_no_axiom`
     /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
+    ///
+    /// # Cost
+    /// - allocation: the sets and the lists of the axioms and the unchecked
+    ///   admissions, growth within the audits of the entries
     #[spec(ensures: |ret| ret.axioms.iter().zip(ret.axioms.iter().skip(1)).all(|(a,b)| a < b)
         && ret.unchecked.iter().zip(ret.unchecked.iter().skip(1)).all(|(a,b)| a < b)
-        && readmitted.iter().all(|entry| match entry.outcome {
+        && readmitted.iter().all(|entry| match *entry.outcome {
             | Outcome::Defined { ref audit, .. } | Outcome::Data { ref audit, .. } | Outcome::Assumed { ref audit, .. } =>
                 audit.axioms().iter().all(|at| ret.axioms.binary_search(at).is_ok())
                 && audit.unchecked_admissions().iter().all(|at| ret.unchecked.binary_search(at).is_ok()),
             | _ => true,
         })
-        && ret.axioms.len() <= readmitted.iter().map(|entry| match entry.outcome {
+        && ret.axioms.len() <= readmitted.iter().map(|entry| match *entry.outcome {
             | Outcome::Defined { ref audit, .. } | Outcome::Data { ref audit, .. } | Outcome::Assumed { ref audit, .. } => audit.axioms().len(),
             | _ => 0,
         }).sum::<usize>()
-        && ret.unchecked.len() <= readmitted.iter().map(|entry| match entry.outcome {
+        && ret.unchecked.len() <= readmitted.iter().map(|entry| match *entry.outcome {
             | Outcome::Defined { ref audit, .. } | Outcome::Data { ref audit, .. } | Outcome::Assumed { ref audit, .. } => audit.unchecked_admissions().len(),
             | _ => 0,
         }).sum::<usize>())]
@@ -1572,7 +1660,7 @@ impl ArtifactAudit
         for entry in readmitted {
             if let Outcome::Defined { ref audit, .. }
             | Outcome::Data { ref audit, .. }
-            | Outcome::Assumed { ref audit, .. } = entry.outcome
+            | Outcome::Assumed { ref audit, .. } = *entry.outcome
             {
                 axioms.extend(audit.axioms().iter().copied());
                 unchecked.extend(audit.unchecked_admissions().iter().copied());
@@ -1761,15 +1849,15 @@ impl Readmission
     #[spec(
         requires: {
             let vacancies: Vec<ConstantIndex> = self.environment.entries().vacancies().collect();
-            self.readmitted.iter().all(|entry| match entry.outcome {
+            self.readmitted.iter().all(|entry| match *entry.outcome {
                 | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } | Outcome::Data { admitted, .. } => self.staged_at(&vacancies, admitted.position()).is_some(),
                 | _ => true,
             })
         },
         captures: [before = names.len(), named = self.readmitted.iter().filter(|entry|
-            matches!(entry.outcome, Outcome::Defined { .. } | Outcome::Assumed { .. } | Outcome::Data { .. }) && names.contains_key(&entry.constant)).count()],
+            matches!(*entry.outcome, Outcome::Defined { .. } | Outcome::Assumed { .. } | Outcome::Data { .. }) && names.contains_key(&entry.constant)).count()],
         ensures: before.checked_sub(names.len()) == Some(named) && self.readmitted.iter().all(|entry|
-            !matches!(entry.outcome, Outcome::Defined { .. } | Outcome::Assumed { .. } | Outcome::Data { .. }) || !names.contains_key(&entry.constant)),
+            !matches!(*entry.outcome, Outcome::Defined { .. } | Outcome::Assumed { .. } | Outcome::Data { .. }) || !names.contains_key(&entry.constant)),
     )]
     #[inline]
     #[must_use]
@@ -1923,7 +2011,7 @@ impl Readmission
     #[spec(
         requires: {
             let vacancies: Vec<ConstantIndex> = self.environment.entries().vacancies().collect();
-            self.readmitted.iter().all(|entry| match entry.outcome {
+            self.readmitted.iter().all(|entry| match *entry.outcome {
                 | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } | Outcome::Data { admitted, .. } => self.staged_at(&vacancies, admitted.position()).is_some(),
                 | _ => true,
             })
@@ -2031,7 +2119,7 @@ impl Readmission
         for entry in &self.readmitted {
             if let Outcome::Defined { admitted, .. }
             | Outcome::Assumed { admitted, .. }
-            | Outcome::Data { admitted, .. } = entry.outcome
+            | Outcome::Data { admitted, .. } = *entry.outcome
                 && admitted.position() >= from
             {
                 kernel_names.insert(
@@ -2408,6 +2496,10 @@ impl Crossed
     ///   over another to the answer a whole readmission gives.
     /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
     /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+    ///
+    /// # Cost
+    /// - allocation: the environment handed on, the positions and the entries
+    ///   of the record, durable by the record
     #[spec(ensures: |ret| match ret {
         Maybe::Present(ref crossed) => usize::from(crossed.boundary()) == built.2.len()
             && crossed.boundary() > from && built.1.open.is_empty(),
@@ -2424,7 +2516,7 @@ impl Crossed
         }
         if readmitted
             .iter()
-            .any(|entry| matches!(entry.outcome, Outcome::Rejected(_)))
+            .any(|entry| matches!(*entry.outcome, Outcome::Rejected(_)))
         {
             return Maybe::Absent(crossed::Absent::Rejected);
         }
@@ -2504,6 +2596,10 @@ impl Crossed
     /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
     /// - witness: `bridge::tests::a_resumed_readmission_seeds_a_native_its_prefix_never_read`
     /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+    ///
+    /// # Cost
+    /// - allocation: the environment, the definitions, the positions and the
+    ///   entries of the run, growth within the run
     #[spec(ensures: |ret| ret.as_ref().is_none_or(|resumed| resumed.2.len() == usize::from(run)
         && resumed.2.iter().zip(report.judged()).all(|(entry, judged)|
             entry.constant == judged.constant() && entry.origin == judged.origin())))]
@@ -2519,7 +2615,7 @@ impl Crossed
         let mut readmitted = Vec::with_capacity(report.judged().len());
         for (entry, judged) in self.readmitted.get(.. run.0)?.iter().zip(leading) {
             let constant = judged.constant();
-            let crossed = (constant, &entry.outcome, judged.verdict());
+            let crossed = (constant, entry.outcome(), judged.verdict());
             if entry.constant != constant
                 || keep::agrees(report, crossed) != keep::Agreement::Agrees
             {
@@ -4001,7 +4097,7 @@ where
                 // than a whole readmission draws.
                 if held.iter().copied().flatten().any(|entry| {
                     matches!(
-                        keep::position_of(&entry.outcome),
+                        keep::position_of(entry.outcome()),
                         Maybe::Present(position) if keeping.sealed.contains(&position)
                     )
                 }) {
@@ -4035,7 +4131,7 @@ where
             return Releasing::Settled(lead(&mut self.slots, item, entries));
         }
         if let (Some(entry), Some(keeping)) = (held, self.keeping.as_ref()) {
-            let tail = match keep::position_of(&entry.outcome) {
+            let tail = match keep::position_of(entry.outcome()) {
                 Maybe::Present(position) => {
                     let kept = !matches!(entry.took, Maybe::Absent(timed::Absent::Block))
                         && match self.environment.keep_in_place(position) {
@@ -4076,12 +4172,12 @@ where
             }
         }
         let source = self.source;
-        let crossed = |outcome, tail| {
+        let crossed = |outcome: Outcome, tail| {
             Releasing::Settled(Answer::Crossed(Crossing {
                 entry: Readmitted {
                     constant,
                     origin: judged.origin(),
-                    outcome,
+                    outcome: Held::from(outcome),
                     certificates: Vec::new(),
                     took: UNOFFERED,
                 },
@@ -4194,6 +4290,12 @@ where
     /// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
     /// - witness: `bridge::tests::an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_3476`
     /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+    ///
+    /// # Cost
+    /// - allocation: the staged declaration and the kernel's release of its
+    ///   check, growth within the declarations of the module
+    /// - allocation: the slot of a running check, growth within the checks that
+    ///   run at once
     fn offer(
         &mut self,
         item: ItemIndex,
@@ -4204,12 +4306,12 @@ where
         let at = usize::from(item);
         let caught_up = self.cursor == self.from.saturating_add(at);
         let constant = judged.constant();
-        let crossed = |outcome, certificates, took| {
+        let crossed = |outcome: Outcome, certificates, took| {
             Releasing::Settled(Answer::Crossed(Crossing {
                 entry: Readmitted {
                     constant,
                     origin: judged.origin(),
-                    outcome,
+                    outcome: Held::from(outcome),
                     certificates,
                     took,
                 },
@@ -4430,7 +4532,7 @@ where
                 entry: Readmitted {
                     constant: judged.constant(),
                     origin: judged.origin(),
-                    outcome: Outcome::Refused(Refusal::MachineInvariant),
+                    outcome: Held::from(Outcome::Refused(Refusal::MachineInvariant)),
                     certificates: Vec::new(),
                     took: UNOFFERED,
                 },
@@ -4554,7 +4656,7 @@ where
             entry: Readmitted {
                 constant,
                 origin,
-                outcome,
+                outcome: Held::from(outcome),
                 certificates: replayed,
                 took,
             },
@@ -4585,6 +4687,10 @@ where
     ///   position that a later release took, or whose later releases keep their
     ///   runs, records other positions or outcomes than the serial run.
     /// - witness: `bridge::tests::an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_3476`
+    ///
+    /// # Cost
+    /// - allocation: the kernel's drop of the releases after the pair, growth
+    ///   within the running checks
     fn settle_at_cursor(
         &mut self,
         (offered, pending): (Offered<'report>, Pending),
@@ -4648,7 +4754,7 @@ where
                     entry: Readmitted {
                         constant: offered.constant,
                         origin: offered.origin,
-                        outcome,
+                        outcome: Held::from(outcome),
                         certificates,
                         took,
                     },
@@ -4813,6 +4919,10 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — as [`readmit_from`].
     /// - witness: `bridge::tests::a_bound_sealed_atom_lowers_to_the_kernel_atom`
+    ///
+    /// # Cost
+    /// - allocation: the entry, the withheld atom and the open seal, growth
+    ///   within the declarations of the module
     fn apply(
         &mut self,
         crossing: Crossing,
@@ -4823,7 +4933,7 @@ where
         // place misplaced, so the whole readmission answers instead. So does
         // a crossing that reads a formation its place misplaces.
         if self.keeping.is_some()
-            && (matches!(entry.outcome, Outcome::Rejected(_)) || self.positions.misplaced)
+            && (matches!(*entry.outcome, Outcome::Rejected(_)) || self.positions.misplaced)
         {
             self.misplaced = true;
         }
@@ -4838,14 +4948,14 @@ where
         if tail == Tail::Lone {
             if abstracted.is_some()
                 && matches!(
-                    entry.outcome,
+                    *entry.outcome,
                     Outcome::Marked(_)
                         | Outcome::Refused(Refusal::Withheld { .. } | Refusal::WithheldData { .. })
                 )
             {
                 let _fresh = self.positions.withheld.insert(constant);
             }
-            if let (&Outcome::Data { admitted, .. }, Some(declared)) = (&entry.outcome, abstracted)
+            if let (&Outcome::Data { admitted, .. }, Some(declared)) = (entry.outcome(), abstracted)
             {
                 self.positions.open.push(OpenSeal {
                     end: ConstantIndex::from(
@@ -5187,6 +5297,9 @@ struct OpenSeal
 /// - hypothesis: L3 — a sealed module's export replays with the atom closed
 ///   over its members, and a client past the seal reads the atom rigid.
 /// - witness: `bridge::tests::a_bound_sealed_atom_lowers_to_the_kernel_atom`
+///
+/// # Cost
+/// - allocation: the closing and the open seals, growth within the open seals
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -5215,7 +5328,9 @@ fn close_seals(
             },
             Err(error) => {
                 if let Some(entry) = readmitted.get_mut(seal.readmitted) {
-                    entry.outcome = Outcome::Rejected(error);
+                    // The rejection is this member's own, so it replaces a
+                    // shared outcome with one of its own.
+                    entry.outcome = Held::from(Outcome::Rejected(error));
                 }
             },
         }
@@ -6179,17 +6294,22 @@ fn settle(
 ///   environment as it was but for the assumptions, the native signatures and
 ///   the free models admitted as [`cross`] admits them. A pair the kernel
 ///   reports undecided is answered as [`cross`] answers it, and the block is
-///   offered again.
+///   offered again. An admitted block shares no outcome: each member holds its
+///   own.
 /// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
 ///   [`Outcome::Rejected`].
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the outcome that the members of a refused block share, error
+///   path
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a universe and its decoder cross and are admitted
 ///   together; a block one member of which is refused crosses nothing.
 /// - witness: `gandr-core-checker-base::tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
 #[spec(captures: [entries = environment.entries().admitted(), axioms = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len())], ensures: |ret| ret.len() == members.len()
-    && (ret.iter().all(|crossed| matches!(crossed.0, Outcome::Defined { .. } | Outcome::Data { .. } | Outcome::Assumed { .. }))
+    && (ret.iter().all(|crossed| matches!(*crossed.0, Outcome::Defined { .. } | Outcome::Data { .. } | Outcome::Assumed { .. }))
         || usize::from(environment.entries().admitted()).checked_sub(usize::from(entries)) == positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms)))]
 fn cross_block<Vouch>(
     environment: &mut Environment,
@@ -6198,7 +6318,7 @@ fn cross_block<Vouch>(
     positions: &mut Positions,
     members: &[(ConstantIndex, Offer<'_>)],
     vouch: &Vouch,
-) -> Vec<(Outcome, Vec<Replayed>)>
+) -> Vec<(Held, Vec<Replayed>)>
 where
     Vouch: Fn(Certificate) -> Certificate,
 {
@@ -6265,15 +6385,20 @@ where
                                 (outcome, replayed)
                             },
                         };
+                        // The member that failed keeps the certificates it
+                        // replayed; each member holds the one outcome.
+                        let shared = Shared::new(outcome);
+                        let mut replayed = replayed;
                         return members
                             .iter()
                             .map(|&(member, _)| {
-                                if member == constant {
-                                    (outcome.clone(), replayed.clone())
+                                let replayed = if member == constant {
+                                    core::mem::take(&mut replayed)
                                 }
                                 else {
-                                    (outcome.clone(), Vec::new())
-                                }
+                                    Vec::new()
+                                };
+                                (Held::Block(Shared::clone(&shared)), replayed)
                             })
                             .collect();
                     },
@@ -6307,7 +6432,7 @@ where
                                 (constant, offer, image),
                                 (staged_as, admitted),
                             );
-                            (outcome, replayed)
+                            (Held::from(outcome), replayed)
                         },
                     )
                     .collect();
@@ -6342,9 +6467,10 @@ where
                     answers = Some(fresh);
                     continue;
                 }
+                let shared = Shared::new(Outcome::Rejected(error));
                 return images
                     .into_iter()
-                    .map(|(_, replayed)| (Outcome::Rejected(error.clone()), replayed))
+                    .map(|(_, replayed)| (Held::Block(Shared::clone(&shared)), replayed))
                     .collect();
             },
         }
@@ -6862,7 +6988,7 @@ where
         fixed.iter().map(|(label, &value)| (label, value)),
     )?;
     let mut records = Vec::with_capacity(rounds.len().saturating_add(1));
-    records.push(fixed_record.clone());
+    records.push(fixed_record);
     for round in rounds.iter().filter(|round| !round.is_empty()) {
         records.push(record_of(
             arena,
@@ -6917,6 +7043,9 @@ where
         )
     };
     let mut witnesses = Vec::with_capacity(rounds.len().saturating_mul(2));
+    // Each round reads at most one record of the key, and no two rounds read
+    // the same one, so each round takes its record.
+    let mut records: Vec<Option<FormationRecord>> = records.into_iter().map(Some).collect();
     for (index, round) in rounds.iter().enumerate() {
         // Round zero is the fixed record with its meets in place; a later
         // round is its meets' record, which the key holds already.
@@ -6925,7 +7054,10 @@ where
             body,
             types,
         } = match (index, round.is_empty()) {
-            (0, true) => fixed_record.clone(),
+            (0, true) => records
+                .first_mut()
+                .and_then(Option::take)
+                .ok_or_else(invariant)?,
             (0, false) => record_of(
                 arena,
                 &fields,
@@ -6934,8 +7066,8 @@ where
                     .map(|(label, &value)| (label, round.get(label).copied().unwrap_or(value))),
             )?,
             _ => records
-                .get(index.saturating_add(1))
-                .cloned()
+                .get_mut(index.saturating_add(1))
+                .and_then(Option::take)
                 .ok_or_else(invariant)?,
         };
         let record = witness(
@@ -13338,6 +13470,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             row: Vec::from([signature.clone()]),
             level: handled.level.clone(),
         };
+        // A step that folds into the rest reads this program at its own
+        // result; the row and the level stay the subject's.
+        let mut here = program.clone();
         let binder = u32::from(scoped);
         let past = |depth: u32| binder.checked_add(depth).ok_or(Refusal::MachineInvariant);
         // The rest of the spine past the step at hand, once a step stands:
@@ -13444,11 +13579,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         if inner.row.iter().any(|held| held.name() != signature.name()) {
                             return Err(uncovered);
                         }
-                        let here = Programmed {
-                            result: self.shifted(handled.subject, Binders::from(past(depth)?)),
-                            row: program.row.clone(),
-                            level: program.level.clone(),
-                        };
+                        here.result = self.shifted(handled.subject, Binders::from(past(depth)?));
                         self.fold((current, &inner), next, (model, &here))?
                     },
                     // The subject's last step is checked at its result, as

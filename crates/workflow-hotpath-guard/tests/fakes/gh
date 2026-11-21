@@ -2,6 +2,8 @@
 printf '%s\n' "$*" >> "$FAKE_GH_LOG"
 if [ "$FAKE_GH" = fail ]; then echo 'HTTP 401: Bad credentials' >&2; exit 1; fi
 n=$(wc -l < "$FAKE_GH_LOG" | tr -d ' ')
+# A REST read names its method, as `api --method GET <path>`: read it as `api <path>`.
+if [ "$1 $2 $3" = 'api --method GET' ]; then shift 3; set -- api "$@"; fi
 case "$1 $2" in
   'api --paginate')
     case "$3" in

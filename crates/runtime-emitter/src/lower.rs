@@ -4454,10 +4454,12 @@ impl Lowering<'_>
                         Operand::Block(self.function.block(block.key)),
                         Operand::Immediate(Immediate::from(immediate(count | block.answered)?)),
                     ),
-                    Err(Unblocked::Undescribed | Unblocked::Refused(_)) => self.call(
-                        &Callee::Primitive(primitive),
-                        Immediate::from(immediate(count)?),
-                    )?,
+                    Err(Unblocked::Undescribed | Unblocked::Unhosted | Unblocked::Refused(_)) => {
+                        self.call(
+                            &Callee::Primitive(primitive),
+                            Immediate::from(immediate(count)?),
+                        )?
+                    },
                 };
                 self.tasks.push(entered);
                 for &argument in arguments.iter().rev() {

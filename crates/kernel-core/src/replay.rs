@@ -4903,8 +4903,11 @@ where
     ///   otherwise its constructor term, flattened through its own
     ///   declaration's constructors, with each leaf that is a returned endpoint
     ///   whose normal form is no returned endpoint replaced by that normal form
-    ///   and read again in turn, every constructor whose fields are unchanged
-    ///   kept at its own id.
+    ///   and read again in turn, each leaf that is a definition replaced by its
+    ///   body, unfolded while it is a definition, where that body is a
+    ///   constructor of the declaration or a returned endpoint, and read again
+    ///   in turn, every constructor whose fields are unchanged kept at its own
+    ///   id.
     /// - provides: the leaf half of [`Self::present`].
     /// - fails: as [`Self::normalize_returned`]; [`ReplayRefusal::Unreadable`]
     ///   on a dangling node.
@@ -4927,8 +4930,11 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — `loop(⟨force wound⟩)` over the presented circle, with
     ///   `wound` returning `unloop(base)`, reads as `base` once the leaf is
-    ///   read, and the same term over a free circle stays apart from `base`.
+    ///   read, and the same term over a free circle stays apart from `base`. A
+    ///   rule whose left side needs a constructor meets it under one definition
+    ///   and under two.
     /// - witness: `replay::tests::a_returned_leaf_of_a_presented_term_reads_before_the_rules`
+    /// - witness: `gandr-core-nbe::presented::tests::a_definition_under_a_presented_constructor_reads_as_its_body_8283`
     #[spec(
         captures: before = self.spent,
         ensures: |ret| self.spent >= before
@@ -4987,6 +4993,31 @@ where
                         }
                         else {
                             walk.push(Walk::Visit(read));
+                        }
+                    },
+                    // A definition whose body is a constructor of the type, or
+                    // a returned endpoint, hides a redex from the rules, as a
+                    // call does: read the leaf by that body.
+                    Some(&Value::Constant(_)) => {
+                        let mut end = id;
+                        while let Some(&Value::Constant(constant)) = self.arena.value(end)
+                            && let Unfoldable::Body(body) = self.unfoldings.unfolding(constant)
+                        {
+                            self.charge()?;
+                            end = body;
+                        }
+                        let reads = match self.arena.value(end) {
+                            Some(&Value::Constructor { datatype, .. }) => {
+                                owned(self.arena, datatype)
+                            },
+                            Some(&Value::Returned(_)) => true,
+                            Some(_) | None => false,
+                        };
+                        if reads {
+                            walk.push(Walk::Visit(end));
+                        }
+                        else {
+                            built.push(id);
                         }
                     },
                     Some(_) => built.push(id),

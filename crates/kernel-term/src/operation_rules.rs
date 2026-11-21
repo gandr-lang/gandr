@@ -65,6 +65,7 @@ use crate::presented::Presentation;
 use crate::presented::RewriteFuel;
 use crate::presented::RuleIndex;
 use crate::presented::RuleNode;
+use crate::presented::RuleReading;
 use crate::presented::RuleVariable;
 use crate::term::ConstantIndex;
 use crate::term::ConstructorTag;
@@ -963,7 +964,9 @@ where
     /// - requires: every rule of `rules` validated.
     /// - ensures: `rules`' own rules, the rules of every ruled definition they
     ///   reach through right-side calls, and the presentation of every family a
-    ///   constructor of any of those rules belongs to, each family once.
+    ///   constructor of any of those rules belongs to, each family once. A
+    ///   symmetry of a presentation is no rule of the system, because no reader
+    ///   rewrites by it.
     /// - panics: none.
     /// - measure: each reached definition once.
     /// - executable: none — the closure is the body's own traversal.
@@ -1028,6 +1031,7 @@ where
             let rules = presentation
                 .rules()
                 .iter()
+                .filter(|rule| rule.reading() == RuleReading::Step)
                 .map(|rule| OperationRule::new(read(rule.left()), read(rule.right())))
                 .collect();
             system.presentations.push((family, rules));

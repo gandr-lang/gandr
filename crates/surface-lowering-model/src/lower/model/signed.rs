@@ -66,7 +66,6 @@ use crate::import::Translation;
 use crate::lower::DeclarationOutcome;
 use crate::lower::Sink;
 use crate::model::ModelForm;
-use crate::model::derive;
 use crate::module::BodyScope;
 use crate::module::Container;
 use crate::module::Functor;
@@ -403,6 +402,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     ///   over the derived signature and the target's slots; a clause would
     ///   restate it whole.
     ///
+    /// # Cost
+    /// - allocation: the derived signature and the expected types it mints,
+    ///   diagnostic.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Models::match_signatures`].
     /// - witness: `gandr-surface-lowering::tests::namespace::an_import_at_a_wider_signature_refuses_its_source_3098`
@@ -423,10 +426,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
             named.span,
             name,
         ) {
-            Ok((_, presentation)) => presentation,
+            Ok((theory, presentation)) => (theory, presentation),
             Err(refusal) => return Maybe::Present(Unmatched::Unnamed(refusal)),
         };
-        let Ok(derived) = derive(presentation)
+        let Ok(derived) = self.cx().collected.derived(presentation.0, presentation.1)
         else {
             return Maybe::Present(Unmatched::Member(name, MatchFault::Unstated));
         };
@@ -436,6 +439,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                 binds: &[],
                 manifests: &[],
             }),
+            ported: self.cx().collected.port_sorts_of(derived.theory),
             origin: Origin::new(named.node, named.span),
         };
         for component in &derived.components {
@@ -491,6 +495,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// - panics: none.
     /// - executable: none — as [`Self::unmatched`].
     ///
+    /// # Cost
+    /// - allocation: the two derived signatures and the types they mint,
+    ///   diagnostic.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Models::match_signatures`].
     /// - witness: `gandr-surface-lowering::tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
@@ -509,7 +517,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                 named.span,
                 name,
             ) {
-                Ok((_, presentation)) => derive(presentation)
+                Ok((theory, presentation)) => self
+                    .cx()
+                    .collected
+                    .derived(theory, presentation)
                     .map_err(|_underived| Unmatched::Member(name, MatchFault::Unstated)),
                 Err(refusal) => Err(Unmatched::Unnamed(refusal)),
             }
@@ -522,12 +533,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
             Ok(produced) => produced,
             Err(unmatched) => return Maybe::Present(unmatched),
         };
-        let minting = |named: Placed| Minting {
+        let minting = |named: Placed, ported| Minting {
             members: Members::Fields(Fields {
                 before: &[],
                 binds: &[],
                 manifests: &[],
             }),
+            ported,
             origin: Origin::new(named.node, named.span),
         };
         // The codomain's components by name, the first of each name kept.
@@ -552,8 +564,22 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                 return fault(MatchFault::Unstated);
             };
             let (Ok(expected), Ok(found)) = (
-                self.mint_form(form, &minting(signature.named), sink),
-                self.mint_form(made_form, &minting(codomain.named), sink),
+                self.mint_form(
+                    form,
+                    &minting(
+                        signature.named,
+                        self.cx().collected.port_sorts_of(stated.theory),
+                    ),
+                    sink,
+                ),
+                self.mint_form(
+                    made_form,
+                    &minting(
+                        codomain.named,
+                        self.cx().collected.port_sorts_of(produced.theory),
+                    ),
+                    sink,
+                ),
             )
             else {
                 return fault(MatchFault::Unstated);

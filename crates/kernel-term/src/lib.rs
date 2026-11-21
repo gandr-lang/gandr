@@ -307,6 +307,7 @@ pub use crate::presented::RewriteFuel;
 pub use crate::presented::RuleFault;
 pub use crate::presented::RuleIndex;
 pub use crate::presented::RuleNode;
+pub use crate::presented::RuleReading;
 pub use crate::presented::RuleRefusal;
 pub use crate::presented::RuleSlot;
 pub use crate::presented::RuleTerm;

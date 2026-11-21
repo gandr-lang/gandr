@@ -482,6 +482,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the minted operation type and its nodes, durable by the
+    ///   arena.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — `State`'s `get` and `put` at an integer state and a
     ///   state-passing carrier, as the module's members are declared.
@@ -513,6 +517,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                 before: components.get(.. place).unwrap_or_default(),
                 binds: &binds,
                 manifests: sorts,
+            }),
+            ported: slot.theories.first().map_or(&[][..], |theory| {
+                self.cx().collected.port_sorts_of(theory.signature.theory)
             }),
             origin,
         };

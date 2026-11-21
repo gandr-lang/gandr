@@ -1087,6 +1087,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         self.declare();
         self.mark_generic();
         self.read_builtins();
+        self.resolve_ports();
         self.seed()?;
         Exits::new(self.host()).survey()?;
         self.classify()?;
@@ -5964,17 +5965,24 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             self.plan(site, Plan::Natural(naturals, integer.magnitude().clone()));
             return Ok(());
         }
-        let annotated = self
+        let written = self
             .cx()
             .classifiers
             .get(&site.at.node)
             .and_then(|&written| self.cx().tree.fragment(written))
-            .is_some_and(|written| {
-                matches!(
-                    type_atom(SurfaceName::from(written)),
+            .map(SurfaceName::from);
+        let annotated = match written {
+            Some(name) => match self.stated_named(site, name)? {
+                Maybe::Present(stated) => matches!(
+                    self.cx().builtin_atom(stated.held),
                     Maybe::Present(TypeAtom::Float64)
-                )
-            });
+                ),
+                // economy: a name that no member binds reads the table of
+                // atoms, until #8140 declares each atom as a type member.
+                Maybe::Absent(_) => matches!(type_atom(name), Maybe::Present(TypeAtom::Float64)),
+            },
+            None => false,
+        };
         let suffixed = spelled.strip_suffix("f64");
         if suffixed.is_some() || annotated {
             let Ok(float) = suffixed.unwrap_or(spelled).parse::<Float64Literal>()
@@ -10775,8 +10783,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ) -> Result<Maybe<TypeComponent<'source>, named::Absent>, LoweringRefusal<'source>>
     {
         let unresolved = Maybe::Absent(named::Absent::Unresolved);
-        if let Some(&Maybe::Present(seen)) = self.cx().scopes.get(site.at.node) {
-            return Ok(self
+        if let Some(&Maybe::Present(seen)) = self.cx().scopes.get(site.at.node)
+            && let Some(stated) = self
                 .cx()
                 .collected
                 .structures
@@ -10784,7 +10792,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 .and_then(|structure| structure.types.get(.. seen.before))
                 .and_then(|visible| visible.iter().rev().find(|stated| stated.name == name))
                 .copied()
-                .map_or(unresolved, Maybe::Present));
+        {
+            return Ok(Maybe::Present(stated));
         }
         let cx = self.cx_mut();
         if let Maybe::Present(_) = cx.scope.resolve(site.reading.frame(), name, &mut cx.fuel)? {
@@ -15167,13 +15176,17 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - hypothesis: L3 — a record type's, a record's and a dependent arrow's
     ///   labels are each recorded with what they label.
     /// - witness: `gandr-surface-lowering::lower::arity::tests::each_label_names_what_it_labels`
+    ///
+    /// # Cost
+    /// - allocation: the names of each type's frames, which its label holds,
+    ///   durable by the origin table
     #[spec(captures: before = sink.origins.labels().len(), ensures: sink.origins.labels().len() <= before.saturating_add(self.cx().labels.len()))]
     fn record_labels(
         &self,
         sink: &mut Sink<'_>,
     )
     {
-        let named = |frame: Frame, held: NodeIndex| -> Vec<String> {
+        let named = |frame: Frame, held: NodeIndex| {
             self.cx()
                 .scope
                 .telescope_names(frame, self.telescope_at(held))
@@ -15577,7 +15590,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 span: origin.span(),
                 labelled: Labelled::CompType {
                     ty,
-                    context: Vec::new(),
+                    context: gandr_kernel_data::ThinShared::default(),
                 },
             });
         }
@@ -16161,7 +16174,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             Plan::Expansion(family, arguments) => {
                 let expanded =
                     ModelsRef::new(self.host_ref()).mint_expansion(family, arguments, sink, origin);
-                let context = |lowerer: &Self, frame| -> Vec<String> {
+                let context = |lowerer: &Self, frame| {
                     lowerer
                         .cx()
                         .scope
@@ -18460,6 +18473,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_standing_supply_opens_a_lambda_per_explicit_before_it_1498`
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_instance_is_the_one_handled_in_scope_2271`
+    ///
+    /// # Cost
+    /// - allocation: the applications, the lambdas and the injections of the
+    ///   call, durable by the arena's identifiers
+    /// - allocation: the candidates of an omitted model, which its holes share,
+    ///   durable by the origin table
     #[spec(
         captures: (written, opened, supplied) = {
             let positions = self.spread(arguments);

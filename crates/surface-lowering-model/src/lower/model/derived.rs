@@ -277,6 +277,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     /// # Errors
     /// As the fails clause.
     ///
+    /// # Cost
+    /// - allocation: the minted type and proof and their nodes, durable by the
+    ///   arena.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::mint_derived_rules`].
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
@@ -331,6 +335,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
                 components: &signature.components,
                 binds: &binds,
             }),
+            ported: self.cx().collected.port_sorts_of(signature.theory),
             origin: origin.inserted(Insertion::Derived),
         };
         let law = self

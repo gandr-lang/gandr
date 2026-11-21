@@ -202,7 +202,7 @@ pub(super) const fn position_of(outcome: &Outcome) -> Maybe<ConstantIndex, entry
 #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || (!held.is_empty() && held.iter().all(Option::is_some)))]
 pub(super) fn unit_of(held: &[Option<&Readmitted>]) -> Maybe<ConstantIndex, entry::Absent>
 {
-    let mut first = None;
+    let mut first = Maybe::Absent(entry::Absent::Unadmitted);
     for (offset, entry) in held.iter().enumerate() {
         let Some(entry) = *entry
         else {
@@ -213,12 +213,18 @@ pub(super) fn unit_of(held: &[Option<&Readmitted>]) -> Maybe<ConstantIndex, entr
         else {
             return Maybe::Absent(entry::Absent::Unwhole);
         };
-        let start = *first.get_or_insert(position);
+        let start = match first {
+            Maybe::Present(start) => start,
+            Maybe::Absent(_) => {
+                first = Maybe::Present(position);
+                position
+            },
+        };
         if usize::from(position) != usize::from(start).saturating_add(offset) {
             return Maybe::Absent(entry::Absent::Unwhole);
         }
     }
-    first.map_or(Maybe::Absent(entry::Absent::Unadmitted), Maybe::Present)
+    first
 }
 
 /// The entry of the declaration `judged`, kept in place from the record's
@@ -241,6 +247,12 @@ pub(super) fn unit_of(held: &[Option<&Readmitted>]) -> Maybe<ConstantIndex, entr
 ///   so, and the certificates of a kept entry name the definitions of the
 ///   edited source.
 /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+///
+/// # Cost
+/// - allocation: the kept outcome, a copy of an outcome of its own and a count
+///   of a shared one, and the certificates, growth within the record's entry
+/// - allocation: the definition and the kernel position filed in `positions`,
+///   durable by the declaration's module position
 #[spec(ensures: |ret| ret.constant == judged.constant() && ret.certificates.len() == entry.certificates.len())]
 pub(super) fn keep_entry(
     positions: &mut Positions,
@@ -296,6 +308,10 @@ pub(super) fn keep_entry(
 ///   a fresh admission crosses it; a retirement that a running check reads
 ///   waits, and the place does not cross beside a live entry of its own.
 /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+///
+/// # Cost
+/// - allocation: the kernel's retirement of the unit, durable by the unit's
+///   kernel position
 #[spec(captures: length = environment.entries().len(), ensures: environment.entries().len() == length)]
 pub(super) fn retire_unit(
     environment: &mut Environment,
@@ -510,6 +526,12 @@ fn leading_run(
 /// - witness: `bridge::tests::a_crossing_that_reads_a_kept_seed_first_takes_it_below_itself_7196`
 /// - witness: `bridge::tests::a_readmission_keeps_a_sealed_module_whose_seal_stays_whole_7200`
 /// - witness: `bridge::tests::a_readmission_keeps_the_witnesses_of_a_formation_its_edit_leaves_7200`
+///
+/// # Cost
+/// - allocation: the environment handed on, the positions and the resumed run,
+///   growth within the record
+/// - allocation: the kept entries, the retired positions and the rank rewrite,
+///   growth within the declarations past the run
 #[spec(ensures: |ret| match ret {
     Maybe::Present(ref kept) => kept.held.len() == keys.len(),
     Maybe::Absent(_) => true,

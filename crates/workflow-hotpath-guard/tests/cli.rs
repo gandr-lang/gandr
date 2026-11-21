@@ -316,7 +316,7 @@ macro_rules! writes {
             .lines()
             .filter(|line| {
                 (line.starts_with("issue ") && !line.starts_with("issue list"))
-                    || line.starts_with("api --method")
+                    || (line.starts_with("api --method") && !line.starts_with("api --method GET"))
             })
             .map(str::to_owned)
             .collect::<Vec<_>>()
@@ -649,7 +649,7 @@ fn the_event_s_pull_request_names_a_force_pushed_commit()
     assert!(
         std::fs::read_to_string(scratch.join("log"))
             .unwrap()
-            .contains("api repos/gandr-lang/gandr/pulls/1358\n"),
+            .contains("api --method GET repos/gandr-lang/gandr/pulls/1358\n"),
         "read by its number"
     );
     std::fs::remove_dir_all(&scratch).unwrap();

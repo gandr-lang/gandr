@@ -2009,6 +2009,7 @@ INSERT INTO purpose VALUES('kernel-term','presented::RewriteFuel','struct','The 
 INSERT INTO purpose VALUES('kernel-term','presented::RuleFault','enum','Why a rule does not present its type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::RuleIndex','struct','A rule''s position in its declaration''s written order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::RuleNode','enum','One node of a rule side, in pre-order.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','presented::RuleReading','enum','How the readers of a rule table read one rule: as a step, or as a symmetry of one constructor.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::RuleRefusal','struct','The first rule of a presentation that does not present its type, and why.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::RuleSlot','enum','Where a constructor field stands, as a rule side reads it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::RuleTerm','enum','One node of a constructor term flattened in pre-order for rewriting.',NULL,'fits','sound',NULL);
@@ -3544,6 +3545,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','description::elaborate_descr
 INSERT INTO purpose VALUES('surface-lowering-base','description::elaborate_roots','function','Reads the data and codata declarations under the roots into a report, so each readable sibling is kept.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','description::family_classifier','module','Names the reason none is held: a description judgment, not a native value-family declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','description::mutual::MutualDescription','struct','Holds a mutual block''s data families as one description over their sorts, so a field at a sibling reads as a recursive occurrence.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','description::theory::unknown_port_sort','function','Builds the refusal of a port at a sort that nothing declares, so the read and the resolve refuse it alike.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','description::written::Applied','enum','Names one step of a codata family''s written self-application in post-order, so each argument the family does not head is read as a value at its node.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','description::written::RuleDirection','enum','Names the direction a written rule''s arrow takes, so the rule''s direction is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','description::written::RuleOrientation','enum','Names the orientation a written rule''s arrow takes, so the rule''s orientation is read.',NULL,'fits','sound',NULL);
@@ -3927,6 +3929,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','model::ModelForm','enum','Na
 INSERT INTO purpose VALUES('surface-lowering-base','model::ModelSignature','struct','Holds a model''s signature, so the signature''s components are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','model::Placement','struct','Holds a model''s component''s placement, so the component''s placement is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','model::Port','struct','Holds a port a model''s component states, so the component''s port is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','model::PortedName','struct','Holds a port sort that no sort of its theory declares, so the scope of the theory''s source resolves it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','model::Presentation','struct','Holds a theory''s presentation, so the presentation''s sorts and operations are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','model::PresentationFault','enum','Names why a theory''s presentation faults, so the refusal names the fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','model::Presented','type_alias','Names the type a presented component states, so the component''s type is read.',NULL,'fits','sound',NULL);
@@ -3944,6 +3947,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','model::dependence','function
 INSERT INTO purpose VALUES('surface-lowering-base','model::derive','function','Derives a model''s signature from a theory''s presentation, so the signature''s components are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','model::derive_laws','function','Derives the laws a theory states without adding them, so a model''s laws are read as the theory writes them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','model::presentation','module','Names the reason a declaration has no presentation.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','model::signature_theory','module','Names the reason a model signature names no written theory.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','model::variable_dependence','function','Names whether each variable of a binder is named after it, so a law''s type keeps only its dependent variables.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','module::Ambiguity','struct','Holds two unqualified imports of one source binding one name to two declarations.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','module::CodataIndex','struct','Names the index of a codata family, so the family''s index is read.',NULL,'fits','sound',NULL);
@@ -6031,6 +6035,7 @@ INSERT INTO purpose VALUES('theory-levitation','rule::FreeTerm','struct','Holds 
 INSERT INTO purpose VALUES('theory-levitation','rule::Freshness','struct','Holds a rule''s freshness condition, so the condition''s named atoms are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','rule::RowTail','enum','Names the tail of a rule''s row, so the tail''s form is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','rule::RuleFace','struct','Holds a 2-cell face, so the face''s two sides are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-levitation','rule::RuleReading','enum','How the readers of a rule table read one rule face: as a step, or as a symmetry of one operation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','rule::RuleVarMeta','struct','Holds the derived metadata of a rule-face pattern variable, so the metadata''s variance is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','rule::TermArgs','struct','Holds a term node''s arguments, so the arguments'' count is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','rule::TermNode','struct','Holds one node of a free term, so the node''s kind is read.',NULL,'fits','sound',NULL);
