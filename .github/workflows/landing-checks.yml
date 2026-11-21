@@ -1,0 +1,3201 @@
+# <critical>
+# MUST preserve anchor-first CI: maximal sharing, no copied orchestration.
+# New functionality MUST reuse template anchors or add anchors for likely reuse.
+# MUST parameterize differences; performance exceptions require measured evidence.
+# Share exceptional logic through actions; preserve parallelism, caches, and gates.
+# </critical>
+# Lists we produce are displayed collapsed: in `<details>` under a one-line
+# summary of what, how many and the verdict.
+#
+# What this workflow guarantees the landing pipeline. A fix to any part keeps
+# every line below true; changing one is a decision for the owner, never a side
+# effect of a fix (#1999 records the audit these come from).
+# - One rolling stack: each new pull request targets the newest one on the
+#   board, and `pr:land`/`pr:watch` queue the largest green prefix at once
+#   (#2001); what falls off the tail rolls on as the next stack. Nothing
+#   restacks a stack before queueing it: a restack reruns every member's
+#   pull-request run and floods the runners.
+# - A pull-request run lints; the merge group tests; each push to `landing`
+#   reports (#6993, the owner's order of 2026-11-12). The title, treefmt and
+#   Clippy are required checks. The report lanes, hotpath, obligations and
+#   mutants, run on each push to `landing` against the push before, block
+#   nothing and comment on each pull request the push lands. The hotpath
+#   lane files its follow-up issues. The mutants lanes are off
+#   (`GANDR_MUTANTS`, #3695) until the dedicated host of #3207 runs them.
+# - The queue is tuned for throughput, pull requests landed per hour, not for
+#   one pull request's latency. Entries batch (at least 3, or a 5-minute
+#   wait); every entry gets its own cumulative group run; the runner pool is
+#   the limit, so more groups at once than it serves add only wall time.
+# - A merge group starts from the newest build it can find: the latest
+#   successful run of its own queue when that is newer than main's state,
+#   else main's.
+# - No timing budget fails a run, since a failed budget would halt landing.
+#   The nightly `reports` job's lane budget reports drift.
+# - Heavy jobs run in the CI image, which every job extracts whole before its
+#   first step; its payload stays what most jobs run (ci.Dockerfile).
+# - A merge group on `landing` runs the blocking set alone (#5438, #5439).
+#   The set is the run's setup, the formatting of the change, Clippy, the
+#   compiler policy, the treefmt job and the brake. `landing-title-and-deletes.yml` lints the title and each
+#   entry's authored commits, and checks the ledger against the issues the
+#   group closes (#6883). The Clippy job runs the formatting first, and it,
+#   the compiler policy and the treefmt job run the tasks of `check:landing`.
+#   The treefmt job runs its whole set of checks, the ledgers among them, as
+#   on a pull request (the owner's word of 2026-11-14). The two lints
+#   read the packages that the group's change reaches against its base,
+#   over the newest state that a group on `landing` handed on, and a group
+#   that reaches no package runs neither lint (#6894). The brake
+#   fails while `main` lags `landing` past its limits (#5442). Every other
+#   job skips a group on `landing`.
+#   The integration cycle tests `landing`. A pull request on `landing` runs
+#   no Clippy, because its lane ran `check:landing` before `pr:open`.
+#   `check:landing-queue` holds the jobs to these rules.
+# - The integration cycle dispatches this workflow on `integration` with the
+#   input `cycle` (`landing-integration-cycle.yml`, #5440). That run tests every lane that
+#   a merge group tests on Linux, with no fail-fast. It runs no macOS, no
+#   obligations, no mutants and no hotpath lane. Its plain lane refuses the
+#   path of a home directory in the tree (`check:local-paths`, #7478), and no
+#   run on `landing` runs that check (`check:landing-queue`).
+name: landing-checks
+
+on:
+  pull_request: {}
+  workflow_dispatch:
+    inputs:
+      plain-baseline:
+        description: Also time the plain baseline the enforcing lanes compare with
+        type: boolean
+        default: false
+      cycle:
+        description: Run as the integration cycle, the lanes of a merge group on Linux alone
+        type: boolean
+        default: false
+      runner:
+        description: The runner of the integration cycle's lanes; the cycle step chooses it
+        type: choice
+        options: [hosted, integration]
+        default: hosted
+  # The push to main reruns no Linux check: the merge-group run already
+  # tested this exact commit, so a rerun could only disagree through its
+  # environment. It promotes caches instead. Queue refs cannot warm sibling
+  # branches, so cache misses may reuse artifacts from the latest completed
+  # queue run. Successful builds publish state even when a later test fails.
+  # Main promotes only the exact landing's state; cached state never
+  # substitutes for running a gate. A commit pushed to main without the
+  # queue has no queue run to promote: its push runs every lane the queue
+  # runs on Linux, the recovery sweep and the formatting included (#2084),
+  # and the test lanes cache their state as main's, so the next queue run
+  # builds over it rather than over the last queued landing. macOS is
+  # tested daily and on dispatch, never on a push or in the queue: no
+  # landing waits for it (#702, #1177).
+  # A push to `landing` is a group of the queue that has landed. Its run is
+  # the report lanes alone, hotpath, obligations and mutants, each against
+  # the push before (#6993); `prepare` names it `landed`, and every other
+  # job skips it (`check:landing-queue`).
+  push:
+    branches: [main, landing]
+  merge_group: {}
+  # The daily run times the plain baseline of main, which every enforcing
+  # lane divides its own report by, and tests main on macOS, saving the macOS
+  # state the next daily run builds over.
+  schedule:
+    - cron: "37 5 * * *"
+
+permissions:
+  contents: read
+
+# pull_request only: cancelling a push-to-main run would cancel the promotion
+# of the caches PR branches read from, mid-merge.
+# Each push to main is a group of its own commit, so no landing's run waits
+# for the previous landing's or is replaced by the next one: every landing
+# promotes its state. Overlapping push runs may save their states in either
+# order; each state's deletion spares every entry newer than the one its run
+# saved (`ci:delete-superseded`), so the newest entry always stands.
+# merge_group is naturally exempt either way: github.ref there is the
+# queue's own per-entry temporary ref (refs/heads/gh-readonly-queue/...), so
+# each queue entry already gets a distinct concurrency group and can never
+# collide with, or be cancelled by, another one.
+# The event name gives a scheduled and a dispatched run of main, which share
+# main's ref, a group each: a group holds one pending run, so one kind would
+# otherwise replace the other's.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+  # A test that times its code fails on a slow result only under this
+  # variable, which only CI sets (#1786); without it the test measures and
+  # prints, so a loaded workstation never fails on time.
+  GANDR_WALL_CLOCK_GATES: "1"
+
+  # Opt back into quickinstall (jdx/mise PR 10923 flipped the default off) and
+  # mise's built-in binstall, in env form so both bind regardless of
+  # settings-file scoping.
+  MISE_CARGO_BINSTALL_QUICKINSTALL: "true"
+  MISE_CARGO_BINSTALL_NATIVE: "true"
+  # CI installs every job tool inside mise-action; skip only workstation tools.
+  # The image checks this list against its own at build time.
+  MISE_DISABLE_TOOLS: "cargo:bindgen-cli,cargo:hotpath,github:j178/prek,github:max-sixty/worktrunk,github:nektos/act,github:orhun/git-cliff"
+  # A job's mise keeps every entry of `mise.lock`, a disabled tool's too, and
+  # writes no line of it (#6976): the lock is the hosts', and a job that
+  # rewrites it reads `mise.lock` as part of its change.
+  MISE_LOCKFILE_MODE: merge
+  # The Linux image switch: empty selects the bare-runner bootstrap; any other
+  # value selects the image, and every run then pulls the pin-file tag of its
+  # own checkout. A tag that is not published yet is built inside the run that
+  # first needs it, and the image jobs wait for it.
+  GANDR_CI_IMAGE: ${{ vars.GANDR_CI_IMAGE }}
+  # The corpus sweeps sample the corpus and add every source the change adds
+  # or modifies; a pull request's first parent is the base it lands on, and
+  # the lanes that run sweeps fetch that parent. A merge group's change runs
+  # from its base on main instead (`sweep-base`, #2101), which its lanes fetch.
+  GANDR_SWEEP_BASE: HEAD^
+  # The mutants lanes' one switch (#3695): the change report (`mutants`, with
+  # `mutants-comment` after it), the landing filer (`mutants-landed`) and the
+  # daily crate (`mutants-nightly`) run only at `on`. `prepare` reads it into
+  # its `mutants` output, which each lane's condition reads. The owner turned
+  # them off on 2026-10-28: hosted runners are too slow for the campaign to
+  # move, and nobody acts on its reports. The reversal is `on` here, once the
+  # dedicated host of #3207 runs them. The local tasks stay, so a seat may run
+  # `mise run mutants`, `mutants:named` or `mutants:changed` by hand.
+  GANDR_MUTANTS: "off"
+
+jobs:
+  # Definitions only: aliases run in each consuming job's context.
+  template:
+    if: false
+    needs: &rust-needs [prepare, ci-image]
+    # arm64, measured on the enforcing lane (#702): the suite 27% and a
+    # warm rebuild 9% faster than ubuntu-latest's x86-64, and Linux arm64
+    # runs native code through the emitter's arm64 patcher. Every lane that
+    # can runs on arm64; macOS's runners are arm64 too. report-coverage.yml's x86-64
+    # Linux run is the one job that compiles and runs the emitter's x86-64
+    # patcher and memory placement, so the image is published for both.
+    # The integration cycle runs on the self-hosted runner with the label
+    # `integration` when its step reads such a runner online, and on a hosted
+    # runner otherwise (#5526). The input is a choice, and only a run on
+    # `integration` takes the label, so no dispatch of another branch runs
+    # on the self-hosted runner. A pull request, a merge group and a push
+    # set no input.
+    runs-on: &linux ${{ inputs.cycle && inputs.runner == 'integration' && github.ref == 'refs/heads/integration' && fromJSON('["self-hosted", "integration"]') || 'ubuntu-24.04-arm' }}
+    # Private-GHCR consumers need package reads on the job. The workflow floor
+    # stays `contents: read` for every job that pulls no image. A job that
+    # builds Rust also writes kache's package on a trusted run.
+    # - see: #7789
+    permissions: &image-read-permissions
+      contents: read
+      packages: write
+    steps:
+      # Checkout stays shallow except where a gate needs history. A job that
+      # must build the pull request's own head, not GitHub's merge commit,
+      # names it in CI_CHECKOUT_REF; empty is the event's default ref.
+      - &git-checkout
+        name: git checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: ${{ env.CI_FETCH_DEPTH || '1' }}
+          # A job that reads the history of commits names the partial clone
+          # filter in CI_CHECKOUT_FILTER. Then the fetch takes no tree of an
+          # older commit, and the checkout takes only its own commit's trees.
+          # An empty filter is no filter.
+          filter: ${{ env.CI_CHECKOUT_FILTER || '' }}
+          ref: ${{ env.CI_CHECKOUT_REF || '' }}
+      - &trust-workspace
+        name: trust the workspace for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      # Inside the CI image the toolchain is baked; only the caches run. A
+      # lane off the image's platform overrides the switch: no container runs
+      # there whatever the repository variable says, so its toolchain install
+      # is unconditional.
+      #
+      # Main promotes queue state into shared caches. Manual test runs warm
+      # only their own branch, making a second dispatch a warm measurement.
+      # A promote job that found no state skips the setup. Each platform has
+      # one writer: the plain lane on Linux (its promotion, or the lane itself
+      # on a queue-less push), the enforcing join of the daily run on macOS,
+      # which runs no plain lane. The documentation lane fetches the same
+      # locked dependencies and saves none.
+      - &setup-rust
+        id: setup-rust
+        name: setup rust
+        if: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' || env.CI_ON_MAIN == 'true' || env.CI_BUILD_STATE_FOUND == 'true' }}
+        uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
+        with:
+          install-toolchain: ${{ env.CI_INSTALL_TOOLCHAIN || needs.prepare.outputs.image == '' }}
+          cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' && (env.CI_BUILD_STATE_FOUND == 'true' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test')) || ((github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule') && env.CI_ON_MAIN == 'true' && (env.CI_SHARDS != '' || env.CI_ENFORCING != 'true'))) }}
+      # Cache installed tools by locked pins, including source-built sizelint
+      # and macOS Dylint tools. Install the complete CI subset inside the cache
+      # (`.github/actions/install-tools`, shared with every workflow).
+      - &install-policy-tools
+        name: install mise-managed policy tools
+        if: &without-image ${{ needs.prepare.outputs.image == '' || env.CI_INSTALL_TOOLCHAIN == 'true' }}
+        uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
+        with:
+          cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'schedule' && env.CI_ON_MAIN == 'true') || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test'))) }}
+      # Every policy cache is keyed on the quenchant revision the Dylint
+      # metadata pins (`workflow:revision`), so a restored library is always
+      # this revision's policy: Cargo can consider a library from another
+      # revision fresh, and no key or restore prefix ever omits it.
+      - &identify-policy
+        name: identify the policy revision
+        if: ${{ !cancelled() }}
+        run: printf 'CI_POLICY_REVISION=%s\n' "$(mise run --quiet workflow:revision)" >> "$GITHUB_ENV"
+      - &restore-dylint-drivers
+        name: restore Dylint drivers
+        id: dylint-drivers-restore
+        if: *without-image
+        uses: &cache-restore actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &dylint-drivers ~/.dylint_drivers
+          key: dylint-drivers-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'mise.toml', 'mise.lock') }}
+      # The gate binary changes only with the revision and the compiler.
+      - &restore-gate-binary
+        name: restore the gate binary
+        id: gate-binary-restore
+        uses: *cache-restore
+        with:
+          path: &gate-binary target/workflow-tools
+          key: &gate-binary-key quenchant-gates-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ env.CI_POLICY_REVISION }}
+          lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - &save-gate-binary
+        name: save the gate binary
+        if: ${{ !cancelled() && env.ACT != 'true' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && hashFiles('target/workflow-tools/bin/quenchant-gates') != '' && steps.gate-binary-restore.outputs.cache-hit != 'true' }}
+        uses: &cache-save actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *gate-binary
+          key: ${{ steps.gate-binary-restore.outputs.cache-primary-key }}
+      # The policy state follows main like the test state: one entry per
+      # landing, restored by the newest of the same compiler, tool pins and
+      # policy revision. It holds the built library, the workspace as the
+      # library last checked it with the specification records that check
+      # wrote, and the rustdoc JSON: a unit Cargo finds fresh keeps its
+      # record, so a pull request lints and documents only what it changed.
+      # It also holds the inline sources each check listed, because the
+      # allowlist check of `check:dylint` reads them for a fresh unit too.
+      # A group on `landing` that downloaded the newest landing state
+      # (`landing-state`) restores none (#6894); a job with no such step
+      # always restores.
+      - &restore-policy-state
+        name: restore the policy state
+        id: policy-state-restore
+        if: ${{ steps.landing-state.outcome != 'success' }}
+        uses: *cache-restore
+        with:
+          path: &policy-state |
+            target/dylint
+            target/evidence
+            target/embedded-sources
+          key: policy-state-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'mise.toml', 'mise.lock') }}-${{ env.CI_POLICY_REVISION }}-${{ github.sha }}
+          restore-keys: policy-state-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'mise.toml', 'mise.lock') }}-${{ env.CI_POLICY_REVISION }}-
+          # Promotion already downloads the verified queue artifact.
+          lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - &save-policy-state
+        name: save the policy state
+        id: save-policy-state
+        if: ${{ !cancelled() && env.ACT != 'true' && ((github.event_name == 'push' && github.ref == 'refs/heads/main' && env.CI_BUILD_STATE_FOUND == 'true') || (github.event_name == 'workflow_dispatch' && steps.policy-library.outcome == 'success' && steps.invocation-state.outcome == 'success')) && steps.policy-state-restore.outputs.cache-hit != 'true' }}
+        uses: *cache-save
+        with:
+          path: *policy-state
+          key: ${{ steps.policy-state-restore.outputs.cache-primary-key }}
+      - &save-dylint-drivers
+        name: save Dylint drivers
+        if: &promote-drivers ${{ env.CI_DYLINT_DRIVERS_FOUND == 'true' && steps.dylint-drivers-restore.outputs.cache-hit != 'true' }}
+        uses: *cache-save
+        with:
+          path: *dylint-drivers
+          key: ${{ steps.dylint-drivers-restore.outputs.cache-primary-key }}
+      # Preserve both test reports. Artifact delivery is hosted-only: act
+      # cannot serve upload-artifact v7's CreateArtifact request schema.
+      - &upload-test-report
+        name: upload test report
+        if: ${{ always() && env.ACT != 'true' }}
+        continue-on-error: true
+        uses: &upload-artifact actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-${{ github.job }}${{ env.CI_SHARD != '' && format('-{0}', env.CI_SHARD) || '' }}
+          path: |
+            target/nextest/ci/junit.xml
+            target/nextest/ci-enforcing/junit.xml
+            target/nextest/ci-enforcing/junit-*.xml
+          if-no-files-found: ignore
+      # Each lane's summary names where its state came from. The
+      # `lane-timing` job adds what each step took, so a slow run says where
+      # its time went, from one read of the run's jobs for every lane
+      # (#5078); the nightly lane budget (`ci:lane-budget`) holds the medians
+      # to their budgets.
+      - &lane-state
+        name: summarize the lane's state
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          CI_TEST_STATE: ${{ steps.test-state-restore.outputs.cache-hit == 'true' && 'exact cache hit' || steps.download-build-state.outcome == 'success' && 'queue artifact' || steps.test-state-restore.outputs.cache-matched-key != '' && 'main''s newest state' || steps.test-state-restore.outcome == 'success' && 'miss' || 'not used' }}
+          CI_POLICY_STATE: ${{ github.job == 'cargo-dylint-crate' && steps.landing-state.outcome == 'success' && 'the newest landing state' || steps.policy-state-restore.outputs.cache-hit == 'true' && 'exact cache hit' || steps.policy-state-restore.outputs.cache-matched-key != '' && 'main''s newest state' || steps.policy-state-restore.outcome == 'success' && 'miss' || 'not used' }}
+          CI_CLIPPY_STATE: ${{ github.job == 'cargo-clippy-crate' && steps.landing-state.outcome == 'success' && 'the newest landing state' || steps.clippy-state-restore.outputs.cache-hit == 'true' && 'exact cache hit' || steps.clippy-state-restore.outputs.cache-matched-key != '' && 'main''s newest state' || steps.clippy-state-restore.outcome == 'success' && 'miss' || 'not used' }}
+        shell: bash
+        run: |
+          line=
+          for pair in "Test:$CI_TEST_STATE" "Policy:$CI_POLICY_STATE" "Clippy:$CI_CLIPPY_STATE"; do
+            if [[ ${pair#*:} != "not used" ]]; then line+="${line:+ }${pair%%:*} state: ${pair#*:}."; fi
+          done
+          if [[ -n $line ]]; then printf '### Lane state\n\n%s\n' "$line" >> "$GITHUB_STEP_SUMMARY"; fi
+      # Compute once, before any restored build directory can add manifests.
+      # The step names the manifests by their places. A pattern from the root
+      # walks a self-hosted runner's warm build and passes the expression
+      # engine's 120 s.
+      # - see: #7705
+      #
+      # The fingerprint names one exact state. The generation is the toolchain
+      # pin alone. A restore takes the newest state of its generation. Then
+      # Cargo's own fingerprints rebuild what the manifests changed. They hash
+      # a Git dependency's revision and check source checksums.
+      #
+      # A toolchain bump starts a new generation: every artifact of the old one
+      # is stale, and the superseded ones a generation accumulates go with it.
+      - &identify-build-state
+        name: identify build-state inputs
+        env:
+          CI_STATE_INPUTS: ${{ hashFiles('Cargo.toml', 'crates/*/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+          CI_STATE_GENERATION: ${{ hashFiles('rust-toolchain.toml') }}
+        run: printf 'CI_BUILD_FINGERPRINT=%s\nCI_BUILD_GENERATION=%s\n' "$CI_STATE_INPUTS" "$CI_STATE_GENERATION" >> "$GITHUB_ENV"
+      - &restore-test-state
+        name: restore complete test state
+        id: test-state-restore
+        uses: ./.github/actions/restore-test-state # zizmor: ignore[self-repository]
+        with:
+          # Promotion already downloads the verified queue artifact; a lane
+          # that runs on main's push restores main's newest state itself. A
+          # lane on a push to `landing` restores it as a pull request does
+          # (#6993).
+          lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && env.CI_ON_MAIN != 'true' }}
+      # A cache a queue run saves is visible to that queue ref alone, so
+      # only main's push, the daily run and a dispatch save: a queue run's or
+      # a push to `landing`'s save would take gigabytes of the repository's
+      # cache for no reader. A lane on main saves only the state it archived,
+      # and a shard none: its join hands the whole on.
+      - &save-test-state
+        name: cache complete test state
+        id: save-test-state
+        if: ${{ !cancelled() && env.ACT != 'true' && env.CI_SHARD == '' && (github.event_name == 'push' && github.ref == 'refs/heads/main' && (env.CI_ON_MAIN != 'true' || steps.build-state-archive.outcome == 'success') || (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && steps.build-state-archive.outcome == 'success') && steps.test-state-restore.outputs.cache-hit != 'true' && env.CI_BUILD_STATE_FOUND == 'true' }}
+        uses: *cache-save
+        with:
+          path: build-state-${{ env.CI_BUILD_STATE }}.tar.zst
+          key: ${{ steps.test-state-restore.outputs.cache-primary-key }}
+      # One state per lane and ref: each landing's supersedes the older ones,
+      # which would otherwise sit in the cache until they evicted the tool
+      # caches. The integration cycle's dispatch saves too, about 5 GB a
+      # state, so it deletes its superseded entry as a push does (#6951).
+      - &delete-superseded-state
+        name: delete superseded test state
+        if: ${{ env.ACT != 'true' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && steps.save-test-state.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_STATE_KEY: ${{ steps.test-state-restore.outputs.cache-primary-key }}
+          CI_STATE_PREFIX: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-
+        run: mise run ci:delete-superseded "$CI_STATE_PREFIX" "$CI_STATE_KEY"
+      # Hand on only the units this run's builds used: Cargo never deletes
+      # the ones a manifest change superseded (ci:prune-enforcing). A lane's
+      # failed prune hands on the whole directory, which is correct, only
+      # larger. A shard's build is part of the state, which the join hands on.
+      # The join's prune builds each unit the join dropped, so its failure is
+      # a state that does not build: it stops the join by name, and no state
+      # goes on (#7508).
+      - &prune-build-state
+        name: prune build state to this run's units
+        id: prune-build-state
+        if: &hand-on-state ${{ !cancelled() && env.CI_PLAIN_BASELINE != 'true' && env.CI_SHARD == '' && steps.build-workspace.outcome == 'success' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'merge_group' && steps.test-state-restore.outputs.cache-hit != 'true') || ((github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule') && env.CI_ON_MAIN == 'true')) }}
+        continue-on-error: ${{ env.CI_SHARDS == '' }}
+        shell: bash
+        env:
+          CI_PRUNE_TASK: ${{ env.CI_ENFORCING == 'true' && 'ci:prune-enforcing' || env.CI_DOCS == 'true' && 'ci:prune-docs' || env.CI_DOCTESTS == 'true' && 'ci:prune-doctests' || 'ci:prune-plain' }}
+        run: |
+          mise run "$CI_PRUNE_TASK" && exit 0
+          status=$?
+          if [[ -n ${CI_SHARDS:-} ]]; then
+            echo "::error title=join::$CI_PRUNE_TASK fails over the joined state, so the join hands on no state (#7508)"
+          fi
+          exit "$status"
+      # Keep modes and mtimes in a zstd tar; upload without zip recompression.
+      # Each flavor keeps only its own test-profile target directory, with
+      # the sources it was built from recorded inside (#3206). The documentation
+      # lane's is `check:doc`'s own build directory, `target/gate-doc` (#6698).
+      # Dispatches also upload, so warm measurements cover the promotion path;
+      # a lane on main caches its state itself and uploads none.
+      # The plain baseline only reads state: its full plain build would evict
+      # the queue's from the cache. A join archives only a state its prune
+      # built (#7508).
+      - &archive-build-state
+        name: archive build state
+        id: build-state-archive
+        if: *hand-on-state
+        shell: bash
+        env:
+          CI_BUILD_TARGET: ${{ env.CI_ENFORCING == 'true' && 'target/enforcing/debug' || env.CI_DOCS == 'true' && 'target/gate-doc/debug' || 'target/debug' }}
+          CI_PRUNE_OUTCOME: ${{ steps.prune-build-state.outcome }}
+        run: |
+          if [[ -n ${CI_SHARDS:-} && $CI_PRUNE_OUTCOME != success ]]; then
+            echo "the join's prune did not succeed, so no state goes on (#7508)" >&2
+            exit 1
+          fi
+          mise run --quiet ci:sources-record "$CI_BUILD_TARGET"
+          tar -cf - "$CI_BUILD_TARGET" | zstd -T0 -3 -f -o "build-state-$GITHUB_JOB.tar.zst"
+          echo CI_BUILD_STATE_FOUND=true >> "$GITHUB_ENV"
+      - &upload-build-state
+        name: upload build state
+        if: ${{ !cancelled() && env.ACT != 'true' && github.event_name != 'push' && env.CI_ON_MAIN != 'true' && steps.build-state-archive.outcome == 'success' }}
+        uses: *upload-artifact
+        with:
+          path: build-state-${{ github.job }}.tar.zst
+          name: build-state-${{ github.job }}--${{ env.CI_BUILD_GENERATION }}
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+      # Only this workflow's queue runs are trusted artifact producers:
+      # GitHub sets the event, and only an owner-queued PR reaches the queue.
+      # A test lane downloads the latest successful queue run's build when no
+      # cache entry matched, or when that build is newer than main's newest
+      # state of the lane's own key (`queue-newer`, by key). A merge group
+      # stacked on entries main does not hold yet then starts from a build
+      # that holds them, where main's state would rebuild every entry ahead of
+      # it. Main saves each lane's state minutes after its landing, one lane
+      # at a time, so another lane's newer save says nothing of this lane's:
+      # read across lanes, a group that started between two saves rebuilt
+      # every landing since the older one (#2148). Promotion matches only its
+      # exact key. Another toolchain generation's state is never downloaded.
+      # The artifact lands beside the restored state and replaces it in
+      # `find the restored build state`.
+      - &download-build-state
+        name: download reusable queue build state
+        id: download-build-state
+        if: ${{ (github.event_name == 'push' && env.CI_ON_MAIN != 'true' && steps.test-state-restore.outputs.cache-hit != 'true' || (github.event_name != 'push' || env.CI_ON_MAIN == 'true') && steps.test-state-restore.outputs.cache-hit != 'true' && (steps.test-state-restore.outputs.cache-matched-key == '' || fromJSON(needs.prepare.outputs.queue-newer || '{}')[format('{0}-{1}-{2}-{3}', runner.os, runner.arch, env.CI_BUILD_STATE, env.CI_BUILD_GENERATION)] == true)) && contains(fromJSON(needs.prepare.outputs.artifacts || '[]'), format('build-state-{0}--{1}', env.CI_BUILD_STATE, env.CI_BUILD_GENERATION)) }}
+        uses: &download-artifact actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: build-state-${{ env.CI_BUILD_STATE }}--${{ env.CI_BUILD_GENERATION }}
+          run-id: ${{ needs.prepare.outputs.run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: queue-state
+      # Whether a build state or the Dylint drivers came down, tested once in
+      # the shell and read as a flag after: `hashFiles` over a tarball reads
+      # the whole archive inside the expression engine, whose 120 s budget a
+      # large state exceeds. The archive steps raise the same flag.
+      - &find-build-state
+        name: find the restored build state
+        shell: bash
+        run: |
+          if [[ -e "queue-state/build-state-$CI_BUILD_STATE.tar.zst" ]]; then mv -f "queue-state/build-state-$CI_BUILD_STATE.tar.zst" .; fi
+          if [[ -e "build-state-$CI_BUILD_STATE.tar.zst" ]]; then echo CI_BUILD_STATE_FOUND=true >> "$GITHUB_ENV"; fi
+          if [[ -e dylint-drivers.tar ]]; then echo CI_DYLINT_DRIVERS_FOUND=true >> "$GITHUB_ENV"; fi
+      # A checkout dates every source now, after the state's build-script
+      # outputs, and a build script's inputs are read by mtime: each source
+      # unchanged since the state was built is dated before it (#3206).
+      - &unpack-build-state
+        name: unpack build state
+        if: &state-found ${{ env.CI_BUILD_STATE_FOUND == 'true' }}
+        shell: bash
+        run: |
+          zstd -dc "build-state-$CI_BUILD_STATE.tar.zst" | tar -xf -
+          mise run --quiet ci:sources-restamp
+      # The dependency cache also holds Cargo's registry; this fills it with
+      # every package of the lock, for each target. It runs whether or not a
+      # state was restored: a cold build fetches only its host's packages,
+      # and a test that resolves another target offline reads every package
+      # of the lock (`wasi.rs`, #7402). With the registry restored, the fetch
+      # downloads only what it lacks.
+      - &fetch-dependencies
+        name: fetch locked dependencies
+        run: cargo fetch --locked
+
+  # Every lookup the run decides on, in one job (#2045): a job's runner
+  # start-up costs more than any of these lookups' work, and each job is a
+  # slot of the account's concurrency cap. It reads
+  # - the changed-file categories (`rust`, `extension`, `parser`): missing
+  #   bases and failed fetches or diffs force the checks, never skip them; the
+  #   queue always checks its complete merge result; a Rust-only pull request
+  #   or queue entry does not pay for the extension lane; a change to the
+  #   parser, its grammar, its syntax tree or a corpus source reaches every
+  #   recovery record (#1434, #2101). A merge group's change is read from its
+  #   base on main, the merge base the compare API names, never from its
+  #   parent: a later entry's parent is the entry below it, so its own diff
+  #   alone would miss a stale record the entries below it left (#2101);
+  #   that base is also the sweeps' (`sweep-base`). The daily run gates
+  #   nothing and reads none; nor does a push whose head a merge group built
+  #   and tested, as a queue landing's is;
+  # - `unbuilt`: a push to main whose head no merge group built (#2084), a
+  #   chain pushed by hand. No run has tested its tree, so it runs every
+  #   lane a merge group runs, the recovery sweep, the extension, the
+  #   compiler policy and the formatting among them, and red main is red
+  #   on its own run;
+  # - `landed`: a push to `landing`, a group of the queue that has landed
+  #   (#6993). Its run is the report lanes alone, and `rust` reads its change
+  #   against the push before (`github.event.before`), as a pull request's
+  #   against its base;
+  # - `rebased`: a push that is GitHub's own rebase of the change, its patch
+  #   unchanged, over a replaced head whose required checks passed (#2070,
+  #   #2700). Every lane skips, so the required checks pass at once, and the
+  #   group run tests the tree;
+  # - the pin-file tag of this checkout and whether it is published
+  #   (`.github/actions/find-image`, shared with every image workflow): a
+  #   pull request from a fork cannot publish with its read-only token, so a
+  #   missing tag there selects the bare runner instead of a build;
+  # - the reusable queue build state, on a push to main, in the queue and on
+  #   a dispatch. Completed queue runs supply successful builds independently
+  #   of their test verdict, and a new queue ref can read their artifacts
+  #   even when it cannot read its predecessor's branch-local cache; Cargo
+  #   still checks all fingerprints. Main promotion requires the exact
+  #   landing SHA; a test lane reuses the latest successful queue build when
+  #   no cached state of its generation matched or when that build completed
+  #   after main's newest state of that lane was saved. Artifact discovery
+  #   is skipped under act, and a failed lookup means no reuse, not a failed
+  #   run;
+  # - for a merge group on `landing` (#6894), `lints`: whether its change
+  #   against the group's base reaches a package for the lints, as
+  #   `.config/gate-scope/packages.jq` reads it with `lints`. A failed fetch
+  #   or diff reads as a reach. And `landing-states`: for each lint job, the
+  #   newest run of the queue on `landing` that uploaded the job's state, an
+  #   artifact of this repository's own queue ref. Each lookup is one read,
+  #   so a group of no lint between two others breaks no chain of states.
+  # Always trigger the workflow: a skipped workflow supplies no required
+  # check, whereas a skipped job succeeds. Dependency updates land through a
+  # maintainer's pull request, so a Renovate pull request runs nothing:
+  # this job skips, and every job after it skips without its outputs.
+  prepare:
+    name: prepare the run
+    needs: depth
+    if: ${{ !cancelled() && github.actor != 'renovate[bot]' }}
+    # A hosted runner prepares each run, the integration cycle's too. The
+    # self-hosted runner keeps its workspace between jobs. Its container jobs
+    # run as root, so they leave files that its user cannot remove. A job on
+    # its host then fails at its checkout. This job is the one job of a cycle
+    # that checks out on the host, and it runs no lane of the suite.
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+      checks: read
+      statuses: read
+    outputs:
+      rust: ${{ github.event_name != 'schedule' && (github.event_name != 'push' || github.ref == 'refs/heads/landing') && ((github.event_name != 'pull_request' && github.event_name != 'push') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.rust == 'true') && steps.rebased.outputs.rebased != 'true' }}
+      extension: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.run.outputs.run-id == '' || github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.extension == 'true') && steps.rebased.outputs.rebased != 'true' }}
+      parser: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.run.outputs.run-id == '' || github.event_name == 'merge_group' && steps.group-base.outcome != 'success' || github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.parser == 'true') && steps.rebased.outputs.rebased != 'true' }}
+      unbuilt: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.run.outputs.run-id == '' }}
+      sweep-base: ${{ steps.group-base.outputs.sha }}
+      landed: ${{ github.event_name == 'push' && github.ref == 'refs/heads/landing' }}
+      rebased: ${{ steps.rebased.outputs.rebased == 'true' }}
+      image: ${{ steps.image.outputs.tag != '' && (steps.image.outputs.found == 'true' || !github.event.pull_request.head.repo.fork) && format('ghcr.io/gandr-lang/gandr-ci:{0}', steps.image.outputs.tag) || '' }}
+      build: ${{ steps.image.outputs.tag != '' && steps.image.outputs.found == 'false' && !github.event.pull_request.head.repo.fork }}
+      run-id: &queue-run ${{ steps.run.outputs.run-id || steps.previous.outputs.run-id }}
+      queue-newer: ${{ steps.fresher.outputs.queue-newer }}
+      artifacts: ${{ steps.artifacts.outputs.artifacts }}
+      baseline-run-id: ${{ steps.baseline.outputs.run-id }}
+      baseline-sha: ${{ steps.baseline.outputs.sha }}
+      baseline-created: ${{ steps.baseline.outputs.created }}
+      mutants: ${{ env.GANDR_MUTANTS == 'on' }}
+      lints: ${{ github.event.merge_group.base_ref != 'refs/heads/landing' || steps.lint-reach.outcome != 'success' || steps.lint-reach.outputs.reach != '[]' }}
+      landing-states: ${{ format('{{"cargo-clippy-crate":"{0}","cargo-dylint-crate":"{1}"}}', steps.landing-clippy-state.outputs.run-id, steps.landing-policy-state.outputs.run-id) }}
+    env:
+      CI_SHA: ${{ github.sha }}
+      CI_GATE: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' && github.ref == 'refs/heads/landing' }}
+      CI_QUEUE_STATE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - *git-checkout
+      - id: group-base
+        name: find the merge group's base on main
+        if: ${{ github.event_name == 'merge_group' }}
+        continue-on-error: true
+        env:
+          CI_TRUNK: ${{ github.event.repository.default_branch }}
+        run: >-
+          gh api "repos/$GH_REPO/compare/$CI_TRUNK...$CI_SHA"
+          --jq '"sha=" + .merge_base_commit.sha' >> "$GITHUB_OUTPUT"
+      - id: fetch
+        name: fetch the comparison tree
+        if: ${{ env.CI_GATE == 'true' }}
+        continue-on-error: true
+        env: &change-base
+          CI_BASE_SHA: ${{ steps.group-base.outputs.sha || github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: git fetch --depth=1 origin "$CI_BASE_SHA"
+      - id: filter
+        name: filter changed paths
+        if: ${{ env.CI_GATE == 'true' && steps.fetch.outcome == 'success' }}
+        continue-on-error: true
+        env: *change-base
+        # One pipeline, no shell control flow or third-party filter action.
+        # NUL framing preserves filenames; no-renames retains source deletions.
+        # pipefail makes a failed diff distinguishable from an empty diff.
+        shell: bash
+        run: >-
+          git diff --no-renames --name-only -z "$CI_BASE_SHA" HEAD |
+          jq -rRs '(split("\u0000")) as $paths | "rust=" + ($paths | any(length > 0 and ((endswith(".md") or startswith("docs/") or startswith("LICENSE") or . == ".gitignore") | not)) | tostring), "extension=" + ($paths | any(startswith("contrib/gandr-vscode/") or . == "aube-lock.yaml" or . == "aube.lock" or . == ".oxlintrc.json" or . == "treefmt.toml" or . == ".config/mise/tasks/mise-tasks-check.toml" or . == ".github/workflows/landing-checks.yml") | tostring), "parser=" + ($paths | any(startswith("crates/surface-parser/") or startswith("crates/surface-grammar/") or startswith("crates/surface-syntax/") or (startswith("corpus/") and endswith(".gandr"))) | tostring)' >> "$GITHUB_OUTPUT"
+      # A group on `landing` lints only what its change reaches against the
+      # group's own base (#6894). Its base on main, which the steps above
+      # read, holds every landing since main's head too.
+      - id: landing-base
+        name: fetch the base of the group on landing
+        if: ${{ github.event.merge_group.base_ref == 'refs/heads/landing' }}
+        continue-on-error: true
+        env: &landing-base
+          CI_LANDING_BASE: ${{ github.event.merge_group.base_sha }}
+        run: git fetch --depth=1 origin "$CI_LANDING_BASE"
+      - id: lint-reach
+        name: read what the group's change reaches for the lints
+        if: ${{ steps.landing-base.outcome == 'success' }}
+        continue-on-error: true
+        env: *landing-base
+        shell: bash
+        run: >-
+          git diff --no-renames --name-only "$CI_LANDING_BASE" HEAD |
+          jq -nR '{changed: [inputs], packages: [], lints: true}' |
+          jq -c -L .config/gate-scope -f .config/gate-scope/packages.jq |
+          jq -r '"reach=" + tojson' >> "$GITHUB_OUTPUT"
+      # The newest state of each lint job that a group on `landing` uploaded.
+      # A run of this repository's own queue ref uploaded it, never a fork's.
+      # Each step spells its call out, so `check:gh-budget` finds the site.
+      - id: landing-clippy-state
+        name: find the newest landing Clippy state
+        if: &landing-lints ${{ github.event.merge_group.base_ref == 'refs/heads/landing' && env.ACT != 'true' && steps.lint-reach.outputs.reach != '[]' }}
+        continue-on-error: true
+        env:
+          CI_LINT_JOB: cargo-clippy-crate
+          CI_STATE_GENERATION: ${{ hashFiles('rust-toolchain.toml') }}
+          CI_REPO_ID: ${{ github.repository_id }}
+        run: >-
+          gh api --method GET "repos/$GH_REPO/actions/artifacts"
+          -f name="build-state-$CI_LINT_JOB--$CI_STATE_GENERATION" -f per_page=20
+          --jq '[.artifacts[] | select(.expired | not) | select(.workflow_run.head_branch | startswith("gh-readonly-queue/landing/")) | select(.workflow_run.head_repository_id == (env.CI_REPO_ID | tonumber))][0].workflow_run.id // "" | "run-id=\(.)"'
+          >> "$GITHUB_OUTPUT"
+      - id: landing-policy-state
+        name: find the newest landing policy state
+        if: *landing-lints
+        continue-on-error: true
+        env:
+          CI_LINT_JOB: cargo-dylint-crate
+          CI_STATE_GENERATION: ${{ hashFiles('rust-toolchain.toml') }}
+          CI_REPO_ID: ${{ github.repository_id }}
+        run: >-
+          gh api --method GET "repos/$GH_REPO/actions/artifacts"
+          -f name="build-state-$CI_LINT_JOB--$CI_STATE_GENERATION" -f per_page=20
+          --jq '[.artifacts[] | select(.expired | not) | select(.workflow_run.head_branch | startswith("gh-readonly-queue/landing/")) | select(.workflow_run.head_repository_id == (env.CI_REPO_ID | tonumber))][0].workflow_run.id // "" | "run-id=\(.)"'
+          >> "$GITHUB_OUTPUT"
+      # GitHub rebases a stack's members itself when a member below merges
+      # (its committer is `web-flow`), and no setting turns that off (#2070).
+      # A rebase that leaves the change's patch as it was, measured against
+      # its fork from the trunk before and after, ran its checks already on
+      # the head it replaced; where every required context passed there
+      # (`required.jq` over that head's rollup, #2700), the group run tests
+      # the tree. The decision is `.config/pr-stack/rebased.jq`. Any other
+      # push, a replaced head that failed or is still running, or a reading
+      # that fails, runs the lanes.
+      - id: rebased
+        name: recognize GitHub's rebase of an unchanged change
+        if: ${{ github.event_name == 'pull_request' && github.event.action == 'synchronize' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          CI_BEFORE: ${{ github.event.before }}
+          CI_HEAD: ${{ github.event.pull_request.head.sha }}
+          CI_TRUNK: ${{ github.event.repository.default_branch }}
+        run: |
+          committer=$(gh api "repos/$GH_REPO/commits/$CI_HEAD" --jq '.committer.login // ""')
+          if [[ $committer != web-flow ]]; then
+            echo rebased=false >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          refs=("$CI_BEFORE" "$CI_HEAD" "+refs/heads/$CI_TRUNK:refs/remotes/origin/$CI_TRUNK")
+          git fetch --quiet --no-tags --depth=50 origin "${refs[@]}"
+          patch() {
+            local fork
+            for _ in $(seq 20); do
+              if fork=$(git merge-base "origin/$CI_TRUNK" "$1"); then
+                git diff --no-renames "$fork" "$1" | git patch-id --stable | cut -d ' ' -f 1
+                return
+              fi
+              git fetch --quiet --no-tags --deepen=100 origin "${refs[@]}"
+            done
+            return 1
+          }
+          before=$(patch "$CI_BEFORE")
+          after=$(patch "$CI_HEAD")
+          required=$(gh api "repos/$GH_REPO/rules/branches/$CI_TRUNK" \
+            --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | unique')
+          reading=$(gh api graphql -F owner="${GH_REPO%%/*}" -F name="${GH_REPO#*/}" -F oid="$CI_BEFORE" -f query='
+            query($owner: String!, $name: String!, $oid: GitObjectID!) {
+              repository(owner: $owner, name: $name) { object(oid: $oid) { ... on Commit { statusCheckRollup {
+                contexts(first: 100) { nodes { __typename
+                  ... on CheckRun { name status conclusion startedAt checkSuite { workflowRun { databaseId } } }
+                  ... on StatusContext { context state startedAt: createdAt } } } } } } } }' \
+            --jq '.data.repository.object.statusCheckRollup.contexts.nodes // []' \
+            | jq -c --argjson required "$required" -f .config/pr-stack/required.jq)
+          rebased=$(jq -n --arg committer "$committer" --arg before "$before" --arg after "$after" \
+            --argjson required "$required" --argjson reading "$reading" \
+            '{committer: $committer, before: $before, after: $after, required: $required, reading: $reading}' \
+            | jq -f .config/pr-stack/rebased.jq)
+          echo "replaced head $CI_BEFORE: $reading; rebased=$rebased"
+          printf 'rebased=%s\n' "$rebased" >> "$GITHUB_OUTPUT"
+      - id: image
+        name: find the published image
+        uses: ./.github/actions/find-image # zizmor: ignore[self-repository]
+        with:
+          enabled: ${{ env.GANDR_CI_IMAGE != '' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      # The queue merges a group once its required checks pass, while the
+      # group's run still has its join and its reports to finish: a landing's
+      # push looks the run up 16 to 60 s before it completes. Read then, every
+      # landing was `unbuilt` and ran every lane a second time, a group's
+      # worth of jobs against the account's concurrency cap while the next
+      # group waited for runners, up to 156 s in #2365 (#2148). The lookup
+      # waits for the run with this head to complete, five minutes at most,
+      # in at most 8 reads whose waits grow (#5078); a head no queue run
+      # built answers at once.
+      - id: run
+        name: find the completed queue run for this landing
+        if: ${{ env.CI_QUEUE_STATE == 'true' && env.ACT != 'true' && github.event_name == 'push' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          for wait in 0 15 15 30 60 60 60 60; do
+            sleep "$wait"
+            read -r id status < <(gh api --method GET "repos/$GH_REPO/actions/workflows/landing-checks.yml/runs" \
+              -f event=merge_group -f head_sha="$CI_SHA" \
+              --jq '.workflow_runs[0] // {} | "\(.id // "") \(.status // "")"')
+            [[ -z $id || $status == completed ]] && break
+          done
+          echo "run-id=$([[ -n $id && $status == completed ]] && echo "$id")" >> "$GITHUB_OUTPUT"
+      # A group's ref is `gh-readonly-queue/<base>/…`. A group on `landing`
+      # runs no test lane, so its run holds no test state for a group on
+      # main (#5439). The lookup reads the newest 30 successful queue runs and
+      # keeps the newest one of the group's own queue. A group on `landing`
+      # reads none of the three outputs that follow, so it skips the lookup:
+      # its lint jobs find their states by the two lookups above (#6894).
+      - id: previous
+        name: find the latest successful queue run
+        if: ${{ env.CI_QUEUE_STATE == 'true' && env.ACT != 'true' && github.event_name != 'push' && github.event.merge_group.base_ref != 'refs/heads/landing' }}
+        continue-on-error: true
+        env:
+          CI_QUEUE_BASE: ${{ github.event.merge_group.base_ref || github.event.repository.default_branch }}
+        run: >-
+          gh api --method GET "repos/$GH_REPO/actions/workflows/landing-checks.yml/runs"
+          -f event=merge_group -f status=success -f per_page=30
+          --jq '[.workflow_runs[] | select(.head_branch | startswith("gh-readonly-queue/" + (env.CI_QUEUE_BASE | ltrimstr("refs/heads/")) + "/"))][0] // {} | "run-id=\(.id // "")\ncompleted=\(.updated_at // "")"'
+          >> "$GITHUB_OUTPUT"
+      # Main's state is a promoted queue build, saved after its run completed,
+      # or a push's own build. A queue build that completed after main's
+      # newest state of a key was saved holds every landing that state holds
+      # and the entries queued ahead of this group besides. The answer is per
+      # key, the cache key without its fingerprint and commit: each lane reads
+      # its own.
+      - id: fresher
+        name: compare it with main's newest test states
+        if: ${{ steps.previous.outputs.completed != '' }}
+        continue-on-error: true
+        env:
+          CI_QUEUE_COMPLETED: ${{ steps.previous.outputs.completed }}
+        run: >-
+          gh api --method GET "repos/$GH_REPO/actions/caches"
+          -f ref=refs/heads/main -f key=gandr-v3-test-state- -f sort=created_at -f direction=desc -f per_page=100
+          --jq '[.actions_caches[] | {state: (.key | ltrimstr("gandr-v3-test-state-") | split("-") | .[:-2] | join("-")), created: .created_at}]
+          | group_by(.state) | map({key: .[0].state, value: (env.CI_QUEUE_COMPLETED > (map(.created) | max))}) | from_entries
+          | "queue-newer=" + tojson'
+          >> "$GITHUB_OUTPUT"
+      - id: artifacts
+        name: list its build-state artifacts
+        if: ${{ steps.run.outputs.run-id != '' || steps.previous.outputs.run-id != '' }}
+        continue-on-error: true
+        env:
+          CI_RUN_ID: *queue-run
+        run: >-
+          gh api "repos/$GH_REPO/actions/runs/$CI_RUN_ID/artifacts"
+          --jq '"artifacts=" + ([.artifacts[] | select(.expired == false) | .name] | tojson)'
+          >> "$GITHUB_OUTPUT"
+      # The newest plain baseline a scheduled or dispatched run of this
+      # repository's main published, for the landing's specification cost
+      # (`spec-cost-landed`); a failed lookup only skips the ratio.
+      - id: baseline
+        name: find the newest plain baseline of main
+        if: ${{ env.ACT != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        run: >-
+          gh api --method GET "repos/$GH_REPO/actions/artifacts"
+          -f name=junit-cargo-test-plain-baseline -f per_page=100
+          --jq '[.artifacts[] | select(.expired == false and .workflow_run.head_branch == "main" and .workflow_run.head_repository_id == .workflow_run.repository_id)]
+          | max_by(.created_at) // {}
+          | "run-id=\(.workflow_run.id // "")\nsha=\(.workflow_run.head_sha // "")\ncreated=\(.created_at // "")"'
+          >> "$GITHUB_OUTPUT"
+
+  # The CI depth gate (#5074): a pull request above the third member of its
+  # stack runs no lane. The merge queue builds three entries at most, so the
+  # runs of the members above them only took runners from the three that land
+  # next and from the merge groups. The gate cancels the whole run before
+  # `prepare` and comments once a head; the landing watcher runs the run again
+  # once a landing moves the pull request to depth 3. A cancelled run leaves
+  # every required check unset, never passed. A gate that fails runs the
+  # whole CI.
+  depth:
+    name: wait for stack depth 3
+    if: ${{ github.event_name == 'pull_request' && github.actor != 'renovate[bot]' && !github.event.pull_request.head.repo.fork }}
+    runs-on: *linux
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CI_PULL_REQUEST: ${{ github.event.pull_request.number }}
+      CI_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - *git-checkout
+      - name: cancel the run above depth 3
+        continue-on-error: true
+        run: .config/pr-stack/landing.bash depth
+
+  # The brake on `landing` (#5442): a merge group on `landing` fails this
+  # check while `main` lags `landing` past a limit of
+  # `.config/integration/brake.json` (`ci:brake`). Only a huge backlog takes
+  # the brake. The job needs no setup, so it runs beside the blocking set.
+  # The checkout holds the commits of the whole history and the trees of its
+  # own commit alone, so git reads the lag in hours. The `gandr-lang` App
+  # reads the runs of the cycle, because the workflow's token has no room for
+  # the call. A job with no App fails, so the brake holds until it has one.
+  brake:
+    name: hold the landings while main lags
+    if: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_ref == 'refs/heads/landing' }}
+    runs-on: *linux
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      CI_FETCH_DEPTH: "0"
+      CI_CHECKOUT_FILTER: "tree:0"
+      # mise.toml pins no jq: the task's own pin installs it when it runs.
+      MISE_ENABLE_TOOLS: "jq"
+    steps:
+      - *git-checkout
+      - name: mint the App's token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.LANDING_APP_ID }}
+          private-key: ${{ secrets.LANDING_APP_PRIVATE_KEY }}
+          # The brake's need, no more: read the runs of the cycle.
+          permission-actions: read
+      # No cache, as in landing-title-and-deletes.yml: the shared cache holds every tool of
+      # CI, and this job installs none of mise.toml's.
+      - name: install mise
+        uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
+        with:
+          cache: "false"
+      - name: read the lag of main behind landing
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: mise run ci:brake
+
+  # Builds and publishes the missing tag with the image workflow itself.
+  # Every image job needs it, so all of them wait for a build. A job's
+  # default condition skips it when any ancestor was skipped, so every job
+  # downstream states `!cancelled() && !failure()`: a skipped build lets it
+  # run, and a failed one stops it. The formatting gate runs over a failed
+  # build and fails pulling the missing image, so a failed build fails a
+  # required check rather than skipping them all, which would pass.
+  ci-image:
+    name: build the missing CI image
+    needs: prepare
+    # `prepare` needs the depth gate, which runs on a pull request only, so
+    # the default condition skips this job on a push and in a merge group.
+    # The missing tag then stayed missing, and every image job failed its
+    # pull with `manifest unknown` (#5128).
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.build == 'true' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build-ci-image.yml # zizmor: ignore[self-repository]
+
+  # The enforcing run is the full test pass on each platform. The plain lane
+  # compiles and runs only what enforcement removes, the corpus roots; the
+  # documentation lane runs the private-item rustdoc and the examples lane
+  # the documentation examples, units no other plain gate builds; plain
+  # Clippy lints the plain-only targets. On main's push the Linux test lanes
+  # run only when no queue run tested the commit, and then build on main's
+  # state and cache theirs as main's. A push whose queue run holds no plain
+  # build state, the merge group into `landing`, builds and caches it with no
+  # test (`CI_BUILD_ONLY`, #6790): the nightly's all-features job restores it.
+  cargo-test-plain-only:
+    name: test plain-only targets (linux)
+    needs: *rust-needs
+    if: ${{ !cancelled() && !failure() && github.event.merge_group.base_ref != 'refs/heads/landing' && (needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true' || github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-plain-only--')) }}
+    runs-on: *linux
+    permissions: &build-state-read-permissions
+      contents: read
+      packages: write
+      actions: read
+    container: &ci-image ${{ needs.prepare.outputs.image }} # zizmor: ignore[unpinned-images]
+    timeout-minutes: 30
+    env:
+      CI_BUILD_STATE: cargo-test-plain-only
+      CI_ON_MAIN: ${{ github.event_name == 'push' }}
+      CI_BUILD_ONLY: ${{ github.event_name == 'push' && needs.prepare.outputs.unbuilt != 'true' }}
+      # The lane runs three Cargo commands over three package selections: the
+      # parser's tests, the driver the corpus roots run, and the comments
+      # suite. Each resolves its own features, so each compiled the changed
+      # crates again (#2148). Resolving every command's features as the whole
+      # workspace's lets them share units. No test this lane runs reads Cargo's
+      # resolution, which the environment would change for it.
+      CARGO_UNSTABLE_FEATURE_UNIFICATION: "true"
+      CARGO_RESOLVER_FEATURE_UNIFICATION: workspace
+    steps: &workspace-test-steps
+      - *git-checkout
+      - *trust-workspace
+      # A merge group's sweeps read the whole group's change, from its base
+      # on main: the entry below it is its parent (#2101).
+      - &fetch-sweep-base
+        name: fetch the merge group's base
+        if: ${{ needs.prepare.outputs.sweep-base != '' }}
+        env:
+          CI_SWEEP_BASE: ${{ needs.prepare.outputs.sweep-base }}
+        run: |
+          git fetch --depth=1 origin "$CI_SWEEP_BASE"
+          echo "GANDR_SWEEP_BASE=$CI_SWEEP_BASE" >> "$GITHUB_ENV"
+      - *identify-build-state
+      - *install-policy-tools
+      - *setup-rust
+      - *restore-test-state
+      - *download-build-state
+      - *find-build-state
+      - *unpack-build-state
+      - *fetch-dependencies
+      # A shard names its packages; the rest shard takes every package no
+      # named shard does, so a new crate is tested before anyone places it.
+      # The mark dates the restored state: what the shard builds after it is
+      # what it hands the join.
+      - &select-shard
+        name: select the shard's packages
+        if: ${{ env.CI_SHARD != '' }}
+        shell: bash
+        run: |
+          args=()
+          for package in $CI_SHARD_PACKAGES; do args+=(--package "$package"); done
+          if [[ -n $CI_SHARD_EXCLUDES ]]; then
+            args=(--workspace)
+            for package in $CI_SHARD_EXCLUDES; do args+=(--exclude "$package"); done
+          fi
+          printf 'CI_SHARD_ARGS=%s\n' "${args[*]}" >> "$GITHUB_ENV"
+          mkdir -p target/enforcing/debug
+          touch target/shard-base
+      - &build-workspace
+        name: build workspace targets
+        id: build-workspace
+        env:
+          CI_BUILD_TASK: ${{ env.CI_ENFORCING == 'true' && 'build:tests-enforcing' || env.CI_PLAIN_BASELINE == 'true' && 'build:tests' || env.CI_DOCS == 'true' && 'check:doc' || env.CI_DOCTESTS == 'true' && 'check:doctests' || 'build:tests-plain-only' }}
+        run: mise run "$CI_BUILD_TASK"
+      # The enforcing task sets the graph-wide cfg, including host-built
+      # macros. Runtime sentinels reject a silently non-enforcing build. The
+      # documentation lanes test nothing apart from their build: rustdoc's
+      # check is the documentation lane's, and Cargo builds and runs the
+      # examples in one command, which cannot build without running.
+      # Each check after the build runs whatever an earlier check gives, so
+      # one run names every red and the fixer repairs them together (#5440).
+      - &test-workspace
+        name: test workspace targets
+        if: ${{ !cancelled() && steps.build-workspace.outcome == 'success' && env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' && env.CI_BUILD_ONLY != 'true' }}
+        env:
+          CI_TEST_TASK: ${{ env.CI_ENFORCING == 'true' && 'check:tests-enforcing' || env.CI_PLAIN_BASELINE == 'true' && 'ci:plain-baseline' || 'check:tests-plain-only' }}
+          NEXTEST_PROFILE: ${{ env.CI_ENFORCING == 'true' && 'ci-enforcing' || 'ci' }}
+        run: mise run "$CI_TEST_TASK"
+      # Each Linux enforcing shard lists its tests where they were built and
+      # resolves its own members' witnesses against that listing: a member's
+      # witnesses name its own tests, and the shards partition the members
+      # (#2148). No job waits on every shard's listing, and the join hands
+      # the state on beside the verdict, not before it (#1994).
+      - name: list the shard's tests for the witness gate
+        id: witness-listing
+        if: ${{ !cancelled() && env.CI_WITNESSES == 'true' && steps.build-workspace.outcome == 'success' }}
+        env:
+          CI_WITNESS_LISTING: ${{ env.CI_WITNESS_LISTINGS }}/${{ env.CI_SHARD }}.json
+        run: |
+          mkdir -p "$CI_WITNESS_LISTINGS"
+          mise run ci:witness-listing
+      # Witness discovery lists the enforcing test inventory, so it runs where
+      # that graph is already built: anywhere else it compiles the graph again.
+      # The gate binary comes from the revision's cache when present.
+      - *identify-policy
+      - name: restore the gate binary
+        if: ${{ !cancelled() && env.CI_WITNESSES == 'true' }}
+        uses: *cache-restore
+        with:
+          path: *gate-binary
+          key: *gate-binary-key
+      - name: resolve adequacy witnesses
+        if: ${{ !cancelled() && env.CI_WITNESSES == 'true' && steps.witness-listing.outcome == 'success' }}
+        run: mise run check:witnesses
+      - name: run the corpus roots
+        if: &plain-gate ${{ !cancelled() && steps.build-workspace.outcome == 'success' && env.CI_ENFORCING != 'true' && env.CI_PLAIN_BASELINE != 'true' && env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' && env.CI_BUILD_ONLY != 'true' }}
+        run: mise run check:corpus
+      # The differential of the scheduled replay (#7286) runs the driver that
+      # the corpus roots built, at each width against the serial run.
+      - name: run the differential of the replay
+        if: *plain-gate
+        run: mise run check:differential
+      # The corpus roots built the driver the formatter check runs, and the
+      # plain state holds the comments suite: the format gate would build both
+      # from nothing.
+      - name: check the corpus layout
+        if: *plain-gate
+        run: mise run check:corpus-format
+      - name: write the standard library's pages
+        if: *plain-gate
+        run: mise run check:gandr-doc
+      - name: corpus item comments
+        if: *plain-gate
+        run: mise run check:corpus-comments
+      # The corpus roots built the driver the ledger is generated by.
+      - name: check the syntax ledger
+        if: *plain-gate
+        run: mise run check:syntax-ledger
+      - name: check the syntax exemplars
+        if: *plain-gate
+        run: mise run check:syntax-exemplars
+      # The step of the syntax exemplars builds the binary that the fence check runs.
+      - name: check the fenced gandr blocks of the prose
+        if: *plain-gate
+        run: mise run check:fences
+      - name: settle the exemplars
+        if: *plain-gate
+        run: mise run check:exemplars
+      # The check reads the tree alone, so it waits on no build, and the
+      # plain lane alone runs it. A pull request and a group on `landing` run
+      # no step of it (#7478).
+      - name: refuse the path of a home directory in the tree
+        if: ${{ !cancelled() && env.CI_ENFORCING != 'true' && env.CI_PLAIN_BASELINE != 'true' && env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' && env.CI_BUILD_ONLY != 'true' }}
+        run: mise run check:local-paths
+      - *upload-test-report
+      - *prune-build-state
+      - *archive-build-state
+      - *upload-build-state
+      - *save-test-state
+      # A shard hands the join what it built over the restored state; the
+      # join takes each unit whole from one build and hands the state on.
+      - name: archive the shard's build
+        id: shard-archive
+        if: ${{ !cancelled() && env.CI_SHARD != '' && steps.build-workspace.outcome == 'success' }}
+        shell: bash
+        run: |
+          find target/enforcing/debug -newer target/shard-base \( -type f -o -type l \) -print > target/shard-files
+          tar -cf - -T target/shard-files | zstd -T0 -3 -f -o "build-shard-$CI_SHARD.tar.zst"
+      - name: upload the shard's build
+        if: ${{ !cancelled() && env.ACT != 'true' && steps.shard-archive.outcome == 'success' }}
+        uses: *upload-artifact
+        with:
+          path: build-shard-${{ env.CI_SHARD }}.tar.zst
+          name: build-shard-${{ github.job }}-${{ env.CI_SHARD }}
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+      - *lane-state
+
+  # The recovery sweep in a lane of its own (#2148). A change that reaches
+  # the recovery records (`parser`) sweeps every one of them at every row,
+  # the sources parsed on every core, which took 77 s of the plain lane's 267
+  # and ran after its build, before the corpus roots: beside the plain lane
+  # each ends sooner. It restores the plain lane's state and builds what that
+  # lane's first build does, the parser's tests, and saves and hands on
+  # nothing: the plain lane's state holds the same units. A pull request,
+  # stacked or not, whose change reaches the records runs it too, so a
+  # stale record is red on the pull request rather than first in the queue
+  # (#2101). There it sweeps only the records its own change touches
+  # (`ci:recovery-change`, #5864): `landing` can hold stale records that
+  # `integration` records and the rebase onto `main` brings back, and they
+  # are not the pull request's. A merge group, a dispatch and `main` sweep
+  # every record. The enforcing shards keep their sample, where every row
+  # would take half an hour (#1434).
+  cargo-test-recovery:
+    name: sweep the recovery records (linux)
+    needs: *rust-needs
+    if: ${{ !cancelled() && !failure() && github.event.merge_group.base_ref != 'refs/heads/landing' && needs.prepare.outputs.parser == 'true' && (needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true' || github.event_name == 'pull_request') }}
+    runs-on: *linux
+    permissions: *build-state-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 30
+    env:
+      CI_BUILD_STATE: cargo-test-plain-only
+      CI_ON_MAIN: ${{ github.event_name == 'push' }}
+      # A pull request's change is read against `HEAD^`, the base side of
+      # its merge commit.
+      CI_FETCH_DEPTH: "2"
+      # As the plain lane's, so the parser's tests reuse its state's units.
+      CARGO_UNSTABLE_FEATURE_UNIFICATION: "true"
+      CARGO_RESOLVER_FEATURE_UNIFICATION: workspace
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *fetch-sweep-base
+      - *identify-build-state
+      - *install-policy-tools
+      - *setup-rust
+      - *restore-test-state
+      - *download-build-state
+      - *find-build-state
+      - *unpack-build-state
+      - name: build the parser's tests
+        run: mise run build:tests-plain-only
+      - name: sweep every recovery record the change reaches
+        env:
+          CI_RECOVERY_TASK: ${{ github.event_name == 'pull_request' && 'ci:recovery-change' || 'ci:recovery' }}
+        run: mise run "$CI_RECOVERY_TASK"
+      - *lane-state
+
+  # The documentation lane: the private-item rustdoc as its build, over a
+  # state of its own. It shares no unit with the plain lane's gates, since
+  # rustdoc checks, so beside the plain lane it leaves its critical path and
+  # duplicates no build (#1177).
+  cargo-test-docs:
+    name: document the workspace (linux)
+    needs: *rust-needs
+    if: &test-lane ${{ !cancelled() && !failure() && github.event.merge_group.base_ref != 'refs/heads/landing' && (needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true') }}
+    runs-on: *linux
+    permissions: *build-state-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 30
+    env:
+      CI_BUILD_STATE: cargo-test-docs
+      CI_ON_MAIN: ${{ github.event_name == 'push' }}
+      CI_DOCS: "true"
+    steps: *workspace-test-steps
+
+  # The examples lane: the documentation examples, built and run in one
+  # command over a state of its own. Their libraries build apart from the
+  # corpus driver's and from rustdoc's check, and a change deep in the graph
+  # rebuilds every library above it. Run after the rustdoc on one runner,
+  # the two took a group changing `core-sequent` past the enforcing shards
+  # by 45 s; beside each other, each finishes under them (#2148).
+  cargo-test-doctests:
+    name: test the documentation examples (linux)
+    needs: *rust-needs
+    if: *test-lane
+    runs-on: *linux
+    permissions: *build-state-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 30
+    env:
+      CI_BUILD_STATE: cargo-test-doctests
+      CI_ON_MAIN: ${{ github.event_name == 'push' }}
+      CI_DOCTESTS: "true"
+    steps: *workspace-test-steps
+
+  # The enforcing lane in shards (#702). The library chain from core-term to
+  # the dispatcher bounds one job's build, so a shard takes the packages above
+  # that chain, one the chain's middle and the rest the leaves: measured on
+  # the arm64 runner over #699's core-term change, the whole graph rebuilt in
+  # 301 s and tested in 51 s, the shards in 146 + 35, 141 + 4 and 73 + 17.
+  # The packages above the chain are three shards: the dispatcher, the rest
+  # of the engine and its faces, each building the chain's top once (#1177).
+  # At four jobs after a surface-lowering change one shard rebuilt in 70.7 s
+  # and two in 45.6 and 45.7 s, and after a dispatcher change in 56.2 s
+  # against 31.3 and 32.0 s. The dispatcher has a shard of its own because
+  # its crate alone holds 166 s of the engine's 223 s of tests and the longest
+  # build chain. At four jobs after a core-sequent change, the engine shard
+  # that held it rebuilt in 45 s; the dispatcher alone rebuilt in 24 s and the
+  # rest of the engine in 32 s (#2148). The chain's middle is two shards, the
+  # checker and the lowering: the checker's, the incremental checker's and the
+  # lowering's library tests are the three longest units of the deep rebuild,
+  # and the lowering's waits on the checker's library. At eight cores' four
+  # jobs after a core-term change the one shard rebuilt in 133 s, the two in
+  # 64 and 80 s (#2148). A shard is a package set, its cost the packages'
+  # build and their tests (#2547): over ten queue runs faces took 200 s (98 s
+  # building, 39 s testing) against its 145 s surface budget while the checker
+  # took 72 s of its 190 s, so the language server, the faces' largest package
+  # (106 s of test time), is tested beside the checker. Every shard restores
+  # the lane's one state; its join takes each unit whole from one shard's
+  # build and hands the state on. The run stage is tested in the
+  # dispatcher's shard: the witnesses of each crate name tests of the other,
+  # and a shard resolves its own members' witnesses alone.
+  cargo-test-enforcing-shard:
+    name: test enforcing targets (linux, ${{ matrix.shard }})
+    needs: *rust-needs
+    if: *test-lane
+    runs-on: *linux
+    permissions: *build-state-read-permissions
+    # The tests of `gandr-runtime-uring` start an `io_uring` ring. Docker's
+    # default seccomp profile refuses `io_uring_setup` with EPERM. Docker
+    # reads a profile only from a file on the host, before the checkout, so no
+    # file of the tree can reach it. The jobs that run the crate's tests drop
+    # the filter, and only they do.
+    # - see: #7633
+    container: &ci-test-image
+      image: *ci-image # zizmor: ignore[unpinned-images]
+      options: --security-opt seccomp=unconfined
+    timeout-minutes: 30
+    strategy: &enforcing-shards
+      fail-fast: false
+      matrix:
+        include:
+          - shard: dispatcher
+            packages: &dispatcher-shard >-
+              gandr-surface-dispatcher gandr-surface-evaluate
+          - shard: engine
+            packages: &engine-shard >-
+              gandr-runtime-stencils gandr-surface-corpus gandr-surface-diagnostics
+              gandr-surface-session
+          - shard: faces
+            packages: &faces-shard >-
+              gandr-lang gandr-surface-agentic gandr-surface-render-terminal gandr-surface-repl
+              gandr-surface-tui
+          - shard: checker
+            packages: &checker-shard >-
+              gandr-core-checker gandr-core-checker-base gandr-core-checker-bridge gandr-core-content
+              gandr-core-incremental gandr-surface-lsp gandr-surface-lsp-base
+              gandr-surface-lsp-core gandr-surface-lsp-diagnostics gandr-surface-lsp-navigation
+          - shard: lowering
+            packages: &lowering-shard >-
+              gandr-core-sequent gandr-runtime-emitter gandr-surface-lowering gandr-surface-lowering-base
+              gandr-surface-lowering-capability gandr-surface-lowering-exits gandr-surface-lowering-expression
+              gandr-surface-lowering-identity gandr-surface-lowering-model gandr-surface-lowering-native
+              gandr-surface-pretty
+          - shard: rest
+            excludes:
+              [*dispatcher-shard, *engine-shard, *faces-shard, *checker-shard, *lowering-shard]
+    env:
+      CI_BUILD_STATE: cargo-test-enforcing
+      CI_ON_MAIN: ${{ github.event_name == 'push' }}
+      CI_ENFORCING: "true"
+      CI_FETCH_DEPTH: "2"
+      CI_SHARD: ${{ matrix.shard }}
+      CI_SHARD_PACKAGES: ${{ matrix.packages }}
+      CI_SHARD_EXCLUDES: ${{ join(matrix.excludes, ' ') }}
+      CI_WITNESSES: "true"
+      CI_WITNESS_LISTINGS: target/witness-listings
+    steps: *workspace-test-steps
+
+  # The join: the lane's state, every shard's build over it, one mtime for
+  # the whole (Cargo reads a unit whose dependency is newer than it as stale,
+  # and each shard built its shared units at its own time; sources are
+  # checked by checksum). The joined state is what the next landing
+  # restores; no verdict waits on it, since each shard resolves its own
+  # witnesses (#1994, #2148).
+  #
+  # A push to main whose queue run holds no enforcing build state builds the
+  # state here, with no shard and no test (`CI_BUILD_ONLY`, #6790). Such a
+  # run is the merge group into `landing`, which runs no test lane, so
+  # nothing else writes the state the nightly restores on this runner. The
+  # integration cycle tests the tree, on a host of another architecture. The
+  # build starts from main's newest state of the generation, so it compiles
+  # what changed since. A run that holds the state promotes it, as before.
+  cargo-test-enforcing:
+    name: join the enforcing shards (linux)
+    needs: [prepare, ci-image, cargo-test-enforcing-shard]
+    if: ${{ !cancelled() && !failure() && github.event.merge_group.base_ref != 'refs/heads/landing' && (needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true' || github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-enforcing--')) }}
+    runs-on: *linux
+    # The join deletes the state it supersedes on main, as promotion does.
+    permissions:
+      contents: read
+      packages: write
+      actions: write
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 30
+    env:
+      CI_BUILD_STATE: cargo-test-enforcing
+      CI_ON_MAIN: ${{ github.event_name == 'push' }}
+      CI_SHARDS: cargo-test-enforcing-shard
+      CI_ENFORCING: "true"
+      CI_BUILD_ONLY: ${{ github.event_name == 'push' && needs.prepare.outputs.unbuilt != 'true' }}
+    steps: &join-steps
+      - *git-checkout
+      - *trust-workspace
+      - *identify-build-state
+      - *install-policy-tools
+      - *setup-rust
+      - *restore-test-state
+      - *download-build-state
+      - *find-build-state
+      - *unpack-build-state
+      # Under act no shard uploads, and the join builds what it lists. A
+      # build-only join has no shard to download.
+      - name: download the shards' builds
+        if: ${{ env.ACT != 'true' && env.CI_BUILD_ONLY != 'true' }}
+        uses: *download-artifact
+        with:
+          pattern: build-shard-${{ env.CI_SHARDS }}-*
+          merge-multiple: true
+      # Each shard's build unpacks into a directory of its own, and the join
+      # moves each unit into the state whole from one build (`build-state
+      # join`). A unit two shards built differently, or a dependent compiled
+      # against another build, never crosses (#7508); the prune builds each
+      # unit the join drops. The shard that owns the tool builds it again when
+      # its sources change; otherwise the restored state holds it current.
+      - name: join the shards' builds
+        id: build-workspace
+        shell: bash
+        run: |
+          mkdir -p target/enforcing/debug
+          if [[ ${CI_BUILD_ONLY:-} == true ]]; then
+            mise run build:tests-enforcing
+            exit 0
+          fi
+          shards=()
+          for build in build-shard-*.tar.zst; do
+            [[ -e $build ]] || continue
+            shard=shards/${build%.tar.zst}
+            mkdir -p "$shard"
+            zstd -dc "$build" | tar -xf - -C "$shard"
+            rm "$build"
+            shards+=("$shard/target/enforcing/debug")
+          done
+          if (( ${#shards[@]} > 0 )); then
+            tool=target/enforcing/debug/build-state
+            for shard in "${shards[@]}"; do
+              if [[ -x $shard/build-state ]]; then tool=$shard/build-state; break; fi
+            done
+            if [[ ! -x $tool ]]; then
+              echo "::error title=join::no shard built build-state, and the restored state holds none (#7508)"
+              exit 1
+            fi
+            "$tool" join --profile-dir target/enforcing/debug "${shards[@]}"
+            rm -rf shards
+          fi
+          stamp=$(date +%Y%m%d%H%M.%S)
+          find target/enforcing/debug -exec touch -h -t "$stamp" {} +
+      - name: fetch locked dependencies
+        run: cargo fetch --locked
+      - *prune-build-state
+      - *archive-build-state
+      - *upload-build-state
+      - *save-test-state
+      - *delete-superseded-state
+      - *lane-state
+
+  # The plain baseline runs every workspace test without enforcement. It runs
+  # daily on main and on a dispatch that asks for it. The enforcing lane reads
+  # its times and reports the cost of each test's specifications. The job
+  # starts from the plain lane's state and saves no state. It runs the ring's
+  # tests, so its container drops the seccomp filter, as the shards' does.
+  cargo-test-plain-baseline:
+    name: time the plain baseline (linux)
+    needs: *rust-needs
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'schedule' || inputs.plain-baseline) }}
+    runs-on: *linux
+    permissions: *build-state-read-permissions
+    container: *ci-test-image
+    timeout-minutes: 45
+    env:
+      CI_BUILD_STATE: cargo-test-plain-only
+      CI_PLAIN_BASELINE: "true"
+      CI_FETCH_DEPTH: "2"
+    steps: *workspace-test-steps
+
+  # Windows and big-endian lanes have no local surface under act; macOS arm64
+  # remains the other platform. Its enforcing run is the full test pass in
+  # the Linux lane's shards; the plain delta is platform-neutral and runs on
+  # Linux. It runs in the daily run and on a dispatch, never on a push, in
+  # the queue or on a pull request: no landing waits for it (#702, #1177).
+  #
+  # The shards run on our own macOS runners (#7352). Such a runner keeps its
+  # work directory, its rustup home and its mise home from one job to the
+  # next. So a shard builds warm in place: it restores, saves and hands on
+  # no state, and no join merges the shards. The checkout keeps the ignored
+  # `target/`, and a new toolchain pin starts it again, as a new pin starts
+  # a new generation of the cached states.
+  #
+  # A job's log is public. It may show the host's name, on the runner's
+  # `Machine name` line, and nothing of the user's home. So each runner lives
+  # outside that home, its work directory and its homes with it, which its
+  # registration sets. Each runner of a host installs into homes of its own:
+  # rustup takes no lock, and two runners that install one toolchain at one
+  # time collide in its downloads. The first step refuses a runner that
+  # lacks a tool, or whose workspace or a home lies in the user's home, by
+  # name.
+  cargo-test-macos-enforcing-shard:
+    name: test enforcing targets (macos-arm64, ${{ matrix.shard }})
+    needs: *rust-needs
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
+    runs-on: [self-hosted, macos-arm64]
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 45
+    strategy: *enforcing-shards
+    env:
+      CI_ENFORCING: "true"
+      CI_SHARD: ${{ matrix.shard }}
+      CI_SHARD_PACKAGES: ${{ matrix.packages }}
+      CI_SHARD_EXCLUDES: ${{ join(matrix.excludes, ' ') }}
+    steps:
+      - name: check the runner's tools and homes
+        shell: bash
+        run: |
+          for tool in git rustup xcode-select; do
+            command -v "$tool" > /dev/null || { echo "::error::the runner has no \`$tool\` on its PATH"; exit 1; }
+          done
+          xcode-select -p > /dev/null || { echo "::error::the runner's host has no Xcode command line tools: run \`xcode-select --install\` there"; exit 1; }
+          # A path in the user's home names the user, and the user's mise
+          # state lists the user's own checkouts, whose warnings print their
+          # paths. So the workspace and each home lie outside that home. The
+          # message names the variable and never its value.
+          for name in GITHUB_WORKSPACE RUSTUP_HOME CARGO_HOME MISE_DATA_DIR MISE_STATE_DIR MISE_CACHE_DIR MISE_CONFIG_DIR; do
+            value=${!name:-}
+            [[ -n $value && $value != "$HOME" && $value != "$HOME"/* ]] || { echo "::error::$name is unset or lies in the host user's home: register the runner again, or set it in the runner's .env to a directory outside that home (#7352)"; exit 1; }
+          done
+          # The runner names each step's shell by the path it finds on PATH.
+          case ":$PATH:" in
+            *":$HOME/"*) echo "::error::the runner's PATH holds a directory in the host user's home: register the runner again, or write its .path without one (#7352)"; exit 1 ;;
+          esac
+      # The host also holds seats, and a job that takes every core starves
+      # them. So the runners of a host take half of it together, and each
+      # job takes the host's cores divided by twice the count of its runners:
+      # its build jobs, its test threads, a mise tool's build, and the width
+      # of each driver that a test starts (`GANDR_JOBS`). The count is the
+      # runner directories beside this one, so a runner added or removed
+      # changes the share with no edit here. The job takes no gate slot of
+      # the seats: its share bounds it.
+      - name: bound the job by its host
+        shell: bash
+        run: |
+          root=$RUNNER_WORKSPACE
+          while [[ $root != / && ! -e $root/.runner ]]; do root=${root%/*}; root=${root:-/}; done
+          [[ -e $root/.runner ]] || { echo "::error::the runner's directory holds no .runner file: register the runner again (#7352)"; exit 1; }
+          shopt -s nullglob
+          runners=("${root%/*}"/*/.runner)
+          cores=$(getconf _NPROCESSORS_ONLN)
+          jobs=$(( cores / (2 * ${#runners[@]}) ))
+          (( jobs >= 1 )) || jobs=1
+          printf 'CARGO_BUILD_JOBS=%s\nNEXTEST_TEST_THREADS=%s\nGANDR_JOBS=%s\nGANDR_GATE_SLOT=runner\n' "$jobs" "$jobs" "$jobs" >> "$GITHUB_ENV"
+          echo "the job takes $jobs of the host's $cores cores: its ${#runners[@]} runners take half the host"
+      - name: git checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+          # The ignored `target/` is the shard's warm build, and a clean
+          # checkout would remove it.
+          clean: false
+      - name: remove the files that no commit tracks
+        run: git clean -ffd
+      - *trust-workspace
+      - name: start the build again on a new toolchain pin
+        shell: bash
+        env:
+          CI_PIN: ${{ hashFiles('rust-toolchain.toml') }}
+        run: |
+          if [[ -d target && $(cat target/pin 2> /dev/null) != "$CI_PIN" ]]; then rm -rf target; fi
+          mkdir -p target
+          printf '%s\n' "$CI_PIN" > target/pin
+      # The runner's own rustup home starts empty, and mise builds a tool
+      # with cargo, so the pin installs first.
+      - name: setup rust
+        uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
+        with:
+          cache: "false"
+      - name: install mise-managed policy tools
+        uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
+        with:
+          cache: "false"
+      - *fetch-dependencies
+      - *select-shard
+      - *build-workspace
+      - *test-workspace
+      - *upload-test-report
+
+  # Preserve the required gate identities. These must run after a failed,
+  # skipped or cancelled lane: accepting a partial result would weaken CI.
+  # Each enforcing shard resolves its own witnesses, so the Linux job reads
+  # the lanes' results and nothing else: no container, no checkout, nothing
+  # between the slowest shard and the verdict but a runner pickup (#2148).
+  # The recovery lane runs only when the change reaches the records, so its
+  # skip passes exactly when the run read no `parser` change. The prose lane
+  # is required here, in the queue, beside the tests (#3082).
+  cargo-test:
+    name: test the workspace (linux)
+    needs:
+      [
+        prepare,
+        cargo-test-plain-only,
+        cargo-test-recovery,
+        cargo-test-docs,
+        cargo-test-doctests,
+        cargo-test-enforcing-shard,
+        prose-gate,
+      ]
+    if: ${{ always() && github.event.merge_group.base_ref != 'refs/heads/landing' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}
+    runs-on: *linux
+    permissions: {}
+    timeout-minutes: 5
+    env:
+      PLAIN_RESULT: ${{ needs.cargo-test-plain-only.result }}
+      RECOVERY_RESULT: ${{ needs.cargo-test-recovery.result == 'skipped' && needs.prepare.result == 'success' && needs.prepare.outputs.parser != 'true' && 'success' || needs.cargo-test-recovery.result }}
+      DOCS_RESULT: ${{ needs.cargo-test-docs.result }}
+      DOCTESTS_RESULT: ${{ needs.cargo-test-doctests.result }}
+      SHARDS_RESULT: ${{ needs.cargo-test-enforcing-shard.result }}
+      PROSE_RESULT: ${{ needs.prose-gate.result }}
+    steps:
+      - name: require both test flavors, the recovery sweep, the documentation and its examples, and the prose
+        run: test "$PLAIN_RESULT:$RECOVERY_RESULT:$DOCS_RESULT:$DOCTESTS_RESULT:$SHARDS_RESULT:$PROSE_RESULT" = success:success:success:success:success:success
+
+  # Skipped on a pull request, in the queue and on a push, which a skipped
+  # job satisfies; in the daily run a failed macOS lane fails it there. It
+  # reads the shards' result alone, so it runs on Linux.
+  cargo-test-macos:
+    name: test the workspace (macos-arm64)
+    needs: [cargo-test-macos-enforcing-shard]
+    if: ${{ always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
+    runs-on: *linux
+    permissions: {}
+    timeout-minutes: 5
+    env:
+      SHARDS_RESULT: ${{ needs.cargo-test-macos-enforcing-shard.result }}
+    steps:
+      - name: require the enforcing test pass
+        run: test "$SHARDS_RESULT" = success
+
+  # Clippy writes check metadata, which a restored test build does not hold.
+  # So the lane keeps its own state, main's newest, and restores it by prefix
+  # on the toolchain pin alone. Cargo's fingerprints decide what a change
+  # checks again.
+  #
+  # The merge group prunes the state to the units that its run used and
+  # uploads it. Then main's push promotes it, and does not lint the tested
+  # commit again. A push that no queue run tested lints, prunes and saves the
+  # state itself.
+  # - see: #2045, `promote-cargo-clippy-crate`
+  #
+  # The enforcing pass lints the workspace. The plain pass lints only the
+  # targets that carry `cfg(not(anodized_panic))` code, which the enforcing
+  # pass never compiles. `check:clippy-plain-only` fails on such a file outside
+  # its list. A lint of the whole plain graph costs the lane a pass over the
+  # workspace for that one target.
+  # - see: #2070
+  #
+  # A pull request on `landing` skips the lane, and the skip satisfies the
+  # required check. The author runs `check:landing` before `pr:open`, and the
+  # group on `landing` runs the lane again.
+  # - see: #5439
+  #
+  # The group on `landing` first runs the shared formatters over the paths
+  # that its entries change against its base. The queue builds a tree that no
+  # lane's gate read, and a red formatter fails the group before Clippy
+  # starts. The check takes seconds. So it shares this required job and its
+  # image, and has no job of its own.
+  # - see: #6883
+  #
+  # Then the group lints the packages that its change reaches against its
+  # base. A group that reaches none lints nothing. Each package outside that
+  # set is the base's, so the base's verdict on it stands.
+  # - see: #6894
+  #
+  # The group starts from the newest state that a group on `landing` uploaded.
+  # It does not start from main's, which lags `landing` by the integration
+  # cycle. The prune's two passes cover the whole workspace. So the state that
+  # the group hands on is whole for its tree, from any state at its start.
+  #
+  # The job lints on x86-64, where each lane gates. So a lane's signed record
+  # of the pass on this tree serves it. Then the job reads the record and runs
+  # neither lint again.
+  # - see: #7684
+  #
+  # `cargo-clippy-arch` lints the code that only an arm64 build compiles. This
+  # required check needs that job and fails on its failure. When the ruleset
+  # of `landing` requires the arm64 job by its name, this job drops the
+  # `needs`.
+  cargo-clippy-crate:
+    name: check Clippy wall
+    needs: [prepare, ci-image, cargo-clippy-arch]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.ci-image.result != 'failure' && github.base_ref != 'landing' && needs.prepare.outputs.landed != 'true' && (needs.prepare.outputs.rust == 'true' || needs.prepare.outputs.unbuilt == 'true') }}
+    runs-on: &linux-x86 ${{ inputs.cycle && inputs.runner == 'integration' && github.ref == 'refs/heads/integration' && fromJSON('["self-hosted", "integration"]') || 'ubuntu-24.04' }}
+    # A landing's push deletes the Clippy state it superseded.
+    permissions:
+      contents: read
+      packages: write
+      actions: write
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    env:
+      CI_BUILD_STATE: cargo-clippy-crate
+      VERDICT_CHECKS: check:clippy-plain-only check:clippy-enforcing
+    steps:
+      - name: refuse a failed lint of the arm64 code
+        if: ${{ needs.cargo-clippy-arch.result == 'failure' || needs.cargo-clippy-arch.result == 'cancelled' }}
+        run: |
+          echo "the lint of the code that only an arm64 build compiles failed (check Clippy on arm64 code), so this required check fails" >&2
+          exit 1
+      - *git-checkout
+      # The formatting check reads the change through Git inside the job's
+      # container.
+      - *trust-workspace
+      - *identify-build-state
+      - *install-policy-tools
+      - *setup-rust
+      - name: check the formatting of the change
+        if: ${{ github.event.merge_group.base_ref == 'refs/heads/landing' }}
+        env:
+          GATE_BASE: ${{ github.event.merge_group.base_sha }}
+        run: mise run check:format
+      # The scope of the two lints of a group on `landing` (#6894), and the
+      # base that each later step reads: the compiler policy holds each
+      # function that the change alters against it (#7632). The image holds jq
+      # as a tool of mise alone, as the tasks pin it.
+      - &lint-scope
+        name: name the packages that the change reaches
+        if: ${{ github.event.merge_group.base_ref == 'refs/heads/landing' && needs.prepare.outputs.lints == 'true' }}
+        env:
+          GATE_BASE: ${{ github.event.merge_group.base_sha }}
+        shell: bash
+        run: mise exec jq@1.8.1 -- .config/gate-scope/scope.bash --lints | awk -v base="$GATE_BASE" '{ print "GATE_SCOPE=" $0 } END { print "GATE_BASE=" base }' >> "$GITHUB_ENV"
+      # The format check and the scope read the change as the working tree
+      # against the group's base, so a step that writes a tracked file widens
+      # both: the job's mise wrote `mise.lock` and every group read the whole
+      # workspace (#6976). Here the tree must match its commit after the tools
+      # install and the scope reads it; a path that differs fails the job by
+      # name.
+      - &tree-matches-commit
+        name: refuse a working tree that differs from its commit
+        if: ${{ github.event.merge_group.base_ref == 'refs/heads/landing' }}
+        shell: bash
+        run: |
+          changed=$(git status --porcelain --untracked-files=all)
+          if [[ -n $changed ]]; then
+            printf 'the working tree differs from its commit, so the scope reads paths the change does not hold:\n%s\n' "$changed" >&2
+            exit 1
+          fi
+      # A lane's gate that passed on this tree writes a signed record of each
+      # check that this job runs. A record that binds this run's key holds,
+      # and the check does not run again. The key reads the scope against the
+      # record's base, which the trunk must hold.
+      # - see: #7684, `.config/gate-scope/verdict.bash`
+      - &read-verdicts
+        name: read the records of the lane's gate
+        id: verdict
+        if: ${{ needs.prepare.outputs.lints == 'true' && (github.event_name == 'merge_group' || github.event_name == 'pull_request') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          read -ra checks <<< "$VERDICT_CHECKS"
+          if mise exec jq@1.8.1 -- .config/gate-scope/verdict.bash read "${checks[@]}"; then
+            echo held=true >> "$GITHUB_OUTPUT"
+          fi
+      # The newest state that a group on `landing` uploaded for this job
+      # (`landing-states`). A failed download falls back to main's state.
+      - &download-landing-state
+        name: download the newest landing state
+        id: landing-state
+        if: ${{ github.event.merge_group.base_ref == 'refs/heads/landing' && needs.prepare.outputs.lints == 'true' && fromJSON(needs.prepare.outputs.landing-states || '{}')[github.job] != '' }}
+        continue-on-error: true
+        uses: *download-artifact
+        with:
+          name: build-state-${{ github.job }}--${{ env.CI_BUILD_GENERATION }}
+          run-id: ${{ fromJSON(needs.prepare.outputs.landing-states || '{}')[github.job] }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: landing-state
+      - &unpack-landing-state
+        name: unpack the newest landing state
+        if: ${{ steps.landing-state.outcome == 'success' }}
+        shell: bash
+        run: zstd -dc "landing-state/build-state-$GITHUB_JOB.tar.zst" | tar -xf -
+      - name: restore the Clippy state
+        id: clippy-state-restore
+        if: ${{ needs.prepare.outputs.lints == 'true' && steps.landing-state.outcome != 'success' }}
+        uses: *cache-restore
+        with:
+          path: &clippy-state |
+            target/debug
+            target/enforcing/debug
+          key: &clippy-state-key clippy-state-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ github.sha }}
+          restore-keys: clippy-state-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
+      - name: lint the plain-only targets
+        id: clippy-plain
+        if: ${{ needs.prepare.outputs.lints == 'true' && steps.verdict.outputs.held != 'true' }}
+        run: mise run check:clippy-plain-only
+      - name: lint every target with specification enforcement
+        id: clippy-enforcing
+        if: ${{ needs.prepare.outputs.lints == 'true' && steps.verdict.outputs.held != 'true' }}
+        run: mise run check:clippy-enforcing
+      - name: prune the Clippy state to this run's units
+        id: prune-clippy-state
+        if: ${{ steps.clippy-plain.outcome == 'success' && steps.clippy-enforcing.outcome == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' && steps.clippy-state-restore.outputs.cache-hit != 'true') }}
+        run: mise run ci:prune-clippy
+      # The queue's state, handed to main's push as an artifact: a cache a
+      # queue ref saves is visible to that ref alone.
+      - name: archive the Clippy state
+        id: build-state-archive
+        if: ${{ github.event_name == 'merge_group' && steps.prune-clippy-state.outcome == 'success' }}
+        shell: bash
+        run: tar -cf - target/debug target/enforcing/debug | zstd -T0 -3 -f -o "build-state-$GITHUB_JOB.tar.zst"
+      - *upload-build-state
+      - name: save the Clippy state
+        id: save-clippy-state
+        if: ${{ env.ACT != 'true' && github.event_name != 'merge_group' && steps.prune-clippy-state.outcome == 'success' && steps.clippy-state-restore.outputs.cache-hit != 'true' }}
+        uses: *cache-save
+        with:
+          path: *clippy-state
+          key: ${{ steps.clippy-state-restore.outputs.cache-primary-key }}
+      - &delete-superseded-clippy-state
+        name: delete superseded Clippy state
+        if: ${{ github.event_name == 'push' && steps.save-clippy-state.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_STATE_KEY: ${{ steps.clippy-state-restore.outputs.cache-primary-key }}
+        run: mise run ci:delete-superseded clippy-state-v "$CI_STATE_KEY"
+      - *lane-state
+  # The lint of the code that only an arm64 build compiles. Its set is each
+  # package whose sources hold a `cfg` that names `aarch64` and not `x86_64`,
+  # cut to the packages that the change reaches. The lanes gate on x86-64 and
+  # write no record for arm64, so the job runs whenever its set holds a
+  # package. `check Clippy wall` needs it and fails on its failure.
+  # - see: #7684, `check:clippy-arch`
+  cargo-clippy-arch:
+    name: check Clippy on arm64 code
+    needs: *rust-needs
+    if: ${{ !cancelled() && !failure() && github.base_ref != 'landing' && needs.prepare.outputs.landed != 'true' && needs.prepare.outputs.lints == 'true' && (needs.prepare.outputs.rust == 'true' || needs.prepare.outputs.unbuilt == 'true') }}
+    runs-on: *linux
+    permissions: *image-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    env:
+      VERDICT_CHECKS: check:clippy-arch
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - *setup-rust
+      - *lint-scope
+      - *tree-matches-commit
+      # The binary `gate` gives the inputs of each check to the read of the
+      # records. A hosted runner keeps no binary, so the push to main builds
+      # it and saves it, and a job restores it before it reads. The launcher
+      # names the binary by the five paths of this key.
+      # - see: #8276, `.config/gate-scope/tool.bash`
+      - &restore-workflow-gate
+        name: restore the binary of the gate's reader
+        if: ${{ needs.prepare.outputs.lints == 'true' && (github.event_name == 'merge_group' || github.event_name == 'pull_request') }}
+        uses: *cache-restore
+        with:
+          path: &workflow-gate ~/.cache/gandr/tools/gate
+          key: &workflow-gate-key workflow-gate-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/workflow-gate/**', 'crates/workflow-github/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml') }}
+      - *read-verdicts
+      - name: restore the arm64 Clippy state
+        if: ${{ steps.verdict.outputs.held != 'true' }}
+        uses: *cache-restore
+        with:
+          path: *clippy-state
+          key: *clippy-state-key
+          restore-keys: clippy-state-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
+      - name: lint the code that only an arm64 build compiles
+        if: ${{ steps.verdict.outputs.held != 'true' }}
+        run: mise run check:clippy-arch
+  # The external plugin checks all local targets once per landing, beside the
+  # build it would otherwise repeat on every pull request; the obligations lane
+  # runs it on a pull request for its records. The image carries its driver;
+  # the bare-runner fallback installs the same pinned tools and restores the
+  # compiler- and revision-matched policy artifacts. Every landing hands its
+  # policy state to main, the rustdoc JSON included, so the obligations lane
+  # starts from main's records and documentation rather than from nothing.
+  # A group on `landing` lints the packages that its change reaches, over the
+  # newest landing state, as the Clippy job does (#6894). A group that
+  # reaches none skips the job. The dead-weight report and main read the
+  # records that the group hands on, so a scoped group then lints the rest of
+  # the workspace over the same state. A unit that the state holds fresh is
+  # read, never linted again.
+  cargo-dylint-crate:
+    name: check quenchant compiler policy
+    needs: *rust-needs
+    if: ${{ !cancelled() && !failure() && (needs.prepare.outputs.rust == 'true' && needs.prepare.outputs.lints == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true') }}
+    runs-on: *linux-x86
+    permissions: *build-state-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    env:
+      VERDICT_CHECKS: check:dylint
+    steps:
+      - *git-checkout
+      # The scope reads the change through Git inside the job's container.
+      - *trust-workspace
+      - *identify-build-state
+      - *install-policy-tools
+      - *setup-rust
+      - *lint-scope
+      - *tree-matches-commit
+      - *restore-workflow-gate
+      - *read-verdicts
+      - *identify-policy
+      - *restore-dylint-drivers
+      - *restore-gate-binary
+      - *download-landing-state
+      - *unpack-landing-state
+      - *restore-policy-state
+      - name: lint every workspace target
+        id: policy-library
+        if: ${{ steps.verdict.outputs.held != 'true' }}
+        # The task strips enforcement cfgs: the separately built plugin runs
+        # plain, while the source lints and DYLINT_RUSTFLAGS stay unchanged.
+        run: mise run check:dylint
+      - name: lint the rest of the workspace for the state it hands on
+        id: policy-rest
+        if: ${{ github.event_name == 'merge_group' && env.GATE_SCOPE != '' && env.GATE_SCOPE != '--workspace' && steps.verdict.outputs.held != 'true' }}
+        run: env -u GATE_SCOPE mise run check:dylint
+      # The specification gates run from the gate binary installed at the
+      # policy's metadata revision: the invocation state and the enforcing
+      # requirement. The enforcing test lane resolves adequacy witnesses.
+      - name: check the specification invocation state
+        id: invocation-state
+        run: mise run check:anodized
+      - name: require specification enforcement
+        run: mise run check:anodized-enforcing
+      # State, never a gate: the obligations lane builds what is missing.
+      - name: document the workspace for the obligations report
+        continue-on-error: true
+        run: mise run evidence:rustdoc
+      # The dead-weight report (#2891) reads the records of a landed tree, so
+      # the merge group keeps them as `evidence-records`. The records of the
+      # targets the workspace no longer has go first, and the build state
+      # below then carries the pruned records too. A record set is about
+      # 12 MB once compressed, and two days cover a night with no Rust
+      # landing.
+      - name: prune the evidence records
+        id: evidence-prune
+        if: ${{ !cancelled() && github.event_name == 'merge_group' && steps.policy-library.outcome == 'success' && steps.policy-rest.outcome != 'failure' }}
+        run: mise run evidence:prune
+      - name: keep the evidence records for the dead-weight report
+        if: ${{ !cancelled() && env.ACT != 'true' && steps.evidence-prune.outcome == 'success' }}
+        uses: *upload-artifact
+        with:
+          name: evidence-records
+          path: target/evidence/records
+          if-no-files-found: error
+          retention-days: 2
+      - name: record the policy state sources
+        run: mise run ci:sources-record target/evidence
+      # This lane hands over its policy caches, not the dependency cache.
+      - name: archive the policy state and gate binary
+        id: build-state-archive
+        if: ${{ !cancelled() && github.event_name == 'merge_group' && steps.policy-library.outcome == 'success' && steps.policy-rest.outcome != 'failure' && steps.invocation-state.outcome == 'success' }}
+        shell: bash
+        run: |
+          tar -cf - target/dylint target/evidence target/embedded-sources target/workflow-tools | zstd -T0 -3 -o "build-state-$GITHUB_JOB.tar.zst"
+          echo CI_BUILD_STATE_FOUND=true >> "$GITHUB_ENV"
+      - *upload-build-state
+      - *save-policy-state
+      - *save-gate-binary
+      - name: archive Dylint drivers
+        id: dylint-drivers-archive
+        if: ${{ !cancelled() && github.event_name == 'merge_group' && steps.policy-library.outcome == 'success' && needs.prepare.outputs.image == '' && steps.dylint-drivers-restore.outputs.cache-hit != 'true' }}
+        run: tar -cf dylint-drivers.tar -C "$HOME" .dylint_drivers
+      - name: upload Dylint drivers
+        if: ${{ !cancelled() && env.ACT != 'true' && steps.dylint-drivers-archive.outcome == 'success' }}
+        uses: *upload-artifact
+        with:
+          path: dylint-drivers.tar
+          name: dylint-drivers
+          if-no-files-found: error
+          retention-days: 1
+      - *lane-state
+
+  # A change owes re-verification by every specification naming a changed
+  # item (`evidence:obligations`). Each push to `landing` reruns only the
+  # obligated witnesses of the group it lands, specifications enforced, and
+  # lists them in one comment on each pull request of the group (#6993). The
+  # lane informs and does not gate: `pr:open` and `pr:land` run no
+  # specification obligation (#5458). Dispatches run the lane too, against
+  # the parent commit, so `ci:act` exercises it. The comment is posted after
+  # the lane, from a bare runner, so the job running the change's code holds
+  # no write token.
+  obligations:
+    name: re-verify obligated specifications (linux)
+    needs: *rust-needs
+    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.rust == 'true' && (needs.prepare.outputs.landed == 'true' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: write
+      actions: read
+      checks: read
+      pull-requests: read
+      issues: read
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 30
+    outputs:
+      comment: ${{ steps.obligations.outcome == 'success' }}
+      report: ${{ steps.report.outputs.artifact-url }}
+    env:
+      # The witnesses reuse main's enforcing test state, and the listing main's
+      # policy state: its library, records and rustdoc JSON. Nothing is saved.
+      CI_BUILD_STATE: cargo-test-enforcing
+      CI_ENFORCING: "true"
+      # A push to `landing` compares its head with the push before it, and a
+      # dispatch its commit with the parent.
+      CI_FETCH_DEPTH: "2"
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *identify-build-state
+      - *install-policy-tools
+      - *setup-rust
+      - *identify-policy
+      - *restore-dylint-drivers
+      - *restore-gate-binary
+      - *restore-policy-state
+      - *restore-test-state
+      - *find-build-state
+      - *unpack-build-state
+      # The change is the group the push lands: its head against the push
+      # before it (`github.event.before`), fetched at depth one. A dispatch
+      # reads its parent commit.
+      - name: fetch the push before
+        shell: bash
+        env:
+          BEFORE: ${{ github.event_name == 'push' && github.event.before || '' }}
+        run: |
+          if [[ -z $BEFORE ]]; then
+            printf 'CI_OBLIGATIONS_BASE=%s\n' "$(git rev-parse --short=12 HEAD^)" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          git fetch --quiet --no-tags --depth=1 origin "$BEFORE"
+          printf 'CI_OBLIGATIONS_BASE=%s\n' "${BEFORE::12}" >> "$GITHUB_ENV"
+      # The read-only token reads the labels the lint assessment is owed under
+      # and the head's hotpath checks the hotpath verdict is owed under.
+      - name: list the re-verification obligations
+        id: obligations
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: mise run evidence:obligations "$CI_OBLIGATIONS_BASE"
+      - name: rerun the obligated witnesses
+        env:
+          NEXTEST_PROFILE: ci-enforcing
+        run: mise run evidence:witnesses
+      # The full report: the posted comment links here when it is truncated,
+      # so it is kept as long as any artifact.
+      - name: upload the obligations comment
+        id: report
+        if: ${{ !cancelled() && env.ACT != 'true' && steps.obligations.outcome == 'success' }}
+        uses: *upload-artifact
+        with:
+          name: obligations-comment
+          path: target/evidence/comment.md
+          if-no-files-found: error
+      - *upload-test-report
+      - *lane-state
+
+  # Posted whatever the witnesses' verdict, once the report exists: the
+  # comment lists the witnesses rerun. A push to `landing` posts it on each
+  # pull request the group lands, the `(#n)` of each first-parent commit from
+  # the push before to the head, read through the compare API, since the
+  # poster checks nothing out (#6993). GitHub refuses a comment body over
+  # 65,536 characters, so a longer report is cut at a line boundary below
+  # that, and the comment links the full report's artifact. The comment is
+  # updated in place: the poster finds this workflow's own comment by its
+  # marker when it posts, so a rerun of the lane, which reuses the first
+  # attempt's other jobs, edits the comment the first attempt posted (#2067).
+  # Only `github-actions[bot]`'s comment is updated; a comment by anyone else
+  # that copies the marker is ignored. The poster runs on a bare runner, so
+  # the job running the change's code holds no write token.
+  obligations-comment:
+    name: post the obligations comment
+    needs: obligations
+    if: ${{ !cancelled() && needs.obligations.outputs.comment == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
+    runs-on: *linux
+    permissions:
+      pull-requests: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      BEFORE: ${{ github.event.before }}
+      HEAD_SHA: ${{ github.sha }}
+      COMMENT_ARTIFACT: obligations-comment
+      COMMENT_MARKER: <!-- quenchant-obligations -->
+      REPORT_URL: ${{ needs.obligations.outputs.report }}
+    steps: &post-comment
+      - name: download the comment
+        uses: *download-artifact
+        with:
+          name: ${{ env.COMMENT_ARTIFACT }}
+      - name: create or update the comment
+        shell: bash
+        run: |
+          if (( $(wc -c < comment.md) > 60000 )); then
+            body=$(head -c 60000 comment.md)
+            {
+              printf '%s\n\n' "${body%$'\n'*}"
+              printf -- '---\n\nThe report is cut here at the comment size limit. The full report is the [%s artifact](%s).\n' "$COMMENT_ARTIFACT" "$REPORT_URL"
+            } > comment.cut.md
+            mv comment.cut.md comment.md
+          fi
+          numbers=$(gh api "repos/$GH_REPO/compare/$BEFORE...$HEAD_SHA" |
+            jq -r --arg head "$HEAD_SHA" '(.commits | map({key: .sha, value: .}) | from_entries) as $by
+              | [$head | recurse($by[.].parents[0].sha // empty | select($by[.] != null))]
+              | map($by[.].commit.message | split("\n") | first | capture("\\(#(?<n>[0-9]+)\\)$").n) | reverse | .[]')
+          for number in $numbers; do
+            id=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$number/comments?per_page=100" |
+              jq -r --arg marker "$COMMENT_MARKER" '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith($marker)))] | first | .id // ""')
+            if [[ -n $id ]]; then
+              gh api --method PATCH "repos/$GH_REPO/issues/comments/$id" -F body=@comment.md --silent
+            else
+              gh api --method POST "repos/$GH_REPO/issues/$number/comments" -F body=@comment.md --silent
+            fi
+          done
+
+  # The mutants of a landed group's own lines (`mutants:changed`, #1456):
+  # each mutant on a line the group adds runs under the witnesses of its
+  # function, and one comment on each pull request of the group, updated in
+  # place, names the survivors. Each push to `landing` runs it against the
+  # push before (#6993). The lane is a report, never a gate. No check of it
+  # is required and nothing needs it; a surviving mutant is a warning and a
+  # line in the comment, never a red check, and the same push files the
+  # landings' survivors (`mutants-landed`). The daily run maps each crate
+  # whole (`mutants-nightly`). Dispatches run it against the parent commit,
+  # so `ci:act` exercises it. As with the obligations comment, the comment is
+  # posted after the lane from a bare runner, so the job running the change's
+  # code holds no write token.
+  mutants:
+    name: report the mutants of the change (linux)
+    needs: *rust-needs
+    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.mutants == 'true' && needs.prepare.outputs.rust == 'true' && (needs.prepare.outputs.landed == 'true' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: write
+      actions: read
+    container: *ci-test-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 15
+    outputs:
+      comment: ${{ steps.changed.outcome == 'success' }}
+      report: ${{ steps.report.outputs.artifact-url }}
+    env:
+      # The mutants build over main's plain test state and the listing reads
+      # main's rustdoc JSON from the policy state. Nothing is saved.
+      CI_BUILD_STATE: cargo-test-plain-only
+      # A push to `landing` reads the push before it, fetched at depth one; a
+      # dispatch reads its parent commit.
+      CI_FETCH_DEPTH: "2"
+      MUTANTS_BASE: ${{ github.event_name == 'push' && github.event.before || 'HEAD^' }}
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *identify-build-state
+      - *install-policy-tools
+      - *setup-rust
+      - *identify-policy
+      - *restore-policy-state
+      - *restore-test-state
+      - *find-build-state
+      - *unpack-build-state
+      # A lane for each of the runner's cores, each building in its own copy
+      # of the restored target directory: a lane's worktree sits elsewhere, so
+      # the workspace's own crates rebuild there, but every dependency is
+      # main's. The run stops at 300 s, and the report names every mutant it
+      # did not reach. A run that fails is a warning too: the lane never marks
+      # a pull request red.
+      - name: run the mutants of the change's added lines
+        id: changed
+        continue-on-error: true
+        shell: bash
+        run: |
+          if [[ $MUTANTS_BASE != HEAD^ ]]; then git fetch --quiet --no-tags --depth=1 origin "$MUTANTS_BASE"; fi
+          mise run mutants:changed -- --base "$MUTANTS_BASE" --lanes "$(nproc)" --until 300 --seed-target target
+          { printf '<!-- gandr-mutants -->\n'; cat mutants.out/changed/report.md; } > mutants.out/changed/comment.md
+          cat mutants.out/changed/report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: upload the mutants comment
+        id: report
+        if: ${{ !cancelled() && env.ACT != 'true' && steps.changed.outcome == 'success' }}
+        uses: *upload-artifact
+        with:
+          name: mutants-comment
+          path: mutants.out/changed/comment.md
+          if-no-files-found: error
+      - name: note the surviving mutants
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          CHANGED_OUTCOME: ${{ steps.changed.outcome }}
+        run: |
+          if [[ $CHANGED_OUTCOME != success ]]; then
+            printf '::warning::the mutants run failed; its step log says why, and no comment is posted\n'
+            exit 0
+          fi
+          survivors=$(wc -l < mutants.out/changed/survivors.txt)
+          if (( survivors > 0 )); then
+            printf '::warning::%s mutant(s) on the change'"'"'s lines survive; the mutants comment names each with its verdict\n' "$survivors"
+          fi
+      - *lane-state
+
+  mutants-comment:
+    name: post the mutants comment
+    needs: mutants
+    if: ${{ !cancelled() && needs.mutants.outputs.comment == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
+    runs-on: *linux
+    permissions:
+      pull-requests: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      BEFORE: ${{ github.event.before }}
+      HEAD_SHA: ${{ github.sha }}
+      COMMENT_ARTIFACT: mutants-comment
+      COMMENT_MARKER: <!-- gandr-mutants -->
+      REPORT_URL: ${{ needs.mutants.outputs.report }}
+    steps: *post-comment
+
+  # The daily mutation run (`mutants:nightly`, #1456): one crate a night in a
+  # fixed rotation, each mutant under the witnesses of its function, resumed
+  # where the last night stopped. A night is held to fifteen minutes of
+  # runner time. The job's own limit is fourteen, and the run starts no mutant
+  # or group later than eleven minutes after the job's first step, which
+  # leaves the image start, the stop of the one then running and the state's
+  # save inside the limit. A crate too large for one night continues the
+  # next, so it is cut into as many nights as its cost needs and no night
+  # waits longer. A crate's next pass lists only its new mutants and its survivors
+  # (`--iterate`). The outcomes, a few names per mutant, are one cache entry
+  # per night, restored from the newest; only a scheduled run saves one. The
+  # report is the job summary. Nothing needs this job; the nightly lane
+  # budget holds it over the scheduled runs.
+  # `unwitnessed.txt` gives the static gaps to one collector per crate.
+  mutants-nightly:
+    name: mutate the night's crate (linux)
+    needs: *rust-needs
+    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.mutants == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      issues: write
+      packages: write
+      actions: read
+    container: *ci-test-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 14
+    env:
+      CI_BUILD_STATE: cargo-test-plain-only
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: note the night's deadline
+        shell: bash
+        run: printf 'CI_MUTANTS_DEADLINE=%s\n' "$(( $(date +%s) + 660 ))" >> "$GITHUB_ENV"
+      - *git-checkout
+      - *trust-workspace
+      - *identify-build-state
+      - *install-policy-tools
+      - *setup-rust
+      - *identify-policy
+      - *restore-policy-state
+      - *restore-test-state
+      - *find-build-state
+      - *unpack-build-state
+      - name: restore the mutants outcomes
+        uses: *cache-restore
+        with:
+          path: &mutants-state |
+            mutants.out/nightly/cursor
+            mutants.out/nightly/*/iterate
+          key: gandr-v1-mutants-nightly-${{ github.run_id }}
+          restore-keys: gandr-v1-mutants-nightly-
+      # One lane, building into the restored target directory.
+      - name: run the night's mutants
+        id: night
+        shell: bash
+        run: |
+          left=$(( CI_MUTANTS_DEADLINE - $(date +%s) ))
+          if (( left <= 0 )); then
+            echo "::error::the job's setup spent the night's eleven minutes"
+            exit 1
+          fi
+          export CARGO_TARGET_DIR="$PWD/target"
+          mise run mutants:nightly -- --until "$left" --lanes 1
+          crate=$(cat mutants.out/nightly/cursor)
+          mise run ci:mutants-landed -- --package "$crate" --unwitnessed "mutants.out/nightly/$crate/unwitnessed.txt"
+          cat mutants.out/nightly/report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: save the mutants outcomes
+        if: ${{ !cancelled() && env.ACT != 'true' && github.event_name == 'schedule' && steps.night.outcome == 'success' }}
+        uses: *cache-save
+        with:
+          path: *mutants-state
+          key: gandr-v1-mutants-nightly-${{ github.run_id }}
+      - *lane-state
+
+  # The benchmark report (`mise run ci:hotpath`): each series runs under the
+  # hotpath profiler and uploads its report to hotpath Cloud twice, as
+  # `<series>`, judged on allocation in every crate, and as `<series>-timing`,
+  # judged on wall-clock time (hotpath/<series>-policy.toml,
+  # hotpath/<series>-timing-policy.toml). Each push to `landing` runs it,
+  # every push alike, so each push keeps the runs the next one reads (#6993,
+  # the owner's order of 2026-11-12): the verdict comes after the land and
+  # holds nothing up. A dispatch runs the series too, which is how act
+  # exercises the job. The upload signs in with the job's OIDC token. Nothing
+  # needs this job. It builds over main's plain test state, rebuilding only
+  # what the profiler's features change.
+  #
+  # Every run keeps its reports as the artifact `hotpath-<commit>`. hotpath
+  # Cloud judges nothing on a push. Each series runs until HOTPATH_RUNS are
+  # kept, as the artifact `hotpath-runs-<commit>`, and every row is judged
+  # over its runs and the push before's kept ones, never rerun here (`mise
+  # run ci:hotpath-judge`). A push whose push before kept no runs, the first
+  # after the move among them, is judged on nothing and says so once.
+  # `hotpath-judged` posts the checks on the pushed commit. One set of runs
+  # fails no row (#7319): a row past its margin is a suspect, its check
+  # neutral, and `hotpath-confirm` runs its series again.
+  hotpath:
+    name: report the hotpath benchmarks (linux)
+    needs: *rust-needs
+    if: ${{ !cancelled() && (needs.prepare.outputs.landed == 'true' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
+    outputs:
+      judged: ${{ steps.judge.outputs.checks }}
+      suspects: ${{ steps.judge.outputs.suspects }}
+      unsent: ${{ steps.unsent.outputs.benchmarks }}
+    runs-on: *linux
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+      id-token: write
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 30
+    env:
+      CI_BUILD_STATE: cargo-test-plain-only
+      # A report hotpath Cloud did not take is kept, warned and filed (#2641):
+      # a report never turns a run red.
+      HOTPATH_UPLOAD: enabled
+      HOTPATH_ALLOC_METRIC: count
+      CI_HEAD_SHA: ${{ github.sha }}
+      HOTPATH_RUNS: "5"
+      HOTPATH_FUNCTIONS_LIMIT: "0"
+      HOTPATH_USER_METADATA: runner=linux-arm64,profile=test
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *identify-build-state
+      - *install-policy-tools
+      - *setup-rust
+      - *restore-test-state
+      - *find-build-state
+      - *unpack-build-state
+      - *fetch-dependencies
+      # Each series step runs in `hotpath` and, for a suspect series alone,
+      # in `hotpath-confirm`: `needs.hotpath` is empty in `hotpath` itself.
+      - &hotpath-gandr
+        name: run the gandr series
+        if: ${{ github.job == 'hotpath' || contains(needs.hotpath.outputs.suspects, ' gandr ') }}
+        run: mise run ci:hotpath gandr gandr-lang hotpath
+      - &hotpath-store
+        name: run the store series
+        if: ${{ github.job == 'hotpath' || contains(needs.hotpath.outputs.suspects, ' store ') }}
+        run: mise run ci:hotpath store gandr-storage-schema store
+      - &hotpath-conversion
+        name: run the conversion series
+        if: ${{ github.job == 'hotpath' || contains(needs.hotpath.outputs.suspects, ' conversion ') }}
+        run: mise run ci:hotpath conversion gandr-lang conversion
+      # Each report `ci:hotpath` could not upload is named under
+      # target/hotpath/unsent/; `hotpath-unsent` files them.
+      - name: name the reports not uploaded
+        id: unsent
+        run: printf 'benchmarks=%s\n' "$(ls target/hotpath/unsent | paste -sd' ')" >> "$GITHUB_OUTPUT"
+      # `compgen` is a builtin of bash alone. The image's default shell is
+      # `sh`, where the test fails and no check reaches the poster (#7277).
+      # `suspects` names each series with a neutral check, a space either
+      # side of each name, for the series steps' `contains`.
+      - name: judge the runs against the base's
+        id: judge
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
+        shell: bash
+        env:
+          CI_BASE_SHA: ${{ github.event.before }}
+        run: |
+          mise run ci:hotpath-judge gandr store conversion
+          if compgen -G 'target/hotpath/judged/checks/*.json' > /dev/null; then
+            echo checks=true >> "$GITHUB_OUTPUT"
+          fi
+          if [[ -s target/hotpath/judged/suspects ]]; then
+            echo "suspects= $(< target/hotpath/judged/suspects) " >> "$GITHUB_OUTPUT"
+          fi
+      # A lost artifact loses its measurements, never this run's result.
+      - name: keep the reports
+        continue-on-error: true
+        uses: *upload-artifact
+        with:
+          name: hotpath-${{ github.sha }}
+          path: target/hotpath/reports/*.json
+          retention-days: 14
+      # A lost artifact leaves the next push unjudged, never this run's
+      # result.
+      - name: keep the runs
+        continue-on-error: true
+        uses: *upload-artifact
+        with:
+          name: hotpath-runs-${{ github.sha }}
+          path: target/hotpath/runs/*.json
+          retention-days: 14
+      - name: keep the judged checks
+        if: ${{ steps.judge.outputs.checks == 'true' }}
+        uses: *upload-artifact
+        with:
+          name: hotpath-judged
+          path: target/hotpath/judged/checks/*.json
+          retention-days: 14
+      - *lane-state
+
+  # The second set of runs (#7319): a row fails only when two sets on two
+  # jobs pass its policy's margin. The job starts only when the first set
+  # finds a suspect, so the common push costs nothing more. It runs each
+  # suspect series again with no upload, and judges the new runs against
+  # the same base runs with the first set's checks (`mise run
+  # ci:hotpath-judge --confirm`). A row that only one set finds stays a
+  # neutral note and files nothing.
+  hotpath-confirm:
+    name: run the suspect hotpath series again (linux)
+    needs: [prepare, ci-image, hotpath]
+    if: ${{ !cancelled() && needs.hotpath.outputs.suspects != '' && github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
+    runs-on: *linux
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 30
+    env:
+      CI_BUILD_STATE: cargo-test-plain-only
+      HOTPATH_UPLOAD: "0"
+      HOTPATH_ALLOC_METRIC: count
+      CI_HEAD_SHA: ${{ github.sha }}
+      HOTPATH_RUNS: "5"
+      HOTPATH_FUNCTIONS_LIMIT: "0"
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *identify-build-state
+      - *install-policy-tools
+      - *setup-rust
+      - *restore-test-state
+      - *find-build-state
+      - *unpack-build-state
+      - *fetch-dependencies
+      - name: download the first set's checks
+        uses: *download-artifact
+        with:
+          name: hotpath-judged
+          path: target/hotpath/first
+      - *hotpath-gandr
+      - *hotpath-store
+      - *hotpath-conversion
+      - name: judge the second set against the base's
+        shell: bash
+        env:
+          CI_BASE_SHA: ${{ github.event.before }}
+          SUSPECTS: ${{ needs.hotpath.outputs.suspects }}
+        run: |
+          read -ra series <<< "$SUSPECTS"
+          mise run ci:hotpath-judge --confirm target/hotpath/first "${series[@]}"
+      - name: keep the confirmed checks
+        uses: *upload-artifact
+        with:
+          name: hotpath-confirmed
+          path: target/hotpath/judged/checks/*.json
+          retention-days: 14
+      - *lane-state
+
+  # Every lane's step times, from one read of the run's jobs (#5078): each
+  # lane once read the jobs for itself, nine reads a run. A page of 100
+  # holds every job of a run. The jobs API at times lists a job without its
+  # steps; the summary then says so. Hosted only: act serves no jobs API.
+  lane-timing:
+    name: summarize the lanes' step times
+    needs:
+      [
+        cargo-test-plain-only,
+        cargo-test-recovery,
+        cargo-test-enforcing,
+        cargo-clippy-crate,
+        cargo-dylint-crate,
+        obligations,
+        mutants,
+        mutants-nightly,
+        hotpath,
+        hotpath-confirm,
+      ]
+    if: ${{ !cancelled() && github.event.merge_group.base_ref != 'refs/heads/landing' }}
+    runs-on: *linux
+    permissions:
+      actions: read
+    steps:
+      - name: summarize the lanes' step times
+        if: ${{ env.ACT != 'true' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100"
+          --jq '[.jobs[] | select(.name != "summarize the lanes'"'"' step times" and .conclusion != null and .conclusion != "skipped")
+          | [.steps[]? | select(.completed_at != null and .conclusion != "skipped") | "| \(.name) | \((((.completed_at | fromdate) - (.started_at | fromdate)) / 6 | round) / 10) |"] as $rows
+          | "#### \(.name)\n\n" + if $rows == [] then "Step times unavailable: the jobs API listed no steps for this job." else "| step | minutes |\n| --- | ---: |\n" + ($rows | join("\n")) end]
+          | "### Lane timing\n\n" + join("\n\n")'
+          >> "$GITHUB_STEP_SUMMARY"
+
+  # The judge's `hotpath / <benchmark>-band` and `-push` checks, posted on
+  # the judged commit from a bare runner, so the job running the change's
+  # code holds no write token. A check a workflow's token posts starts no
+  # workflow, so this job dispatches the hotpath guard for the commit (on the
+  # default branch's copy of it), which files a failed one as it files
+  # hotpath Cloud's and marks a passed one's rows fixed. A push names no
+  # pull request: the guard looks up the one that carries the commit. When
+  # `hotpath-confirm` ran, its checks are the ones posted; when it failed,
+  # the first set's neutral checks are, and they file nothing (#7319).
+  #
+  # A report blocks nothing, and `main` shares the commit. So no check that
+  # this job posts fails. A row that both sets find posts a neutral check.
+  # Its external id is `hotpath:regressed`, and the guard files it.
+  hotpath-judged:
+    name: post the judged hotpath checks
+    needs: [hotpath, hotpath-confirm]
+    if: ${{ !cancelled() && needs.hotpath.outputs.judged == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
+    runs-on: *linux
+    permissions:
+      actions: write
+      checks: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      HEAD_SHA: ${{ github.sha }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      REPO_ID: ${{ github.event.repository.node_id }}
+    steps:
+      - name: download the judged checks
+        uses: *download-artifact
+        with:
+          name: ${{ needs.hotpath-confirm.result == 'success' && 'hotpath-confirmed' || 'hotpath-judged' }}
+      # Every judged check in one GraphQL request, one `createCheckRun` for
+      # each under its own alias (#5078): a REST post a check spent about
+      # four requests a judgement. A check keeps its name, conclusion and
+      # output as the judge wrote them.
+      #
+      # The external id of a check marks a row that both sets find.
+      - name: post the checks and dispatch the guard
+        shell: bash
+        run: |
+          jq -s --arg repo "$REPO_ID" --arg sha "$HEAD_SHA" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+            [range(length)] as $i
+            | {query: ("mutation($repo: ID!, $sha: GitObjectID!, $at: DateTime!"
+                  + ($i | map(", $n\(.): String!, $k\(.): CheckConclusionState!, $e\(.): String!, $o\(.): CheckRunOutput!") | join(""))
+                  + ") { "
+                  + ($i | map("c\(.): createCheckRun(input: {repositoryId: $repo, headSha: $sha, name: $n\(.), status: COMPLETED, conclusion: $k\(.), externalId: $e\(.), completedAt: $at, output: $o\(.)}) { checkRun { id } }") | join(" "))
+                  + " }"),
+               variables: ({repo: $repo, sha: $sha, at: $at}
+                  + (to_entries | map({"n\(.key)": .value.name, "k\(.key)": (.value.conclusion | ascii_upcase), "e\(.key)": (.value.external_id // ""), "o\(.key)": .value.output}) | add))}' *.json \
+            | gh api graphql --input - --silent
+          gh workflow run report-hotpath-regressions.yml --ref "$DEFAULT_BRANCH" -f sha="$HEAD_SHA"
+      # The judged tables, collapsed one block for each benchmark, as the
+      # comment that `hotpath-comment` posts on each landed pull request
+      # (#7351).
+      - name: write the table comment
+        shell: bash
+        run: |
+          {
+            printf '<!-- hotpath-table -->\n### hotpath\n\n'
+            jq -r '.table // empty' *.json
+          } > comment.md
+      - name: keep the table comment
+        uses: *upload-artifact
+        with:
+          name: hotpath-comment
+          path: comment.md
+          if-no-files-found: error
+
+  # The judged tables on each pull request that the push lands (#7351), one
+  # comment that a rerun edits, posted as the obligations comment is. The
+  # comment decides no verdict.
+  hotpath-comment:
+    name: post the hotpath table comment
+    needs: hotpath-judged
+    if: ${{ !cancelled() && needs.hotpath-judged.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
+    runs-on: *linux
+    permissions:
+      pull-requests: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      BEFORE: ${{ github.event.before }}
+      HEAD_SHA: ${{ github.sha }}
+      COMMENT_ARTIFACT: hotpath-comment
+      COMMENT_MARKER: <!-- hotpath-table -->
+      REPORT_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps: *post-comment
+
+  # A landing's hotpath verdicts become ledger rows (`mise run
+  # ci:hotpath-landed`): each push to `landing` reads the `hotpath /
+  # <benchmark>` checks `hotpath-judged` posts on its commit, once they are
+  # posted, and adds a row per red check or improvement for each pull request
+  # the push lands to the landed-deltas tracking issue, linking the issue the
+  # report-hotpath-regressions workflow filed (#6993). Nothing needs this job.
+  hotpath-landed:
+    name: add the landings' hotpath verdicts to the ledger
+    needs: [prepare, ci-image, hotpath-judged]
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: read
+      checks: read
+      issues: write
+      pull-requests: read
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      HOTPATH_PUSH_BEFORE: ${{ github.event.before }}
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - name: add the landed verdicts
+        run: mise run ci:hotpath-landed
+
+  # A report the hotpath job could not upload on a push to `landing` is a row
+  # of one `kind:ci` issue (`mise run ci:hotpath-unsent`, #2641), opened or
+  # updated here; the run's `hotpath-<commit>` artifact keeps the measurements
+  # and the run stays green. Nothing needs this job.
+  hotpath-unsent:
+    name: file the hotpath reports not uploaded
+    needs: [prepare, ci-image, hotpath]
+    if: ${{ !cancelled() && needs.hotpath.outputs.unsent != '' && github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: read
+      issues: write
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      HOTPATH_UNSENT: ${{ needs.hotpath.outputs.unsent }}
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - name: file the reports not uploaded
+        run: mise run ci:hotpath-unsent
+
+  # A landing that leaves a mutant of its own lines alive files it (`mise run
+  # ci:mutants-landed`): each push to `landing` reads the mutants comment of
+  # every pull request it lands, once `mutants-comment` posts it (#6993), and
+  # each one whose report names survivors gets one issue, routed by the tiers
+  # of the crates the survivors live in. Nothing needs this job.
+  mutants-landed:
+    name: file the landings' surviving mutants
+    needs: [prepare, ci-image, mutants-comment]
+    if: ${{ !cancelled() && needs.prepare.outputs.mutants == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: read
+      issues: write
+      pull-requests: read
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      MUTANTS_PUSH_BEFORE: ${{ github.event.before }}
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - name: file the surviving mutants
+        run: mise run ci:mutants-landed
+
+  # Each test's specification cost (#2148), once per landing: the enforcing
+  # reports of the run that built main's head (the merge group's, or this
+  # push's own lanes when no group built it) over the newest plain baseline
+  # of main, one section per shard, as the job summary and the
+  # `spec-cost-ratio` artifact. A measurement, never a gate: it left the
+  # merge group's enforcing lanes, where it held each one's verdict about
+  # 7 s, and nothing needs this job.
+  spec-cost-landed:
+    name: report the landing's specification cost
+    needs: [prepare, ci-image, cargo-test-enforcing-shard]
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.repository.fork == false && needs.prepare.outputs.baseline-run-id != '' }}
+    runs-on: *linux
+    permissions: *build-state-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 10
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - name: download the landing's enforcing reports
+        uses: *download-artifact
+        with:
+          pattern: junit-cargo-test-enforcing-shard-*
+          path: target/landed
+          run-id: ${{ needs.prepare.outputs.run-id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: download the plain baseline
+        uses: *download-artifact
+        with:
+          name: junit-cargo-test-plain-baseline
+          path: target/plain-baseline
+          run-id: ${{ needs.prepare.outputs.baseline-run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: report each test's specification cost
+        shell: bash
+        env:
+          CI_BASELINE_SHA: ${{ needs.prepare.outputs.baseline-sha }}
+          CI_BASELINE_CREATED: ${{ needs.prepare.outputs.baseline-created }}
+        run: .config/spec-cost/landed.bash target/landed target/plain-baseline/ci/junit.xml | tee target/spec-cost-ratio.md >> "$GITHUB_STEP_SUMMARY"
+      - name: upload each test's specification cost
+        uses: *upload-artifact
+        with:
+          name: spec-cost-ratio
+          path: target/spec-cost-ratio.md
+          if-no-files-found: error
+
+  # A slow test is a report, never a dequeue (#3752): the `ci` profile marks a
+  # test past 30 s slow and fails only a test past 5 minutes. This job reads
+  # the run's JUnit reports once its test lanes end, passed or failed, and
+  # files each slow test on its own collector for triage (`mise run
+  # ci:slow-file`), naming it in the summary. It runs on each merge group,
+  # and on a push only when no merge group built its head (`unbuilt`). Nothing
+  # needs this job, and a failed filing is a warning, never a red run.
+  slow-tests:
+    name: file the slow tests
+    needs:
+      - prepare
+      - ci-image
+      - cargo-test-plain-only
+      - cargo-test-recovery
+      - cargo-test-doctests
+      - cargo-test-enforcing-shard
+    if: ${{ !cancelled() && github.event.repository.fork == false && github.event.merge_group.base_ref != 'refs/heads/landing' && (github.event_name == 'merge_group' || needs.prepare.outputs.unbuilt == 'true') }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+      issues: write
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      SLOW_RUN_ID: ${{ github.run_id }}
+      SLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      SLOW_FILE: "true"
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - name: download the run's test reports
+        uses: *download-artifact
+        with:
+          pattern: junit-*
+          path: target/test-timing/${{ github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - id: file
+        name: file the slow tests
+        continue-on-error: true
+        run: mise run ci:slow-file
+      - name: warn of a failed filing
+        if: ${{ steps.file.outcome == 'failure' }}
+        shell: bash
+        run: |
+          echo "::warning::the slow tests of this run were not filed; read the step's log"
+          printf '## Slow tests\n\nThe filing failed; the step log names why.\n' >> "$GITHUB_STEP_SUMMARY"
+
+  # Formatting and workflow security lint share the treefmt pass. It runs
+  # over a failed image build and fails pulling the missing image (`ci-image`),
+  # skips GitHub's rebase of an unchanged change (`rebased`, #2070), and runs
+  # on a push only when no merge group built its head (`unbuilt`, #2084). A
+  # merge group on `landing` runs it as a pull request does, so the ruleset
+  # can require it (the owner's word of 2026-11-14): on a pull request it
+  # takes 208 s on average, beside the compiler policy's 295 s in a group.
+  format-gate:
+    name: check formatting and lint gates (treefmt)
+    needs: *rust-needs
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.rebased != 'true' && (github.event_name != 'push' || needs.prepare.outputs.unbuilt == 'true') && github.event_name != 'schedule' && github.actor != 'renovate[bot]' }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: write
+      # `check:tracking` reads the state of each issue a refusal names.
+      issues: read
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    env:
+      CI_FETCH_DEPTH: "0"
+      COMMIT_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+    steps:
+      - *git-checkout
+      # Repository gates read Git metadata inside the job container.
+      - *trust-workspace
+      # This job reads the records for each change, so it restores the binary
+      # for each change.
+      # - see: #8276
+      - name: restore the binary of the gate's reader
+        if: ${{ github.event_name == 'merge_group' || github.event_name == 'pull_request' }}
+        uses: *cache-restore
+        with:
+          path: *workflow-gate
+          key: *workflow-gate-key
+      # A lane's gate that passed on this change writes a signed record of
+      # `check:format` and of `check:purposes`. The job reads each record with
+      # git and the signature check alone, before it installs its tools. A
+      # record that holds skips its check.
+      # - see: #7684, `.config/gate-scope/verdict.bash`
+      - name: read the records of the lane's gate
+        id: verdict
+        if: ${{ github.event_name == 'merge_group' || github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GATE_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        shell: bash
+        run: |
+          for check in check:format check:purposes; do
+            if mise exec jq@1.8.1 -- .config/gate-scope/verdict.bash read "$check"; then
+              echo "${check#check:}=held" >> "$GITHUB_OUTPUT"
+            fi
+          done
+      # The pinned toolchain for treefmt's rustfmt pass; restore-only.
+      # Unscoped: `mise install` here pulls the full mise.toml tool list, not
+      # just the formatters treefmt invokes. Measured why scoping is wrong:
+      # with install_args limited to treefmt's own tools, `mise run` in the
+      # next step still auto-installs the rest of mise.toml's tools on demand —
+      # but jdx/mise-action's cache save already ran at the end of *this*
+      # step, before that auto-install happened, so the later cost is never
+      # captured and gets re-paid in full on every run (measured at ~9m37s in
+      # the source repository this shape comes from). Installing everything
+      # here, inside the one step the cache actually covers, is what makes the
+      # cache amortize at all.
+      - *install-policy-tools
+      - *setup-rust
+      # The corpus layout and comment checks run in the plain lane, whose
+      # state holds what they build. Each check runs whatever an earlier
+      # check gives, so one run names every red (#5440).
+      - name: treefmt --ci
+        if: ${{ !cancelled() && steps.verdict.outputs.format != 'held' }}
+        run: mise run check:format
+      - name: markdown allowlist and budgets
+        if: &keep-going ${{ !cancelled() }}
+        run: mise run check:markdown
+      - name: the root README matches the owner's pin
+        if: *keep-going
+        run: mise run check:readme-pin
+      - name: merge residue check
+        if: *keep-going
+        run: mise run check:merge-residue
+      - name: workflow hashing check
+        if: *keep-going
+        run: mise run check:workflow-hashing
+      - name: validate npm lock sidecars
+        if: *keep-going
+        run: mise run check:lockfile
+      - name: keep workflow tools outside the package graph
+        if: *keep-going
+        run: mise run check:publish
+      - name: check the crate map
+        if: *keep-going
+        run: mise run check:crate-map
+      - name: check the crate leads
+        if: *keep-going
+        run: mise run check:crate-lead
+      # The purposes ledger documents only the crates it rows, so its rustdoc
+      # build grows with the ledger rather than with the workspace.
+      - name: check the purposes ledger
+        if: ${{ !cancelled() && steps.verdict.outputs.purposes != 'held' }}
+        run: mise run check:purposes
+      - name: check the positions ledger
+        if: *keep-going
+        run: mise run check:positions
+      - name: check the sharing ledger
+        if: *keep-going
+        run: mise run check:shared
+      # No library or vault is configured here, so keys are read for their
+      # shape; a seat's local run resolves them.
+      - name: check the references ledger
+        if: *keep-going
+        run: mise run check:references
+      # The tracking check judges a completed issue by the commits that close
+      # it, so it runs here, where the checkout holds the whole history
+      # (#5778).
+      - name: check the tracking issues
+        if: *keep-going
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: mise run check:tracking
+      # The ledger check judges an owed issue by the commits that name it as
+      # the tracking check does, so it runs here beside it.
+      - name: check the features ledger
+        if: *keep-going
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: mise run check:ledger
+      # One commitlint run per non-merge commit, so the agent-commit rules see
+      # that commit's own author: the config resolves it from
+      # COMMITLINT_COMMIT. A root commit has no parent to range from; its
+      # message is linted alone. Bash, for pipefail: a failed rev-list must
+      # fail the step rather than lint nothing.
+      - name: lint authored commits
+        if: *keep-going
+        shell: bash
+        run: |
+          base=${COMMIT_BASE:-}
+          if [[ -z $base ]] && git rev-parse --verify --quiet HEAD^ > /dev/null; then base=HEAD^; fi
+          git rev-list --reverse --no-merges ${base:+"$base.."}HEAD | while read -r commit; do
+            if git rev-parse --verify --quiet "$commit^" > /dev/null; then
+              env COMMITLINT_COMMIT="$commit" mise exec -- commitlint --from "$commit^" --to "$commit"
+            else
+              git log -1 --format=%B "$commit" | env COMMITLINT_COMMIT="$commit" mise exec -- commitlint
+            fi
+          done
+
+  # The prose check is a gate of the merge group. `main` holds findings with
+  # no ledger line from pull requests that gated before the check landed. So
+  # the queue checks what `main` can fail, where it decides `main`.
+  # `cargo-test` requires the check in the queue. A pull request reads it as
+  # information, and a push to main checks the landing and saves the tools.
+  #
+  # The check's own task pins Python, uv and spaCy with its model. The cache
+  # keeps their installs by those pins, and main saves them, where each ref
+  # can read them. The sentence parse is the spaCy venv's Python, so the lane
+  # builds only the `prose` binary.
+  #
+  # The markdown documents answer for the paragraphs that the change wrote
+  # since `PROSE_BASE`. So the checkout holds the history, as the format
+  # gate's does. The bodies of the pull requests that the change lands give
+  # their named overrides, and the architect's comments sign them.
+  # - see: #2919, #3082, #7621
+  #
+  # Main saves the parse cache beside the tools. A run that saves it prunes it
+  # first. Thus the cache holds the parses of the head's passages and of no
+  # older script.
+  # - see: #7659
+  prose-gate:
+    name: check the prose against its ledger
+    needs: *rust-needs
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.rebased != 'true' && needs.prepare.outputs.landed != 'true' && github.event.merge_group.base_ref != 'refs/heads/landing' && github.event_name != 'schedule' && github.actor != 'renovate[bot]' }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: write
+      # The bodies of the pull requests the change lands, and the comments
+      # that sign an override.
+      pull-requests: read
+      issues: read
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 15
+    env:
+      CI_FETCH_DEPTH: "0"
+      PROSE_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - *setup-rust
+      - name: locate the prose tools
+        id: prose-tools
+        shell: bash
+        run: |
+          printf 'installs=%s/installs\n' "${MISE_DATA_DIR:-$HOME/.local/share/mise}" >> "$GITHUB_OUTPUT"
+          printf 'parses=%s/gandr/prose\n' "${XDG_CACHE_HOME:-$HOME/.cache}" >> "$GITHUB_OUTPUT"
+          printf 'pins=%s\n' "$(sed -n '/^\["check:prose"\]/,/^usage/p' .config/mise/tasks/mise-tasks-check.toml | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      - name: restore the prose tools
+        id: prose-tools-restore
+        uses: *cache-restore
+        with:
+          path: &prose-tools |
+            ${{ steps.prose-tools.outputs.installs }}/python
+            ${{ steps.prose-tools.outputs.installs }}/github-astral-sh-uv
+            ${{ steps.prose-tools.outputs.installs }}/pipx-spacy
+          key: prose-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.prose-tools.outputs.pins }}
+      - name: restore the parse cache
+        uses: *cache-restore
+        with:
+          path: ${{ steps.prose-tools.outputs.parses }}
+          key: prose-parses-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.prose-tools.outputs.pins }}-${{ github.sha }}
+          restore-keys: prose-parses-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.prose-tools.outputs.pins }}-
+      # The signers of an override are those of a deletion. The repository
+      # variable holds them, and the owner alone sets it.
+      # - see: #6962
+      - name: write the signers of an override
+        if: ${{ vars.GANDR_DELETE_SIGNERS != '' }}
+        shell: bash
+        env:
+          GANDR_DELETE_SIGNERS: ${{ vars.GANDR_DELETE_SIGNERS }}
+        run: install -D -m 644 /dev/stdin "${XDG_CONFIG_HOME:-$HOME/.config}/gandr-factory/architects.txt" <<< "$GANDR_DELETE_SIGNERS"
+      - name: read the bodies of the pull requests the change lands
+        if: ${{ env.PROSE_BASE != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: printf 'PROSE_OVERRIDE=%s\n' "$(.config/prose/bodies.bash "$PROSE_BASE" "$RUNNER_TEMP/prose-bodies" ${PR_NUMBER:+"$PR_NUMBER"})" >> "$GITHUB_ENV"
+      - name: check the prose against its ledger
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PROSE_PRUNE: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+        run: mise run check:prose
+      - name: save the prose tools
+        if: ${{ !cancelled() && env.ACT != 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.prose-tools-restore.outputs.cache-hit != 'true' }}
+        uses: *cache-save
+        with:
+          path: *prose-tools
+          key: ${{ steps.prose-tools-restore.outputs.cache-primary-key }}
+      - name: save the parse cache
+        if: ${{ !cancelled() && env.ACT != 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+        uses: *cache-save
+        with:
+          path: ${{ steps.prose-tools.outputs.parses }}
+          key: prose-parses-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.prose-tools.outputs.pins }}-${{ github.sha }}
+
+  # The licences, by the owner's word. `cargo-deny` reads the licences of our
+  # manifests and of each crate of the lock file, and their sources, against
+  # `deny.toml`. The check of ours reads each licence file by its digest, and
+  # each SPDX line against the allow list.
+  # - see: #7743, `check:deny`, `check:licences`,
+  #   `.config/licences/approved.json`
+  #
+  # The owner alone widens either file, by a code owner's review, and the
+  # landing ruleset requires this job. The fetch reads the crates before the
+  # checks, and no check reads the network. The advisories run in the
+  # nightly. A dependency bump brings a new licence, so the job runs for each
+  # actor.
+  # - see: `.github/CODEOWNERS`
+  licences-gate:
+    name: check the licences against the owner's set
+    needs: *rust-needs
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.rebased != 'true' && needs.prepare.outputs.landed != 'true' && github.event_name != 'schedule' }}
+    runs-on: *linux
+    permissions: *image-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 10
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - *setup-rust
+      - name: fetch the crates of the lock file
+        run: cargo fetch --locked --quiet
+      - name: check the licences and the sources of the crates
+        run: mise run check:deny
+      - name: check the licence files and the headers of the tree
+        run: mise run check:licences
+
+  # Light lane: pull requests, the merge group, dispatch and a push no merge
+  # group built. The changes filter keeps a Rust-only diff off this job. The
+  # image carries Node and aube; the bare-runner fallback installs the same
+  # pins.
+  extension-gate:
+    name: check the VS Code extension
+    needs: *rust-needs
+    if: ${{ !cancelled() && !failure() && github.event.merge_group.base_ref != 'refs/heads/landing' && needs.prepare.outputs.landed != 'true' && needs.prepare.outputs.extension == 'true' }}
+    runs-on: *linux
+    permissions: *image-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    steps:
+      - *git-checkout
+      - *install-policy-tools
+      - name: type-check, lint, bundle, and package the extension
+        run: mise run check:extension
+      - name: check the input table against its pinned sources
+        run: mise run check:input-table
+
+  # The reader of a Rust crate links the libraries of rustc. So it is no
+  # member of the workspace, and no other lane builds it. This job builds the
+  # reader, lints it and runs its tests when a change reaches Rust. A merge
+  # group on `landing` skips it, as it skips each check outside the blocking
+  # set.
+  rust-record-gate:
+    name: check the reader of a Rust crate
+    needs: *rust-needs
+    if: ${{ !cancelled() && !failure() && github.event.merge_group.base_ref != 'refs/heads/landing' && needs.prepare.outputs.landed != 'true' && (needs.prepare.outputs.rust == 'true' || needs.prepare.outputs.unbuilt == 'true') }}
+    runs-on: *linux
+    permissions: *image-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - *setup-rust
+      - name: build the reader, lint it and run its tests
+        run: mise run check:rust-record
+
+  promote-cargo-test-plain-only:
+    name: promote plain build state (linux)
+    needs: &promote-needs [prepare, ci-image]
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-plain-only--') }}
+    runs-on: *linux
+    # Promotion deletes the state its landing superseded.
+    permissions: &promote-permissions
+      contents: read
+      packages: write
+      actions: write
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    env:
+      CI_BUILD_STATE: cargo-test-plain-only
+    steps: &promote-steps
+      - *git-checkout
+      - *trust-workspace
+      - *identify-build-state
+      - *install-policy-tools
+      - *restore-test-state
+      - *download-build-state
+      - *find-build-state
+      - *setup-rust
+      - *unpack-build-state
+      - *fetch-dependencies
+      - *save-test-state
+      - *delete-superseded-state
+
+  promote-cargo-test-enforcing:
+    name: promote enforcing build state (linux)
+    needs: *promote-needs
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-enforcing--') }}
+    runs-on: *linux
+    permissions: *promote-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    env:
+      CI_BUILD_STATE: cargo-test-enforcing
+      CI_ENFORCING: "true"
+    steps: *promote-steps
+
+  promote-cargo-test-docs:
+    name: promote documentation build state (linux)
+    needs: *promote-needs
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-docs--') }}
+    runs-on: *linux
+    permissions: *promote-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    env:
+      CI_BUILD_STATE: cargo-test-docs
+      CI_DOCS: "true"
+    steps: *promote-steps
+
+  promote-cargo-test-doctests:
+    name: promote documentation examples build state (linux)
+    needs: *promote-needs
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-doctests--') }}
+    runs-on: *linux
+    permissions: *promote-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    env:
+      CI_BUILD_STATE: cargo-test-doctests
+      CI_DOCTESTS: "true"
+    steps: *promote-steps
+
+  promote-dylint-crate:
+    name: promote the compiler policy state
+    needs: *promote-needs
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && (contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-cargo-dylint-crate--') || contains(fromJSON(needs.prepare.outputs.artifacts || '[]'), 'dylint-drivers')) }}
+    runs-on: *linux
+    permissions: *promote-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    env:
+      CI_BUILD_STATE: cargo-dylint-crate
+    steps:
+      - *git-checkout
+      - *identify-build-state
+      - *install-policy-tools
+      - *download-build-state
+      - name: download the landing's Dylint drivers
+        if: ${{ needs.prepare.outputs.image == '' && contains(fromJSON(needs.prepare.outputs.artifacts || '[]'), 'dylint-drivers') }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dylint-drivers
+          run-id: ${{ needs.prepare.outputs.run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - *find-build-state
+      - *identify-policy
+      - *restore-dylint-drivers
+      - *restore-gate-binary
+      - *restore-policy-state
+      - *unpack-build-state
+      - name: unpack Dylint drivers
+        if: *promote-drivers
+        run: tar -xf dylint-drivers.tar -C "$HOME"
+      - name: record the policy state sources
+        run: mise run ci:sources-record target/evidence
+      - *save-policy-state
+      - name: delete superseded policy state
+        if: ${{ env.ACT != 'true' && steps.save-policy-state.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_STATE_KEY: ${{ steps.policy-state-restore.outputs.cache-primary-key }}
+        run: mise run ci:delete-superseded policy-state-v "$CI_STATE_KEY"
+      - *save-gate-binary
+      - *save-dylint-drivers
+
+  # A hosted runner keeps no binary of a workflow tool, so a job that calls
+  # the tool builds it first. This job runs on each push to main. It builds
+  # the binary `gate` when no cache entry holds it, and it saves the entry as
+  # main's.
+  #
+  # Each job that reads the records restores that entry. The key changes
+  # with the source of the tool, the root manifest, the lock file and the
+  # compiler. So most pushes find the entry and build nothing.
+  # - see: #8276, `.config/gate-scope/tool.bash`
+  promote-workflow-gate:
+    name: promote the binary of the gate's reader
+    needs: *promote-needs
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: *linux
+    permissions: *image-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - name: find the binary of the gate's reader
+        id: workflow-gate-find
+        uses: *cache-restore
+        with:
+          path: *workflow-gate
+          key: *workflow-gate-key
+          lookup-only: true
+      - *install-policy-tools
+      - name: build the binary of the gate's reader
+        id: workflow-gate-build
+        if: ${{ steps.workflow-gate-find.outputs.cache-hit != 'true' }}
+        run: mise exec -- .config/gate-scope/tool.bash gandr-workflow-gate gate --version
+      - name: save the binary of the gate's reader
+        if: ${{ env.ACT != 'true' && steps.workflow-gate-build.outcome == 'success' }}
+        uses: *cache-save
+        with:
+          path: *workflow-gate
+          key: ${{ steps.workflow-gate-find.outputs.cache-primary-key }}
+
+  # The landing's Clippy state, from the queue run that linted this exact
+  # commit, saved as main's in place of the state it supersedes (#2045).
+  promote-cargo-clippy-crate:
+    name: promote the Clippy state
+    needs: *promote-needs
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-cargo-clippy-crate--') }}
+    runs-on: *linux
+    permissions: *promote-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    env:
+      CI_BUILD_STATE: cargo-clippy-crate
+    steps:
+      - *git-checkout
+      - *identify-build-state
+      - *install-policy-tools
+      - name: look up the Clippy state
+        id: clippy-state-restore
+        uses: *cache-restore
+        with:
+          path: *clippy-state
+          key: *clippy-state-key
+          lookup-only: true
+      - *download-build-state
+      - *find-build-state
+      - *unpack-build-state
+      - name: save the Clippy state
+        id: save-clippy-state
+        if: ${{ env.ACT != 'true' && env.CI_BUILD_STATE_FOUND == 'true' && steps.clippy-state-restore.outputs.cache-hit != 'true' }}
+        uses: *cache-save
+        with:
+          path: *clippy-state
+          key: ${{ steps.clippy-state-restore.outputs.cache-primary-key }}
+      - *delete-superseded-clippy-state
