@@ -1,0 +1,16 @@
+theory Generated where {
+  boundary Two { p, q };
+  face left = { p };
+  sort Val : Type;
+  oper zero : Val;
+  ext Cell = Val on left is zero;
+}
+
+theory Wheel where {
+  sort Nat : Type;
+  obs emit : (s : Nat, x : Nat) --> (y : Nat);
+  rule spin : (data stream : Nat) ==> (out : Nat) {
+    node : emit(state, stream) --> (out);
+    feed : (out) --> (state);
+  };
+}
