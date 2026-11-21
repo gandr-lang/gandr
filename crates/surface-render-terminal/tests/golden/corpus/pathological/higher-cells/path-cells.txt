@@ -1,0 +1,29 @@
+error[NoFiller.Omitted]: the module omits this law, and its sides do not convert, so nothing discharges it
+   ╭▸ corpus/pathological/higher-cells/path-cells.gandr:61:1
+   │
+61 │ ┏ module Unwitnessed : Model(Glob) where
+62 │ ┃   /// The one object.
+63 │ ┃   type Ob = One;
+64 │ ┃   /// The numbers, each a cell from the object to itself.
+   ┆ ┇
+70 │ ┃   /// Addition, the composite.
+71 │ ┃   def comp(a : One, b : One, c : One, f : Nat, g : Nat) -> Nat = plus f g;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a law whose sides do not convert
+   │
+   ├ note: `assoc` is refused with NoFiller.Omitted, as its expectation states
+   ╰ help: prove the law by a definition at its type, or admit it where the host asserts it
+
+error[HandlerUnlawful]: this handler is not shown to satisfy the law `putSkip` of the theory it handles
+   ╭▸ corpus/pathological/higher-cells/path-cells.gandr:90:3
+   │
+90 │ ┏   handle st : Skipping with sort S = Integer {
+91 │ ┃     st.put 1;
+92 │ ┃     let a = st.get;
+93 │ ┃     pure a
+   ┆ ┇
+97 │ ┃     | oper put(s, k) => pure 9
+98 │ ┃   }
+   │ ┗━━━┛ not shown to satisfy a law of its theory
+   │
+   ├ note: `discarding` is refused with HandlerUnlawful, as its expectation states
+   ╰ help: change the handler's clauses so that they satisfy the law
