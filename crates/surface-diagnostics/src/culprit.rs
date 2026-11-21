@@ -160,7 +160,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
 {
     Culprit(match refusal {
         LoweringRefusal::UnresolvedName { .. } => "not found in this scope",
-        LoweringRefusal::RetiredName { .. } => "a retired spelling",
         LoweringRefusal::BuiltinMark { fault, .. } => match fault {
             BuiltinFault::NoRow => "names no row of the builtin table",
             BuiltinFault::Bodied => "a given row's declaration with a body",
@@ -278,7 +277,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             FormFault::MissingOpen(ClosingClass::Brace) => "missing `{`",
             FormFault::Misspelt(_) => "a keyword misspelt",
             FormFault::MisspeltOperator(_) => "an operator misspelt",
-            FormFault::Retired(_) | FormFault::Repaired(Repair::Retired(_)) => "a retired spelling",
             FormFault::NotAName => "a pattern where a name goes",
             FormFault::BareIndex => "a bare index",
             FormFault::PositionalAfterNamed => "a positional implicit after a named one",
@@ -755,7 +753,6 @@ mod tests
     {
         Culprit(match refusal {
             LoweringRefusal::UnresolvedName { .. } => "not found in this scope",
-            LoweringRefusal::RetiredName { .. } => "a retired spelling",
             LoweringRefusal::BuiltinMark { fault, .. } => match fault {
                 BuiltinFault::NoRow => "names no row of the builtin table",
                 BuiltinFault::Bodied => "a given row's declaration with a body",
@@ -881,9 +878,6 @@ mod tests
                 FormFault::MissingOpen(ClosingClass::Brace) => "missing `{`",
                 FormFault::Misspelt(_) => "a keyword misspelt",
                 FormFault::MisspeltOperator(_) => "an operator misspelt",
-                FormFault::Retired(_) | FormFault::Repaired(Repair::Retired(_)) => {
-                    "a retired spelling"
-                },
                 FormFault::NotAName => "a pattern where a name goes",
                 FormFault::BareIndex => "a bare index",
                 FormFault::PositionalAfterNamed => "a positional implicit after a named one",

@@ -5674,9 +5674,9 @@ mod tests
             LoweringRefusal::MalformedForm {
                 span: at(8_usize, 9_usize),
                 form: FormName::from(NamedKind("parenthesized_type")),
-                fault: FormFault::Retired(gandr_surface_grammar::RetiredForm::ParenthesizedProduct),
+                fault: FormFault::MisplacedTile,
             },
-            "a type list anywhere but before an arrow is the retired product, refused at its opening tile"
+            "a type list anywhere but before an arrow is no form, refused at its opening tile"
         );
         assert_eq!(
             refusal(SourceText::from("def z : Integer -> Integer -> String ;")),
@@ -7337,230 +7337,12 @@ mod tests
         }
     }
 
-    /// #7879: the box `A => B` in a type position reads as `A` and an extra
-    /// operand that starts with `=>`. In a signature, a nested box, a group
-    /// in parentheses and a record field, the declaration reports that
-    /// refusal by its name and no other fault. A parameter, a result and an
-    /// expression hole keep their faults, and `rec t => S` and an arm whose
-    /// pattern is one name keep their readings.
-    #[test]
-    fn the_fat_arrow_box_is_refused_by_name_7879()
-    {
-        let pbg = grammar();
-        let lowered = |source: &'static str| {
-            let tree = gandr_surface_parser::parse(&pbg, SourceText::from(source))
-                .expect("parses")
-                .into_tree();
-            let mut arena = CoreArena::new();
-            let module = lower_module(
-                &pbg,
-                &tree,
-                &mut arena,
-                LoweringBudget::DEFAULT,
-                Recognition::default(),
-            )
-            .expect("lowers");
-            outcomes(&module)
-        };
-        let refused = |start: usize, end: usize, form: FormName, fault: FormFault| {
-            DeclarationOutcome::Refused(LoweringRefusal::MalformedForm {
-                span: span(ByteOffset::from(start), ByteOffset::from(end)),
-                form,
-                fault,
-            })
-        };
-        let boxed = FormFault::Retired(gandr_surface_grammar::RetiredForm::FatArrowBox);
-        for (source, start, end, form) in [
-            (
-                "def b : Integer => Integer;\n",
-                8,
-                26,
-                FormName::DECLARATION,
-            ),
-            (
-                "def b : Integer => Integer => Integer;\n",
-                8,
-                37,
-                FormName::DECLARATION,
-            ),
-            (
-                "def g : (Integer => Integer) -> Integer;\n",
-                9,
-                27,
-                FormName::from(NamedKind("parenthesized_type")),
-            ),
-            (
-                "def r : *{ x : Integer => Integer };\n",
-                15,
-                33,
-                FormName::from(NamedKind("telescope_type")),
-            ),
-        ] {
-            assert_eq!(
-                lowered(source),
-                [refused(start, end, form, boxed)],
-                "{source}"
-            );
-        }
-        assert_eq!(
-            lowered(include_str!(
-                "lower/fixtures/a-constructor-field-names-the-fat-arrow-box-7879.gandr"
-            )),
-            [
-                refused(34, 52, FormName::from(NamedKind("data_generator")), boxed),
-                refused(24, 59, FormName::DECLARATION, FormFault::MisplacedTile),
-            ],
-            "a constructor field names the box and keeps the fault of its line"
-        );
-        for (source, at, form, fault) in [
-            (
-                "def f(g : Integer => Integer) -> Integer;\n",
-                17,
-                FormName::DECLARATION,
-                FormFault::Repaired(Repair::Diverged(crate::form::Ending::Unnamed)),
-            ),
-            (
-                "def f(x : Integer) -> Integer => Integer;\n",
-                21,
-                FormName::DECLARATION,
-                FormFault::Repaired(Repair::Unended(crate::form::Ending::Unnamed)),
-            ),
-            (
-                "def b = Integer => Integer;\n",
-                15,
-                FormName::from(NamedKind("def_value")),
-                FormFault::Repaired(Repair::Unended(crate::form::Ending::Tile(
-                    crate::form::TileName::SEMICOLON,
-                ))),
-            ),
-        ] {
-            assert_eq!(lowered(source), [refused(at, at, form, fault)], "{source}");
-        }
-        assert!(
-            matches!(lowered("def s : rec t => Integer >! t;\n").as_slice(), [
-                DeclarationOutcome::Uncompleted { .. }
-            ]),
-            "`rec t => S` reads as a session type"
-        );
-        assert!(
-            matches!(
-                lowered(include_str!(
-                    "lower/fixtures/a-one-name-arm-keeps-its-reading-7879.gandr"
-                ))
-                .as_slice(),
-                [DeclarationOutcome::Completed { .. }]
-            ),
-            "an arm whose pattern is one name reads as an arm"
-        );
-    }
-
-    /// #8052: a retired box extends from its type before `=>` through its
-    /// result. The named refusal covers both ends in a session type, a
-    /// parameter and a signature.
-    #[test]
-    fn the_retired_box_marks_its_whole_form_8052()
-    {
-        let pbg = grammar();
-        let lowered = |source: &'static str| {
-            let tree = gandr_surface_parser::parse(&pbg, SourceText::from(source))
-                .expect("parses")
-                .into_tree();
-            let mut arena = CoreArena::new();
-            let module = lower_module(
-                &pbg,
-                &tree,
-                &mut arena,
-                LoweringBudget::DEFAULT,
-                Recognition::default(),
-            )
-            .expect("lowers");
-            outcomes(&module)
-        };
-        let refused = |start: usize, end: usize, form: FormName| {
-            DeclarationOutcome::Refused(LoweringRefusal::MalformedForm {
-                span: span(ByteOffset::from(start), ByteOffset::from(end)),
-                form,
-                fault: FormFault::Retired(gandr_surface_grammar::RetiredForm::FatArrowBox),
-            })
-        };
-        for (source, start, end, form) in [
-            (
-                "def serve(c : t => +{more : Integer >! t, done : end}) -> Unit = unit;\n",
-                14,
-                53,
-                FormName::from(NamedKind("def_function")),
-            ),
-            (
-                "def g(c : t => Integer) -> Unit = unit;\n",
-                10,
-                22,
-                FormName::from(NamedKind("def_function")),
-            ),
-            ("def f : t => Integer;\n", 8, 20, FormName::DECLARATION),
-        ] {
-            assert_eq!(lowered(source), [refused(start, end, form)], "{source}");
-        }
-    }
-
-    /// #5192: a list in parentheses outside the domain of an arrow and a
-    /// function's outputs is the old spelling of a product. The lowering
-    /// refuses it by its name at its opening tile, in a signature and in a
-    /// record field. The domain `(A, B) -> C` and the outputs `-> (A, B)`
-    /// keep their readings.
-    #[test]
-    fn a_parenthesized_product_is_refused_by_name_at_its_opener_8050()
-    {
-        let pbg = grammar();
-        let lowered = |source: &'static str| {
-            let tree = gandr_surface_parser::parse(&pbg, SourceText::from(source))
-                .expect("parses")
-                .into_tree();
-            let mut arena = CoreArena::new();
-            let module = lower_module(
-                &pbg,
-                &tree,
-                &mut arena,
-                LoweringBudget::DEFAULT,
-                Recognition::default(),
-            )
-            .expect("lowers");
-            outcomes(&module)
-        };
-        let product = FormFault::Retired(gandr_surface_grammar::RetiredForm::ParenthesizedProduct);
-        for (source, open) in [
-            ("def p : (Integer, String);\n", 8),
-            ("def r : *{ x : (Integer, Integer) };\n", 15),
-        ] {
-            assert_eq!(
-                lowered(source),
-                [DeclarationOutcome::Refused(
-                    LoweringRefusal::MalformedForm {
-                        span: span(ByteOffset::from(open), ByteOffset::from(open + 1)),
-                        form: FormName::from(NamedKind("parenthesized_type")),
-                        fault: product,
-                    }
-                )],
-                "{source}"
-            );
-        }
-        let domain = lowered("def f : (Integer, Integer) -> Integer;\n");
-        assert!(
-            matches!(domain.as_slice(), [DeclarationOutcome::Uncompleted { .. }]),
-            "a domain keeps its reading: {domain:?}"
-        );
-        let outputs = lowered("def d(m : Integer, n : Integer) -> (Integer, Integer) { (m, n) }\n");
-        assert!(
-            matches!(outputs.as_slice(), [DeclarationOutcome::Completed { .. }]),
-            "a group of outputs keeps its reading: {outputs:?}"
-        );
-    }
-
     /// #5192: a group in parentheses receives a call's outputs alone. Over a
     /// stored product, in a `let` with or without a type and in a match arm,
-    /// the lowering refuses it by its name: `*{p, q}` is the pattern. A
-    /// group over a call's outputs keeps its reading.
+    /// the group has a tile out of place: `*{p, q}` is the pattern. A group
+    /// over a call's outputs keeps its reading.
     #[test]
-    fn a_parenthesized_product_pattern_is_refused_by_name_5192()
+    fn a_parenthesized_product_pattern_is_a_misplaced_tile_5192()
     {
         let pbg = grammar();
         let lowered = |source: &'static str| {
@@ -7583,7 +7365,7 @@ mod tests
                 LoweringRefusal::MalformedForm {
                     span: span(ByteOffset::from(start), ByteOffset::from(start + 6)),
                     form: FormName::TUPLE_PATTERN,
-                    fault: FormFault::product_pattern(),
+                    fault: FormFault::MisplacedTile,
                 },
             )]
         };
@@ -7597,7 +7379,7 @@ mod tests
                 25,
             ),
             (
-                include_str!("lower/fixtures/a-match-arm-group-is-refused-by-name-5192.gandr"),
+                include_str!("lower/fixtures/a-match-arm-group-is-a-misplaced-tile-5192.gandr"),
                 70,
             ),
         ] {
@@ -7612,108 +7394,6 @@ mod tests
                 DeclarationOutcome::Completed { .. }
             ]),
             "a group over a call's outputs keeps its reading: {outputs:?}"
-        );
-    }
-
-    /// #7879: the glued `#{` is the retired opener of a telescope and a
-    /// record. A declaration that holds it reports that refusal at the
-    /// token's bytes and no other fault; another declaration keeps its own
-    /// reading, and `# {` with a space is no retired token.
-    #[test]
-    fn the_glued_view_telescope_is_refused_by_name_7879()
-    {
-        let pbg = grammar();
-        let lowered = |source: &'static str| {
-            let tree = gandr_surface_parser::parse(&pbg, SourceText::from(source))
-                .expect("parses")
-                .into_tree();
-            let mut arena = CoreArena::new();
-            let module = lower_module(
-                &pbg,
-                &tree,
-                &mut arena,
-                LoweringBudget::DEFAULT,
-                Recognition::default(),
-            )
-            .expect("lowers");
-            outcomes(&module)
-        };
-        let retired = |start: usize| {
-            DeclarationOutcome::Refused(LoweringRefusal::MalformedForm {
-                span: span(
-                    ByteOffset::from(start),
-                    ByteOffset::from(start.saturating_add(2)),
-                ),
-                form: FormName::DECLARATION,
-                fault: FormFault::Repaired(Repair::Retired(
-                    gandr_surface_grammar::RetiredForm::ViewTelescope,
-                )),
-            })
-        };
-        for source in [
-            "def a = #{ x : Integer };\n",
-            "def a : #{ x : Integer };\n",
-            "def a = #{ .x = 1 };\n",
-            "def a = #{};\n",
-        ] {
-            assert_eq!(lowered(source), [retired(8)], "{source}");
-        }
-        let several = lowered(include_str!(
-            "lower/fixtures/a-view-telescope-leaves-the-other-declarations-7879.gandr"
-        ));
-        assert!(
-            matches!(several.as_slice(), [
-                DeclarationOutcome::Uncompleted { .. },
-                refused,
-                DeclarationOutcome::Bodied { .. },
-            ] if *refused == retired(21)),
-            "the faults of each other declaration stay: {several:?}"
-        );
-        let spaced = lowered("def a = # { x : Integer };\n");
-        assert!(
-            !spaced.iter().any(|outcome| matches!(
-                outcome,
-                DeclarationOutcome::Refused(LoweringRefusal::MalformedForm {
-                    fault: FormFault::Repaired(Repair::Retired(_)),
-                    ..
-                })
-            )),
-            "`# {{` with a space is the freshness relation and a brace: {spaced:?}"
-        );
-    }
-
-    /// #7877: `unit`, where no declaration binds it, is the retired spelling
-    /// of the unit value, refused at the name; a source that binds `unit`
-    /// reads its own name.
-    #[test]
-    fn the_retired_unit_is_refused_by_name_7877()
-    {
-        let mut arena = CoreArena::new();
-        let source = crate::fixture::listing("def c : *{} ; def c = unit ;");
-        let module = crate::fixture::listed(&source, &mut arena);
-        let text: &str = source.as_ref();
-        let start = text.find("unit").unwrap_or_default();
-        assert_eq!(
-            outcomes(&module).first().copied(),
-            Some(DeclarationOutcome::Refused(LoweringRefusal::RetiredName {
-                span: span(
-                    ByteOffset::from(start),
-                    ByteOffset::from(start.saturating_add(4))
-                ),
-                form: gandr_surface_grammar::RetiredForm::UnitValue,
-            })),
-            "an unbound `unit` is the retired spelling, at the name"
-        );
-        let mut arena = CoreArena::new();
-        let source = crate::fixture::listing(
-            "def unit : Integer ; def unit = 1 ; def c : Integer ; def c = unit ;",
-        );
-        let module = crate::fixture::listed(&source, &mut arena);
-        assert!(
-            outcomes(&module)
-                .iter()
-                .all(|outcome| !matches!(outcome, DeclarationOutcome::Refused(_))),
-            "a bound `unit` reads the declaration that binds it"
         );
     }
 
@@ -8671,44 +8351,6 @@ mod tests
             Maybe::Absent(builtin_role::Absent::Unnamed),
             "a key that names no role gives none"
         );
-    }
-
-    /// #8071: the attribute `native`, and a `builtin` mark whose payload is a
-    /// bare word, are each refused by the name of their retired spelling at
-    /// the attribute.
-    #[test]
-    fn a_retired_builtin_spelling_is_refused_by_name_8071()
-    {
-        use gandr_surface_grammar::RetiredForm;
-        use gandr_surface_syntax::ByteOffset;
-        use gandr_surface_syntax::ByteSpan;
-
-        use crate::error::FormFault;
-        use crate::form::FormName;
-
-        for (text, end, form) in [
-            (
-                "@[ native(\"string.append\") ] def a = 3 ;",
-                26_usize,
-                RetiredForm::NativeAttribute,
-            ),
-            (
-                "@[ builtin(irPair) ] def a = 3 ;",
-                18_usize,
-                RetiredForm::BuiltinWord,
-            ),
-        ] {
-            assert_eq!(
-                refusal(SourceText::from(text)),
-                LoweringRefusal::MalformedForm {
-                    span: ByteSpan::new(ByteOffset::from(3_usize), ByteOffset::from(end))
-                        .expect("the attribute's span"),
-                    form: FormName::ATTRIBUTE,
-                    fault: FormFault::Retired(form),
-                },
-                "{text}"
-            );
-        }
     }
 
     /// #2077: `decomposes` takes one form unquoted, read as its spelling: the

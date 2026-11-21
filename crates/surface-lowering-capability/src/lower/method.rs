@@ -325,6 +325,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     /// # Errors
     /// As `fails`.
     ///
+    /// # Cost
+    /// - allocation: the refusal it returns, error path
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a mode word on a top-level function's parameter and
     ///   on a method's second parameter, and a mode variable on a top-level

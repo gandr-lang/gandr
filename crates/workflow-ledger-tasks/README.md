@@ -23,7 +23,6 @@ This crate runs the ledger tasks of gandr's surface. It writes the syntax ledger
 - `ledger exemplars <directory>` prints each exemplar that does not hold, `<path>: <fault>`, then the count. It exits `1` when it finds one.
 - `ledger recovery <directory>` prints the near-miss table, each mutant whose first error marks other bytes than its mutation, then the count. It exits `1` when it finds one.
 - `ledger list` and `ledger show <id>` read `ledger/features.sql` under `--root`, the current directory by default.
-- `ledger fences <path>…` prints each fenced `gandr` block that writes a retired spelling, `<path>:<line>: …` with the spelling that replaces it, then the count. It exits `1` when it finds one. A fragment and each other refusal pass.
 - A fault prints `ledger: <fault>` on standard error and exits `2`.
 
 ## Expected features
@@ -35,7 +34,6 @@ The tasks need a checkout of the repository. They read `corpus/ledger` and `ledg
 ```sh
 mise run ledger:syntax
 mise run check:syntax-exemplars
-mise run check:fences
 mise run ledger:recovery
 cargo run --package gandr-workflow-ledger-tasks -- list --area syntax
 cargo nextest run -p gandr-workflow-ledger-tasks

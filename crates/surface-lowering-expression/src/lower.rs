@@ -74,7 +74,6 @@ use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::NumericLiteral;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
-use gandr_surface_grammar::RetiredForm;
 use gandr_surface_lowering_base::lower::Block;
 use gandr_surface_lowering_base::lower::Body;
 use gandr_surface_lowering_base::lower::Bridge;
@@ -179,7 +178,6 @@ use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::Repair;
-use crate::form::RetiredBox;
 use crate::form::Run;
 use crate::form::RunReading;
 use crate::form::Shape;
@@ -187,7 +185,6 @@ use crate::form::TileName;
 use crate::form::Universe;
 use crate::form::applied_word;
 use crate::form::bare_bracket;
-use crate::form::boxed_extra;
 use crate::form::family_of;
 use crate::form::misspelt_keyword;
 use crate::form::misspelt_operator;
@@ -195,7 +192,6 @@ use crate::form::opens_expression;
 use crate::form::owed_tile;
 use crate::form::read_as_type;
 use crate::form::read_pieces;
-use crate::form::retired_within;
 use crate::form::run_reading;
 use crate::form::shape_of;
 use crate::form::tile_label;
@@ -5351,12 +5347,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                         name,
                     })
                 }
-                else if name.as_ref() == RetiredForm::UnitValue.written().0 {
-                    Err(LoweringRefusal::RetiredName {
-                        span: site.at.span,
-                        form: RetiredForm::UnitValue,
-                    })
-                }
                 else {
                     Err(LoweringRefusal::UnresolvedName {
                         span: site.at.span,
@@ -8299,10 +8289,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     )
                 })
             {
-                return Err(pattern.fault(
-                    binder.span,
-                    FormFault::Retired(RetiredForm::ParenthesizedProductPattern),
-                ));
+                return Err(pattern.fault(binder.span, FormFault::MisplacedTile));
             }
             // A pattern of a call returning outputs binds every one of them.
             if outputs
@@ -12166,7 +12153,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::identity::tests::session_statements_lower_to_their_formers`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::an_omitted_carrier_is_a_nominated_hole_4932`
-    /// - witness: `gandr-surface-lowering::lower::identity::tests::a_carrier_written_first_is_refused_5024`
+    /// - witness: `gandr-surface-lowering::lower::identity::tests::a_carrier_written_first_is_an_extra_operand_5024`
     ///
     /// # Cost
     /// - allocation: the refusal of an unresolved head, error path
@@ -12214,8 +12201,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         }
         let path_shaped = [TileName::PATH, TileName::BRIDGE, TileName::FLOW_TYPE]
             .into_iter()
-            .find(|shaped| name.as_ref() == shaped.as_ref());
-        if let Some(shaped) = path_shaped {
+            .any(|shaped| name.as_ref() == shaped.as_ref());
+        if path_shaped {
             // A path-shaped head written where a value is read takes its three
             // members as one parenthesized argument: `Path(A, a, b)`.
             let tripled = |argument: NodeIndex| {
@@ -12231,7 +12218,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 parenthesized && commas.nth(1).is_some() && commas.next().is_none()
             };
             if count == 3_usize || (count == 1_usize && first.is_some_and(tripled)) {
-                return Err(site.fault(head.span, FormFault::carrier_first(shaped)));
+                return Err(site.fault(head.span, FormFault::ExtraOperand));
             }
         }
         if let Some(written) = pair
@@ -14413,11 +14400,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - provides: grouping in type position, a function's outputs, and the
     ///   annotated argument of a type-valued call.
     /// - fails: yields the empty-list refusal for `()` where no result is read,
-    ///   which is never the unit type, the hole's own refusal, the retired
-    ///   spelling [`RetiredForm::ParenthesizedProduct`] at the first comma of a
-    ///   list, which only a value function space's domain and a result read, a
-    ///   misplaced-tile fault at a `:` where no value is read, and the
-    ///   annotation's own refusals.
+    ///   which is never the unit type, the hole's own refusal, a misplaced tile
+    ///   at the open of a list, which only a value function space's domain and
+    ///   a result read, a misplaced-tile fault at a `:` where no value is read,
+    ///   and the annotation's own refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -14433,7 +14419,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   constructor; empty parentheses are refused by name; a result's group
     ///   of outputs lowers to the many-value returner.
     /// - witness: `gandr-surface-lowering::lower::tests::an_arrow_lowers_under_a_thunk_type`
-    /// - witness: `gandr-surface-lowering::lower::tests::a_parenthesized_product_is_refused_by_name_at_its_opener_8050`
     /// - witness: `gandr-surface-lowering::lower::tests::the_alias_is_the_thunked_arrow`
     /// - witness: `gandr-surface-lowering::lower::tests::the_empty_parentheses_are_never_the_unit`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_type_valued_calls_argument_takes_an_annotation_3633`
@@ -14476,15 +14461,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             return Native::new(self.host()).annotated(site, run, cursor);
         }
         let inner = site.one(run)?;
-        // A list in parentheses outside a domain and a result is the old
-        // spelling of a product: `*{A, B}` replaces `(A, B)`.
+        // A list in parentheses outside a domain and a result is no form here,
+        // and a product is written `*{A, B}`.
         if let Maybe::Present(open) = open
             && let Maybe::Present(_) = cursor.at(TileName::COMMA)
         {
-            return Err(site.fault(
-                open.span,
-                FormFault::Retired(RetiredForm::ParenthesizedProduct),
-            ));
+            return Err(site.fault(open.span, FormFault::MisplacedTile));
         }
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
         self.group(site, inner);
@@ -19973,7 +19955,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - witness: `gandr-surface-lowering::lower::tests::a_spelled_payload_is_read_back_where_it_was_filed`
     /// - witness: `gandr-surface-lowering::lower::tests::a_named_payload_is_spelled_with_its_name_2077`
     /// - witness: `gandr-surface-lowering::lower::tests::traces_is_written_once_per_channel_3338`
-    /// - witness: `gandr-surface-lowering::lower::tests::a_retired_builtin_spelling_is_refused_by_name_8071`
     /// - witness: `gandr-surface-lowering::tests::modules::a_sealed_atom_reads_the_identity_its_type_member_states`
     #[spec(
         captures: before = seen.len(),
@@ -20019,13 +20000,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
         arena: &CoreArena,
     ) -> Result<Filing, LoweringRefusal<'source>>
     {
-        if written.name.as_ref() == RetiredForm::NativeAttribute.written().0 {
-            return Err(LoweringRefusal::MalformedForm {
-                span: written.span,
-                form: FormName::ATTRIBUTE,
-                fault: FormFault::Retired(RetiredForm::NativeAttribute),
-            });
-        }
         let Maybe::Present((name, schema)) = AttributeRegistry::lookup(written.name)
         else {
             return Err(LoweringRefusal::UnknownAttribute {
@@ -20076,13 +20050,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             },
             (_, form, _) => form,
         };
-        if name == RegisteredAttribute::BUILTIN && form == PayloadForm::Word {
-            return Err(LoweringRefusal::MalformedForm {
-                span: written.span,
-                form: FormName::ATTRIBUTE,
-                fault: FormFault::Retired(RetiredForm::BuiltinWord),
-            });
-        }
         match payload_verdict(schema, form) {
             PayloadVerdict::Admitted => {},
             PayloadVerdict::Missing => {
@@ -20872,101 +20839,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
         if owed { Owed::Owed } else { Owed::Nothing }
     }
 
-    /// The refusal of the slot `slot`, refused as `refusal` at `at`: the
-    /// refusal of the first retired token that a form of the slot holds, when
-    /// one holds such a token; the full retired box, when `refusal` is an
-    /// extra operand that [`boxed_extra`] reads as the box; and `refusal`
-    /// otherwise.
-    ///
-    /// A declaration that holds an old spelling reports that refusal and no
-    /// other fault, since the faults around it follow from it.
-    ///
-    /// # Specification
-    /// - requires: `at` and the halves of `slot` name nodes of the tree.
-    /// - ensures: [`crate::form::Repaired::refusal`] of [`retired_within`]'s
-    ///   repair under the first of `at`, the form that introduced the slot, its
-    ///   signature and its definition that holds a retired token, named by that
-    ///   form; else, for an extra operand that [`boxed_extra`] reads as the box
-    ///   under one of them, the same refusal with [`FormFault::Retired`] of
-    ///   [`RetiredForm::FatArrowBox`]; `refusal` otherwise.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Clause cost
-    /// - bound: none on a declaration that lowers. On a refused declaration,
-    ///   one walk of the nodes of each of at most four forms of that
-    ///   declaration, and one compare of at most 2 bytes at each grout.
-    ///
-    /// # Cost
-    /// - allocation: the worklists of the walks of the refused forms, error
-    ///   path
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — `def a = #{ .x = 1 };` reads an extra operand first
-    ///   and reports the retired token; `def b : Integer => Integer;` reports
-    ///   the box from `Integer` through its result; a declaration with neither
-    ///   keeps its refusal.
-    /// - witness: `gandr-surface-lowering::lower::tests::the_glued_view_telescope_is_refused_by_name_7879`
-    /// - witness: `gandr-surface-lowering::lower::tests::the_fat_arrow_box_is_refused_by_name_7879`
-    #[spec(ensures: |ret| ret == refusal || matches!(ret, LoweringRefusal::MalformedForm { fault: FormFault::Repaired(Repair::Retired(_)) | FormFault::Retired(RetiredForm::FatArrowBox), .. }))]
-    fn retired_first(
-        &self,
-        slot: &DeclarationSlot<'source>,
-        at: NodeIndex,
-        refusal: LoweringRefusal<'source>,
-    ) -> LoweringRefusal<'source>
-    {
-        let cx = self.cx();
-        let halves = [slot.signature, slot.definition].map(|half| match half {
-            Maybe::Present(half) => Some(half.declaration.node),
-            Maybe::Absent(_) => None,
-        });
-        let forms = [
-            Some(at),
-            Some(slot.introduced_by.node),
-            halves[0],
-            halves[1],
-        ];
-        let token = forms.into_iter().flatten().find_map(|form| {
-            let Maybe::Present(found) = retired_within(cx.pbg, cx.tree, form)
-            else {
-                return None;
-            };
-            let name = cx
-                .tree
-                .node(form)
-                .and_then(|node| match shape_of(cx.pbg, node) {
-                    Ok(Shape::Form { name, .. }) => Some(name),
-                    _ => None,
-                })
-                .unwrap_or(FormName::DECLARATION);
-            Some(found.refusal(name))
-        });
-        if let Some(found) = token {
-            return found;
-        }
-        if let LoweringRefusal::MalformedForm {
-            span,
-            form,
-            fault: FormFault::ExtraOperand,
-        } = refusal
-            && let Some(span) = forms.into_iter().flatten().find_map(|held| {
-                let RetiredBox(Maybe::Present(found)) = boxed_extra(cx.pbg, cx.tree, held, span)
-                else {
-                    return None;
-                };
-                Some(found)
-            })
-        {
-            return LoweringRefusal::MalformedForm {
-                span,
-                form,
-                fault: FormFault::Retired(RetiredForm::FatArrowBox),
-            };
-        }
-        refusal
-    }
-
     /// What the slot at `position` amounts to by its own halves, whatever
     /// module it belongs to.
     ///
@@ -20974,22 +20846,21 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - requires: the slot and its member coordinates are interpreted in this
     ///   lowering run.
     /// - ensures: a stored refusal takes precedence, then a refusal a check
-    ///   after minting filed, each read as [`Self::retired_first`] reads it; a
-    ///   definition written `Eq.generic(T)` is the equality derived for `T`,
-    ///   and the prelude's `Eq.generic` itself is unminted; a signature that
-    ///   `native` marks is the row's value at its type; a world declaration is
-    ///   the world it names; a data declaration, or a described family the
-    ///   decoder admitted, `Theory` among them, is the index of its minted
-    ///   signature; an operation, a derived rule and a `theory` block's
-    ///   definition are each the type and body minted for it; an abstract slot
-    ///   is the abstract type it lowered to, and a kind witness the check of
-    ///   its type member's code at the kind; otherwise the available signature
-    ///   — written, a function tail's, the type a model derives, or the
-    ///   annotation an unsigned definition's whole value is written under — and
-    ///   body select Completed, Uncompleted or Bodied, but a definition written
-    ///   as a value or a function tail whose body did not mint is the body's
-    ///   absence, which [`Self::outcome`] refuses by name, never an obligation
-    ///   the signature owes (#6113).
+    ///   after minting filed; a definition written `Eq.generic(T)` is the
+    ///   equality derived for `T`, and the prelude's `Eq.generic` itself is
+    ///   unminted; a signature that `native` marks is the row's value at its
+    ///   type; a world declaration is the world it names; a data declaration,
+    ///   or a described family the decoder admitted, `Theory` among them, is
+    ///   the index of its minted signature; an operation, a derived rule and a
+    ///   `theory` block's definition are each the type and body minted for it;
+    ///   an abstract slot is the abstract type it lowered to, and a kind
+    ///   witness the check of its type member's code at the kind; otherwise the
+    ///   available signature — written, a function tail's, the type a model
+    ///   derives, or the annotation an unsigned definition's whole value is
+    ///   written under — and body select Completed, Uncompleted or Bodied, but
+    ///   a definition written as a value or a function tail whose body did not
+    ///   mint is the body's absence, which [`Self::outcome`] refuses by name,
+    ///   never an obligation the signature owes (#6113).
     /// - provides: the declaration outcome without manufacturing absent halves.
     /// - fails: a refused member witness is Unminted; if neither half exists,
     ///   the signature’s absence is preserved.
@@ -21015,11 +20886,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - allocation: the refusal that a refused outcome owns, error path
     #[spec(
         ensures: |ret| {
-            if let Maybe::Present((at, refusal)) = slot.refusal {
-                ret == Maybe::Present(DeclarationOutcome::Refused(self.retired_first(slot, at, refusal)))
+            if let Maybe::Present((_, refusal)) = slot.refusal {
+                ret == Maybe::Present(DeclarationOutcome::Refused(refusal))
             }
             else if let Some(&refusal) = self.cx().faults.get(&position) {
-                ret == Maybe::Present(DeclarationOutcome::Refused(self.retired_first(slot, slot.introduced_by.node, refusal)))
+                ret == Maybe::Present(DeclarationOutcome::Refused(refusal))
             }
             else if let Some(&(declared_type, body)) = self.cx().generics.get(&position) {
                 ret == Maybe::Present(DeclarationOutcome::Completed { declared_type, body })
@@ -21129,16 +21000,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
         slot: &DeclarationSlot<'source>,
     ) -> Maybe<DeclarationOutcome<'source>, lowered::Absent>
     {
-        if let Maybe::Present((at, refusal)) = slot.refusal {
-            return Maybe::Present(DeclarationOutcome::Refused(
-                self.retired_first(slot, at, refusal),
-            ));
+        if let Maybe::Present((_, refusal)) = slot.refusal {
+            return Maybe::Present(DeclarationOutcome::Refused(refusal));
         }
         if let Some(&refusal) = self.cx().faults.get(&position) {
-            let at = slot.introduced_by.node;
-            return Maybe::Present(DeclarationOutcome::Refused(
-                self.retired_first(slot, at, refusal),
-            ));
+            return Maybe::Present(DeclarationOutcome::Refused(refusal));
         }
         if let Some(&(declared_type, body)) = self.cx().generics.get(&position) {
             return Maybe::Present(DeclarationOutcome::Completed {

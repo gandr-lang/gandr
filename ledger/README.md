@@ -102,7 +102,6 @@ To edit it: `mise run ledger:build`, change `features.db` with `sqlite3`, `mise 
 | `mise run check:syntax-ledger` | regenerates both ledger files into a temporary directory through `ledger:syntax` and fails, printing the difference, while either differs from the committed file |
 | `mise run check:syntax-exemplars` | fails while a committed rule, an attribute or a refusal has no exemplar or owed row, a file names none, an exemplar does not show what it names, or a features exemplar states `owes` or `refuses` |
 | `mise run check:exemplars` | fails while an exemplar leaves a declaration unsettled |
-| `mise run check:fences` | fails while a fenced `gandr` block of a tracked Markdown file, or of a comment of a tracked `.rs` or `.gandr` file, writes a spelling that the reader refuses as `RetiredSpelling.<surface>` |
 | `mise run ledger:build`, `mise run ledger:dump` | build `features.db` from `features.sql`, and dump it back |
 | `mise run ledger:stamp <pr> <base>` | writes `#<pr>` into the `since` of each implemented or partial row that the change from `<base>` touches, and commits `features.sql` alone; `pr:open` runs it once the pull request has its number |
 | `mise run check:ledger` | fails while `features.sql` breaks a constraint or is not its own re-dump, a `parent` names no row, a named path does not exist, a features exemplar is named by no row, or a language feature names no exemplar |

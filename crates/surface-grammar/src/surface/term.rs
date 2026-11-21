@@ -80,7 +80,6 @@ use crate::PrecName;
 use crate::PrecTable;
 use crate::Provenance;
 use crate::Regex;
-use crate::RetiredForm;
 use crate::Rule;
 use crate::RuleName;
 use crate::Sort;
@@ -1652,16 +1651,6 @@ fn attributes_parameters_externs(
         SurfaceForm("parameter"),
         AdaptationReason("folded away: the `id : T?` parameter is inlined in the parameter list, not a standalone form-first identifier competing with a bare variable"),
     ));
-    attribute_block.adaptations.push(Adaptation::refused(
-        RuleName("attribute_block"),
-        RetiredForm::NativeAttribute,
-        AdaptationReason("a native value is a row of the builtin table: `@[builtin(\"key\")]` binds it, and the reader refuses `native` by name"),
-    ));
-    attribute_block.adaptations.push(Adaptation::refused(
-        RuleName("attribute_block"),
-        RetiredForm::BuiltinWord,
-        AdaptationReason("a `builtin` mark names its row by a key in quotes, as each row of the builtin table: the reader refuses a bare word by name"),
-    ));
     out.push(attribute_block);
     out.push(r(
         RuleName("inner_attribute_block"),
@@ -1796,9 +1785,9 @@ fn patterns(
     // A group of patterns receiving a call's outputs, positional `(q, r)` or
     // labelled `(.q, .r)`, `(.r = rem, .q = quo)`. The labelled group takes a
     // `(` of its own, decided by the very next tile, as the labelled telescope
-    // does, so a dot after an operand is never a label's. Over a stored
-    // product the group is the retired pattern, and `*{p, q}` replaces it.
-    let mut tuple = r(
+    // does, so a dot after an operand is never a label's. A stored product
+    // takes the pattern `*{p, q}`.
+    out.push(r(
         RuleName("tuple_pattern"),
         Provenance("tuple_pattern"),
         s,
@@ -1817,13 +1806,7 @@ fn patterns(
                 t(TileLabel(")")),
             ]),
         ]),
-    );
-    tuple.adaptations.push(Adaptation::refused(
-        RuleName("tuple_pattern"),
-        RetiredForm::ParenthesizedProductPattern,
-        AdaptationReason("a group in parentheses over a stored product, in a `let` or a match arm, is refused by name: `*{p, q}` is the pattern; a group over a call's outputs keeps its reading"),
     ));
-    out.push(tuple);
     // The telescope pattern `*{ x, y }`, `*{ .n, .v }` punning its labels and
     // `*{ .n = m }` renaming one. An entry's shape is inlined, since a
     // standalone `record_pattern_field` rule would give its `identifier`
@@ -4800,21 +4783,6 @@ fn primary_expressions(
         RuleName("telescope_expression"),
         SurfaceForm("record_update_expression"),
         AdaptationReason("factored into the #{ expression family: the update tail `| .id = E, … }` shares the `#{ E` prefix and discriminates on the `|` tile after the source expression"),
-    ));
-    telescope.adaptations.push(Adaptation::refused(
-        RuleName("telescope_expression"),
-        RetiredForm::UnitValue,
-        AdaptationReason("the unit value is the empty telescope `*{}`: the name `unit`, where no declaration binds it, is refused by name"),
-    ));
-    telescope.adaptations.push(Adaptation::refused(
-        RuleName("telescope_expression"),
-        RetiredForm::BareRecordField,
-        AdaptationReason("a field of a record literal supplies a name, so it writes the dot, `*{ .l = e }`: the undotted `*{ l = e }` is refused by name"),
-    ));
-    telescope.adaptations.push(Adaptation::refused(
-        RuleName("telescope_expression"),
-        RetiredForm::BareUpdateField,
-        AdaptationReason("a field of a record update supplies a name, so it writes the dot, `*{ r | .l = e }`: the undotted `*{ r | l = e }` is refused by name"),
     ));
     out.push(telescope);
     // The injection `+{ .ok = E }` into a sum over labels, positional as

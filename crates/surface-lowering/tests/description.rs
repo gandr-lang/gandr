@@ -181,7 +181,7 @@ fn member_refusals_keep_their_spans_and_other_declarations()
     };
     assert_eq!(
         source.get(usize::from(span.start()) .. usize::from(span.end())),
-        Some("~>")
+        Some("rule : bad x ~> x")
     );
     assert!(matches!(later.outcome(), DeclarationOutcome::Bodied { .. }));
     assert_eq!(later.name().as_ref(), "later");

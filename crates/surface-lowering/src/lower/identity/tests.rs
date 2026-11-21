@@ -31,7 +31,6 @@ use gandr_core_term::session::RecordedMove;
 use gandr_core_term::session::SessionRelation;
 use gandr_core_term::ua::Stratum;
 use gandr_kernel_term::DeBruijnIndex;
-use gandr_surface_grammar::RetiredForm;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
 use gandr_theory_sites::Degree;
@@ -3517,36 +3516,28 @@ fn an_omitted_carrier_is_a_nominated_hole_4932()
 }
 
 #[test]
-fn a_carrier_written_first_is_refused_5024()
+fn a_carrier_written_first_is_an_extra_operand_5024()
 {
-    // A path-shaped type over three operands writes its carrier first, which
-    // its head takes by name: the form is refused at its head by its retired
-    // spelling, as a type and where a value is read.
-    for (source, head, retired) in [
+    // A path-shaped type over three operands has one operand more than its
+    // form takes: the form is refused at its head with an extra operand, as
+    // a type and where a value is read.
+    for (source, head) in [
         (
             "def p : Path(Integer, 4, 4);\n",
             crate::form::TileName::PATH,
-            RetiredForm::PositionalPathCarrier,
         ),
         (
             "def p : Bridge(Integer, 4, 4);\n",
             crate::form::TileName::BRIDGE,
-            RetiredForm::PositionalBridgeCarrier,
         ),
         (
             "def p : Flow(Integer, 4, 4);\n",
             crate::form::TileName::FLOW_TYPE,
-            RetiredForm::PositionalFlowCarrier,
         ),
-        (
-            "def p = Path Integer 4 4;\n",
-            crate::form::TileName::PATH,
-            RetiredForm::PositionalPathCarrier,
-        ),
+        ("def p = Path Integer 4 4;\n", crate::form::TileName::PATH),
         (
             "def p = Path(Integer, 4, 4);\n",
             crate::form::TileName::PATH,
-            RetiredForm::PositionalPathCarrier,
         ),
     ] {
         let mut arena = CoreArena::new();
@@ -3555,10 +3546,10 @@ fn a_carrier_written_first_is_refused_5024()
             matches!(
                 outcome_of(&module, "p".into()),
                 DeclarationOutcome::Refused(LoweringRefusal::MalformedForm {
-                    fault: crate::FormFault::Retired(refused),
+                    fault: crate::FormFault::ExtraOperand,
                     span,
                     ..
-                }) if refused == retired && source.get(usize::from(span.start()) .. usize::from(span.end())) == Some(head.as_ref())
+                }) if source.get(usize::from(span.start()) .. usize::from(span.end())) == Some(head.as_ref())
             ),
             "`{source}` is refused at its head: {:?}",
             outcome_of(&module, "p".into())

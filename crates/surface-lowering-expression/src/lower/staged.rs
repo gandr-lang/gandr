@@ -69,7 +69,6 @@ use gandr_kernel_term::StageBinder;
 use gandr_kernel_term::StageBound;
 use gandr_kernel_term::StageDepth;
 use gandr_kernel_term::StageId;
-use gandr_surface_grammar::RetiredForm;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -543,8 +542,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     }
 
     /// Classify a staged type, `Nat[i]` or `Nat[< i]`, or the view type
-    /// `View[m](a)` a method answering a place declares its result at. The
-    /// retired field and face forms, `T[.l = v]` and `T[f ↦ v]`, are refused.
+    /// `View[m](a)` a method answering a place declares its result at.
     ///
     /// # Specification
     /// - requires: `site` is a staged type.
@@ -592,17 +590,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             .bracket(site, &mut cursor, TileName::BRACKET_CLOSE)?
         {
             Bracket::Stage => {},
-            Bracket::Fields(_) => {
-                return Err(LoweringRefusal::RetiredName {
-                    span: site.at.span,
-                    form: RetiredForm::BracketFields,
-                });
-            },
-            Bracket::Faces(_) => {
-                return Err(LoweringRefusal::RetiredName {
-                    span: site.at.span,
-                    form: RetiredForm::BracketFaces,
-                });
+            Bracket::Fields(_) | Bracket::Faces(_) => {
+                return Err(site.fault(site.at.span, FormFault::MisplacedTile));
             },
         }
         let _below = cursor.tile(TileName::LESS_THAN);

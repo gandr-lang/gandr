@@ -1,6 +1,0 @@
-/// `parenthesized_product`: the retired product type `(A, B)`. The telescope
-/// `*{A, B}` replaces it. The lowering refuses the list at its first comma, and
-/// the refusal names it. The domain `(A, B) -> C` and the outputs `-> (A, B)`
-/// keep their readings.
-@[refuses("RetiredSpelling.parenthesized_product")]
-def p : (Integer, String);

@@ -968,8 +968,6 @@ fn uncarried(
                 | DescriptionFault::TypeShape
                 | DescriptionFault::NoType
                 | DescriptionFault::NoUniverse
-                | DescriptionFault::RetiredRuleArrow
-                | DescriptionFault::RetiredOperation
                 | DescriptionFault::NativeDecode(_)
                 | DescriptionFault::IllFormed(_)
                 | DescriptionFault::Signature(_)

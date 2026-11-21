@@ -1,6 +1,0 @@
-/// `view_telescope`: the retired opener `#{` of a telescope and a record. The
-/// opener `*{` replaces it. The reader refuses the glued token, and the
-/// refusal names it. `# {` with a space stays the freshness relation and a
-/// brace.
-@[refuses("RetiredSpelling.view_telescope")]
-def a : #{ x : Integer };

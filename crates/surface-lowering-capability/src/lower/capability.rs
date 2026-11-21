@@ -198,7 +198,6 @@ use gandr_core_term::handler::subject;
 use gandr_core_term::session::SessionAction;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
-use gandr_surface_grammar::RetiredForm;
 use gandr_surface_lowering_base::lower::arity::Planned;
 use gandr_surface_lowering_base::lower::arity::clause_body;
 pub(super) use gandr_surface_lowering_base::lower::capability::Authority;
@@ -1378,13 +1377,13 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             start,
             end: self.cx().operands.entries().len(),
         };
-        // An operation of no input is called by its bare name: the reader
-        // refuses the empty argument list `()` by its name.
+        // An operation of no input is called by its bare name, so an empty
+        // argument list `()` stands where no tile belongs.
         if payload.start == payload.end {
-            return Err(LoweringRefusal::RetiredName {
-                span: ByteSpan::new(list.start(), site.at.span.end()).unwrap_or(list),
-                form: RetiredForm::EmptyOperationCall,
-            });
+            return Err(site.fault(
+                ByteSpan::new(list.start(), site.at.span.end()).unwrap_or(list),
+                FormFault::MisplacedTile,
+            ));
         }
         if let Performer::Capability(capability, _) = performer {
             self.host().read(capability, Reading::Value(frame));
@@ -2603,6 +2602,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///
     /// # Errors
     /// [`LoweringRefusal::MalformedForm`].
+    ///
+    /// # Cost
+    /// - allocation: the refusal it returns, error path
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::capability_scope`].

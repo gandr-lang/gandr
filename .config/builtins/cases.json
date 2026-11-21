@@ -21,9 +21,7 @@
   {
     "name": "a head rule of the type grammar names its capitalized tiles, the primitive rule names each tile, and a rule of the same name in another file names none",
     "input": [
-      "crates/surface-grammar/src/surface/type_shell.rs:495:    for (name, head, retired) in [",
-      "crates/surface-grammar/src/surface/type_shell.rs:496:        (\"path_type\", \"Path\", RetiredForm::PositionalPathCarrier),",
-      "crates/surface-grammar/src/surface/type_shell.rs:502:    ] {",
+      "crates/surface-grammar/src/surface/type_shell.rs:488:    for (name, head) in [(\"path_type\", \"Path\"), (\"bridge_type\", \"Bridge\")] {",
       "crates/surface-grammar/src/surface/type_shell.rs:508:                tile(TileLabel(head)),",
       "crates/surface-grammar/src/surface/type_shell.rs:531:        RuleName(\"flow_type\"),",
       "crates/surface-grammar/src/surface/type_shell.rs:534:        Regex::seq([tile(TileLabel(\"Flow\")), supplied(Listed::Always)]),",
@@ -40,7 +38,7 @@
       "crates/surface-parser/src/mold.rs:5002:    ));",
       ""
     ],
-    "output": "Any\tcrates/surface-grammar/src/surface/type_shell.rs\nFlow\tcrates/surface-grammar/src/surface/type_shell.rs\nPath\tcrates/surface-grammar/src/surface/type_shell.rs\nu32\tcrates/surface-grammar/src/surface/type_shell.rs"
+    "output": "Any\tcrates/surface-grammar/src/surface/type_shell.rs\nBridge\tcrates/surface-grammar/src/surface/type_shell.rs\nFlow\tcrates/surface-grammar/src/surface/type_shell.rs\nPath\tcrates/surface-grammar/src/surface/type_shell.rs\nu32\tcrates/surface-grammar/src/surface/type_shell.rs"
   },
   {
     "name": "the highlighter names each primitive type but the universes, and a list on one line names its texts",

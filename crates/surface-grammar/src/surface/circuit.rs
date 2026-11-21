@@ -63,7 +63,6 @@ use crate::PrecName;
 use crate::PrecTable;
 use crate::Provenance;
 use crate::Regex;
-use crate::RetiredForm;
 use crate::Rule;
 use crate::RuleName;
 use crate::Sort;
@@ -196,23 +195,6 @@ fn theory_declaration(
         RuleName("theory_declaration"),
         SurfaceForm("circuit_signature"),
         AdaptationReason("inlined signature: the arrow-separated two-sided port list is kept LOCAL to each member so a named port list `( name : Type, … )` never becomes a standalone `(`-opened form competing with the parenthesized type at every type slot (the `op_result` precedent)"),
-    ));
-    theory.adaptations.push(Adaptation::refused(
-        RuleName("theory_declaration"),
-        RetiredForm::ShapeMember,
-        AdaptationReason("the member `shape` is refused by name: `boundary` states the carrier of the signature's cells, and `face` names each face of it"),
-    ));
-    theory.adaptations.push(Adaptation::refused(
-        RuleName("theory_declaration"),
-        RetiredForm::EmptyOperationInputs,
-        AdaptationReason("an operation of no input is a constant: `oper c : T` states it, and the reader refuses `() -->` by name"),
-    ));
-    theory.adaptations.push(Adaptation::refused(
-        RuleName("theory_declaration"),
-        RetiredForm::EmptyOperationCall,
-        AdaptationReason(
-            "a constant is its bare name in a term: the reader refuses `c ()` by name",
-        ),
     ));
     out.push(theory);
 }

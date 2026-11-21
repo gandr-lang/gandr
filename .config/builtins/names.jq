@@ -28,7 +28,7 @@ def opener:
   | if $file | endswith("/resolve.rs") then first(.text | capture("\\bconst (?<block>TYPE_ATOMS|HOMED_ATOMS|HOMED_FORMERS)\\b") | .block) // null
     elif $file | endswith("/type_shell.rs") then
       first(.text | capture("RuleName\\(\"(?<block>primitive_type|flow_type|capability_type)\"\\)") | .block)
-      // (if .text | test("\\bfor \\(name, head, retired\\) in \\[") then "carried" else null end)
+      // (if .text | test("\\bfor \\(name, head\\) in \\[") then "carried" else null end)
     elif $file | endswith("/mold.rs") then first(.text | capture("\\bconst (?<block>CALLED_FORMERS)\\b") | .block) // null
     elif $file | endswith("/highlight.rs") then first(.text | capture("\\bconst (?<block>PRIMITIVE_TYPES)\\b") | .block) // null
     elif $file | endswith("/identity.rs") then first(.text | capture("\\bconst (?<block>SPELLED)\\b") | .block) // null
@@ -69,7 +69,9 @@ def names($block; $spelled):
             ($line | opener) as $opened
             | if $opened == null then .names = []
               else {block: $opened,
-                    names: (if $opened == "CALLED_FORMERS" then [$line | strings] else [] end)}
+                    names: (if $opened == "CALLED_FORMERS" then [$line | strings]
+                            elif $opened == "carried" then [$line | names($opened; $spelled)]
+                            else [] end)}
                 | if ($line | closer) then .block = null else . end
               end
           elif ($line | closer) then {block: null, names: [$line | names($block; $spelled)]}

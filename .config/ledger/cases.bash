@@ -14,10 +14,6 @@
 # `check.bash` runs there, and its exit status and standard error are the
 # case's. The base of the change that a gate names is not the scratch
 # repository's, so the harness drops it.
-#
-# A case's `files` are the sources that the case adds, each under its path.
-# A file in the folder of refused spellings is such a source.
-# - see: #6896
 set -euo pipefail
 # The scratch repository's git reads no identity from the host, as the CI
 # image has none, and guesses none: a commit that names no author fails
@@ -86,11 +82,6 @@ while IFS= read -r case; do
   if jq -e 'has("superseded")' <<< "$case" > /dev/null; then
     jq '{superseded: .superseded}' <<< "$case" > "$repo/ledger/syntax.json"
   fi
-  while IFS= read -r path; do
-    mkdir -p "$repo/$(dirname "$path")"
-    jq -r --arg path "$path" '.files[$path]' <<< "$case" > "$repo/$path"
-    git -C "$repo" add "$path"
-  done < <(jq -r '.files // {} | keys[]' <<< "$case")
   status=0
   env=(PATH="$scratch/gh:$PATH" STUB_GH="$scratch/answers")
   if jq -e 'has("body")' <<< "$case" > /dev/null; then
