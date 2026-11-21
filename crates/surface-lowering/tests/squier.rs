@@ -311,9 +311,7 @@ fn bar_cells(
         let mut next = Vec::with_capacity(layer.len().saturating_mul(usize::from(letters.0)));
         for word in &layer {
             for letter in 0 .. letters.0 {
-                let mut grown = word.0.clone();
-                grown.push(Letter(letter));
-                let grown = Word(grown);
+                let grown = Word([word.0.as_slice(), &[Letter(letter)]].concat());
                 if strings.reducibility(&grown) == Reducibility::Irreducible {
                     next.push(grown);
                 }
@@ -330,9 +328,7 @@ fn bar_cells(
             let used: usize = cell.iter().map(|word| word.0.len()).sum();
             for word in &normal {
                 if used.saturating_add(word.0.len()) <= WORD_BUDGET {
-                    let mut grown = cell.clone();
-                    grown.push(word.clone());
-                    next.push(grown);
+                    next.push([cell.as_slice(), core::slice::from_ref(word)].concat());
                 }
             }
         }

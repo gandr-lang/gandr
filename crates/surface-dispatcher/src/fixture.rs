@@ -313,8 +313,8 @@ pub fn damage(
         .collect();
     segments.sort();
     let mut latest = None;
-    for segment in segments {
-        let bytes = std::fs::read(&segment).expect("a segment reads");
+    for segment in &segments {
+        let bytes = std::fs::read(segment).expect("a segment reads");
         let mut rest = bytes.as_slice();
         let mut at = 0_u64;
         while let Some((magic, after)) = rest.split_first_chunk::<4>()
@@ -329,7 +329,7 @@ pub fn damage(
                 .saturating_add(64_u64)
                 .saturating_add(u64::from(u32::from_le_bytes(*length)));
             if named.as_slice() == digest.as_ref() {
-                latest = Some((segment.clone(), end));
+                latest = Some((segment, end));
             }
             at = end;
             rest = next;

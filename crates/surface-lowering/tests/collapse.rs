@@ -118,8 +118,7 @@ fn spread(
             continue;
         }
         for part in 0 ..= remaining.0 {
-            let mut next = prefix.clone();
-            next.push(Count(part));
+            let next = [prefix.as_slice(), &[Count(part)]].concat();
             pending.push((next, Count(remaining.0.saturating_sub(part))));
         }
     }
@@ -151,8 +150,7 @@ fn shapes_of(
                 let arguments = shapes.get(part.0).map_or(&[][..], Vec::as_slice);
                 for tuple in &tuples {
                     for &argument in arguments {
-                        let mut next = tuple.clone();
-                        next.push(argument);
+                        let next = [tuple.as_slice(), &[argument]].concat();
                         longer.push(next);
                     }
                 }
@@ -247,8 +245,7 @@ fn linear_arrows(
                 let terms = shapes.get(part.0).map_or(&[][..], Vec::as_slice);
                 for tuple in &tuples {
                     for &term in terms {
-                        let mut next = tuple.clone();
-                        next.push(term);
+                        let next = [tuple.as_slice(), &[term]].concat();
                         longer.push(next);
                     }
                 }
@@ -305,8 +302,7 @@ fn essential(theory: &mut LawvereTheory) -> Option<Vec<Vec<BarCell>>>
         for cell in out.last()? {
             let target = cell.0.last()?.source;
             for arrow in linear_arrows(theory, &shapes, (target, largest))? {
-                let mut arrows = cell.0.clone();
-                arrows.push(arrow);
+                let arrows = [cell.0.as_slice(), &[arrow]].concat();
                 let candidate = BarCell(arrows);
                 if theory.class(&candidate).ok()? == Class::Critical {
                     found.push(candidate);

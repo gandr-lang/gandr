@@ -1461,10 +1461,14 @@ fn closing_materials(
     let mut materials: Vec<Vec<Part>> = menu
         .closings()
         .iter()
+        // Each material is the pending parts and its own closing, built
+        // whole.
         .map(|closing| {
-            let mut material = pending.to_vec();
-            material.extend(parts(grammar, closing.steps()));
-            material
+            pending
+                .iter()
+                .cloned()
+                .chain(parts(grammar, closing.steps()))
+                .collect()
         })
         .collect();
     if materials.is_empty() && !pending.is_empty() {

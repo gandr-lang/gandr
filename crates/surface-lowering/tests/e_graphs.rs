@@ -146,8 +146,7 @@ fn seeds(theory: &mut LawvereTheory) -> Vec<TermPlace>
                             continue;
                         }
                         for &child in children {
-                            let mut grown = tuple.clone();
-                            grown.push(child);
+                            let grown = [tuple.as_slice(), &[child]].concat();
                             longer.push((grown, used.saturating_add(child_size)));
                         }
                     }
