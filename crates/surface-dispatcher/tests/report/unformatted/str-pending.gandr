@@ -1,0 +1,2 @@
+module M : *{ x : Integer, z : Integer } where { def x = 1; }
+def identity : +U (Integer -> -F Integer) ; def identity = thunk { fun (x) { return x } } ; def hole : Integer ;

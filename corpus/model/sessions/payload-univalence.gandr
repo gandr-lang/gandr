@@ -1,0 +1,19 @@
+// This source pays session bisimilarity with a univalence
+// between nominal types.
+//
+// The univalence record supplies the evidence.
+// Native identity checks the evidence at the owed payload pair.
+// `equiv` decides a path from its round trips.
+//
+// `oneProtocol` gives `Path.bisim` the payload path.
+//
+// - see: `model/identity/equiv-data.gandr` — `equiv` checks round trips
+// - see: #1739 — `oneProtocol`
+
+// The bits and the answers, their univalence `codes`, and the protocols
+// `Ask.Coded` and `Ask.Decoded` that hear them.
+import "./run-transport.gandr";
+
+/// The two protocols are one type along the univalence, which pays
+/// the one pair of payloads that differ.
+def oneProtocol : Path[.A = Type] Ask.Coded Ask.Decoded = Path.bisim Ask.Coded Ask.Decoded codes;

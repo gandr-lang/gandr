@@ -1,0 +1,49 @@
+// `halted` performs an operation with no continuation inside an unwind.
+//
+// An unwind runs to completion under the empty row. It must not stop on an
+// operation that no handler resumes.
+//
+// The checker reads the unwind under the empty row. So it refuses the
+// operation there, as it refuses `abandon k` inside an unwind.
+//
+// - see: #7968 — an operation with no continuation
+// - see: `../cancellation/shielded.gandr` — `abandon k` inside an unwind
+
+// The import provides the early-exit host interface.
+import std.process;
+
+/// A halt with a code, which no handler resumes.
+theory Halt.Eff where
+  /// The code of the halt.
+  sort R : Type+;
+  /// The carrier, the answer of the handler.
+  sort C : Type;
+  /// Halt with `code`.
+  oper halt : (code : R) --> C;
+
+/// A halt performed inside an unwind.
+@[refuses("UnwindEffect")]
+def halted() -> Integer =
+  handle h : Halt.Eff with sort R = Integer {
+    var n = 0;
+    access n as v { abort v } unwind { h.halt 1 };
+    pure 0
+  } with {
+    | pure(y) => pure y
+    | oper halt(code) => pure 7
+  }
+
+/// An exit whose clause abandons `k` inside an unwind.
+@[refuses("UnwindEffect")]
+def abandoned() -> Integer =
+  handle c : std.process.Exit.Eff {
+    let _ = c.exit 1;
+    pure 0
+  } with {
+    | pure(y) => pure y
+    | oper exit(code, k) => {
+      var n = 0;
+      access n as v { abort v } unwind { abandon k };
+      pure 7
+    }
+  }
