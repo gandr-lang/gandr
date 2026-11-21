@@ -1,0 +1,20 @@
+// The workspace of the tree. It names the standard library, so a source of
+// the tree finds `std` by the walk above it. The walk reads the members that
+// `workspace.gandr.toml` records, so it never runs `std` to find `std`.
+//
+// - see: #7685
+import std.build (Gandr);
+import std.list (List);
+
+/// What the members share: the version each states.
+pub module Workspace : Model(Gandr.Workspace) where
+  def version = "0.1.0";
+  /// The least language version the members ask for.
+  def gandr = ">= 0.0";
+  /// The features every member uses: none.
+  def features = "";
+  /// The systems the members build on: any.
+  def systems = "";
+
+/// The workspace's packages: the standard library.
+pub def members : List String = #["library/std"];

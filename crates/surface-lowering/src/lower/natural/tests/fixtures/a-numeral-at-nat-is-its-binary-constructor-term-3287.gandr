@@ -1,0 +1,3 @@
+def zero = (0 : Nat);
+def five = (5 : Nat);
+def large = (2147483648 : Nat);

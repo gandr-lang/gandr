@@ -1,0 +1,14 @@
+data Nat : Type where
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+data Pred : (n : Nat) --> Type where
+  | Pre : (m : Nat) --> Pred (Succ m)
+data At : (n : Nat) --> Type where
+  | A : (n : Nat) --> At n
+data Sig : Type where
+  | Pack : (n : Nat, v : Pred (Succ n)) --> Sig
+data Packed : (s : Sig) --> Type where
+  | Hold : (n : Nat, v : Pred (Succ n)) --> Packed (Pack n v)
+def first(n : Nat, v : Pred (Succ n), h : Packed (Pack n v)) -> At n =
+  match h where
+    | Hold(m, w) => A m

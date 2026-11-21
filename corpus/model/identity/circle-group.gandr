@@ -1,0 +1,85 @@
+/// This source states the group laws of the circle loop space.
+///
+/// The laws compare `wind` and `spin` with integer addition.
+/// The loops commute because their winding numbers commute.
+///
+/// The checker proves each law by word conversion or `Path.ap`.
+///
+/// Limits: `ΩS¹≡ℤ` needs univalence. `isSetΩS¹` and `toPropElim` need the
+/// h-level ladder. `basedΩS¹ x ≡ ℤ` at every point needs equivalences as
+/// structure.
+///
+/// - see: #422 — `spinHom`
+/// - see: #473 — `spinHom`
+/// - see: #440 — `spinHom`
+/// - see: #423 — `windHom`, `comm`
+/// - see: #424 — `windHom`
+/// - see: #4618 — `spunComm`
+/// - see: #426 — `comm`
+// The circle, the integers, winding, spinning and the round trip `sect`.
+import "./circle-base.gandr";
+// The integers' sum and its laws.
+import "./int-sum.gandr";
+
+/// The successor case adds one loop by computation.
+def spinUp(n : Int) -> Path[.A = Path[.A = Circle] Base Base] (spin (S n)) (loop ∷ spin n) =
+  Path.here (loop ∷ spin n)
+
+/// The predecessor case adds one inverse loop by computation.
+def spinDown(n : Int) -> Path[.A = Path[.A = Circle] Base Base] (spin (P n)) (back loop ∷ spin n) =
+  Path.here (back loop ∷ spin n)
+
+/// The `spinHom` induction uses reverse word order because `spin` adds a loop
+/// at each word front.
+def rec spinHom(
+  a : Int,
+  b : Int
+) -> Path[.A = Path[.A = Circle] Base Base] (spin (plus a b)) (Path.step (spin b) (spin a)) =
+  match b where
+    | Z => Path.here (spin a)
+    | S(x) => Path.ap loopOn (spinHom[<] a x)
+    | P(x) => Path.ap unloopOn (spinHom[<] a x)
+
+/// The `windHom` induction sums windings in reverse order because `wind` folds
+/// its second summand.
+def rec windHom(
+  q : Path[.A = Circle] Base Base,
+  p : Path[.A = Circle] Base Base
+) -> Path[.A = Int] (wind (Path.step p q)) (plus (wind q) (wind p)) =
+  match p where
+    | here => Path.here (wind q)
+    | loop ∷ r => Path.ap up (windHom[<] q r)
+    | back(loop) ∷ r => Path.ap down (windHom[<] q r)
+
+/// The kernel replays `spunComm` as `Path.ap(spin, plusComm)`.
+def spunComm(
+  p : Path[.A = Circle] Base Base,
+  q : Path[.A = Circle] Base Base
+) -> Path[.A = Path[.A = Circle] Base Base] (spin (plus (wind q) (wind p))) (
+  spin (plus (wind p) (wind q))
+) =
+  Path.walk (fun (a) {
+    type(Path[.A = Path[.A = Circle] Base Base] (spin (plus (wind q) (wind p))) (spin a))
+  }) (plusComm (wind q) (wind p)) (Path.here (spin (plus (wind q) (wind p))))
+
+/// The `comm` chain applies `sect`, `windHom`, and `plusComm` to
+/// commute circle loops.
+def comm(
+  p : Path[.A = Circle] Base Base,
+  q : Path[.A = Circle] Base Base
+) -> Path[.A = Path[.A = Circle] Base Base] (Path.step p q) (Path.step q p) =
+  compose[9, 11] (chain 5) (
+    Path.back (sect (Path.step p q)),
+    Path.ap spin (windHom q p),
+    Path.ap spin (plusComm (wind q) (wind p)),
+    Path.back (Path.ap spin (windHom p q)),
+    sect (Path.step q p)
+  )
+
+/// Spinning and winding three loops returns three.
+@[runs("S (S (S Z))")]
+def windThree : () -> Int = wind (spin (S (S (S Z))));
+
+/// Spinning and winding two inverse loops returns minus two.
+@[runs("P (P Z)")]
+def windMinusTwo : () -> Int = wind (spin (P (P Z)));

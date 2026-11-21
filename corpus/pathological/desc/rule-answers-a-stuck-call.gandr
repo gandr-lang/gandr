@@ -1,0 +1,48 @@
+//! A rule of a theory that answers a stuck call beside another stuck call.
+//!
+//! The unit rule `band one x <=> x` answers `encode c`. The other endpoint is
+//! `encode b`. A reader that takes each stuck call for the same call admits
+//! a path that does not hold.
+//!
+//! No rule relates the two calls, and each call has its own argument. So the
+//! checker refuses the reflexivity between them.
+//!
+//! - see: #8278
+
+/// The theory of a truth value.
+theory Truth where
+  /// The sort of truth values.
+  sort T : Type;
+  /// The false value.
+  oper no : T;
+  /// The true value.
+  oper yes : T;
+
+/// The fragment of the `llvm` dialect at one bit.
+theory BitWord where
+  /// A word of one bit.
+  sort I1 : Type;
+  /// The constant zero.
+  oper zero : I1;
+  /// The constant one.
+  oper one : I1;
+  /// The conjunction of two bits.
+  oper band : (x : I1, y : I1) --> I1;
+  /// Zero on the left absorbs.
+  rule bandZero : band zero x <=> zero;
+  /// One on the left is the unit.
+  rule bandOne : band one x <=> x;
+
+/// The bit of a truth value.
+def encode(t : Terms Truth) -> Terms BitWord =
+  match t where
+    | Truth.no => BitWord.zero
+    | Truth.yes => BitWord.one
+
+/// The unit rule answers the call on `c`, and the point is the call on `b`.
+///
+/// - see: #8278
+@[refuses("EndpointMismatch")]
+def unitOfAnother(b : Terms Truth, c : Terms Truth) -> Path (encode
+  b) (BitWord.band BitWord.one (encode c)) = Path.here
+  (encode b);
