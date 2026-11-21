@@ -163,6 +163,9 @@
 //!   bikeshed (row "An effect whose sort is fixed at a type"): the row entry's
 //!   spelling, `T with sort x = A`, which [`CapabilityRef::returner_row`]
 //!   reads.
+//! - `vault:01a1e7b4-8c77-7a81-9165-ff37ea870424` — anchor: the direction of
+//!   I/O (§ io-direction-interop): a handler in gandr answers the interface of
+//!   an `extern` block, which `capability_scope` records as a host scope.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -239,7 +242,6 @@ use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
-use crate::form::FormName;
 use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Pieces;
@@ -263,6 +265,7 @@ use crate::origin::RowTheory;
 use crate::origin::ScopeAnswer;
 use crate::origin::WrittenModel;
 use crate::resolve::Frame;
+use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
 use crate::resolve::binder_site;
@@ -1961,9 +1964,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// - fails: the wrong-sort refusal where no computation is read and at a
     ///   module a host interface's scope names; a missing-operand fault where
     ///   the subject of a host scope writing no `with` ends, which its clauses
-    ///   follow; out of the fragment (`extern_block`) at the interface of a
-    ///   scope over an extern block's interface, which the host the run is
-    ///   offered to answers; the refusals of [`CapabilityRef::handled`],
+    ///   follow; [`LoweringRefusal::UnresolvedName`] at a clause over an extern
+    ///   block's interface that names an operation the block lacks; out of the
+    ///   fragment (`Arity`, the clause's binders) at a clause over that
+    ///   interface that binds a payload for a member of no argument, or none
+    ///   for a member of some; the refusals of [`CapabilityRef::handled`],
     ///   [`Families::theory_slot`], [`Families::named_model`] and
     ///   [`Families::answering_model`]; [`LoweringRefusal::UninterfacedMember`]
     ///   at the theory's name with [`InterfaceFault::Value`] for a scope
@@ -2081,17 +2086,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                     crate::resolve::Resolution::Declaration(theory.theory),
                 ));
             },
-            // A source handler of an extern block's interface is beyond the
-            // form: the host the run is offered to answers it (#327).
-            Interface::Foreign(_) => {
-                let named = Site {
-                    at: written.last,
-                    ..site
-                };
-                return Err(named.folded(
-                    FormName::EXTERN_BLOCK,
-                    FragmentBoundary::Unadmitted(Unbuilt::ExternBlock),
-                ));
+            // A source handler of an extern block's interface shadows the
+            // host inside its scope: its clauses answer each member.
+            Interface::Foreign(ref foreign) => {
+                let _first = self.cx_mut().answered.insert(held, foreign.name.clone());
             },
         }
         let subject = self.host().block(site, &mut cursor, Frame::Inner(held))?;
@@ -2266,6 +2264,26 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                             else {
                                 (None, first)
                             };
+                        // A clause over a block's interface answers a member
+                        // the block declares, and binds a payload where the
+                        // member takes arguments.
+                        if let Interface::Foreign(ref foreign) = interface {
+                            let Some(member) = foreign
+                                .operations
+                                .iter()
+                                .find(|member| member.name == operation)
+                            else {
+                                return Err(LoweringRefusal::UnresolvedName {
+                                    span: at.span,
+                                    name: self.cx().name_at(at),
+                                });
+                            };
+                            if member.parameters.is_empty() == payload.is_some() {
+                                let binders = if payload.is_some() { 2_usize } else { 1_usize };
+                                return Err(Site { at, ..site }
+                                    .out(FragmentBoundary::Arity(OperandCount::from(binders))));
+                            }
+                        }
                         // A host operation replying a buffer names its mint
                         // between the payload and the continuation; a theory's
                         // replies values of the sorts its manifest fixes.

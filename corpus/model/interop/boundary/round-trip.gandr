@@ -3,16 +3,18 @@
 //
 // The first direction: Rust holds the composed program and calls a definition
 // by name. The second: the `extern` block declares the Rust caller's `add` as
-// an operation of the interface `Boundary`, and `quadrupled` performs it. No
-// handler here answers it, so the run offers it to the Rust caller's host,
-// which calls its own `add`. The block names `add`'s row, and its check admits
-// the declared types against the row under Rust's default layout. A `u32`
-// crosses as itself, and `by-layout.gandr` reads values by their layouts.
+// an operation of the interface `Boundary`, and `quadrupled` performs it.
+// Outside a handler the run offers it to the Rust caller's host, which calls
+// its own `add`. The block names `add`'s row, and its check admits the
+// declared types against the row under Rust's default layout. A `u32` crosses
+// as itself, and `by-layout.gandr` reads values by their layouts.
 //
 // The Rust test composes this source, names each definition and calls it on
 // values it builds, then reads the answer back. Each `runs` item below makes
 // the same call from gandr, so both sides state one answer. `quadrupled` has
-// none, since only the Rust caller answers `Boundary`.
+// none, since only the Rust caller answers `Boundary` there. `mocked` handles
+// `Boundary` in gandr, so its clause answers each `add`, and the run needs no
+// host.
 //
 // - see: `model/interop/boundary/by-layout.gandr` — values crossing by their
 //   layouts
@@ -66,3 +68,13 @@ def lessened() -> Integer = less 19 7;
 def added() -> Integer =
   let add = adder 5
   add 7
+
+/// `quadrupled` at 21, with `add` answered in gandr: inside the scope the
+/// clause shadows the Rust caller's host. The clause receives both arguments
+/// as one pair of `u32`.
+@[runs("84u32")]
+def mocked() -> u32 =
+  handle b : Boundary { quadrupled 21u32 } with {
+    | pure(r) => r
+    | oper add(p, k) => k (u32.wrapping_add p.0 p.1)
+  }

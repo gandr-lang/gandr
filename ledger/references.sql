@@ -790,6 +790,7 @@ INSERT INTO reference VALUES('vault:01a1e7b4-8c77-7a81-9165-ff37ea870424','runti
 INSERT INTO reference VALUES('vault:01a1e7b4-8c77-7a81-9165-ff37ea870424','runtime-rust-record','','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1e7b4-8c77-7a81-9165-ff37ea870424','runtime-stencils','transitions','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1e7b4-8c77-7a81-9165-ff37ea870424','surface-lowering-base','module::foreign','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1e7b4-8c77-7a81-9165-ff37ea870424','surface-lowering-capability','lower::capability','anchor','5eec36daeb530a2a2414ed09554c550498b9a52d','2026-11-19','e01349b44df85a4a17a18cf7e7221d5d14131eb7');
 INSERT INTO reference VALUES('vault:01a1ead7-6581-7f22-9479-5b0b363e80d3','runtime-emitter','widths','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1ebc5-2ff2-7833-b871-85901e734925','boot-alloc','','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1ebc5-2ff2-7833-b871-85901e734925','boot-core','','newest',NULL,NULL,NULL);

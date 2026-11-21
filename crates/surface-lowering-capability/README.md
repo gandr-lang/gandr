@@ -47,6 +47,7 @@ The capability family of gandr's lowering. It lowers a capability scope and its 
 - `vault:01a14daa-a317-7d92-bd17-3f20e87634cd` — background: the theories design — what `with sort x = A` fixes.
 - `vault:01a15620-7fbe-7030-a3af-07ffa620eed2` — background: the syntax bikeshed — the row entry's spelling.
 - `vault:01a15b47-4304-793b-a542-d12afcf732a6` — anchor: § methods-desugaring — a receiver no hold holds is a value, and an index of one holds it for its read.
+- `vault:01a1e7b4-8c77-7a81-9165-ff37ea870424` — anchor: the IO direction plan (§ io-direction-interop) — a handler in gandr answers the interface of an `extern` block inside its scope.
 
 ## License
 
