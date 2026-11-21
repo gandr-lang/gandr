@@ -165,7 +165,8 @@ impl Drop for Scratch
 /// The directory holding this test's own user directories for the driver:
 /// one per test under the target's scratch directory, emptied on the test's
 /// first run of the driver, so no earlier run and no other test decides its
-/// verdict.
+/// verdict. Its configuration names the checkout's `library/std` as the
+/// standard library, as [`profiled`] writes it.
 ///
 /// A test runs on a thread its name names; a thread a test spawns takes the
 /// process's directory, which is the test's own under nextest.
@@ -188,10 +189,32 @@ fn homes() -> PathBuf
                     .join("cli-homes")
                     .join(test);
                 drop(std::fs::remove_dir_all(&directory));
+                profiled(&directory.join("config"));
                 directory
             })
             .clone()
     })
+}
+
+/// Writes `gandr/config.toml` under `home`, the configuration directory of a
+/// run, so that its `[library] std` names the checkout's `library/std`. A
+/// fixture outside the tree reads the standard library through it.
+///
+/// # Specification
+/// trivial.
+///
+/// # Panics
+/// When the file cannot be written.
+pub fn profiled(home: &Path)
+{
+    let library = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../library/std");
+    let directory = home.join("gandr");
+    std::fs::create_dir_all(&directory).expect("the configuration directory is made");
+    std::fs::write(
+        directory.join("config.toml"),
+        format!("[library]\nstd = \"{}\"\n", library.display()),
+    )
+    .expect("the configuration is written");
 }
 
 /// The driver, ready to run with `arguments`.
@@ -6129,9 +6152,9 @@ fn copied(
 /// #7685: `library.std` in the user's configuration file names the standard
 /// library that a source outside it reads first. A copy of `library/std` with
 /// a module the checkout lacks stands apart from the source, with no
-/// workspace above either. With no file, the source reads the last place,
-/// which lacks the module, and the check refuses it. Once the file names the
-/// copy, the check settles.
+/// workspace above either. With no file, the source finds no standard
+/// library, and the check refuses its import of `std` by name. Once the file
+/// names the copy, the check settles.
 #[test]
 fn a_profile_names_the_standard_library_7685()
 {
@@ -6156,10 +6179,13 @@ fn a_profile_names_the_standard_library_7685()
         ran(command)
     };
     let unprofiled = check();
-    assert_ne!(
-        code(&unprofiled),
-        Code(0_i32),
-        "with no profile, the last place lacks the copy's module:\n{}",
+    assert_eq!(
+        (
+            code(&unprofiled),
+            stdout(&unprofiled).contains("error[ImportNoStandard]")
+        ),
+        (Code(1_i32), true),
+        "with no profile and no workspace, the import of `std` is refused:\n{}",
         stdout(&unprofiled)
     );
     let _file = scratch.file(

@@ -2,8 +2,8 @@
 //
 // A model gives each constant with a value definition.
 //
-// The checker reads a constant value when a law applies it. The reader
-// refuses the old spelling of a constant, `oper zero : () --> M`, by its name.
+// The checker reads a constant value when a law applies it. A constant
+// states its sort alone, `oper z : T`.
 //
 // - see: #2917
 

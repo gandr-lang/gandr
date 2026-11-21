@@ -137,8 +137,8 @@
 //! Enable `tracing` for an INFO span around `dispatch`. It records no argument
 //! or outcome payload and installs no subscriber. One INFO event names the
 //! place of the standard library that an import of `std` from outside it
-//! takes: the profile, the walk or the last place, with the library's root
-//! and the importer's directory (#7685). The driver, `gandr-lang`, owns
+//! takes: the profile or the walk, with the library's root and the
+//! importer's directory (#7685). The driver, `gandr-lang`, owns
 //! output; the evaluator, `gandr-core-nbe`, uses the same diagnostics
 //! interface independently. The dependency is optional and off by default, so
 //! ordinary routing has no instrumentation.

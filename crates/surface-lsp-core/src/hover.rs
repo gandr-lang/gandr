@@ -994,6 +994,9 @@ pub fn hover<Store, Blocks>(
 /// - hypothesis: L3 — a resolved import of a documented file, a missing path
 ///   and an address with a scheme are asserted at their exact answers.
 /// - witness: `hover::tests::an_import_hovers_the_file_it_reads_1203`
+///
+/// # Cost
+/// - allocation: the text of the hover, durable by the returned hover
 #[spec(ensures: |ref ret| ret.as_ref().is_none_or(|hover| hover.contents.value.starts_with(style.markup.opener().0)))]
 fn imported(
     hovering: &Hovering,
@@ -1051,6 +1054,15 @@ fn imported(
                 Some(&ImportTarget::Cycle) => format!(
                     "`{}` imports this document back, so neither is read.",
                     file.display()
+                ),
+                Some(&ImportTarget::NoStandard) => format!(
+                    "`std` finds no standard library: the profile's `[library] std` names none, \
+                     and no directory from `{}` up holds one, so this document is not read.",
+                    hovering
+                        .document
+                        .parent()
+                        .unwrap_or(&hovering.document)
+                        .display()
                 ),
                 Some(&ImportTarget::Unresolved) | None => {
                     if !file.is_file() {

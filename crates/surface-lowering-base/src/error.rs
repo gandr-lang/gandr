@@ -1033,6 +1033,18 @@ pub enum LoweringRefusal<'source>
         refused: ByteSpan,
     },
 
+    /// A declaration of a source outside the standard library whose import of
+    /// `std` finds no standard library: the host's profile names none, and no
+    /// directory from the importer's up roots one or names one in its
+    /// workspace.
+    ImportNoStandard
+    {
+        /// The bytes the import covers.
+        span: ByteSpan,
+        /// The bytes of the refused declaration's name.
+        refused: ByteSpan,
+    },
+
     /// A name read through a module path whose head names no module of the
     /// package, or through the alias of a coordinate its lock does not
     /// record: a coordinate is read only once `gandr lock` has locked it.
@@ -2212,6 +2224,9 @@ impl fmt::Display for LoweringRefusal<'_>
             Self::ImportCycle { .. } => f.write_str(
                 "this source's import is an edge of an import cycle, so none of its declarations is read",
             ),
+            Self::ImportNoStandard { .. } => f.write_str(
+                "this source's import of `std` finds no standard library: the host's profile names none, and no directory above this source holds one, so none of its declarations is read",
+            ),
             Self::UnlockedDependency { alias, .. } => write!(
                 f,
                 "`{alias}` names no module of this package and no dependency its lock records"
@@ -2858,6 +2873,7 @@ impl LoweringRefusal<'_>
             | Self::DuplicateImportAlias { span, .. }
             | Self::ImportUnresolved { span, .. }
             | Self::ImportCycle { span, .. }
+            | Self::ImportNoStandard { span, .. }
             | Self::UnlockedDependency { span, .. }
             | Self::SignatureMismatch { span, .. }
             | Self::ImportShadows { span, .. }
@@ -3005,7 +3021,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 82_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 83_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -3380,6 +3396,10 @@ mod tests
                 method: SurfaceName::from("first"),
                 mode: crate::module::ReceiverMode::Deduced,
             },
+            LoweringRefusal::ImportNoStandard {
+                span: s(155_usize, 156_usize),
+                refused: s(0_usize, 1_usize),
+            },
         ]
     }
 
@@ -3473,6 +3493,7 @@ mod tests
             s(149_usize, 150_usize),
             s(151_usize, 152_usize),
             s(153_usize, 154_usize),
+            s(155_usize, 156_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

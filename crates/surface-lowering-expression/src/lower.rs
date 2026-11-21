@@ -1488,16 +1488,18 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// # Specification
     /// - requires: the collection pass has run.
     /// - ensures: each slot whose name stands in a source with a path import
-    ///   resolved to [`ImportTarget::Unresolved`] or [`ImportTarget::Cycle`]
-    ///   holds [`LoweringRefusal::ImportUnresolved`] or
-    ///   [`LoweringRefusal::ImportCycle`] at its declaration form, naming the
-    ///   import; each slot of a source whose import is read via a name no flow
-    ///   bears holds [`LoweringRefusal::NotATranslation`] at the name, and one
-    ///   whose import's source publishes nothing of a name the flow's domain
-    ///   states holds [`LoweringRefusal::SignatureMismatch`] at the flow's
-    ///   name, naming the first such member — except a slot of a functor's
-    ///   template, which declares nothing; each slot of a source whose import
-    ///   lists a name its module neither declares nor homes holds
+    ///   resolved to [`ImportTarget::Unresolved`], [`ImportTarget::Cycle`] or
+    ///   [`ImportTarget::NoStandard`] holds
+    ///   [`LoweringRefusal::ImportUnresolved`],
+    ///   [`LoweringRefusal::ImportCycle`] or
+    ///   [`LoweringRefusal::ImportNoStandard`] at its declaration form, naming
+    ///   the import; each slot of a source whose import is read via a name no
+    ///   flow bears holds [`LoweringRefusal::NotATranslation`] at the name, and
+    ///   one whose import's source publishes nothing of a name the flow's
+    ///   domain states holds [`LoweringRefusal::SignatureMismatch`] at the
+    ///   flow's name, naming the first such member — except a slot of a
+    ///   functor's template, which declares nothing; each slot of a source
+    ///   whose import lists a name its module neither declares nor homes holds
     ///   [`LoweringRefusal::UnknownMember`], and one its module keeps private
     ///   [`LoweringRefusal::UnexportedName`], at the listed name; each
     ///   top-level declared name, and each family whose constructor, a source
@@ -1555,7 +1557,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             let imported = match target {
                 ImportTarget::Source(imported) => imported,
                 ImportTarget::Unlocked => continue,
-                ImportTarget::Unresolved | ImportTarget::Cycle => {
+                ImportTarget::Unresolved | ImportTarget::Cycle | ImportTarget::NoStandard => {
                     for (index, slot) in collected.slots.iter().enumerate() {
                         if collected.unit.source_at(slot.named.span.start()) != source {
                             continue;
@@ -1563,6 +1565,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                         let refused = slot.named.span;
                         refusals.push((SlotIndex::from(index), match target {
                             ImportTarget::Cycle => LoweringRefusal::ImportCycle { span, refused },
+                            ImportTarget::NoStandard => {
+                                LoweringRefusal::ImportNoStandard { span, refused }
+                            },
                             ImportTarget::Unresolved
                             | ImportTarget::Source(_)
                             | ImportTarget::Unlocked => {
@@ -5217,7 +5222,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     alias: module,
                 });
             },
-            ImportResolution::Path(ImportTarget::Unresolved | ImportTarget::Cycle)
+            ImportResolution::Path(
+                ImportTarget::Unresolved | ImportTarget::Cycle | ImportTarget::NoStandard,
+            )
             | ImportResolution::Foreign => {
                 return Ok(Maybe::Absent(alias_member::Absent::Unaliased));
             },

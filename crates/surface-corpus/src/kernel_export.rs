@@ -1266,7 +1266,8 @@ mod kernel_kept_export
             completing.len()
         );
         // A change can touch only sources whose last form crosses nothing,
-        // so only the fixed set holds the sweep to a retired form.
+        // so only the fixed set holds the sweep to a source whose last form
+        // retires.
         if sweep.portion() == Portion::Fixed {
             assert!(
                 !retired.is_empty(),

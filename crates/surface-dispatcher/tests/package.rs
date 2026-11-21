@@ -471,6 +471,7 @@ fn a_package_root_walks_each_source_once_3889()
 #[test]
 fn a_workspace_walks_every_member_it_names_2687()
 {
+    gandr_surface_dispatcher::fixture::profiled();
     let directory = scratch(Path::new("workspace"), &[
         Path::new("workspace.gandr"),
         Path::new("hello/package.gandr"),
@@ -984,9 +985,9 @@ fn a_copy_of_the_standard_library_elsewhere_is_the_standard_library_7635()
 /// #7685: a source outside the standard library reads the standard library
 /// that a workspace above it names. A copy of `library/std` with a module the
 /// checkout lacks is a member of a workspace outside the tree. With no
-/// manifest, the walk finds nothing, and the last place lacks the module. So
-/// a source of the workspace that imports the module is refused. Once the
-/// written manifest names the copy, the source reads the copy and settles.
+/// manifest, the walk finds nothing, so the source's import of `std` is
+/// refused. Once the written manifest names the copy, the source reads the
+/// copy and settles.
 #[test]
 fn a_workspace_above_a_source_names_its_standard_library_7685()
 {
@@ -1029,7 +1030,7 @@ fn a_workspace_above_a_source_names_its_standard_library_7685()
     let (_, unsettled, _, shown) = walked(&source);
     assert!(
         unsettled > 0_usize,
-        "with no manifest, the last place lacks the copy's module:\n{shown}"
+        "with no manifest, the walk finds no standard library:\n{shown}"
     );
     std::fs::write(
         workspace.join("workspace.gandr.toml"),
@@ -2023,6 +2024,7 @@ fn rooted(root: &Path) -> Package
 #[test]
 fn a_workspace_s_packages_share_one_lock_4921()
 {
+    gandr_surface_dispatcher::fixture::profiled();
     let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
     let directory = siblings(Path::new("shared-lock"), Hello {
         version: "0.1.0",

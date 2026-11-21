@@ -895,6 +895,7 @@ fn faults_and_empty_sources_stay_exhausted()
 #[test]
 fn a_repair_is_proposed_as_a_fix_once_it_checks_5474()
 {
+    gandr_surface_dispatcher::fixture::profiled();
     let scratch = Scratch::new(Path::new("checked-repair"));
     let listed = include_str!("../../../corpus/model/builtins/list-patterns.gandr").replacen(
         "  shortLength (#[7, 8])\n",
