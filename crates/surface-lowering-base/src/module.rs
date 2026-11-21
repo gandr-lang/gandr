@@ -1708,6 +1708,11 @@ pub struct Collected<'source>
     /// Each source's offer, `offers [ … ] ;`, by the source: what a site
     /// answers the rows of the worlds placed at it with.
     pub offers: BTreeMap<SourceIndex, world::SiteOffer>,
+    /// The type member that each kept port sort of a theory names, keyed by
+    /// the theory's written declaration: the resolve of its source's scope,
+    /// kept apart from the descriptions that a layer can share.
+    pub port_sorts:
+        BTreeMap<NodeIndex, Vec<(gandr_theory_levitation::Name, TypeComponent<'source>)>>,
 }
 
 quenchant_shape::reason_enum! {
@@ -2933,6 +2938,77 @@ impl<'source> Collected<'source>
         )
     }
 
+    /// The type member that `name` names in the scope of `container`, for a
+    /// form written at `at`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the nearest container outward from `container`, its module,
+    ///   each module enclosing it, then its source's top level, that writes a
+    ///   type member of the name wholly before `at` answers it, the last such
+    ///   of that container; past the top level, the member that
+    ///   [`Self::imported_type_member`] answers for its source. A name that no
+    ///   such member has answers nothing.
+    /// - fails: [`Ambiguity`] when two imports write a type member of the name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Ambiguity`].
+    ///
+    /// # Termination
+    /// - reason: each step leaves a module for the container that encloses it.
+    /// - measure: the depth of the modules around `container`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a port at a name that its source binds reads that
+    ///   source's member, and a name that nothing binds answers nothing.
+    /// - witness: `gandr-surface-dispatcher::compose::a_port_sort_reads_the_binding_of_its_theory_s_source_8139`
+    /// - witness: `gandr-surface-lowering::lower::row::tests::a_port_sort_no_scope_binds_is_refused_at_its_bytes_8139`
+    #[spec(ensures: |ref ret| match *ret {
+        Ok(Maybe::Present(member)) => member.name == name,
+        Ok(Maybe::Absent(_)) => true,
+        Err(ref ambiguity) => ambiguity.import != ambiguity.other,
+    })]
+    #[inline]
+    pub fn scoped_type_member(
+        &self,
+        mut container: Container,
+        at: ByteOffset,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<TypeComponent<'source>, imported::Absent>, Ambiguity>
+    {
+        loop {
+            let written = self
+                .type_members_in(container)
+                .filter(|member| {
+                    member.name == name
+                        && self
+                            .slots
+                            .get(usize::from(member.held))
+                            .is_some_and(|held| held.introduced_by.span.end() <= at)
+                })
+                .last();
+            if let Some(&member) = written {
+                return Ok(Maybe::Present(member));
+            }
+            match container {
+                Container::Module(module) => {
+                    let Some(structure) = self.structures.get(module.0)
+                    else {
+                        return Ok(Maybe::Absent(imported::Absent::Unbound));
+                    };
+                    container = structure.container;
+                },
+                Container::TopLevel(source) => {
+                    return match self.imported_type_member(source, name)? {
+                        Maybe::Present((member, _)) => Ok(Maybe::Present(member)),
+                        Maybe::Absent(absent) => Ok(Maybe::Absent(absent)),
+                    };
+                },
+            }
+        }
+    }
+
     /// The module or instance `source`'s unqualified imports answer `name`
     /// with, and the import that answers it.
     ///
@@ -3710,6 +3786,9 @@ pub fn collect<'source>(
 /// # Errors
 /// The description elaboration's refusal.
 ///
+/// # Cost
+/// - allocation: the descriptions and the tables of the collection, setup.
+///
 /// # Adequacy
 /// - hypothesis: L3 — every collection starts here, so every witness of
 ///   [`collect_source`] reaches it.
@@ -3742,6 +3821,7 @@ pub fn begin_collection<'source>(
                 .collect(),
         ),
         description_diagnostics: described.diagnostics,
+        port_sorts: BTreeMap::new(),
         natives: described.natives,
         cells,
         slots: Vec::new(),
@@ -7237,7 +7317,7 @@ struct Opened<'source>
 enum Header<'source>
 {
     /// A module whose body is read.
-    Opened(Opened<'source>),
+    Opened(alloc::boxed::Box<Opened<'source>>),
     /// A path, its two bodies read as flows' headers.
     Path(alloc::boxed::Box<path::PathHeader<'source>>),
     /// A functor application binding its instance.
@@ -7538,7 +7618,7 @@ impl<'source> Collector<'_, 'source>
                     let refusal = misplaced_in(FormName::MODULE, segment.span);
                     let _held = self.refuse_held(top, opened.name, module, opened.named, refusal);
                 },
-                (Ok(within), _) => self.open(within, module, opened, &mut stack),
+                (Ok(within), _) => self.open(within, module, *opened, &mut stack),
                 (Err(refusal), _) => {
                     let _held = self.refuse_held(top, opened.name, module, opened.named, refusal);
                 },
@@ -7841,7 +7921,7 @@ impl<'source> Collector<'_, 'source>
             return refused(misplaced_in(FormName::MODULE, cursor.here()));
         }
 
-        Ok(Header::Opened(Opened {
+        Ok(Header::Opened(alloc::boxed::Box::new(Opened {
             name,
             named,
             ascription,
@@ -7849,7 +7929,7 @@ impl<'source> Collector<'_, 'source>
             sealed,
             members,
             parameter,
-        }))
+        })))
     }
 
     /// Read a flow's header past its `flow` keyword: its name, its domain and
@@ -7872,6 +7952,10 @@ impl<'source> Collector<'_, 'source>
     /// - provides: the flow half of [`Self::header`].
     /// - fails: never; every fault of the form is yielded.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the boxed header and the derived signatures, durable by
+    ///   the flow's slot.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a flow whose body reads its domain's members by name
@@ -7953,7 +8037,7 @@ impl<'source> Collector<'_, 'source>
         self.collected.declared_uses.push(domain_used);
         self.collected.declared_uses.push(used);
 
-        Header::Opened(Opened {
+        Header::Opened(alloc::boxed::Box::new(Opened {
             name,
             named,
             ascription: Maybe::Present(components),
@@ -7976,7 +8060,7 @@ impl<'source> Collector<'_, 'source>
                     },
                 },
             }),
-        })
+        }))
     }
 
     /// Read a functor application's tail past its `=`: `F(P(.p)*) ;`, or a
@@ -8787,7 +8871,7 @@ impl<'source> Collector<'_, 'source>
             return Ok(());
         }
         match self.header(member, pieces)? {
-            Header::Opened(opened) => self.open(container, member, opened, stack),
+            Header::Opened(opened) => self.open(container, member, *opened, stack),
             Header::Path(path) => {
                 self.fault_at(structure, member, misplaced_in(form, path.named().span));
             },
@@ -13218,6 +13302,7 @@ impl<'source> LoweredModule<'source>
                     named: declaration.named,
                     description: &declaration.description,
                     presentation,
+                    declaration: declaration.at.node,
                 }),
                 Maybe::Absent(_) => None,
             })

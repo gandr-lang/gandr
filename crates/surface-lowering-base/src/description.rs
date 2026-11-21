@@ -2846,6 +2846,8 @@ mod mutual;
 
 mod theory;
 
+pub use theory::unknown_port_sort;
+
 pub mod written;
 
 #[cfg(test)]

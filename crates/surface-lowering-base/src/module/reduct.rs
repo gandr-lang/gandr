@@ -141,6 +141,10 @@ impl<'source> Collector<'_, 'source>
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the recorded inclusions and the derived slots, durable by
+    ///   the collection.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a monoid's semigroup, an extension of the monoid
     ///   reaching the semigroup through it, and two extensions of the semigroup
@@ -197,7 +201,7 @@ impl<'source> Collector<'_, 'source>
                 Maybe::Present(&crate::description::DescribedDeclaration {
                     presentation: Maybe::Present(ref presentation),
                     ..
-                }) => derive(presentation).ok(),
+                }) => derive(presentation, Maybe::Present(node)).ok(),
                 Maybe::Present(_) | Maybe::Absent(_) => None,
             }
             .filter(|signature| {
@@ -335,6 +339,10 @@ impl<'source> Collector<'_, 'source>
     /// # Errors
     /// As the fails clause.
     ///
+    /// # Cost
+    /// - allocation: the forgetting slots and the sort sets, durable by the
+    ///   collection.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a counter's carrier fixed at a type and at a
     ///   variable, one map between them; a pairing's sorts fixed one, the other
@@ -383,7 +391,7 @@ impl<'source> Collector<'_, 'source>
         else {
             return Ok(());
         };
-        let Ok(signature) = derive(presentation)
+        let Ok(signature) = self.collected.derived(theory, presentation)
         else {
             return Ok(());
         };

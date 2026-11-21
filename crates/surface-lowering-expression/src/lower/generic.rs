@@ -51,6 +51,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::DataSignature;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::builtin::TypeAtom;
 use gandr_core_term::description::DecodeContext;
 use gandr_core_term::description::ParameterDepth;
 use gandr_core_term::description::TypeArity;
@@ -109,6 +110,7 @@ use crate::origin::Origin;
 use crate::resolve::SurfaceName;
 use crate::resolve::atom_type;
 use crate::resolve::type_atom;
+use crate::resolve::type_head;
 use crate::slot::Role;
 
 /// The prelude module that declares the derivation.
@@ -762,6 +764,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     ///   refuses at its site.
     /// - witness: `gandr-surface-lowering::lower::generic::tests::a_generic_equality_lowers_to_the_derived_declaration_2302`
     /// - witness: `gandr-surface-lowering::lower::generic::tests::an_uncovered_declaration_is_refused_at_its_name_2302`
+    ///
+    /// # Cost
+    /// - allocation: the constructors and their fields, durable by the returned
+    ///   signature
+    /// - allocation: the code nodes still to read, growth within the code
+    /// - allocation: the atom of each head and the text of its `builtin` key,
+    ///   growth within the fields of the declaration
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |signature| signature.parameters().is_empty() && signature.indices().is_empty()))]
     fn code_of(
         &self,
@@ -843,7 +852,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                     },
                     CodeView::Var(sort) if sort == family => fields.push(own),
                     CodeView::Field { ty, .. } => {
-                        enter_builtins(arena, ty, names);
+                        enter_builtins(arena, ty, names, |head| self.head_atom(slot, head));
                         let context = DecodeContext {
                             self_sort: NameRef::from(family.as_ref()),
                             self_type: own,
@@ -870,14 +879,76 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
         }
         Ok(DataSignature::new(Vec::new(), constructors, kind))
     }
+
+    /// The atom that a type head `head`, which a field of the data
+    /// declaration held at `slot` names, stands for in the scope of the
+    /// declaration's source.
+    ///
+    /// # Specification
+    /// - requires: `head` is a head that a field of `slot`'s code names.
+    /// - ensures: for a head written in the declaration, the atom of the
+    ///   builtin type member that
+    ///   [`crate::module::Collected::scoped_type_member`] answers for it at the
+    ///   declaration, and the absence for a member that is no builtin or a name
+    ///   that two imports bind; the answer of the table of atoms for a head
+    ///   that no member binds.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer reads the scope and the tree, which a
+    ///   predicate would read again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a field at `Bool` that no member binds reads the atom
+    ///   of the table, and one at a name that a source binds to another type
+    ///   reads no atom.
+    /// - witness: `gandr-surface-lowering::lower::generic::tests::a_derived_field_reads_the_binding_of_its_source_8139`
+    /// - witness: `gandr-surface-lowering::lower::generic::tests::a_generic_equality_lowers_to_the_derived_declaration_2302`
+    ///
+    /// # Cost
+    /// - allocation: the text of the member's `builtin` key, growth within the
+    ///   fields of the declaration
+    fn head_atom(
+        &self,
+        slot: &DeclarationSlot<'source>,
+        head: &Name,
+    ) -> Maybe<TypeAtom, type_head::Absent>
+    {
+        let cx = self.cx();
+        let written = cx
+            .tree
+            .descendants(slot.introduced_by.node)
+            .into_iter()
+            .flatten()
+            .filter_map(|node| cx.tree.fragment(node))
+            .map(SurfaceName::from)
+            .find(|name| name.as_ref() == head.as_ref());
+        let Some(name) = written
+        else {
+            return type_atom(SurfaceName::from(head.as_ref()));
+        };
+        match cx
+            .collected
+            .scoped_type_member(slot.container, slot.introduced_by.span.start(), name)
+        {
+            Ok(Maybe::Present(member)) => match cx.builtin_atom(member.held) {
+                Maybe::Present(atom) => Maybe::Present(atom),
+                Maybe::Absent(_) => Maybe::Absent(type_head::Absent::Unregistered),
+            },
+            Err(_) => Maybe::Absent(type_head::Absent::Unregistered),
+            // economy: a name that no member binds reads the table of
+            // atoms, until #8140 declares each atom as a type member.
+            Ok(Maybe::Absent(_)) => type_atom(name),
+        }
+    }
 }
 
-/// Enter into `names` each builtin type head `ty` writes that no
-/// declaration's name already binds, at the type it stands for.
+/// Enter into `names` each type head `ty` writes that no declaration's name
+/// already binds and that `atom_of` reads as an atom, at the type it stands
+/// for.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: every head of `ty` the builtin table answers is bound; no binding
+/// - ensures: every head of `ty` that `atom_of` answers is bound; no binding
 ///   already held changes.
 /// - fails: never; a head neither binds is left for the decoder to refuse.
 /// - panics: none.
@@ -899,6 +970,7 @@ fn enter_builtins(
     arena: &mut CoreArena,
     ty: &ValueTypeRef,
     names: &mut BTreeMap<Name, TypeBinding>,
+    atom_of: impl Fn(&Name) -> Maybe<TypeAtom, type_head::Absent>,
 )
 {
     let mut pending = vec![ty.to_node()];
@@ -911,7 +983,7 @@ fn enter_builtins(
         if names.contains_key(head) {
             continue;
         }
-        if let Maybe::Present(atom) = type_atom(SurfaceName::from(head.as_ref())) {
+        if let Maybe::Present(atom) = atom_of(head) {
             let _first = names.insert(head.clone(), TypeBinding::Type(atom_type(arena, atom)));
         }
     }

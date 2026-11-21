@@ -312,14 +312,13 @@ use crate::model::Included;
 use crate::model::Members;
 use crate::model::ModelFault;
 use crate::model::Placement;
+use crate::model::PortedName;
 use crate::model::Presentation;
 use crate::model::PresentedCircuit;
 use crate::model::PresentedDiagram;
 use crate::model::SortTerm;
 use crate::model::StatedLaw;
 use crate::model::presentation;
-use crate::resolve::SurfaceName;
-use crate::resolve::type_atom;
 use crate::unit::SourceIndex;
 
 quenchant_shape::reason_enum! {
@@ -560,7 +559,7 @@ impl Reader<'_, '_>
     /// - witness: `description::theory::tests::an_include_is_refused_at_its_member`
     /// - witness: `tests::theory::an_included_member_is_refused_at_its_include_2752`
     /// - witness: `description::theory::tests::an_extension_generates_its_signature`
-    /// - witness: `description::theory::tests::a_port_at_a_sort_nothing_declares_is_refused_2410`
+    /// - witness: `description::theory::tests::a_port_at_a_sort_nothing_declares_is_kept_for_its_scope_8139`
     /// - witness: `description::theory::tests::a_marked_merge_is_a_diagram_of_its_presentation_5763`
     /// - witness: `description::theory::tests::a_frobenius_mark_stands_on_an_unindexed_sort_5763`
     pub(super) fn signature(
@@ -853,6 +852,7 @@ impl Reader<'_, '_>
         // member's span.
         let own_laws = laws.len();
         let mut law_spans = Vec::new();
+        let mut ported = Vec::new();
         for (marked, member) in members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
@@ -886,7 +886,12 @@ impl Reader<'_, '_>
                 self.signature_operation(&mut reading, &parts.sorts, kind)
                     .map(|(operation, tile, ports)| {
                         if !unread_include {
-                            diagnostics.extend(undeclared_ports(&operation, &ports, &parts.sorts));
+                            diagnostics.extend(undeclared_ports(
+                                &operation,
+                                &ports,
+                                &parts.sorts,
+                                &mut ported,
+                            ));
                         }
                         if matches!(marked, Some(MemberMark::Inert(_))) {
                             let _fresh = inert.insert(operation.name.clone());
@@ -975,6 +980,7 @@ impl Reader<'_, '_>
             laws,
             inert,
             frobenius,
+            ported,
         };
         // A circuit rule reads once every member is read. A block that marks
         // no sort reads no diagram, so it does not decode its members.
@@ -3486,29 +3492,38 @@ fn surface_span(span: ByteSpan) -> SurfaceSpan
 }
 
 /// The refusal of each port of `operation`, written at `written`, that sits
-/// at a sort none of `sorts` names and that no builtin type spells (#2410).
+/// at a sort none of `sorts` names and writes an index (#2410); each such
+/// port with no index is kept in `ported`, for the scope of the declaring
+/// source to resolve once it stands.
 ///
 /// A port's sort names a sort of the signature, one an `include` or an `ext`
-/// member brought in among them, or, written bare, a builtin type such as
-/// `Void`: a model interprets every other sort, and a name no sort declares
-/// has nothing to interpret it by. A nested model's one port is at the theory
-/// it nests, not at a sort, and is not read here.
+/// member brought in among them, or, written bare, a type that the scope of
+/// the source binds, such as `Integer`: a model interprets every other sort,
+/// and a name nothing declares has nothing to interpret it by. The read has
+/// no scope, so a bare name waits for [`unknown_port_sort`] in the resolve. A
+/// nested model's one port is at the theory it nests, not at a sort, and is
+/// not read here.
 ///
 /// # Specification
 /// - requires: `written` is where `operation`'s ports are written, in order.
 /// - ensures: one [`WfKind::UnknownPortSort`] refusal per input then output
-///   port, in order, whose sort is neither the name of one of `sorts` nor a
-///   builtin type written with no index, located at the port's sort and naming
-///   the operation then the sort; none for a nested model.
+///   port, in order, whose sort names none of `sorts` and writes an index,
+///   located at the port's sort and naming the operation then the sort; one
+///   [`PortedName`] pushed onto `ported` per such port that writes no index, in
+///   the same order; neither for a nested model.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a result naming nothing is refused at its bytes, while a
-///   declared sort, an included one and a builtin type are read.
-/// - witness: `description::theory::tests::a_port_at_a_sort_nothing_declares_is_refused_2410`
+/// - hypothesis: L3 — a bare port at a name that no sort declares is kept with
+///   its bytes, and an indexed one is refused at the read; a result and an
+///   input that nothing binds are refused at their bytes once the scope
+///   resolves them.
+/// - witness: `description::theory::tests::a_port_at_a_sort_nothing_declares_is_kept_for_its_scope_8139`
+/// - witness: `gandr-surface-lowering::lower::row::tests::a_port_sort_no_scope_binds_is_refused_at_its_bytes_8139`
 ///
 /// # Cost
 /// - allocation: the refusals of the ports, error path
+/// - allocation: each kept port, growth within the presentation's ports
 #[spec(ensures: |ref refused| refused.iter().all(|refusal| matches!(refusal.fault,
     DescriptionFault::IllFormed(ref diagnostic) if diagnostic.kind == WfKind::UnknownPortSort))
     && (operation.kind != OperationKind::Nested || refused.is_empty()))]
@@ -3516,38 +3531,64 @@ fn undeclared_ports(
     operation: &TheoryOperation,
     written: &WrittenOperation,
     sorts: &[TheorySort],
+    ported: &mut Vec<PortedName>,
 ) -> Vec<DescriptionDiagnostic>
 {
     if operation.kind == OperationKind::Nested {
         return Vec::new();
     }
     let declared: BTreeSet<&Name> = sorts.iter().map(|sort| &sort.name).collect();
-    operation
+    let mut refused = Vec::new();
+    for (port, at) in operation
         .inputs
         .iter()
         .chain(&operation.outputs)
         .zip(written.inputs.iter().chain(&written.outputs))
-        .filter(|&(port, _)| {
-            !declared.contains(&port.sort)
-                && (!port.indices.is_empty()
-                    || matches!(
-                        type_atom(SurfaceName::from(port.sort.as_ref())),
-                        Maybe::Absent(_)
-                    ))
-        })
-        .map(|(port, at)| DescriptionDiagnostic {
-            span: at.sort.span,
-            fault: DescriptionFault::IllFormed(WfDiagnostic::new(
-                WfKind::UnknownPortSort,
-                Box::from([operation.name.clone(), port.sort.clone()]),
-                DiagnosticMessage::from(format!(
-                    "the operation `{}` has a port at `{}`, which no sort declares",
-                    operation.name, port.sort
-                )),
-                Maybe::Present(surface_span(at.sort.span)),
+    {
+        if declared.contains(&port.sort) {
+            continue;
+        }
+        if port.indices.is_empty() {
+            ported.push(PortedName {
+                operation: operation.name.clone(),
+                sort: port.sort.clone(),
+                span: at.sort.span,
+            });
+        }
+        else {
+            refused.push(unknown_port_sort(&operation.name, &port.sort, at.sort.span));
+        }
+    }
+    refused
+}
+
+/// The refusal of a port of `operation` at `sort`, written at `span`, which
+/// names no sort of the signature and no type of the scope.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the refusal and its message, error path
+#[must_use]
+#[inline]
+pub fn unknown_port_sort(
+    operation: &Name,
+    sort: &Name,
+    span: ByteSpan,
+) -> DescriptionDiagnostic
+{
+    DescriptionDiagnostic {
+        span,
+        fault: DescriptionFault::IllFormed(WfDiagnostic::new(
+            WfKind::UnknownPortSort,
+            Box::from([operation.clone(), sort.clone()]),
+            DiagnosticMessage::from(format!(
+                "the operation `{operation}` has a port at `{sort}`, which no sort declares"
             )),
-        })
-        .collect()
+            Maybe::Present(surface_span(span)),
+        )),
+    }
 }
 
 /// The attribute a theory's sort takes, `@[ frobenius ]`: the sort carries a

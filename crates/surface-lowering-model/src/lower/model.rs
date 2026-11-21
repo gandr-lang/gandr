@@ -428,6 +428,9 @@ struct Minting<'source, 'model>
     members: Members<'source, 'model>,
     /// The origin every minted node carries.
     origin: Origin,
+    /// The type member that each port sort of the theory's source names,
+    /// which a sort no member of the model names reads.
+    ported: &'model [(Name, crate::module::TypeComponent<'source>)],
 }
 
 /// A theory whose components
@@ -1111,6 +1114,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// # Errors
     /// [`Missing`].
     ///
+    /// # Cost
+    /// - allocation: the minted nodes of the type and their scratch, durable by
+    ///   the arena.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Models::mint_models`].
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_signature_states_what_the_written_one_does`
@@ -1140,6 +1147,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                 structure,
                 operations: self.operation_names(model),
             },
+            ported: self.cx().collected.port_sorts_of(model.theory),
             origin,
         };
 
@@ -1456,6 +1464,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                     .find(|component| component.name.as_ref() == sort.sort.as_ref())
             })
             .copied()
+            .or_else(|| {
+                minting
+                    .ported
+                    .iter()
+                    .find(|&&(ref named, _)| *named == sort.sort)
+                    .map(|&(_, member)| member)
+            })
         else {
             let builtin = match sort.builtin() {
                 Maybe::Present(BuiltinSort::Universe(ground)) => {
@@ -1522,11 +1537,23 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                     | Maybe::Absent(_) => Err(Missing::Unlowered),
                 }
             },
+            (TypeMeaning::Builtin(_), true) => match self.cx().builtin_atom(component.held) {
+                Maybe::Present(atom) => match sink.atom(atom, minting.origin) {
+                    Lowered::ValueType(id) => Ok(id),
+                    Lowered::Value(_)
+                    | Lowered::Computation(_)
+                    | Lowered::CompType(_)
+                    | Lowered::Function { .. } => Err(Missing::Unlowered),
+                },
+                Maybe::Absent(_) => Err(Missing::Unlowered),
+            },
             (
-                TypeMeaning::Manifest(_) | TypeMeaning::Sealed | TypeMeaning::Instantiated { .. },
+                TypeMeaning::Manifest(_)
+                | TypeMeaning::Sealed
+                | TypeMeaning::Instantiated { .. }
+                | TypeMeaning::Builtin(_),
                 false,
             )
-            | (TypeMeaning::Builtin(_), _)
             | (TypeMeaning::Family(_), true) => Err(Missing::Unlowered),
         }
     }
@@ -2664,6 +2691,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// # Errors
     /// As the fails clause.
     ///
+    /// # Cost
+    /// - allocation: the derived signature, durable by the returned signature.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Models::bundled`].
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_type_is_the_record_its_theory_derives`
@@ -2682,7 +2712,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
             self.cx()
                 .collected
                 .presented_theory_in(at, prefix, written.at.span, name)?;
-        let Ok(signature) = crate::model::derive(presentation)
+        let Ok(signature) = self.cx().collected.derived(position, presentation)
         else {
             return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
         };
@@ -3893,6 +3923,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// # Errors
     /// [`Missing::Unlowered`].
     ///
+    /// # Cost
+    /// - allocation: the minted fields and their nodes, durable by the arena.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::bundle_type`], and a model implicit's
     ///   components bound one parameter each, every link binding.
@@ -3919,6 +3952,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                     binds: binds.get(.. at).unwrap_or_default(),
                     manifests,
                 }),
+                ported: self.cx().collected.port_sorts_of(signature.theory),
                 origin: below,
             };
             let field = match component.form {
@@ -4339,6 +4373,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// # Errors
     /// [`Missing`].
     ///
+    /// # Cost
+    /// - allocation: the minted index types and their nodes, durable by the
+    ///   arena.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — `Hom(dom : Ob, cod : Ob)` states `Ob` twice.
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
@@ -4358,11 +4396,25 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
         else {
             return Err(Missing::Unlowered);
         };
+        let ported = match self
+            .cx()
+            .collected
+            .structures
+            .get(usize::from(structure))
+            .map(|entry| entry.model)
+        {
+            Some(Maybe::Present(index)) => match self.cx().collected.models.get(&index) {
+                Maybe::Present(signature) => self.cx().collected.port_sorts_of(signature.theory),
+                Maybe::Absent(_) => &[],
+            },
+            Some(Maybe::Absent(_)) | None => &[],
+        };
         let minting = Minting {
             members: Members::Module {
                 structure,
                 operations: BTreeMap::new(),
             },
+            ported,
             origin,
         };
         let dependent: Vec<Dependent> = binders.iter().map(|_| Dependent(true)).collect();

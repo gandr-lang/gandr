@@ -128,9 +128,7 @@ use crate::model::Variable;
 use crate::model::dependence;
 use crate::model::derive_members;
 use crate::model::variable_dependence;
-use crate::resolve::SurfaceName;
 use crate::resolve::atom_type;
-use crate::resolve::type_atom;
 
 /// What a described node is, for a face reading it.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1006,7 +1004,8 @@ impl Typer<'_>
     }
 
     /// Record a written sort at the universe its sorts are coded in, when its
-    /// head is one of `sorts` or a builtin type, or at the universe above the
+    /// head is one of `sorts` or a bare name that no sort declares, which the
+    /// scope of the source resolves to a type, or at the universe above the
     /// host's types when it is `Type`, an index over the host's types.
     ///
     /// # Specification
@@ -1024,18 +1023,16 @@ impl Typer<'_>
         sorts: &[Name],
     )
     {
-        let builtin = matches!(
-            type_atom(SurfaceName::from(head.as_ref())),
-            Maybe::Present(_)
-        );
+        let universal = head.as_ref() == crate::form::TileName::UNIVERSE.as_ref();
+        // A bare name that no sort declares is a type of the source's scope,
+        // or the resolve refuses its port, so its spelling is never read.
+        let scoped = !universal && !sorts.contains(head) && written.indices.is_empty();
         let closed = self.context(&Scope::default());
-        if sorts.contains(head) || builtin {
+        if sorts.contains(head) || scoped {
             let universe = self.universe(Level::zero());
             self.emit(written.span, DescribedRole::Type, universe, closed);
         }
-        else if head.as_ref() == crate::form::TileName::UNIVERSE.as_ref()
-            && let Ok(level) = Level::zero().succ()
-        {
+        else if universal && let Ok(level) = Level::zero().succ() {
             let universe = self.universe(level);
             self.emit(written.span, DescribedRole::Type, universe, closed);
         }

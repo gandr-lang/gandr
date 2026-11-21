@@ -1003,6 +1003,8 @@ model/modules/phase.gandr:Point.T:150abf207ffa9972 uncommented
 model/modules/phase.gandr:Sign.Minus:f2ac31c5604cab09 uncommented
 model/modules/phase.gandr:Sign.Plus:0fbbf059e44c0b21 uncommented
 model/modules/phase.gandr:Square.U:abf2c4244d49483e uncommented
+model/modules/port-sort-scope-use.gandr:Loud.C:cab6495eb7ad7e78 uncommented
+model/modules/port-sort-scope-use.gandr:import_declaration:97cdf627f7f4ac5a uncommented
 model/modules/prelude-resolve.gandr:Point.Point:ca18de0a9ac4a649 uncommented
 model/moves/file-base.gandr:File.Line:63ee756153cc9872 uncommented
 model/programs/draft.gandr:import_declaration:1fcbcceed882ead3 uncommented
@@ -1647,6 +1649,8 @@ pathological/modules/model-refused-member.gandr:Toggle.T:fd96cb812c7e4101 uncomm
 pathological/modules/model-refused-member.gandr:Toggle.flip:62d22d2fec985277 uncommented
 pathological/modules/module-binder-shadows-a-host.gandr:<file> uncommented
 pathological/modules/module-binder-shadows-a-host.gandr:lookup:4679e0eca3d8a2fd uncommented
+pathological/modules/port-sort-scope.gandr:Quiet.C:cab6495eb7ad7e78 uncommented
+pathological/modules/port-sort-scope.gandr:import_declaration:00c620b0993a6980 uncommented
 pathological/modules/sealed-abstraction-leak.gandr:<file> uncommented
 pathological/modules/sealed-abstraction-leak.gandr:Counter.T:150abf207ffa9972 uncommented
 pathological/modules/sealed-abstraction-leak.gandr:Counter.zero:76abc5beff52d395 uncommented
