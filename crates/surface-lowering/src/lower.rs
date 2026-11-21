@@ -6495,6 +6495,43 @@ mod tests
         );
     }
 
+    /// #8307: the bare qualified name of a definition of no input where a type
+    /// is read, `M.unit`, has the core that `M.unit()` gave before: the decode
+    /// of what the force of the declaration returns.
+    #[test]
+    fn a_bare_qualified_name_of_no_input_where_a_type_is_read_decodes_its_run_8307()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "module M where { def unit() -> -F Type { return Integer } } def two : M.unit ;",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let declared = declared_of(lowered[1]);
+        let Some(&ValueType::Element { code, .. }) = arena.value_type(declared)
+        else {
+            panic!("the run where a type is read decodes");
+        };
+        let Some(&Value::Returned(ran)) = arena.value(code)
+        else {
+            panic!("the code is what the run returns: {:?}", arena.value(code));
+        };
+        let Some(&Computation::Force(head)) = arena.computation(ran)
+        else {
+            panic!(
+                "the run is the force of the declaration: {:?}",
+                arena.computation(ran)
+            );
+        };
+        assert_eq!(
+            arena.value(head).cloned(),
+            Some(Value::Constant(ConstantIndex::from(0_usize))),
+            "the head is `M.unit`"
+        );
+    }
+
     /// #8079: `thunk { now }` passes the definition of no input as a value
     /// with no run: the constant itself, the argument `apply now` passed
     /// before the bare name ran.

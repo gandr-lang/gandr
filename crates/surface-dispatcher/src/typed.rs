@@ -8623,10 +8623,10 @@ mod tests
         );
     }
 
-    /// #5213: a type that calls a module's function prints as that call, a
-    /// call of no arguments with its empty list, and reads back to its
-    /// certificate. A call's result applied once more prints and reads back
-    /// the same.
+    /// #5213: a type that calls a module's function prints as that call, and
+    /// reads back to its certificate. The run of a definition of no input
+    /// prints as its bare qualified name (#8307). A call's result applied once
+    /// more prints and reads back the same.
     #[test]
     fn a_module_s_call_in_a_type_reads_back_5213()
     {
@@ -8641,9 +8641,9 @@ mod tests
         assert!(
             trips
                 .iter()
-                .any(|&(ref spelled, ref trip)| spelled == "Standard.unit()"
+                .any(|&(ref spelled, ref trip)| spelled == "Standard.unit"
                     && *trip == RoundTrip::Equal),
-            "the call of no arguments prints with its empty list and reads back: {trips:?}"
+            "the run of no input prints as its bare qualified name and reads back: {trips:?}"
         );
         assert!(
             trips

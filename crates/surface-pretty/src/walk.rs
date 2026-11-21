@@ -10598,16 +10598,9 @@ impl Walk<'_, '_>
                     Join::Prefix(Prefix::Pure),
                 )),
             },
-            // The run of a definition of no input is its bare name. Where a
-            // type is read, a qualified name keeps its empty list, `M.f()`,
-            // as the type grammar ends a qualified link at a value name only
-            // before a list (#8307).
-            Former::Force(forced)
-                if source.invoked(forced).0
-                    && (self.surface != Surface::Type
-                        || !matches!(source.read(forced), Former::Constant(name)
-                            if name.as_ref().contains('.'))) =>
-            {
+            // The run of a definition of no input is its bare name, a
+            // qualified one too, `M.f`, where a type is read as elsewhere.
+            Former::Force(forced) if source.invoked(forced).0 => {
                 tasks.push(Task::Surface(self.surface));
                 tasks.push(Task::Visit {
                     node: forced,

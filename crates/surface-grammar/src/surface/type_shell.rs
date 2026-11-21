@@ -592,9 +592,8 @@ fn add_type_rules(
     // application so `-F M.T` and `M.T -> C` need no parentheses. A link may
     // pass through nested modules named in lowercase, a model's nested model,
     // `Sealed.inner.T`, or a package's module path, `a.b.c.T` (#2874): each
-    // name and its `.` sit inside the link, so the link still ends at a type
-    // name and a session's continuation, a lowercase recursion variable after
-    // its `.`, never reads as one.
+    // name and its `.` sit inside the link. No form of a session holds a `.`,
+    // so a link may end at a lowercase name too.
     //
     // A postfix `.` rather than a lead-tile path `T (. T)*` keeps a path one
     // parse. A lead-tile path would claim the first `.` itself, and the same
@@ -603,13 +602,14 @@ fn add_type_rules(
     //
     // An argument list after the type name applies the member, a module's
     // family reached through its name, `M.F(Integer)`, as a bare family's
-    // `F(Integer)` is applied (#3051). A link may also end at a value name
-    // the list applies, a module's function that computes a type,
-    // `Standard.ext(a, b)`, as a bare function's call `ext(a, b)` is read
-    // (#5213). The list ends the link, so it applies the last name alone; a
-    // second list applies the call's result once more,
-    // `Standard.subTy(a, s)(x)`, and a later `.` selects from an application,
-    // which the lowering refuses.
+    // `F(Integer)` is applied (#3051). A link may also end at a value name,
+    // with no list for the run of a definition of no input, `Standard.unit`,
+    // as a bare `unit` runs (#8307), or with the list that applies a module's
+    // function that computes a type, `Standard.ext(a, b)`, as a bare
+    // function's call `ext(a, b)` is read (#5213). The list ends the link, so
+    // it applies the last name alone; a second list applies the call's result
+    // once more, `Standard.subTy(a, s)(x)`, and a later `.` selects from an
+    // application, which the lowering refuses.
     //
     // The left side is a name, as `M` in `M.T` is one: a source declares
     // it. A whole form over other tiles, as a lone `Path`, is no left side,

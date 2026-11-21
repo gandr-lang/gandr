@@ -1320,11 +1320,13 @@ struct Form<'gap>
 ///   places and the keywords [`misspelt`] gives for the [`COPIES`] words
 ///   nearest an obligation, nearest first, [`COPIES`] places in all. Each place
 ///   is judged in a copy of its form with the places kept there before it, a
-///   move in place of a move of its own line. A place is kept when that copy
-///   owes fewer obligations than the form alone, each minted tile and each
-///   moved line counting as one. A closer, a sibling separator, an arrow, an
-///   attribute opener, a keyword or a move is kept only when the copy owes
-///   nothing but its minted tiles and its moved lines.
+///   move in place of a move of its own line, and a written closer in place of
+///   each kept write of the same closer after it. A place is kept when that
+///   copy owes fewer obligations than the form alone, each minted tile and each
+///   moved line counting as one, or as few when it takes the place of a later
+///   closer. A closer, a sibling separator, an arrow, an attribute opener, a
+///   keyword or a move is kept only when the copy owes nothing but its minted
+///   tiles and its moved lines.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
@@ -1340,7 +1342,9 @@ struct Form<'gap>
 ///   alone; a misspelt `matc` owes its word alone; a `)` deleted inside a line
 ///   with a repair after it is not minted at the line's end; a line at column
 ///   zero inside nested blocks owes only its own line; a source that owes
-///   nothing, and one whose places all owe more, keep their parse.
+///   nothing, and one whose places all owe more, keep their parse; a `]` left
+///   out before the call of a labelled bracket's type owes it before the `(`
+///   and not after the call.
 /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
 /// - witness: `parse::gap::tests::a_separator_left_out_between_siblings_is_minted_5433`
 /// - witness: `parse::gap::tests::an_arrow_left_out_before_a_returner_is_minted_5501`
@@ -1350,6 +1354,7 @@ struct Form<'gap>
 /// - witness: `parse::gap::tests::a_line_at_column_zero_inside_nested_blocks_stays_in_a_block_5434`
 /// - witness: `parse::gap::tests::a_source_that_owes_nothing_keeps_its_parse_5433`
 /// - witness: `parse::gap::tests::a_bracket_left_open_before_a_closer_of_another_family_is_closed_there_6103`
+/// - witness: `parse::gap::tests::a_bracket_left_open_before_a_call_of_its_type_is_closed_there_6364`
 pub(super) fn gapped<'source>(
     pbg: &Pbg,
     parsed: &ParseResult<'source>,

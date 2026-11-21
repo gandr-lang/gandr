@@ -13074,17 +13074,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             (Some(first), Some(second)) => {
                 self.listed_application(site, resolved, first, Lists::Again(second))
             },
-            // economy: the grammar ends a qualified link at a value name only
-            // before a list, so `M.f()` of a definition of no input is its
-            // bare name. The ceiling is that grammar: #8307 admits the bare
-            // `M.f` and removes this arm.
-            (Some(first), None)
-                if first.start == first.end
-                    && matches!(resolved, Resolved::Declaration { constant, .. }
-                        if self.cx().collected.no_input.contains(&SlotIndex::from(usize::from(constant)))) =>
-            {
-                self.listed_application(site, resolved, first, Lists::Bare)
-            },
             (Some(first), None) => self.listed_application(site, resolved, first, Lists::Called),
             (None, _) => self.static_application(site, resolved, none),
         }
