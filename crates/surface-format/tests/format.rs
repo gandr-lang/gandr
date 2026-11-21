@@ -441,9 +441,28 @@ fn a_terminator_touches_the_form_it_ends()
         "import \"./base.gandr\" as prelude;\n\
          world seat;\n\
          def a = 1;\n\
-         def f(a : Type, y : a) -> -F a = {\n  let x : a = same a y;\n  loop { break };\n  return x\n};\n\
+         def f(a : Type, y : a) -> -F a = {\n  let x : a = same a y\n  loop { break }\n  return x\n};\n\
          def t = *{1, 2};\n",
         "no space stands before a `;`, whatever ends the form it closes"
+    );
+}
+
+/// #7734: a statement in a broken block ends at its line end, so the
+/// formatter drops the `;` that the source wrote there. It keeps a `;` between
+/// two statements on one line, and the `;` of a block's last statement, which
+/// gives the block the unit value.
+#[test]
+fn a_statement_ends_at_its_line_7734()
+{
+    let grammar = grammar();
+    let source = include_str!("format/unformatted/a-statement-ends-at-its-line-7734.gandr");
+    assert_eq!(
+        text(&grammar, source, WIDE),
+        "def f(y : Integer) -> -F Integer = {\n  let x : Integer = y // the first\n  let z : Integer = x\n  return z\n};\n\
+         def g(y : Integer) -> -F Unit = {\n  let x : Integer = y\n  loop { break };\n};\n\
+         def h(y : Integer) -> -F Integer = { let x : Integer = y; return x };\n\
+         def k(y : Integer) -> Integer =\n  let x = y\n  x\n",
+        "a line end separates two statements of a broken block, and a `;` stays on one line and at the block's end"
     );
 }
 
@@ -472,7 +491,7 @@ fn a_continuation_line_indents_under_its_statement()
         include_str!("format/unformatted/a-continuation-line-indents-under-its-statement.gandr");
     assert_eq!(
         text(&grammar, source, WIDE),
-        "def f(x : Integer) -> -F Integer = {\n  let y = inc x\n    ;\n  let z = inc y;\n  return z\n};\n",
+        "def f(x : Integer) -> -F Integer = {\n  let y = inc x\n  let z = inc y\n  return z\n};\n",
         "a line indented past its statement continues it; one after a separator starts a statement"
     );
 }

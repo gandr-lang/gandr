@@ -151,7 +151,9 @@ fn top_level(
         .collect()
 }
 
-/// The tokens of `text`, whitespace and comments left out.
+/// The tokens of `text`, whitespace and comments left out. A line end that
+/// the layout pass reads as a statement's end is spelled `;`, as the printer
+/// writes it (#7734).
 ///
 /// # Specification
 /// trivial.
@@ -162,6 +164,9 @@ fn tokens(fragment: SourceFragment<'_>) -> Vec<String>
         .into_iter()
         .filter(|token| token.lexeme != Lexeme::Space)
         .filter_map(|token| {
+            if token.lexeme == Lexeme::LayoutSemi && token.start == token.end {
+                return Some(String::from(";"));
+            }
             text.get(usize::try_from(token.start).ok()? .. usize::try_from(token.end).ok()?)
                 .map(String::from)
         })

@@ -8,7 +8,7 @@ def early(k : Nat) -> -F Nat = match k {
     let q = match j {
       | Zero => return j
       | Succ(r) => pure r
-    };
+    }
     pure q
   }
 };

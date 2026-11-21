@@ -296,6 +296,7 @@ mod tail;
 
 mod thunk;
 
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -318,8 +319,10 @@ use gandr_surface_parser::ParseResult;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeDigest;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeKey;
+use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
@@ -2183,12 +2186,17 @@ impl Ending
     }
 }
 
-/// Check that `text` parses to the root digest of `parsed`, spells the tokens
-/// and block comments of `leaves`, and keeps each line comment's words with
-/// its owner in its role.
+/// Check that `text` parses to the tree of `parsed`, spells the tokens and
+/// block comments of `leaves`, and keeps each line comment's words with its
+/// owner in its role. A statement's end may change its spelling between a
+/// written `;` and the layout pass's line end (#7734).
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the reparse of `text`, its leaves, the pairs and the comment
+///   runs of each tree, growth within the text's leaves
 fn verify(
     grammar: &Pbg,
     parsed: &ParseResult<'_>,
@@ -2198,21 +2206,128 @@ fn verify(
 {
     let reparsed = parse(grammar, text).map_err(FormatError::Reparse)?;
     let digest = |result: &ParseResult<'_>| result.tree().digest();
-    if digest(&reparsed) != digest(parsed) {
+    if digest(&reparsed) != digest(parsed)
+        && same_tree(parsed.tree(), reparsed.tree()) == OneTree::Other
+    {
         return Err(FormatError::Changed(Change::Meaning));
     }
     let again = leaf::flatten(grammar, reparsed.tree(), reparsed.obligations());
-    if material(leaves).ne(material(&again.leaves)) {
-        return Err(FormatError::Changed(Change::Material));
-    }
+    paired(leaves, &again.leaves)?;
     let before = comments(parsed.tree());
-    let after = comments(reparsed.tree());
+    let mut after = comments(reparsed.tree());
+    if digest(&reparsed) != digest(parsed) {
+        rekey(parsed.tree(), reparsed.tree(), &mut after);
+    }
     if comment_runs(parsed.tree().source(), &before)
         .ne(&comment_runs(reparsed.tree().source(), &after))
     {
         return Err(FormatError::Changed(Change::Attachment));
     }
     Ok(())
+}
+
+/// Key each comment of `comments`, read from `after`, by the form of `before`
+/// that stands in its form's place. [`same_tree`] holds the two trees one tree
+/// but for the spelling of a statement's end, which changes a form's digest.
+/// So the form at one place keys its owners in both trees alike (#7734).
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: one digest pair for each form, growth within the forms of
+///   `after`
+fn rekey(
+    before: &SyntaxTree<'_>,
+    after: &SyntaxTree<'_>,
+    comments: &mut [attach::Comment<'_>],
+)
+{
+    let forms: BTreeMap<NodeDigest, NodeDigest> = before
+        .forms()
+        .iter()
+        .zip(after.forms())
+        .filter_map(|(&old, &new)| Some((after.key(new)?.form(), before.key(old)?.form())))
+        .collect();
+    for comment in comments {
+        comment.key = comment.key.map(|key| {
+            NodeKey::new(
+                forms
+                    .get(&key.form())
+                    .copied()
+                    .unwrap_or_else(|| key.form()),
+                key.rank(),
+            )
+        });
+    }
+}
+
+/// Whether two trees are one tree but for the spelling of a statement's end.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OneTree
+{
+    /// One tree: the trees differ at most where a `;` is written in one and
+    /// left to the layout pass in the other.
+    Same,
+    /// Two trees.
+    Other,
+}
+
+/// Whether `before` and `after` hold one tree but for the spelling of a
+/// statement's end. Their significant nodes, in the layout's order, agree one
+/// by one: one label, one count of significant children and one text. The one
+/// exception is a `;` tile that one tree writes and the other leaves to the
+/// layout pass, whose text is empty (#7734). A significant node is a node with
+/// a key, so layout and documentation take no part.
+///
+/// # Specification
+/// trivial.
+fn same_tree(
+    before: &SyntaxTree<'_>,
+    after: &SyntaxTree<'_>,
+) -> OneTree
+{
+    let significant = |tree: &SyntaxTree<'_>, position: NodeIndex| tree.key(position).is_some();
+    let mut left = before
+        .positions()
+        .filter(|&position| significant(before, position));
+    let mut right = after
+        .positions()
+        .filter(|&position| significant(after, position));
+    loop {
+        let (here, there) = match (left.next(), right.next()) {
+            (None, None) if before.forms().len() == after.forms().len() => {
+                return OneTree::Same;
+            },
+            (Some(here), Some(there)) => (here, there),
+            (None | Some(_), None) | (None, Some(_)) => return OneTree::Other,
+        };
+        let (Some(node), Some(other)) = (before.node(here), after.node(there))
+        else {
+            return OneTree::Other;
+        };
+        let label = node.label();
+        let children = |tree: &SyntaxTree<'_>, position: NodeIndex| {
+            tree.children(position)
+                .filter(|&child| significant(tree, child))
+                .count()
+        };
+        if label != other.label() || children(before, here) != children(after, there) {
+            return OneTree::Other;
+        }
+        if bool::from(label.carries_text()) {
+            let written = before.fragment(here).map(<&str>::from);
+            let laid = after.fragment(there).map(<&str>::from);
+            let ends = matches!(label, NodeLabel::Tile(_))
+                && matches!(
+                    (written, laid),
+                    (Some(";"), Some("")) | (Some(""), Some(";"))
+                );
+            if written != laid && !ends {
+                return OneTree::Other;
+            }
+        }
+    }
 }
 
 /// The checker's elaboration of a source, once made: none until a rewritten
@@ -2249,9 +2364,7 @@ fn verify_rewritten(
 {
     let reparsed = parse(grammar, text).map_err(FormatError::Reparse)?;
     let again = leaf::flatten(grammar, reparsed.tree(), reparsed.obligations());
-    if material(written).ne(material(&again.leaves)) {
-        return Err(FormatError::Changed(Change::Material));
-    }
+    paired(written, &again.leaves)?;
     let before_comments = comments(parsed.tree());
     let after_comments = comments(reparsed.tree());
     if kept_runs(parsed.tree().source(), &before_comments)
@@ -2541,21 +2654,60 @@ fn kept_runs<'source>(
         .collect()
 }
 
+/// The material leaves of `written` and of `candidate`, paired in order. A
+/// statement's end is a `;` or a line end, so a `;` that `written` holds and
+/// the candidate leaves to the line end pairs with none (#7734). The tree that
+/// [`same_tree`] compares keeps the separator it marks.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the pairs, growth within the candidate's leaves
+fn paired<'leaves, 'source>(
+    written: &'leaves [Leaf<'source>],
+    candidate: &'leaves [Leaf<'source>],
+) -> Result<Vec<(&'leaves Leaf<'source>, &'leaves Leaf<'source>)>, FormatError>
+{
+    let changed = || FormatError::Changed(Change::Material);
+    let separator =
+        |leaf: &Leaf<'_>| leaf.material == Material::Token && <&str>::from(leaf.text) == ";";
+    let mut wrote = material_leaves(written);
+    let mut pairs = Vec::new();
+    for read in material_leaves(candidate) {
+        loop {
+            let next = wrote.next().ok_or_else(changed)?;
+            if material(next) == material(read) {
+                pairs.push((next, read));
+                break;
+            }
+            if !separator(next) {
+                return Err(changed());
+            }
+        }
+    }
+    if wrote.all(separator) {
+        Ok(pairs)
+    }
+    else {
+        Err(changed())
+    }
+}
+
+/// What `leaf` writes: its kind of material and its text, which two leaves
+/// that pair share.
+///
+/// # Specification
+/// trivial.
+const fn material<'source>(leaf: &Leaf<'source>) -> (Material, SourceFragment<'source>)
+{
+    (leaf.material, leaf.text)
+}
+
 /// The tokens and block comments of `leaves`, in order. An empty tile, as the
 /// one a juxtaposition holds or a layout block's virtual separator, is no
 /// material: no source writes it, so a rewrite that writes `f a` leaves it to
 /// the parse, and the tree digest and the lowering keep the structure it marks.
-///
-/// # Specification
-/// trivial.
-fn material<'leaves, 'source>(
-    leaves: &'leaves [Leaf<'source>]
-) -> impl Iterator<Item = (Material, SourceFragment<'source>)> + 'leaves
-{
-    material_leaves(leaves).map(|leaf| (leaf.material, leaf.text))
-}
-
-/// The leaves of `leaves` that [`material`] reads, in order.
 ///
 /// # Specification
 /// trivial.

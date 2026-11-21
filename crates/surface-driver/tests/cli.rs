@@ -1625,10 +1625,24 @@ fn fmt_rewrites_what_check_reports()
 
     let faulted = ran(gandr(&[fmt, check, &loose, &absent]));
     assert_eq!(code(&faulted), Code(2_i32), "a fault outranks a change");
+    let reported = stderr(&faulted);
+    let lines: Vec<&str> = reported.lines().collect();
+    assert_eq!(
+        lines.first().copied(),
+        Some(
+            format!(
+                "gandr: {}:1:5: not in the formatter's layout",
+                loose.display()
+            )
+            .as_str()
+        ),
+        "the check names the first place that the layout changes"
+    );
     assert!(
-        stderr(&faulted).starts_with(&format!("gandr: {}: ", absent.display())),
-        "{}",
-        stderr(&faulted)
+        lines
+            .get(1)
+            .is_some_and(|line| line.starts_with(&format!("gandr: {}: ", absent.display()))),
+        "{reported}"
     );
 
     let rewritten = ran(gandr(&[fmt, &loose, &tidy]));

@@ -1,6 +1,16 @@
 //! One top-level form laid out: its brackets nested as groups, each group on
 //! one line when it fits and broken one item per line when it does not, and
 //! each juxtaposed spine on one line or broken one operand per line.
+//!
+//! A broken group of statements ends each statement but its last at the line
+//! end, so a written `;` there leaves. A `;` stays between two statements on
+//! one line, after the last statement of a block and in a declaration body.
+//!
+//! # References
+//!
+//! - `vault:01a1dd3c-1111-7400-ae8f-fb22f062f5fd` — newest: the line end is the
+//!   one spelling of a statement's end, and the block-final `;` gives the block
+//!   the unit value.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -242,6 +252,8 @@ enum Frame<'source>
         close: SourceFragment<'source>,
         /// The space before the closing bracket.
         closing: Join,
+        /// What the bracket holds, as the layout pass reads it.
+        body: Body,
     },
     /// A layout block: the column rule, not a bracket, ends it, so it breaks
     /// one item per line and writes no closer.
@@ -250,6 +262,19 @@ enum Frame<'source>
         /// The token that opens it: a line-final `=`, or nothing.
         open: SourceFragment<'source>,
     },
+}
+
+/// What a group holds, as the layout pass reads it: statements, which a line
+/// end separates, or anything else (#7734).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Body
+{
+    /// Statements: a `{` after no `where` and no `rec`, or a block that a
+    /// line-final `=` opens.
+    Statements,
+    /// The members of a declaration, the declarations of a `rec` group, an
+    /// arm list or any bracket but `{`, where a line end writes no `;`.
+    Other,
 }
 
 /// A group: a frame and the elements inside it.
@@ -598,6 +623,17 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
                         kind: Neighbour::Open,
                     };
                     let join = between(before, here, (gap, rewrote), inside, quoted);
+                    // A `{` after `where` holds a declaration's members, and
+                    // one after `rec` holds declarations, as the layout pass
+                    // reads them.
+                    let members = matches!(before, Before::After(token)
+                        if matches!(<&str>::from(token.text), "where" | "rec"));
+                    let body = if text == "{" && !members {
+                        Body::Statements
+                    }
+                    else {
+                        Body::Other
+                    };
                     let id = GroupId(groups.len());
                     groups.push(Group {
                         frame: Frame::Bracketed {
@@ -607,6 +643,7 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
                             context: leaf.context,
                             close: leaf.text,
                             closing: Join::Touch,
+                            body,
                         },
                         placed: Vec::new(),
                     });
@@ -938,13 +975,14 @@ fn group_doc(
         Frame::Layout { .. } => Ends::Column,
         Frame::Bracketed { .. } | Frame::Form => Ends::Closer,
     };
-    let (open, close, closing) = match group.frame {
+    let (open, close, closing, body) = match group.frame {
         Frame::Bracketed {
             open,
             close,
             closing,
+            body,
             ..
-        } => (open, close, closing),
+        } => (open, close, closing, body),
         Frame::Form => {
             // A form that no layout block ends has no body's column, so its
             // type's spine may break before each operand (#7939).
@@ -964,8 +1002,14 @@ fn group_doc(
         // The column rule ends the block, so its items stand one per line
         // under its open and nothing closes it.
         Frame::Layout { open } => {
+            let body = if <&str>::from(open) == "=" {
+                Body::Statements
+            }
+            else {
+                Body::Other
+            };
             let open = builder.text(TextSource::from(<&str>::from(open)))?;
-            let indented = item_lines(builder, &group.placed, docs, blank, Columns::Read)?;
+            let indented = item_lines(builder, &group.placed, docs, blank, (Columns::Read, body))?;
             let best = builder.concat(open, indented)?;
             return Ok(Built {
                 flat: Flat::Breaks,
@@ -1001,7 +1045,7 @@ fn group_doc(
     else {
         Columns::Unread
     };
-    let indented = item_lines(builder, &group.placed, docs, blank, columns)?;
+    let indented = item_lines(builder, &group.placed, docs, blank, (columns, body))?;
     let hard = builder.hard_line();
     let broken = builder.concat_all([open, indented, hard, close])?;
     if forced {
@@ -1060,7 +1104,10 @@ fn group_doc(
 
 /// The items of `placed`, each on a line of its own and indented under the
 /// line that opens them, a continuation further still, a blank line the
-/// source wrote before an item kept as `blank`.
+/// source wrote before an item kept as `blank`. In a group of statements, the
+/// line end separates two statements. So an item there that the source ended
+/// with a `;` stands without it, unless it is the group's last statement,
+/// whose `;` gives the block the unit value (#7734).
 ///
 /// # Specification
 /// trivial.
@@ -1072,20 +1119,43 @@ fn item_lines(
     placed: &[Placed<'_>],
     docs: &[Built],
     blank: DocId,
-    columns: Columns,
+    (columns, body): (Columns, Body),
 ) -> Result<DocId, FormatError>
 {
+    let items = items(placed, docs, columns);
+    let last = items.iter().rposition(|item| {
+        item.placed
+            .iter()
+            .any(|current| current.element.kind() == Kind::Code)
+    });
     let mut lines: Vec<DocId> = Vec::new();
-    for (index, item) in items(placed, docs, columns).into_iter().enumerate() {
+    for (index, item) in items.into_iter().enumerate() {
         let Some(&Placed { gap, .. }) = item.placed.first()
         else {
             continue;
+        };
+        let ending = match body {
+            Body::Statements if Some(index) != last => separator(item.placed),
+            Body::Statements | Body::Other => Ending::Kept,
+        };
+        let content = match ending {
+            Ending::Kept => run(builder, item.placed, docs, (Mode::Best, Held::Free))?,
+            Ending::Dropped { before, after } => match (before.is_empty(), after.first()) {
+                (true, None) => continue,
+                (true, Some(_)) => run(builder, after, docs, (Mode::Best, Held::Free))?,
+                (false, None) => run(builder, before, docs, (Mode::Best, Held::Free))?,
+                (false, Some(next)) => {
+                    let statement = run(builder, before, docs, (Mode::Best, Held::Free))?;
+                    let join = join_doc(builder, next.join)?;
+                    let comment = run(builder, after, docs, (Mode::Best, Held::Free))?;
+                    builder.concat_all([statement, join, comment])?
+                },
+            },
         };
         if index > 0 && gap == Gap::Blank {
             lines.push(blank);
         }
         let line = builder.hard_line();
-        let content = run(builder, item.placed, docs, (Mode::Best, Held::Free))?;
         let both = builder.concat(line, content)?;
         lines.push(match item.continuation {
             Continuation::Statement => both,
@@ -1094,6 +1164,49 @@ fn item_lines(
     }
     let body = builder.concat_all(lines)?;
     Ok(builder.nest(NestAmount::from(INDENT), body)?)
+}
+
+/// How a statement of a broken block ends in the layout.
+#[derive(Clone, Copy, Debug)]
+enum Ending<'group, 'source>
+{
+    /// The line end ends it, so its written `;` leaves: the elements before
+    /// the `;`, and the comments after it on its line.
+    Dropped
+    {
+        /// The statement's elements before its `;`.
+        before: &'group [Placed<'source>],
+        /// The comments after its `;`.
+        after: &'group [Placed<'source>],
+    },
+    /// It keeps what it writes: no `;`, or the `;` of a block's last
+    /// statement.
+    Kept,
+}
+
+/// How the statement of `placed`, one item of a broken block, ends: its `;`
+/// drops when it is its last code, which only comments may follow on its
+/// line.
+///
+/// # Specification
+/// trivial.
+fn separator<'group, 'source>(placed: &'group [Placed<'source>]) -> Ending<'group, 'source>
+{
+    let last = placed
+        .iter()
+        .rposition(|current| current.element.kind() == Kind::Code);
+    let Some(at) = last.filter(|&at| {
+        placed.get(at).is_some_and(
+            |current| matches!(current.element, Element::Text(text) if <&str>::from(text) == ";"),
+        )
+    })
+    else {
+        return Ending::Kept;
+    };
+    Ending::Dropped {
+        before: placed.get(.. at).unwrap_or_default(),
+        after: placed.get(at.saturating_add(1) ..).unwrap_or_default(),
+    }
 }
 
 /// The document of `join`: nothing, or one space.

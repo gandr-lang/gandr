@@ -4342,9 +4342,24 @@ fn fmt(
     let visited = formatting.visit(pool, |step| {
         let written = match step {
             FormatStep::Unchanged { path, withdrawn } => kept(stderr, path, &withdrawn),
-            FormatStep::Changed { path, withdrawn } => {
+            FormatStep::Changed {
+                path,
+                withdrawn,
+                at,
+            } => {
                 changed = true;
-                writeln!(stdout, "{}", path.display()).and_then(|()| kept(stderr, path, &withdrawn))
+                writeln!(stdout, "{}", path.display())
+                    .and_then(|()| match rewrite {
+                        Rewrite::Check => writeln!(
+                            stderr,
+                            "gandr: {}:{}:{}: not in the formatter's layout",
+                            path.display(),
+                            at.line,
+                            at.column
+                        ),
+                        Rewrite::InPlace => Ok(()),
+                    })
+                    .and_then(|()| kept(stderr, path, &withdrawn))
             },
             FormatStep::Fault { path, fault } => {
                 faulted = true;

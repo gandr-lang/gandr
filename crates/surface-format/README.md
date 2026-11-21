@@ -28,6 +28,7 @@ The source formatter: a parsed gandr source laid out at a page width through `ga
 - Sorawee Porncharoenwase, Justin Pombrio, and Emina Torlak. "A Pretty Expressive Printer." _Proceedings of the ACM on Programming Languages_ 7, OOPSLA2, October 2023. [doi:10.1145/3622837](https://doi.org/10.1145/3622837), [arXiv:2310.01530](https://arxiv.org/abs/2310.01530) — the cost order the layouts are chosen under.
 - Philip Wadler. "A Prettier Printer." In Jeremy Gibbons and Oege de Moor (editors), _The Fun of Programming_, Palgrave Macmillan, 2003. [prettier.pdf](https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf) — a group that is flat only when everything inside it is.
 - The Go authors. [gofmt](https://pkg.go.dev/cmd/gofmt) — a formatter that keeps the line breaks an author wrote between statements and changes only the layout around them.
+- `vault:01a1dd3c-1111-7400-ae8f-fb22f062f5fd` — newest: the line end is the one spelling of a statement's end.
 
 ## Provided features
 

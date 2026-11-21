@@ -155,6 +155,8 @@ pub enum FormatStep<'formatting>
         path: &'formatting Path,
         /// Each declaration that kept the source's spelling, and why.
         withdrawn: Vec<Kept>,
+        /// Where the source's text first differs from its layout (#7734).
+        at: LineColumn,
     },
     /// A path the formatting could not lay out.
     Fault
@@ -503,7 +505,13 @@ where
     let fault = match reached {
         Reached::Source => match lay() {
             Ok(Laid::Unchanged(withdrawn)) => return FormatStep::Unchanged { path, withdrawn },
-            Ok(Laid::Changed(withdrawn)) => return FormatStep::Changed { path, withdrawn },
+            Ok(Laid::Changed(withdrawn, at)) => {
+                return FormatStep::Changed {
+                    path,
+                    withdrawn,
+                    at,
+                };
+            },
             Err(fault) => fault,
         },
         Reached::Unreadable(error) => FormatFault::Unreadable(error),
@@ -519,8 +527,9 @@ enum Laid
 {
     /// The formatted text is the source's own.
     Unchanged(Vec<Kept>),
-    /// The formatted text differs from the source's.
-    Changed(Vec<Kept>),
+    /// The formatted text differs from the source's, first where the source
+    /// stands at this place.
+    Changed(Vec<Kept>, LineColumn),
 }
 
 /// Read the source at `path` through `reader`, format it under `grammar` at
@@ -577,15 +586,22 @@ fn lay_out<'formatting>(
         .map(|withdrawal| Kept::located(withdrawal.clone(), text))
         .collect();
     let laid = <&str>::from(formatted.text());
-    if laid == text.as_ref() {
+    let written = text.as_ref();
+    if laid == written {
         return Ok(Laid::Unchanged(withdrawn));
     }
+    let first = written
+        .char_indices()
+        .zip(laid.chars())
+        .find(|&((_, before), after)| before != after)
+        .map_or_else(|| written.len().min(laid.len()), |((at, _), _)| at);
+    let at = LineColumn::of(text, ByteOffset::from(first));
     if rewrite == Rewrite::InPlace {
         reader
             .write(path, SourceText::from(laid))
             .map_err(FormatFault::Unwritable)?;
     }
-    Ok(Laid::Changed(withdrawn))
+    Ok(Laid::Changed(withdrawn, at))
 }
 
 #[cfg(test)]
@@ -881,7 +897,7 @@ mod tests
             Rewrite::InPlace,
         )
         .expect("the source formats");
-        let super::Laid::Changed(kept) = laid
+        let super::Laid::Changed(kept, _) = laid
         else {
             panic!("the source changes: {laid:?}");
         };

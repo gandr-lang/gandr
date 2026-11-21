@@ -241,7 +241,7 @@ def early(k : Nat) -> Nat = match k {
     let q = match j {
       | Zero => return j
       | Succ(r) => pure r
-    };
+    }
     pure q
   }
 };
@@ -2491,7 +2491,7 @@ fn a_brace_body_moves_after_the_equals_6318()
         def twice(n : Nat) -> Nat = Succ (Succ n);
 
         def block(n : Nat) -> Nat = {
-          let m = twice n;
+          let m = twice n
           twice m
         };
 

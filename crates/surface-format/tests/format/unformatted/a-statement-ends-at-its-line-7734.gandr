@@ -1,0 +1,13 @@
+def f(y : Integer) -> -F Integer = {
+  let x : Integer = y; // the first
+  let z : Integer = x;
+  return z
+};
+def g(y : Integer) -> -F Unit = {
+  let x : Integer = y;
+  loop { break };
+};
+def h(y : Integer) -> -F Integer = { let x : Integer = y; return x };
+def k(y : Integer) -> Integer =
+  let x = y;
+  x

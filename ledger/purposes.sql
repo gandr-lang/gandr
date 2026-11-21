@@ -3025,6 +3025,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','format::FormatFault','enum','Wh
 INSERT INTO purpose VALUES('surface-dispatcher','format::FormatStep','enum','One step of a formatting.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','format::Formatting','struct','The format verb over the paths it was given, laying out its sources in order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','format::Kept','struct','A declaration the formatter left in the source''s spelling because a rewrite would have changed what it lowers to, where the source writes it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','format::LineColumn','struct','Where a byte of a source''s text sits, as an author counts it: its one-based line and column.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','format::Rewrite','enum','What the format verb does with a source whose layout changes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','generation::Delivered','struct','A job''s result, delivered because its generation is still its slot''s current one.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','generation::Generations','struct','Jobs on the driver''s pool, each keyed by what its result is valid under, with one current generation per slot.',NULL,'fits','sound',NULL);
