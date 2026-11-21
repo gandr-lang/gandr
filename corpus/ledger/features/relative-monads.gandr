@@ -1,0 +1,98 @@
+/// `relative-monads`: Monads relative to the shift.
+/// Implemented: a monad relative to `-F` as a theory, its unit and extension
+/// over a family of computation types; the carrier as a theory's sort into the
+/// computation types, which the option monad's carrier models; the option
+/// monad's operations and code polymorphic in the carrier; and the left unit,
+/// the right unit and associativity, which join as one theory.
+/// Not implemented: a handler's return clause from a value to the carrier, the
+/// unit of the handler reading.
+///
+/// - owes: #4383
+/// - see: #2115 — `MonadRightUnit`
+/// - see: #2116 — `RelativeMonad`
+//! A monad relative to the shift `-F`: a unit returning a value and an
+//! extension running a computation into a continuation, over a family of
+//! computation types [Altenkirch-2015-monads_need_not_be_endofunctors] and
+//! [Jiang-2025-notions_stackmanipulating_computation_relative_monads]. Its host
+//! half is ordinary definitions: the option monad's two operations, a program
+//! sequenced through them, and code polymorphic in the carrier. Of the laws,
+//! the left unit is a second-order rule and the right unit abstracts the
+//! variable the continuation binds; associativity overlaps itself and both
+//! units, and every pair joins, so the three are one theory.
+//!
+//! - cites: [Altenkirch-2015-monads_need_not_be_endofunctors]
+//! - cites: [Jiang-2025-notions_stackmanipulating_computation_relative_monads]
+//!
+//! [Altenkirch-2015-monads_need_not_be_endofunctors]: https://doi.org/10.2168/LMCS-11(1:3)2015 "Altenkirch, Chapman and Uustalu, Monads need not be endofunctors"
+//! [Jiang-2025-notions_stackmanipulating_computation_relative_monads]: https://doi.org/10.1145/3720434 "Jiang, Xue and New, Notions of Stack-Manipulating Computation and Relative Monads"
+
+// `Maybe`, the option monad's values.
+import "../../model/data/data-maybe.gandr";
+
+/// The left unit: returning a value to an extension runs its continuation at
+/// that value, a second-order rule over values `V` and computations `C`.
+theory MonadLeftUnit where
+  sort V : Type+;
+  sort C : Type;
+  oper ret : (a : V) --> C;
+  oper ext : (m : C, k : pi+ (x : V). C) --> C;
+  rule unitL : ext (ret a) k <=> k a;
+
+/// The right unit: extending a computation by the unit is the computation.
+/// `bind x . ret(x)` abstracts the variable `k`'s port binds, and `ret` names
+/// it at its port of the sort `V`.
+theory MonadRightUnit where
+  sort V : Type+;
+  sort C : Type;
+  oper ret : (a : V) --> C;
+  oper ext : (m : C, k : pi+ (x : V). C) --> C;
+  rule unitR : ext m (bind x. (ret x)) <=> m;
+
+/// The three laws together. Associativity's inner `ext(m, k)` is an instance
+/// of its own left side and of both unit laws', and its right side
+/// substitutes `k` under `bind x .`: each pair is found by pattern
+/// unification, and its two reducts normalize to one term.
+theory RelativeMonad where
+  sort V : Type+;
+  sort C : Type;
+  oper ret : (a : V) --> C;
+  oper ext : (m : C, k : pi+ (x : V). C) --> C;
+  rule unitL : ext (ret a) k <=> k a;
+  rule unitR : ext m (bind x. (ret x)) <=> m;
+  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));
+
+/// The option monad's unit: the value, present.
+def ret(A : Type, a : A) -> Maybe A = Some a;
+
+/// The option monad's extension: run the computation once, first, then pass
+/// a present value to the continuation and stop at an absent one.
+def ext(A : Type, B : Type, m : () -> Maybe A, k : A -> Maybe B) -> Maybe B =
+  let r = force m
+  match r where
+    | None => None
+    | Some(x) => k x
+
+/// One, then its successor, through the extension: the value read back.
+@[runs("2")]
+def two() -> Integer =
+  let r = ext
+    Integer
+    Integer
+    (ret Integer 1)
+    (fun (x) { ret Integer (x + 1) })
+  match r where
+    | None => 0
+    | Some(y) => y
+
+/// Code polymorphic in the carrier: a computation of any family of
+/// computation types, run again.
+def again(T : Type -> Type[-], m : +U T Integer) -> T Integer = force m;
+
+/// The carrier as a theory's sort: a family from the host's types into the
+/// computation types, the shape `T` above takes.
+theory Carrier where
+  sort T(A : Type) : Type[-];
+
+/// The option monad's carrier: a computation returning a `Maybe`.
+module OptionCarrier : Model(Carrier) where
+  type T(a : Type) = -F Maybe a;

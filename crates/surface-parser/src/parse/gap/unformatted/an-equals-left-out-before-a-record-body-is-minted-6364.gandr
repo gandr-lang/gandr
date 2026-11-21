@@ -1,0 +1,4 @@
+def rightward : Model Counter with sort C = Unit + (Unit + Unit)  *{
+  .start = first,
+  .step = onward
+};
