@@ -1,5 +1,8 @@
 // This source shows a model of a theory that another source declares.
 //
+// A port sort names a type of the theory's own source. A model in another
+// source reads the same type, or the model and the theory disagree on it.
+//
 // The port of `say` names `Integer` in the declaring source, where it names
 // the strings. This source sees the prelude's `Integer`. The model still gives
 // a word, because the port reads the declaring source's binding.

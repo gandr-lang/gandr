@@ -1,5 +1,9 @@
 // A model that reads a port at its own scope's `Integer`.
 //
+// A port reads the binding of the theory's source, and never the binding of
+// the model's source. A member that reads its own binding gives a value of
+// another type.
+//
 // The port of `say` names `Integer` in the declaring source, where it names
 // the strings. This source sees the prelude's `Integer`. A member that gives
 // a prelude integer does not give the word that the port names, so the model
