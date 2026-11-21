@@ -111,22 +111,28 @@ export GATE_SCOPE
 # tree.
 source .config/pr-stack/trunk.bash
 if GATE_BASE=$(git merge-base "origin/$trunk" HEAD 2> /dev/null); then export GATE_BASE; else unset GATE_BASE; fi
-# A check with a record of a pass on these inputs does not run again. Each
-# job of a pull request reads the records in the same way. The gate reads
-# them before it starts a check, and `GATE_HELD` names each check that holds
-# one. A check of that list prints the fact and exits 0. The records bind
-# the tree of a commit, so a worktree with work that no commit holds reads
-# none.
-# - see: `.config/gate-scope/verdict.bash`, #7684
+# A check that holds does not run again. It holds by its base when no input
+# of it changes, or by a record of a pass on these inputs. Each job of a
+# pull request reads in the same way.
+#
+# The gate reads before it starts a check, and `GATE_HELD` names each check
+# that holds. A check of that list prints the fact and exits 0. The read
+# binds the tree of a commit, so a worktree with work that no commit holds
+# reads nothing.
+# - see: `.config/gate-scope/verdict.bash`, #7684, #8265
 GATE_HELD=
 if [[ -n ${GATE_BASE:-} && $tree == "$(git rev-parse 'HEAD^{tree}')" ]]; then
-  mapfile -t recorded < <(jq -r '.checks | keys[]' .config/gate-scope/verdicts.json)
-  GATE_HELD=$(.config/gate-scope/verdict.bash read "${recorded[@]}" 2>&1 \
+  # The gate asks for the four checks that take the time. Each of them
+  # reads `GATE_HELD`. A record of `check:clippy-arch` costs 0.4 s to read,
+  # and the check takes less than that. The reader exits 1 when one check
+  # does not hold, and the gate keeps each check that does.
+  recorded=(check:clippy-plain-only check:clippy-enforcing check:dylint check:purposes)
+  GATE_HELD=$({ .config/gate-scope/verdict.bash read "${recorded[@]}" 2>&1 || true; } \
     | awk '$1 == "verdict:" && $3 == "holds" { printf "%s%s", sep, $2; sep = " " }') || GATE_HELD=
   if [[ -n $GATE_HELD ]]; then
-    echo "check: a record of a pass holds for $GATE_HELD, so the gate runs none of them again" >&2
+    echo "check: $GATE_HELD hold by the base or by a record of a pass, so the gate runs none of them again" >&2
   else
-    echo 'check: no record of a pass holds for these inputs, so each check runs' >&2
+    echo 'check: no check holds by the base or by a record of a pass, so each check runs' >&2
   fi
 fi
 export GATE_HELD

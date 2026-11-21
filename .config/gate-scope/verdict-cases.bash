@@ -334,6 +334,27 @@ got=$(setup "$scratch/table-row" && workspace && table '"crates/a/"' \
   && reads_inputs --workspace check:purposes)
 [[ $got == runs ]] || fail "#7684: a path that joins the row of a check of the table runs it" "$got"
 
+# A change on a base that the trunk holds, with no record of a check. The
+# change is the text `$1` at the path `$2`.
+change_on_trunk() {
+  export GATE_VERDICT_TRUNK_OK=$GATE_BASE
+  git switch --quiet --create change
+  mkdir -p "$(dirname "$2")"
+  commit "$2" "$1" change > /dev/null
+}
+
+got=$(setup "$scratch/base-apart" && workspace && change_on_trunk notes notes.txt && reads_inputs --workspace)
+[[ $got == held ]] || fail "#8265: a change of no input of the check holds it by its base, with no record" "$got"
+
+got=$(setup "$scratch/base-input" && workspace && change_on_trunk '//! a, changed' crates/a/src/lib.rs && reads_inputs --workspace)
+[[ $got == runs ]] || fail "#8265: a change of an input of the check runs it, with no record" "$got"
+
+got=$(setup "$scratch/base-off-trunk" && workspace && change_on_trunk notes notes.txt && GATE_VERDICT_TRUNK_OK='' reads_inputs --workspace)
+[[ $got == runs ]] || fail "#8265: a base that the trunk does not hold holds no check" "$got"
+
+got=$(setup "$scratch/base-task" && workspace && change_on_trunk 'run = "true"' .config/mise/tasks/case.toml && reads_inputs --workspace)
+[[ $got == runs ]] || fail "#8265: a change that holds a task file holds no check by its base" "$got"
+
 # A dep-info file of the crate `a` that names a file outside its crate. The
 # check refuses it by its path, until the table names it for `a`.
 got=$(
@@ -354,4 +375,4 @@ got=$(
   || fail "#7684: the dep-info check refuses a file outside the inputs by its path" "$got"
 
 (( failed == 0 )) || exit 1
-echo "verdict OK: 24 cases read, refuse and write records as recorded"
+echo "verdict OK: 28 cases read, refuse and write records as recorded"
