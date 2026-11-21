@@ -98,19 +98,19 @@
 # TypeScript tests (`contrib/` files named `*.test.ts` or under a `smoke/`
 # directory), a `//` line or a `test(…)` name citing `#n` (#3538).
 #
-# A surface form states its parser cost and its demand (#2527): a change to
-# the parser, its grammar or its syntax tree (`surface`, the paths it changes
-# under `crates/surface-parser/`, `crates/surface-grammar/` or
-# `crates/surface-syntax/`) has a `### Surface form` subsection with a
-# non-blank `cost:` line (the keystroke scenario's numbers before and after,
-# the molder's candidates and windows on the form) and a non-blank
-# `demand: <site>` line naming the corpus source or program that needs it.
-# It states its spelling too (#6876), since the owner's rule of 2026-11-11
-# admits one spelling for each form: `spelling: sole`, or `spelling: replaces
-# <old>, refused here` where the change refuses the spelling it replaces, or
-# `spelling: replaces <old>, refused by #n` where `#n` is an open issue.
-# The goldens `corpus:goldens` records there follow the corpus and ask for
-# none (#2756).
+# A change to the parser, its grammar or its syntax tree states its surface
+# form. Its body holds a `### Surface form` subsection with three lines. The
+# `cost:` line gives the keystroke numbers before and after the change. It
+# also gives the candidates and the windows of the molder on the form. The
+# `demand:` line names the corpus source or the program that needs the form.
+# - see: #2527
+# - see: `crates/surface-parser/`, `crates/surface-grammar/`, `crates/surface-syntax/`
+#
+# The `spelling:` line gives one of three forms: `sole`, `replaces <old>,
+# refused here`, or `replaces <old>, refused by #n` with an open issue. The
+# owner's rule admits one spelling for each form. A golden record that
+# `corpus:goldens` writes under these paths asks for no subsection.
+# - see: #6876, #2756
 #
 # A closing keyword closes only from the head's keyword lines (#2980): one
 # anywhere else (`closed #628` in prose, a `Closes #n` line with prose after
@@ -409,9 +409,10 @@ def golden:
   test("^crates/surface-grammar/tests/highlight/.+\\.(?:roles|hover)$")
   or test("^crates/surface-parser/tests/recovery/.+\\.recovery$");
 
-# The refusals of a change to the parser whose body states no surface form,
-# or a spelling in none of its three forms, or a replaced spelling whose
-# unit does not stand open (#6876).
+# This function refuses a parser change whose body has no surface form. It
+# refuses a spelling outside the three forms too. It refuses a replaced
+# spelling when the unit of that spelling does not stand open.
+# - see: #6876
 def surface:
   (.surface // [] | map(select(golden | not))) as $paths
   | select($paths | length > 0)

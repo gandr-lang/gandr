@@ -2519,19 +2519,20 @@ read -r held held_places table <<< "$counts"
 echo "builtins check OK: $held names in $held_places places, each with its row; $table rows of the one table, which the test of gandr-core-term reads"
 {% endraw %}'''
 
-# No item, refusal tag or comment of the tree marks a form as retired
-# (#8188). A new form replaces what it supersedes whole, so the tree keeps no
-# record of that. `.config/retired/findings.jq` names the identifiers
-# and the phrases that the check refuses, and its cases pin them. The check
-# reads each tracked text file but the recorded debug transcripts and the
-# changelog, which tell what a run or a release saw.
+# No item, refusal tag or comment of the tree marks a form as retired. A new
+# form replaces what it supersedes whole, so the tree keeps no record of that.
+# The findings program names the identifiers and the phrases that the check
+# refuses, and its cases pin them. The check reads each tracked text file but
+# the recorded debug transcripts and the changelog. Those tell what a run or a
+# release saw.
+# - see: #8188, `.config/retired/findings.jq`
 #
-# `.config/retired/record.txt` lists the files of the one record of a spelling
-# that the grammar still parses, each with the open issue that removes it. The
-# record's own phrase stands in those files alone. The check refuses a line
-# with no issue, and a file that holds no part of the record, so the list
-# cannot go stale.
-# - see: #8188
+# The record list names the files of the one record of a spelling that the
+# grammar still parses. Each line names the open issue that removes the
+# record. The phrase of the record stands in those files alone. The check
+# refuses a line with no issue. It refuses a file that holds no part of the
+# record too, so the list cannot go stale.
+# - see: `.config/retired/record.txt`
 #
 # The gate prints every finding before it fails.
 ["check:retired"]
