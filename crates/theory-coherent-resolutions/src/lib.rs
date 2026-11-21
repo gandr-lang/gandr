@@ -1,0 +1,254 @@
+//! Coherent resolution of a cell rewriting system: firing a cell, finding the
+//! critical pairs, joining them under replayable certificates, and completing
+//! the system until the pairs are exhausted or the budget declines.
+//!
+//! The modules are one construction read in order. A cell fires
+//! ([`rewrite_at`], [`normalize`]); two cells whose left-hand sides unify, or
+//! whose right-hand side and left-hand side do, overlap
+//! ([`enumerate_overlaps`], [`Overlap`]); a branching that converges is
+//! witnessed by a certificate that replays ([`Tracelet`],
+//! [`confluence_tracelet`], [`derive_fused`]); and orienting the branchings
+//! that diverge until none remains is completion ([`complete`],
+//! [`complete_with_overlap_source`]). Overlap enumeration and the certificates
+//! depend on each other — a certificate carries the overlap it joins, and the
+//! overlap support relates certificates as well as cells — so
+//! the crate encloses both.
+//!
+//! The rewriting engine is generic over the substrate's
+//! [`CellAlphabet`](gandr_theory_cell_complexes::CellAlphabet) and adds no cell
+//! vocabulary. The resolution of a first-order block is the bar complex of the
+//! Lawvere theory that the block presents ([`LawvereTheory`], [`BarCell`]). The
+//! complex follows chapter 13 of the polygraphs book of Ara and others, and
+//! refuses a rule that erases or duplicates a variable. Brown's scheme keeps
+//! each critical branching essential, the limit that Malbos and Ren sharpen,
+//! and its matching is a function, as in § 3.4 of Doré. A
+//! sequent cell has no first-order reading in the substrate, so the caller
+//! states the theory's rules. The complex is a
+//! [`Complex`](gandr_theory_discrete_morse::Complex) of the Morse crate. The
+//! crate is `no_std` and depends on `alloc`, the substrate, the Morse crate and
+//! `quenchant-shape`; its `hotpath` feature links `std` and the profiler, which
+//! times the overlap queries and normalization for the benchmark report.
+//!
+//! Each overlap is one unification at a seam, so the enumeration asks one
+//! query for each ordered pair of cells. A certificate records which cell
+//! fired where, and no substitution. Its replay matches each step again
+//! against skolemized terms. Completion is one worklist loop for a fresh
+//! run, a supplied run and a resumed run. A step ceiling and a cell ceiling
+//! bound it, and a ceiling returns a decline that holds the pending batches.
+//! Absence and refusal are values. A step that does not happen returns
+//! `Maybe` with its reason, and a refused operation returns `Result` with a
+//! typed refusal.
+//!
+//! The construction takes four sources. Squier, Otto and Kobayashi read a
+//! joined critical branching as a coherence cell, so each certificate is a
+//! 3-cell. Guiraud, Hoffbeck and Malbos collapse the resolution of a
+//! convergent presentation onto its rules, critical pairs and critical
+//! triples. [`critical_triples`] lists the triples of a store. Brown's scheme
+//! on the bar complex is that collapse, up to the critical triples. Malbos and
+//! Ren count each critical branching once, and keep
+//! only the essential ones. Completion joins each root branching once. The
+//! collapse tests compare the essential branchings with the certified pairs.
+//! Doré states a matching as a partial function, acyclic when each cell
+//! reaches a critical cell. The collapse tests check Brown's matching in that
+//! form.
+//!
+//! The results hold at two levels. Each confluence certificate is a 3-cell of
+//! a coherent presentation, which holds up to homotopy (Ara and others,
+//! Theorem 7.3.5). [`Basis`] builds the 4-cell of each critical triple from
+//! them, so its reduction holds up to homotopy too, with its equivalence. The
+//! bar complex holds only over the integers, as chains. The general form is
+//! the Squier polygraphic resolution, with a cell for each critical branching
+//! of each arity (Ara and others, Theorem 23.2.3).
+//!
+//! # Executable specifications
+//!
+//! The item specifications pair executable `#[spec]` predicates with local `#
+//! Adequacy` witnesses. Enforced runs check rewrite order and budgets, overlap
+//! and certificate support, preserved completion state, and the exact
+//! successful replay prefix before a typed refusal. The boundary witnesses
+//! include empty schedules and support, interrupted batches, independently
+//! failing replay legs, and fusion retries that preserve the store and
+//! identifier.
+//!
+//! The test-only numeral strategy is the sole executable exemption: the pinned
+//! attribute cannot name its opaque `impl Strategy` return in a generated
+//! predicate signature. The fusion differential independently checks every
+//! generated input through borrowed producer views and its size, rejecting
+//! metavariables, wrong constructors or arities, and values outside zero
+//! through 63 successors. The exemption ends when opaque returns are supported.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-4e61-7143-9414-8eb3d0de397f` — anchor: a certificate step
+//!   records the substitution that matched its cell, and replay instantiates
+//!   the cell by it in place of a match (§ gate-substitution-read).
+//! - Donald E. Knuth and Peter B. Bendix. "Simple Word Problems in Universal
+//!   Algebras." In _Computational Problems in Abstract Algebra_, Pergamon,
+//!   1970, pages 263–297. `doi:10.1016/B978-0-08-012975-4.50028-X` — critical
+//!   pairs, orienting a divergent pair by a reduction order, and the completion
+//!   loop `complete` runs.
+//! - Franz Baader and Tobias Nipkow. _Term Rewriting and All That_. Cambridge
+//!   University Press, 1998. `doi:10.1017/CBO9781139172752` — critical pairs
+//!   and the critical-pair lemma, completion as an inference system that can
+//!   fail or diverge, and overlaps at interior positions, which this enumerator
+//!   does not compute.
+//! - Craig C. Squier, Friedrich Otto, and Yuji Kobayashi. "A Finiteness
+//!   Condition for Rewriting Systems." _Theoretical Computer Science_ 131, 2
+//!   (1994), pages 271–294 — the critical branchings of a convergent
+//!   presentation, joined, generate its homotopy relations: the reading of a
+//!   confluence certificate as a coherence cell.
+//! - Dimitri Ara, Albert Burroni, Yves Guiraud, Philippe Malbos, François
+//!   Métayer, and Samuel Mimram. _Polygraphs: From Rewriting to Higher
+//!   Categories_. London Mathematical Society Lecture Note Series 495,
+//!   Cambridge University Press, March 2025. `doi:10.1017/9781009498968`;
+//!   preprint `arXiv:2312.00429` — coherent presentations and Squier
+//!   completion, which extends Knuth–Bendix completion with a 3-cell for every
+//!   critical branching.
+//! - Nicolas Behr. "Tracelets and Tracelet Analysis of Compositional Rewriting
+//!   Systems." In _Proceedings of Applied Category Theory 2019_, Electronic
+//!   Proceedings in Theoretical Computer Science 323 (2020), pages 44–71.
+//!   `doi:10.4204/EPTCS.323.4` — tracelets as derivations recorded for
+//!   re-execution, sequential composition of rules, and the concurrency theorem
+//!   the fused-cell differential adopts as a test.
+//! - Yves Guiraud, Eric Hoffbeck and Philippe Malbos. "Convergent Presentations
+//!   and Polygraphic Resolutions of Associative Algebras." _Mathematische
+//!   Zeitschrift_ 293 (2019), pages 113–179. `doi:10.1007/s00209-018-2185-z` —
+//!   the resolution whose generating cells are the rules, the critical pairs
+//!   and the critical triples, and the collapsing scheme that reaches it.
+//!   [`critical_triples`] lists the triples of its § 6.2.
+//! - Philippe Malbos and Isaac Ren. "Completion in Operads via Essential
+//!   Syzygies." In _Proceedings of ISSAC 2021_, ACM, 2021.
+//!   `doi:10.1145/3452143.3465552` — each critical branching counted once,
+//!   which `scheduled_confluence_batches` follows, and the essential
+//!   branchings, which the collapse tests compare with the certified pairs.
+//! - Maximilian Doré. _Computing Spaces in Type Theory_. Doctoral thesis,
+//!   University of Oxford, 2023, § 3.4 — a matching as a partial function,
+//!   acyclic when each cell reaches a critical cell.
+
+// Module documentation that predates the shape lint: 11 headings outside the
+// vocabulary, 2 decision records and 1 budget exceeded. Each allow leaves with
+// the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
+#![no_std]
+
+extern crate alloc;
+// The profiler's instrumentation names `std`; it links only into the
+// benchmark build.
+#[cfg(feature = "hotpath")]
+extern crate std;
+
+mod basis;
+mod boundary;
+mod completion;
+mod lawvere;
+mod overlap;
+mod rewrite;
+mod tracelet;
+mod triple;
+
+pub use crate::basis::Basis;
+pub use crate::basis::BasisCell;
+pub use crate::basis::BasisFault;
+pub use crate::basis::BasisRefusal;
+pub use crate::basis::Composite;
+pub use crate::basis::Fill;
+pub use crate::basis::Homotopy;
+pub use crate::basis::Move;
+pub use crate::basis::PathStep;
+pub use crate::basis::RewritePath;
+pub use crate::basis::Sense;
+pub use crate::basis::Witness;
+pub use crate::boundary::Arity;
+pub use crate::boundary::BarDegree;
+pub use crate::boundary::BatchIndex;
+pub use crate::boundary::BudgetExhaustion;
+pub use crate::boundary::CertificateIndex;
+pub use crate::boundary::CompletionCellBudget;
+pub use crate::boundary::CompletionStatus;
+pub use crate::boundary::CompletionStepBudget;
+pub use crate::boundary::MovePlace;
+pub use crate::boundary::NormalizationBudget;
+pub use crate::boundary::Occurrences;
+pub use crate::boundary::Operation;
+pub use crate::boundary::OverlapIndex;
+pub use crate::boundary::PairDecisions;
+pub use crate::boundary::RulePlace;
+pub use crate::boundary::StepIndependence;
+pub use crate::boundary::StepPlace;
+pub use crate::boundary::TermPlace;
+pub use crate::boundary::TermSize;
+pub use crate::boundary::TraceletEquivalence;
+pub use crate::boundary::TraceletReplay;
+pub use crate::boundary::TripleIndex;
+pub use crate::boundary::Variable;
+pub use crate::completion::CompletionBudget;
+pub use crate::completion::CompletionOutcome;
+pub use crate::completion::CompositePair;
+pub use crate::completion::CompositeRefusal;
+pub use crate::completion::DeclineReason;
+pub use crate::completion::Joinability;
+pub use crate::completion::NoScheme;
+pub use crate::completion::PairClass;
+pub use crate::completion::PairJoining;
+pub use crate::completion::PairScheme;
+pub use crate::completion::SuppliedOverlapError;
+pub use crate::completion::complete;
+pub use crate::completion::complete_with_overlap_source;
+pub use crate::completion::join_critical_pairs;
+pub use crate::completion::scheduled_confluence_batches;
+pub use crate::lawvere::Arrow;
+pub use crate::lawvere::BarBound;
+pub use crate::lawvere::BarCell;
+pub use crate::lawvere::Degeneracy;
+pub use crate::lawvere::LawvereError;
+pub use crate::lawvere::LawvereTheory;
+pub use crate::lawvere::TermHead;
+pub use crate::lawvere::TermNode;
+pub use crate::lawvere::TermTable;
+pub use crate::lawvere::Truncation;
+pub use crate::lawvere::overlapped;
+pub use crate::lawvere::root_rewrite;
+pub use crate::lawvere::truncated;
+pub use crate::overlap::Overlap;
+pub use crate::overlap::OverlapKind;
+pub use crate::overlap::OverlapRefusal;
+pub use crate::overlap::OverlapSupport;
+pub use crate::overlap::PeakLegs;
+pub use crate::overlap::enumerate_overlaps;
+pub use crate::overlap::interior_overlaps_between;
+pub use crate::overlap::overlaps_between;
+pub use crate::overlap::peak_legs;
+pub use crate::overlap::root_overlaps_between;
+pub use crate::rewrite::CellApp;
+pub use crate::rewrite::Normalization;
+pub use crate::rewrite::Rewrite;
+pub use crate::rewrite::apply_once;
+pub use crate::rewrite::fire_at;
+pub use crate::rewrite::firing;
+pub use crate::rewrite::normalize;
+pub use crate::rewrite::redex_search;
+pub use crate::rewrite::replay_at;
+pub use crate::rewrite::rewrite_at;
+pub use crate::tracelet::ReplayPath;
+pub use crate::tracelet::ReplayPathOutcome;
+pub use crate::tracelet::ReplayStep;
+pub use crate::tracelet::ReplayTrace;
+pub use crate::tracelet::StuckStep;
+pub use crate::tracelet::Tracelet;
+pub use crate::tracelet::confluence_join;
+pub use crate::tracelet::confluence_tracelet;
+pub use crate::tracelet::derive_fused;
+pub use crate::tracelet::record_path;
+pub use crate::tracelet::replay_equivalent;
+pub use crate::tracelet::replay_from_peak;
+pub use crate::tracelet::replay_path;
+pub use crate::triple::CriticalTriple;
+pub use crate::triple::critical_triples;
