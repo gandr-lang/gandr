@@ -85,6 +85,11 @@ sites = [
   { file = "crates/surface-lowering-base/src/module.rs", pattern = 'Err\(extra_operand\(FormName::ATTRIBUTE, (stray|extra)\)\)' },
 ]
 
+[refusal.MalformedForm]
+sites = [
+  { file = "crates/surface-lowering-base/src/lower.rs", pattern = '^\s*LoweringRefusal::MalformedForm \{$' },
+]
+
 [refusal.FixedFieldDiffers]
 sites = [
   { file = "crates/core-checker-base/src/judgement/native.rs", pattern = '^\s*Ok\(_\) => CheckRefusal::FixedFieldDiffers \{$' },
