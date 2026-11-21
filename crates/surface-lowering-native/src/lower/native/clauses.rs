@@ -477,24 +477,31 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                 }
                 choices.push(read);
             }
-            let mut combined: Vec<Vec<PatternAt>> = Vec::from([Vec::new()]);
-            for column in &choices {
-                combined = combined
-                    .iter()
-                    .flat_map(|prefix| {
-                        column.iter().map(move |&root| {
-                            let mut row = prefix.clone();
-                            row.push(root);
-                            row
-                        })
-                    })
-                    .collect();
+            // Each row takes one choice of each column, the last column
+            // varying fastest. A row's choice of a column is its index, read
+            // in the mixed radix of the columns' lengths, so each row is
+            // built once from the columns.
+            let mut strides = Vec::with_capacity(choices.len());
+            let mut count = 1_usize;
+            for column in choices.iter().rev() {
+                strides.push(count);
+                count = count.saturating_mul(column.len());
             }
-            rows.extend(combined.into_iter().map(|columns| Row {
-                columns,
-                arm,
-                bindings: Vec::new(),
-                stuck: Maybe::Absent(stuck::Absent::Decided),
+            strides.reverse();
+            rows.extend((0 .. count).map(|index| {
+                Row {
+                    columns: choices
+                        .iter()
+                        .zip(&strides)
+                        .filter_map(|(column, &stride)| {
+                            let place = index.checked_div(stride)?.checked_rem(column.len())?;
+                            column.get(place).copied()
+                        })
+                        .collect(),
+                    arm,
+                    bindings: Vec::new(),
+                    stuck: Maybe::Absent(stuck::Absent::Decided),
+                }
             }));
             variables.push(named);
         }

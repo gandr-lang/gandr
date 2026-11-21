@@ -6862,7 +6862,7 @@ where
         fixed.iter().map(|(label, &value)| (label, value)),
     )?;
     let mut records = Vec::with_capacity(rounds.len().saturating_add(1));
-    records.push(fixed_record.clone());
+    records.push(fixed_record);
     for round in rounds.iter().filter(|round| !round.is_empty()) {
         records.push(record_of(
             arena,
@@ -6917,6 +6917,9 @@ where
         )
     };
     let mut witnesses = Vec::with_capacity(rounds.len().saturating_mul(2));
+    // Each round reads at most one record of the key, and no two rounds read
+    // the same one, so each round takes its record.
+    let mut records: Vec<Option<FormationRecord>> = records.into_iter().map(Some).collect();
     for (index, round) in rounds.iter().enumerate() {
         // Round zero is the fixed record with its meets in place; a later
         // round is its meets' record, which the key holds already.
@@ -6925,7 +6928,10 @@ where
             body,
             types,
         } = match (index, round.is_empty()) {
-            (0, true) => fixed_record.clone(),
+            (0, true) => records
+                .first_mut()
+                .and_then(Option::take)
+                .ok_or_else(invariant)?,
             (0, false) => record_of(
                 arena,
                 &fields,
@@ -6934,8 +6940,8 @@ where
                     .map(|(label, &value)| (label, round.get(label).copied().unwrap_or(value))),
             )?,
             _ => records
-                .get(index.saturating_add(1))
-                .cloned()
+                .get_mut(index.saturating_add(1))
+                .and_then(Option::take)
                 .ok_or_else(invariant)?,
         };
         let record = witness(
@@ -13338,6 +13344,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             row: Vec::from([signature.clone()]),
             level: handled.level.clone(),
         };
+        // A step that folds into the rest reads this program at its own
+        // result; the row and the level stay the subject's.
+        let mut here = program.clone();
         let binder = u32::from(scoped);
         let past = |depth: u32| binder.checked_add(depth).ok_or(Refusal::MachineInvariant);
         // The rest of the spine past the step at hand, once a step stands:
@@ -13444,11 +13453,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         if inner.row.iter().any(|held| held.name() != signature.name()) {
                             return Err(uncovered);
                         }
-                        let here = Programmed {
-                            result: self.shifted(handled.subject, Binders::from(past(depth)?)),
-                            row: program.row.clone(),
-                            level: program.level.clone(),
-                        };
+                        here.result = self.shifted(handled.subject, Binders::from(past(depth)?));
                         self.fold((current, &inner), next, (model, &here))?
                     },
                     // The subject's last step is checked at its result, as
