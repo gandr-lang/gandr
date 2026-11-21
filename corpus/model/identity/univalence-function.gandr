@@ -1,0 +1,32 @@
+//! This source transports a function along `ua`.
+//!
+//! The transported function moves its argument backward along the path.
+//! It moves its result forward along the path.
+//!
+//! The checker expands the function family at the `ua` path.
+//! The runtime evaluates the transported function.
+//! It reads the case table of § 4.5 of the cited work at a function type.
+//!
+//! - cites: [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom]
+//!
+//! [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom]: https://arxiv.org/abs/1611.02108 "Cohen, Coquand, Huber and Mörtberg, Cubical Type Theory: a constructive interpretation of the univalence axiom"
+
+// This import supplies the circle, integers, winding and spin.
+import "./circle-base.gandr";
+// The loops at the point as the integers, `loopsAreIntegers`.
+import "./univalence.gandr";
+
+/// The transport maps a loop function to an integer function by `spin`,
+/// `f` and `wind`.
+def funBeta(
+  f : Path[.A = Circle] Base Base -> Path[.A = Circle] Base Base
+) -> Path[.A = Int -> Int] (Path.walk (fun (X) { X -> X }) loopsAreIntegers f) fun (n) {
+  wind (f (spin n))
+} =
+  Path.here (fun (n) { wind (f (spin n)) })
+
+/// A run maps a loop function to the successor of its winding.
+@[runs("S (S (S Z))")]
+def funRun() -> Int =
+  let g = Path.walk (fun (X) { X -> X }) loopsAreIntegers (fun (l) { loopOn l })
+  g (S (S Z))

@@ -1,0 +1,2 @@
+// a note
+data Unit : Type where { | Tt : Unit }
