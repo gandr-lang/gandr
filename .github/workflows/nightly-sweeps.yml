@@ -819,8 +819,12 @@ jobs:
         with:
           name: chain-log-riscv64
           path: ${{ runner.temp }}/chain/chain-log-riscv64
+      # A step that opens a collector reads the private-names list from the
+      # secret, in its own environment alone (#7895).
       - name: report the chain of each head
         if: *not-cancelled
+        env:
+          GANDR_PRIVATE_NAMES: ${{ secrets.GANDR_PRIVATE_NAMES }}
         run: mise run --quiet report:chain "$RUNNER_TEMP/chain" >> "$GITHUB_STEP_SUMMARY"
       - name: keep the night's chain rows
         if: *not-cancelled
@@ -836,6 +840,7 @@ jobs:
       - name: keep the wasm driver's issue
         if: ${{ !cancelled() && (needs.wasm.result == 'success' || needs.wasm.result == 'failure') }}
         env:
+          GANDR_PRIVATE_NAMES: ${{ secrets.GANDR_PRIVATE_NAMES }}
           WASM_RESULT: ${{ needs.wasm.result }}
         run: mise run ci:wasm-file
       - name: compare each lane with its budget

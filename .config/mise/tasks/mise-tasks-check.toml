@@ -3191,7 +3191,9 @@ run = [".config/reserved/cases.bash", ".config/reserved/check.bash .config/nexte
 # `.github/workflows/nightly-sweeps.yml`'s own jobs, anchors expanded, give none.
 # The night's chain report (#6893): each case in `.config/nightly/chain.json`
 # gives the row that `chain.jq` reads from a build log, or the report and the
-# collector that `chain-night.jq` writes from the rows.
+# collector that `chain-night.jq` writes from the rows. Each collector body
+# that a case records passes `body:prose`, as `issue:file` reads it on a
+# runner (#7895).
 ["check:nightly"]
 description = "The nightly's reporting work runs as one job, each step after a failure still running and the lane budget last, and the chain report reads each recorded log and night as recorded"
 tools.jq = "1.8.1"
@@ -3201,6 +3203,13 @@ run = '''
 set -euo pipefail
 .config/cases/run.bash nightly .config/nightly/cases.json --program .config/nightly/jobs.jq --mode c
 .config/cases/run.bash nightly .config/nightly/chain.json --programs .config/nightly --mode c
+bodies=$(mktemp -d)
+trap 'rm -rf "$bodies"' EXIT
+jq -c '.[] | select(.program == "chain-night.jq") | .output.action.body // empty' .config/nightly/chain.json \
+  | while IFS= read -r body; do jq -r . <<< "$body" > "$(mktemp -p "$bodies" --suffix=.md)"; done
+if compgen -G "$bodies/*.md" > /dev/null; then
+  mise run --quiet body:prose "$bodies"/*.md
+fi
 refusals=$(yq -o=json 'explode(.) | .jobs' .github/workflows/nightly-sweeps.yml | jq -r -f .config/nightly/jobs.jq | jq -r '.[] | ".github/workflows/nightly-sweeps.yml: \(.)"')
 if [[ -n "$refusals" ]]; then
   printf '%s\n' "$refusals" >&2

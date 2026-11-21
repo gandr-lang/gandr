@@ -3042,12 +3042,16 @@ findings=$(jq -n --slurpfile rows "$tables/rows.json" '{rows: $rows[0], issues: 
 # `$XDG_CONFIG_HOME/gandr-factory/private-names` (`~/.config` by default): one
 # extended regular expression per line, matched without regard to case, `#`
 # lines and blank lines skipped. The list is the owner's and never lives in
-# the tree. Each match is printed with its file (or `title`) and line, and
-# the check exits 1; a missing or empty list refuses too, naming its path,
-# never a silent pass. A title that holds a JSON escape `\uXXXX` is refused
-# too (#6496, `.config/issues/title.jq`): a filer that quotes the title for
-# the shell with a JSON encoder sends the escape, and GitHub shows it as
-# text. A comment that closes or declines a unit on a probe passes
+# the tree. Where the file is absent, the check reads the same lines from the
+# value `GANDR_PRIVATE_NAMES`. A runner takes it from the repository secret
+# of that name, in the one step that files (#7895). Each match is printed
+# with its file (or `title`) and line, and the check exits 1. A runner's log
+# is public, so on a runner each match prints its file and line number and
+# none of the line's text. A missing or empty list refuses too, naming its
+# path, never a silent pass. A title that holds a JSON escape `\uXXXX` is
+# refused too (#6496, `.config/issues/title.jq`): a filer that quotes the
+# title for the shell with a JSON encoder sends the escape, and GitHub shows
+# it as text. A comment that closes or declines a unit on a probe passes
 # `--sets-aside <n>` (#6569, `.config/bodies/measured.jq`): for each
 # `## Sources` row of #n whose `saves:` claims a saving, the comment needs a
 # line `measured: <value> by <instrument>`, or it is refused. One GraphQL
@@ -3071,9 +3075,11 @@ found=$(mktemp)
 trap 'rm -f "$patterns" "$found"' EXIT
 if [[ -f $list ]]; then
   grep -vE '^[[:space:]]*(#|$)' "$list" > "$patterns" || true
+elif [[ -n ${GANDR_PRIVATE_NAMES:-} ]]; then
+  printf '%s\n' "$GANDR_PRIVATE_NAMES" | grep -vE '^[[:space:]]*(#|$)' > "$patterns" || true
 fi
 if [[ ! -s $patterns ]]; then
-  echo "body:check: no private-names list at $list (one pattern per line); write it before posting a body" >&2
+  echo "body:check: no private-names list at $list and none in GANDR_PRIVATE_NAMES (one pattern per line); write it before posting a body" >&2
   exit 2
 fi
 eval "files=(${usage_file:?})"
@@ -3096,7 +3102,12 @@ if [[ -n ${usage_sets_aside:-} ]]; then
 fi
 if [[ -s $found ]]; then
   printf 'body:check FAILED: these lines name private material (%s); rewrite them:\n' "$list" >&2
-  sed 's/^/  /' "$found" >&2
+  # A runner's log is public: it gives each match's file and line alone.
+  if [[ ${GITHUB_ACTIONS:-} == true ]]; then
+    cut -d: -f1,2 "$found" | sed 's/^/  /' >&2
+  else
+    sed 's/^/  /' "$found" >&2
+  fi
 fi
 if [[ -n $escaped ]]; then
   printf 'body:check FAILED: the title holds JSON escapes; pass the title as the text a reader sees, quoted for the shell (shlex.quote in Python), never JSON-encoded:\n' >&2
