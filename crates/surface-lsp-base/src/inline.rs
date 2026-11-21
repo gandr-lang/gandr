@@ -1469,7 +1469,7 @@ fn closing_materials(
         .map(|closing| {
             pending
                 .iter()
-                .cloned()
+                .copied()
                 .chain(parts(grammar, closing.steps()))
                 .collect()
         })

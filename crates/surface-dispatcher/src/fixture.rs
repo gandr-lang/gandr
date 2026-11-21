@@ -340,7 +340,7 @@ pub fn damage(
     let file = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
-        .open(&segment)
+        .open(segment)
         .expect("the segment opens");
     match damage {
         Damage::Truncate => file.set_len(last).expect("the segment is cut"),

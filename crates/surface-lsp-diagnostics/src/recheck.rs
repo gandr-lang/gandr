@@ -697,6 +697,11 @@ impl Rechecked
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
 /// - witness: `gandr-surface-lsp::server::tests::a_change_during_a_judgement_retires_it_1547`
 /// - witness: `gandr-surface-lsp::server::tests::an_edit_that_changes_the_imports_is_laid_out_again_2439`
+///
+/// # Cost
+/// - allocation: the judgement of the document and its diagnostics, growth
+///   within the document
+/// - allocation: the text of a session fault, error path
 #[spec(ensures: |ret| match ret {
     Polled::Whole(ref rechecked) => rechecked.diagnostics.iter().all(|diagnostic|
         diagnostic.source == "gandr" && diagnostic.range.start <= diagnostic.range.end
@@ -1354,6 +1359,11 @@ where
 /// - witness: `recheck::tests::an_admission_follows_the_published_diagnostics`
 /// - witness: `gandr-surface-lsp::server::tests::an_edit_s_admission_publishes_each_decline_of_its_loops_6810`
 /// - witness: `gandr-surface-lsp::server::tests::an_opening_after_another_admission_publishes_each_decline_of_its_loops_6810`
+///
+/// # Cost
+/// - allocation: the admission's diagnostics and its tiers, growth within the
+///   declarations
+/// - allocation: the shared fault of a readmission, error path
 #[spec(
     captures: before = finished.timing,
     ensures: |ret| ret.timing.forms == before.forms

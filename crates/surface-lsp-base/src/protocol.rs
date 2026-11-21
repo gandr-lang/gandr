@@ -77,10 +77,12 @@ impl Serialize for DocumentUri
     /// # Specification
     /// trivial.
     #[inline]
-    fn serialize<S: Serializer>(
+    fn serialize<S>(
         &self,
         serializer: S,
     ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
     {
         serializer.serialize_str(&self.0)
     }
@@ -96,7 +98,9 @@ impl<'de> Deserialize<'de> for DocumentUri
     /// # Cost
     /// - allocation: the text and its holder, durable by the URI
     #[inline]
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
     {
         String::deserialize(deserializer).map(|uri| Self(Shared::new(uri)))
     }
@@ -4196,10 +4200,12 @@ pub struct CodeAction
 ///
 /// # Specification
 /// trivial.
-fn answered<S: Serializer>(
+fn answered<S>(
     diagnostics: &ThinShared<(), Value, Global>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
 {
     serializer.collect_seq(diagnostics.iter())
 }

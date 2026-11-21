@@ -3837,21 +3837,19 @@ where
             // Each earlier member takes its share and its program while the
             // module is at hand. The unit's origin table joins them after the
             // module gives it up, so no member copies the table.
-            let earlier: Vec<_> = earlier
-                .iter()
-                .map(|&member| {
-                    let own = owned(&report, (&module, &verdicts), member);
-                    let held = share(
-                        member,
-                        (own, spellings.clone()),
-                        (&arena, &module, &verdicts),
-                        &unit,
-                    );
-                    let mut program = program.clone();
-                    program.run_within(own_constants(&module, member));
-                    (held, program)
-                })
-                .collect();
+            let mut shares = Vec::with_capacity(earlier.len());
+            for &member in earlier {
+                let own = owned(&report, (&module, &verdicts), member);
+                let held = share(
+                    member,
+                    (own, spellings.clone()),
+                    (&arena, &module, &verdicts),
+                    &unit,
+                );
+                let mut program = program.clone();
+                program.run_within(own_constants(&module, member));
+                shares.push((held, program));
+            }
             let own = if whole {
                 report
             }
@@ -3862,7 +3860,7 @@ where
             let last_share = share(last, (own, spellings), (&arena, &module, &verdicts), &unit);
             let origins = Shared::new(module.into_origins());
             Projected {
-                earlier: earlier
+                earlier: shares
                     .into_iter()
                     .map(|(held, program)| {
                         Ok(settled(
@@ -4325,6 +4323,18 @@ fn unreached_imports(
     unreached
 }
 
+/// The unit-wide tables that join each share of a judged unit, and the
+/// program of the share.
+///
+/// # Specification
+/// trivial.
+type UnitTables<'source> = (
+    Shared<OriginTable, Global>,
+    Shared<Failures, Global>,
+    Shared<Locations, Global>,
+    Program<'source>,
+);
+
 /// The settled composition of one source's `share`, joined by the unit-wide
 /// origins, failures, locations and program, its kernel artifact pending.
 ///
@@ -4335,12 +4345,7 @@ fn unreached_imports(
 /// - allocation: the empty names of a pending export, setup
 fn settled<'source>(
     share: Share<'source>,
-    (origins, failures, locations, program): (
-        Shared<OriginTable, Global>,
-        Shared<Failures, Global>,
-        Shared<Locations, Global>,
-        Program<'source>,
-    ),
+    (origins, failures, locations, program): UnitTables<'source>,
 ) -> Composed<'source>
 {
     Composed::Settled {

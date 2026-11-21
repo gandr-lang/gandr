@@ -97,6 +97,10 @@ const MALFORMED: &str = "MalformedForm";
 ///   hole only as a snippet.
 /// - witness: `fix::tests::a_repair_is_offered_as_the_closing_it_owes`
 /// - witness: `gandr-surface-lsp::server::tests::a_repaired_form_is_offered_its_closing`
+///
+/// # Cost
+/// - allocation: the actions, their edits and their one-item lists of
+///   diagnostics, growth within the diagnostics
 #[spec(ensures: |ret| ret.len() <= diagnostics.len()
     && ret.iter().all(|action| action.kind == "quickfix"
         && action.is_preferred
@@ -309,6 +313,10 @@ pub fn holes(
 ///   settles its declaration and a downstream one, and none of the names the
 ///   trial refuses at the hole, in the trial's order.
 /// - witness: `gandr-surface-lsp::server::tests::a_hole_is_offered_the_names_that_settle_it`
+///
+/// # Cost
+/// - allocation: the kept names, the actions with their edits, and one shared
+///   list of the diagnostics at the hole, growth within the trial
 #[spec(ensures: |ret| ret.len() <= tried.len()
     && ret.iter().all(|action| action.kind == "quickfix")
     && ret.iter().filter(|action| action.is_preferred).count() <= 1)]
@@ -399,6 +407,10 @@ pub fn fills(
 ///   the `,`; a line that continues a `let` is offered nothing, because the
 ///   document the repair writes refuses as much.
 /// - witness: `gandr-surface-lsp::server::tests::a_repair_is_offered_once_its_trial_settles_it_5474`
+///
+/// # Cost
+/// - allocation: the kept repairs, the actions with their edits and their lists
+///   of diagnostics, growth within the named diagnostics
 #[spec(ensures: |ret| ret.len() <= named.len()
     && ret.iter().all(|action| action.kind == "quickfix")
     && ret.iter().filter(|action| action.is_preferred).count() <= 1)]

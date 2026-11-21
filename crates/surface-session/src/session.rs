@@ -2414,6 +2414,11 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   checkpoint; no second store read occurs in the predicate.
     /// - witness: `tests::checkpoint::a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote`
     /// - witness: `tests::checkpoint::a_store_holding_nothing_reopens_fresh`
+    ///
+    /// # Cost
+    /// - allocation: the form store, the tree, the lowering and the restored
+    ///   checkpoints of the session, setup
+    /// - allocation: the shared fault of a parse, error path
     #[spec(
         ensures: |ret| {
     ret
@@ -2718,6 +2723,11 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// # Adequacy
     /// - hypothesis: L3 — as [`submit`](Self::submit).
     /// - witness: `tests::session::whole_file_submit_carries_definitions_forward`
+    ///
+    /// # Cost
+    /// - allocation: the shared positions of the composition, durable by the
+    ///   composition
+    /// - allocation: the shared fault of a readmission, error path
     fn admit_into<'text>(
         &mut self,
         mut submission: Submission<'text>,
@@ -5049,6 +5059,11 @@ where
 /// - hypothesis: L3 — the trial's witnesses judge each candidate against a
 ///   fresh session's judgement of it.
 /// - witness: `tests::trial::each_candidate_is_judged_as_a_fresh_session_judges_it`
+///
+/// # Cost
+/// - allocation: the tree, the lowering and the submission of the candidate,
+///   growth within its text
+/// - allocation: the shared fault of a parse or of a readmission, error path
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|submission|
     submission.root == root && submission.text == laid.0
         && submission.base == laid.1.base()
