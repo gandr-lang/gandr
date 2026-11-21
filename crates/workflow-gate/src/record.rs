@@ -402,7 +402,8 @@ fn values(object: &Object) -> Option<Vec<Value>>
 
 /// Whether the shape of the record `object` holds for `key`: a commit with
 /// no parent, whose tree is the run's tree when `key` binds a tree, and
-/// whose body is `key`.
+/// whose body holds `key` as one of its values. The record of a gate holds
+/// one key for each check that passed, one key on each line.
 ///
 /// # Specification
 /// - requires: `tree` is the run's tree when `key` binds a tree.
@@ -420,9 +421,11 @@ fn values(object: &Object) -> Option<Vec<Value>>
 /// - allocation: the values of the body and of the key, growth within the key
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a record whose body is another key; a body that is not
-///   compared holds the check with status 0.
+/// - hypothesis: L2 — a record whose body is another key, and a record of two
+///   keys read by each of its checks and by a third key; a body that is not
+///   compared, or that must be one value, changes the hold of a check.
 /// - witness: `tests::cli::a_record_with_a_body_of_another_key_does_not_hold`
+/// - witness: `tests::cli::a_record_of_two_keys_holds_each_and_no_third`
 #[inline]
 fn shape(
     object: Option<&Object>,
@@ -441,49 +444,72 @@ fn shape(
     }
     let body = values(object).ok_or_else(|| "its body is not a key".to_owned())?;
     let own: Option<Value> = serde_json::from_str(key.as_ref()).ok();
-    match (body.as_slice(), own.as_ref()) {
-        (&[ref value], Some(own)) if value == own => Ok(()),
+    match own {
+        Some(ref own) if body.contains(own) => Ok(()),
         _ => Err("its body is not the run's key".to_owned()),
     }
 }
 
-/// The base that the body of a record of the tree names.
+/// The base that the body of a record of the tree names for `check`.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the text of `base` in the first value of the body; the empty text
-///   when the value holds no base, or a base of `null` or `false`.
+/// - ensures: the text of `base` in the value of the body whose `check` is
+///   `check`; the empty text when that value holds no base, or a base of `null`
+///   or `false`, or when each value of the body is `null`.
 /// - provides: the base whose scope and whose trunk the record's key reads.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the outcome is a value.
 ///
 /// # Errors
-/// `its body is not a key` when the body does not read as JSON, or its first
-/// value is neither an object nor `null`.
+/// `its body is not a key` when the body does not read as JSON, or a value is
+/// neither an object nor `null`. `its body holds no key of its check` when no
+/// object of the body names `check`.
 ///
 /// # Cost
 /// - allocation: the values of the body, growth within the body
 ///
 /// # Adequacy
 /// - hypothesis: L2 — a record of the tree on a base that the run does not
-///   name; the run's base in place of the record's changes the key, and the
-///   record does not hold.
+///   name, and a record of two keys; the run's base in place of the record's,
+///   or the first key in place of the key of its check, changes the key, and
+///   the record does not hold.
 /// - witness: `tests::cli::a_record_of_the_tree_holds_against_its_own_base`
+/// - witness: `tests::cli::a_record_of_two_keys_holds_each_and_no_third`
 #[inline]
-fn named_base(object: Option<&Object>) -> Result<String, String>
+fn named_base(
+    object: Option<&Object>,
+    check: &Check,
+) -> Result<String, String>
 {
     let refused = || "its body is not a key".to_owned();
     let object = object.filter(|found| found.commit).ok_or_else(refused)?;
     let body = values(object).ok_or_else(refused)?;
-    match body.first() {
-        None | Some(&Value::Null) => Ok(String::new()),
-        Some(&Value::Object(ref members)) => Ok(match members.get("base") {
+    let mut own = None;
+    for value in &body {
+        match *value {
+            Value::Null => {},
+            Value::Object(ref members) => {
+                if own.is_none()
+                    && members.get("check").and_then(Value::as_str) == Some(check.as_ref())
+                {
+                    own = Some(members);
+                }
+            },
+            Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
+                return Err(refused());
+            },
+        }
+    }
+    match own {
+        Some(members) => Ok(match members.get("base") {
             None | Some(&Value::Null | &Value::Bool(false)) => String::new(),
             Some(&Value::String(ref base)) => base.clone(),
             Some(other) => other.to_string(),
         }),
-        Some(_) => Err(refused()),
+        None if body.iter().all(Value::is_null) => Ok(String::new()),
+        None => Err("its body holds no key of its check".to_owned()),
     }
 }
 
@@ -1669,7 +1695,7 @@ impl Records<'_>
             }
             for (name, commit) in self.under(check, listing) {
                 let base = if fetched == Fetch::Done {
-                    named_base(objects.get(commit)).and_then(|base| {
+                    named_base(objects.get(commit), check).and_then(|base| {
                         if base.is_empty() {
                             Err("it names no base".to_owned())
                         }
