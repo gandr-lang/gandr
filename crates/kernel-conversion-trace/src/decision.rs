@@ -298,6 +298,11 @@ pub enum ConversionDecision<Id>
     /// Unlike a leading shared comparison, this cannot close the whole pair;
     /// concatenated component traces therefore retain their boundaries.
     Decompose,
+    /// Select the decomposition of two constructors that pairs their two
+    /// fields crossed: the first field of each side with the second field of
+    /// the other. The consumer admits it only where a symmetry of the
+    /// constructor states that the two orders are one term.
+    DecomposeCrossed,
     /// A decomposition was refuted by one of its subgoals: the single
     /// negative premise of the rule separating two applications of one rigid
     /// head, and of every former compared child by child.
@@ -386,6 +391,7 @@ impl<Id> ConversionDecision<Id>
                 }
             },
             Self::Decompose => ConversionDecision::Decompose,
+            Self::DecomposeCrossed => ConversionDecision::DecomposeCrossed,
             Self::NegativeSubgoal { position } => ConversionDecision::NegativeSubgoal { position },
             Self::Evaluate => ConversionDecision::Evaluate,
             Self::Admitted => ConversionDecision::Admitted,
@@ -434,6 +440,7 @@ mod tests
             ConversionDecision::Force { thunk: 8 },
             ConversionDecision::ComparedShared { left: 9, right: 10 },
             ConversionDecision::Decompose,
+            ConversionDecision::DecomposeCrossed,
             ConversionDecision::NegativeSubgoal {
                 position: SubgoalPosition::from(11),
             },
@@ -487,6 +494,7 @@ mod tests
                 right: 110,
             },
             ConversionDecision::Decompose,
+            ConversionDecision::DecomposeCrossed,
             ConversionDecision::NegativeSubgoal {
                 position: SubgoalPosition::from(11),
             },

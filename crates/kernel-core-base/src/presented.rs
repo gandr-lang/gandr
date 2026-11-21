@@ -144,6 +144,21 @@ impl PresentedType
     {
         self.presentation.cells()
     }
+
+    /// How the two fields of the constructor `tag` stand under the rules of
+    /// the type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn field_order(
+        &self,
+        tag: gandr_kernel_term::ConstructorTag,
+    ) -> gandr_kernel_term::FieldOrder
+    {
+        self.presentation.field_order(tag)
+    }
 }
 
 /// The presented types of an environment, by admission position, and the

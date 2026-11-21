@@ -1133,6 +1133,7 @@ where
             },
             ConversionDecision::Evaluate => writer.tag(Tag(15)),
             ConversionDecision::Admitted => writer.tag(Tag(16)),
+            ConversionDecision::DecomposeCrossed => writer.tag(Tag(17)),
         }
     }
     Ok(())
@@ -1262,6 +1263,7 @@ where
             },
             15 => ConversionDecision::Evaluate,
             16 => ConversionDecision::Admitted,
+            17 => ConversionDecision::DecomposeCrossed,
             _ => return Err(CodecError::Corrupt),
         }]);
     }

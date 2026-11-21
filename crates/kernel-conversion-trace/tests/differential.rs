@@ -368,6 +368,7 @@ fn replay(
             | ConversionDecision::Hold { .. }
             | ConversionDecision::Force { .. }
             | ConversionDecision::Decompose
+            | ConversionDecision::DecomposeCrossed
             | ConversionDecision::NegativeSubgoal { .. }
             | ConversionDecision::Evaluate
             | ConversionDecision::Admitted => {
@@ -583,6 +584,7 @@ fn a_trace_that_names_the_wrong_branch_is_refused_rather_than_agreed_with()
             | ConversionDecision::Force { .. }
             | ConversionDecision::ComparedShared { .. }
             | ConversionDecision::Decompose
+            | ConversionDecision::DecomposeCrossed
             | ConversionDecision::NegativeSubgoal { .. }
             | ConversionDecision::Evaluate
             | ConversionDecision::Admitted) => other,

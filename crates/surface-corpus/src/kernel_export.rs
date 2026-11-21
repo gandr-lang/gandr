@@ -1921,6 +1921,7 @@ mod kernel_ride_readmission
                 | ConversionDecision::Force { .. }
                 | ConversionDecision::ComparedShared { .. }
                 | ConversionDecision::Decompose
+                | ConversionDecision::DecomposeCrossed
                 | ConversionDecision::NegativeSubgoal { .. }
                 | ConversionDecision::Evaluate
                 | ConversionDecision::Admitted => ConversionDecision::ReduceLeft { redex: () },

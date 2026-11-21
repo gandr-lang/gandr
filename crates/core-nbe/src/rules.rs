@@ -331,6 +331,9 @@ pub enum Choice
         /// The side whose head is defined.
         defined: ConversionSide,
     },
+    /// Two constructors of one tag with two fields, where a symmetry of the
+    /// constructor states that the two orders of the fields are one term.
+    Symmetric,
 }
 
 /// How a choice's alternatives combine.
@@ -360,6 +363,11 @@ pub enum Move
     /// Freeze the defined head on this side and η-expand it against the lambda
     /// on the other.
     FreezeEta(ConversionSide),
+    /// Compare the two fields of the two constructors in the written order.
+    Paired,
+    /// Compare the two fields crossed: the first field of each side with the
+    /// second field of the other.
+    Crossed,
 }
 
 impl Choice
@@ -375,7 +383,8 @@ impl Choice
     ///   the shortcut; a frozen constant against itself unfrozen runs the
     ///   shortcut or the unfolding of the unfrozen side; a lambda against a
     ///   defined computation runs the frozen η-expansion, then the
-    ///   authoritative unfolding, biased.
+    ///   authoritative unfolding, biased; two constructors under a symmetry run
+    ///   the written pairing or the crossed pairing of their two fields.
     /// - provides: the one place the machine reads which alternatives a choice
     ///   point has, and the replay reads which a recorded branch may name.
     /// - fails: never.
@@ -398,6 +407,8 @@ impl Choice
             && ret.1.as_slice() == [Move::Shortcut, Move::Unfold(defined)],
         Self::Lambda { defined } => ret.0 == Combination::Biased
             && ret.1.as_slice() == [Move::FreezeEta(defined), Move::Unfold(defined)],
+        Self::Symmetric => ret.0 == Combination::Either
+            && ret.1.as_slice() == [Move::Paired, Move::Crossed],
     })]
     pub(crate) fn alternatives(self) -> (Combination, Vec<Move>)
     {
@@ -425,8 +436,92 @@ impl Choice
                 Combination::Biased,
                 Vec::from([Move::FreezeEta(defined), Move::Unfold(defined)]),
             ),
+            Self::Symmetric => (
+                Combination::Either,
+                Vec::from([Move::Paired, Move::Crossed]),
+            ),
         }
     }
+}
+
+/// How a move pairs the two fields of two constructors.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum Pairing
+{
+    /// First field with first field.
+    Written,
+    /// First field with second field.
+    Crossed,
+}
+
+/// The premises of two constructors of one tag with two fields, at `pairing`.
+///
+/// # Specification
+/// - requires: `left` and `right` are the two sides of a goal that
+///   [`Choice::Symmetric`] started.
+/// - ensures: the classifiers of the two sides, then the two pairs of fields:
+///   in the written order for [`Pairing::Written`], and each first field with
+///   the second field of the other side for [`Pairing::Crossed`].
+/// - provides: the premises of the two moves of [`Choice::Symmetric`].
+/// - fails: [`DomainFault::Dangling`] for a node the arena does not hold;
+///   [`ConversionFault::MachineInvariant`] when a side is no constructor with
+///   two fields.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Cost
+/// - allocation: the three premises, setup
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`crate::presented::field_order`].
+/// - witness: `presented::tests::two_orders_of_two_fields_convert_under_a_symmetry_8311`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |subgoals| subgoals.len() == 3))]
+pub(crate) fn paired_subgoals(
+    domain: &DomainArena,
+    left: DomainValueId,
+    right: DomainValueId,
+    pairing: Pairing,
+) -> Result<Vec<Subgoal>, ConversionFault>
+{
+    let (
+        Some(&DomainValue::Constructor {
+            datatype: left_source,
+            fields: left_fields,
+            ..
+        }),
+        Some(&DomainValue::Constructor {
+            datatype: right_source,
+            fields: right_fields,
+            ..
+        }),
+    ) = (domain.value(left), domain.value(right))
+    else {
+        return Err(ConversionFault::MachineInvariant);
+    };
+    let left_fields = domain
+        .fields(left_fields)
+        .map_err(ConversionFault::Domain)?;
+    let right_fields = domain
+        .fields(right_fields)
+        .map_err(ConversionFault::Domain)?;
+    let (&[left_first, left_second], &[right_first, right_second]) = (left_fields, right_fields)
+    else {
+        return Err(ConversionFault::MachineInvariant);
+    };
+    let (first, second) = match pairing {
+        Pairing::Written => (right_first, right_second),
+        Pairing::Crossed => (right_second, right_first),
+    };
+    Ok(Vec::from([
+        Subgoal::Classifiers(left_source, right_source),
+        Subgoal::Values(left_first, first),
+        Subgoal::Values(left_second, second),
+    ]))
 }
 
 /// What a goal does next.
@@ -2582,6 +2677,12 @@ fn plan_values(
                 .map_err(ConversionFault::Domain)?;
             if left_fields.len() != right_fields.len() {
                 return Ok(Plan::Leaf(Settled::NotConvertible));
+            }
+            if left_fields.len() == 2
+                && crate::presented::field_order(core, domain, definitions, left_source, left_tag)?
+                    == gandr_kernel_term::FieldOrder::Free
+            {
+                return Ok(Plan::Choose(Choice::Symmetric));
             }
             let mut subgoals = Vec::with_capacity(left_fields.len().saturating_add(1_usize));
             subgoals.push(Subgoal::Classifiers(left_source, right_source));
