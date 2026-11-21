@@ -96,6 +96,10 @@
 //!   tree theorem, and the critical-pair lemma.
 //! - Jean-Pierre Jouannaud and Albert Rubio. "The Higher-Order Recursive Path
 //!   Ordering." LICS 1999 — the order on instantiations of metavariables.
+//! - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: a rule that swaps
+//!   the two arguments of one operation is a symmetry
+//!   ([`RuleReading::Symmetry`]). No reader rewrites by it, so it needs no
+//!   orientation.
 
 use alloc::collections::BTreeSet;
 use alloc::vec;

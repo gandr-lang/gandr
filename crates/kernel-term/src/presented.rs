@@ -77,6 +77,9 @@
 //!   and its loop space as normal forms. Above dimension one the words of the
 //!   spherical cells at a point are abelian, so [`Presentation::normalize`]
 //!   sorts and counts them.
+//! - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the rules of a
+//!   presented type give each term one normal form. A symmetry
+//!   ([`RuleReading::Symmetry`]) is a rule that no reader rewrites by.
 
 use alloc::alloc::Global;
 use alloc::boxed::Box;
