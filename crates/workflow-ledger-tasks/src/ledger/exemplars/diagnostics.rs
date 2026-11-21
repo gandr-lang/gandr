@@ -140,7 +140,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 82_usize] = [
+const OWED: [(&str, Owed); 83_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -369,6 +369,13 @@ const OWED: [(&str, Owed); 82_usize] = [
         Owed::Unreachable(Reason(
             "the lowering applies a codata family only at the count of parameters it declares, \
              and names the family itself at its parameters",
+        )),
+    ),
+    (
+        "ImportNoStandard",
+        Owed::Unreachable(Reason(
+            "an exemplar stands in the checkout, and the walk up from it finds the checkout's \
+             `std` first",
         )),
     ),
     ("HostWorldUndeclared", Owed::Unreachable(HOST_ENTRY)),
