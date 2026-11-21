@@ -984,10 +984,47 @@ pub fn read(
     let named = compiler();
     let words = feature_words(&tree);
     let [rustc, policy, features] = shared(&named, &words);
+    let header = request.token.as_ref().map_or_else(String::new, |token| {
+        format!(
+            "http.https://github.com/.extraheader=AUTHORIZATION: basic {}",
+            base64(format!("x-access-token:{token}").as_bytes())
+        )
+    });
+    // The listing names each check by the prefix of its refs, so it needs no
+    // key and runs beside the keys.
+    let patterns: Vec<String> = request
+        .checks
+        .iter()
+        .zip(&rows)
+        .map(|(check, row)| {
+            if row.digested() {
+                format!("refs/verdicts/inputs/{}/*", segment(check))
+            }
+            else {
+                format!("refs/verdicts/{tree}/{}/*", segment(check))
+            }
+        })
+        .collect();
+    let mut verb = vec!["ls-remote", request.remote.as_str()];
+    verb.extend(patterns.iter().map(String::as_str));
+    let list_words = remote_words(&header, &verb);
+    let lister = || Program {
+        part: Part::from("git ls-remote"),
+        name: "git",
+        arguments: &list_words,
+        input: "",
+    };
     // A check of the tree never holds by its base, so its run needs the
-    // common part, and it starts first.
-    let mut asked = if rows.iter().any(|row| !row.digested()) {
+    // common part and the listing, and they start first.
+    let tree_first = rows.iter().any(|row| !row.digested());
+    let mut asked = if tree_first {
         Some(Asked::start(&root, &rustc, &policy, &features)?)
+    }
+    else {
+        None
+    };
+    let mut listing = if tree_first {
+        Some(lister().start(&root)?)
     }
     else {
         None
@@ -1044,6 +1081,10 @@ pub fn read(
             end: End::Held,
         });
     }
+    let listing = match listing.take() {
+        Some(running) => running,
+        None => lister().start(&root)?,
+    };
     let asked = match asked.take() {
         Some(running) => running,
         None => Asked::start(&root, &rustc, &policy, &features)?,
@@ -1081,12 +1122,6 @@ pub fn read(
             end: End::Refused,
         });
     };
-    let header = request.token.as_ref().map_or_else(String::new, |token| {
-        format!(
-            "http.https://github.com/.extraheader=AUTHORIZATION: basic {}",
-            base64(format!("x-access-token:{token}").as_bytes())
-        )
-    });
     let records = Records {
         request,
         rows: &rows,
@@ -1099,7 +1134,7 @@ pub fn read(
         at_tree: &at_tree,
         at_base: &at_base,
     };
-    records.find(&mut found, &allowed, parts)?;
+    records.find(&mut found, listing, &allowed, parts)?;
     say(&mut lines, &request.checks, &found, &tree, base);
     let missing: Vec<&str> = request
         .checks
@@ -1224,6 +1259,49 @@ fn say(
     }
 }
 
+/// Each ref of the remote that the running `listing` names, with its commit,
+/// in the order of the listing.
+///
+/// # Specification
+/// - requires: `listing` runs `git ls-remote`.
+/// - ensures: each ref and its commit as `git ls-remote` lists them; no ref
+///   when the listing fails.
+/// - provides: the one listing of a read, which ran beside the keys.
+/// - fails: [`GateError::Command`] when the wait for git fails.
+/// - panics: none.
+/// - executable: none — the outcome is the external process's.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Cost
+/// - allocation: the refs, growth within the listing
+///
+/// # Adequacy
+/// - hypothesis: L2 — a check with no record, and a record of another key that
+///   the listing gives by the prefix of its check; a match by prefix and not by
+///   the whole ref takes that record.
+/// - witness: `tests::cli::a_check_with_no_record_runs`
+/// - witness: `tests::cli::a_record_with_a_body_of_another_key_does_not_hold`
+#[inline]
+fn listed(
+    listing: Running<'_>,
+    parts: &Parts,
+) -> Result<Vec<(String, String)>, GateError>
+{
+    let ended = listing.end(parts)?;
+    if !ended.status.success() {
+        return Ok(Vec::new());
+    }
+    Ok(String::from_utf8_lossy(ended.output.as_ref())
+        .lines()
+        .filter_map(|line| {
+            let (commit, name) = line.split_once('\t')?;
+            Some((name.to_owned(), commit.to_owned()))
+        })
+        .collect())
+}
+
 /// What the records of a read need of the run.
 #[derive(Debug)]
 struct Records<'run>
@@ -1253,11 +1331,12 @@ struct Records<'run>
 impl Records<'_>
 {
     /// Finds the records of each check of `found` that does not hold by its
-    /// base, and verifies them.
+    /// base in the answer of `listing`, and verifies them.
     ///
     /// # Specification
     /// - requires: `found` holds [`Found::ByBase`] or an empty list of records
-    ///   for each check of the request.
+    ///   for each check of the request; `listing` lists the refs of each check
+    ///   by its prefix.
     /// - ensures: for a check of inputs, [`Found::Unscoped`] when the scope did
     ///   not read, [`Found::Unbound`] when the remote lists no record of its
     ///   key or the fetch fails, and else its one record. For another check,
@@ -1284,15 +1363,14 @@ impl Records<'_>
     fn find(
         &self,
         found: &mut [Found],
+        listing: Running<'_>,
         allowed: &Allowed,
         parts: &Parts,
     ) -> Result<(), GateError>
     {
         let base = self.request.base.as_ref().map_or("", Commit::as_ref);
-        // The key and the ref of each check of inputs, and the pattern of the
-        // refs of each other check.
+        // The key and the ref of each check of inputs.
         let mut keys: BTreeMap<usize, (Key, String)> = BTreeMap::new();
-        let mut patterns = Vec::new();
         for (place, (check, row)) in self.request.checks.iter().zip(self.rows).enumerate() {
             let Some(one) = found.get_mut(place)
             else {
@@ -1302,7 +1380,6 @@ impl Records<'_>
                 continue;
             }
             if !row.digested() {
-                patterns.push(format!("refs/verdicts/{}/{}/*", self.tree, segment(check)));
                 continue;
             }
             let Some(scope) = self.scope
@@ -1319,10 +1396,9 @@ impl Records<'_>
                 .common
                 .line(check, row, self.tree, base, scope, Some(digests))?;
             let name = format!("refs/verdicts/inputs/{}/{}", segment(check), hash(&key));
-            patterns.push(name.clone());
             let _first = keys.insert(place, (key, name));
         }
-        let listing = self.list(&patterns, parts)?;
+        let listing = listed(listing, parts)?;
         // The refs that stand, each one time, and one fetch for all of them.
         let mut wanted = BTreeSet::new();
         for (place, one) in found.iter().enumerate() {
@@ -1431,61 +1507,6 @@ impl Records<'_>
             .get(place)
             .map_or_else(String::new, segment);
         format!("refs/verdicts/{}/{check}/", self.tree)
-    }
-
-    /// Each ref of the remote that one of `patterns` names, with its commit,
-    /// in the order of the listing.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: each ref and its commit as `git ls-remote` lists them; no ref
-    ///   when the listing fails or no pattern stands.
-    /// - provides: the one listing of a read.
-    /// - fails: [`GateError::Command`] when git does not start.
-    /// - panics: none.
-    /// - executable: none — the outcome is the external process's.
-    ///
-    /// # Errors
-    /// As `fails` lists.
-    ///
-    /// # Cost
-    /// - allocation: the arguments and the refs, growth within the listing
-    ///
-    /// # Adequacy
-    /// - hypothesis: L2 — a check with no record; a listing that gives each ref
-    ///   of the remote takes a record of another key.
-    /// - witness: `tests::cli::a_check_with_no_record_runs`
-    #[inline]
-    fn list(
-        &self,
-        patterns: &[String],
-        parts: &Parts,
-    ) -> Result<Vec<(String, String)>, GateError>
-    {
-        if patterns.is_empty() {
-            return Ok(Vec::new());
-        }
-        let mut verb = vec!["ls-remote", self.request.remote.as_str()];
-        verb.extend(patterns.iter().map(String::as_str));
-        let words = remote_words(self.header, &verb);
-        let ended = Program {
-            part: Part::from("git ls-remote"),
-            name: "git",
-            arguments: &words,
-            input: "",
-        }
-        .start(self.root)?
-        .end(parts)?;
-        if !ended.status.success() {
-            return Ok(Vec::new());
-        }
-        Ok(String::from_utf8_lossy(ended.output.as_ref())
-            .lines()
-            .filter_map(|line| {
-                let (commit, name) = line.split_once('\t')?;
-                Some((name.to_owned(), commit.to_owned()))
-            })
-            .collect())
     }
 
     /// Fetches each ref of `wanted` from the remote to the same ref here.

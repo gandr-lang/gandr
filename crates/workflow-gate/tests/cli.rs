@@ -779,6 +779,17 @@ fn a_check_with_no_record_runs()
     let head = commit!(root, ONE, ["-m", "head"]);
     head!(root, head);
     let key = out!(key!(root, ["--tree", ONE, "check:scoped"], []));
+    // The listing names the check by its prefix, so it gives this record of
+    // another key too, and the read must not take it.
+    let other = commit!(root, ONE, [
+        "-m",
+        "verdict: check:scoped passes",
+        "-m",
+        key.trim_end()
+    ]);
+    push!(root, [format!(
+        "{other}:refs/verdicts/inputs/check-scoped/0123456789abcdef"
+    )]);
     let output = read!(root, ["check:scoped", "check:tree"], [(
         "GATE_VERDICT_SCOPE",
         "--workspace"
