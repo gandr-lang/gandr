@@ -10648,7 +10648,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   fuss-free level.
     /// - provides: the type-head half of resolution, the expansion of a
     ///   manifest type component and a type member, the atom of a sealed one,
-    ///   and the decode of a value name in type position.
+    ///   the decode of a value name in type position, and the run of a
+    ///   definition of no input, unquoted where a type is read and forced where
+    ///   a value is (#8079).
     /// - fails: yields the wrong-sort refusal for a head whose sort does not
     ///   suit the position and the unresolved-head refusal for a head nothing
     ///   answers.
@@ -10668,6 +10670,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
     /// - witness: `gandr-surface-lowering::lower::tests::u_and_f_are_names`
     /// - witness: `gandr-surface-lowering::lower::tests::every_type_atom_lowers_to_its_core_type`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_bare_name_of_no_input_where_a_type_is_read_decodes_its_run_8079`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_nullary_call_at_a_family_s_argument_is_its_head_s_force_6787`
     /// - witness: `gandr-surface-lowering::tests::modules::a_manifest_type_component_expands_in_later_components`
     /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
     /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_is_named_only_after_it_is_written`
@@ -10691,6 +10695,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                                 | Plan::Atom(_)
                                 | Plan::Universe(_)
                                 | Plan::Decode(_, _, _)
+                                | Plan::Unquote(_, _, _)
+                                | Plan::Forced(_)
                                 | Plan::StaticApplication(_, _)
                                 | Plan::Data(_, _)
                                 | Plan::Codata(_, _)
