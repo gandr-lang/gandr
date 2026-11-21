@@ -1,0 +1,92 @@
+test: store::a_roots_tree_the_store_does_not_hold_is_refused_by_its_file_4397
+package: gandr-storage-store
+command: mise run debug:refusal Unheld gandr-storage-store store::a_roots_tree_the_store_does_not_hold_is_refused_by_its_file_4397
+
+(lldb) target create "target/debug-trace/debug/build/gandr-storage-store/d3dfb709676b07bc/out/tests-d3dfb709676b07bc"
+Current executable set to 'target/debug-trace/debug/build/gandr-storage-store/d3dfb709676b07bc/out/tests-d3dfb709676b07bc' (x86_64).
+(lldb) settings set -- target.run-args  "store::a_roots_tree_the_store_does_not_hold_is_refused_by_its_file_4397" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --file crates/storage-store/src/roots.rs --line 273
+Breakpoint 1: where = tests-d3dfb709676b07bc`<gandr_storage_store::roots::Roots>::tree::{closure#1} + 184 at roots.rs:273:26, address = 0x000000000010a888
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-d3dfb709676b07bc`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x000000000015ae28
+(lldb) run
+
+running 1 test
+test store::a_roots_tree_the_store_does_not_hold_is_refused_by_its_file_4397 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 2213460 launched: 'target/debug-trace/debug/build/gandr-storage-store/d3dfb709676b07bc/out/tests-d3dfb709676b07bc' (x86_64)
+Process 2213460 stopped
+* thread #2, name = 'store::a_roots_', stop reason = breakpoint 1.1
+       frame #0: 0x000055555565e888 tests-d3dfb709676b07bc`<gandr_storage_store::roots::Roots>::tree::{closure#1}(fault=Record(UnknownNode{hash:{0:"!\xb11K\x9fW\xf9\xacL\xf3Q[\xd0:\x87\xe0q%o\x91\x84\U00000017Kc^\xb4\xa0h\U0000000e\xfa\U00000016C"}})) at roots.rs:273:26
+   270 	        };
+   271 	        let records = leaves(nodes, tree).map_err(|fault| match fault {
+   272 	            StoreError::Record(RecordTreeError::UnknownNode { hash }) => {
+-> 273 	                unrooted(RootsFault::Unheld { node: hash })
+    	                         ^
+   274 	            },
+   275 	            other @ (StoreError::Io { .. }
+   276 	            | StoreError::Value(_)
+(lldb) bt 24
+* thread #2, name = 'store::a_roots_', stop reason = breakpoint 1.1
+   * frame #0: 0x000055555565e888 tests-d3dfb709676b07bc`<gandr_storage_store::roots::Roots>::tree::{closure#1}(fault=Record(UnknownNode{hash:{0:"!\xb11K\x9fW\xf9\xacL\xf3Q[\xd0:\x87\xe0q%o\x91\x84\U00000017Kc^\xb4\xa0h\U0000000e\xfa\U00000016C"}})) at roots.rs:273:26
+     frame #1: 0x0000555555641b3e tests-d3dfb709676b07bc`<core::result::Result<alloc::vec::Vec<gandr_storage_records::record::Record>, gandr_storage_store::store::StoreError>>::map_err::<gandr_storage_store::store::StoreError, <gandr_storage_store::roots::Roots>::tree::{closure#1}>(self=Err(Record(UnknownNode{hash:{0:"!\xb11K\x9fW\xf9\xacL\xf3Q[\xd0:\x87\xe0q%o\x91\x84\U00000017Kc^\xb4\xa0h\U0000000e\xfa\U00000016C"}})), op={_ref__unrooted:{_ref__path:"/tmp/gandr-storage-store-unheld-2213460/roots"}}) at result.rs:967:27
+     frame #2: 0x000055555565f862 tests-d3dfb709676b07bc`<gandr_storage_store::roots::Roots>::tree(directory="/tmp/gandr-storage-store-unheld-2213460", nodes={__0:{path:"/tmp/gandr-storage-store-unheld-2213460/nodes", objects:{root:Some({height:0, node:{…}, _marker:{…}}), length:1, alloc:{value:{0:{…}}}, _marker:{}}, pending:size=0}}, tree={0:"!\xb11K\x9fW\xf9\xacL\xf3Q[\xd0:\x87\xe0q%o\x91\x84\U00000017Kc^\xb4\xa0h\U0000000e\xfa\U00000016C"}) at roots.rs:271:43
+     frame #3: 0x0000555555662dda tests-d3dfb709676b07bc`<gandr_storage_store::roots::Kept>::catch_up(self={roots:{0:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, reading:Untreed}, directory="/tmp/gandr-storage-store-unheld-2213460", nodes={__0:{path:"/tmp/gandr-storage-store-unheld-2213460/nodes", objects:{root:Some({height:0, node:{…}, _marker:{…}}), length:1, alloc:{value:{0:{…}}}, _marker:{}}, pending:size=0}}, journal={inner:{0:{0:{fd:{0:4}}}}}) at roots.rs:717:29
+     frame #4: 0x00005555556620ad tests-d3dfb709676b07bc`<gandr_storage_store::roots::Kept>::read(directory="/tmp/gandr-storage-store-unheld-2213460", nodes={__0:{path:"/tmp/gandr-storage-store-unheld-2213460/nodes", objects:{root:Some({height:0, node:{…}, _marker:{…}}), length:1, alloc:{value:{0:{…}}}, _marker:{}}, pending:size=0}}) at roots.rs:530:26
+     frame #5: 0x00005555555d72ba tests-d3dfb709676b07bc`<gandr_storage_store::store::Store>::open(root="/tmp/gandr-storage-store-unheld-2213460") at store.rs:327:21
+     frame #6: 0x00005555555ea999 tests-d3dfb709676b07bc`tests::store::a_roots_tree_the_store_does_not_hold_is_refused_by_its_file_4397 at store.rs:546:19
+     frame #7: 0x00005555555e38f7 tests-d3dfb709676b07bc`tests::store::a_roots_tree_the_store_does_not_hold_is_refused_by_its_file_4397::{closure#0}((null)={}) at store.rs:533:70
+     frame #8: 0x00005555555d05a6 tests-d3dfb709676b07bc`<tests::store::a_roots_tree_the_store_does_not_hold_is_refused_by_its_file_4397::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #9: 0x00005555555eb61b tests-d3dfb709676b07bc`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #10: 0x00005555555eb619 tests-d3dfb709676b07bc`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #11: 0x00005555555f8b65 tests-d3dfb709676b07bc`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #12: 0x00005555555f8b60 tests-d3dfb709676b07bc`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #13: 0x00005555555f8b60 tests-d3dfb709676b07bc`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #14: 0x00005555555f8b4b tests-d3dfb709676b07bc`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #15: 0x00005555555f8b4b tests-d3dfb709676b07bc`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #16: 0x00005555555f8b4b tests-d3dfb709676b07bc`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #17: 0x00005555555f8b36 tests-d3dfb709676b07bc`test::run_test::{closure#0} at lib.rs:677:43
+     frame #18: 0x00005555555f3524 tests-d3dfb709676b07bc`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #19: 0x00005555555f34a9 tests-d3dfb709676b07bc`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #20: 0x00005555555fbcc2 tests-d3dfb709676b07bc`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #21: 0x00005555555fbcb3 tests-d3dfb709676b07bc`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #22: 0x00005555555fbcb3 tests-d3dfb709676b07bc`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #23: 0x00005555555fbca3 tests-d3dfb709676b07bc`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+(lldb) frame variable --depth 3
+(gandr_storage_store::store::StoreError) fault = Record(UnknownNode{hash:{0:"!\xb11K\x9fW\xf9\xacL\xf3Q[\xd0:\x87\xe0q%o\x91\x84\U00000017Kc^\xb4\xa0h\U0000000e\xfa\U00000016C"}}) {
+  0 = UnknownNode{hash:{0:"!\xb11K\x9fW\xf9\xacL\xf3Q[\xd0:\x87\xe0q%o\x91\x84\U00000017Kc^\xb4\xa0h\U0000000e\xfa\U00000016C"}} {
+    hash = {0:"!\xb11K\x9fW\xf9\xacL\xf3Q[\xd0:\x87\xe0q%o\x91\x84\U00000017Kc^\xb4\xa0h\U0000000e\xfa\U00000016C"}
+  }
+}
+(gandr_storage_store::roots::{impl#3}::tree::{closure_env#0}) unrooted = {_ref__path:"/tmp/gandr-storage-store-unheld-2213460/roots"}
+(gandr_storage_records::bytes::NodeHash) hash = {0:"!\xb11K\x9fW\xf9\xacL\xf3Q[\xd0:\x87\xe0q%o\x91\x84\U00000017Kc^\xb4\xa0h\U0000000e\xfa\U00000016C"}
+(lldb) up
+frame #1: 0x0000555555641b3e tests-d3dfb709676b07bc`<core::result::Result<alloc::vec::Vec<gandr_storage_records::record::Record>, gandr_storage_store::store::StoreError>>::map_err::<gandr_storage_store::store::StoreError, <gandr_storage_store::roots::Roots>::tree::{closure#1}>(self=Err(Record(UnknownNode{hash:{0:"!\xb11K\x9fW\xf9\xacL\xf3Q[\xd0:\x87\xe0q%o\x91\x84\U00000017Kc^\xb4\xa0h\U0000000e\xfa\U00000016C"}})), op={_ref__unrooted:{_ref__path:"/tmp/gandr-storage-store-unheld-2213460/roots"}}) at result.rs:967:27
+   964 	    {
+   965 	        match self {
+   966 	            Ok(t) => Ok(t),
+-> 967 	            Err(e) => Err(op(e)),
+    	                          ^
+   968 	        }
+   969 	    }
+   970 	
+(lldb) frame variable --depth 3
+(core::result::Result<alloc::vec::Vec<gandr_storage_records::record::Record, alloc::alloc::Global>, gandr_storage_store::store::StoreError>) self = Err(Record(UnknownNode{hash:{0:"!\xb11K\x9fW\xf9\xacL\xf3Q[\xd0:\x87\xe0q%o\x91\x84\U00000017Kc^\xb4\xa0h\U0000000e\xfa\U00000016C"}})) {
+  0 = Record(UnknownNode{hash:{0:"!\xb11K\x9fW\xf9\xacL\xf3Q[\xd0:\x87\xe0q%o\x91\x84\U00000017Kc^\xb4\xa0h\U0000000e\xfa\U00000016C"}}) {
+    0 = UnknownNode{hash:{0:"!\xb11K\x9fW\xf9\xacL\xf3Q[\xd0:\x87\xe0q%o\x91\x84\U00000017Kc^\xb4\xa0h\U0000000e\xfa\U00000016C"}} {
+      hash = {0:"!\xb11K\x9fW\xf9\xacL\xf3Q[\xd0:\x87\xe0q%o\x91\x84\U00000017Kc^\xb4\xa0h\U0000000e\xfa\U00000016C"} {...}
+    }
+  }
+}
+(gandr_storage_store::roots::{impl#3}::tree::{closure_env#1}) op = {_ref__unrooted:{_ref__path:"/tmp/gandr-storage-store-unheld-2213460/roots"}}
+(gandr_storage_store::store::StoreError) e = Record(UnknownNode{hash:{0:"!\xb11K\x9fW\xf9\xacL\xf3Q[\xd0:\x87\xe0q%o\x91\x84\U00000017Kc^\xb4\xa0h\U0000000e\xfa\U00000016C"}}) {
+  0 = UnknownNode{hash:{0:"!\xb11K\x9fW\xf9\xacL\xf3Q[\xd0:\x87\xe0q%o\x91\x84\U00000017Kc^\xb4\xa0h\U0000000e\xfa\U00000016C"}} {
+    hash = {0:"!\xb11K\x9fW\xf9\xacL\xf3Q[\xd0:\x87\xe0q%o\x91\x84\U00000017Kc^\xb4\xa0h\U0000000e\xfa\U00000016C"}
+  }
+}
