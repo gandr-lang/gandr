@@ -2,11 +2,11 @@
 ///
 /// A `def` with an empty input list is a computation of no input.
 /// Its bare name runs it in each position: a statement, an operand, an
-/// argument and the bound term of a `let`.
+/// argument, the bound term of a `let` and a type.
 /// A qualified name runs it by the same rule.
 /// `thunk { now }` passes the definition as a value, with no run.
+///
 /// A parameter of a thunk type is a value, and `f ()` forces it.
-/// Where a type is read, the bare name of such a definition is its call.
 ///
 /// - see: `../../model/identity/cong-thunk.gandr` — a returned thunk
 // `now` runs to three at each use, and `apply` forces the thunk it takes.

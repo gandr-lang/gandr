@@ -6,8 +6,8 @@
 //! that call. So the type must read back as the call it prints.
 //!
 //! `Standard.same(Integer)` calls the function and decodes the code that the
-//! call returns. `Standard.unit()` runs a function of no input: a qualified
-//! link ends at a value name only before a list, so the empty list stands for
+//! call returns. `Standard.unit()` runs a function of no input. A qualified
+//! link ends at a value name only before a list. So the empty list stands for
 //! the bare name. `Standard.after(Integer)(n)`
 //! applies the call's result to one more argument. A second list after a
 //! type family is not a call, and the lowering refuses it.

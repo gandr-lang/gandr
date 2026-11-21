@@ -13057,8 +13057,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             },
             // economy: the grammar ends a qualified link at a value name only
             // before a list, so `M.f()` of a definition of no input is its
-            // bare name. The ceiling is that grammar: the unit that admits the
-            // bare `M.f` removes this arm.
+            // bare name. The ceiling is that grammar: #8307 admits the bare
+            // `M.f` and removes this arm.
             (Some(first), None)
                 if first.start == first.end
                     && matches!(resolved, Resolved::Declaration { constant, .. }
