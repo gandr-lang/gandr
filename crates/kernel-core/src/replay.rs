@@ -4935,7 +4935,7 @@ where
     ///   rule whose left side needs a constructor meets it under one definition
     ///   and under two.
     /// - witness: `replay::tests::a_returned_leaf_of_a_presented_term_reads_before_the_rules`
-    /// - witness: `corpus/model/desc/rule-matches-through-a-definition.gandr`
+    /// - witness: `gandr-core-nbe::presented::tests::a_definition_under_a_presented_constructor_reads_as_its_body_8283`
     #[spec(
         captures: before = self.spent,
         ensures: |ret| self.spent >= before
