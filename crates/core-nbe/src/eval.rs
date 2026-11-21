@@ -9962,6 +9962,87 @@ pub fn run_held(
     Ok((read, machine.fuel))
 }
 
+/// What a value standing at a definition reads as: the value of the
+/// definition's body, read on through each definition that body stands at.
+///
+/// # Specification
+/// - requires: `value` lives in `domain`.
+/// - ensures: `Ok((Some(read), left))` when `value` is a neutral headed by a
+///   constant, with an empty spine, whose unfolding is a value: `read` is that
+///   value, read again while it is such a neutral, so `read` stands at none.
+///   `Ok((None, left))` for any other value, and for a constant whose unfolding
+///   is rigid or a computation. `left` is `fuel` less one unit per task the
+///   evaluation of a body popped.
+/// - provides: the reading of a definition no recorded decision can reach: one
+///   standing as a leaf of a presented type's constructor term.
+/// - fails: every variant of [`EvalFault`] the evaluation of a body raises,
+///   [`EvalFault::OutOfFuel`] when `fuel` runs out first.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: the `while let` loop below, not recursion.
+/// - measure: the definitions between `value` and a value that stands at none:
+///   an admitted definition's body names earlier definitions alone.
+///
+/// # Cost
+/// - allocation: the machine's tasks and the values of each body, growth within
+///   the bodies of the definitions
+///
+/// # Adequacy
+/// - hypothesis: L3 — `loop(named)` over the circle reads as `base` once the
+///   leaf `named` reads as its body `unloop(base)`, and a name whose body is
+///   `base` leaves the word apart from `base`.
+/// - witness: `presented::tests::a_definition_under_a_presented_constructor_reads_as_its_body_8283`
+#[spec(ensures: |ret| match ret {
+    Ok((read, left)) => u32::from(left) <= u32::from(fuel)
+        && read.is_none_or(|read| domain.value(read).is_some()),
+    Err(_) => true,
+})]
+pub fn run_defined(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    fuel: Fuel,
+    value: DomainValueId,
+) -> Result<(Option<DomainValueId>, Fuel), EvalFault>
+{
+    let mut machine = Machine::new(definitions, fuel);
+    let mut read = None;
+    let mut at = value;
+    while let DomainValue::Neutral { neutral, .. } = *domain
+        .value(at)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?
+    {
+        let node = domain
+            .neutral(neutral)
+            .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+        if !matches!(node.head(), NeutralHead::Constant(_)) || !node.spine().is_empty() {
+            break;
+        }
+        at = match node.unfolding() {
+            Unfolding::Forced(Glued::Value(body)) => body,
+            Unfolding::Unforced(entry) => {
+                let Some(&term) = machine.definitions.bodies().get(&entry)
+                else {
+                    break;
+                };
+                machine.tasks.push(Task::Value {
+                    term,
+                    env: Machine::root_env(),
+                });
+                run(core, domain, &mut machine)?;
+                machine.pop_value()?
+            },
+            Unfolding::Rigid | Unfolding::Forced(Glued::Computation(_)) => break,
+        };
+        read = Some(at);
+    }
+    Ok((read, machine.fuel))
+}
+
 /// The computation a held endpoint stands for: `value` when it is a neutral
 /// headed by a returned computation, with an empty spine.
 ///
