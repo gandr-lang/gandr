@@ -2856,6 +2856,12 @@ impl<'pbg> MeldState<'pbg>
     {
         let at = SourceOffset::from(u32::try_from(self.source.len()).unwrap_or(u32::MAX));
         self.push_text(mold, TileText::from(""));
+        if let Some(EmitOp::Token { label, start, end }) = self.emit.last_mut()
+            && start == end
+            && *label == NodeLabel::Tile(mold)
+        {
+            *label = NodeLabel::GhostTile(mold);
+        }
         self.flag(Oblig::MissingTile, SourceSpan { start: at, end: at });
     }
 
@@ -10414,7 +10420,7 @@ impl Reader<'_>
 /// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
 #[spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| reader.pos >= before.0
     && ret.as_ref().map_or_else(|error| before.1.map_or_else(|| *error == CheckpointError::Truncated, |tag| tag <= 1 || *error == CheckpointError::BadTag { tag }), |op| before.1 == Some(match *op { EmitOp::Token { .. } => 0, EmitOp::Interior { .. } => 1 })
-    && reader.pos == before.0.saturating_add(match *op { EmitOp::Token { label, .. } => (match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(9), EmitOp::Interior { label, ref children, .. } => (match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(17).saturating_add(children.len().saturating_mul(4)) })))]
+    && reader.pos == before.0.saturating_add(match *op { EmitOp::Token { label, .. } => (match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) | NodeLabel::GhostTile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(9), EmitOp::Interior { label, ref children, .. } => (match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) | NodeLabel::GhostTile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(17).saturating_add(children.len().saturating_mul(4)) })))]
 fn read_emit_op(reader: &mut Reader<'_>) -> Result<EmitOp, CheckpointError>
 {
     let wire_tag = reader.u8()?;
@@ -10466,7 +10472,7 @@ fn read_emit_op(reader: &mut Reader<'_>) -> Result<EmitOp, CheckpointError>
 ///   golden record.
 /// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
 #[spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before) == Some(&match *op { EmitOp::Token { .. } => 0, EmitOp::Interior { .. } => 1 })
-    && writer.bytes.len() == before.saturating_add(match *op { EmitOp::Token { label, .. } => (match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(9), EmitOp::Interior { label, ref children, .. } => (match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(17).saturating_add(children.len().saturating_mul(4)) }))]
+    && writer.bytes.len() == before.saturating_add(match *op { EmitOp::Token { label, .. } => (match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) | NodeLabel::GhostTile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(9), EmitOp::Interior { label, ref children, .. } => (match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) | NodeLabel::GhostTile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(17).saturating_add(children.len().saturating_mul(4)) }))]
 fn write_emit_op(
     writer: &mut Writer,
     op: &EmitOp,
@@ -10515,7 +10521,7 @@ fn write_emit_op(
 ///   typed errors. Wrong payload order, over-consumption or acceptance of
 ///   unknown tags changes these observations.
 /// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
-#[spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| reader.pos >= before.0 && ret.as_ref().map_or_else(|error| before.1.map_or_else(|| *error == CheckpointError::Truncated, |tag| (1 ..= 7).contains(&tag) || *error == CheckpointError::BadTag { tag }), |label| before.1 == Some(u8::from(label.tag())) && reader.pos == before.0.saturating_add(match *label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } => 4, NodeLabel::GhostClose { .. } => 8 })))]
+#[spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| reader.pos >= before.0 && ret.as_ref().map_or_else(|error| before.1.map_or_else(|| *error == CheckpointError::Truncated, |tag| (1 ..= 8).contains(&tag) || *error == CheckpointError::BadTag { tag }), |label| before.1 == Some(u8::from(label.tag())) && reader.pos == before.0.saturating_add(match *label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) | NodeLabel::GhostTile(_) => 5, NodeLabel::Grout { .. } => 4, NodeLabel::GhostClose { .. } => 8 })))]
 fn read_label(reader: &mut Reader<'_>) -> Result<NodeLabel, CheckpointError>
 {
     let wire_tag = reader.u8()?;
@@ -10545,6 +10551,10 @@ fn read_label(reader: &mut Reader<'_>) -> Result<NodeLabel, CheckpointError>
         },
         0x06 => Ok(NodeLabel::Space),
         0x07 => Ok(NodeLabel::Doc),
+        0x08 => {
+            let wire_mold = reader.u32()?;
+            Ok(NodeLabel::GhostTile(MoldId::from(u32::from(wire_mold))))
+        },
         tag => Err(CheckpointError::BadTag { tag }),
     }
 }
@@ -10563,7 +10573,7 @@ fn read_label(reader: &mut Reader<'_>) -> Result<NodeLabel, CheckpointError>
 ///   Swapping a tag, losing payload bytes or writing an extra payload changes
 ///   the wire form and cursor.
 /// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
-#[spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before) == Some(&u8::from(label.tag())) && writer.bytes.len() == before.saturating_add(match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } => 4, NodeLabel::GhostClose { .. } => 8 }))]
+#[spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before) == Some(&u8::from(label.tag())) && writer.bytes.len() == before.saturating_add(match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) | NodeLabel::GhostTile(_) => 5, NodeLabel::Grout { .. } => 4, NodeLabel::GhostClose { .. } => 8 }))]
 fn write_label(
     writer: &mut Writer,
     label: NodeLabel,
@@ -10572,7 +10582,7 @@ fn write_label(
     writer.u8(WireByte::from(u8::from(label.tag())));
     match label {
         NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => {},
-        NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
+        NodeLabel::Meld(mold) | NodeLabel::Tile(mold) | NodeLabel::GhostTile(mold) => {
             writer.u32(WireU32::from(u32::from(mold)));
         },
         NodeLabel::Grout { sort, shape } => {
@@ -11267,6 +11277,9 @@ mod tests
                 },
                 &[5, 0xcd, 0xab, 0x04, 0x03, 0x02, 0x01, 2],
             ),
+            (NodeLabel::GhostTile(MoldId::from(0x0a0b_0c0d)), &[
+                8, 0x0d, 0x0c, 0x0b, 0x0a,
+            ]),
         ];
         for &(label, golden) in labels {
             let mut writer = super::Writer { bytes: vec![0xee] };
@@ -11293,7 +11306,7 @@ mod tests
             }
         }
         for tag in 0_u8 ..= u8::MAX {
-            if !(1 ..= 7).contains(&tag) {
+            if !(1 ..= 8).contains(&tag) {
                 let bytes = [tag];
                 let mut reader = super::Reader {
                     bytes: CheckpointBytesRef::from(bytes.as_slice()),
@@ -13604,6 +13617,7 @@ mod tests
                 | NodeLabel::Tile(_)
                 | NodeLabel::Grout { .. }
                 | NodeLabel::GhostClose { .. }
+                | NodeLabel::GhostTile(_)
                 | NodeLabel::Space
                 | NodeLabel::Doc => tree
                     .fragment(parent)

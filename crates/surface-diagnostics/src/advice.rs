@@ -682,6 +682,10 @@ fn malformed(
         FormFault::Repaired(Repair::GhostClose(close)) => {
             format!("add the closing `{}`", closing(close))
         },
+        FormFault::Repaired(Repair::Minted(Ending::Tile(tile))) => {
+            format!("write `{}` here", tile.as_ref())
+        },
+        FormFault::Repaired(Repair::Minted(Ending::Unnamed)) => format!("finish the {form}"),
         FormFault::Repaired(Repair::Unended(Ending::Tile(tile))) => {
             format!("add the closing `{}`", tile.as_ref())
         },

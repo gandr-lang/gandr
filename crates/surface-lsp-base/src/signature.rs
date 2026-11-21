@@ -511,6 +511,7 @@ fn level(
             NodeLabel::Wald
             | NodeLabel::Grout { .. }
             | NodeLabel::GhostClose { .. }
+            | NodeLabel::GhostTile(_)
             | NodeLabel::Space => {},
         }
     }
@@ -671,6 +672,7 @@ impl Form
                 NodeLabel::Wald
                 | NodeLabel::Grout { .. }
                 | NodeLabel::GhostClose { .. }
+                | NodeLabel::GhostTile(_)
                 | NodeLabel::Space => {},
             }
         }
@@ -1130,6 +1132,7 @@ fn docs_under(
                 | NodeLabel::Wald
                 | NodeLabel::Grout { .. }
                 | NodeLabel::GhostClose { .. }
+                | NodeLabel::GhostTile(_)
                 | NodeLabel::Space,
             )
             | None => {},
@@ -1172,6 +1175,7 @@ fn first_tile(
             NodeLabel::Wald
             | NodeLabel::Grout { .. }
             | NodeLabel::GhostClose { .. }
+            | NodeLabel::GhostTile(_)
             | NodeLabel::Space
             | NodeLabel::Doc => {},
         }
@@ -1389,6 +1393,7 @@ impl<'grammar> Operands<'grammar>
                     NodeLabel::Wald
                     | NodeLabel::Grout { .. }
                     | NodeLabel::GhostClose { .. }
+                    | NodeLabel::GhostTile(_)
                     | NodeLabel::Space
                     | NodeLabel::Doc,
                 )
@@ -1431,6 +1436,7 @@ fn telescope(
         | NodeLabel::Tile(_)
         | NodeLabel::Grout { .. }
         | NodeLabel::GhostClose { .. }
+        | NodeLabel::GhostTile(_)
         | NodeLabel::Space
         | NodeLabel::Doc => None,
     };
@@ -1469,6 +1475,7 @@ fn telescope(
             NodeLabel::Wald
             | NodeLabel::Grout { .. }
             | NodeLabel::GhostClose { .. }
+            | NodeLabel::GhostTile(_)
             | NodeLabel::Space => continue,
         };
         if delimits {

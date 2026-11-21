@@ -814,6 +814,7 @@ fn rule_of(
         NodeLabel::Wald
         | NodeLabel::Grout { .. }
         | NodeLabel::GhostClose { .. }
+        | NodeLabel::GhostTile(_)
         | NodeLabel::Space
         | NodeLabel::Doc => Maybe::Absent(()),
     }

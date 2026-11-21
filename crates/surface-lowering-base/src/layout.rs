@@ -389,6 +389,7 @@ impl Layout
                     NodeLabel::Wald
                     | NodeLabel::Meld(_)
                     | NodeLabel::GhostClose { .. }
+                    | NodeLabel::GhostTile(_)
                     | NodeLabel::Space
                     | NodeLabel::Doc => return None,
                 };

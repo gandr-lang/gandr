@@ -915,6 +915,7 @@ fn gated(
             NodeLabel::Wald
             | NodeLabel::Grout { .. }
             | NodeLabel::GhostClose { .. }
+            | NodeLabel::GhostTile(_)
             | NodeLabel::Space => {
                 stack.extend(
                     tree.children(position)

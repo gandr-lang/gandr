@@ -278,11 +278,12 @@ impl Preimage
     ///
     /// # Specification
     /// - requires: `text` is the fragment the node covers.
-    /// - ensures: appends the label's tag and payload — a mold id, or a grout's
-    ///   sort and shape, or a minted close's sort and family, the family's byte
-    ///   with its high bit set and the reach after it when the close reaches
-    ///   back — then the child count, then the text's length and the text
-    ///   exactly when the label carries text.
+    /// - ensures: appends the label's tag and payload — a mold id for a form, a
+    ///   tile or a minted tile, or a grout's sort and shape, or a minted
+    ///   close's sort and family, the family's byte with its high bit set and
+    ///   the reach after it when the close reaches back — then the child count,
+    ///   then the text's length and the text exactly when the label carries
+    ///   text.
     /// - panics: none.
     /// - executable: none — the appended bytes are the body; restating them
     ///   observes nothing independent.
@@ -313,7 +314,7 @@ impl Preimage
         bytes.push(u8::from(label.tag()));
         match label {
             NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => {},
-            NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
+            NodeLabel::Meld(mold) | NodeLabel::Tile(mold) | NodeLabel::GhostTile(mold) => {
                 bytes.extend_from_slice(&u32::from(mold).to_le_bytes());
             },
             NodeLabel::Grout { sort, shape } => {

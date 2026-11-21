@@ -1505,6 +1505,10 @@ pub enum Repair
     ReservedName(TileName),
     /// A closing tile of this family that the source never wrote.
     GhostClose(ClosingClass),
+    /// A tile that the source never wrote, which the parser pushed to finish
+    /// a form it repairs: the `;` that a statement keyword ends a statement
+    /// with when the source wrote none. The ending names the tile.
+    Minted(Ending),
     /// The tile that ends a form the source never finished: the reading of
     /// the parser's postfix grout, the ghost end it appends to a form whose
     /// end is no paired closer (a definition's `;`, a string's `"`).
@@ -1605,6 +1609,8 @@ impl fmt::Display for Repair
             Self::GhostClose(ClosingClass::Paren) => f.write_str("a `)` the source never wrote"),
             Self::GhostClose(ClosingClass::Bracket) => f.write_str("a `]` the source never wrote"),
             Self::GhostClose(ClosingClass::Brace) => f.write_str("a `}` the source never wrote"),
+            Self::Minted(Ending::Tile(tile)) => write!(f, "a `{}` the source never wrote", tile.0),
+            Self::Minted(Ending::Unnamed) => f.write_str("a tile the source never wrote"),
             Self::Unended(Ending::Tile(tile)) => {
                 write!(f, "a closing `{}` the source never wrote", tile.0)
             },
@@ -1694,6 +1700,7 @@ pub enum Shape
         | NodeLabel::GhostClose { class, .. } => {
             ret == Ok(Shape::Repair(Repair::GhostClose(class)))
         },
+        | NodeLabel::GhostTile(mold) => ret == Ok(Shape::Repair(minted(pbg, mold))),
         | NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => pbg.named_kind(mold).map_or_else(
             |_| {
                 ret == Err(LoweringRefusal::UnknownMold {
@@ -1737,8 +1744,25 @@ pub fn shape_of<'source>(
         },
         NodeLabel::Grout { shape, .. } => Ok(Shape::Repair(Repair::Grout(shape))),
         NodeLabel::GhostClose { class, .. } => Ok(Shape::Repair(Repair::GhostClose(class))),
+        NodeLabel::GhostTile(mold) => Ok(Shape::Repair(minted(pbg, mold))),
         NodeLabel::Space | NodeLabel::Doc => Ok(Shape::Layout),
     }
+}
+
+/// The repair a tile of `mold` that the parser minted reads as.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn minted(
+    pbg: &Pbg,
+    mold: MoldId,
+) -> Repair
+{
+    Repair::Minted(
+        pbg.mold(mold)
+            .map_or(Ending::Unnamed, |held| Ending::Tile(TileName(held.label))),
+    )
 }
 
 /// Whether a written type classifies codes: a universe, the row kind, or an
@@ -2387,18 +2411,19 @@ pub fn written_children<'tree>(
 ///   order, save a child `statement_block`, whose children read in its place
 ///   with its tiles as own tiles ([`own_children`]); the root reads every
 ///   written child as an operand; layout and documentation are dropped
-///   everywhere, and the first grout, minted close or reserved word read as a
-///   name ([`reserved_name`]) among the children is reported beside the pieces
-///   rather than read as one; a reserved name still reads as its tile. When
-///   that first repair is a minted close of a form of several tiles and a form
-///   inside it holds a repair too, the deepest such repair — the first in
-///   source order among equals — is reported instead, naming the form that
-///   holds it: the outer close follows from the inner form's. A minted close or
-///   a ghost end, the form's own or the inner one reported, gives way to the
-///   point where its form first leaves its rule's shape when that point comes
-///   before it ([`earliest`]). Reading layout, documentation or a repair node
-///   itself leaves both fields empty. An application spine `f x y` reads as the
-///   pieces of the call `f(x, y)` it spells, as [`application_spine`] reads it.
+///   everywhere, and the first grout, minted close, minted tile or reserved
+///   word read as a name ([`reserved_name`]) among the children is reported
+///   beside the pieces rather than read as one; a reserved name still reads as
+///   its tile. When that first repair is a minted close of a form of several
+///   tiles and a form inside it holds a repair too, the deepest such repair —
+///   the first in source order among equals — is reported instead, naming the
+///   form that holds it: the outer close follows from the inner form's. A
+///   minted close or a ghost end, the form's own or the inner one reported,
+///   gives way to the point where its form first leaves its rule's shape when
+///   that point comes before it ([`earliest`]). Reading layout, documentation
+///   or a repair node itself leaves both fields empty. An application spine `f
+///   x y` reads as the pieces of the call `f(x, y)` it spells, as
+///   [`application_spine`] reads it.
 /// - provides: the one reading of a form's children every reader takes, so the
 ///   own-tile test is decided in one place, over one buffer reused from form to
 ///   form.
@@ -2454,6 +2479,7 @@ pub fn written_children<'tree>(
                 },
                 | NodeLabel::Grout { .. }
                 | NodeLabel::GhostClose { .. }
+                | NodeLabel::GhostTile(_)
                 | NodeLabel::Space
                 | NodeLabel::Doc => {
                     read.pieces.is_empty()
@@ -2473,7 +2499,8 @@ pub fn written_children<'tree>(
                             | NodeLabel::Space
                             | NodeLabel::Doc
                             | NodeLabel::Grout { .. }
-                            | NodeLabel::GhostClose { .. } => None,
+                            | NodeLabel::GhostClose { .. }
+                            | NodeLabel::GhostTile(_) => None,
                             | _ => Some(Placed::of(child, held)),
                         }
                     });
@@ -2487,6 +2514,7 @@ pub fn written_children<'tree>(
                                 | NodeLabel::GhostClose { class, .. } => {
                                     Repair::GhostClose(class)
                                 },
+                                | NodeLabel::GhostTile(mold) => minted(pbg, mold),
                                 | NodeLabel::Tile(mold) => {
                                     Repair::ReservedName(reserved_name(pbg, tree, child, mold)?)
                                 },
@@ -2565,6 +2593,7 @@ pub fn read_pieces<'source>(
         NodeLabel::Wald => Holder::Root,
         NodeLabel::Grout { .. }
         | NodeLabel::GhostClose { .. }
+        | NodeLabel::GhostTile(_)
         | NodeLabel::Space
         | NodeLabel::Doc => {
             return Ok(());
@@ -2582,7 +2611,7 @@ pub fn read_pieces<'source>(
         };
         let piece = match held.label() {
             NodeLabel::Space | NodeLabel::Doc => continue,
-            NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => {
+            NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } | NodeLabel::GhostTile(_) => {
                 if let Maybe::Present(found) = repair_at(pbg, tree, placed) {
                     note_repair(read, placed, found.repair);
                 }
@@ -2608,18 +2637,25 @@ pub fn read_pieces<'source>(
         && matches!(
             read.repair,
             Maybe::Present(Repaired {
-                repair: Repair::GhostClose(_) | Repair::Unended(_),
+                repair: Repair::GhostClose(_) | Repair::Unended(_) | Repair::Minted(_),
                 ..
             })
         )
     {
         let inner = nested_repair(pbg, tree, &read.pieces)?;
-        read.repair = match (inner, read.repair) {
+        let marked = match (inner, read.repair) {
             (Maybe::Present(inner), _) => Maybe::Present(inner),
             (Maybe::Absent(_), Maybe::Present(found)) => {
                 Maybe::Present(earliest(pbg, tree, position, found))
             },
             (Maybe::Absent(_), Maybe::Absent(reason)) => Maybe::Absent(reason),
+        };
+        read.repair = match marked {
+            Maybe::Present(found) => match diverged_within(pbg, tree, &read.pieces, found)? {
+                Maybe::Present(inner) => Maybe::Present(inner),
+                Maybe::Absent(_) => Maybe::Present(found),
+            },
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         };
     }
     Ok(())
@@ -2685,6 +2721,7 @@ fn application_spine(
         | NodeLabel::Wald
         | NodeLabel::Grout { .. }
         | NodeLabel::GhostClose { .. }
+        | NodeLabel::GhostTile(_)
         | NodeLabel::Space
         | NodeLabel::Doc => return None,
     };
@@ -2774,6 +2811,7 @@ fn application_spine(
         | NodeLabel::Wald
         | NodeLabel::Grout { .. }
         | NodeLabel::GhostClose { .. }
+        | NodeLabel::GhostTile(_)
         | NodeLabel::Space
         | NodeLabel::Doc => None,
     });
@@ -2872,7 +2910,8 @@ fn qualified_head(
             | NodeLabel::Tile(_)
             | NodeLabel::Wald
             | NodeLabel::Grout { .. }
-            | NodeLabel::GhostClose { .. } => {
+            | NodeLabel::GhostClose { .. }
+            | NodeLabel::GhostTile(_) => {
                 read.pieces.truncate(mark);
                 return;
             },
@@ -2936,7 +2975,7 @@ pub fn stop_of(
     let first = own_children(pbg, tree, position).find_map(|(child, _)| {
         let held = tree.node(child)?;
         match held.label() {
-            NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => {
+            NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } | NodeLabel::GhostTile(_) => {
                 match repair_at(pbg, tree, Placed::of(child, held)) {
                     Maybe::Present(found) => Some(found),
                     Maybe::Absent(_) => None,
@@ -2960,7 +2999,7 @@ pub fn stop_of(
         found
     };
     match found.repair {
-        Repair::GhostClose(_) | Repair::Unended(_) => {
+        Repair::GhostClose(_) | Repair::Unended(_) | Repair::Minted(_) => {
             Maybe::Present(earliest(pbg, tree, position, found))
         },
         Repair::Grout(_) | Repair::Keyword(_) | Repair::ReservedName(_) | Repair::Diverged(_) => {
@@ -3057,6 +3096,7 @@ fn unended(
             | NodeLabel::Wald
             | NodeLabel::Grout { .. }
             | NodeLabel::GhostClose { .. }
+            | NodeLabel::GhostTile(_)
             | NodeLabel::Space
             | NodeLabel::Doc => {},
         }
@@ -3203,6 +3243,7 @@ fn nested_repair<'source>(
             let repair = match held.label() {
                 NodeLabel::Grout { shape, .. } => grouted(pbg, tree, child, shape),
                 NodeLabel::GhostClose { class, .. } => Repair::GhostClose(class),
+                NodeLabel::GhostTile(mold) => minted(pbg, mold),
                 NodeLabel::Meld(_) => {
                     forms.push((child, depth.saturating_add(1_usize)));
                     continue;
@@ -3243,6 +3284,95 @@ fn nested_repair<'source>(
     Ok(Maybe::Present(earliest(pbg, tree, holder, found)))
 }
 
+/// The first point, before `found`, where a form inside one of the operands
+/// `pieces` names leaves its rule's shape, with the form that holds it.
+///
+/// A tile the parser minted is the effect of the place the source went wrong
+/// before it. A member of a declaration that holds one operand too many, as
+/// `loop : Base Base` with its `<->` left out, leaves the declaration to
+/// close at the next declaration's keyword, and the parser mints the tile the
+/// declaration lacks there. The member's gap is the place to mark.
+///
+/// # Specification
+/// - requires: `pieces` were read from `tree`.
+/// - ensures: for a [`Repair::Minted`] `found`, among the forms inside the
+///   operands, the [`diverged()`] point that starts first, when it starts
+///   before `found`, as [`Repair::Diverged`] at that point and naming the form
+///   that holds it; absent for any other `found` and when no such point starts
+///   before it.
+/// - fails: [`LoweringRefusal::UnknownMold`] for a holding form whose mold
+///   `pbg` does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// [`LoweringRefusal::UnknownMold`] for a mold `pbg` does not hold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a cell member with its `<->` left out is marked at the
+///   gap between its two terms, not at the tile minted after it.
+/// - witness: `gandr-workflow-ledger-tasks::ledger::recovery::tests::a_deleted_invertible_cell_arrow_marks_its_gap_8051`
+///
+/// # Cost
+/// - allocation: the worklist of the walk over the operands, error path
+fn diverged_within<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    pieces: &[Piece],
+    found: Repaired,
+) -> Result<Maybe<Repaired, nested::Absent>, LoweringRefusal<'source>>
+{
+    if !matches!(found.repair, Repair::Minted(_)) {
+        return Ok(Maybe::Absent(nested::Absent::Own));
+    }
+    // economy: the walk runs only over a form whose tile the parser minted,
+    // so a clean tree never pays for it.
+    let mut forms: Vec<NodeIndex> = pieces
+        .iter()
+        .filter_map(|piece| match *piece {
+            Piece::Operand(placed) => Some(placed.node),
+            Piece::Tile { .. } => None,
+        })
+        .collect();
+    let mut first: Maybe<(NodeIndex, Divergence), nested::Absent> =
+        Maybe::Absent(nested::Absent::Own);
+    while let Some(form) = forms.pop() {
+        let Some(holder) = tree.node(form)
+        else {
+            continue;
+        };
+        if !matches!(holder.label(), NodeLabel::Meld(_)) {
+            continue;
+        }
+        if let Maybe::Present(point) = diverged(pbg, tree, form)
+            && point.at.start() < found.span.start()
+            && match first {
+                Maybe::Present((_, ref best)) => point.at.start() < best.at.start(),
+                Maybe::Absent(_) => true,
+            }
+        {
+            first = Maybe::Present((form, point));
+        }
+        forms.extend(own_children(pbg, tree, form).map(|(child, _)| child));
+    }
+    let Maybe::Present((form, point)) = first
+    else {
+        return Ok(Maybe::Absent(nested::Absent::Own));
+    };
+    let Some(holder) = tree.node(form)
+    else {
+        return Ok(Maybe::Absent(nested::Absent::Own));
+    };
+    let Shape::Form { name, .. } = shape_of(pbg, holder)?
+    else {
+        return Ok(Maybe::Absent(nested::Absent::Own));
+    };
+    Ok(Maybe::Present(Repaired {
+        span: point.at,
+        repair: Repair::Diverged(point.ending),
+        nested: Maybe::Present(name),
+    }))
+}
+
 /// The repair a form the parser closed is reported by: the point where the
 /// form at `form` first leaves its rule's shape when that point comes before
 /// `found`, its minted close or ghost end, and `found` otherwise. Either mark
@@ -3251,10 +3381,10 @@ fn nested_repair<'source>(
 ///
 /// # Specification
 /// - requires: `found` is a repair among the children of `form`.
-/// - ensures: when `found` is a [`Repair::GhostClose`] or a [`Repair::Unended`]
-///   and [`diverged()`]'s point starts before it, the point standing in
-///   `found`'s form: `found`'s own repair there when the form writes none of
-///   its tiles past the point, so the close belongs there, and
+/// - ensures: when `found` is a [`Repair::GhostClose`], a [`Repair::Unended`]
+///   or a [`Repair::Minted`] and [`diverged()`]'s point starts before it, the
+///   point standing in `found`'s form: `found`'s own repair there when the form
+///   writes none of its tiles past the point, so the close belongs there, and
 ///   [`Repair::Diverged`] otherwise, its span starting where [`owed`]'s mark of
 ///   `found` starts when that comes first; otherwise [`owed`]'s mark of
 ///   `found`; `found` unchanged in every other case.
@@ -3279,7 +3409,10 @@ fn earliest(
     found: Repaired,
 ) -> Repaired
 {
-    if !matches!(found.repair, Repair::GhostClose(_) | Repair::Unended(_)) {
+    if !matches!(
+        found.repair,
+        Repair::GhostClose(_) | Repair::Unended(_) | Repair::Minted(_)
+    ) {
         return found;
     }
     let owed = owed(pbg, tree, form, found);
@@ -3340,6 +3473,7 @@ fn owed(
             | NodeLabel::Meld(_)
             | NodeLabel::Tile(_)
             | NodeLabel::Grout { .. }
+            | NodeLabel::GhostTile(_)
             | NodeLabel::Space
             | NodeLabel::Doc => None,
         }
@@ -3430,6 +3564,7 @@ fn diverged(
         | NodeLabel::Wald
         | NodeLabel::Grout { .. }
         | NodeLabel::GhostClose { .. }
+        | NodeLabel::GhostTile(_)
         | NodeLabel::Space
         | NodeLabel::Doc => None,
     };
@@ -3955,9 +4090,9 @@ pub fn misspelt_operator(
 /// # Specification
 /// - requires: `declaration` is a node of `tree`.
 /// - ensures: the tile name of the first child with no width, after `run`, of
-///   the meld under `declaration` whose child starts at `run`; `None` when no
-///   meld there holds a child that starts at `run`, or that meld owes no tile
-///   after it.
+///   the meld under `declaration` whose child starts at `run`: a tile that the
+///   parser minted, or one that the layout wrote; `None` when no meld there
+///   holds a child that starts at `run`, or that meld owes no tile after it.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the descent.
@@ -4000,6 +4135,9 @@ pub fn owed_tile(
         let span = node.span();
         if span.start() <= run || span.start() != span.end() {
             return None;
+        }
+        if let NodeLabel::GhostTile(mold) = node.label() {
+            return pbg.mold(mold).ok().map(|held| TileName(held.label));
         }
         match tile_label(pbg, node) {
             Maybe::Present(tile) => Some(tile),
@@ -4416,8 +4554,9 @@ fn note_repair(
 /// # Specification
 /// - requires: `child` names a node of `tree`, molded under `pbg`.
 /// - ensures: for a grout node, the repair its grout reads as; for a minted
-///   close, the close of its class; either at the node's own span, standing in
-///   no nested form. Absent for every other node.
+///   close, the close of its class; for a minted tile, the tile it stands in
+///   for; each at the node's own span, standing in no nested form. Absent for
+///   every other node.
 /// - provides: the reading of a repair [`read_pieces`] notes among a form's
 ///   children, and the refusal of one standing on its own among the root's.
 /// - fails: never; a node the tree does not hold is absent.
@@ -4432,9 +4571,9 @@ fn note_repair(
     | Maybe::Present(found) => found.span == child.span
         && found.nested == Maybe::Absent(nested::Absent::Own)
         && tree.node(child.node).is_some_and(|node| matches!(node.label(),
-            NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. })),
+            NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } | NodeLabel::GhostTile(_))),
     | Maybe::Absent(_) => tree.node(child.node).is_none_or(|node| !matches!(node.label(),
-        NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. })),
+        NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } | NodeLabel::GhostTile(_))),
 })]
 #[inline]
 pub fn repair_at(
@@ -4446,6 +4585,7 @@ pub fn repair_at(
     let repair = match tree.node(child.node).map(Node::label) {
         Some(NodeLabel::Grout { shape, .. }) => grouted(pbg, tree, child.node, shape),
         Some(NodeLabel::GhostClose { class, .. }) => Repair::GhostClose(class),
+        Some(NodeLabel::GhostTile(mold)) => minted(pbg, mold),
         Some(
             NodeLabel::Tile(_)
             | NodeLabel::Meld(_)
@@ -4512,6 +4652,7 @@ pub fn tile_label(
         | NodeLabel::Meld(_)
         | NodeLabel::Grout { .. }
         | NodeLabel::GhostClose { .. }
+        | NodeLabel::GhostTile(_)
         | NodeLabel::Space
         | NodeLabel::Doc => Maybe::Absent(tiled::Absent::Untiled),
     }
@@ -7022,6 +7163,8 @@ mod tests
             Repair::GhostClose(ClosingClass::Brace),
             unended,
             Repair::Unended(super::Ending::Unnamed),
+            Repair::Minted(super::Ending::Tile(TileName("=>"))),
+            Repair::Minted(super::Ending::Unnamed),
         ]
         .map(|repair| repair.to_string());
         for (position, message) in messages.iter().enumerate() {

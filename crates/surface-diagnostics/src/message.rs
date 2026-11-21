@@ -523,6 +523,12 @@ fn lowered(
                         ClosingClass::Brace => "}",
                     })
                 },
+                FormFault::Repaired(Repair::Minted(Ending::Tile(tile))) => {
+                    write!(f, "this {form} is missing its `{}` here", tile.as_ref())
+                },
+                FormFault::Repaired(Repair::Minted(Ending::Unnamed)) => {
+                    write!(f, "this {form} stops before it is finished")
+                },
                 FormFault::Repaired(Repair::Unended(Ending::Tile(tile))) => {
                     write!(f, "this {form} is missing its closing `{}`", tile.as_ref())
                 },

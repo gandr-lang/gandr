@@ -855,6 +855,7 @@ fn molds(
             | NodeLabel::Meld(_)
             | NodeLabel::Grout { .. }
             | NodeLabel::GhostClose { .. }
+            | NodeLabel::GhostTile(_)
             | NodeLabel::Space
             | NodeLabel::Doc => false,
         })

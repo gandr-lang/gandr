@@ -1302,6 +1302,7 @@ impl<'source> Respelling<'_, 'source>
                 | NodeLabel::Tile(_)
                 | NodeLabel::Grout { .. }
                 | NodeLabel::GhostClose { .. }
+                | NodeLabel::GhostTile(_)
                 | NodeLabel::Space,
             )
             | None => Interior::No,
@@ -1637,6 +1638,7 @@ impl<'source> Respelling<'_, 'source>
             | NodeLabel::Tile(_)
             | NodeLabel::Grout { .. }
             | NodeLabel::GhostClose { .. }
+            | NodeLabel::GhostTile(_)
             | NodeLabel::Doc => Role::Operand(Child::Leaf(leaf)),
         };
         Some((role, Vec::from([leaf]), leaf.span))

@@ -571,7 +571,7 @@ fn owners(
                     Some(_) | None => (range(node), range(node), kind(mold)),
                 }
             },
-            NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => {
+            NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } | NodeLabel::GhostTile(_) => {
                 (range(node), range(node), String::from("grout"))
             },
             NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => continue,

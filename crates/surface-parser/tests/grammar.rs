@@ -193,6 +193,7 @@ fn a_group_before_the_value_function_arrow_molds_as_its_domains_2255() -> Result
                 | gandr_surface_syntax::NodeLabel::Meld(_)
                 | gandr_surface_syntax::NodeLabel::Grout { .. }
                 | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                | gandr_surface_syntax::NodeLabel::GhostTile(_)
                 | gandr_surface_syntax::NodeLabel::Space
                 | gandr_surface_syntax::NodeLabel::Doc => None,
             })
@@ -237,6 +238,7 @@ fn juxtaposition_applies_between_operands_4853() -> Result<(), Failure>
                 | gandr_surface_syntax::NodeLabel::Meld(_)
                 | gandr_surface_syntax::NodeLabel::Grout { .. }
                 | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                | gandr_surface_syntax::NodeLabel::GhostTile(_)
                 | gandr_surface_syntax::NodeLabel::Space
                 | gandr_surface_syntax::NodeLabel::Doc => false,
             })
@@ -301,6 +303,7 @@ fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Failure>
                 | gandr_surface_syntax::NodeLabel::Meld(_)
                 | gandr_surface_syntax::NodeLabel::Grout { .. }
                 | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                | gandr_surface_syntax::NodeLabel::GhostTile(_)
                 | gandr_surface_syntax::NodeLabel::Space
                 | gandr_surface_syntax::NodeLabel::Doc => false,
             })
@@ -350,6 +353,7 @@ fn a_called_former_keeps_its_own_opener_6121() -> Result<(), Failure>
                 | gandr_surface_syntax::NodeLabel::Meld(_)
                 | gandr_surface_syntax::NodeLabel::Grout { .. }
                 | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                | gandr_surface_syntax::NodeLabel::GhostTile(_)
                 | gandr_surface_syntax::NodeLabel::Space
                 | gandr_surface_syntax::NodeLabel::Doc => None,
             })
@@ -432,6 +436,7 @@ fn a_path_type_reads_its_endpoints_juxtaposed_5750() -> Result<(), Failure>
                 gandr_surface_syntax::NodeLabel::Wald
                 | gandr_surface_syntax::NodeLabel::Grout { .. }
                 | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                | gandr_surface_syntax::NodeLabel::GhostTile(_)
                 | gandr_surface_syntax::NodeLabel::Space
                 | gandr_surface_syntax::NodeLabel::Doc => None,
             });
@@ -518,6 +523,7 @@ fn a_packed_model_s_type_applies_by_juxtaposition_6093() -> Result<(), Failure>
                 | gandr_surface_syntax::NodeLabel::Meld(_)
                 | gandr_surface_syntax::NodeLabel::Grout { .. }
                 | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                | gandr_surface_syntax::NodeLabel::GhostTile(_)
                 | gandr_surface_syntax::NodeLabel::Space
                 | gandr_surface_syntax::NodeLabel::Doc => false,
             })
@@ -579,6 +585,7 @@ fn an_observation_s_type_applies_a_parenthesized_argument_6093() -> Result<(), F
                 | gandr_surface_syntax::NodeLabel::Meld(_)
                 | gandr_surface_syntax::NodeLabel::Grout { .. }
                 | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                | gandr_surface_syntax::NodeLabel::GhostTile(_)
                 | gandr_surface_syntax::NodeLabel::Space
                 | gandr_surface_syntax::NodeLabel::Doc => false,
             })

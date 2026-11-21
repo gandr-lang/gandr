@@ -180,7 +180,8 @@ pub fn comments<'source>(tree: &SyntaxTree<'source>) -> Vec<Comment<'source>>
                 | NodeLabel::Meld(_)
                 | NodeLabel::Tile(_)
                 | NodeLabel::Grout { .. }
-                | NodeLabel::GhostClose { .. } => {
+                | NodeLabel::GhostClose { .. }
+                | NodeLabel::GhostTile(_) => {
                     pending.push(child);
                     continue;
                 },
@@ -272,6 +273,7 @@ fn role(
             NodeLabel::Wald
             | NodeLabel::Meld(_)
             | NodeLabel::Grout { .. }
+            | NodeLabel::GhostTile(_)
             | NodeLabel::Space
             | NodeLabel::Doc,
         )

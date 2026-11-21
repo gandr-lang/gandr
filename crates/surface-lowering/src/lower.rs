@@ -7448,6 +7448,69 @@ mod tests
         );
     }
 
+    /// #8056: two statements on one line need a `;` between them, and a line
+    /// right of its block's column continues the statement before it, so a
+    /// statement word there leaves that statement without its `;`. The `;`
+    /// the parser mints at the second `let` is refused where it stands.
+    #[test]
+    fn two_statements_on_one_line_need_their_separator_8056()
+    {
+        let at = |point: usize| span(ByteOffset::from(point), ByteOffset::from(point));
+        let pbg = grammar();
+        for (source, point, why) in [
+            (
+                include_str!(
+                    "../../surface-lowering-base/src/form/tests/unformatted/two-statements-on-one-line-need-their-separator-8056-1.gandr"
+                ),
+                35_usize,
+                "a second `let` on the line of the first is refused at the `;` it lacks",
+            ),
+            (
+                include_str!(
+                    "../../surface-lowering-base/src/form/tests/unformatted/two-statements-on-one-line-need-their-separator-8056-2.gandr"
+                ),
+                39_usize,
+                "a `let` that continues the line above is refused at the `;` it lacks",
+            ),
+        ] {
+            let tree = repaired(&pbg, SourceText::from(source));
+            assert_eq!(
+                refusal_in(&pbg, &tree),
+                LoweringRefusal::MalformedForm {
+                    span: at(point),
+                    form: FormName::from(NamedKind("def_value")),
+                    fault: FormFault::Repaired(Repair::Minted(crate::form::Ending::Tile(
+                        crate::form::TileName::SEMICOLON
+                    ))),
+                },
+                "{why}"
+            );
+        }
+        let tree = gandr_surface_parser::parse(
+            &pbg,
+            SourceText::from(include_str!(
+                "../../surface-lowering-base/src/form/tests/unformatted/two-statements-on-one-line-need-their-separator-8056-3.gandr"
+            )),
+        )
+        .unwrap()
+        .into_tree();
+        let mut arena = CoreArena::new();
+        let module = lower_module(
+            &pbg,
+            &tree,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+        .unwrap();
+        assert!(
+            matches!(outcomes(&module).as_slice(), [
+                DeclarationOutcome::Completed { .. }
+            ]),
+            "the two statements with the `;` written between them lower"
+        );
+    }
+
     /// #1829: a form the parser closed at its end is marked where its written
     /// tiles first leave its rule's shape, not at the close.
     #[test]

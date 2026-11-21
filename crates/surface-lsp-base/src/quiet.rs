@@ -196,7 +196,9 @@ fn ends_in_repair(
             return EndsInRepair(false);
         };
         match node.label() {
-            NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => return EndsInRepair(true),
+            NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } | NodeLabel::GhostTile(_) => {
+                return EndsInRepair(true);
+            },
             NodeLabel::Tile(_) | NodeLabel::Space => return EndsInRepair(false),
             NodeLabel::Wald | NodeLabel::Meld(_) | NodeLabel::Doc => {
                 let last = tree.children(at).filter(|&child| {

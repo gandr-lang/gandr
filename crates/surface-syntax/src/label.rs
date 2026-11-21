@@ -240,6 +240,13 @@ pub enum NodeLabel
     /// insignificant, like layout, so editing documentation leaves the
     /// documented form's identity and every ancestor's unchanged.
     Doc,
+    /// A minted tile: a tile of the mold that the source never wrote, which
+    /// the parser pushes over no text to finish a form it repairs.
+    ///
+    /// Distinct from [`NodeLabel::Tile`], so no consumer reads the repair as
+    /// a tile the source wrote: a separator that the layout pass writes is a
+    /// `Tile` over no text too.
+    GhostTile(MoldId),
 }
 
 impl NodeLabel
@@ -256,7 +263,9 @@ impl NodeLabel
     {
         if match (self, other) {
             (Self::Wald, Self::Wald) | (Self::Space, Self::Space) | (Self::Doc, Self::Doc) => true,
-            (Self::Meld(a), Self::Meld(b)) | (Self::Tile(a), Self::Tile(b)) => {
+            (Self::Meld(a), Self::Meld(b))
+            | (Self::Tile(a), Self::Tile(b))
+            | (Self::GhostTile(a), Self::GhostTile(b)) => {
                 matches!(a.const_eq(b), crate::ConstEquality::Equal)
             },
             (Self::Grout { sort: a, shape: sa }, Self::Grout { sort: b, shape: sb }) => {
@@ -321,7 +330,7 @@ impl NodeLabel
     #[spec(ensures: |ret| ret.0 == match self {
         Self::Wald => 1_u8, Self::Meld(_) => 2_u8, Self::Tile(_) => 3_u8,
         Self::Grout { .. } => 4_u8, Self::GhostClose { .. } => 5_u8, Self::Space => 6_u8,
-        Self::Doc => 7_u8,
+        Self::Doc => 7_u8, Self::GhostTile(_) => 8_u8,
     })]
     #[inline]
     #[must_use]
@@ -335,6 +344,7 @@ impl NodeLabel
             Self::GhostClose { .. } => 0x05_u8,
             Self::Space => 0x06_u8,
             Self::Doc => 0x07_u8,
+            Self::GhostTile(_) => 0x08_u8,
         })
     }
 
@@ -344,11 +354,11 @@ impl NodeLabel
     /// # Specification
     /// - requires: nothing; the function is total over the vocabulary.
     /// - ensures: every leaf label answers affirmatively — a tile, grout, a
-    ///   minted close and layout — and the three interior labels, a form, the
-    ///   root and documentation, answer negatively: a leaf's text is what the
-    ///   source wrote there (empty for inserted grout and a minted close, the
-    ///   token's bytes for grout over an unmolded token), and an interior
-    ///   node's text is its children's.
+    ///   minted close, a minted tile and layout — and the three interior
+    ///   labels, a form, the root and documentation, answer negatively: a
+    ///   leaf's text is what the source wrote there (empty for inserted grout,
+    ///   a minted close and a minted tile, the token's bytes for grout over an
+    ///   unmolded token), and an interior node's text is its children's.
     /// - provides: the text half of a node's digest preimage.
     /// - fails: never.
     /// - panics: none.
@@ -358,7 +368,7 @@ impl NodeLabel
     ///   exhaustively with each variant's exact answer asserted, so promoting
     ///   or demoting any single variant breaks one assertion.
     /// - witness: `label::tests::only_leaves_carry_text`
-    #[spec(ensures: |ret| ret.0 == matches!(self, Self::Tile(_) | Self::Grout { .. } | Self::GhostClose { .. } | Self::Space))]
+    #[spec(ensures: |ret| ret.0 == matches!(self, Self::Tile(_) | Self::Grout { .. } | Self::GhostClose { .. } | Self::GhostTile(_) | Self::Space))]
     #[inline]
     #[must_use]
     pub const fn carries_text(self) -> CarriesText
@@ -409,7 +419,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn every_variant() -> [NodeLabel; 7_usize]
+    fn every_variant() -> [NodeLabel; 8_usize]
     {
         [
             NodeLabel::Wald,
@@ -426,6 +436,7 @@ mod tests
             },
             NodeLabel::Space,
             NodeLabel::Doc,
+            NodeLabel::GhostTile(MoldId::from(3_u32)),
         ]
     }
 
@@ -433,7 +444,7 @@ mod tests
     fn every_digest_tag_is_pinned()
     {
         let expected = [
-            0x01_u8, 0x02_u8, 0x03_u8, 0x04_u8, 0x05_u8, 0x06_u8, 0x07_u8,
+            0x01_u8, 0x02_u8, 0x03_u8, 0x04_u8, 0x05_u8, 0x06_u8, 0x07_u8, 0x08_u8,
         ];
         for (label, tag) in every_variant().into_iter().zip(expected) {
             assert_eq!(
@@ -469,7 +480,7 @@ mod tests
     #[test]
     fn only_leaves_carry_text()
     {
-        let expected = [false, false, true, true, true, true, false];
+        let expected = [false, false, true, true, true, true, false, true];
         for (label, carries) in every_variant().into_iter().zip(expected) {
             assert_eq!(
                 label.carries_text(),
@@ -482,7 +493,7 @@ mod tests
     #[test]
     fn only_layout_and_documentation_are_insignificant()
     {
-        let expected = [true, true, true, true, true, false, false];
+        let expected = [true, true, true, true, true, false, false, true];
         for (label, significant) in every_variant().into_iter().zip(expected) {
             assert_eq!(
                 label.significance(),
@@ -500,6 +511,7 @@ mod tests
         let mut labels = Vec::from(every_variant());
         labels.extend([
             NodeLabel::Meld(MoldId::from(4_u32)),
+            NodeLabel::GhostTile(MoldId::from(4_u32)),
             NodeLabel::Grout {
                 sort: GroutSort::from(2_u16),
                 shape: GroutShape::Convex,

@@ -255,6 +255,10 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             FormFault::Repaired(Repair::GhostClose(ClosingClass::Paren)) => "missing `)`",
             FormFault::Repaired(Repair::GhostClose(ClosingClass::Bracket)) => "missing `]`",
             FormFault::Repaired(Repair::GhostClose(ClosingClass::Brace)) => "missing `}`",
+            FormFault::Repaired(Repair::Minted(Ending::Tile(_))) => {
+                "a tile of the form belongs here"
+            },
+            FormFault::Repaired(Repair::Minted(Ending::Unnamed)) => "the form stops here",
             FormFault::Repaired(Repair::Unended(Ending::Tile(_))) => {
                 "its closing tile belongs here"
             },
@@ -857,6 +861,10 @@ mod tests
                 FormFault::Repaired(Repair::GhostClose(ClosingClass::Paren)) => "missing `)`",
                 FormFault::Repaired(Repair::GhostClose(ClosingClass::Bracket)) => "missing `]`",
                 FormFault::Repaired(Repair::GhostClose(ClosingClass::Brace)) => "missing `}`",
+                FormFault::Repaired(Repair::Minted(Ending::Tile(_))) => {
+                    "a tile of the form belongs here"
+                },
+                FormFault::Repaired(Repair::Minted(Ending::Unnamed)) => "the form stops here",
                 FormFault::Repaired(Repair::Unended(Ending::Tile(_))) => {
                     "its closing tile belongs here"
                 },

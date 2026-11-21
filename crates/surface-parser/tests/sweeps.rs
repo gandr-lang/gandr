@@ -250,6 +250,7 @@ fn recovers(portion: Portion) -> Result<(), Failure>
                 .collect();
             let name = match node {
                 NodeLabel::Tile(mold) => format!("tile {}", spelled(mold)),
+                NodeLabel::GhostTile(mold) => format!("ghost tile {}", spelled(mold)),
                 NodeLabel::Meld(mold) => format!("meld {}", spelled(mold)),
                 // A close minted at its one place is spelled as before closes
                 // reached back, so its tree's fingerprint stays where it was.

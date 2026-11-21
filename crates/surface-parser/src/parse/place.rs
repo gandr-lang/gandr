@@ -601,6 +601,7 @@ fn minted_places(tree: &SyntaxTree<'_>) -> BTreeSet<(ByteOffset, Option<ClosingC
                 NodeLabel::Wald
                 | NodeLabel::Meld(_)
                 | NodeLabel::Tile(_)
+                | NodeLabel::GhostTile(_)
                 | NodeLabel::Grout { .. }
                 | NodeLabel::Space
                 | NodeLabel::Doc => None,
@@ -757,7 +758,7 @@ fn headed<'source>(
     let read = |position: NodeIndex| {
         let node = tree.node(position)?;
         let declaration = match node.label() {
-            NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
+            NodeLabel::Meld(mold) | NodeLabel::Tile(mold) | NodeLabel::GhostTile(mold) => {
                 bool::from(declaration_head(pbg, mold)) && !owes_first(position)
             },
             NodeLabel::Space | NodeLabel::Doc => return None,
@@ -816,7 +817,9 @@ fn headed<'source>(
         block.extend(tree.children(declaration).filter_map(|child| {
             let node = tree.node(child)?;
             match node.label() {
-                NodeLabel::Tile(_) if node.span().start() == node.span().end() => {
+                NodeLabel::Tile(_) | NodeLabel::GhostTile(_)
+                    if node.span().start() == node.span().end() =>
+                {
                     opened = true;
                     None
                 },
@@ -829,6 +832,7 @@ fn headed<'source>(
                     Some((child, node.span(), keyword.filter(|_| member), !member))
                 },
                 NodeLabel::Tile(_)
+                | NodeLabel::GhostTile(_)
                 | NodeLabel::Meld(_)
                 | NodeLabel::Wald
                 | NodeLabel::Grout { .. }
@@ -1028,7 +1032,7 @@ fn first_tile(
     loop {
         let node = tree.node(at)?;
         match node.label() {
-            NodeLabel::Tile(mold) => return Some((mold, node.span())),
+            NodeLabel::Tile(mold) | NodeLabel::GhostTile(mold) => return Some((mold, node.span())),
             NodeLabel::Meld(_) => {
                 at = tree.children(at).find(|&child| {
                     tree.node(child)
@@ -1165,6 +1169,7 @@ fn opened<'source>(
                 NodeLabel::Wald
                 | NodeLabel::Meld(_)
                 | NodeLabel::Tile(_)
+                | NodeLabel::GhostTile(_)
                 | NodeLabel::Grout { .. }
                 | NodeLabel::GhostClose { .. } => Some((
                     node.span(),
@@ -1260,7 +1265,7 @@ fn reopened<'source>(
             .positions()
             .filter_map(|position| copied.node(position))
             .find_map(|node| match node.label() {
-                NodeLabel::Tile(mold)
+                NodeLabel::Tile(mold) | NodeLabel::GhostTile(mold)
                     if node.span().start() == ByteOffset::from(at) && node.span().end() == end =>
                 {
                     Some(mold)
@@ -1268,6 +1273,7 @@ fn reopened<'source>(
                 NodeLabel::Wald
                 | NodeLabel::Meld(_)
                 | NodeLabel::Tile(_)
+                | NodeLabel::GhostTile(_)
                 | NodeLabel::Grout { .. }
                 | NodeLabel::GhostClose { .. }
                 | NodeLabel::Space
@@ -1921,7 +1927,7 @@ fn settled<'source>(
         .positions()
         .filter_map(|position| tree.node(position))
         .filter_map(|node| match node.label() {
-            NodeLabel::Tile(mold) => Some((node.span(), mold)),
+            NodeLabel::Tile(mold) | NodeLabel::GhostTile(mold) => Some((node.span(), mold)),
             NodeLabel::Wald
             | NodeLabel::Meld(_)
             | NodeLabel::Grout { .. }
@@ -2202,13 +2208,17 @@ fn lost_separator(
     tree.children(form)
         .filter_map(|child| tree.node(child))
         .find_map(|node| match node.label() {
-            NodeLabel::Tile(mold) if node.span().start() == end && node.span().end() == end => pbg
-                .mold(mold)
-                .ok()
-                .map(|def| def.label)
-                .filter(|&label| ClosingClass::closing(DelimSpelling::from(label)).is_none())
-                .map(SourceText::from),
+            NodeLabel::Tile(mold) | NodeLabel::GhostTile(mold)
+                if node.span().start() == end && node.span().end() == end =>
+            {
+                pbg.mold(mold)
+                    .ok()
+                    .map(|def| def.label)
+                    .filter(|&label| ClosingClass::closing(DelimSpelling::from(label)).is_none())
+                    .map(SourceText::from)
+            },
             NodeLabel::Tile(_)
+            | NodeLabel::GhostTile(_)
             | NodeLabel::Wald
             | NodeLabel::Meld(_)
             | NodeLabel::Grout { .. }
@@ -2324,6 +2334,7 @@ fn declared(
                 NodeLabel::Meld(mold) => bool::from(declaration_head(pbg, mold)),
                 NodeLabel::Wald
                 | NodeLabel::Tile(_)
+                | NodeLabel::GhostTile(_)
                 | NodeLabel::Grout { .. }
                 | NodeLabel::GhostClose { .. } => false,
             }),
@@ -2387,6 +2398,7 @@ fn minted(node: &Node) -> Option<GroutSort>
         NodeLabel::Wald
         | NodeLabel::Meld(_)
         | NodeLabel::Tile(_)
+        | NodeLabel::GhostTile(_)
         | NodeLabel::Grout { .. }
         | NodeLabel::Space
         | NodeLabel::Doc => None,
@@ -2630,6 +2642,7 @@ mod tests
                     | NodeLabel::Meld(_)
                     | NodeLabel::Tile(_)
                     | NodeLabel::Grout { .. }
+                    | NodeLabel::GhostTile(_)
                     | NodeLabel::Space
                     | NodeLabel::Doc => None,
                 })

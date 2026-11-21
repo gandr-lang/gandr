@@ -407,6 +407,7 @@ fn corpus_roles_match_the_golden() -> Result<(), Failure>
                     | NodeLabel::Meld(_)
                     | NodeLabel::Grout { .. }
                     | NodeLabel::GhostClose { .. }
+                    | NodeLabel::GhostTile(_)
                     | NodeLabel::Space
                     | NodeLabel::Doc => None,
                 }),
@@ -493,6 +494,7 @@ fn spans_partition_the_tile_bytes() -> Result<(), Failure>
                 | NodeLabel::Meld(_)
                 | NodeLabel::Grout { .. }
                 | NodeLabel::GhostClose { .. }
+                | NodeLabel::GhostTile(_)
                 | NodeLabel::Space
                 | NodeLabel::Doc => {},
             }

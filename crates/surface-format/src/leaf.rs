@@ -309,7 +309,7 @@ pub fn flatten<'source>(
                 continue;
             },
             NodeLabel::Tile(_) => Material::Token,
-            NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => {
+            NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } | NodeLabel::GhostTile(_) => {
                 if let Owner::Form(form) = owner {
                     repaired.push(form);
                 }
@@ -350,6 +350,7 @@ pub fn flatten<'source>(
             | NodeLabel::Meld(_)
             | NodeLabel::Grout { .. }
             | NodeLabel::GhostClose { .. }
+            | NodeLabel::GhostTile(_)
             | NodeLabel::Space
             | NodeLabel::Doc => (Context::Plain, Offside::Written),
         };
@@ -436,6 +437,7 @@ fn tile_label(
         | NodeLabel::Meld(_)
         | NodeLabel::Grout { .. }
         | NodeLabel::GhostClose { .. }
+        | NodeLabel::GhostTile(_)
         | NodeLabel::Space
         | NodeLabel::Doc => None,
     }
@@ -462,6 +464,7 @@ fn called_tile(
         NodeLabel::Wald
         | NodeLabel::Grout { .. }
         | NodeLabel::GhostClose { .. }
+        | NodeLabel::GhostTile(_)
         | NodeLabel::Space
         | NodeLabel::Doc => None,
     };
@@ -496,6 +499,7 @@ fn branch_of(
             | NodeLabel::Meld(_)
             | NodeLabel::Grout { .. }
             | NodeLabel::GhostClose { .. }
+            | NodeLabel::GhostTile(_)
             | NodeLabel::Space
             | NodeLabel::Doc,
         )

@@ -4663,7 +4663,13 @@ fn first_token<'source>(
                     children.reverse();
                 }
             },
-            Some(NodeLabel::GhostClose { .. } | NodeLabel::Space | NodeLabel::Doc) | None => {},
+            Some(
+                NodeLabel::GhostClose { .. }
+                | NodeLabel::GhostTile(_)
+                | NodeLabel::Space
+                | NodeLabel::Doc,
+            )
+            | None => {},
         }
     }
     SurfaceName::from("")

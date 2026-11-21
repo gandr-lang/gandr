@@ -185,6 +185,7 @@ fn tiles(
             | NodeLabel::Tile(_)
             | NodeLabel::Grout { .. }
             | NodeLabel::GhostClose { .. }
+            | NodeLabel::GhostTile(_)
             | NodeLabel::Space
             | NodeLabel::Doc => None,
         };

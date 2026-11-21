@@ -215,7 +215,8 @@ impl<'source> Collector<'_, 'source>
                     | NodeLabel::Meld(_)
                     | NodeLabel::Tile(_)
                     | NodeLabel::Grout { .. }
-                    | NodeLabel::GhostClose { .. } => Some(Placed {
+                    | NodeLabel::GhostClose { .. }
+                    | NodeLabel::GhostTile(_) => Some(Placed {
                         node: position,
                         span: node.span(),
                     }),
@@ -270,6 +271,7 @@ impl<'source> Collector<'_, 'source>
                     NodeLabel::Wald
                     | NodeLabel::Meld(_)
                     | NodeLabel::GhostClose { .. }
+                    | NodeLabel::GhostTile(_)
                     | NodeLabel::Space
                     | NodeLabel::Doc => return None,
                 };

@@ -122,6 +122,7 @@ pub fn printed(text: SourceText<'_>) -> String
             NodeLabel::Wald
             | NodeLabel::Meld(_)
             | NodeLabel::GhostClose { .. }
+            | NodeLabel::GhostTile(_)
             | NodeLabel::Doc => None,
         };
         if let Some(text) = quoted {
@@ -169,6 +170,7 @@ fn named(
         NodeLabel::Wald => write!(out, "wald"),
         NodeLabel::Meld(mold) => write!(out, "form {}", rule(mold)),
         NodeLabel::Tile(mold) => write!(out, "tile {}", rule(mold)),
+        NodeLabel::GhostTile(mold) => write!(out, "ghost tile {}", rule(mold)),
         NodeLabel::Grout {
             sort: grouted,
             shape,

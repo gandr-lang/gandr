@@ -267,6 +267,7 @@ pub fn declarations(
                 NodeLabel::Wald
                 | NodeLabel::Grout { .. }
                 | NodeLabel::GhostClose { .. }
+                | NodeLabel::GhostTile(_)
                 | NodeLabel::Space
                 | NodeLabel::Doc => pending.push((child, holder, None)),
             }
@@ -338,7 +339,10 @@ fn rooted(
             NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
                 grammar.rule_of(mold).ok().map(|rule| rule.name().0)
             },
-            NodeLabel::Wald | NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => {
+            NodeLabel::Wald
+            | NodeLabel::Grout { .. }
+            | NodeLabel::GhostClose { .. }
+            | NodeLabel::GhostTile(_) => {
                 blocks = None;
                 ended = None;
                 continue;
@@ -566,7 +570,8 @@ fn names_deprecated(
             NodeLabel::Meld(_)
             | NodeLabel::Wald
             | NodeLabel::Grout { .. }
-            | NodeLabel::GhostClose { .. } => {
+            | NodeLabel::GhostClose { .. }
+            | NodeLabel::GhostTile(_) => {
                 if !inside {
                     return Deprecated(false);
                 }
@@ -916,7 +921,8 @@ pub fn runs(
             NodeLabel::Meld(_)
             | NodeLabel::Wald
             | NodeLabel::Grout { .. }
-            | NodeLabel::GhostClose { .. } => None,
+            | NodeLabel::GhostClose { .. }
+            | NodeLabel::GhostTile(_) => None,
         };
         let tile = matches!(node.label(), NodeLabel::Tile(_));
         let written_at = depth;
@@ -1265,7 +1271,8 @@ pub fn folds(
             | NodeLabel::Space
             | NodeLabel::Tile(_)
             | NodeLabel::Grout { .. }
-            | NodeLabel::GhostClose { .. } => continue,
+            | NodeLabel::GhostClose { .. }
+            | NodeLabel::GhostTile(_) => continue,
         };
         fold(node.span(), holder);
     }

@@ -2804,6 +2804,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 | NodeLabel::Wald
                 | NodeLabel::Grout { .. }
                 | NodeLabel::GhostClose { .. }
+                | NodeLabel::GhostTile(_)
                 | NodeLabel::Space
                 | NodeLabel::Doc => None,
             })
@@ -3987,7 +3988,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 fault:
                     FormFault::Repaired(
                         Repair::Diverged(crate::form::Ending::Tile(tile))
-                        | Repair::Unended(crate::form::Ending::Tile(tile)),
+                        | Repair::Unended(crate::form::Ending::Tile(tile))
+                        | Repair::Minted(crate::form::Ending::Tile(tile)),
                     ),
                 ..
             } = *refusal
@@ -4264,6 +4266,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 NodeLabel::Wald
                 | NodeLabel::Grout { .. }
                 | NodeLabel::GhostClose { .. }
+                | NodeLabel::GhostTile(_)
                 | NodeLabel::Space
                 | NodeLabel::Doc => false,
             };
