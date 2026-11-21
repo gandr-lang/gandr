@@ -1579,12 +1579,16 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             return Ok(());
         };
         let candidates = Models::new(self.host()).model_candidates(site, slot)?;
-        let names: Vec<String> = candidates
+        // The holes of the slot share one list of the candidates' names.
+        let names = candidates
             .iter()
             .map(|&(name, _)| String::from(name.as_ref()))
             .collect();
         for &hole in &holes {
-            let _first = self.cx_mut().model_candidates.insert(hole, names.clone());
+            let _first = self
+                .cx_mut()
+                .model_candidates
+                .insert(hole, Clone::clone(&names));
         }
         self.cx_mut()
             .planned_models

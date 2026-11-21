@@ -6,6 +6,7 @@
 //! context and the types of its fields read nothing of the families, so they
 //! compile here, before the families and beside their code generation.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
@@ -18,6 +19,7 @@ use gandr_core_term::DataSignature;
 use gandr_core_term::Renaming;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
@@ -577,8 +579,8 @@ pub struct Context<'run, 'source>
     /// declaration making the call, its holes and its candidates.
     pub planned_models: BTreeMap<NodeIndex, Vec<model::PlannedModel<'source>>>,
     /// The names of an omitted model slot's candidates, in place order, by
-    /// each hole the slot nominated.
-    pub model_candidates: BTreeMap<gandr_core_term::hole::HoleId, Vec<String>>,
+    /// each hole the slot nominated. The holes of one slot share the list.
+    pub model_candidates: BTreeMap<gandr_core_term::hole::HoleId, ThinShared<(), String, Global>>,
     /// Each model slot a call omits, its candidates minted, by the
     /// declaration whose body makes the call.
     pub models: BTreeMap<ConstantIndex, Vec<gandr_core_term::model::ModelSlot>>,

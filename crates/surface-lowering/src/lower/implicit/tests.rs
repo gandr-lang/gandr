@@ -1063,7 +1063,9 @@ fn an_omitted_model_implicit_nominates_a_hole_per_component_739()
     let slot = Omitted::Model {
         function: String::from("stepped"),
         implicit: String::from("s"),
-        candidates: Vec::from([String::from("Up"), String::from("Tens")]),
+        candidates: [String::from("Up"), String::from("Tens")]
+            .into_iter()
+            .collect(),
     };
     assert_eq!(
         holes

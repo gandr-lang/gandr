@@ -641,8 +641,8 @@ pub enum Omitted
         /// The model implicit the call omits.
         implicit: String,
         /// The name of each module that may answer the slot, in the order
-        /// the checker places them.
-        candidates: Vec<String>,
+        /// the checker places them, which the holes of the slot share.
+        candidates: ThinShared<(), String, Global>,
     },
     /// A component of the model answering a capability scope over `theory`
     /// that names none, beside the modules that may answer it.
@@ -651,8 +651,8 @@ pub enum Omitted
         /// The theory the scope handles.
         theory: String,
         /// The name of each module that may answer the scope, in the order
-        /// the checker places them.
-        candidates: Vec<String>,
+        /// the checker places them, which the holes of the scope share.
+        candidates: ThinShared<(), String, Global>,
     },
     /// A wildcard `_` written where a value is read, for the term the
     /// equations force.
