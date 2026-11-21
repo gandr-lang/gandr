@@ -1993,10 +1993,14 @@ jq -r '"the known-red list #\(.number) (\(.state | ascii_downcase)):\n\n\(.body)
 # does not stop the removal of the others (#7490). The judgement of each
 # worktree is `.config/pr-stack/sweep-tree.bash`.
 #
-# With `--guard` (`pr:open`, `pre-start`) the task refuses when the free
-# space left is under 150 GB, naming the largest build directories.
+# With `--guard` (`pr:open`, `pr:land`, `pre-start`) the task first reads the
+# free space. At 150 GB or more the guard has nothing to refuse, so it reads
+# no worktree and ends. Under 150 GB it sweeps. It refuses when the free
+# space after the sweep is still under 150 GB, and it names the largest
+# build directories. A call with no `--guard` sweeps each time.
+# - see: #8268
 ["wt:sweep"]
-description = "Remove this clone's landed worktrees and leaked scratch, and with --guard refuse under 150 GB free"
+description = "Remove this clone's landed worktrees and leaked scratch; with --guard, only under 150 GB free, and refuse when the sweep leaves less"
 tools.jq = "1.8.1"
 usage = '''
 flag "--guard" help="refuse when the free space after the sweep is under 150 GB"
@@ -2009,6 +2013,13 @@ floor_gb=150
 command -v wt > /dev/null || { echo "wt:sweep needs Worktrunk's wt on PATH" >&2; exit 2; }
 here=$(realpath "$(git rev-parse --show-toplevel)")
 common=$(git rev-parse --path-format=absolute --git-common-dir)
+if [[ "${usage_guard:-false}" == true ]]; then
+  free_gb=$(( $(df -Pk "$common" | awk 'NR == 2 { print $4 }') / 1048576 ))
+  if (( free_gb >= floor_gb )); then
+    echo "wt:sweep: ${free_gb} GB free is at or above the ${floor_gb} GB floor, so the guard reads no worktree"
+    exit 0
+  fi
+fi
 source .config/pr-stack/trunk.bash
 trunk_ref=origin/$trunk
 git fetch --quiet origin "$trunk" main || echo "wt:sweep: fetching $trunk and main failed; sweeping against the last fetch" >&2
@@ -5399,8 +5410,9 @@ trap 'release_landing; drop_scratch' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
-# Landed worktrees go first; a sweep that fails never holds a landing.
-mise run wt:sweep || echo "wt:sweep failed; landing regardless" >&2
+# The guard sweeps under the disk floor alone, and a sweep that fails never
+# holds a landing.
+mise run wt:sweep --guard || echo "wt:sweep failed; landing regardless" >&2
 
 # The features ledger rows the body names are the rows the change patches,
 # each `since` carrying the pull request's number (#2525, `ledger:patched`),
