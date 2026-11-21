@@ -1,0 +1,17 @@
+error[ModelAmbiguous]: more than one module in scope answers the model implicit `e` this call to `eq` omits: `Always` and `ByCode`; supply the one meant as `eq[.e = …](…)`
+   ╭▸ corpus/pathological/modules/model-stated-type.gandr:78:28
+   │
+78 │ def twice : decoded(ofFlag(Yes == No)) = "x";
+   │                            ━━━━━━━━━ a model implicit more than one module answers
+   │
+   ├ note: `twice` is refused with ModelAmbiguous, as its expectation states
+   ╰ help: supply the intended model by name in brackets before the parentheses
+
+error[ModelUnanswered]: no module in scope answers the model implicit `e` this call to `eq` omits at `Mark`: `EqInteger`, `EqString`, `PartialEqFloat`, `OrdInteger`, `OrdString`, `Always` and `ByCode` do not; supply one as `eq[e = …](…)`
+   ╭▸ corpus/pathological/modules/model-stated-type.gandr:82:33
+   │
+82 │ def unanswered : decoded(ofFlag(Up == Down)) = "x";
+   │                                 ━━━━━━━━━━ a model implicit no module answers: found `Mark`
+   │
+   ├ note: `unanswered` is refused with ModelUnanswered, as its expectation states
+   ╰ help: declare a module that is a model of the theory at these types, or supply one by name in brackets

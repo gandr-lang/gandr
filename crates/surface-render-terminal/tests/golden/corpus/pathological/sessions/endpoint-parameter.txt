@@ -1,0 +1,75 @@
+error[LinearResidue]: the endpoint is not closed before the body of the function that takes it ends
+   ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:20:11
+   │
+20 │   def leaky(seat : end) -> Unit =
+   │   │         ┯━━━
+   │   │         │
+   │   │         an endpoint left unconsumed: found `end`
+   │ ┌─┘         the endpoint was taken as this parameter
+   │ │
+21 │ │   *{}
+   │ └─────┘ checked against `end -> Unit`; while checking the body of this thunk
+   │
+   ├ note: `leaky` is refused with LinearResidue, as its expectation states
+   ╰ help: end the endpoint's protocol before the body of the function that takes it ends
+
+error[UsedAfterClose]: the endpoint is used after `close`
+   ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:34:47
+   │
+33 │ ┌ def reused() -> Unit =
+34 │ │   let desk = fork (seat : end) { finish seat; close seat };
+   │ │   ┬──                            ┬──────────  ━━━━━━━━━━ an endpoint already closed
+   │ │   │                              │
+   │ │   │                              checked against `-F Unit`; while checking the body of this split; binds _ : Unit
+   │ │   the endpoint was opened by this fork
+   │ │   checked against `-F Unit`; while checking the child this forks
+35 │ │   close desk
+   │ └────────────┘ checked against `() -> Unit`; while checking the body of this thunk
+   │
+   ├ note: `reused` is refused with UsedAfterClose, as its expectation states
+   ╰ help: move the action before the `close`, or delete it
+
+error[EndpointAsValue]: an endpoint can be used only by a session action
+   ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:40:54
+   │
+39 │ ┌ def miscounted() -> Unit =
+40 │ │   let desk = fork (seat : end) { let total = counted seat; close seat };
+   │ │   ┬──                            ┬──         ┬───────┯━━━
+   │ │   │                              │           │       │
+   │ │   │                              │           │       an endpoint read as a value
+   │ │   │                              │           synthesised; while checking the argument of this application
+   │ │   │                              checked against `-F Unit`; while synthesising the computation this runs where a value is read
+   │ │   the endpoint was opened by this fork
+   │ │   checked against `-F Unit`; while checking the child this forks
+41 │ │   close desk
+   │ └────────────┘ checked against `() -> Unit`; while checking the body of this thunk
+   │
+   ├ note: `miscounted` is refused with EndpointAsValue, as its expectation states
+   ╰ help: use the endpoint only in a session action
+
+error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
+   ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:50:62
+   │
+45 │    def rec follow(operator : rec open => &{
+   │    │              ──────── checked against `(rec t => &{report : Integer >? t, retire : Integer >? end}) -> -F Unit`; while checking the rest of this receive's block; binds operator : rec t => &{report : Integer >? t, retire : Integer >? end}
+   │ ┌──┘
+   │ │
+46 │ │    report : Integer >? open,
+47 │ │    retire : Integer >? end
+48 │ │  }) -> Unit =
+49 │ │┌   offer operator {
+50 │ ││     | report => { let next = recv operator; become follow[<] operator }
+   │ ││                   ┬──                              ┬─────────┯━━━━━━━
+   │ ││                   │                                │         │
+   │ ││                   │                                │         not below the stage its recursion wants
+   │ ││                   │                                checked against `-F Unit`; while synthesising the function this applies
+   │ ││                   checked against `-F Unit`; while checking the rest of this receive's block
+51 │ ││     | retire => { let last = recv operator; close operator }
+52 │ ││   }
+   │ ││   │
+   │ └│───│
+   │  └───checked against `(rec t => &{report : Integer >? t, retire : Integer >? end}) -> Unit`; while checking the body of this function; binds follow : (rec t => &{report : Integer >? t, retire : Integer >? end}) -> Unit
+   │      checked against `-F Unit`; while checking an arm of this offer
+   │
+   ├ note: `follow` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself

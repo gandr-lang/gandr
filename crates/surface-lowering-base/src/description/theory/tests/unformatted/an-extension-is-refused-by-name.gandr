@@ -1,0 +1,6 @@
+theory T where {{
+{shape}  sort Val : Type;
+  oper zero : Val;
+  oper twice : (v : Val) --> Val;
+  {member};
+}}

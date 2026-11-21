@@ -1,0 +1,6 @@
+data Flag : Type where {
+  | Down : Flag
+  | Up : Flag
+  oper pick : (x : Flag, y : Flag) --> Flag;
+  rule : pick x ==> x;
+}
