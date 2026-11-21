@@ -734,6 +734,49 @@ pub fn keys(
     parts: &Parts,
 ) -> Result<Vec<Key>, GateError>
 {
+    let ground = Ground::read(
+        &Request {
+            commits: Vec::new(),
+            checks: Vec::new(),
+            scope: request.scope.clone(),
+            tables: request.tables.clone(),
+        },
+        parts,
+    )?;
+    keys_on(&ground, request, parts)
+}
+
+/// The key of each check of `request` on `ground`, as [`keys`] gives it.
+///
+/// # Specification
+/// - requires: `ground` is the ground of the worktree of the run.
+/// - ensures: as [`keys`] ensures. The tasks of `ground`, when it holds them,
+///   stand in place of a read of mise.
+/// - provides: the keys of a write, on the ground and the tasks that the write
+///   read one time.
+/// - fails: as [`keys`] fails.
+/// - panics: none.
+/// - executable: none — the outcome is the external processes'.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Cost
+/// - allocation: the common part, the lists and one line for each check, growth
+///   within the checks of the request
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`keys`], and the keys of a write; a write whose key
+///   is not the key of the read writes a record that holds no check.
+/// - witness: `tests::cli::a_key_is_the_line_of_the_script`
+/// - witness: `tests::cli::a_gate_writes_one_record_for_its_checks`
+#[inline]
+pub fn keys_on(
+    ground: &Ground,
+    request: &KeyRequest,
+    parts: &Parts,
+) -> Result<Vec<Key>, GateError>
+{
     let tree = match request.tree {
         Some(ref tree) => tree.clone(),
         None => head_tree(parts)?,
@@ -748,7 +791,6 @@ pub fn keys(
         scope: request.scope.clone(),
         tables: request.tables.clone(),
     };
-    let ground = Ground::read(&asking, parts)?;
     let rows = rows(&ground.tables, &request.checks)?;
     for (check, row) in request.checks.iter().zip(&rows) {
         if row.form() == Form::Inputs {

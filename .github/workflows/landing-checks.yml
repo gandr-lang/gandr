@@ -1657,7 +1657,7 @@ jobs:
       # check that this job runs. A record that binds this run's key holds,
       # and the check does not run again. The key reads the scope against the
       # record's base, which the trunk must hold.
-      # - see: #7684, `.config/gate-scope/verdict.bash`
+      # - see: #7684, `crates/workflow-gate`
       - &read-verdicts
         name: read the records of the lane's gate
         id: verdict
@@ -1667,7 +1667,7 @@ jobs:
         shell: bash
         run: |
           read -ra checks <<< "$VERDICT_CHECKS"
-          if mise exec jq@1.8.1 -- .config/gate-scope/verdict.bash read "${checks[@]}"; then
+          if .config/gate-scope/tool.bash gandr-workflow-gate gate verdict read "${checks[@]}"; then
             echo held=true >> "$GITHUB_OUTPUT"
           fi
       # The newest state that a group on `landing` uploaded for this job
@@ -2736,7 +2736,7 @@ jobs:
       # `check:format` and of `check:purposes`. The job reads each record with
       # git and the signature check alone, before it installs its tools. A
       # record that holds skips its check.
-      # - see: #7684, `.config/gate-scope/verdict.bash`
+      # - see: #7684, `crates/workflow-gate`
       - name: read the records of the lane's gate
         id: verdict
         if: ${{ github.event_name == 'merge_group' || github.event_name == 'pull_request' }}
@@ -2746,7 +2746,7 @@ jobs:
         shell: bash
         run: |
           for check in check:format check:purposes; do
-            if mise exec jq@1.8.1 -- .config/gate-scope/verdict.bash read "$check"; then
+            if .config/gate-scope/tool.bash gandr-workflow-gate gate verdict read "$check"; then
               echo "${check#check:}=held" >> "$GITHUB_OUTPUT"
             fi
           done

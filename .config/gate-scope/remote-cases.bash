@@ -108,6 +108,11 @@ esac
 EOF
 chmod +x "$scratch/bin/ssh" "$scratch/near-bin/gh" "$scratch/far-bin/gh" "$scratch/far-bin/mise"
 export PATH=$scratch/near-bin:$PATH
+# The far side runs `gate` from this host's cache, and its home holds no
+# toolchain. So the case builds `gate` here, and each far side keeps this
+# host's cache.
+export XDG_CACHE_HOME=${XDG_CACHE_HOME:-$HOME/.cache}
+"$here/tool.bash" gandr-workflow-gate gate --version > /dev/null
 
 # `origin`, with `landing` at a base that links `.config`; the far host's
 # checkout, a clone of it; and this host's work, a clone on the branch
