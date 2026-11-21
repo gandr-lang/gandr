@@ -638,9 +638,11 @@ fn add_type_rules(
                     ]),
                     Regex::seq([
                         tile(TileLabel("type_variable")),
-                        tile(TileLabel("(")),
-                        Regex::optional(comma1(Regex::sort(ty))),
-                        tile(TileLabel(")")),
+                        Regex::optional(Regex::seq([
+                            tile(TileLabel("(")),
+                            Regex::optional(comma1(Regex::sort(ty))),
+                            tile(TileLabel(")")),
+                        ])),
                     ]),
                 ]),
                 Regex::optional(Regex::seq([

@@ -1449,6 +1449,17 @@ pub(super) fn gapped<'source>(
         if let Act::Moves { .. } = place.act {
             trial.retain(|kept| kept.at != place.at || matches!(kept.act, Act::Writes { .. }));
         }
+        // A closer written before a kept write of the same closer competes
+        // with it: an omission shows as a repair at or after its place.
+        let mut displaced = false;
+        if let Act::Writes { ref tiles, over: 0 } = place.act {
+            let before = trial.len();
+            trial.retain(|kept| {
+                !(kept.at > place.at
+                    && matches!(kept.act, Act::Writes { tiles: ref held, over: 0 } if held == tiles))
+            });
+            displaced = trial.len() < before;
+        }
         trial.push(place);
         trial.sort_by_key(|gap| (gap.at, matches!(gap.act, Act::Writes { .. })));
         let Some(copy) = written(region, start, &trial)
@@ -1461,7 +1472,7 @@ pub(super) fn gapped<'source>(
         let owed = own
             .saturating_add(copy.splices.len())
             .saturating_add(copy.moves.len());
-        if owed < form.best && (own == 0 || !place.cleared) {
+        if (owed < form.best || (displaced && owed == form.best)) && (own == 0 || !place.cleared) {
             form.best = owed;
             form.kept = trial;
         }
@@ -1478,9 +1489,10 @@ pub(super) fn gapped<'source>(
         kept.iter().any(|&gap| {
             inside.start() <= gap.at
                 && gap.at <= inside.end()
-                && lines
-                    .iter()
-                    .any(|line| core::ptr::eq(core::ptr::from_ref(line), core::ptr::from_ref(gap)))
+                && (gap.cleared
+                    || lines.iter().any(|line| {
+                        core::ptr::eq(core::ptr::from_ref(line), core::ptr::from_ref(gap))
+                    }))
         })
     };
     if inside.is_some_and(|inside| !shown(inside)) {
@@ -1495,7 +1507,8 @@ pub(super) fn gapped<'source>(
         })
         .sum();
     minted(pbg, source, &kept).filter(|repaired| {
-        repaired.obligations.len() < parsed.obligations.len()
+        (repaired.obligations.len() < parsed.obligations.len()
+            || (inside.is_some() && repaired.obligations.len() == parsed.obligations.len()))
             && (inside.is_none() || repaired.obligations.len() == tiles)
     })
 }
