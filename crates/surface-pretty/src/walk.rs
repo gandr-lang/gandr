@@ -12757,11 +12757,15 @@ impl Walk<'_, '_>
                 let name = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
                 let count = Arity(usize::from(arity));
                 // A family the lowering names as a call, a theory's terms
-                // `Terms(Mag)`, is written as the application it names.
+                // `Terms(Mag)`, is written as the application it names. A
+                // name the lowering writes juxtaposed, `Terms Mag`, is that
+                // application already. Either binds as an application, so an
+                // operand slot that admits an atom alone encloses it (#8336).
                 let minted = (count.0 == 0_usize)
                     .then(|| juxtaposed_family(&name, self.surface))
                     .flatten();
-                let applies = minted.is_some();
+                let applies = minted.is_some()
+                    || (count.0 == 0_usize && name.0.contains(char::is_whitespace));
                 let name = minted.unwrap_or(name);
                 let _ = match declared {
                     Some(constant) => parts.named(name, constant),

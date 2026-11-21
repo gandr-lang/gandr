@@ -53,9 +53,11 @@
 //!
 //! An item ends with a separator only when it needs one. An item a
 //! line-leading `|` begins is a constructor, a clause or an arm, which the
-//! next item's head ends. An item already ends at a `;`, a `,`, an opening
-//! brace or an explicit `}`, and a declaration also ends at the virtual close
-//! of a body, as a braced declaration ends at its brace. The virtual close of
+//! next item's head ends. An item already ends at a `;`, a `,` or an opening
+//! brace. A declaration also ends at an explicit `}` and at the virtual close
+//! of a body, as a braced declaration ends at its brace. A statement ends at
+//! no `}`: its line end writes its separator, as after any other token. The
+//! virtual close of
 //! an arm list ends no declaration, since a `match` is an expression: `def f
 //! (x : A) = match x where …` takes its `;` after its arms. An arm list takes
 //! no separator, so an explicit `;` in a layout arm list closes that arm list
@@ -73,6 +75,12 @@
 //!
 //! Inside parentheses, brackets, attributes and the other
 //! bracketed forms no opener opens and no separator is written.
+//!
+//! # References
+//!
+//! - `vault:01a1dd3c-1111-7400-ae8f-fb22f062f5fd` — newest: the layout design
+//!   (§ layout-decision) — a line at the block's column ends the statement
+//!   before it, whatever its last token is.
 
 use alloc::vec::Vec;
 
@@ -390,10 +398,13 @@ impl Plan<'_>
             // An arm list closes inside an expression, so its close ends no
             // declaration.
             Prev::Closed(sep) => declaration && sep != Sep::Arms,
+            // A `}` ends a declaration, as a brace body after its head does.
+            // It ends no statement: the statement ends at its line end, as
+            // after any other token (#8326).
             Prev::Written(lexeme, spelled) => {
                 (lexeme == Lexeme::Punct
                     && (matches!(spelled, b";" | b"," | b"{")
-                        || (spelled == b"}" && self.ending == Ending::Ends)))
+                        || (spelled == b"}" && declaration && self.ending == Ending::Ends)))
                     // A string left open: its interior ends nothing.
                     || matches!(
                         lexeme,
@@ -1457,18 +1468,48 @@ mod tests
             marked("def f(x : A) -> A {\n  let y = x;\n  let z = y\n  z\n}\n"),
             "def f(x : A) -> A {\n  let y = x;\n  let z = y⟪;⟫\n  z\n}\n"
         );
-        // A block-like statement ends at its brace; a continuation indented
-        // past the column continues it; a comment after a statement stays
-        // outside the separator.
+        // A statement that ends in a brace ends at its line end, as any other
+        // does (#8326); a continuation indented past the column continues
+        // it; a comment after a statement stays outside the separator.
         assert_eq!(
             marked("def f(x : A) -> A {\n  if x { a } else { b }\n  g x\n    y // c\n  z\n}\n"),
-            "def f(x : A) -> A {\n  if x { a } else { b }\n  g x\n    y⟪;⟫ // c\n  z\n}\n"
+            "def f(x : A) -> A {\n  if x { a } else { b }⟪;⟫\n  g x\n    y⟪;⟫ // c\n  z\n}\n"
         );
         // A line-leading bar and a closer take no separator; a sigil's brace
         // is no statement block.
         assert_eq!(
             marked("data D {\n  | a\n  | b\n}\ndef r() -> R { *{\n  x = 1\n  y = 2\n} }\n"),
             "data D {\n  | a\n  | b\n}\ndef r() -> R { *{\n  x = 1\n  y = 2\n} }\n"
+        );
+    }
+
+    #[test]
+    fn a_line_that_ends_in_a_brace_ends_its_statement_8326()
+    {
+        // #8326: the `}` of a product, of a `match` that a `let` binds and of
+        // a `fork` block ends no statement, so the line end writes its
+        // separator, in a layout block and in braces.
+        assert_eq!(
+            marked("def f() -> A =\n  let *{b, n} = *{true, 2}\n  n\n"),
+            "def f() -> A ⟪=→{⟫\n  let *{b, n} = *{true, 2}⟪;⟫\n  n⟪}⟫\n"
+        );
+        assert_eq!(
+            marked("def f() -> A {\n  let p = *{true, 2}\n  p\n}\n"),
+            "def f() -> A {\n  let p = *{true, 2}⟪;⟫\n  p\n}\n"
+        );
+        assert_eq!(
+            marked("def f(b : B) -> A =\n  let n = match b { | t => 1 | f => 2 }\n  n\n"),
+            "def f(b : B) -> A ⟪=→{⟫\n  let n = match b { | t => 1 | f => 2 }⟪;⟫\n  n⟪}⟫\n"
+        );
+        assert_eq!(
+            marked("def f() -> A =\n  let h = fork (t : S) {\n    close t\n  }\n  recv h\n"),
+            "def f() -> A ⟪=→{⟫\n  let h = fork (t : S) {\n    close t\n  }⟪;⟫\n  recv h⟪}⟫\n"
+        );
+        // A `loop` that its own brace closes takes the separator too, and a
+        // `}` before the block's close takes none.
+        assert_eq!(
+            marked("def f() -> A {\n  loop { break }\n  return 1\n}\n"),
+            "def f() -> A {\n  loop { break }⟪;⟫\n  return 1\n}\n"
         );
     }
 
