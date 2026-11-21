@@ -1,0 +1,2 @@
+import "./eight.gandr";
+def broken : Integer = nowhere;

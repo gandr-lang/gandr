@@ -1,0 +1,89 @@
+//! This source shows loop-carried state.
+//!
+//! A loop carries each named slot between passes.
+//! A loop can run forever and returns under `Partial`.
+//!
+//! The checker tracks each slot through every loop pass.
+//! The lowering treats a loop as a fold over its slots.
+//!
+//! - see: #1481
+//! - cites: [Hutton-1999-a_tutorial_on_the_universality_and_expressiveness_of_fold]
+//!
+//! [Hutton-1999-a_tutorial_on_the_universality_and_expressiveness_of_fold]: https://doi.org/10.1017/S0956796899003500 "Hutton, A tutorial on the universality and expressiveness of fold"
+
+/// `countdown` decrements its held count.
+/// Each condition reads the preceding write-back.
+@[runs("0")]
+def countdown() -> [Partial] Integer =
+  var n = 3
+  while n > 0 { access n as v { resume v (v - 1) } };
+  pure n
+
+/// `opposed` carries two slots.
+/// It decrements one slot and increments the other.
+@[runs("704")]
+def opposed() -> [Partial] Integer =
+  var a = 10
+  var b = 1
+  while b < 4 {
+    access b as v { resume v (v + 1) };
+    access a as w { resume w (w - 1) }
+  };
+  pure a * 100 + b
+
+/// `sum` adds each count to its total.
+/// It decrements the count after each addition.
+@[runs("6")]
+def sum() -> [Partial] Integer =
+  var i = 3
+  var total = 0
+  while i > 0 {
+    access total as t { resume t (t + i) };
+    access i as v { resume v (v - 1) }
+  };
+  pure total
+
+/// `beside` carries an unread slot unchanged.
+@[runs("7")]
+def beside() -> [Partial] Integer =
+  var a = 4
+  var b = 3
+  while b > 0 { access b as v { resume v (v - 1) } };
+  pure a + 3
+
+/// `continue` carries the current slot value to the next pass.
+@[runs("0")]
+def skipping() -> [Partial] Integer =
+  var n = 3
+  while n > 0 {
+    access n as v { resume v (v - 1) };
+    continue
+  };
+  pure n
+
+/// A `loop` left by a `break`: the break's value reads the slot the pass
+/// wrote, and the statement binds it.
+@[runs("5")]
+def climb() -> [Partial] Integer =
+  var n = 0
+  let m = loop {
+    access n as v { resume v (v + 1) };
+    let done = n >= 5;
+    match done where
+      | true => break(n)
+      | false => continue
+  };
+  pure m
+
+/// A bare `break`: what follows the loop reads the slot the last pass left.
+@[runs("4")]
+def stride() -> [Partial] Integer =
+  var n = 0
+  loop {
+    access n as v { resume v (v + 2) };
+    let done = n >= 4;
+    match done where
+      | true => break
+      | false => continue
+  };
+  pure n

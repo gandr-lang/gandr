@@ -1,0 +1,6 @@
+/// `unit_value`: the retired name `unit` of the unit value. The empty
+/// telescope `*{}` is the unit value, and the resolver refuses `unit` by its
+/// name where no declaration binds it.
+def c : *{};
+@[refuses("RetiredSpelling.unit_value")]
+def c = unit;
