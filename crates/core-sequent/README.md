@@ -28,9 +28,9 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - `CovariableIndex`: a covariable is a de Bruijn index, in a space of its own.
 - `Store` with `HeapValue`, `HeapValueId`, `ClosedCommand`, `HeapFamily`, `Accumulation` and `StoreFault`: the values a run moved out, immutable and shared by address, a literal stack innermost frame first with closed bind frames, and the full-family refusal.
 - `Environment` with `Store::bind_value` and `Store::bound_values`: persistent producer chains, read innermost first. `Store::copy` (`CopyRefusal`) copies a value into another store, code and sharing kept.
-- `focus_computation`, `focus_value`, `focus_top_value` and `focus_definition`, recording each created command's `FocusOrigin` in a `Provenance` table: total on closed well-typed core terms that hold no code, every image well formed and closed, a code refused by name, and a refused translation leaving the arena and the table at their marks. `Writers` names the writers that focus apart from their binders (`Independence`, `MarkRefusal`, `spawn_independent`, `ScheduleRefusal`). `Typed` holds the checker's types of binders and fields, and `Unknowns` counts each position at the unknown type by its `Unknown` cause.
+- `focus_computation`, `focus_value`, `focus_top_value` and `focus_definition`, recording each created command's `FocusOrigin` in a `Provenance` table, total on closed well-typed core terms that hold no code. `Writers` names the writers that focus apart from their binders (`Independence`, `MarkRefusal`, `spawn_independent`, `ScheduleRefusal`). `Typed` holds the checker's types, and `Unknowns` counts each unknown position by its `Unknown` cause.
 - `unfocus_command` and `unfocus_value`: the left inverse of focusing, refusing IL outside its image by name with `UnfocusRefusal` and leaving the core arena at its mark.
-- Annotations that the command arena owns: the type of each value binder and constructor field, the one unknown type where no checker gave one, and the two types of a native `ListFold` over `ListNil` and `ListCons`.
+- Annotations that the command arena owns: the type of each value binder and constructor field, one unknown type, and the two types of a native `ListFold` over `ListNil` and `ListCons`.
 - `check_command` with `CheckRefusal`, `ArityHead` and `FreeSet`: reference integrity, arity from the head, focus, polarity, second-class closures, and the free variables and covariables of a command read off the support minting stored at its root. `check_annotations` (`Annotated`) holds each field's type to its binder's by id.
 - `NodeAddress`, `Suspension`, `Captures` and `CommandArena::captures`: the intuitionistic bindings a thunk, a fixpoint, a copattern object, a capture or a bind frame captures — exactly those its support selects, which a run moves into the store and readback pairs with an environment.
 - `producer_children`, `consumer_children`, `command_children` and `Opens`: a node's children in edge order, each with the binders the node opens over it.
@@ -142,6 +142,7 @@ Running a command is `gandr-runtime-emitter`'s: `src/lower.rs` states the linear
 - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — lineage: the futures design (§ futures-in-gandr item 1) — a cut whose writer performs no operation is independent, so focus records each bind's writer and the arena marks its binder.
 - `vault:01a1813c-69c4-7402-97c9-fd16b5893f9f` — exemplar: Courant's `ACCU` (ch. 10) — a free variable's value and the spine it grew.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite focuses as its fold.
+- `vault:01a1ead7-6581-7f22-9479-5b0b363e80d3` — newest: the typed machine interface (§ typed-machine-layouts) — the type of each binder and field of the IL, which the check verifies where the IL gives it.
 
 ## License
 

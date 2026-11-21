@@ -28,6 +28,9 @@
 //! name. A core value is never a `μ`, so every argument of a focused frame
 //! and every field of a focused constructor is a value.
 //!
+//! Focusing is total on closed well-typed core terms that hold no code. Each
+//! image is well formed and closed, and a code is refused by name.
+//!
 //! Every walk here is a loop over an explicit task stack, so no term's depth
 //! reaches the call stack. A refused translation truncates the arena and the
 //! provenance table to the marks taken on entry.
