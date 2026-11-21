@@ -6265,15 +6265,15 @@ fn settle(
 ///   environment as it was but for the assumptions, the native signatures and
 ///   the free models admitted as [`cross`] admits them. A pair the kernel
 ///   reports undecided is answered as [`cross`] answers it, and the block is
-///   offered again.
+///   offered again. An admitted block shares no outcome: each member holds its
+///   own.
 /// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
 ///   [`Outcome::Rejected`].
 /// - panics: none.
 ///
 /// # Cost
-/// - allocation: one block of the outcome that the members of a refused block
-///   share, error path. An admitted block makes no such block: each member
-///   holds its own outcome.
+/// - allocation: the outcome that the members of a refused block share, error
+///   path
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a universe and its decoder cross and are admitted

@@ -447,6 +447,8 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
         let mut roots = Vec::new();
         // Each column's alternatives; a row per choice of one in each.
         let mut choices: Vec<Vec<PatternAt>> = Vec::with_capacity(width);
+        // The place value of each column in the index of a row.
+        let mut strides: Vec<usize> = Vec::with_capacity(width);
         for (arm, clause) in clauses.iter().enumerate() {
             let arm = ArmAt(arm);
             let mut named = Vec::new();
@@ -481,7 +483,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
             // varying fastest. A row's choice of a column is its index, read
             // in the mixed radix of the columns' lengths, so each row is
             // built once from the columns.
-            let mut strides = Vec::with_capacity(choices.len());
+            strides.clear();
             let mut count = 1_usize;
             for column in choices.iter().rev() {
                 strides.push(count);
