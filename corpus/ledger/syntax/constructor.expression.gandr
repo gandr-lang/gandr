@@ -1,0 +1,4 @@
+/// `constructor.expression`: a constructor.
+data Colour : Type where
+  | Blue : Colour
+def colour : Colour = Blue;

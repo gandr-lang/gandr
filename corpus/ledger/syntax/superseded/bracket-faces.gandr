@@ -1,0 +1,9 @@
+/// `bracket_faces`: the retired static bracket `T[f ↦ v]` that fixes the
+/// fields of a record type's face. The reader `T.#{f ↦ v}` replaces it. The
+/// lowering refuses the bracket, and the refusal names it.
+///
+/// A system of faces `T[f ↦ v, g ↦ w]` is refused alike.
+type Config = *{host : String, port : Integer, tls : Bool} where
+  face secure = {port, tls};
+@[refuses("RetiredSpelling.bracket_faces")]
+def secured : Config[secure ↦ *{.port = 443, .tls = true}] = *{.host = "localhost"};

@@ -1,0 +1,58 @@
+test: environment::tests::a_seed_whose_twin_below_retires_takes_a_fresh_key_5469
+package: gandr-kernel-core
+command: mise run debug:test gandr-kernel-core environment::tests::a_seed_whose_twin_below_retires_takes_a_fresh_key_5469
+
+(lldb) target create "target/debug-trace/debug/build/gandr-kernel-core/f512168f2e1dbfd8/out/gandr_kernel_core-f512168f2e1dbfd8"
+Current executable set to 'target/debug-trace/debug/build/gandr-kernel-core/f512168f2e1dbfd8/out/gandr_kernel_core-f512168f2e1dbfd8' (x86_64).
+(lldb) settings set -- target.run-args  "environment::tests::a_seed_whose_twin_below_retires_takes_a_fresh_key_5469" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = gandr_kernel_core-f512168f2e1dbfd8`__rustc::rust_panic + 8 at panicking.rs:883:16, address = 0x00000000016214f8
+(lldb) run
+
+running 1 test
+test environment::tests::a_seed_whose_twin_below_retires_takes_a_fresh_key_5469 ... 
+thread 'environment::tests::a_seed_whose_twin_below_retires_takes_a_fresh_key_5469' (26952) panicked at crates/kernel-core/src/environment.rs:8462:9:
+assertion `left == right` failed: `s` takes the key of a fresh `s`, and `r` read the key before it
+  left: (Ok(ConstantIndex(2)), Present(EntryContentKey([48, 214, 196, 217, 32, 54, 60, 130, 126, 203, 161, 24, 7, 216, 246, 94, 100, 11, 5, 44, 163, 229, 8, 136, 172, 24, 169, 5, 230, 111, 121, 59])))
+ right: (Err(Unkept { position: ConstantIndex(2), refusal: KeyChanged }), Present(EntryContentKey([14, 106, 232, 50, 224, 52, 196, 159, 74, 211, 77, 58, 165, 154, 54, 58, 252, 157, 78, 140, 64, 87, 193, 215, 102, 163, 77, 7, 38, 153, 250, 214])))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 26930 launched: 'target/debug-trace/debug/build/gandr-kernel-core/f512168f2e1dbfd8/out/gandr_kernel_core-f512168f2e1dbfd8' (x86_64)
+Process 26930 stopped
+* thread #2, name = 'environment::te', stop reason = breakpoint 1.1
+       frame #0: 0x0000555556b754f8 gandr_kernel_core-f512168f2e1dbfd8`__rustc::rust_panic at panicking.rs:883:16
+(lldb) bt 24
+* thread #2, name = 'environment::te', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555556b754f8 gandr_kernel_core-f512168f2e1dbfd8`__rustc::rust_panic at panicking.rs:883:16
+     frame #1: 0x0000555556b91a65 gandr_kernel_core-f512168f2e1dbfd8`std::panicking::panic_with_hook at panicking.rs:836:5
+     frame #2: 0x0000555556b74aa2 gandr_kernel_core-f512168f2e1dbfd8`std::panicking::panic_handler::{closure#0} at panicking.rs:685:13
+     frame #3: 0x0000555556b6e899 gandr_kernel_core-f512168f2e1dbfd8`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18
+     frame #4: 0x0000555556b756ad gandr_kernel_core-f512168f2e1dbfd8`__rustc::rust_begin_unwind at panicking.rs:676:5
+     frame #5: 0x0000555556baeefc gandr_kernel_core-f512168f2e1dbfd8`core::panicking::panic_fmt at panicking.rs:80:14
+     frame #6: 0x0000555556baedf3 gandr_kernel_core-f512168f2e1dbfd8`core::panicking::assert_failed_inner at panicking.rs:447:23
+     frame #7: 0x0000555555f36328 gandr_kernel_core-f512168f2e1dbfd8`core::panicking::assert_failed::<(core::result::Result<gandr_kernel_term::term::ConstantIndex, gandr_kernel_core_base::error::KernelError>, quenchant_shape::shape::Maybe<gandr_kernel_core_base::verdict::EntryContentKey, gandr_kernel_core_base::verdict::keyed::Absent>), (core::result::Result<gandr_kernel_term::term::ConstantIndex, gandr_kernel_core_base::error::KernelError>, quenchant_shape::shape::Maybe<gandr_kernel_core_base::verdict::EntryContentKey, gandr_kernel_core_base::verdict::keyed::Absent>)>(kind=Eq, left=(Ok({0:2}), Present({0:"0\xd6\xc4\xd9 6<\x82~ˡ\U00000018\a\xd8\xf6^d\v\U00000005,\xa3\xe5\b\x88\xac\U00000018\xa9\U00000005\xe6oy;"})), right=(Err(Unkept{position:{0:2}, refusal:KeyChanged}), Present({0:"\U0000000ej\xe82\xe04ğJ\xd3M:\xa5\x9a6:\xfc\x9dN\x8c@W\xc1\xd7f\xa3M\a&\x99\xfa\xd6"})), args=Some({template:{pointer:"`s` takes the key of a fresh `s`, and `r` read the key before itthe rewrite leaves `a` outthe rewrite names `a` twicethe rewrite gives two entries one ranka refused rewrite changes nothingeach entry holds its new rankno level parameter admitsthe definition names the one before itthe check reads only what the content namesa support that misses the edge refuses the read at its position"}, args:{pointer:{ty:{0:(…)}}}})) at panicking.rs:407:5
+     frame #8: 0x0000555555fd7fbd gandr_kernel_core-f512168f2e1dbfd8`gandr_kernel_core::environment::tests::a_seed_whose_twin_below_retires_takes_a_fresh_key_5469 at environment.rs:8462:9
+     frame #9: 0x0000555555fa4ff7 gandr_kernel_core-f512168f2e1dbfd8`gandr_kernel_core::environment::tests::a_seed_whose_twin_below_retires_takes_a_fresh_key_5469::{closure#0}((null)={}) at environment.rs:8450:64
+     frame #10: 0x0000555555d34a96 gandr_kernel_core-f512168f2e1dbfd8`<gandr_kernel_core::environment::tests::a_seed_whose_twin_below_retires_takes_a_fresh_key_5469::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #11: 0x00005555561d265b gandr_kernel_core-f512168f2e1dbfd8`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #12: 0x00005555561d2659 gandr_kernel_core-f512168f2e1dbfd8`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:701:18
+     frame #13: 0x00005555561df835 gandr_kernel_core-f512168f2e1dbfd8`test::run_test_in_process::{closure#0} at lib.rs:724:74 [inlined]
+     frame #14: 0x00005555561df830 gandr_kernel_core-f512168f2e1dbfd8`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #15: 0x00005555561df830 gandr_kernel_core-f512168f2e1dbfd8`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:573:43 [inlined]
+     frame #16: 0x00005555561df81b gandr_kernel_core-f512168f2e1dbfd8`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #17: 0x00005555561df81b gandr_kernel_core-f512168f2e1dbfd8`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #18: 0x00005555561df81b gandr_kernel_core-f512168f2e1dbfd8`test::run_test_in_process at lib.rs:724:27 [inlined]
+     frame #19: 0x00005555561df806 gandr_kernel_core-f512168f2e1dbfd8`test::run_test::{closure#0} at lib.rs:645:43
+     frame #20: 0x00005555561da224 gandr_kernel_core-f512168f2e1dbfd8`test::run_test::{closure#1} at lib.rs:675:41 [inlined]
+     frame #21: 0x00005555561da1a9 gandr_kernel_core-f512168f2e1dbfd8`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #22: 0x00005555561e28c2 gandr_kernel_core-f512168f2e1dbfd8`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #23: 0x00005555561e28b3 gandr_kernel_core-f512168f2e1dbfd8`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

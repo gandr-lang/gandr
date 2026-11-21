@@ -1,0 +1,5 @@
+module M where {
+  def y = 2;
+}
+
+def after = 1;
