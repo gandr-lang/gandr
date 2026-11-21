@@ -1,0 +1,929 @@
+use alloc::vec::Vec;
+
+use super::*;
+use crate::CompType;
+use crate::Computation;
+use crate::Value;
+use crate::ValueType;
+use crate::rewrite::instantiate_value;
+
+/// A fixture's signed decimal spelling.
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+struct Digits(&'static str);
+
+/// Read a fixture's canonical signed integer.
+///
+/// # Specification
+/// trivial.
+fn integer(digits: Digits) -> Scalar
+{
+    let (sign, text) = digits
+        .0
+        .strip_prefix('-')
+        .map_or((Sign::NonNegative, digits.0), |magnitude| {
+            (Sign::Negative, magnitude)
+        });
+    Scalar::Integer(IntegerLiteral::new(
+        sign,
+        Magnitude::from_decimal_text(text.into()).expect("decimal fixture"),
+    ))
+}
+
+/// Look up a fixture's native function.
+///
+/// # Specification
+/// trivial.
+fn named(name: PrimitiveName) -> Primitive
+{
+    PRELUDE
+        .iter()
+        .copied()
+        .find(|primitive| primitive.name() == name)
+        .expect("native fixture name")
+}
+
+#[test]
+fn exact_arithmetic_and_errors()
+{
+    for (name, left, right, expected) in [
+        (
+            "add",
+            "99999999999999999999999999999999999999",
+            "1",
+            "100000000000000000000000000000000000000",
+        ),
+        ("sub", "7", "11", "-4"),
+        (
+            "mul",
+            "-100000000000000000000",
+            "100000000000000000000",
+            "-10000000000000000000000000000000000000000",
+        ),
+        ("int.div", "-19", "4", "-4"),
+        ("int.mod", "-19", "4", "-3"),
+        ("prim.const", "23", "45", "23"),
+    ] {
+        let operands = [integer(Digits(left)), integer(Digits(right))];
+        assert_eq!(
+            named(PrimitiveName(name)).evaluate(&operands.each_ref().map(Scalar::borrowed)),
+            Ok(integer(Digits(expected))),
+            "{name}"
+        );
+    }
+    for (name, input, expected) in [("neg", "-7", "7"), ("prim.id", "-8", "-8")] {
+        let operand = integer(Digits(input));
+        assert_eq!(
+            named(PrimitiveName(name)).evaluate(&[operand.borrowed()]),
+            Ok(integer(Digits(expected)))
+        );
+    }
+    let zero = integer(Digits("0"));
+    let one = integer(Digits("1"));
+    assert_eq!(
+        named(PrimitiveName("neg")).evaluate(&[zero.borrowed()]),
+        Ok(zero.clone())
+    );
+    for name in ["int.div", "int.mod"] {
+        assert_eq!(
+            named(PrimitiveName(name)).evaluate(&[one.borrowed(), zero.borrowed()]),
+            Err(PrimitiveError::DivisionByZero)
+        );
+    }
+    let add = named(PrimitiveName("add"));
+    assert_eq!(add.evaluate(&[]), Err(PrimitiveError::Arity));
+    assert_eq!(
+        add.evaluate(&[Scalar::Boolean(Side::Left)]),
+        Err(PrimitiveError::Arity)
+    );
+    assert_eq!(
+        add.evaluate(&[one.borrowed(), Scalar::Boolean(Side::Left)]),
+        Err(PrimitiveError::ArgumentType)
+    );
+}
+
+#[test]
+fn comparisons_and_booleans()
+{
+    let less = integer(Digits("-4"));
+    let more = integer(Digits("9"));
+    for (name, expected) in [
+        ("eq", Side::Right),
+        ("int.eq", Side::Right),
+        ("ne", Side::Left),
+        ("lt", Side::Left),
+        ("le", Side::Left),
+        ("gt", Side::Right),
+        ("ge", Side::Right),
+        ("int.lt", Side::Left),
+        ("int.le", Side::Left),
+        ("int.gt", Side::Right),
+        ("int.ge", Side::Right),
+    ] {
+        assert_eq!(
+            named(PrimitiveName(name)).evaluate(&[less.borrowed(), more.borrowed()]),
+            Ok(Scalar::Boolean(expected)),
+            "{name}"
+        );
+    }
+    for (name, expected) in [
+        ("eq", Side::Left),
+        ("int.eq", Side::Left),
+        ("ne", Side::Right),
+        ("lt", Side::Right),
+        ("le", Side::Left),
+        ("gt", Side::Right),
+        ("ge", Side::Left),
+        ("int.lt", Side::Right),
+        ("int.le", Side::Left),
+        ("int.gt", Side::Right),
+        ("int.ge", Side::Left),
+    ] {
+        assert_eq!(
+            named(PrimitiveName(name)).evaluate(&[less.borrowed(), less.borrowed()]),
+            Ok(Scalar::Boolean(expected)),
+            "{name} equality boundary"
+        );
+    }
+    for (left, right, conjunction, disjunction) in [
+        (Side::Left, Side::Left, Side::Left, Side::Left),
+        (Side::Left, Side::Right, Side::Right, Side::Left),
+        (Side::Right, Side::Left, Side::Right, Side::Left),
+        (Side::Right, Side::Right, Side::Right, Side::Right),
+    ] {
+        let arguments = [Scalar::Boolean(left), Scalar::Boolean(right)];
+        assert_eq!(
+            named(PrimitiveName("and")).evaluate(&arguments),
+            Ok(Scalar::Boolean(conjunction))
+        );
+        assert_eq!(
+            named(PrimitiveName("or")).evaluate(&arguments),
+            Ok(Scalar::Boolean(disjunction))
+        );
+    }
+    for (input, expected) in [(Side::Left, Side::Right), (Side::Right, Side::Left)] {
+        assert_eq!(
+            named(PrimitiveName("bool.not")).evaluate(&[Scalar::Boolean(input)]),
+            Ok(Scalar::Boolean(expected))
+        );
+    }
+}
+
+#[test]
+fn an_append_writes_the_first_string_then_the_second()
+{
+    let append = named(PrimitiveName("string.append"));
+    let text = |content: &str| Scalar::Text(StringLiteral::new(String::from(content)));
+    let (types, machines) = (text("types are "), text("machines"));
+    assert_eq!(
+        append.evaluate(&[types.borrowed(), machines.borrowed()]),
+        Ok(text("types are machines"))
+    );
+    assert_eq!(
+        append.evaluate(&[machines.borrowed(), types.borrowed()]),
+        Ok(text("machinestypes are ")),
+        "the order is the operands'"
+    );
+    assert_eq!(
+        append.evaluate(&[text("").borrowed(), text("λ\n").borrowed()]),
+        Ok(text("λ\n"))
+    );
+    assert_eq!(
+        append.evaluate(&[types.borrowed(), integer(Digits("1")).borrowed()]),
+        Err(PrimitiveError::ArgumentType),
+        "a text row refuses an integer"
+    );
+    assert_eq!(
+        named(PrimitiveName("add")).evaluate(&[types.borrowed(), machines.borrowed()]),
+        Err(PrimitiveError::ArgumentType),
+        "an integer row refuses text"
+    );
+    let mut arena = CoreArena::new();
+    let signature = append.declared_type(&mut arena);
+    let Some(&CompType::Arrow { domain, .. }) = arena.comp_type(signature)
+    else {
+        panic!("curried arrow");
+    };
+    assert_eq!(
+        arena.value_type(domain),
+        Some(&ValueType::Base(BaseType::String))
+    );
+    let minted = types.mint(&mut arena);
+    assert!(matches!(
+        arena.value(minted),
+        Some(Value::Literal(Literal::Text(content))) if content.as_ref() == "types are "
+    ));
+}
+
+#[test]
+fn a_string_equality_compares_the_texts_byte_for_byte()
+{
+    let equal = named(PrimitiveName("string.eq"));
+    let text = |content: &str| Scalar::Text(StringLiteral::new(String::from(content)));
+    let (machines, machine) = (text("machines"), text("machine"));
+    assert_eq!(
+        equal.evaluate(&[machines.borrowed(), text("machines").borrowed()]),
+        Ok(Scalar::Boolean(Side::Left)),
+        "two equal texts"
+    );
+    assert_eq!(
+        equal.evaluate(&[machines.borrowed(), machine.borrowed()]),
+        Ok(Scalar::Boolean(Side::Right)),
+        "a prefix is not the text"
+    );
+    assert_eq!(
+        equal.evaluate(&[text("").borrowed(), text("").borrowed()]),
+        Ok(Scalar::Boolean(Side::Left)),
+        "the empty text is itself"
+    );
+    assert_eq!(
+        equal.evaluate(&[text("é").borrowed(), text("e\u{301}").borrowed()]),
+        Ok(Scalar::Boolean(Side::Right)),
+        "bytes, not a normal form"
+    );
+    assert_eq!(
+        equal.evaluate(&[machines.borrowed(), integer(Digits("1")).borrowed()]),
+        Err(PrimitiveError::ArgumentType),
+        "a text row refuses an integer"
+    );
+}
+
+#[test]
+fn an_identity_row_answers_as_its_evaluation()
+{
+    let text = |content: &str| Scalar::Text(StringLiteral::new(String::from(content)));
+    let integers: Vec<Scalar> = [
+        "0",
+        "-0",
+        "1",
+        "-1",
+        "99999999999999999999",
+        "-99999999999999999999",
+    ]
+    .into_iter()
+    .map(|digits| integer(Digits(digits)))
+    .collect();
+    let texts: Vec<Scalar> = ["", "a", "machine", "machines", "é", "e\u{301}"]
+        .into_iter()
+        .map(text)
+        .collect();
+    let literal = |scalar: &Scalar| match *scalar {
+        Scalar::Integer(ref integer) => Literal::Integer(integer.clone()),
+        Scalar::Text(ref text) => Literal::Text(text.clone()),
+        Scalar::Boolean(_) | Scalar::Float64(_) | Scalar::Fixed(_) | Scalar::Checked(_) => {
+            panic!("the fixtures are integers and texts")
+        },
+    };
+    let operands: Vec<&Scalar> = integers.iter().chain(&texts).collect();
+    let mut tests = Vec::new();
+    for row in PRELUDE.iter().copied() {
+        let Some(test) = row.literal_identity()
+        else {
+            continue;
+        };
+        let name = String::from(row.name().as_ref());
+        for &left in &operands {
+            for &right in &operands {
+                let evaluated = row.evaluate(&[left.borrowed(), right.borrowed()]);
+                let answered = test.answer(&literal(left), &literal(right));
+                match (evaluated, answered) {
+                    (Ok(Scalar::Boolean(side)), Some(summand)) => assert_eq!(
+                        summand,
+                        Summand::from(usize::from(side == Side::Right)),
+                        "{name} at {left:?} and {right:?}"
+                    ),
+                    (Err(PrimitiveError::ArgumentType), None) => {},
+                    (evaluated, answered) => panic!(
+                        "{name} at {left:?} and {right:?}: evaluated {evaluated:?}, answered {answered:?}"
+                    ),
+                }
+            }
+        }
+        tests.push(name);
+    }
+    tests.sort_unstable();
+    assert_eq!(
+        tests,
+        ["eq", "int.eq", "ne", "string.eq"],
+        "the identity rows are integer and text equality and integer inequality"
+    );
+}
+
+#[test]
+fn a_string_order_compares_the_texts_byte_for_byte()
+{
+    let below = named(PrimitiveName("string.lt"));
+    let text = |content: &str| Scalar::Text(StringLiteral::new(String::from(content)));
+    let answer =
+        |left: &Scalar, right: &Scalar| below.evaluate(&[left.borrowed(), right.borrowed()]);
+    let yes = Ok(Scalar::Boolean(Side::Left));
+    let no = Ok(Scalar::Boolean(Side::Right));
+    let (alpha, beta) = (text("alpha"), text("beta"));
+    assert_eq!(
+        answer(&alpha, &beta),
+        yes,
+        "the first differing byte decides"
+    );
+    assert_eq!(answer(&beta, &alpha), no, "the order is the operands'");
+    assert_eq!(answer(&alpha, &alpha), no, "a text is not below itself");
+    assert_eq!(
+        answer(&text("alp"), &alpha),
+        yes,
+        "a proper prefix is below the text it begins"
+    );
+    assert_eq!(
+        answer(&alpha, &text("alp")),
+        no,
+        "and the text is not below it"
+    );
+    assert_eq!(
+        answer(&text(""), &text("a")),
+        yes,
+        "the empty text is the least"
+    );
+    assert_eq!(
+        answer(&text("Z"), &text("a")),
+        yes,
+        "bytes, not a case-folded order"
+    );
+    assert_eq!(
+        answer(&text("z"), &text("é")),
+        yes,
+        "a multi-byte character orders by its leading byte"
+    );
+    assert_eq!(
+        below.evaluate(&[alpha.borrowed(), integer(Digits("1")).borrowed()]),
+        Err(PrimitiveError::ArgumentType),
+        "a text row refuses an integer"
+    );
+}
+
+#[test]
+fn floating_point_rows_are_ieee_binary64()
+{
+    let float = |value: f64| Scalar::Float64(Float64Literal::from(value));
+    let apply = |name: &'static str, operands: &[Scalar]| {
+        let borrowed: Vec<Scalar<&IntegerLiteral, &StringLiteral>> =
+            operands.iter().map(Scalar::borrowed).collect();
+        named(PrimitiveName(name)).evaluate(&borrowed)
+    };
+    assert_eq!(
+        apply("float64.add", &[float(0.1_f64), float(0.2_f64)]),
+        Ok(float(0.300_000_000_000_000_04_f64)),
+        "a sum rounds to the nearest double, not to the decimal"
+    );
+    assert_eq!(
+        apply("float64.div", &[float(1.0_f64), float(-0.0_f64)]),
+        Ok(float(f64::NEG_INFINITY)),
+        "a quotient by a signed zero is the signed infinity"
+    );
+    assert_eq!(
+        apply("float64.sub", &[float(f64::INFINITY), float(f64::INFINITY)]),
+        Ok(Scalar::Float64(Float64Literal::NAN)),
+        "an invalid operation is the one canonical NaN"
+    );
+    assert_eq!(
+        apply("float64.eq", &[float(f64::NAN), float(f64::NAN)]),
+        Ok(Scalar::Boolean(Side::Right)),
+        "a NaN equals nothing, itself included"
+    );
+    assert_eq!(
+        apply("float64.ne", &[float(f64::NAN), float(f64::NAN)]),
+        Ok(Scalar::Boolean(Side::Left))
+    );
+    assert_eq!(
+        apply("float64.eq", &[float(-0.0_f64), float(0.0_f64)]),
+        Ok(Scalar::Boolean(Side::Left)),
+        "the zeros are equal"
+    );
+    assert_eq!(
+        apply("float64.lt", &[float(-0.0_f64), float(0.0_f64)]),
+        Ok(Scalar::Boolean(Side::Right)),
+        "and neither is below the other"
+    );
+    assert_eq!(apply("float64.exp", &[float(0.0_f64)]), Ok(float(1.0_f64)));
+    assert_eq!(
+        apply("float64.exp", &[float(1.0_f64)]),
+        Ok(float(f64::from_bits(0x4005_bf0a_8b14_576a_u64))),
+        "`exp` at one is libm's double, one unit in the last place above e, on every host"
+    );
+    assert_eq!(apply("float64.neg", &[float(0.0_f64)]), Ok(float(-0.0_f64)));
+    for (input, expected) in [
+        (2.5_f64, "2"),
+        (3.5_f64, "4"),
+        (-2.5_f64, "-2"),
+        (-0.4_f64, "0"),
+        (1.0e20_f64, "100000000000000000000"),
+    ] {
+        assert_eq!(
+            apply("float64.round", &[float(input)]),
+            Ok(integer(Digits(expected))),
+            "{input} rounds to the nearest integer, ties to even"
+        );
+    }
+    for unbounded in [f64::INFINITY, f64::NAN] {
+        assert_eq!(
+            apply("float64.round", &[float(unbounded)]),
+            Err(PrimitiveError::NotFinite),
+            "no integer is nearest {unbounded}"
+        );
+    }
+    assert_eq!(
+        apply("float64.from_integer", &[integer(Digits(
+            "-9007199254740993"
+        ))]),
+        Ok(float(-9_007_199_254_740_992.0_f64)),
+        "an integer past 2^53 rounds to the nearest double, ties to even"
+    );
+    assert_eq!(
+        apply("float64.add", &[float(1.0_f64), integer(Digits("1"))]),
+        Err(PrimitiveError::ArgumentType),
+        "a floating-point row refuses an integer"
+    );
+}
+
+#[test]
+fn a_width_converts_exactly_and_an_integer_by_its_remainder()
+{
+    let apply = |name: &'static str, operand: &Scalar| {
+        named(PrimitiveName(name)).evaluate(&[operand.borrowed()])
+    };
+    let fixed = Scalar::Fixed;
+    for (name, operand, expected) in [
+        ("u32.to_integer", FixedInteger::U32(u32::MAX), "4294967295"),
+        (
+            "u64.to_integer",
+            FixedInteger::U64(u64::MAX),
+            "18446744073709551615",
+        ),
+        ("i32.to_integer", FixedInteger::I32(i32::MIN), "-2147483648"),
+        (
+            "i64.to_integer",
+            FixedInteger::I64(i64::MIN),
+            "-9223372036854775808",
+        ),
+        (
+            "i64.to_integer",
+            FixedInteger::I64(i64::MAX),
+            "9223372036854775807",
+        ),
+    ] {
+        assert_eq!(
+            apply(name, &fixed(operand)),
+            Ok(integer(Digits(expected))),
+            "{name} is exact at {operand:?}"
+        );
+    }
+    for (name, operand, expected) in [
+        ("u32.from_integer", "-1", FixedInteger::U32(u32::MAX)),
+        ("u32.from_integer", "4294967301", FixedInteger::U32(5)),
+        ("u64.from_integer", "-1", FixedInteger::U64(u64::MAX)),
+        (
+            "u64.from_integer",
+            "18446744073709551616",
+            FixedInteger::U64(0),
+        ),
+        (
+            "i32.from_integer",
+            "2147483648",
+            FixedInteger::I32(i32::MIN),
+        ),
+        (
+            "i32.from_integer",
+            "-2147483649",
+            FixedInteger::I32(i32::MAX),
+        ),
+        (
+            "i64.from_integer",
+            "18446744073709551615",
+            FixedInteger::I64(-1),
+        ),
+        (
+            "i64.from_integer",
+            "-340282366920938463463374607431768211457",
+            FixedInteger::I64(-1),
+        ),
+    ] {
+        assert_eq!(
+            apply(name, &integer(Digits(operand))),
+            Ok(fixed(expected)),
+            "{name}({operand}) is its remainder, as Rust's `as` cast reads it"
+        );
+    }
+    for operand in [
+        FixedInteger::U32(u32::MAX),
+        FixedInteger::U64(u64::MAX),
+        FixedInteger::I32(i32::MIN),
+        FixedInteger::I64(i64::MIN),
+        FixedInteger::U8(u8::MAX),
+        FixedInteger::U16(u16::MAX),
+        FixedInteger::I8(i8::MIN),
+        FixedInteger::I16(i16::MIN),
+        FixedInteger::Usize(u64::MAX),
+        FixedInteger::Isize(i64::MIN),
+    ] {
+        let width = operand.width();
+        let width: &str = width.as_ref();
+        let widened = apply(
+            PRELUDE
+                .iter()
+                .map(|row| row.0.name)
+                .find(|name| name.strip_suffix(".to_integer") == Some(width))
+                .expect("a `to_integer` row per width"),
+            &fixed(operand),
+        )
+        .expect("a width converts");
+        let back = PRELUDE
+            .iter()
+            .map(|row| row.0.name)
+            .find(|name| name.strip_suffix(".from_integer") == Some(width))
+            .expect("a `from_integer` row per width");
+        assert_eq!(
+            apply(back, &widened),
+            Ok(fixed(operand)),
+            "{width} through `Integer` and back is itself"
+        );
+    }
+    assert_eq!(
+        apply("u64.to_integer", &fixed(FixedInteger::U32(7))),
+        Err(PrimitiveError::ArgumentType),
+        "a width row refuses another width"
+    );
+    assert_eq!(
+        apply("u32.from_integer", &fixed(FixedInteger::U32(7))),
+        Err(PrimitiveError::ArgumentType),
+        "a width row from the integers refuses a width"
+    );
+}
+
+/// Each row that names a machine operation answers, on the bounds of its
+/// width, what the operation on the zero-extended words answers cut to the
+/// width. The bounds are zero, one, the largest signed value, the least
+/// signed value and all ones. The ten widths have seven such rows each, so a
+/// row named as another's operation, or a row lost, changes one answer or
+/// the count.
+#[test]
+fn a_machine_row_answers_as_its_evaluation_8002()
+{
+    let bits = |width| match width {
+        IntegerWidth::U8 | IntegerWidth::I8 => 8_u32,
+        IntegerWidth::U16 | IntegerWidth::I16 => 16,
+        IntegerWidth::U32 | IntegerWidth::I32 => 32,
+        IntegerWidth::U64 | IntegerWidth::I64 | IntegerWidth::Usize | IntegerWidth::Isize => 64,
+    };
+    let mut rows = 0_usize;
+    for row in PRELUDE.iter().copied() {
+        let Some(MachineOperation { width, instruction }) = row.machine_operation()
+        else {
+            continue;
+        };
+        rows = rows.saturating_add(1);
+        let count = bits(width);
+        let mask = u64::MAX.unbounded_shr(64_u32.saturating_sub(count));
+        let sign = 1_u64.unbounded_shl(count.saturating_sub(1));
+        let bounds = [0_u64, 1, sign.wrapping_sub(1), sign, mask];
+        let fixed =
+            |pattern| FixedInteger::try_from((width, pattern)).expect("a pattern of the width");
+        for first in bounds {
+            for second in bounds {
+                let word = match instruction {
+                    MachineInstruction::Add => first.wrapping_add(second),
+                    MachineInstruction::Sub => first.wrapping_sub(second),
+                    MachineInstruction::Mul => first.wrapping_mul(second),
+                    MachineInstruction::And => first & second,
+                    MachineInstruction::Or => first | second,
+                    MachineInstruction::Xor => first ^ second,
+                    MachineInstruction::Not => !first,
+                };
+                let operands = [Scalar::Fixed(fixed(first)), Scalar::Fixed(fixed(second))];
+                let borrowed = operands.each_ref().map(Scalar::borrowed);
+                let arguments = borrowed
+                    .get(.. row.arguments().len())
+                    .expect("a row of one or two operands");
+                assert_eq!(
+                    Ok(Scalar::Fixed(fixed(word & mask))),
+                    row.evaluate(arguments),
+                    "{} on {first:#x} and {second:#x}",
+                    row.name().as_ref()
+                );
+            }
+        }
+    }
+    assert_eq!(70, rows, "seven machine rows for each of ten widths");
+}
+
+#[test]
+fn each_width_form_answers_at_its_bounds()
+{
+    let apply = |name: &'static str, operands: &[FixedInteger]| {
+        let operands: Vec<Scalar> = operands.iter().copied().map(Scalar::Fixed).collect();
+        let borrowed: Vec<_> = operands.iter().map(Scalar::borrowed).collect();
+        named(PrimitiveName(name)).evaluate(&borrowed)
+    };
+    let present = |fixed| Ok(Scalar::Checked(CheckedFixed::Present(fixed)));
+    let absent = |width| Ok(Scalar::Checked(CheckedFixed::Absent(width)));
+    let truth = |side| Ok(Scalar::Boolean(side));
+    let (u8, i8) = (FixedInteger::U8, FixedInteger::I8);
+    let cases = [
+        (
+            "u8.wrapping_add",
+            [u8(255), u8(1)],
+            Ok(Scalar::Fixed(u8(0))),
+        ),
+        (
+            "u8.wrapping_sub",
+            [u8(0), u8(1)],
+            Ok(Scalar::Fixed(u8(255))),
+        ),
+        (
+            "i8.wrapping_mul",
+            [i8(-128), i8(-1)],
+            Ok(Scalar::Fixed(i8(-128))),
+        ),
+        (
+            "i8.wrapping_rem",
+            [i8(-128), i8(-1)],
+            Ok(Scalar::Fixed(i8(0))),
+        ),
+        (
+            "u8.saturating_add",
+            [u8(255), u8(1)],
+            Ok(Scalar::Fixed(u8(255))),
+        ),
+        (
+            "i8.saturating_sub",
+            [i8(-128), i8(1)],
+            Ok(Scalar::Fixed(i8(-128))),
+        ),
+        (
+            "i8.saturating_mul",
+            [i8(-128), i8(-1)],
+            Ok(Scalar::Fixed(i8(127))),
+        ),
+        ("u8.checked_add", [u8(255), u8(1)], absent(IntegerWidth::U8)),
+        ("u8.checked_add", [u8(254), u8(1)], present(u8(255))),
+        (
+            "i8.checked_sub",
+            [i8(-128), i8(1)],
+            absent(IntegerWidth::I8),
+        ),
+        ("i8.checked_mul", [i8(-64), i8(2)], present(i8(-128))),
+        (
+            "i8.wrapping_div",
+            [i8(-128), i8(-1)],
+            Ok(Scalar::Fixed(i8(-128))),
+        ),
+        (
+            "i8.wrapping_div",
+            [i8(-7), i8(2)],
+            Ok(Scalar::Fixed(i8(-3))),
+        ),
+        (
+            "i8.wrapping_rem",
+            [i8(-7), i8(2)],
+            Ok(Scalar::Fixed(i8(-1))),
+        ),
+        (
+            "u8.wrapping_div",
+            [u8(7), u8(0)],
+            Err(PrimitiveError::DivisionByZero),
+        ),
+        (
+            "u8.wrapping_rem",
+            [u8(7), u8(0)],
+            Err(PrimitiveError::DivisionByZero),
+        ),
+        (
+            "u8.and",
+            [u8(0b1100), u8(0b1010)],
+            Ok(Scalar::Fixed(u8(0b1000))),
+        ),
+        (
+            "u8.or",
+            [u8(0b1100), u8(0b1010)],
+            Ok(Scalar::Fixed(u8(0b1110))),
+        ),
+        (
+            "u8.xor",
+            [u8(0b1100), u8(0b1010)],
+            Ok(Scalar::Fixed(u8(0b0110))),
+        ),
+        ("i8.lt", [i8(-1), i8(0)], truth(Side::Left)),
+        ("u8.ge", [u8(0), u8(255)], truth(Side::Right)),
+        ("u8.eq", [u8(255), u8(255)], truth(Side::Left)),
+        ("u8.ne", [u8(255), u8(255)], truth(Side::Right)),
+        ("u8.le", [u8(255), u8(255)], truth(Side::Left)),
+        ("i8.gt", [i8(0), i8(-1)], truth(Side::Left)),
+        ("u8.checked_shl", [u8(1), u8(7)], present(u8(128))),
+        ("u8.checked_shl", [u8(1), u8(8)], absent(IntegerWidth::U8)),
+        ("i8.checked_shr", [i8(-128), i8(7)], present(i8(-1))),
+        ("i8.checked_shr", [i8(1), i8(-1)], absent(IntegerWidth::I8)),
+    ];
+    for (name, operands, expected) in cases {
+        assert_eq!(apply(name, &operands), expected, "{name} at {operands:?}");
+    }
+    assert_eq!(
+        apply("u8.not", &[u8(0b1010_0101)]),
+        Ok(Scalar::Fixed(u8(0b0101_1010))),
+        "`not` flips each bit"
+    );
+    for (name, operands, expected) in [
+        (
+            "u32.checked_shl",
+            [FixedInteger::U32(1), FixedInteger::U32(32)],
+            absent(IntegerWidth::U32),
+        ),
+        (
+            "u16.wrapping_add",
+            [FixedInteger::U16(u16::MAX), FixedInteger::U16(1)],
+            Ok(Scalar::Fixed(FixedInteger::U16(0))),
+        ),
+        (
+            "i16.checked_add",
+            [FixedInteger::I16(i16::MAX), FixedInteger::I16(1)],
+            absent(IntegerWidth::I16),
+        ),
+        (
+            "usize.wrapping_add",
+            [FixedInteger::Usize(u64::MAX), FixedInteger::Usize(1)],
+            Ok(Scalar::Fixed(FixedInteger::Usize(0))),
+        ),
+        (
+            "isize.saturating_sub",
+            [FixedInteger::Isize(i64::MIN), FixedInteger::Isize(1)],
+            Ok(Scalar::Fixed(FixedInteger::Isize(i64::MIN))),
+        ),
+        (
+            "u64.checked_mul",
+            [FixedInteger::U64(u64::MAX), FixedInteger::U64(2)],
+            absent(IntegerWidth::U64),
+        ),
+        (
+            "i32.wrapping_add",
+            [FixedInteger::I32(i32::MAX), FixedInteger::I32(1)],
+            Ok(Scalar::Fixed(FixedInteger::I32(i32::MIN))),
+        ),
+        (
+            "i64.checked_shr",
+            [FixedInteger::I64(-1), FixedInteger::I64(64)],
+            absent(IntegerWidth::I64),
+        ),
+    ] {
+        assert_eq!(apply(name, &operands), expected, "{name} at {operands:?}");
+    }
+    assert_eq!(
+        apply("u8.wrapping_add", &[u8(1), FixedInteger::U16(1)]),
+        Err(PrimitiveError::ArgumentType),
+        "a width row refuses an operand of another width"
+    );
+    let widths: Vec<&str> = IntegerWidth::ALL.iter().map(AsRef::as_ref).collect();
+    for form in [
+        "wrapping_add",
+        "wrapping_sub",
+        "wrapping_mul",
+        "saturating_add",
+        "saturating_sub",
+        "saturating_mul",
+        "checked_add",
+        "checked_sub",
+        "checked_mul",
+        "wrapping_div",
+        "wrapping_rem",
+        "and",
+        "or",
+        "xor",
+        "not",
+        "checked_shl",
+        "checked_shr",
+        "eq",
+        "ne",
+        "lt",
+        "le",
+        "gt",
+        "ge",
+        "to_integer",
+        "from_integer",
+    ] {
+        for &width in &widths {
+            assert_eq!(
+                PRELUDE
+                    .iter()
+                    .filter(|row| row.0.name.split_once('.') == Some((width, form)))
+                    .count(),
+                1,
+                "one `{width}.{form}` row"
+            );
+        }
+    }
+}
+
+#[test]
+fn table_signatures_and_currying_agree()
+{
+    let mut arena = CoreArena::new();
+    let primitive = named(PrimitiveName("sub"));
+    assert_eq!(
+        "sub",
+        primitive.name().as_ref(),
+        "a name borrows its spelling"
+    );
+    let mut signature = primitive.declared_type(&mut arena);
+    let thunk = primitive.thunk(&mut arena);
+    let Some(&Value::Primitive { mut body, .. }) = arena.value(thunk)
+    else {
+        panic!("native thunk");
+    };
+    for input in ["19", "7"] {
+        let Some(&CompType::Arrow { domain, codomain }) = arena.comp_type(signature)
+        else {
+            panic!("curried arrow");
+        };
+        assert_eq!(
+            arena.value_type(domain),
+            Some(&ValueType::Base(BaseType::Integer))
+        );
+        signature = codomain;
+        let Some(&Computation::Lambda(inner)) = arena.computation(body)
+        else {
+            panic!("curried lambda");
+        };
+        let wrapper = arena.value_thunk(inner);
+        let argument = integer(Digits(input)).mint(&mut arena);
+        let applied = instantiate_value(&mut arena, wrapper, argument);
+        let Some(&Value::Thunk(inner)) = arena.value(applied)
+        else {
+            panic!("substituted thunk");
+        };
+        body = inner;
+    }
+    let Some(&CompType::Returner { result, .. }) = arena.comp_type(signature)
+    else {
+        panic!("returner");
+    };
+    assert_eq!(
+        arena.value_type(result),
+        Some(&ValueType::Base(BaseType::Integer))
+    );
+    let Some(&Computation::Primitive {
+        primitive,
+        arguments: Arguments::Binary(arguments),
+    }) = arena.computation(body)
+    else {
+        panic!("saturated primitive");
+    };
+    let operands = arguments.map(|argument| match arena.value(argument) {
+        Some(&Value::Literal(Literal::Integer(ref integer))) => Scalar::Integer(integer),
+        _ => panic!("substituted operand"),
+    });
+    assert_eq!(primitive.evaluate(&operands), Ok(integer(Digits("12"))));
+}
+
+#[test]
+fn the_host_asserts_the_laws_of_its_equalities_2302()
+{
+    let all = [Law::Reflexive, Law::Symmetric, Law::Transitive];
+    let partial = [Law::Symmetric, Law::Transitive];
+    for (name, carrier, laws) in [
+        ("int.eq", PrimitiveType::Integer, &all[..]),
+        ("eq", PrimitiveType::Integer, &all[..]),
+        ("string.eq", PrimitiveType::Text, &all[..]),
+        ("float64.eq", PrimitiveType::Float64, &partial[..]),
+    ] {
+        assert_eq!(
+            named(PrimitiveName(name)).laws(),
+            Some((carrier, laws)),
+            "{name} asserts its laws at its carrier"
+        );
+    }
+    let asserting = PRELUDE
+        .iter()
+        .filter(|primitive| primitive.laws().is_some())
+        .count();
+    assert_eq!(asserting, 4, "no other row asserts a law");
+    let mut arena = CoreArena::new();
+    for primitive in PRELUDE.iter().copied() {
+        for law in all {
+            let asserted = primitive
+                .laws()
+                .is_some_and(|(_, laws)| laws.contains(&law));
+            let stated = primitive.law_statement(law, &mut arena);
+            assert_eq!(
+                stated.is_some(),
+                asserted,
+                "{}: {law:?}",
+                primitive.name().as_ref()
+            );
+            if let Some(stated) = stated {
+                assert!(
+                    matches!(arena.value_type(stated), Some(&ValueType::Thunk(_))),
+                    "a statement is a thunked chain"
+                );
+            }
+        }
+    }
+    assert_eq!(
+        named(PrimitiveName("float64.eq")).law_statement(Law::Reflexive, &mut arena),
+        None,
+        "a NaN is not equal to itself"
+    );
+}
