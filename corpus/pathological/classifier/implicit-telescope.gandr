@@ -1,0 +1,87 @@
+// The refusals of implicit parameters: a call omitting an implicit
+// nothing determines, one whose only solution names a binder of an
+// argument's own lambda, a call whose argument and expected type disagree on
+// one, an implicit written among the parentheses, a resident naming
+// no implicit, a use standing as a value with an implicit unsupplied, a
+// supply standing as a value whose implicit, once the supply abstracts the
+// explicit parameter before it, holds no value of that parameter, a
+// telescope whose types mention each other, and a positional supply after a
+// named one, past the block, twice, or compound. A call in a declared type is
+// refused as one in a body is: the type's formation solves its implicits.
+//
+// - see: #315
+// - see: #1216
+// - see: #5026 — `unchosenSigned`, `disagreeingSigned`
+
+// `same`, the identity at a type supplied by name, `twice`, whose combination
+// is implicit, `chosen`, whose implicit's type names its explicit parameter,
+// and `konst`, whose implicit is the result type of the function it takes.
+import "../../classifier/implicit-telescope.gandr";
+
+/// `twice` with its implicits omitted: the argument determines `m`, and
+/// nothing determines the combination.
+@[refuses("ImplicitUnsolved")]
+def undetermined() -> Integer = twice 3;
+
+/// `chosen` with its implicit omitted: `x` is a value of `t`, and nothing
+/// determines which.
+@[refuses("ImplicitUnsolved")]
+def unchosen() -> Integer = chosen Integer;
+
+/// `konst` with its implicit omitted where the lambda returns its own
+/// argument: the only solution for `b` is the lambda's binder `t`, which the
+/// call does not stand under.
+@[refuses("ImplicitUnsolved")]
+def escaping() -> Integer = konst (fun (t) { fun (y) { y } });
+
+/// `same(3)` where a unit is expected: the argument solves `a` as `Integer`,
+/// and the returned type then disagrees with `Unit`.
+@[refuses("TypeMismatch")]
+def disagreeing() -> Unit = same 3;
+
+/// The implicit written among the parentheses, as for `sameExplicit`.
+@[refuses("ImplicitInParentheses")]
+def inParentheses() -> Integer = same Integer 3;
+
+/// A resident naming no implicit of `same`.
+@[refuses("UnresolvedName")]
+def strayResident() -> Integer = same[.b = Integer] 3;
+
+/// A positional resident after a named one: the positions come first.
+@[refuses("MalformedForm")]
+def positionAfterName() -> Integer = same[.a = Integer, Integer] 3;
+
+/// A second positional resident, where `same`'s block writes one implicit.
+@[refuses("MalformedForm")]
+def positionPastBlock() -> Integer = same[Integer, Integer] 3;
+
+/// A position supplies `a`, and a name supplies it again.
+@[refuses("MalformedForm")]
+def suppliedTwice() -> Integer = same[Integer, .a = Integer] 3;
+
+/// A compound value by position: it goes by name, `chosen[.x = 3 + 4]`.
+@[refuses("MalformedForm")]
+def compoundPosition() -> Integer = chosen[3 + 4] Integer;
+
+/// `same` named as a value, its implicit unsupplied.
+@[refuses("ImplicitUnsupplied")]
+def sameNamed : Integer -> Integer = same;
+
+/// `chosen` passed as a value with `x` supplied: `x`'s type names `t`, so the
+/// supply is `λ t. chosen(t)[.x = 7]`, and `7` is no value of every `t`.
+@[refuses("TypeMismatch")]
+def chosenStanding : Type -> Integer = chosen[7];
+
+/// Two implicits each typed by the other: no order binds either first.
+@[refuses("TelescopeCycle")]
+def tangled[a : b, b : a](x : a) -> a = return x;
+
+/// `chosen` with its implicit omitted in a declared type with no body: no
+/// body poses a comparison, so nothing determines `x`.
+@[refuses("ImplicitUnsolved")]
+def unchosenSigned : Path (chosen Integer) 0;
+
+/// `same (*{})` in a declared type: the argument solves `a` as `Unit`, and
+/// the path's integer carrier then disagrees with it.
+@[refuses("TypeMismatch")]
+def disagreeingSigned : Path (same (*{})) 3 = Path.here 3;

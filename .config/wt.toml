@@ -1,0 +1,50 @@
+# Worktree creation refreshes clone-shared hook runners, including pinned
+# executable paths. Existing checkouts run the same installer during setup.
+# No worktree is created without a sweep: the clone's landed worktrees and
+# leaked scratch go first, and under the disk floor the creation is refused
+# (`wt:sweep --guard`).
+#
+# A new worktree starts warm where the filesystem clones (`wt:warm`):
+# every gitignored artifact of the primary worktree — the build directory,
+# the code index, the extension's modules — is copied in as a reflink, and a
+# filesystem that cannot clone skips the copy. Existing files are never
+# overwritten, so the step is safe to re-run; a mutation run's output stays
+# with the worktree that produced it. The copy is stamped after the checkout,
+# so cargo judges freshness by source content, not mtime
+# (`.cargo/config.toml`): an artifact of another revision is rebuilt. A
+# copied unit that reads a source of the primary through its dep-info is
+# removed, so cargo builds it again here (#5137).
+# The probe asking whether the filesystem clones is written outside both
+# trees, in the clone's git directory and beside the worktree, so no
+# `git add -A` stages it while the copy runs (#3222); its name is ignored
+# and refused as residue besides, for a hook killed before its cleanup.
+#
+# The warm step blocks the creation, as the sweep does. No build may run in
+# the worktree before the step ends. Until the removal, a copied unit reads
+# the primary's sources, so a build gives the primary's result. During the
+# removal, `rm -rf` takes a unit that a build reads or has just built
+# again, and the build stops on a missing extern or fingerprint (#7465). As
+# a background hook, the step ran for minutes under the first gate of a
+# lane's new worktree.
+#
+# So that the wait stays short, the copy skips the units of the workspace's
+# members (#7538). Each member is named `gandr-*`, and each unit of a member
+# reads the member's sources or depends on a unit that does. Cargo builds
+# all of them again in the new worktree, so a copy of them is work that the
+# removal undoes. `copy-ignored` takes a directory that it finds ignored as
+# one entry, so it leaves `target/` to `wt:warm`, which clones it without
+# those units (`.config/pr-stack/warm-target.bash`). The removal still reads
+# the units that stay.
+#
+# The same step records the commit the new worktree starts from as its stack
+# base (`record_start`, #5990). After the landing rebase rewrites `landing`,
+# `pr:open` measures the branch from that commit, so the old commits of
+# `landing` never read as the branch's own. The record runs inside
+# `wt:warm`, a command each host approves already.
+[pre-start]
+hooks = "mise exec -- prek install"
+sweep = "mise run wt:sweep --guard"
+copy = "mise run wt:warm"
+
+[step.copy-ignored]
+exclude = ["mutants.out/", "target/"]
