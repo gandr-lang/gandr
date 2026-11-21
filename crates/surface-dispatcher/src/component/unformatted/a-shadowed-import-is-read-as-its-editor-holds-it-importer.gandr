@@ -1,0 +1,4 @@
+import "./base.gandr" ;
+import "./draft.gandr" ;
+def four : Integer ;
+def four = one ;

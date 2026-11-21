@@ -1,0 +1,36 @@
+// A natural literal read through a reader, in a body and as a definition's
+// own value.
+//
+// A literal at a type a `FromNat` model carries is the reader's call. A
+// function's body runs that call, so the literal there settles to a leaf.
+//
+// A definition's own value has no computation around it to run the call
+// before. The reader's call is pure, so the value stands as what the call
+// returns, and each read of the definition runs the call.
+//
+// - see: #4806 — the refusal at the literal, before #4812
+// - see: #4812 — a definition's own value that runs a pure call
+// - see: `ledger/features/literal-reading.gandr` — the literals readers carry
+
+/// Expressions over the integers.
+data Expr : Type where
+  /// `Lit` holds an integer.
+  | Lit : (n : Integer) --> Expr
+
+/// `ExprFromNat` reads a literal as `Lit`.
+module ExprFromNat : Model(FromNat) with sort Carrier = Expr where
+  /// The leaf.
+  def fromNat(n : Integer) -> Expr = Lit n;
+
+/// The literal read in a body, which runs the reader's call.
+@[runs("Lit 5")]
+def body() -> Expr = 5;
+
+/// The literal as the definition's own value, which stands as what the
+/// reader's call returns.
+@[runs("Lit 5")]
+def leaf : Expr = 5;
+
+/// This body reads `leaf` and runs its reader call again.
+@[runs("Lit 5")]
+def readLeaf() -> Expr = leaf;
