@@ -408,3 +408,149 @@ fn a_failed_cargo_is_refused_by_its_command()
     assert_eq!(out!(output), "");
     assert_eq!(output.status.code(), Some(2_i32));
 }
+
+/// The tree of the first scratch tree with a source that reads three target
+/// features.
+const FEATURES: &str = "bc770d33648370215a6fd46c39d255d410dcab58";
+
+/// What each key of the cases holds between its check and its inputs: the
+/// commit of the fake compiler, and no flag.
+const PLAIN: &str = "\"compiler\":\"0123456789abcdef0123456789abcdef01234567\",\"flags\":{}";
+
+/// What each key of the cases holds after its inputs, with the profile of the
+/// rows of inputs.
+const REST: &str = "\"policy\":\"case-policy\",\"profile\":\"case\",\"scope\":\"--workspace\",\"target\":\"\
+                    case-host\",\"target_features\":{}}";
+
+/// The digest of the inputs of `check:scoped` at the first and at the second
+/// scratch tree, which differ in `docs/` alone.
+const SCOPED_DIGEST: &str = "1da5e1b97ae3d9d76e605ed5b1fc00b6ed391e3fd0e42a27a5c28b8c1c7d7760";
+
+/// The digest of the inputs of `check:table` at the first scratch tree.
+const TABLE_DIGEST: &str = "153ec4f0c56706141543a964abc11e739ded62c7603e0be560c6f9576c370050";
+
+/// Runs `gate verdict key` with `$args` in `$root`, with the fakes on the
+/// path, the fake compiler, a fixed policy and the variables of `$env`. The
+/// environment holds nothing else, so no flag of the host that runs the case
+/// enters a key.
+macro_rules! key {
+    ($root:expr, $args:expr, $env:expr $(,)?) => {{
+        let root: &Path = &$root;
+        let base = root.parent().unwrap();
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut paths = vec![manifest.join("tests/fakes")];
+        paths.extend(std::env::split_paths(
+            &std::env::var_os("PATH").unwrap_or_default(),
+        ));
+        let variables: &[(&str, &str)] = &$env;
+        Command::new(env!("CARGO_BIN_EXE_gate"))
+            .arg("--tables")
+            .arg(manifest.join("tests/tables"))
+            .args(["verdict", "key"])
+            .args($args)
+            .current_dir(root)
+            .env_clear()
+            .env("PATH", std::env::join_paths(paths).unwrap())
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .env("FAKE_CARGO_METADATA", base.join("metadata.json"))
+            .env("FAKE_MISE_TASKS", base.join("tasks.json"))
+            .env("GATE_INPUTS_TASK", "case-task")
+            .env("GATE_VERDICT_RUSTC", manifest.join("tests/fakes/rustc"))
+            .env("GATE_VERDICT_POLICY", "case-policy")
+            .envs(variables.iter().copied())
+            .output()
+            .unwrap()
+    }};
+}
+
+#[test]
+fn a_key_is_the_line_of_the_script()
+{
+    let root = scratch!("key");
+    // The fake `mise` fails on `mise run`, so a run that asks the task for
+    // the policy is refused.
+    let output = key!(root, ["--tree", ONE, "check:scoped", "check:tree"], []);
+    assert_eq!(err!(output), "");
+    assert_eq!(
+        out!(output),
+        format!(
+            "{{\"base_inputs\":\"\",\"check\":\"check:scoped\",{PLAIN},\"inputs\":\"{SCOPED_DIGEST}\",{REST}\n\
+             {{\"base\":\"\",\"check\":\"check:tree\",{PLAIN},\"policy\":\"case-policy\",\"profile\":\"test\",\
+             \"scope\":\"--workspace\",\"target\":\"case-host\",\"target_features\":{{}},\"tree\":\"{ONE}\"}}\n"
+        )
+    );
+    assert!(output.status.success());
+}
+
+#[test]
+fn a_key_binds_the_base_of_a_check_that_reads_it()
+{
+    let root = scratch!("key-base");
+    let output = key!(
+        root,
+        ["--tree", ONE, "check:scoped", "check:table", "check:tree"],
+        [("GATE_BASE", TWO)]
+    );
+    assert_eq!(err!(output), "");
+    // The row of `check:scoped` reads its base, and the row of `check:table`
+    // does not. A check of the tree binds the base as it stands.
+    assert_eq!(
+        out!(output),
+        format!(
+            "{{\"base_inputs\":\"{SCOPED_DIGEST}\",\"check\":\"check:scoped\",{PLAIN},\"inputs\":\"{SCOPED_DIGEST}\",\
+             {REST}\n{{\"base_inputs\":\"\",\"check\":\"check:table\",{PLAIN},\"inputs\":\"{TABLE_DIGEST}\",{REST}\n\
+             {{\"base\":\"{TWO}\",\"check\":\"check:tree\",{PLAIN},\"policy\":\"case-policy\",\"profile\":\"test\",\
+             \"scope\":\"--workspace\",\"target\":\"case-host\",\"target_features\":{{}},\"tree\":\"{ONE}\"}}\n"
+        )
+    );
+}
+
+#[test]
+fn a_key_holds_each_flag_and_each_feature_of_the_host()
+{
+    let root = scratch!("key-flags");
+    put!(root, "crates/c/src/lib.rs", "// needle\n");
+    put!(
+        root,
+        "crates/a/src/feature.rs",
+        "#[cfg(target_feature = \"avx2\")]\n#[cfg(target_feature=\"fma\")]\n#[cfg(any(target_feature = \"neon\", \
+         target_feature = \"avx2\"))]\n"
+    );
+    let _added = git!(root, ["add", "-A"]);
+    assert_eq!(git!(root, ["write-tree"]), FEATURES);
+    let output = key!(root, ["--tree", FEATURES, "check:tree"], [
+        ("RUSTFLAGS", "-Ccase-flag"),
+        ("CARGO_PROFILE_DEV_DEBUG", "0"),
+        ("CARGO_TARGET_CASE_RUSTFLAGS", "-Cother"),
+        ("OTHER_RUSTFLAGS", "no"),
+        ("CARGO_BUILD_TARGET", "case-target"),
+    ]);
+    assert_eq!(err!(output), "");
+    // The fake compiler holds `fma` on only with the flag of `RUSTFLAGS`, and
+    // it holds no `neon`. The target is not the host, so the key names the
+    // host. `OTHER_RUSTFLAGS` is no variable that Cargo reads.
+    assert_eq!(
+        out!(output),
+        format!(
+            "{{\"base\":\"\",\"check\":\"check:tree\",\"compiler\":\"0123456789abcdef0123456789abcdef01234567\",\"flags\":\
+             {{\"CARGO_BUILD_TARGET\":\"case-target\",\"CARGO_PROFILE_DEV_DEBUG\":\"0\",\"CARGO_TARGET_CASE_RUSTFLAGS\":\"\
+             -Cother\",\"RUSTFLAGS\":\"-Ccase-flag\"}},\"host\":\"case-host\",\"policy\":\"case-policy\",\"profile\":\"test\",\
+             \"scope\":\"--workspace\",\"target\":\"case-target\",\"target_features\":{{\"avx2\":true,\"fma\":true,\"neon\":\
+             false}},\"tree\":\"{FEATURES}\"}}\n"
+        )
+    );
+}
+
+#[test]
+fn a_check_with_no_row_of_a_verdict_is_refused()
+{
+    let root = scratch!("key-rowless");
+    let output = key!(root, ["--tree", ONE, "check:other"], []);
+    assert_eq!(
+        err!(output),
+        "gate: check:other holds no row in verdicts.json\n"
+    );
+    assert_eq!(out!(output), "");
+    assert_eq!(output.status.code(), Some(2_i32));
+}

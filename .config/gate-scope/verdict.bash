@@ -256,21 +256,32 @@ case ${1:-} in
     (( $# >= 3 )) || { echo 'usage: verdict.bash write <tree> <check>...' >&2; exit 2; }
     tree=$2
     shift 2
-    common_key=$(common "$tree")
     # A check that the gate runs by its name runs each of its `depends` too:
     # `check:landing` runs Clippy and the policy. Without the task list, the
     # gate takes the names as the caller gives them.
     mapfile -t ran < <(mise tasks ls --json 2> /dev/null | jq -r --args '
       (map({key: .name, value: [(.depends // [])[] | if type == "array" then .[0] else . end | split(" ")[0]]}) | from_entries) as $deps
       | def ran: ., (($deps[.] // [])[] | ran); [$ARGS.positional[] | ran] | unique[]' "$@" || printf '%s\n' "$@")
-    failed=0
+    # The checks that the run signs: each that `verdicts.json` names, and that
+    # the gate does not hold. A check that the gate holds does not run, so the
+    # gate signs no record of it. Its base or an older record answers for it.
+    # - see: #8265, #8268
+    signed_checks=()
     for check in "${ran[@]}"; do
       jq -e --arg check "$check" '.checks | has($check)' "$table" > /dev/null || continue
-      # A check that the gate holds does not run, so the gate signs no record
-      # of it. Its base or an older record answers for it.
-      # - see: #8265, #8268
       [[ " ${GATE_HELD:-} " != *" $check "* ]] || continue
-      k=$(key "$check" "$tree")
+      signed_checks+=("$check")
+    done
+    (( ${#signed_checks[@]} > 0 )) || exit 0
+    # One run of `gate` gives the key of each check, one line each, in the
+    # order of the checks.
+    # - see: #8279
+    answer=$(gate verdict key --tree "$tree" "${signed_checks[@]}")
+    mapfile -t keys <<< "$answer"
+    failed=0
+    for i in "${!signed_checks[@]}"; do
+      check=${signed_checks[$i]}
+      k=${keys[$i]}
       signed=false
       for attempt in 1 2; do
         if commit=$(git commit-tree -S -m "verdict: $check passes on ${tree:0:12}" -m "$k" "$tree"); then
