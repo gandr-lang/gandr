@@ -1,0 +1,2 @@
+def endSigned = (Path.here 3 : Path[.A = Integer](3, _)) ;
+def endApart = (Path.here 3 : Path[.A = Integer](4, _)) ;
