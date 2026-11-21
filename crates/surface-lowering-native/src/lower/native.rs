@@ -14047,11 +14047,11 @@ impl<'source> NativeRef<'_, '_, 'source>
     ///   replaced by `applied`'s arguments and the fields before it by the
     ///   values the constructor is written with, every node the substitution
     ///   mints recorded at the classifier's inserted origin; the unclassified
-    ///   absence when `applied` is no application of a family, which
-    ///   [`Self::classifier_type`] answers by [`Self::fielded_classifier`];
-    ///   nothing when the field's constructor plans no constructor, `applied`
-    ///   applies the family to fewer arguments than its parameters, or a type
-    ///   or a value it reads did not lower.
+    ///   absence when `applied` is no application of a family or the field's
+    ///   declared type did not lower, which [`Self::classifier_type`] answers
+    ///   by [`Self::fielded_classifier`]; nothing when the field's constructor
+    ///   plans no constructor, `applied` applies the family to fewer arguments
+    ///   than its parameters, or a value before the field did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -14059,9 +14059,11 @@ impl<'source> NativeRef<'_, '_, 'source>
     /// - hypothesis: L3 — a list written in a field typed `List(Integer)`, in
     ///   one typed `List(a)` of a family applied to `Integer`, and in one
     ///   naming the field before it; a pair in a field of a pair whose type a
-    ///   definition's call computes, left unclassified.
+    ///   definition's call computes, left unclassified; a constructor in a
+    ///   field of a family whose rules the lowering refused, left unclassified.
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_field_classifies_the_constructor_written_in_it_1171`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_pair_in_a_field_at_a_computed_pair_type_takes_its_family_over_wildcards_6113`
+    /// - witness: `gandr-surface-lowering::coincide::a_definition_over_a_refused_indexed_family_is_refused_by_name_8345`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
     fn field_type(
         &self,
@@ -14101,9 +14103,13 @@ impl<'source> NativeRef<'_, '_, 'source>
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
-        let declared = match self.value_type_at(field.declared) {
-            Maybe::Present(declared) => declared,
-            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        // The lowering refuses a family whose rules it cannot orient, and
+        // its fields then have no type. The constructor written in such a
+        // field takes its family over wildcards, and the checker refuses
+        // the family by name (#8345).
+        let Maybe::Present(declared) = self.value_type_at(field.declared)
+        else {
+            return Maybe::Absent(lowered::Absent::Unclassified);
         };
         // The innermost binder is the last field before this one.
         environment.reverse();

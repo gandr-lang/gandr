@@ -3328,6 +3328,61 @@ fn a_signature_whose_definition_is_refused_is_a_note_2339()
     );
 }
 
+/// #8345: a definition that writes a constructor in a field of a family the
+/// lowering refused prints the refusal of a bare constructor of that family,
+/// and no engine fault.
+#[test]
+fn a_definition_over_a_refused_indexed_family_is_refused_by_name_8345()
+{
+    let text = SourceText::from(include_str!(
+        "diagnostics/unformatted/a-definition-over-a-refused-indexed-family-is-refused-by-name-8345.gandr"
+    ));
+    let printed = printed(
+        Path::new("refused.gandr"),
+        SourceRoot::Strict,
+        text,
+        Verb::Check(Goals::Gated),
+    );
+    let refusal = Class::Refusal(FailureClass::MalformedSource);
+    assert_eq!(
+        printed
+            .iter()
+            .map(|diagnostic| (
+                diagnostic.severity,
+                diagnostic.detail.class,
+                diagnostic.message.text.as_str(),
+                match diagnostic.span {
+                    Maybe::Present(span) => String::from(text.fragment(span).unwrap().as_ref()),
+                    Maybe::Absent(_) => String::new(),
+                },
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                Severity::Error,
+                refusal,
+                "this rule may rewrite forever: its right side is not smaller than its left in \
+                 the order the block's calls induce, so the block's rules are refused",
+                String::from("rule : Not High <=> Low"),
+            ),
+            (
+                Severity::Error,
+                refusal,
+                "this is not a datatype",
+                String::from("def low() -> T B = Low;"),
+            ),
+            (
+                Severity::Error,
+                refusal,
+                "this is not a datatype",
+                String::from("def z() -> T D = Zext Low;"),
+            ),
+        ],
+        "the rule is refused, and each definition over the family is refused by name as \
+         the bare constructor is, with no engine fault"
+    );
+}
+
 #[test]
 fn an_unimplemented_refusal_names_its_tracking_issue_in_every_face()
 {

@@ -208,3 +208,30 @@ fn a_call_reads_its_normal_form_or_says_why_not()
         }
     });
 }
+
+#[test]
+fn a_definition_over_a_refused_indexed_family_is_refused_by_name_8345()
+{
+    let source = SourceText::from(include_str!(
+        "coincide/unformatted/a-definition-over-a-refused-indexed-family-is-refused-by-name-8345.gandr"
+    ));
+    lowered(source, |module| {
+        let [_, family, low, z] = *module.declarations().iter().collect::<Vec<_>>()
+        else {
+            panic!("the index's datatype, the family and its two definitions")
+        };
+        assert!(matches!(
+            family.outcome(),
+            DeclarationOutcome::Refused(LoweringRefusal::RulesUnoriented { .. })
+        ));
+        assert!(
+            matches!(low.outcome(), DeclarationOutcome::Completed { .. }),
+            "the bare constructor lowers, and the checker refuses its family"
+        );
+        assert!(
+            matches!(z.outcome(), DeclarationOutcome::Completed { .. }),
+            "a constructor in a field of the refused family lowers as the bare one does: {:?}",
+            z.outcome()
+        );
+    });
+}

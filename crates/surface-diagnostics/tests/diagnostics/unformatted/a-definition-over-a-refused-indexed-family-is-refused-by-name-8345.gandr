@@ -1,0 +1,13 @@
+data W : Type where { | B : W | D : W }
+
+data T : W -> Type where {
+  | Low : T B
+  | High : T B
+  | Not : (b : T B) --> T B
+  | Zext : (b : T B) --> T D
+  rule : Not High <=> Low;
+}
+
+def low() -> T B = Low;
+
+def z() -> T D = Zext Low;
