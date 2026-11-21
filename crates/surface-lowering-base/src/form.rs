@@ -2921,7 +2921,7 @@ fn qualified_head(
 ///   rest`, which reads as the call form `M.Cons(x, rest)` reads.
 /// - fails: never.
 /// - panics: none.
-/// - economy: one walk over the head's children, written into `read`'s buffer,
+/// - bound: one walk over the head's children, written into `read`'s buffer,
 ///   with no allocation beyond the buffer's growth.
 /// - executable: none — the pieces are the head's children in the tree, which a
 ///   predicate could check only by repeating the walk.
