@@ -1,0 +1,19 @@
+/// One.
+/// Two.
+def f(x : Integer) -> -F Integer {
+  return x
+}
+def g = 1 ;
+/* a
+   block */
+def h = 2 ;
+theory T where {
+  sort M : Type;
+  boundary Square {
+    tl, tr, bl, br
+  };
+  oper mul :
+    (M, M) --> M;
+}
+def k =
+  1 ;
