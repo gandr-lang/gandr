@@ -143,7 +143,8 @@ pub fn lay(
                         )),
                         held @ (ImportTarget::Unresolved
                         | ImportTarget::Cycle
-                        | ImportTarget::Unlocked) => held,
+                        | ImportTarget::Unlocked
+                        | ImportTarget::NoStandard) => held,
                     })
                     .collect(),
             );

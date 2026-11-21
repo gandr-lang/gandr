@@ -366,7 +366,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                             Some((target, import.span()))
                         },
                         ImportResolution::Path(
-                            ImportTarget::Unresolved | ImportTarget::Cycle | ImportTarget::Unlocked,
+                            ImportTarget::Unresolved
+                            | ImportTarget::Cycle
+                            | ImportTarget::Unlocked
+                            | ImportTarget::NoStandard,
                         )
                         | ImportResolution::Foreign => None,
                     }

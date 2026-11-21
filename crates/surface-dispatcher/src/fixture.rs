@@ -356,6 +356,19 @@ pub fn damage(
     }
 }
 
+/// Names the checkout's `library/std` as the place of the standard library
+/// that the host's profile states, for this process. A fixture outside the
+/// tree reads the standard library through it. A place named already stays.
+///
+/// # Specification
+/// trivial.
+#[inline]
+pub fn profiled()
+{
+    let library = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../library/std");
+    drop(crate::package::lock::profile_standard(library));
+}
+
 /// A fresh scratch directory, removed when dropped. The field is the
 /// directory, which a test joins its paths to.
 #[repr(transparent)]

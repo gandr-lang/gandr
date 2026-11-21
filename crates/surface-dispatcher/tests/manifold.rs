@@ -175,6 +175,7 @@ impl Drop for Scratch
 #[test]
 fn a_field_that_does_not_read_is_refused_by_name_3374()
 {
+    gandr_surface_dispatcher::fixture::profiled();
     let scratch = Scratch::new(Path::new("refused"));
     let manifold = |name: &str, placements: &str| {
         scratch.file(
@@ -266,6 +267,7 @@ const KEPT: &str = "pub theory Kept where {\n  sort V : Type+;\n  sort C : Type;
 #[test]
 fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
 {
+    gandr_surface_dispatcher::fixture::profiled();
     let judged = |path: &Path| {
         Manifold::read::<Evaluator>(path)
             .expect("the manifold reads")
@@ -410,6 +412,7 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
 #[test]
 fn an_offer_is_admitted_through_a_translation_by_the_manifold_s_policy_3461()
 {
+    gandr_surface_dispatcher::fixture::profiled();
     let judged = |path: &Path| {
         Manifold::read::<Evaluator>(path)
             .expect("the manifold reads")

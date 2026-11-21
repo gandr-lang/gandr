@@ -1016,6 +1016,7 @@ fn distribution_claims(
 #[test]
 fn a_distribution_settles_over_every_answer_of_its_draws_5710()
 {
+    gandr_surface_dispatcher::fixture::profiled();
     let claims = distribution_claims(
         Path::new("distributes"),
         SourceText::from(include_str!(
@@ -1050,6 +1051,7 @@ fn a_distribution_settles_over_every_answer_of_its_draws_5710()
 #[test]
 fn a_declined_draw_names_its_task_or_world_5712()
 {
+    gandr_surface_dispatcher::fixture::profiled();
     let claims = distribution_claims(
         Path::new("declined"),
         SourceText::from(include_str!(
@@ -1093,6 +1095,7 @@ fn a_declined_draw_names_its_task_or_world_5712()
 #[test]
 fn a_width_outside_one_to_sixty_four_is_refused_by_name_5713()
 {
+    gandr_surface_dispatcher::fixture::profiled();
     let claims = distribution_claims(
         Path::new("widths"),
         SourceText::from(include_str!(
@@ -1180,6 +1183,7 @@ fn pairs(outcome: &Outcome) -> Distribution<(Component, Component)>
 #[test]
 fn the_pad_s_ciphertext_is_independent_of_its_message_5713()
 {
+    gandr_surface_dispatcher::fixture::profiled();
     let claims = distribution_claims(
         Path::new("pad"),
         SourceText::from(include_str!(

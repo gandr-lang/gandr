@@ -3175,7 +3175,10 @@ impl<'source> Collected<'source>
                     |further| match further.resolution() {
                         ImportResolution::Path(ImportTarget::Source(next)) => Some(next),
                         ImportResolution::Path(
-                            ImportTarget::Unresolved | ImportTarget::Cycle | ImportTarget::Unlocked,
+                            ImportTarget::Unresolved
+                            | ImportTarget::Cycle
+                            | ImportTarget::Unlocked
+                            | ImportTarget::NoStandard,
                         )
                         | ImportResolution::Foreign => None,
                     },

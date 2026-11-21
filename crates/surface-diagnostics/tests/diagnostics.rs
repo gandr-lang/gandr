@@ -126,6 +126,18 @@ const FIBONACCI_APART: &str = include_str!("diagnostics/fixtures/fibonacci-apart
 const LONG_WORD: &str =
     include_str!("diagnostics/fixtures/a-path-ap-claim-on-a-long-word-6478.gandr");
 
+/// Names the checkout's `library/std` as the profile's standard library for
+/// this process, so a fixture outside the tree reads it. A place named
+/// already stays.
+///
+/// # Specification
+/// trivial.
+fn profiled()
+{
+    let library = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../library/std");
+    drop(gandr_surface_dispatcher::profile_standard(library));
+}
+
 /// A fresh scratch directory, removed when dropped.
 #[repr(transparent)]
 struct Scratch(PathBuf);
@@ -1834,6 +1846,7 @@ fn a_signature_s_refusal_spells_its_binders_by_name_4043()
 #[test]
 fn a_trace_spells_a_kept_region_by_its_name_1494()
 {
+    profiled();
     for (kept, text) in [
         (
             "c",
@@ -1976,6 +1989,7 @@ fn a_return_position_failure_points_at_the_returned_value()
 #[test]
 fn a_head_that_is_no_function_names_its_repair_5474()
 {
+    profiled();
     let list = include_str!(
         "diagnostics/unformatted/a-head-that-is-no-function-names-its-repair-5474-list.gandr"
     );
@@ -3953,6 +3967,7 @@ fn two_codata_types_of_one_mismatch_spell_apart_7403()
 #[test]
 fn a_mistake_is_reported_before_what_it_causes_2048()
 {
+    profiled();
     let text = include_str!(
         "diagnostics/unformatted/a-mistake-is-reported-before-what-it-causes-2048.gandr"
     );

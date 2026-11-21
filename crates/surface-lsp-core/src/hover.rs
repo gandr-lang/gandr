@@ -1052,6 +1052,15 @@ fn imported(
                     "`{}` imports this document back, so neither is read.",
                     file.display()
                 ),
+                Some(&ImportTarget::NoStandard) => format!(
+                    "`std` finds no standard library: the profile's `[library] std` names none, \
+                     and no directory from `{}` up holds one, so this document is not read.",
+                    hovering
+                        .document
+                        .parent()
+                        .unwrap_or(&hovering.document)
+                        .display()
+                ),
                 Some(&ImportTarget::Unresolved) | None => {
                     if !file.is_file() {
                         format!("No file at `{}`.", file.display())

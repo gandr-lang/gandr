@@ -484,6 +484,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::ImportUnresolved { .. } => {
             String::from("change the import path to a source under the root")
         },
+        LoweringRefusal::ImportNoStandard { .. } => String::from(
+            "name the standard library in `[library] std` of the profile, or in a workspace above this source",
+        ),
         LoweringRefusal::MissingPayload { .. } => {
             String::from("give the attribute the payload its schema requires")
         },
@@ -1531,6 +1534,7 @@ mod tests
         "HeldConsumed",
         "HeldShared",
         "ImportCycle",
+        "ImportNoStandard",
         "LoopNotRespected",
         "ModelImplicitValue",
         "OutOfFragment.Held",

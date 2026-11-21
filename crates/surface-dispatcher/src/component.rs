@@ -586,8 +586,9 @@ impl ImportPath
     /// - ensures: [`Named::File`] of the file under `sources` when its head —
     ///   the first segment, the stem of a file alone — names a `.gandr` file or
     ///   a directory there; else, for the head `std`, [`Named::File`] of the
-    ///   file in `standard` when it is some, and of the file in the package
-    ///   that [`lock::standard_from`] finds when it finds one;
+    ///   file in `standard` when it is some, of the file in the package that
+    ///   [`lock::standard_from`] finds when it finds one, and
+    ///   [`Named::NoStandard`] of the file under `sources` when it finds none;
     ///   [`Named::Unlocked`] of the file under `sources` otherwise.
     /// - provides: the one rule a module path's head reads.
     /// - fails: never.
@@ -630,9 +631,10 @@ impl ImportPath
         }
         standard.map_or_else(
             || {
-                lock::standard_from(sources).map_or(Named::Unlocked(local), |(library, _place)| {
-                    Named::File(lock::within(&library, rest))
-                })
+                lock::standard_from(sources)
+                    .map_or(Named::NoStandard(local), |(library, _place)| {
+                        Named::File(lock::within(&library, rest))
+                    })
             },
             |own| Named::File(lock::within(own, rest)),
         )
@@ -651,6 +653,11 @@ pub enum Named
     /// would hold for it, which an editor may hold unsaved, or the
     /// coordinate's directory.
     Unlocked(PathBuf),
+    /// A module path whose head is `std`, from a source outside the standard
+    /// library, where neither the host's profile nor a directory from the
+    /// importer's up gives a standard library; the file the package would
+    /// hold for it.
+    NoStandard(PathBuf),
 }
 
 impl Named
@@ -664,7 +671,7 @@ impl Named
     pub fn file(&self) -> &Path
     {
         match *self {
-            Self::File(ref file) | Self::Unlocked(ref file) => file,
+            Self::File(ref file) | Self::Unlocked(ref file) | Self::NoStandard(ref file) => file,
         }
     }
 }
@@ -851,6 +858,8 @@ enum Edge
     /// A module path whose head is no module of the package and no dependency
     /// its lock records.
     Unlocked,
+    /// A module path whose head is `std` that finds no standard library.
+    NoStandard,
 }
 
 /// Whether a source read into the graph parses.
@@ -1590,6 +1599,7 @@ impl Graph
                         self.resolve(&file, root, shadows)
                     },
                     Named::Unlocked(_) => Edge::Unlocked,
+                    Named::NoStandard(_) => Edge::NoStandard,
                 })
                 .collect();
             if let Some(reading) = self.read.get_mut(next) {
@@ -1605,7 +1615,7 @@ impl Graph
             .flat_map(|read| read.edges.iter())
             .filter_map(|&edge| match edge {
                 Edge::To(to) => Some(to),
-                Edge::Unresolved | Edge::Unlocked => None,
+                Edge::Unresolved | Edge::Unlocked | Edge::NoStandard => None,
             })
             .collect();
         for to in named {
@@ -1665,7 +1675,7 @@ impl Graph
     /// - allocation: the source that it reads, growth within the import closure
     #[spec(ensures: |ret| match ret {
         Edge::To(position) => position.0 < self.read.len(),
-        Edge::Unresolved | Edge::Unlocked => true,
+        Edge::Unresolved | Edge::Unlocked | Edge::NoStandard => true,
     })]
     fn resolve<Editor>(
         &mut self,
@@ -1989,9 +1999,10 @@ impl Graph
                     .iter()
                     .filter_map(|&edge| match self.target(&reaches, Position(from), edge) {
                         ImportTarget::Source(to) => Some(Position(usize::from(to))),
-                        ImportTarget::Unresolved | ImportTarget::Cycle | ImportTarget::Unlocked => {
-                            None
-                        },
+                        ImportTarget::Unresolved
+                        | ImportTarget::Cycle
+                        | ImportTarget::Unlocked
+                        | ImportTarget::NoStandard => None,
                     })
                     .collect()
             })
@@ -2008,6 +2019,7 @@ impl Graph
     ///   leads back to `from`; [`ImportTarget::Source`] holding the target's
     ///   graph position for a resolved edge whose target parses and is not set
     ///   apart; [`ImportTarget::Unlocked`] for an [`Edge::Unlocked`];
+    ///   [`ImportTarget::NoStandard`] for an [`Edge::NoStandard`];
     ///   [`ImportTarget::Unresolved`] otherwise.
     /// - fails: never.
     /// - panics: none.
@@ -2020,7 +2032,10 @@ impl Graph
     /// - witness: `component::tests::a_cycle_and_a_missing_path_leave_their_imports_unresolved`
     #[spec(ensures: |ret| match ret {
         ImportTarget::Source(to) => usize::from(to) < self.read.len(),
-        ImportTarget::Unresolved | ImportTarget::Cycle | ImportTarget::Unlocked => true,
+        ImportTarget::Unresolved
+        | ImportTarget::Cycle
+        | ImportTarget::Unlocked
+        | ImportTarget::NoStandard => true,
     })]
     fn target(
         &self,
@@ -2054,6 +2069,7 @@ impl Graph
                 ImportTarget::Source(SourceIndex::from(to.0))
             },
             Edge::Unlocked => ImportTarget::Unlocked,
+            Edge::NoStandard => ImportTarget::NoStandard,
             Edge::To(_) | Edge::Unresolved => ImportTarget::Unresolved,
         }
     }
@@ -2116,7 +2132,8 @@ impl Graph
                             }),
                         held @ (ImportTarget::Unresolved
                         | ImportTarget::Cycle
-                        | ImportTarget::Unlocked) => held,
+                        | ImportTarget::Unlocked
+                        | ImportTarget::NoStandard) => held,
                     })
                     .collect()
             });
@@ -3959,6 +3976,7 @@ mod tests
     #[test]
     fn importers_of_a_given_std_module_lay_it_apart_4856()
     {
+        crate::fixture::profiled();
         let grammar = built_in().expect("the grammar builds");
         let module = std::fs::canonicalize(
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../library/std/src/string.gandr"),
@@ -4258,6 +4276,7 @@ mod tests
     #[test]
     fn a_std_module_path_names_the_standard_library_from_any_root_4517()
     {
+        crate::fixture::profiled();
         let grammar = built_in().expect("the grammar builds");
         let library = std::fs::canonicalize(
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../library/std/src"),

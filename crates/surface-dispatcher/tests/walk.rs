@@ -1000,6 +1000,7 @@ fn an_importer_is_judged_over_its_sibling()
 #[test]
 fn importers_of_a_given_std_module_are_judged_apart_4856()
 {
+    gandr_surface_dispatcher::fixture::profiled();
     let scratch = Scratch::new(Path::new("std-importers"));
     for side in ["left", "right"] {
         scratch.file(

@@ -20290,6 +20290,9 @@ mod tests
     #[test]
     fn a_repair_is_offered_once_its_trial_settles_it_5474()
     {
+        drop(gandr_surface_dispatcher::profile_standard(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../library/std"),
+        ));
         let (mut workspace, [mut first, _second]) = two_connections();
         let uri = crate::protocol::DocumentUri::from("file:///tmp/shared.gandr");
         let published = |workspace: &Workspace| {

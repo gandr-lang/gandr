@@ -5683,7 +5683,10 @@ pub fn item_sources(module: &LoweredModule<'_>) -> Vec<gandr_core_incremental::S
                 .into_iter()
                 .chain(source.imports().iter().filter_map(|target| match *target {
                     ImportTarget::Source(index) => Some(index),
-                    ImportTarget::Unresolved | ImportTarget::Cycle | ImportTarget::Unlocked => None,
+                    ImportTarget::Unresolved
+                    | ImportTarget::Cycle
+                    | ImportTarget::Unlocked
+                    | ImportTarget::NoStandard => None,
                 }))
                 .map(|index| gandr_core_incremental::SourceOrdinal::from(usize::from(index)))
                 .collect();

@@ -238,6 +238,11 @@ pub enum ImportTarget
     /// #4527). The import binds nothing, and a name read through it is refused
     /// at that name.
     Unlocked,
+    /// A module path whose head is `std`, from a source outside the standard
+    /// library, where neither the host's profile nor a directory from the
+    /// importer's up gives a standard library. Each declaration of the
+    /// importer is refused.
+    NoStandard,
 }
 
 /// One source of a unit: where its text starts, what its imports resolved
@@ -698,7 +703,10 @@ impl Unit
             previous = source.start;
             let forward = source.imports.iter().any(|target| match *target {
                 ImportTarget::Source(SourceIndex(imported)) => imported >= position,
-                ImportTarget::Unresolved | ImportTarget::Cycle | ImportTarget::Unlocked => false,
+                ImportTarget::Unresolved
+                | ImportTarget::Cycle
+                | ImportTarget::Unlocked
+                | ImportTarget::NoStandard => false,
             });
             if forward {
                 return Err(UnitFault::Forward(SourceIndex(position)));
