@@ -119,7 +119,6 @@ use gandr_core_checker::worlds::Predicate;
 use gandr_core_term::FailureClass;
 use gandr_core_term::generic::Uncovered;
 use gandr_kernel_term::StringLiteral;
-use gandr_surface_grammar::RetiredForm;
 use gandr_surface_lowering::BuiltinFault;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::FragmentFeature;
@@ -968,9 +967,6 @@ pub enum RefusalName
     NoUniverseAbove,
     /// A form whose pieces fall short of its rule.
     MalformedForm,
-    /// A retired spelling of a form, qualified by the surface the syntax
-    /// ledger's row names it by.
-    RetiredSpelling(RetiredForm),
     /// An attribute name the registry does not hold.
     UnknownAttribute,
     /// One attribute written twice for one name.
@@ -1685,7 +1681,6 @@ impl RefusalName
         (Self::GradedBridge, b"GradedBridge") | (Self::MalformedLiteral,
         b"MalformedLiteral") | (Self::NoUniverseAbove, b"NoUniverseAbove") |
         (Self::MalformedForm, b"MalformedForm") |
-        (Self::RetiredSpelling(_), b"RetiredSpelling") |
         (Self::UnknownAttribute, b"UnknownAttribute") | (Self::DuplicateAttribute,
         b"DuplicateAttribute") | (Self::MissingPayload, b"MissingPayload") |
         (Self::NonValuePayload, b"NonValuePayload") | (Self::IllTypedPayload,
@@ -1904,7 +1899,7 @@ impl RefusalName
         | (Self::DialogueInverted, b"DialogueInverted")
         | (Self::ForwardUnsupported, b"ForwardUnsupported")
         | (Self::Boundary, b"Boundary")
-    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::SignatureMismatch(_) | Self::BuiltinMark(_) | Self::StagedBody(_) | Self::RetiredSpelling(_) | Self::UnprovenLaw | Self::NoFiller(FillerAsk::Omitted) | Self::GenericUncovered(GenericCoverage::Dependent) | Self::Immobile(CrossingRead::Capture | CrossingRead::Homed) | Self::NotOpen(CrossingRead::Capture | CrossingRead::Homed))
+    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::SignatureMismatch(_) | Self::BuiltinMark(_) | Self::StagedBody(_) | Self::UnprovenLaw | Self::NoFiller(FillerAsk::Omitted) | Self::GenericUncovered(GenericCoverage::Dependent) | Self::Immobile(CrossingRead::Capture | CrossingRead::Homed) | Self::NotOpen(CrossingRead::Capture | CrossingRead::Homed))
         == ret.qualifier.is_some()
 },
     )]
@@ -1963,7 +1958,6 @@ impl RefusalName
             Self::SignatureMismatch(_) => "SignatureMismatch",
             Self::BuiltinMark(_) => "BuiltinMark",
             Self::StagedBody(_) => "StagedBody",
-            Self::RetiredSpelling(_) => "RetiredSpelling",
             Self::ImportShadows => "ImportShadows",
             Self::UnexportedName => "UnexportedName",
             Self::PathCode => "PathCode",
@@ -2184,9 +2178,6 @@ impl RefusalName
         {
             Some(Qualifier::Named(fault))
         }
-        else if let Self::RetiredSpelling(form) = self {
-            Some(Qualifier::Named(Tag(form.surface().0)))
-        }
         else if matches!(self, Self::UnprovenLaw) {
             Some(Qualifier::Named(ADMITTED))
         }
@@ -2283,10 +2274,6 @@ impl RefusalName
                 },
                 "BuiltinMark" => tagged(&BUILTIN_TAGS).map(Self::BuiltinMark),
                 "StagedBody" => tagged(&STAGED_TAGS).map(Self::StagedBody),
-                "RetiredSpelling" => RetiredForm::ALL
-                    .into_iter()
-                    .find(|form| form.surface().0 == rest)
-                    .map(Self::RetiredSpelling),
                 "UnprovenLaw" => (rest == ADMITTED.0).then_some(Self::UnprovenLaw),
                 "NoFiller" => (rest == OMITTED.0).then_some(Self::NoFiller(FillerAsk::Omitted)),
                 "GenericUncovered" => (rest == DEPENDENT.0)

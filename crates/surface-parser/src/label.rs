@@ -81,7 +81,6 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
-use gandr_surface_grammar::RetiredForm;
 use gandr_surface_syntax::SourceFragment;
 
 use crate::meld::primitive_copy_wrapper;
@@ -1798,15 +1797,14 @@ fn scan_slash(
     }
 }
 /// Scan a lexeme led by `#`: a shebang, the sequence literal's `#[`, the
-/// retired token `#{`, the freshness relation, or a stray byte.
+/// freshness relation, or a stray byte.
 ///
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
 /// - ensures: scanning advances; shebangs are layout, the sequence opener is
-///   punctuation, the glued `#{` is one unknown token that the lowering refuses
-///   by name, a `#` that opens none is the one-byte punctuation of a freshness
-///   condition `a # t`, and a `#!` that opens no shebang is an unknown token of
-///   two bytes.
+///   punctuation, a `#` that opens none is the one-byte punctuation of a
+///   freshness condition `a # t`, and a `#!` that opens no shebang is an
+///   unknown token of two bytes.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1823,17 +1821,6 @@ fn scan_hash(
     pos: ByteOffset,
 ) -> ScanResult
 {
-    // The glued `#{` is a retired token: one token that no tile molds, so the
-    // parser grouts it whole and the lowering names it. `# {` with a space
-    // stays the freshness relation and a brace.
-    let retired = RetiredForm::ViewTelescope.written().0.as_bytes();
-    if bytes
-        .0
-        .get(pos.0 ..)
-        .is_some_and(|rest| rest.starts_with(retired))
-    {
-        return ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::from(retired.len())));
-    }
     match bytes.byte(pos.advance(ByteWidth::ONE)).map(u8::from) {
         Some(b'!') => match bytes.byte(pos.advance(ByteWidth::TWO)).map(u8::from) {
             // `#!/…` first-line shebang (trivia).
@@ -2648,7 +2635,6 @@ mod tests
             (super::scan_hash, &[
                 ("#!/x\n", Lexeme::Space, 4),
                 ("#!sh{x", Lexeme::Unknown, 2),
-                ("#{x", Lexeme::Unknown, 2),
                 ("# {x", Lexeme::Punct, 1),
                 ("#[x", Lexeme::Punct, 2),
                 ("#!bad", Lexeme::Unknown, 2),

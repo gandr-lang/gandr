@@ -823,194 +823,12 @@ pub struct RemovalIssue(pub u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Replacement(pub &'static str);
 
-/// The text that a source writes for an old spelling: the word or the tile a
-/// reader meets.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct OldSpelling(pub &'static str);
-
-/// An old spelling that a source meets as a refusal.
-///
-/// Each arm is one row of the syntax ledger. The row's surface is the tag of
-/// the refusal `RetiredSpelling.<surface>`, and the row's replacement is the
-/// text that the refusal's message offers, so the row and the refusal hold
-/// one string each.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum RetiredForm
-{
-    /// A theory member written `shape`, which `boundary` and `face` replace.
-    ShapeMember,
-    /// The unit value written `unit`, which `*{}` replaces.
-    UnitValue,
-    /// A path type written `Path(A, a, b)`, its carrier first.
-    PositionalPathCarrier,
-    /// A bridge type written `Bridge(A, a, b)`, its carrier first.
-    PositionalBridgeCarrier,
-    /// A flow type written `Flow(A, a, b)`, its carrier first.
-    PositionalFlowCarrier,
-    /// A telescope or a record opened by the glued token `#{`, which `*{`
-    /// replaces.
-    ViewTelescope,
-    /// A function type written `A => B` in a type position, which `A -> B`
-    /// replaces.
-    FatArrowBox,
-    /// A record type's fixed fields in a static bracket, `T[.l = v]`, which
-    /// `T.#{.l = v}` replaces.
-    BracketFields,
-    /// A record type's faces in a static bracket, `T[f ↦ v]`, which
-    /// `T.#{f ↦ v}` replaces.
-    BracketFaces,
-    /// A product type written as a list in parentheses, `(A, B)`, outside the
-    /// domain of an arrow and a function's outputs, which `*{A, B}` replaces.
-    ParenthesizedProduct,
-    /// A pattern over a stored product written as a group in parentheses,
-    /// `(p, q)`, which `*{p, q}` replaces. A group still receives a call's
-    /// outputs.
-    ParenthesizedProductPattern,
-    /// A theory operation of no input written `oper c : () --> T`, which the
-    /// constant `oper c : T` replaces.
-    EmptyOperationInputs,
-    /// A theory operation of no input applied to `()` in a term, `c ()`,
-    /// which the constant's bare name `c` replaces.
-    EmptyOperationCall,
-    /// A field of a record literal written with no dot, `*{ l = e }`, which
-    /// `*{ .l = e }` replaces.
-    BareRecordField,
-    /// A field of a record update written with no dot, `*{ r | l = e }`,
-    /// which `*{ r | .l = e }` replaces.
-    BareUpdateField,
-    /// The attribute `native`, which `builtin` replaces: `@[builtin("key")]`
-    /// names a row of the builtin table, a native value among them.
-    NativeAttribute,
-    /// A `builtin` mark whose payload is a bare word, `@[builtin(irPair)]`,
-    /// which the key in quotes replaces: `@[builtin("irPair")]`.
-    BuiltinWord,
-}
-
-impl RetiredForm
-{
-    /// Every retired spelling, in the order of the enum.
-    pub const ALL: [Self; 17] = [
-        Self::ShapeMember,
-        Self::UnitValue,
-        Self::PositionalPathCarrier,
-        Self::PositionalBridgeCarrier,
-        Self::PositionalFlowCarrier,
-        Self::ViewTelescope,
-        Self::FatArrowBox,
-        Self::BracketFields,
-        Self::BracketFaces,
-        Self::ParenthesizedProduct,
-        Self::ParenthesizedProductPattern,
-        Self::EmptyOperationInputs,
-        Self::EmptyOperationCall,
-        Self::BareRecordField,
-        Self::BareUpdateField,
-        Self::NativeAttribute,
-        Self::BuiltinWord,
-    ];
-
-    /// The surface name of the spelling: the row's surface and the tag of its
-    /// refusal.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn surface(self) -> SurfaceForm
-    {
-        SurfaceForm(match self {
-            Self::ShapeMember => "shape_member",
-            Self::UnitValue => "unit_value",
-            Self::PositionalPathCarrier => "positional_path_carrier",
-            Self::PositionalBridgeCarrier => "positional_bridge_carrier",
-            Self::PositionalFlowCarrier => "positional_flow_carrier",
-            Self::ViewTelescope => "view_telescope",
-            Self::FatArrowBox => "fat_arrow_box",
-            Self::BracketFields => "bracket_fields",
-            Self::BracketFaces => "bracket_faces",
-            Self::ParenthesizedProduct => "parenthesized_product",
-            Self::ParenthesizedProductPattern => "parenthesized_product_pattern",
-            Self::EmptyOperationInputs => "empty_operation_inputs",
-            Self::EmptyOperationCall => "empty_operation_call",
-            Self::BareRecordField => "bare_record_field",
-            Self::BareUpdateField => "bare_update_field",
-            Self::NativeAttribute => "native_attribute",
-            Self::BuiltinWord => "builtin_word",
-        })
-    }
-
-    /// The spelling that stays, as a source writes it: the row's
-    /// replacement and the text the refusal's message offers.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn replaced_by(self) -> Replacement
-    {
-        Replacement(match self {
-            Self::ShapeMember => "boundary B {…}; face f = {…}",
-            Self::UnitValue => "*{}",
-            Self::PositionalPathCarrier => "Path[.A = A](a, b)",
-            Self::PositionalBridgeCarrier => "Bridge[.A = A](a, b)",
-            Self::PositionalFlowCarrier => "Flow[.A = A](a, b)",
-            Self::ViewTelescope => "*{ … }",
-            Self::FatArrowBox => "A -> B",
-            Self::BracketFields => "T.#{.l = v}",
-            Self::BracketFaces => "T.#{f ↦ v}",
-            Self::ParenthesizedProduct => "*{A, B}",
-            Self::ParenthesizedProductPattern => "*{p, q}",
-            Self::EmptyOperationInputs => "oper c : T",
-            Self::EmptyOperationCall => "c",
-            Self::BareRecordField => "*{ .l = e }",
-            Self::BareUpdateField => "*{ r | .l = e }",
-            Self::NativeAttribute => "builtin",
-            Self::BuiltinWord => "builtin(\"key\")",
-        })
-    }
-
-    /// The old spelling as a source writes it: the word or the tile a reader
-    /// meets.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn written(self) -> OldSpelling
-    {
-        OldSpelling(match self {
-            Self::ShapeMember => "shape",
-            Self::UnitValue => "unit",
-            Self::PositionalPathCarrier => "Path",
-            Self::PositionalBridgeCarrier => "Bridge",
-            Self::PositionalFlowCarrier => "Flow",
-            Self::ViewTelescope => "#{",
-            Self::FatArrowBox => "=>",
-            Self::BracketFields => "[.",
-            Self::BracketFaces => "↦",
-            Self::ParenthesizedProduct => "(A, B)",
-            Self::ParenthesizedProductPattern => "(p, q)",
-            Self::EmptyOperationInputs | Self::EmptyOperationCall => "()",
-            Self::BareRecordField => "*{ l = e }",
-            Self::BareUpdateField => "*{ r | l = e }",
-            Self::NativeAttribute => "native",
-            Self::BuiltinWord => "builtin(key)",
-        })
-    }
-}
-
-/// Whether an adaptation records an old spelling, and how far its removal
-/// stands.
+/// Whether an adaptation records an old spelling, and the issue that removes
+/// it.
 ///
 /// An old spelling that the grammar still parses names the open issue that
 /// removes it: `ledger:syntax` writes the mark, and `check:ledger` refuses a
-/// mark whose issue does not stand open. An old spelling that the parser or
-/// the lowering refuses is a retired form: the mark stays, so a later change
-/// that reads the spelling again meets the exemplar that states the refusal.
+/// mark whose issue does not stand open.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Removal
 {
@@ -1019,9 +837,6 @@ pub enum Removal
     /// The grammar still parses the old spelling: this issue removes it, and
     /// the replacement stays.
     By(RemovalIssue, Replacement),
-    /// A source that writes the old spelling meets the refusal of this
-    /// retired form.
-    Refused(RetiredForm),
 }
 
 /// An adaptation record: where a rule's shape departs from the surface form
@@ -1085,27 +900,6 @@ impl Adaptation
             surface: surface.0,
             reason: reason.0,
             removal: Removal::By(removal, replaced_by),
-        }
-    }
-
-    /// Records an old spelling that a source meets as a refusal. The retired
-    /// form gives the record its surface, its replacement and its refusal.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn refused(
-        rule: RuleName,
-        form: RetiredForm,
-        reason: AdaptationReason,
-    ) -> Self
-    {
-        Self {
-            rule: rule.0,
-            surface: form.surface().0,
-            reason: reason.0,
-            removal: Removal::Refused(form),
         }
     }
 }

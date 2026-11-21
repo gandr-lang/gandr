@@ -56,7 +56,6 @@ use crate::Provenance;
 use crate::Regex;
 use crate::RemovalIssue;
 use crate::Replacement;
-use crate::RetiredForm;
 use crate::Rule;
 use crate::RuleName;
 use crate::Sort;
@@ -151,11 +150,6 @@ fn add_type_rules(
         RuleName("function_type"),
         SurfaceForm("value_function_type"),
         AdaptationReason("folded into function_type: the box `(A, B) -> C` is the arrow over a value codomain, so the value function space has no arrow of its own"),
-    ));
-    function.adaptations.push(Adaptation::refused(
-        RuleName("function_type"),
-        RetiredForm::FatArrowBox,
-        AdaptationReason("the box `A => B` in a signature, a nested box, a group in parentheses or a record field is refused by name; a parameter, a result and a constructor field keep their faults, and a box in an expression hole is not named"),
     ));
     rules.push(function);
     // The linear arrow `(x : A) ⊸ C`, in the band of the arrow: its parameter
@@ -487,57 +481,43 @@ fn add_type_rules(
     // reads it while the list stands, and the juxtaposed endpoints read it,
     // `Path a b`, so the head decides the sort and no window weighs a type
     // group against a term group (#5750). `Path` alone is a whole form. A
-    // three-operand list writes the carrier first, `Path(A, a, b)`: the
-    // grammar reads it, and the lowering refuses it by name, so the head
-    // takes its carrier by name, `Path[.A = A](a, b)`.
+    // three-operand list writes no form, so the grammar reads it and the
+    // lowering gives it an extra operand. The head takes its carrier by name,
+    // `Path[.A = A](a, b)`.
     let endpoint = Sort::Expression;
-    for (name, head, retired) in [
-        ("path_type", "Path", RetiredForm::PositionalPathCarrier),
-        (
-            "bridge_type",
-            "Bridge",
-            RetiredForm::PositionalBridgeCarrier,
-        ),
-    ] {
-        let mut carried = rule(
-            RuleName(name),
-            ty,
-            type_application,
-            Regex::seq([
-                tile(TileLabel(head)),
-                Regex::optional(Regex::alt([
-                    Regex::seq([
-                        tile(TileLabel("(")),
-                        Regex::sort(endpoint),
-                        tile(TileLabel(",")),
-                        Regex::sort(endpoint),
-                        Regex::optional(Regex::seq([tile(TileLabel(",")), Regex::sort(endpoint)])),
-                        tile(TileLabel(")")),
-                    ]),
-                    supplied(Listed::Optionally),
-                ])),
-            ]),
-        )
-        .with_operands(endpoint);
-        carried.adaptations.push(Adaptation::refused(
-            RuleName(name),
-            retired,
-            AdaptationReason("a carrier written first, by position, is refused by name: the head takes its carrier by name"),
-        ));
-        rules.push(carried);
+    for (name, head) in [("path_type", "Path"), ("bridge_type", "Bridge")] {
+        rules.push(
+            rule(
+                RuleName(name),
+                ty,
+                type_application,
+                Regex::seq([
+                    tile(TileLabel(head)),
+                    Regex::optional(Regex::alt([
+                        Regex::seq([
+                            tile(TileLabel("(")),
+                            Regex::sort(endpoint),
+                            tile(TileLabel(",")),
+                            Regex::sort(endpoint),
+                            Regex::optional(Regex::seq([
+                                tile(TileLabel(",")),
+                                Regex::sort(endpoint),
+                            ])),
+                            tile(TileLabel(")")),
+                        ]),
+                        supplied(Listed::Optionally),
+                    ])),
+                ]),
+            )
+            .with_operands(endpoint),
+        );
     }
-    let mut flow = rule(
+    rules.push(rule(
         RuleName("flow_type"),
         ty,
         type_application,
         Regex::seq([tile(TileLabel("Flow")), supplied(Listed::Always)]),
-    );
-    flow.adaptations.push(Adaptation::refused(
-        RuleName("flow_type"),
-        RetiredForm::PositionalFlowCarrier,
-        AdaptationReason("a carrier written first, by position, is refused by name: the head takes its carrier by name"),
     ));
-    rules.push(flow);
     // A type application's head is a type name or a type variable: a
     // declaration's name is lowercase, so a type operator a declaration binds
     // is applied under the spelling a type position reads it by, `small` or
@@ -678,15 +658,14 @@ fn add_type_rules(
     // bracket names a method's deduced mode where a view's type reads its
     // element after it, `View[m](a)`.
     //
-    // The bracket also reads the retired forms that fixed a record's fields,
-    // `Config[.port = 443]` and `Config[secure ↦ *{.port = 443}]`. The
-    // lowering refuses each one by name, and the reader `.#{` of
-    // `extension_type` replaces both. The field form opens with `.`, where a
-    // stage opens with `<` or a name. The face form and a stage share their
-    // name, and the token after it, `↦` or `]`, decides between them. The
-    // forms are alternatives of one rule, so the `[` after a type keeps one
-    // mold. A second rule over the same `[` would tie with this one at every
-    // staged type.
+    // The bracket also reads `Config[.port = 443]` and
+    // `Config[secure ↦ *{.port = 443}]`. The lowering gives each one a tile
+    // out of place, and the reader `.#{` of `extension_type` fixes a record's
+    // fields. The field form opens with `.`, where a stage opens with `<` or a
+    // name. The face form and a stage share their name, and the token after
+    // it, `↦` or `]`, decides between them. The forms are alternatives of one
+    // rule, so the `[` after a type keeps one mold. A second rule over the
+    // same `[` would tie with this one at every staged type.
     //
     // A field's value is a type hole, as a value a type takes as a call's
     // argument is: a number, a boolean, a string, a name or a call. After `=`
@@ -748,7 +727,7 @@ fn add_type_rules(
     // value a type takes as a call's argument is. A face's value follows `↦`,
     // which no declaration writes, so it is an expression: the record of the
     // face's fields.
-    let mut extension = rule(
+    rules.push(rule(
         RuleName("extension_type"),
         ty,
         type_path,
@@ -776,27 +755,15 @@ fn add_type_rules(
             ]),
             tile(TileLabel("}")),
         ]),
-    );
-    extension.adaptations.push(Adaptation::refused(
-        RuleName("extension_type"),
-        RetiredForm::BracketFields,
-        AdaptationReason("the static bracket that fixes a record type's fields by label, `T[.l = v]`, is refused by name; a stage `T[i]` and a supply by name `f[.a = A]` keep the bracket"),
     ));
-    extension.adaptations.push(Adaptation::refused(
-        RuleName("extension_type"),
-        RetiredForm::BracketFaces,
-        AdaptationReason("the static bracket that fixes a face's fields, `T[f ↦ v]`, or the fields of each face of a system is refused by name"),
-    ));
-    rules.push(extension);
     // A parenthesized type holds one type or, as the domain of the n-ary box
     // `(A, B) -> C`, a list of them, each entry a bare type or a binder
     // `x : A` — the telescope `(x : A, y : B(x)) -> C`. One rule, so `(` keeps
     // a single type-sort mold; the binder's name is a type hole the `:` after
     // it makes a key, so `(a -> -F b)` still reads its `a` as a type. The
-    // lowering refuses a list anywhere but before `->` and as a function's
-    // outputs: the product `*{A, B}` replaces `(A, B)`, and the refusal names
-    // it.
-    let mut parenthesized = rule(
+    // lowering gives a list anywhere but before `->` and as a function's
+    // outputs a tile out of place: the product is `*{A, B}`.
+    rules.push(rule(
         RuleName("parenthesized_type"),
         ty,
         type_atom,
@@ -805,13 +772,7 @@ fn add_type_rules(
             comma1(entry_shape(ty)),
             tile(TileLabel(")")),
         ]),
-    );
-    parenthesized.adaptations.push(Adaptation::refused(
-        RuleName("parenthesized_type"),
-        RetiredForm::ParenthesizedProduct,
-        AdaptationReason("a list in parentheses outside the domain of an arrow and a function's outputs is refused by name at its first comma: `*{A, B}` is the product"),
     ));
-    rules.push(parenthesized);
     // The telescope `*{ … }`: the tuple, the record and Σ are one former, so
     // one rule spells all three. An entry is a bare type, positional and
     // labelled by its index, or a labelled `k : T`; `*{}` is the unit and
@@ -837,13 +798,6 @@ fn add_type_rules(
         RuleName("telescope_type"),
         SurfaceForm("record_type_field"),
         AdaptationReason("folded into telescope_type: the `k : T` field is inlined with its key a type hole, not a placeholder tile nor a form tile that would outrank every type variable at the same token"),
-    ));
-    telescope_type.adaptations.push(Adaptation::refused(
-        RuleName("telescope_type"),
-        RetiredForm::ViewTelescope,
-        AdaptationReason(
-            "the glued token `#{` is refused by name: `*{` opens the telescope and the record",
-        ),
     ));
     rules.push(telescope_type);
     // A protocol step and the rest: `T >! S` sends `T`, and `T >? S` receives

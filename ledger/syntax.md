@@ -228,30 +228,13 @@ A rule no source can mold, with the reason and what the reason is read from: the
 | ---- | ---- | ---- | ------ | --------- |
 | `instantiation.type` | instantiation | `TYPE` | the form holds no tile, so no tree names the rule | grammar |
 
-## Superseded — 18 spellings
+## Superseded — 1 spelling
 
-An old spelling and the spelling that replaces it. A spelling the grammar still parses, so that a stale source reaches the decline of the elaborator, names the open issue that removes it, and `check:ledger` refuses a row whose issue does not stand open. A spelling that a source meets as a refusal names the refusal, and `check:ledger` refuses a row whose exemplar under `corpus/ledger/syntax/superseded/` does not state it.
+An old spelling that the grammar still parses, so that a stale source reaches the decline of the elaborator, and the spelling that replaces it. Each names the open issue that removes it, and `check:ledger` refuses a row whose issue does not stand open.
 
 | Rule | Old spelling | Replaced by | Removal | Why the record stands |
 | ---- | ------------ | ----------- | ------- | --------------------- |
-| `attribute_block` | `native_attribute` | `builtin` | refused as [`RetiredSpelling.native_attribute`](../corpus/ledger/syntax/superseded/native-attribute.gandr) | a native value is a row of the builtin table: `@[builtin("key")]` binds it, and the reader refuses `native` by name |
-| `attribute_block` | `builtin_word` | `builtin("key")` | refused as [`RetiredSpelling.builtin_word`](../corpus/ledger/syntax/superseded/builtin-word.gandr) | a `builtin` mark names its row by a key in quotes, as each row of the builtin table: the reader refuses a bare word by name |
-| `tuple_pattern` | `parenthesized_product_pattern` | `*{p, q}` | refused as [`RetiredSpelling.parenthesized_product_pattern`](../corpus/ledger/syntax/superseded/parenthesized-product-pattern.gandr) | a group in parentheses over a stored product, in a `let` or a match arm, is refused by name: `*{p, q}` is the pattern; a group over a call's outputs keeps its reading |
-| `telescope_expression` | `unit_value` | `*{}` | refused as [`RetiredSpelling.unit_value`](../corpus/ledger/syntax/superseded/unit-value.gandr) | the unit value is the empty telescope `*{}`: the name `unit`, where no declaration binds it, is refused by name |
-| `telescope_expression` | `bare_record_field` | `*{ .l = e }` | refused as [`RetiredSpelling.bare_record_field`](../corpus/ledger/syntax/superseded/bare-record-field.gandr) | a field of a record literal supplies a name, so it writes the dot, `*{ .l = e }`: the undotted `*{ l = e }` is refused by name |
-| `telescope_expression` | `bare_update_field` | `*{ r \| .l = e }` | refused as [`RetiredSpelling.bare_update_field`](../corpus/ledger/syntax/superseded/bare-update-field.gandr) | a field of a record update supplies a name, so it writes the dot, `*{ r \| .l = e }`: the undotted `*{ r \| l = e }` is refused by name |
-| `function_type` | `fat_arrow_box` | `A -> B` | refused as [`RetiredSpelling.fat_arrow_box`](../corpus/ledger/syntax/superseded/fat-arrow-box.gandr) | the box `A => B` in a signature, a nested box, a group in parentheses or a record field is refused by name; a parameter, a result and a constructor field keep their faults, and a box in an expression hole is not named |
-| `path_type` | `positional_path_carrier` | `Path[.A = A](a, b)` | refused as [`RetiredSpelling.positional_path_carrier`](../corpus/ledger/syntax/superseded/positional-path-carrier.gandr) | a carrier written first, by position, is refused by name: the head takes its carrier by name |
-| `bridge_type` | `positional_bridge_carrier` | `Bridge[.A = A](a, b)` | refused as [`RetiredSpelling.positional_bridge_carrier`](../corpus/ledger/syntax/superseded/positional-bridge-carrier.gandr) | a carrier written first, by position, is refused by name: the head takes its carrier by name |
-| `flow_type` | `positional_flow_carrier` | `Flow[.A = A](a, b)` | refused as [`RetiredSpelling.positional_flow_carrier`](../corpus/ledger/syntax/superseded/positional-flow-carrier.gandr) | a carrier written first, by position, is refused by name: the head takes its carrier by name |
 | `type_application` | `glued_type_application` | `type_application.juxtaposed` | removed by #5330 | the glued head `T(a, b)` stays read until the sources move to `T a b` |
-| `extension_type` | `bracket_fields` | `T.#{.l = v}` | refused as [`RetiredSpelling.bracket_fields`](../corpus/ledger/syntax/superseded/bracket-fields.gandr) | the static bracket that fixes a record type's fields by label, `T[.l = v]`, is refused by name; a stage `T[i]` and a supply by name `f[.a = A]` keep the bracket |
-| `extension_type` | `bracket_faces` | `T.#{f ↦ v}` | refused as [`RetiredSpelling.bracket_faces`](../corpus/ledger/syntax/superseded/bracket-faces.gandr) | the static bracket that fixes a face's fields, `T[f ↦ v]`, or the fields of each face of a system is refused by name |
-| `parenthesized_type` | `parenthesized_product` | `*{A, B}` | refused as [`RetiredSpelling.parenthesized_product`](../corpus/ledger/syntax/superseded/parenthesized-product.gandr) | a list in parentheses outside the domain of an arrow and a function's outputs is refused by name at its first comma: `*{A, B}` is the product |
-| `telescope_type` | `view_telescope` | `*{ … }` | refused as [`RetiredSpelling.view_telescope`](../corpus/ledger/syntax/superseded/view-telescope.gandr) | the glued token `#{` is refused by name: `*{` opens the telescope and the record |
-| `theory_declaration` | `shape_member` | `boundary B {…}; face f = {…}` | refused as [`RetiredSpelling.shape_member`](../corpus/ledger/syntax/superseded/shape-member.gandr) | the member `shape` is refused by name: `boundary` states the carrier of the signature's cells, and `face` names each face of it |
-| `theory_declaration` | `empty_operation_inputs` | `oper c : T` | refused as [`RetiredSpelling.empty_operation_inputs`](../corpus/ledger/syntax/superseded/empty-operation-inputs.gandr) | an operation of no input is a constant: `oper c : T` states it, and the reader refuses `() -->` by name |
-| `theory_declaration` | `empty_operation_call` | `c` | refused as [`RetiredSpelling.empty_operation_call`](../corpus/ledger/syntax/superseded/empty-operation-call.gandr) | a constant is its bare name in a term: the reader refuses `c ()` by name |
 
 ## Attributes — 22 attributes
 
