@@ -187,6 +187,21 @@ impl Listing
                 message: error.to_string(),
             })
     }
+
+    /// The entries of the tool `key`: none when the checkout takes no version
+    /// of it on this host.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn entries(
+        &self,
+        key: &ToolKey,
+    ) -> &[Entry]
+    {
+        self.0.get(key).map_or(&[], Vec::as_slice)
+    }
 }
 
 /// The tools that the host disables, read from `json`, the output of `mise

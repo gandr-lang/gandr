@@ -71,6 +71,40 @@ pub enum HostToolsError
         /// The error of the reader.
         message: String,
     },
+    /// A text states no release of LLVM as `major.minor.patch`.
+    Release
+    {
+        /// What states the release: the pin, a command or a file.
+        source: String,
+        /// The text that stands in place of the release.
+        text: String,
+    },
+    /// The pinned LLVM and the LLVM of rustc differ in their major release.
+    Major
+    {
+        /// The release of the pin.
+        pin: String,
+        /// The release of rustc's LLVM.
+        rustc: String,
+    },
+    /// The tree that the host holds states another release than the pin.
+    Tree
+    {
+        /// The file of the tree that states its release.
+        path: PathBuf,
+        /// The release of the pin.
+        pin: String,
+        /// The release of the tree.
+        tree: String,
+    },
+    /// mise holds no install of a tool that the host takes.
+    Uninstalled
+    {
+        /// The tool's key in `mise.toml`.
+        key: String,
+        /// The pinned version.
+        version: String,
+    },
 }
 
 impl fmt::Display for HostToolsError
@@ -124,6 +158,33 @@ impl fmt::Display for HostToolsError
                     "mise's listing of the tools is not the JSON it takes: {message}"
                 )
             },
+            Self::Release {
+                ref source,
+                ref text,
+            } => write!(
+                f,
+                "{source} states no release of LLVM as major.minor.patch: `{text}`"
+            ),
+            Self::Major { ref pin, ref rustc } => write!(
+                f,
+                "the pin holds LLVM {pin}, and rustc holds LLVM {rustc}: a cross-language link needs one major release"
+            ),
+            Self::Tree {
+                ref path,
+                ref pin,
+                ref tree,
+            } => write!(
+                f,
+                "{}: the tree states LLVM {tree}, and the pin is LLVM {pin}",
+                path.display()
+            ),
+            Self::Uninstalled {
+                ref key,
+                ref version,
+            } => write!(
+                f,
+                "{key}: mise holds no install of {version}, and `mise install` installs it"
+            ),
         }
     }
 }
@@ -191,6 +252,35 @@ mod tests
                     message: "expected a map".to_owned(),
                 },
                 "mise's listing of the tools is not the JSON it takes: expected a map",
+            ),
+            (
+                HostToolsError::Release {
+                    source: "`rustc -vV`".to_owned(),
+                    text: "23.1.x".to_owned(),
+                },
+                "`rustc -vV` states no release of LLVM as major.minor.patch: `23.1.x`",
+            ),
+            (
+                HostToolsError::Major {
+                    pin: "22.1.8".to_owned(),
+                    rustc: "23.1.1".to_owned(),
+                },
+                "the pin holds LLVM 22.1.8, and rustc holds LLVM 23.1.1: a cross-language link needs one major release",
+            ),
+            (
+                HostToolsError::Tree {
+                    path: PathBuf::from("tree/lib/cmake/llvm/LLVMConfigVersion.cmake"),
+                    pin: "23.1.6".to_owned(),
+                    tree: "23.1.5".to_owned(),
+                },
+                "tree/lib/cmake/llvm/LLVMConfigVersion.cmake: the tree states LLVM 23.1.5, and the pin is LLVM 23.1.6",
+            ),
+            (
+                HostToolsError::Uninstalled {
+                    key: "github:a/b".to_owned(),
+                    version: "1.0.0".to_owned(),
+                },
+                "github:a/b: mise holds no install of 1.0.0, and `mise install` installs it",
             ),
         ];
         for (error, line) in cases {

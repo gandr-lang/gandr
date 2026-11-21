@@ -320,3 +320,155 @@ fn a_host_that_lacks_no_tool_exits_zero_and_clears_its_needs()
     assert!(!needs.exists());
     std::fs::remove_dir_all(&directory).unwrap();
 }
+
+/// Run `host-tools llvm` in `directory`, with the pin `pin` in its lock, a
+/// rustc of LLVM `rustc`, and a mise that lists `listing`, with shell
+/// built-ins only.
+///
+/// # Specification
+/// trivial.
+fn llvm(
+    directory: &std::path::Path,
+    pin: &str,
+    rustc: &str,
+    listing: &str,
+) -> std::process::Output
+{
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::write(
+        directory.join("mise.lock"),
+        format!("[[tools.\"github:gandr-lang/toolchains-llvm\"]]\nversion = \"{pin}\"\n"),
+    )
+    .unwrap();
+    let bin = directory.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let programs = [
+        (
+            "rustc",
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' 'rustc 1.101.0-nightly (21b707e3f 2026-09-30)' 'release: 1.101.0-nightly' 'LLVM version: {rustc}'\n"
+            ),
+        ),
+        (
+            "mise",
+            format!("#!/bin/sh\ncase \"$1\" in\nls) printf '%s\\n' '{listing}' ;;\nesac\n"),
+        ),
+    ];
+    for (name, text) in programs {
+        std::fs::write(bin.join(name), text).unwrap();
+        std::fs::set_permissions(bin.join(name), std::fs::Permissions::from_mode(0o755_u32))
+            .unwrap();
+    }
+    Command::new(env!("CARGO_BIN_EXE_host-tools"))
+        .arg("llvm")
+        .current_dir(directory)
+        .env("PATH", bin)
+        .output()
+        .unwrap()
+}
+
+/// A tree at `<directory>/tree` that states the release `release`, and the
+/// listing of mise that holds it at the pin `pin`.
+///
+/// # Specification
+/// trivial.
+fn tree(
+    directory: &std::path::Path,
+    pin: &str,
+    release: &str,
+) -> String
+{
+    let root = directory.join("tree");
+    let cmake = root.join("lib/cmake/llvm");
+    std::fs::create_dir_all(&cmake).unwrap();
+    std::fs::write(
+        cmake.join("LLVMConfigVersion.cmake"),
+        format!("set(PACKAGE_VERSION \"{release}\")\n\nif(\"23.1\" VERSION_EQUAL\n    \"${{PACKAGE_FIND_VERSION_MAJOR}}.${{PACKAGE_FIND_VERSION_MINOR}}\")\n  set(PACKAGE_VERSION_COMPATIBLE 1)\nendif()\n"),
+    )
+    .unwrap();
+    format!(
+        "{{\"github:gandr-lang/toolchains-llvm\": [{{\"version\": \"{pin}\", \"installed\": true, \"install_path\": \"{}\"}}]}}",
+        root.display()
+    )
+}
+
+#[test]
+fn the_check_passes_at_the_pin()
+{
+    let directory = scratch();
+    let listing = tree(&directory, "23.1.6+rev0", "23.1.6");
+    let output = llvm(&directory, "23.1.6+rev0", "23.1.1", &listing);
+    assert_eq!(output.status.code(), Some(0_i32), "{output:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!(
+            "LLVM 23.1.6 of the pin, LLVM 23.1.1 of rustc and the tree at {} agree\n",
+            directory.join("tree").display()
+        )
+    );
+    std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn a_pin_of_another_major_release_is_refused_by_both_releases()
+{
+    let directory = scratch();
+    let listing = tree(&directory, "22.1.8+rev0", "22.1.8");
+    let output = llvm(&directory, "22.1.8+rev0", "23.1.1", &listing);
+    assert_eq!(output.status.code(), Some(2_i32));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "host-tools: the pin holds LLVM 22.1.8, and rustc holds LLVM 23.1.1: a cross-language link needs one major release\n"
+    );
+    std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn a_tree_of_another_release_is_refused_by_both_releases()
+{
+    let directory = scratch();
+    let listing = tree(&directory, "23.1.6+rev0", "23.1.5");
+    let output = llvm(&directory, "23.1.6+rev0", "23.1.1", &listing);
+    assert_eq!(output.status.code(), Some(2_i32));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        format!(
+            "host-tools: {}: the tree states LLVM 23.1.5, and the pin is LLVM 23.1.6\n",
+            directory
+                .join("tree/lib/cmake/llvm/LLVMConfigVersion.cmake")
+                .display()
+        )
+    );
+    std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn a_platform_that_takes_no_tree_reads_the_major_release_alone()
+{
+    let directory = scratch();
+    let output = llvm(&directory, "23.1.6+rev0", "23.1.1", "{}");
+    assert_eq!(output.status.code(), Some(0_i32), "{output:?}");
+    let platform = format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH);
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!(
+            "LLVM 23.1.6 of the pin and LLVM 23.1.1 of rustc share their major release, and {platform} takes no tree of the pin\n"
+        )
+    );
+    std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn a_platform_with_no_install_of_its_tree_is_refused()
+{
+    let directory = scratch();
+    let listing = "{\"github:gandr-lang/toolchains-llvm\": [{\"version\": \"23.1.6+rev0\", \"installed\": false, \"install_path\": \"/absent\"}]}";
+    let output = llvm(&directory, "23.1.6+rev0", "23.1.1", listing);
+    assert_eq!(output.status.code(), Some(2_i32));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "host-tools: github:gandr-lang/toolchains-llvm: mise holds no install of 23.1.6+rev0, and `mise install` installs it\n"
+    );
+    std::fs::remove_dir_all(&directory).unwrap();
+}

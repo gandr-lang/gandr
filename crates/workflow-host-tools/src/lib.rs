@@ -32,6 +32,8 @@
 //!   pin on each host.
 //! - [`lack`] reads the tools of a checkout that a host lacks: no install, no
 //!   program, or a program of another machine.
+//! - [`llvm`] reads the release of the pinned LLVM toolchain against the
+//!   release of rustc's LLVM and against the tree that a host holds.
 //!
 //! # Boundaries
 //!
@@ -56,6 +58,7 @@ pub mod host;
 pub mod input;
 pub mod jobs;
 pub mod lack;
+pub mod llvm;
 pub mod lock;
 pub mod names;
 pub mod push;
@@ -75,6 +78,7 @@ pub use crate::host::Receiver;
 pub use crate::input::Input;
 pub use crate::jobs::Job;
 pub use crate::jobs::plan;
+pub use crate::lack::Entry;
 pub use crate::lack::Lack;
 pub use crate::lack::Listing;
 pub use crate::lack::Machine;

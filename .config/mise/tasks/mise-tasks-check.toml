@@ -1599,6 +1599,18 @@ fi
 echo 'readme pin OK: README.md is the owner-approved synopsis'
 '''
 
+# A link with cross-language LTO reads the bitcode of rustc's LLVM beside
+# the libraries of the pinned LLVM toolchain, and it needs one major release
+# on both sides. `host-tools llvm` reads the release of the pin in
+# `mise.lock` and the release of rustc's LLVM in `rustc -vV`, and refuses a
+# difference of their major releases by both releases. It reads the release
+# that the host's tree states in its CMake package, and refuses a tree of
+# another release than the pin. A platform that the release serves with no
+# archive takes no tree, and the check reads the major release alone there.
+["check:llvm"]
+description = "The pinned LLVM toolchain shares its major release with rustc's LLVM, and the host's tree is the pin's release"
+run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-workflow-host-tools --bin host-tools -- llvm"
+
 # The syntax ledger is generated from the grammar, the attribute registry and
 # the committed rules' exemplars, which each rule's admission is read off
 # (`gandr-workflow-ledger-tasks`'s `ledger` module): `ledger:syntax` regenerates

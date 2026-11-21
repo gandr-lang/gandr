@@ -181,6 +181,16 @@ export CARGO_TARGET_WASM32_WASIP3_RUSTFLAGS="-C target-feature=+tail-call -C lin
 cargo build --release --locked -Zbuild-std=std,panic_abort --target wasm32-wasip3 -p gandr-lang --bin gandr
 '''
 
+# The root of the pinned LLVM toolchain on this host: the unpacked tree of
+# its release, with `bin`, `include` and `lib`. A reader takes each path of
+# the toolchain from this root, and no directory of it enters PATH. mise
+# gives a root only to a whole install, so a stopped install gives none.
+# `check:llvm` holds the release of the tree to the pin and to rustc's LLVM.
+["llvm:root"]
+description = "Print the root of the pinned LLVM toolchain on this host"
+quiet = true
+run = "mise where github:gandr-lang/toolchains-llvm"
+
 # The wasm driver against the native one (#4882): each case of
 # `.config/wasm/cases.txt` runs on both, and the task fails on any case
 # where they print differently or one fails alone. Wasmtime is the test

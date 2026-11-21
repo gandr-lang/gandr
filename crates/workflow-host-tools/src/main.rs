@@ -16,13 +16,18 @@
 //! checkout that this host lacks. It prints one line for each of them, and
 //! one line for the host's mise against the pin.
 //!
+//! `host-tools llvm` reads the release of the pinned LLVM toolchain in
+//! `mise.lock`, the release of rustc's LLVM in `rustc -vV`, and the release
+//! that the tree of the host states. It prints one line when they agree.
+//!
 //! # Exit codes
 //!
 //! - `0`: the key of each tool stands, and each push and update ended; for
-//!   `check`, the host lacks no tool; also `--help` and `--version`.
+//!   `check`, the host lacks no tool; for `llvm`, the releases agree; also
+//!   `--help` and `--version`.
 //! - `2`: a tool's build, a push or an update failed, or the run was refused
-//!   before the first build; for `check`, the host lacks a tool; also a
-//!   malformed invocation.
+//!   before the first build; for `check`, the host lacks a tool; for `llvm`, a
+//!   release differs or cannot be read; also a malformed invocation.
 
 extern crate alloc;
 
@@ -48,10 +53,12 @@ use gandr_workflow_host_tools::Pruned;
 use gandr_workflow_host_tools::Pushed;
 use gandr_workflow_host_tools::Receiver;
 use gandr_workflow_host_tools::Target;
+use gandr_workflow_host_tools::ToolKey;
 use gandr_workflow_host_tools::Version;
 use gandr_workflow_host_tools::build;
 use gandr_workflow_host_tools::disabled;
 use gandr_workflow_host_tools::lacks;
+use gandr_workflow_host_tools::llvm;
 use gandr_workflow_host_tools::plan;
 use gandr_workflow_host_tools::prune;
 use gandr_workflow_host_tools::push;
@@ -103,6 +110,9 @@ enum Command
         #[arg(long)]
         mise_version: Option<String>,
     },
+    /// Reads the release of the pinned LLVM toolchain against the release of
+    /// rustc's LLVM and against the tree that the host holds.
+    Llvm,
 }
 
 /// The inputs of each subcommand.
@@ -277,11 +287,12 @@ fn run(cli: Cli) -> Result<ExitCode, HostToolsError>
             mise_version.as_deref().map(Version::from).as_ref(),
             &mut code,
         )?,
+        Command::Llvm => check_llvm()?,
     }
     Ok(code)
 }
 
-/// A question that the check puts to mise.
+/// A question that a check puts to mise or to rustc.
 #[derive(Clone, Copy, Debug)]
 enum Query
 {
@@ -291,6 +302,51 @@ enum Query
     Disabled,
     /// The version of mise, `mise --version`.
     Version,
+    /// The version of rustc and of its LLVM, `rustc -vV`.
+    Rustc,
+}
+
+/// Read the release of the pinned LLVM toolchain in `mise.lock` of the
+/// working directory against the release of rustc's LLVM, then against the
+/// tree that mise holds for this host, and print one line when they agree.
+/// A platform that takes no tree of the pin reads the major release alone.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the lock, the texts of `rustc -vV`, of the listing and of the
+///   tree's file, and the printed line, diagnostic
+fn check_llvm() -> Result<(), HostToolsError>
+{
+    let key = ToolKey::from(llvm::KEY);
+    let lock = Lock::read(&Input::read("mise.lock".as_ref())?)?;
+    let version = lock.version(&key).ok_or_else(|| HostToolsError::Unlocked {
+        key: llvm::KEY.to_owned(),
+    })?;
+    let pin = llvm::Release::of_pin(version)?;
+    let rustc = llvm::Release::of_rustc(&ask(Query::Rustc)?)?;
+    llvm::agree(pin, rustc)?;
+    let platform = Platform::host();
+    let listing = Listing::read(&Json::from(ask(Query::Tools)?.as_str()))?;
+    let Some(entry) = listing.entries(&key).first()
+    else {
+        return say(format_args!(
+            "LLVM {pin} of the pin and LLVM {rustc} of rustc share their major release, and {platform} takes no tree of the pin"
+        ));
+    };
+    if !entry.installed {
+        return Err(HostToolsError::Uninstalled {
+            key: llvm::KEY.to_owned(),
+            version: entry.version.to_string(),
+        });
+    }
+    let root = PathBuf::from(&entry.install_path);
+    llvm::holds(&root, pin)?;
+    say(format_args!(
+        "LLVM {pin} of the pin, LLVM {rustc} of rustc and the tree at {} agree",
+        root.display()
+    ))
 }
 
 /// Read the tools of the checkout in the working directory that this host
@@ -308,8 +364,8 @@ fn check(
 ) -> Result<(), HostToolsError>
 {
     let platform = Platform::host();
-    let listing = Listing::read(&mise(Query::Tools)?)?;
-    let off = disabled(&mise(Query::Disabled)?)?;
+    let listing = Listing::read(&Json::from(ask(Query::Tools)?.as_str()))?;
+    let off = disabled(&Json::from(ask(Query::Disabled)?.as_str()))?;
     let checkout = std::env::current_dir().map_err(|error| HostToolsError::Io {
         path: PathBuf::from("."),
         message: error.to_string(),
@@ -346,8 +402,7 @@ fn check(
     else {
         return Ok(());
     };
-    let version = mise(Query::Version)?;
-    let text: &str = version.as_ref();
+    let text = ask(Query::Version)?;
     let running = text.split_whitespace().next().unwrap_or_default();
     if *pin == *running {
         say(format_args!("{platform} runs mise {running}, the pin"))
@@ -359,30 +414,31 @@ fn check(
     }
 }
 
-/// Put `query` to mise in the working directory, and give its standard
-/// output.
+/// Put `query` to mise or to rustc in the working directory, and give its
+/// standard output.
 ///
 /// # Specification
 /// trivial.
-fn mise(query: Query) -> Result<Json, HostToolsError>
+fn ask(query: Query) -> Result<String, HostToolsError>
 {
-    let args: &[&str] = match query {
-        Query::Tools => &["ls", "--current", "--json"],
-        Query::Disabled => &["settings", "get", "disable_tools"],
-        Query::Version => &["--version"],
+    let (program, args): (&str, &[&str]) = match query {
+        Query::Tools => ("mise", &["ls", "--current", "--json"]),
+        Query::Disabled => ("mise", &["settings", "get", "disable_tools"]),
+        Query::Version => ("mise", &["--version"]),
+        Query::Rustc => ("rustc", &["-vV"]),
     };
-    let line = format!("mise {}", args.join(" "));
-    let output = std::process::Command::new("mise")
+    let line = format!("{program} {}", args.join(" "));
+    let output = std::process::Command::new(program)
         .args(args)
         .output()
         .map_err(|error| HostToolsError::Command {
-            key: "mise".to_owned(),
+            key: program.to_owned(),
             command: line.clone(),
             message: error.to_string(),
         })?;
     if !output.status.success() {
         return Err(HostToolsError::Command {
-            key: "mise".to_owned(),
+            key: program.to_owned(),
             command: line,
             message: format!(
                 "exits with {}: {}",
@@ -391,7 +447,7 @@ fn mise(query: Query) -> Result<Json, HostToolsError>
             ),
         });
     }
-    Ok(Json::from(String::from_utf8_lossy(&output.stdout).as_ref()))
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 impl Read
