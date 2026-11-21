@@ -1484,6 +1484,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 })
                 .collect();
         operators.sort_unstable();
+        // The definitions of no input, so a printer writes a run of one as
+        // its bare name.
+        let mut invoked: Vec<ConstantIndex> = collected
+            .no_input
+            .iter()
+            .filter_map(|&slot| Some(collected.slots.get(usize::from(slot))?.constant))
+            .collect();
+        invoked.sort_unstable();
         let reads = collected.reads();
         // The faces each record type member of this source names: a closure's
         // members are below `own` and keep theirs.
@@ -1536,6 +1544,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_forgets(forgets)
         .with_readers(readers)
         .with_operators(operators)
+        .with_invoked(invoked)
         .with_reading(collected.unit, reads)
         .with_forgettings(forgettings)
         .with_record_faces(record_faces);

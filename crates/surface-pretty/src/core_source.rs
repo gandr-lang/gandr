@@ -41,6 +41,7 @@ use crate::former::Component;
 use crate::former::ForgetCall;
 use crate::former::Forgotten;
 use crate::former::Former;
+use crate::former::Invoked;
 use crate::former::Manifest;
 use crate::former::ModelSlot;
 use crate::former::Name;
@@ -813,6 +814,9 @@ pub struct CoreSource<'arena>
     /// The infix operator of the comparison that calls each constant a
     /// comparison calls, ascending by the constant.
     operators: &'arena [(ConstantIndex, gandr_core_term::primitive::Operator)],
+    /// The constants whose definitions take no input, so that a run of one
+    /// writes its bare name, ascending.
+    invoked: &'arena [ConstantIndex],
     /// The name the source writes for each homed type head it does not write
     /// bare, by the head's bare spelling.
     homes: &'arena [(Name<'arena>, Name<'arena>)],
@@ -857,6 +861,7 @@ impl<'arena> CoreSource<'arena>
             stages: &[],
             slots: &[],
             operators: &[],
+            invoked: &[],
             homes: &[],
         }
     }
@@ -1177,6 +1182,21 @@ impl<'arena> CoreSource<'arena>
     ) -> Self
     {
         Self { telescopes, ..self }
+    }
+
+    /// This source, writing a run of each constant `invoked` holds, ascending,
+    /// as its bare name: a definition of no input, which its name runs.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn invoking(
+        self,
+        invoked: &'arena [ConstantIndex],
+    ) -> Self
+    {
+        Self { invoked, ..self }
     }
 
     /// The telescope this source records for the function `constant`: one
@@ -4010,6 +4030,24 @@ impl Source for CoreSource<'_>
             .ok()
             .and_then(|at| self.operators.get(at))
             .map(|&(_, operator)| operator)
+    }
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn invoked(
+        &self,
+        head: CoreNode,
+    ) -> Invoked
+    {
+        let CoreNode::Value(id) = self.restoration.restored(head)
+        else {
+            return Invoked(false);
+        };
+        Invoked(
+            matches!(self.arena.value(id), Some(&Value::Constant(constant))
+            if self.invoked.binary_search(&constant).is_ok()),
+        )
     }
 }
 

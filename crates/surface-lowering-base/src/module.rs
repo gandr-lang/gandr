@@ -12116,6 +12116,9 @@ pub struct LoweredModule<'source>
     /// The prelude's declarations that a comparison calls, each with the
     /// infix operator that calls it, ascending by the constant.
     operators: Vec<(ConstantIndex, gandr_core_term::primitive::Operator)>,
+    /// The definitions of no input, which a bare name runs, ascending by the
+    /// constant.
+    invoked: Vec<ConstantIndex>,
     /// Each forgetting map the module mints as a source writes it, ascending
     /// by the map's position.
     forgettings: Vec<Forgetting>,
@@ -12187,6 +12190,7 @@ impl<'source> LoweredModule<'source>
             forgets: Vec::new(),
             readers: Vec::new(),
             operators: Vec::new(),
+            invoked: Vec::new(),
             forgettings: Vec::new(),
             record_faces: Vec::new(),
         }
@@ -12373,6 +12377,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.operators = operators;
+        self
+    }
+
+    /// This module, carrying `invoked`: the definitions of no input, which a
+    /// bare name runs, ascending by the constant.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_invoked(
+        mut self,
+        invoked: Vec<ConstantIndex>,
+    ) -> Self
+    {
+        self.invoked = invoked;
         self
     }
 
@@ -13518,6 +13538,19 @@ impl<'source> LoweredModule<'source>
     pub fn operators(&self) -> &[(ConstantIndex, gandr_core_term::primitive::Operator)]
     {
         &self.operators
+    }
+
+    /// The definitions of no input, ascending by the constant: a bare name
+    /// runs each of them. A printer writes a run of one as its bare name, so
+    /// the run reads back as the source writes it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn invoked(&self) -> &[ConstantIndex]
+    {
+        &self.invoked
     }
 
     /// Each forgetting map this module mints as a source writes it, ascending
