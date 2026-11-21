@@ -13,7 +13,7 @@ def again() -> -F Integer = loop {
   } with { | pure(x) => pure x | oper exit(code, k) => k *{} }
 };
 def inner() -> -F Integer = handle c : std.process.Exit.Eff {
-  let v = loop { break(5) };
+  let v = loop { break(5) }
   pure v
 } with {
   | pure(x) => pure x

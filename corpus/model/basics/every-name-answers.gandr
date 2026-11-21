@@ -28,5 +28,5 @@ def swap(c : Colour) -> Colour =
 
 /// The colour after two swaps. It equals the colour itself.
 def backAgain(c : Colour) -> Colour =
-  let once = swap c;
+  let once = swap c
   swap once

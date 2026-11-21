@@ -25,18 +25,18 @@ def reportsByMatch(seat : Integer >! end, early : Bool) -> Unit =
 /// `while` is a case, and what follows the loop runs in its false branch.
 def draining(seat : rec open => +{more : Integer >! open, done : end}, more : Bool) -> Unit =
   while more {
-    select seat more;
+    select seat more
     send seat 1
-  };
+  }
   select seat done
   close seat
 
 /// A desk that hears one report from a seat closing on its late branch.
 @[runs("2")]
 def hearsOneReport() -> Integer =
-  let seat = fork (desk : end) { closing desk false };
+  let seat = fork (desk : end) { closing desk false }
   close seat
-  let desk = fork (report : Integer >! end) { reportsByMatch report false };
+  let desk = fork (report : Integer >! end) { reportsByMatch report false }
   let heard = recv desk
   close desk
   pure heard
@@ -55,5 +55,5 @@ def hearing(desk : rec open => &{more : Integer >? open, done : end}) -> Unit =
 def drained() -> Unit =
   let desk = fork (seat : rec open => +{more : Integer >! open, done : end}) {
     draining seat false
-  };
+  }
   hearing desk

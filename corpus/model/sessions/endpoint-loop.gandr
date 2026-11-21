@@ -50,15 +50,15 @@ def tally(operator : rec open => &{
       | report => { let next = recv operator; access seen as v { resume v (v + 1) }; continue }
       | retire => { let last = recv operator; close operator; break }
     }
-  };
+  }
   pure seen
 
 /// `asking` selects a report and hears its answer on each pass.
 /// The loop issues every command and never exits.
 def asking(seat : rec open => +{more : Integer >? open, done : end}) -> Unit =
   loop {
-    select seat more;
-    let heard = recv seat;
+    select seat more
+    let heard = recv seat
     continue
   }
 
@@ -74,7 +74,7 @@ def serving(desk : rec open => &{report : Integer >? open}) -> Unit =
 /// The bridge declines it as it declines a loop that receives.
 def beacon(seat : rec open => Integer >! open) -> Unit =
   loop {
-    send seat 1;
+    send seat 1
     continue
   }
 
@@ -84,7 +84,7 @@ def followed() -> Unit =
   let seat = fork (operator : rec open => &{
     report : Integer >? open,
     retire : Integer >? end
-  }) { follow operator };
+  }) { follow operator }
   select seat report
   send seat 1
   select seat report

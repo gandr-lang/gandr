@@ -199,7 +199,7 @@ def pick(n : Nat) -> -F Nat =
       let q = match p {
         | Zero => return n
         | Succ(r) => pure r
-      };
+      }
       pure q
     }
   return Succ m
@@ -212,7 +212,7 @@ def pick_elided(n : Nat) -> -F Nat =
       let q = match p {
         | Zero => return n
         | Succ(r) => pure r
-      };
+      }
       pure q
     }
   Succ m

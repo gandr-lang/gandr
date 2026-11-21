@@ -10,6 +10,6 @@ theory Wheel where
   oper zip : (s : Nat, t : Nat) --> (u : Nat);
 
   rule spin : (data stream : Nat) ==> (out : Nat) {
-    node : zip(stream, state) --> (out);
+    node : zip(stream, state) --> (out)
     feed : (out) --> (state);
   };

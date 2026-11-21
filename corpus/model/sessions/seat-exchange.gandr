@@ -37,19 +37,19 @@ import "./seat-base.gandr";
 ]
 def exchange() -> Unit =
   let desk = fork (seat : Seat.SeatEnd) {
-    let task = recv seat;
-    select seat report;
-    send seat Seat.progress;
+    let task = recv seat
+    select seat report
+    send seat Seat.progress
     offer seat {
       | next => { select seat handoff; send seat Seat.notes; close seat }
       | retire => close seat
     }
-  };
+  }
   send desk Seat.task
   offer desk {
     | report => {
-      let first = recv desk;
-      select desk next;
+      let first = recv desk
+      select desk next
       offer desk {
         | report => { let second = recv desk; select desk retire; close desk }
         | handoff => { let notes = recv desk; close desk }

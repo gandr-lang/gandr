@@ -25,6 +25,6 @@ theory Qubit where
 
   /// `f` and `g` both write `z`: one spider merges their outputs.
   rule merge : (data x : Q, data y : Q) <=> (z : Q) {
-    node : f(x) --> (z);
+    node : f(x) --> (z)
     node : g(y) --> (z);
   };

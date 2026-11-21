@@ -39,12 +39,12 @@ def halting() -> [h : Halt.Eff with sort R = Integer] Integer =
 def halted() -> Integer =
   var x = 1
   let r : Integer = handle h : Halt.Eff with sort R = Integer {
-    access x as v { let _ = halting (); resume v 5 } unwind { afterHalt 1 };
+    access x as v { let _ = halting (); resume v 5 } unwind { afterHalt 1 }
     pure 0
   } with {
     | pure(y) => pure y
     | oper halt(code) => pure 7
-  };
+  }
   pure x
 
 /// The same access across an exit whose clause abandons `k` itself.
@@ -52,12 +52,12 @@ def halted() -> Integer =
 def abandoned() -> Integer =
   var x = 1
   let r : Integer = handle c : std.process.Exit.Eff {
-    access x as v { let _ = c.exit 1; resume v 5 } unwind { afterHalt 1 };
+    access x as v { let _ = c.exit 1; resume v 5 } unwind { afterHalt 1 }
     pure 0
   } with {
     | pure(y) => pure y
     | oper exit(code, k) => { abandon k; pure 7 }
-  };
+  }
   pure x
 
 /// The function creates a two-element list with its argument first.
@@ -71,12 +71,12 @@ def haltedKept() -> List Integer =
   let ys = pairOf 1
   var x = 1
   let r : Integer = handle h : Halt.Eff with sort R = Integer {
-    access x as v { let _ = halting (); resume v 5 } unwind { let _ = ys; pure *{} };
+    access x as v { let _ = halting (); resume v 5 } unwind { let _ = ys; pure *{} }
     pure 0
   } with {
     | pure(y) => pure y
     | oper halt(code) => pure 7
-  };
+  }
   pure cons 9 ys
 
 /// The same list across an exit whose clause abandons `k` itself.
@@ -85,10 +85,10 @@ def abandonedKept() -> List Integer =
   let ys = pairOf 1
   var x = 1
   let r : Integer = handle c : std.process.Exit.Eff {
-    access x as v { let _ = c.exit 1; resume v 5 } unwind { let _ = ys; pure *{} };
+    access x as v { let _ = c.exit 1; resume v 5 } unwind { let _ = ys; pure *{} }
     pure 0
   } with {
     | pure(y) => pure y
     | oper exit(code, k) => { abandon k; pure 7 }
-  };
+  }
   pure cons 9 ys

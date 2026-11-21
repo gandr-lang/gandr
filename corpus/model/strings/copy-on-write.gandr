@@ -44,15 +44,15 @@ pub def rec beforeZero(bs : List Integer, b : Integer) -> List Integer =
 pub def push(s : Repr, b : Integer) -> Written =
   match s where
     | Inline(bs) => {
-      let grown = beforeZero bs b;
-      let stored = store grown;
+      let grown = beforeZero bs b
+      let stored = store grown
       match stored where
         | Inline(kept) => Written stored 0
         | Shared(n, moved) => Written stored 1
     }
     | Shared(n, bs) => {
-      let grown = beforeZero bs b;
-      let alone = n == 1;
+      let grown = beforeZero bs b
+      let alone = n == 1
       match alone where
         | true => Written (Shared 1 grown) 0
         | false => Written (Shared 1 grown) 1

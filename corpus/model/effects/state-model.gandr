@@ -86,8 +86,8 @@ def putGet(
     | *{.get = g, .put = p} => {
       let read = g (fun (s) {
         pure fun (t) { let a = shown s; let b = shown t; pure a * 10 + b }
-      });
-      let program = p (+{.1 = +{.0 = *{}}}) read;
+      })
+      let program = p (+{.1 = +{.0 = *{}}}) read
       program (+{.0 = *{}})
     }
 

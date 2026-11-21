@@ -24,7 +24,7 @@ def threeSteps() -> [cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
 /// The steps under the counting model.
 def countedSteps() -> (Nat -> Nat) -> Nat =
   handle cost : Cost.Eff with sort N = Nat -> Nat {
-    let _answer = threeSteps ();
+    let _answer = threeSteps ()
     pure counted
   } with Counting
 

@@ -26,19 +26,19 @@ import std.io;
 /// completion, before the clause resumes with it.
 def bufferReturned() -> Unit =
   handle r : std.io.Ring.Eff {
-    let b = r.alloc 4096;
+    let b = r.alloc 4096
     r.free b
   } with {
     | pure(x) => pure x
     | oper alloc(n, b, k) => {
       let ring = fork (kernel : Buf >? Buf >! end) {
-        let held = recv kernel;
-        send kernel held;
+        let held = recv kernel
+        send kernel held
         close kernel
-      };
-      send ring b;
-      let filled = recv ring;
-      close ring;
+      }
+      send ring b
+      let filled = recv ring
+      close ring
       k filled
     }
     | oper free(b, k) => k *{}
@@ -48,7 +48,7 @@ def bufferReturned() -> Unit =
 /// the case found it live, and every arm hands it back.
 def freedInEachArm(flag : Bool) -> Unit =
   handle r : std.io.Ring.Eff {
-    let b = r.alloc 4096;
+    let b = r.alloc 4096
     match flag where
       | true => r.free b
       | false => r.free b

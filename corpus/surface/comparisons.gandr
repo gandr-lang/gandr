@@ -11,7 +11,7 @@
 
 /// Its argument when that is not zero, else zero.
 def unlessZero(n : Integer) -> [Partial] Integer =
-  while n != 0 { return n };
+  while n != 0 { return n }
   0
 
 /// Three is not zero, so the loop returns it.
@@ -24,7 +24,7 @@ def unlessZeroZero() -> [Partial] Integer = unlessZero 0;
 
 /// Its argument when that is at most zero, else zero.
 def atMostZero(n : Integer) -> [Partial] Integer =
-  while n <= 0 { return n };
+  while n <= 0 { return n }
   0
 
 /// Zero is at most zero, so the loop returns it.
@@ -33,7 +33,7 @@ def atMostZeroZero() -> [Partial] Integer = atMostZero 0;
 
 /// Its argument when that is at least one, else zero.
 def atLeastOne(n : Integer) -> [Partial] Integer =
-  while n >= 1 { return n };
+  while n >= 1 { return n }
   0
 
 /// One is at least one, so the loop returns it.

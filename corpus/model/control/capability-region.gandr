@@ -16,7 +16,7 @@ import std.process;
 /// `named` gives the scope capability its region type.
 def named() -> Unit =
   handle c : std.process.Exit.Eff {
-    let d : Cap { exit } at c = c;
+    let d : Cap { exit } at c = c
     return *{}
   } with {
     | pure(x) => x
@@ -28,7 +28,7 @@ def named() -> Unit =
 @[refuses("CapabilityEscaped")]
 def held() -> Unit =
   handle c : std.process.Exit.Eff {
-    let d : Cap { exit } = c;
+    let d : Cap { exit } = c
     return *{}
   } with {
     | pure(x) => x
@@ -39,7 +39,7 @@ def held() -> Unit =
 def outer() -> Unit =
   handle c : std.process.Exit.Eff {
     handle e : std.process.Exit.Eff {
-      let d : Cap { exit } at c = c;
+      let d : Cap { exit } at c = c
       return *{}
     } with {
       | pure(x) => x
@@ -56,8 +56,8 @@ def outer() -> Unit =
 def swapped() -> Unit =
   handle c : std.process.Exit.Eff {
     handle e : std.process.Exit.Eff {
-      let d : Cap { exit } at e = c;
-      let f : Cap { exit } at c = e;
+      let d : Cap { exit } at e = c
+      let f : Cap { exit } at c = e
       return *{}
     } with {
       | pure(x) => x
@@ -72,7 +72,7 @@ def swapped() -> Unit =
 @[refuses("UnresolvedName")]
 def unbound(c : Integer) -> Unit =
   handle e : std.process.Exit.Eff {
-    let d : Cap { exit } at c = e;
+    let d : Cap { exit } at c = e
     return *{}
   } with {
     | pure(x) => return x
@@ -83,7 +83,7 @@ def unbound(c : Integer) -> Unit =
 /// `kept-view.gandr` shows a view in the same region.
 def plain() -> Unit =
   handle c : std.process.Exit.Eff {
-    let d : Integer at c = 1;
+    let d : Integer at c = 1
     return *{}
   } with {
     | pure(x) => x

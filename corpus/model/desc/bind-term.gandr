@@ -41,7 +41,7 @@ def rec derived(chain : Theory) -> Integer =
     | Rule(name, lhs, rhs, rest) => derived[<] rest
     | Turned(name, lhs, rhs, rest) => derived[<] rest
     | Derived(outer, position, inner, lhs, rhs, rest) => {
-      let r = derived[<] rest;
+      let r = derived[<] rest
       r + 1
     }
     | _ => 0

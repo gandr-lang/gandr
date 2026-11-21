@@ -45,7 +45,7 @@ pub def halfRow : Row = Row (Arg (Plain U64) NoCode) (Plain U32);
 /// admits each read against its row.
 @[boundary(*{wordRow, halfRow})]
 extern "rust" from "memory" as Memory {
-  def word(address : u64) -> u64;
+  def word(address : u64) -> u64
   def half(address : u64) -> u32;
 }
 
@@ -63,15 +63,15 @@ def rec readTagged(fuel : Nat, w : u64) -> [Memory] Maybe Tagged =
   match fuel where
     | Zero => None
     | Succ(rest) => {
-      let n = u64.to_integer w;
-      let bit = int.mod n 2;
+      let n = u64.to_integer w
+      let bit = int.mod n 2
       match bit == 1 where
         | true => Some TagNil
         | false => {
-          let h = Memory.word w;
-          let head = low h;
-          let t = Memory.word (past n 8);
-          let tail = readTagged[<] rest t;
+          let h = Memory.word w
+          let head = low h
+          let t = Memory.word (past n 8)
+          let tail = readTagged[<] rest t
           match tail where
             | None => None
             | Some(l) => Some (TagCons head l)
@@ -85,20 +85,20 @@ def rec readPacked(fuel : Nat, w : u64) -> [Memory] Maybe Packed =
   match fuel where
     | Zero => None
     | Succ(rest) => {
-      let n = u64.to_integer w;
-      let tag = int.mod n 4;
+      let n = u64.to_integer w
+      let tag = int.mod n 4
       match tag == 0 where
         | true => Some Empty
         | false => match tag == 1 where
           | true => Some (One (i32.from_integer (int.div n 4)))
           | false => match tag == 2 where
             | true => {
-              let xy = Memory.word (past n (- 2));
-              let m = u64.to_integer xy;
-              let x = i32.from_integer m;
-              let y = i32.from_integer (int.div m 4294967296);
-              let r = Memory.word (past n 6);
-              let tail = readPacked[<] rest r;
+              let xy = Memory.word (past n (- 2))
+              let m = u64.to_integer xy
+              let x = i32.from_integer m
+              let y = i32.from_integer (int.div m 4294967296)
+              let r = Memory.word (past n 6)
+              let tail = readPacked[<] rest r
               match tail where
                 | None => None
                 | Some(l) => Some (Many x y l)
@@ -112,7 +112,7 @@ pub def taggedLengthAt(w : u64) -> [Memory] Integer =
   match read where
     | None => - 1
     | Some(l) => {
-      let f = Path.walk (fun (X) { X -> Integer }) taggedPath (fun (l) { length l });
+      let f = Path.walk (fun (X) { X -> Integer }) taggedPath (fun (l) { length l })
       f l
     }
 
@@ -122,7 +122,7 @@ pub def packedLengthAt(w : u64) -> [Memory] Integer =
   match read where
     | None => - 1
     | Some(l) => {
-      let f = Path.walk (fun (X) { X -> Integer }) packedPath (fun (l) { length l });
+      let f = Path.walk (fun (X) { X -> Integer }) packedPath (fun (l) { length l })
       f l
     }
 

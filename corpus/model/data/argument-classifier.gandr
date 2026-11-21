@@ -13,7 +13,7 @@ def rec listLength(xs : List Integer) -> Integer =
   match xs where
     | Nil => 0
     | Cons(_, rest) => {
-      let counted = listLength[<] rest;
+      let counted = listLength[<] rest
       counted + 1
     }
 
@@ -35,7 +35,7 @@ def rec tally(c : Color, cs : List Color) -> Integer =
   match cs where
     | Nil => 0
     | Cons(_, rest) => {
-      let counted = tally[<] c rest;
+      let counted = tally[<] c rest
       counted + 1
     }
 
@@ -48,7 +48,7 @@ def rec anyLength(a : Type, xs : List a) -> Integer =
   match xs where
     | Nil => 0
     | Cons(_, rest) => {
-      let counted = anyLength[<] a rest;
+      let counted = anyLength[<] a rest
       counted + 1
     }
 

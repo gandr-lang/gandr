@@ -5,6 +5,6 @@ theory Unmarked where
   oper g : (a : Q) --> (b : Q);
 
   rule merge : (data x : Q, data y : Q) <=> (z : Q) {
-    node : f(x) --> (z);
+    node : f(x) --> (z)
     node : g(y) --> (z);
   };

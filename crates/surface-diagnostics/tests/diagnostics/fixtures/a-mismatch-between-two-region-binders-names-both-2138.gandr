@@ -4,6 +4,6 @@ def crossed[r : Region, s : Region](
   k : (() -> Integer) at r,
   j : (() -> Integer) at s
 ) -> Integer {
-  let m : (() -> Integer) at s = k;
+  let m : (() -> Integer) at s = k
   read m
 }

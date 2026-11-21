@@ -2,11 +2,11 @@ data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 def leaves(n : Integer) -> Unit = { var c = 0; access c as v { return *{} } };
 def unwinds(n : Integer) -> Unit = { var c = 0; access c as v { abort v } unwind { return *{} } };
 def early(n : Nat) -> Integer = {
-  var c = 0;
-  let m = match n { | Zero => return 5 | Succ(p) => pure 1 };
+  var c = 0
+  let m = match n { | Zero => return 5 | Succ(p) => pure 1 }
   c
 };
 def early_by_hand(n : Nat) -> Integer = {
-  var c = 0;
+  var c = 0
   match n { | Zero => 5 | Succ(p) => c }
 };

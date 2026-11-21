@@ -7,10 +7,10 @@ def rooted() -> [std.rand.Eff] Integer =
 @[distributes("1 0")]
 def forked() -> [std.rand.Eff] Integer =
   let desk = fork (seat : Integer >! end) {
-    let drawn = std.rand.draw 99;
-    send seat drawn;
+    let drawn = std.rand.draw 99
+    send seat drawn
     close seat
-  };
+  }
   let drawn = recv desk
   close desk
   pure drawn

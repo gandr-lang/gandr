@@ -25,8 +25,8 @@ theory Halt.Eff where
 @[refuses("UnwindEffect")]
 def halted() -> Integer =
   handle h : Halt.Eff with sort R = Integer {
-    var n = 0;
-    access n as v { abort v } unwind { h.halt 1 };
+    var n = 0
+    access n as v { abort v } unwind { h.halt 1 }
     pure 0
   } with {
     | pure(y) => pure y
@@ -37,13 +37,13 @@ def halted() -> Integer =
 @[refuses("UnwindEffect")]
 def abandoned() -> Integer =
   handle c : std.process.Exit.Eff {
-    let _ = c.exit 1;
+    let _ = c.exit 1
     pure 0
   } with {
     | pure(y) => pure y
     | oper exit(code, k) => {
-      var n = 0;
-      access n as v { abort v } unwind { abandon k };
+      var n = 0
+      access n as v { abort v } unwind { abandon k }
       pure 7
     }
   }

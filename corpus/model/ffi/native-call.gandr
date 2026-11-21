@@ -11,7 +11,7 @@
 /// The test library's adder and string length.
 @[refuses("OutOfFragment.extern_block")]
 extern "c" from "./testlib" as testlib {
-  def gandr_test_add(a : i64, b : i64) -> i64;
+  def gandr_test_add(a : i64, b : i64) -> i64
   def gandr_test_strlen(s : CStr) -> u64;
 }
 

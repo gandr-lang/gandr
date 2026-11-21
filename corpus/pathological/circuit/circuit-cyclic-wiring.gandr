@@ -5,6 +5,6 @@ theory Loop where
   oper g : (a : Nat) --> (b : Nat);
 
   rule spin : (data x : Nat) ==> (z : Nat) {
-    node : f(w) --> (z);
+    node : f(w) --> (z)
     node : g(z) --> (w);
   };

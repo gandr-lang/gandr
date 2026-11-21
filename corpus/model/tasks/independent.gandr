@@ -15,13 +15,13 @@ import "./task-base.gandr";
 @[runs("*{}"), traces(primes scout 0), traces(primes scribe 0)]
 def independent() -> Unit =
   let scouted = fork (scout : Task.Join) {
-    send scout Task.notes;
+    send scout Task.notes
     close scout
-  };
+  }
   let scribed = fork (scribe : Task.Join) {
-    send scribe Task.notes;
+    send scribe Task.notes
     close scribe
-  };
+  }
   let written = recv scribed
   close scribed
   let found = recv scouted

@@ -31,8 +31,8 @@ pub def rec settle(machine : Integer, fuel : List Integer) -> [std.reals.Eff] St
   match fuel where
     | #[] => pure "exhausted"
     | #[_, ..rest] => {
-      let *{now, same} = std.reals.step machine;
-      let spent = now == "exhausted";
+      let *{now, same} = std.reals.step machine
+      let spent = now == "exhausted"
       match spent { | true => settle[<] machine rest | false => pure now }
     }
 

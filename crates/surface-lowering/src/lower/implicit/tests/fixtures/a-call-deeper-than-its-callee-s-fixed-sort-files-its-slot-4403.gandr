@@ -12,8 +12,8 @@ module Up : Model(Counter) where {
 }
 def fromZero[s : Model Counter with sort C = Integer]() -> Integer = s.read (s.incr s.zero);
 def deeper() -> Integer = {
-  let a = 1;
-  let b = a;
-  let c = b;
+  let a = 1
+  let b = a
+  let c = b
   match c { | _ => match c { | _ => fromZero () } }
 };

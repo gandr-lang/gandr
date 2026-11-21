@@ -26,7 +26,7 @@ import std.process;
 def keptView() -> Integer =
   var s = 3
   handle c : std.process.Exit.Eff {
-    let k : (() -> Integer) at c = access shared s as w { pure pure w };
+    let k : (() -> Integer) at c = access shared s as w { pure pure w }
     force k
   } with {
     | pure(x) => pure x
@@ -39,8 +39,8 @@ def keptView() -> Integer =
 def keptAgain() -> Integer =
   var s = 3
   handle c : std.process.Exit.Eff {
-    let k : (() -> Integer) at c = access shared s as w { pure pure w };
-    let j : (() -> Integer) at c = k;
+    let k : (() -> Integer) at c = access shared s as w { pure pure w }
+    let j : (() -> Integer) at c = k
     force j
   } with {
     | pure(x) => pure x
@@ -53,13 +53,13 @@ def keptAgain() -> Integer =
 def released() -> Integer =
   var s = 3
   let n : Integer = handle c : std.process.Exit.Eff {
-    let k : (() -> Integer) at c = access shared s as w { pure pure w };
+    let k : (() -> Integer) at c = access shared s as w { pure pure w }
     force k
   } with {
     | pure(x) => pure x
     | oper exit(code, k) => pure 0
-  };
-  access s as v { resume v (n + 1) };
+  }
+  access s as v { resume v (n + 1) }
   pure s
 
 /// A value read out of a view enters the region as any value does: the read
@@ -68,8 +68,8 @@ def released() -> Integer =
 def keptRead() -> Integer =
   var s = 3
   handle c : std.process.Exit.Eff {
-    let n : Integer at c = access shared s as w { pure w };
-    access s as v { resume v (v + 1) };
+    let n : Integer at c = access shared s as w { pure w }
+    access s as v { resume v (v + 1) }
     pure 3
   } with {
     | pure(x) => pure x
@@ -81,7 +81,7 @@ def keptRead() -> Integer =
 @[runs("3")]
 def keptInHold() -> Integer =
   var s = 3
-  let k : (() -> Integer) at s = access shared s as w { pure pure w };
+  let k : (() -> Integer) at s = access shared s as w { pure pure w }
   force k
 
 /// An inner region can keep an outer shared view.
@@ -90,9 +90,9 @@ def keptInHold() -> Integer =
 def keptInInner() -> Integer =
   var s = 3
   let n : Integer = {
-    var r = 0;
-    let k : (() -> Integer) at r = access shared s as w { pure pure w };
+    var r = 0
+    let k : (() -> Integer) at r = access shared s as w { pure pure w }
     force k
-  };
-  access s as v { resume v (n + 1) };
+  }
+  access s as v { resume v (n + 1) }
   pure s

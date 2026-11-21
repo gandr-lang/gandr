@@ -70,7 +70,7 @@ def eight() -> Integer =
 def headed(xs : List Integer) -> Integer =
   match xs where
     | all @ #[a, .._] => {
-      let counted = shortLength all;
+      let counted = shortLength all
       a + counted
     }
     | #[] => 0

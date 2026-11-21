@@ -1,13 +1,13 @@
 def written(c : Integer) -> Integer = {
-  let b = c < 128;
+  let b = c < 128
   match b { | true => 1 | false => 2 }
 };
 def printed(c : Integer) -> Integer = {
-  let b = c < 128;
+  let b = c < 128
   match b { | +{.0 = u} => 1 | +{.1 = u} => 2 }
 };
 def pick(n : Integer) -> Unit + Unit + Unit = +{.2 = *{}};
 def three(c : Integer) -> Integer = {
-  let s = pick c;
+  let s = pick c
   match s { | +{.1 = u} => 1 | +{.0 = u} => 0 | +{.2 = u} => 2 }
 };

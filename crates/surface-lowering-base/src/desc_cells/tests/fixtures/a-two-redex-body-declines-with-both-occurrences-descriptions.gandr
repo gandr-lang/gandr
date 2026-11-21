@@ -7,8 +7,8 @@ theory Nat where {
     data x : Nat,
     data y : Nat
   ) ==> (z : Nat) {
-    node : p(x) ==> (xp);
-    node : q(y) ==> (yp);
+    node : p(x) ==> (xp)
+    node : q(y) ==> (yp)
     node : add(xp, yp) --> (z);
   };
 }

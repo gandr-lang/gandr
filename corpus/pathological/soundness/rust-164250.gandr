@@ -31,15 +31,15 @@ import std.process;
 @[refuses("ViewEscaped")]
 def bypassed() -> Integer =
   handle outer : std.process.Exit.Eff {
-    let q : (() -> Integer) at outer = thunk { pure 0 };
+    let q : (() -> Integer) at outer = thunk { pure 0 }
     let x : Integer = handle inner : std.process.Exit.Eff {
-      var l = 42;
-      let q2 : (() -> Integer) at outer = access shared l as w { pure thunk { pure w } };
+      var l = 42
+      let q2 : (() -> Integer) at outer = access shared l as w { pure thunk { pure w } }
       force q2
     } with {
       | pure(y) => pure y
       | oper exit(code, k) => pure 0
-    };
+    }
     force q
   } with {
     | pure(y) => pure y

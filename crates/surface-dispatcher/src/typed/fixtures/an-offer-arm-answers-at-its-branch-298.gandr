@@ -4,7 +4,7 @@ def exchange(n : Integer) -> Unit = {
       | next => { send c "notes"; close c }
       | retire => close c
     }
-  };
-  select peer retire;
+  }
+  select peer retire
   close peer
 };

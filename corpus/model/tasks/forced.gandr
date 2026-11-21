@@ -24,10 +24,10 @@ import "./task-base.gandr";
 ]
 def forced() -> Unit =
   let asked = fork (task : Task.Relay) {
-    let request = recv task;
-    send task request;
+    let request = recv task
+    send task request
     close task
-  };
+  }
   send asked Task.notes
   let reply = recv asked
   close asked

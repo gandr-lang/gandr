@@ -33,7 +33,7 @@ rec {
     match u where
       | NatL => return Nat
       | ListL(a) => {
-        let e = elL[<] a;
+        let e = elL[<] a
         return (List e)
       }
       | PiL(a, b) => return (+U ((x : elL[<](a)) -> -F elL[<](b(x))))

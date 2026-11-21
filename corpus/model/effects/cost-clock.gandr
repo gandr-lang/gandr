@@ -32,14 +32,14 @@ def rec passes(clock : Fuel) -> [cost : Cost.Eff with sort N = (Nat -> Nat)] Int
   match clock where
     | Stop => pure 0
     | Tick(rest) => {
-      cost.charge (costs (1 : Nat));
+      cost.charge (costs (1 : Nat))
       passes[<] rest
     }
 
 /// The passes under the counting model.
 def countedPasses(clock : Fuel) -> (Nat -> Nat) -> Nat =
   handle cost : Cost.Eff with sort N = Nat -> Nat {
-    let _answer = passes clock;
+    let _answer = passes clock
     pure counted
   } with Counting
 
@@ -57,7 +57,7 @@ def boundThree : Path (withinThree (3 : Nat)) true = Path.here true;
 /// A loop that never ends charges one on each pass.
 def spin() -> [Partial, cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
   loop {
-    cost.charge (costs (1 : Nat));
+    cost.charge (costs (1 : Nat))
     continue
   }
 
@@ -65,21 +65,21 @@ def spin() -> [Partial, cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
 /// has no count.
 def countedSpin() -> [Partial] ((Nat -> Nat) -> Nat) =
   handle cost : Cost.Eff with sort N = Nat -> Nat {
-    let _answer = spin ();
+    let _answer = spin ()
     pure counted
   } with Counting
 
 /// A loop that ends after one pass charges one.
 def once() -> [Partial, cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
   loop {
-    cost.charge (costs (1 : Nat));
+    cost.charge (costs (1 : Nat))
     break(0)
   }
 
 /// The loop that ends, under the counting model.
 def countedOnce() -> [Partial] ((Nat -> Nat) -> Nat) =
   handle cost : Cost.Eff with sort N = Nat -> Nat {
-    let _answer = once ();
+    let _answer = once ()
     pure counted
   } with Counting
 

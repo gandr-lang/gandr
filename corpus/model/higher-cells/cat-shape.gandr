@@ -110,6 +110,6 @@ def composite_observed() -> Integer = {
     Integer
     Integer
     (fun (n) { n + 1 })
-    (fun (n) { n + 2 });
+    (fun (n) { n + 2 })
   h 1
 };

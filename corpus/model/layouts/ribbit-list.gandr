@@ -153,7 +153,7 @@ pub def rec length(l : Ints) -> Integer =
   match l where
     | Nil => 0
     | Cons(x, rest) => {
-      let n = length[<] rest;
+      let n = length[<] rest
       n + 1
     }
 

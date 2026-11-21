@@ -5,6 +5,6 @@ data Nat : Type where {
 def pair(n : Nat) -> *{Nat, Nat} = *{n, n};
 
 def first(n : Nat) -> Nat = {
-  let *{a, b} = pair n;
+  let *{a, b} = pair n
   a
 };

@@ -21,7 +21,7 @@ import std.process;
 @[runs("101")]
 def resumed() -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit 5;
+    c.exit 5
     pure 1
   } with {
     | pure(x) => pure x + 100
@@ -32,7 +32,7 @@ def resumed() -> Integer =
 /// skipped.
 def left(n : Integer) -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit 1;
+    c.exit 1
     return n
   } with {
     | pure(x) => pure x + 100
@@ -48,7 +48,7 @@ def left_run() -> Integer = become left 5;
 @[runs("9")]
 def discarded() -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit 5;
+    c.exit 5
     return 1
   } with {
     | pure(x) => pure x + 100
@@ -76,8 +76,8 @@ def branch(n : Integer) -> Integer =
     let m = match n {
       | 0 => return 8
       | _ => pure n
-    };
-    c.exit 2;
+    }
+    c.exit 2
     pure m + 1
   } with {
     | pure(x) => pure x + 100
@@ -99,7 +99,7 @@ def looped() -> [Partial] Integer =
   handle c : std.process.Exit.Eff {
     let v = loop {
       break(5)
-    };
+    }
     pure v
   } with {
     | pure(x) => pure x + 100
@@ -122,7 +122,7 @@ def looped_out() -> [Partial] Integer =
 @[runs("9")]
 def answered() -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit 1;
+    c.exit 1
     pure 1
   } with {
     | pure(x) => pure x
@@ -139,7 +139,7 @@ def dropped(k : Stack (-F Unit) (-F Integer)) -> Integer =
 @[runs("9")]
 def handed_on() -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit 5;
+    c.exit 5
     return 1
   } with {
     | pure(x) => pure x + 100
@@ -155,7 +155,7 @@ def resume_stack(j : Stack (-F Unit) (-F Integer)) -> Integer =
 @[runs("101")]
 def resumed_on() -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit 5;
+    c.exit 5
     pure 1
   } with {
     | pure(x) => pure x + 100
@@ -176,7 +176,7 @@ module Conts where
 @[runs("101")]
 def resumed_aliased() -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit 5;
+    c.exit 5
     pure 1
   } with {
     | pure(x) => pure x + 100

@@ -26,6 +26,6 @@ theory NatSum where
     data x : Nat,
     data y : Nat
   ) <=> (z : Nat) {
-    node : p(x) ==> (x′);
+    node : p(x) ==> (x′)
     node : add(x′, y) --> (z);
   };

@@ -22,6 +22,6 @@ pub theory Wheel where
   /// `spin` reads `state` and `stream` through `emit`, then feeds `out`
   /// back as `state`.
   rule spin : (data stream : Nat) ==> (out : Nat) {
-    node : emit(state, stream) --> (out);
+    node : emit(state, stream) --> (out)
     feed : (out) --> (state);
   };

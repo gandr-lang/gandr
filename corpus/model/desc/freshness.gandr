@@ -31,7 +31,7 @@ def rec conditions(chain : Theory) -> Integer =
     | Rule(name, lhs, rhs, rest) => conditions[<] rest
     | Turned(name, lhs, rhs, rest) => conditions[<] rest
     | Fresh(atom, term, rest) => {
-      let r = conditions[<] rest;
+      let r = conditions[<] rest
       r + 1
     }
     | _ => 0

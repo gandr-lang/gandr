@@ -27,7 +27,7 @@ pub def say() -> [out : std.io.Console.Eff] Unit = out.print "said";
 @[runs("1")]
 def resolved() -> Integer =
   handle a : std.io.Console.Eff {
-    say ();
+    say ()
     pure 0
   } with {
     | pure(x) => pure x
@@ -40,7 +40,7 @@ def resolved() -> Integer =
 def namedOuter() -> Integer =
   handle a : std.io.Console.Eff {
     handle b : std.io.Console.Eff {
-      say[.out = a] ();
+      say[.out = a] ()
       pure 0
     } with {
       | pure(x) => pure x
@@ -56,7 +56,7 @@ def namedOuter() -> Integer =
 def namedInner() -> Integer =
   handle a : std.io.Console.Eff {
     handle b : std.io.Console.Eff {
-      say[.out = b] ();
+      say[.out = b] ()
       pure 0
     } with {
       | pure(x) => pure x
@@ -77,7 +77,7 @@ def sayLine(s : String) -> [out : std.io.Console.Eff] Unit = out.print s;
 @[runs("1")]
 def sayLineRuns() -> Integer =
   handle a : std.io.Console.Eff {
-    sayLine "line";
+    sayLine "line"
     pure 0
   } with {
     | pure(x) => pure x
@@ -97,7 +97,7 @@ def rec descend(s : Steps) -> [out : std.io.Console.Eff] Unit =
   match s where
     | Ground => pure *{}
     | Step(rest) => {
-      out.print "step";
+      out.print "step"
       descend[<] rest
     }
 
@@ -106,12 +106,12 @@ def rec descend(s : Steps) -> [out : std.io.Console.Eff] Unit =
 @[runs("3")]
 def descendRuns() -> Integer =
   handle a : std.io.Console.Eff {
-    descend (Step (Step (Step Ground)));
+    descend (Step (Step (Step Ground)))
     pure 0
   } with {
     | pure(x) => pure x
     | oper print(line, k) => {
-      let n = k *{};
+      let n = k *{}
       pure (n + 1)
     }
   }
@@ -128,7 +128,7 @@ def both() -> [first : std.io.Console.Eff, second : std.io.Console.Eff] Unit =
 def outerFirst() -> Integer =
   handle a : std.io.Console.Eff {
     handle b : std.io.Console.Eff {
-      both[.first = a, .second = b] ();
+      both[.first = a, .second = b] ()
       pure 0
     } with {
       | pure(x) => pure x
@@ -145,7 +145,7 @@ def outerFirst() -> Integer =
 def innerFirst() -> Integer =
   handle a : std.io.Console.Eff {
     handle b : std.io.Console.Eff {
-      both[.first = b, .second = a] ();
+      both[.first = b, .second = a] ()
       pure 0
     } with {
       | pure(x) => pure x
@@ -175,7 +175,7 @@ def bothWritten[r : Region, r1 : Region](
 def bothWrittenRuns() -> Integer =
   handle a : std.io.Console.Eff {
     handle b : std.io.Console.Eff {
-      bothWritten b a;
+      bothWritten b a
       pure 0
     } with {
       | pure(x) => pure x

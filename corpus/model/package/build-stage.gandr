@@ -27,7 +27,7 @@ def rec lines(modules : List String) -> String =
   match modules where
     | Nil => ""
     | Cons(path, rest) => {
-      let more = lines[<] rest;
+      let more = lines[<] rest
       "  \"${ path }\",\n${ more }"
     }
 
@@ -37,7 +37,7 @@ def listed(modules : List String) -> String =
   match modules where
     | Nil => "[]"
     | Cons(_, _) => {
-      let each = lines modules;
+      let each = lines modules
       "[\n${ each }]"
     }
 

@@ -3,7 +3,7 @@ data Nat : Type where {
   | Succ : (n : Nat) --> Nat
 }
 def pick(n : Nat, m : Nat) -> -F Nat = {
-  let k = Succ n;
+  let k = Succ n
   match n {
     | Zero => n
     | Succ(p) => n

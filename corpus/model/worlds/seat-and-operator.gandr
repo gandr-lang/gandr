@@ -50,6 +50,6 @@ def opened(report : Seat.Report at seat) -> Seat.Report =
 /// world. So a second migration reads it there and spends a second capability.
 @[entry(*{operator, seat, seat}), runs("\"progress\"")]
 def review() -> Seat.Report =
-  let held : Seat.Report at seat = migrate [seat] { (hold Seat.progress) };
+  let held : Seat.Report at seat = migrate [seat] { (hold Seat.progress) }
   let report at seat = held
   migrate [seat] { pure report }

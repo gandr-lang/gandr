@@ -9,14 +9,14 @@ theory Nat where
     data x : Nat,
     data y : Nat
   ) ==> (z : Nat) {
-    node : p(x) ==> (x′);
-    node : q(y) ==> (y′);
+    node : p(x) ==> (x′)
+    node : q(y) ==> (y′)
     node : add(x′, y′) --> (z);
   };
 
 @[refuses("UndescribedMember.OperationFiller")]
 oper accumulate : (stream : Stream Nat) --> (out2 : Stream Nat) {
-  node : zip(stream, state) --> (next, out2);
+  node : zip(stream, state) --> (next, out2)
   feed : (next) --> (state);
 }
 
@@ -30,7 +30,7 @@ theory Labelled where
   oper step : (i : Nat) --> (o : Nat);
 
   rule twice : (rule p : x ==> x′, data x : Nat) ==> (o : Nat) {
-    node w1 : p(x) ==> (m);
+    node w1 : p(x) ==> (m)
     node w2 : step(m) --> (o);
   };
 

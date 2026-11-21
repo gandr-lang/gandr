@@ -22,8 +22,8 @@ pub def succ(n : Integer) -> Integer =
 @[runs("1")]
 def counter() -> Integer =
   var c = 0
-  access c as v { let n = succ v; resume v n };
-  access c as v { abort v } unwind { pure *{} };
+  access c as v { let n = succ v; resume v n }
+  access c as v { abort v } unwind { pure *{} }
   pure c
 
 /// The view reads the value it lends, so each write-back sees the one before
@@ -31,16 +31,16 @@ def counter() -> Integer =
 @[runs("12")]
 def doubled() -> Integer =
   var c = 3
-  access c as v { resume v (v + v) };
-  access c as v { resume v (v + 6) };
+  access c as v { resume v (v + v) }
+  access c as v { resume v (v + 6) }
   pure c
 
 /// This access writes back through a held value and a parameter.
 /// An abort without `unwind` does nothing.
 def add_to(n : Integer) -> Integer =
   var c = 1
-  access c as v { resume v (v + n) };
-  access c as v { abort v };
+  access c as v { resume v (v + n) }
+  access c as v { abort v }
   pure c
 
 /// This hold adds five.

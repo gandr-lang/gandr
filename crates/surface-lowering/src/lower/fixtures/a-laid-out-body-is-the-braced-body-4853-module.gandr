@@ -10,6 +10,6 @@ def laid(t : Two) -> Two =
     | R => L
 
 def braced(t : Two) -> Two = {
-  let u = t;
+  let u = t
   match u { | L => R | R => L }
 };

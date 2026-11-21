@@ -5,7 +5,7 @@ theory Shared where
   oper g : (a : Nat) --> (b : Nat);
 
   rule twice : (rule p : Nat ==> Nat, data x : Nat, data y : Nat) ==> (o : Nat) {
-    node : p(x) ==> (m);
-    node : f(y) --> (m);
+    node : p(x) ==> (m)
+    node : f(y) --> (m)
     node : g(m) --> (o);
   };

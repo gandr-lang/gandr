@@ -1,8 +1,8 @@
 def f() -> -F Unit = {
-  var s = 3;
+  var s = 3
   handle c : std.process.Exit.Eff {
-    let k : Integer at s = pure 1;
-    let m = k;
+    let k : Integer at s = pure 1
+    let m = k
     c.exit 1
   } with {
     | pure(x) => return x

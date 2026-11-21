@@ -20,8 +20,8 @@ import "../effects/state.gandr";
 /// The scope returns the increment's predicate transformer.
 def incrObserved() -> ((Unit, Integer) -> Type, Integer) -> Type =
   handle st : StateLaws with sort S = Integer {
-    let n = st.get;
-    st.put (n + 1);
+    let n = st.get
+    st.put (n + 1)
     pure fun (q) { fun (s) { q *{} s } }
   } with {
     | pure(w) => pure w

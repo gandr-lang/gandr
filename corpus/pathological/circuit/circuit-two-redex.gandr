@@ -9,7 +9,7 @@ theory Nat where
     data x : Nat,
     data y : Nat
   ) ==> (z : Nat) {
-    node : p(x) ==> (x′);
-    node : q(y) ==> (y′);
+    node : p(x) ==> (x′)
+    node : q(y) ==> (y′)
     node : add(x′, y′) --> (z);
   };

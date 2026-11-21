@@ -29,7 +29,7 @@ def disagreeing : String = (3 : Integer);
 /// have.
 @[refuses("TypeMismatch")]
 def splitWrong() -> Integer =
-  let *{y, z} : Integer * String = *{1, 2};
+  let *{y, z} : Integer * String = *{1, 2}
   y
 
 /// An annotated value written as a statement, where no value stands.

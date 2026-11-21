@@ -25,8 +25,8 @@ def rec size(t : Tree) -> Nat =
   match t where
     | Leaf => Succ Zero
     | Node(f) => {
-      let l = f L;
-      let r = f R;
+      let l = f L
+      let r = f R
       plus (size[<] l) (size[<] r)
     }
 

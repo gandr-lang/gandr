@@ -25,14 +25,14 @@ import std.rand;
 /// bits agree. The corpus spells true as `+{.0 = *{}}`.
 @[distributes(("1/2 *{+{.0 = *{}}, +{.0 = *{}}}", "1/2 *{+{.1 = *{}}, +{.1 = *{}}}"))]
 pub def exchanged() -> [std.rand.Eff] (Bool * Bool) =
-  let mine = std.rand.draw 1;
+  let mine = std.rand.draw 1
   let desk = fork (seat : Integer >! Integer >? Bool >! end) {
-    let mine = std.rand.draw 1;
-    send seat mine;
-    let theirs = recv seat;
-    send seat (mine == theirs);
+    let mine = std.rand.draw 1
+    send seat mine
+    let theirs = recv seat
+    send seat (mine == theirs)
     close seat
-  };
+  }
   let theirs = recv desk
   send desk mine
   let answered = recv desk

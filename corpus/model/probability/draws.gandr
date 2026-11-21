@@ -50,14 +50,14 @@ def tailOf(rest : List Integer) -> List Integer =
 /// list, and with 0 past its end.
 def summedFrom() -> (List Integer -> Integer) =
   handle r : std.rand.Eff {
-    let total = summed ();
+    let total = summed ()
     pure fun (rest : List Integer) { pure total }
   } with {
     | pure(x) => pure x
     | oper draw(width, k) => pure fun (rest : List Integer) {
-      let next = headOr rest;
-      let after = tailOf rest;
-      let g = k next;
+      let next = headOr rest
+      let after = tailOf rest
+      let g = k next
       g after
     }
   }
