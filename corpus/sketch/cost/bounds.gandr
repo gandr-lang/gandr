@@ -57,4 +57,4 @@ def rec merge(xs : List Integer, ys : List Integer) -> [Cost] List Integer #spec
 /// A grade on the effect row states the bound of `threeSteps` in the form
 /// sketch 19 rules. This sketch states a bound as a `measure` clause.
 def threeStepsGraded() -> [Cost <= 3] Integer =
-  threeSteps ()
+  threeSteps

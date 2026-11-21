@@ -10,4 +10,4 @@ def say() -> [out : std.io.Console.Eff] Unit =
 
 @[refuses("InstanceUnanswered")]
 def unanswered() -> [std.io.Console.Eff] Unit =
-  say ()
+  say

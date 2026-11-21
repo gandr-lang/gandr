@@ -6,8 +6,9 @@
 //! that call. So the type must read back as the call it prints.
 //!
 //! `Standard.same(Integer)` calls the function and decodes the code that the
-//! call returns. `Standard.unit()` calls a function of no arguments, and the
-//! printer writes that call with its empty list. `Standard.after(Integer)(n)`
+//! call returns. `Standard.unit()` runs a function of no input: a qualified
+//! link ends at a value name only before a list, so the empty list stands for
+//! the bare name. `Standard.after(Integer)(n)`
 //! applies the call's result to one more argument. A second list after a
 //! type family is not a call, and the lowering refuses it.
 //!
@@ -24,7 +25,7 @@ module Standard where
   /// A family that ignores its index.
   def after(a : Type) -> Integer -> Type = fun (x) { a };
 
-/// The point, at the type a function of no arguments names.
+/// The point, at the type a function of no input names.
 def point() -> Standard.unit() = *{};
 
 /// An integer at the type a call names.

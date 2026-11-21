@@ -27,7 +27,7 @@ def head[a : Type, n : Nat](v : Vec a (Succ n)) -> a =
 /// The head of the vector two long. The checker splits `Succ` against
 /// `Succ (Succ Zero)`, so `n` stands at `Succ Zero`.
 @[runs("1")]
-def firstOfPair() -> Integer = head (pair);
+def firstOfPair() -> Integer = head pair;
 
 /// The head of the empty vector. `Zero` and `Succ` are two constructors, so
 /// the empty vector's length is apart from `Succ n`.
@@ -39,4 +39,4 @@ def single() -> Nat = Succ Zero;
 
 /// The vector two long, at a length with a call under `Succ`. The checker
 /// pairs the field of each `Succ`, and the call converts with its value.
-def pairViaCall() -> Vec Integer (Succ (single())) = pair;
+def pairViaCall() -> Vec Integer (Succ single) = pair;

@@ -1,4 +1,4 @@
 def stated() -> Unit = { pure *{}; };
 def noop() -> Unit = *{};
-def some(b : Bool) -> Unit = { match b { | true => return *{} | false => noop () }; };
-def some_by_hand(b : Bool) -> Unit = match b { | true => *{} | false => { noop (); *{} } };
+def some(b : Bool) -> Unit = { match b { | true => return *{} | false => noop }; };
+def some_by_hand(b : Bool) -> Unit = match b { | true => *{} | false => { noop; *{} } };

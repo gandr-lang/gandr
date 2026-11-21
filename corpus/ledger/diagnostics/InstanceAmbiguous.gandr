@@ -12,7 +12,7 @@ def say() -> [out : std.io.Console.Eff] Unit =
 def ambiguous() -> Integer =
   handle a : std.io.Console.Eff {
     handle b : std.io.Console.Eff {
-      say ();
+      say;
       pure 0
     } with {
       | pure(x) => pure x

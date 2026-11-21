@@ -4,12 +4,12 @@
 // The native finite lists.
 import std.list (List);
 
-/// The type with one point, from a function of no arguments.
+/// The type with one point, from a function of no input.
 def unit() -> Type = return Unit;
 
 /// A family that ignores its index.
 def after(a : Type) -> Integer -> Type = fun (x) { a };
 
 /// A list of points at the type that the calls name. The type applies `List`,
-/// calls `unit` with no arguments, and applies the result of `after` again.
-def points(n : Integer) -> after(List unit())(n) = cons *{} nil;
+/// runs `unit` by its bare name, and applies the result of `after` again.
+def points(n : Integer) -> after(List unit)(n) = cons *{} nil;

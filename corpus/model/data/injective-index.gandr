@@ -103,4 +103,4 @@ pub def oneOfTwo() -> Finite (Succ (Succ Zero)) = FSucc (Succ Zero) (FZero Zero)
 
 /// The second element of the vector two long, at the bound one.
 @[runs("2")]
-def secondAtOne() -> Integer = lookup (Integer) (Succ (Succ Zero)) (pair) (oneOfTwo);
+def secondAtOne() -> Integer = lookup (Integer) (Succ (Succ Zero)) pair oneOfTwo;

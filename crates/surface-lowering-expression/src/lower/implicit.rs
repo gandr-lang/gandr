@@ -167,9 +167,10 @@ enum Use<'cursor>
     Operands([NodeIndex; 2]),
     /// Standing where no call applies it, passed or returned as a value.
     Standing,
-    /// The bare name of a definition of no input, which runs it: a call that
-    /// writes no explicit argument.
-    Run,
+    /// The bare name of the definition of no input at this constant, which
+    /// runs it: a call that writes no explicit argument, with no head of its
+    /// own.
+    Run(ConstantIndex),
 }
 
 /// The atom a resident of an instantiation slot spells. The slot molds a
@@ -1216,19 +1217,18 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     }
 
     /// Plan the bare name at `site`, read under `frame`, of the definition of
-    /// no input at `slot` and `constant` as its call: `tile`, the name's own
-    /// tile, planned as the declaration and read as the call's head, and
-    /// `site` as the call [`Self::supply_declared`] plans with no explicit
-    /// argument.
+    /// no input at `slot` and `constant` as its call: the call
+    /// [`Self::supply_declared`] plans with no explicit argument, headed by
+    /// the constant itself.
     ///
     /// # Specification
-    /// - requires: `site` is the bare name of the definition, read as a
-    ///   computation under `frame`, and `tile` is its identifier tile.
+    /// - requires: `site` is the bare name `name` of the definition, read as a
+    ///   computation under `frame`.
     /// - ensures: [`arity::Planned`] true exactly when the definition has
-    ///   implicits, instances or stage binders: `site` is then the definition
-    ///   applied to an omitted entry for each of them, as a call that writes
-    ///   none supplies it, and `tile` its head, planned as the constant and
-    ///   left unread. False, with nothing changed, for a definition with none.
+    ///   implicits, instances or stage binders: `site` is then `Plan::Invoked`,
+    ///   the definition applied to an omitted entry for each of them, as a call
+    ///   that writes none supplies it. False, with nothing changed, for a
+    ///   definition with none.
     /// - fails: as [`Self::supply_declared`].
     /// - panics: none.
     ///
@@ -1239,8 +1239,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         ensures: |ret| match ret {
             Ok(arity::Planned(true)) => matches!(
                 self.cx().plans.get(site.at.node),
-                Some(&Plan::Application(head, _)) if head == tile.node
-            ) && self.cx().plans.get(tile.node) == Some(&Plan::Constant(constant)),
+                Some(&Plan::Invoked(invoked, _)) if invoked == constant
+            ),
             Ok(arity::Planned(false)) => self.cx().operands.mark() == start,
             Err(_) => true,
         },
@@ -1250,26 +1250,18 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         &mut self,
         site: Site,
         frame: Frame,
-        (tile, name): (Placed, SurfaceName<'source>),
+        name: SurfaceName<'source>,
         (slot, constant): (SlotIndex, ConstantIndex),
     ) -> Result<arity::Planned, LoweringRefusal<'source>>
     {
-        let planned =
-            self.supply_declared(site, frame, (tile, name), slot, BTreeMap::new(), Use::Run)?;
-        if planned == arity::Planned(true) {
-            // The tile stands as the call's head, forced as a named head is;
-            // it is no form of its own, so it is planned here and left unread.
-            let head = Site {
-                at: tile,
-                reading: Reading::Head(frame),
-                ..site
-            };
-            let _frame = self.require(head, Produced::Value)?;
-            self.plan(head, Plan::Constant(constant));
-            self.read(tile.node, Reading::Unread);
-        }
-
-        Ok(planned)
+        self.supply_declared(
+            site,
+            frame,
+            (site.at, name),
+            slot,
+            BTreeMap::new(),
+            Use::Run(constant),
+        )
     }
 
     /// Plan `site`, whose head `inner` names the declaration at `slot` as
@@ -1352,17 +1344,17 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             });
         }
         let mut written = Vec::new();
-        let standing = match used {
+        let (standing, invoked) = match used {
             Use::Called(mut rest) => {
                 arguments(site, &mut rest, &mut written)?;
-                false
+                (false, None)
             },
             Use::Operands(operands) => {
                 written.extend(operands);
-                false
+                (false, None)
             },
-            Use::Run => false,
-            Use::Standing => true,
+            Use::Run(constant) => (false, Some(constant)),
+            Use::Standing => (true, None),
         };
         let explicit = entries
             .iter()
@@ -1498,6 +1490,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             start,
             end: self.cx().operands.entries().len(),
         };
+        // A bare name has no head of its own: the constant heads its call.
+        if let Some(constant) = invoked {
+            self.plan(site, Plan::Invoked(constant, self.cx().kept(applied)));
+            return Ok(arity::Planned(true));
+        }
         let _fresh = self.cx_mut().supplied.insert(inner.node);
         if applied.start == applied.end {
             let _first = self.cx_mut().nullary.insert(inner.node, site.at.node);

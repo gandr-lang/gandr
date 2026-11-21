@@ -3,4 +3,4 @@ def a() -> Integer =
 
 @[owes(1)]
 def b() -> Integer =
-  return a ()
+  return a

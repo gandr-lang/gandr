@@ -36,4 +36,4 @@ def collect() -> Seat.Report =
 @[refuses("EntryNamed")]
 @[entry(*{operator, seat})]
 def relayed() -> Seat.Report =
-  collect ()
+  collect

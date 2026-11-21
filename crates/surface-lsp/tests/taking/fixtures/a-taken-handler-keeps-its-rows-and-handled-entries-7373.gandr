@@ -11,7 +11,7 @@ def tallied() -> [n : Counter.Eff] Integer =
 @[runs("7")]
 def tallyHandled() -> Integer =
   handle c : Counter.Eff {
-    tallied ()
+    tallied
   } with {
     | pure(x) => pure x
     | oper bump(k) => pure 7

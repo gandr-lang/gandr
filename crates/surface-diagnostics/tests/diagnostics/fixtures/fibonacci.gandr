@@ -23,4 +23,4 @@ def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat =
 def five() -> Nat =
   Succ (Succ (Succ (Succ (Succ Zero))))
 def nineteen() -> Nat =
-  Succ (Succ (Succ (Succ (plus (five ()) (plus (five ()) (five ()))))))
+  Succ (Succ (Succ (Succ (plus five (plus five five)))))

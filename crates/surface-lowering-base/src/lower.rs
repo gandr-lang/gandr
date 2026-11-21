@@ -1467,10 +1467,15 @@ pub enum Plan
     /// lowerer's operand store, left to right: a type-position call's argument
     /// written as a call, which a value position nests.
     Called(Code, FormStretch),
-    /// The force of the dynamic function the code names, called with no
-    /// argument where a type reads a value: the expression grammar's `f()`,
-    /// which a value position nests (#6787).
+    /// The force of the dynamic function the code names: the expression
+    /// grammar's `f()` where a type reads a value, which a value position
+    /// nests (#6787), and the bare name of a definition of no input.
     Forced(Code),
+    /// The run of the definition of no input at this admission position,
+    /// applied to the implicits and instances in the lowerer's operand store,
+    /// left to right: its bare name, whose supply a call writes no argument
+    /// for.
+    Invoked(ConstantIndex, FormStretch),
     /// A static application of the head to the arguments in the lowerer's
     /// operand store, left to right.
     StaticApplication(Code, FormStretch),
