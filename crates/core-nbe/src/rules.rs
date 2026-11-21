@@ -449,7 +449,7 @@ impl Choice
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum Pairing
+pub enum Pairing
 {
     /// First field with first field.
     Written,
@@ -481,7 +481,7 @@ pub(crate) enum Pairing
 /// - hypothesis: L3 — as [`crate::presented::field_order`].
 /// - witness: `presented::tests::two_orders_of_two_fields_convert_under_a_symmetry_8311`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |subgoals| subgoals.len() == 3))]
-pub(crate) fn paired_subgoals(
+pub fn paired_subgoals(
     domain: &DomainArena,
     left: DomainValueId,
     right: DomainValueId,
