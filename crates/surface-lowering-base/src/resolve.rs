@@ -440,8 +440,13 @@ pub enum TypeFormer
 /// - hypothesis: L3 — every row has an exact answer, with the other arity and
 ///   near spellings separating the absent branch.
 /// - witness: `resolve::tests::a_near_miss_nullary_head_answers_nothing`
-const TYPE_ATOMS: [(&str, TypeAtom); 12_usize] = [
+const TYPE_ATOMS: [(&str, TypeAtom); 18_usize] = [
+    ("Unit", TypeAtom::Unit),
+    ("Void", TypeAtom::Void),
+    ("Bool", TypeAtom::Boolean),
     ("Integer", TypeAtom::Integer),
+    ("String", TypeAtom::Text),
+    ("Char", TypeAtom::Character),
     ("f64", TypeAtom::Float64),
     ("u32", TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::U32)),
     ("u64", TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::U64)),
@@ -459,6 +464,7 @@ const TYPE_ATOMS: [(&str, TypeAtom); 12_usize] = [
         "isize",
         TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::Isize),
     ),
+    ("Row", TypeAtom::Row),
 ];
 
 /// The unary type heads the ambient scope answers, with the spellings the

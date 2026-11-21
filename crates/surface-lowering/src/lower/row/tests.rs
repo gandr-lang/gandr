@@ -164,6 +164,51 @@ fn a_type_signature_under_builtin_reads_its_atom_8073()
     );
 }
 
+/// #8140: a source that imports a data family `Row` by a list reads it in an
+/// annotation, though the prelude declares the atom `Row`. The prelude
+/// answers a name only where nothing that the source writes binds it.
+#[test]
+fn an_imported_row_hides_the_prelude_s_atom_8140()
+{
+    use alloc::format;
+
+    use crate::unit::ImportTarget;
+    use crate::unit::SourceIndex;
+
+    let rows =
+        include_str!("tests/unformatted/an-imported-row-hides-the-prelude-s-atom-8140-rows.gandr");
+    let own = include_str!("tests/unformatted/an-imported-row-hides-the-prelude-s-atom-8140.gandr");
+    let text = format!("{rows}{own}");
+    let unit = Unit::new(vec![
+        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+        UnitSource::new(ByteOffset::from(rows.len()), vec![ImportTarget::Source(
+            SourceIndex::from(0_usize),
+        )]),
+    ])
+    .expect("two sources make a unit");
+    let mut arena = CoreArena::new();
+    let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
+    let report = judged(&module, &mut arena);
+    let both: Vec<bool> = module
+        .declarations()
+        .iter()
+        .filter(|declaration| !matches!(declaration.outcome(), DeclarationOutcome::Refused(_)))
+        .zip(report.judged())
+        .filter(|&(declaration, _)| declaration.name() == SurfaceName::from("both"))
+        .map(|(_, judged)| {
+            matches!(
+                judged.verdict(),
+                gandr_core_checker::Verdict::Checked { .. }
+            )
+        })
+        .collect();
+    assert_eq!(
+        both,
+        vec![true],
+        "`both` checks at the imported `Row`: {report:?}"
+    );
+}
+
 /// #8139: a port at a name that no scope of its source binds refuses its
 /// theory at the name's bytes, with the reason that the description read gave
 /// before the resolve. A result and an input are refused alike.

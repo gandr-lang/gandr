@@ -1,0 +1,4 @@
+/// A row of two numbers, which this source exports beside the prelude's atom.
+pub data Row : Type where
+  | Pair : (a : Integer, b : Integer) --> Row
+

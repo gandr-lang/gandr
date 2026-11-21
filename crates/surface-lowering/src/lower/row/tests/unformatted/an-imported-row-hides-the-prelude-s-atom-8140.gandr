@@ -1,0 +1,4 @@
+import "rows.gandr" (Row, Pair);
+
+/// The annotation reads the imported `Row`, as its constructor does.
+def both : Row = Pair 1 2;
