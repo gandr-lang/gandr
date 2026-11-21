@@ -50,7 +50,7 @@ def signed: if . > 0 then "+\(hundredths)" else "\(hundredths)" end;
 | [$grew[]
     | . as $g
     | select($held | any(startswith("- [ ] `\($g.arch) \($g.head | short)`") or startswith("- [x] `\($g.arch) \($g.head | short)`")) | not)
-    | "- [ ] `\(.arch) \(.head | short)` — the chain takes \(.now | seconds) against \(.before | seconds) at `\(.previous | short)`, \(.change | signed) %; `\(.unit)` takes \(.unit_now | seconds) against \(.unit_before | seconds) ([run \($in.run.id)](\($in.run.url)))"]
+    | "- [ ] `\(.arch) \(.head | short)` — the chain takes \(.now | seconds) against \(.before | seconds) at `\(.previous | short)`. The change is \(.change | signed) %. `\(.unit)` takes \(.unit_now | seconds) against \(.unit_before | seconds). The night is [run \($in.run.id)](\($in.run.url))."]
   as $new
 | {summary: ("## The chain of each head\n\n"
     + "|Architecture|Head|Wall|Units' time|In flight|Chain|Pipelined|Last night|Change|\n"
