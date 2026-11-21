@@ -1,0 +1,15 @@
+/// `RoundTripDistinct`: a universe equivalence whose round trip does not
+/// return its input.
+def not(b : Unit + Unit) -> Unit + Unit =
+  match b where
+    | +{.0 = u} => +{.1 = u}
+    | +{.1 = u} => +{.0 = u}
+
+def not_not(b : Unit + Unit) -> Unit + Unit =
+  not (not b)
+
+def same(b : Unit + Unit) -> Unit + Unit =
+  b
+
+@[refuses("RoundTripDistinct")]
+def collapse_bool : Path[.A = Type] Bool Bool = equiv not same;
