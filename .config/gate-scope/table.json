@@ -131,19 +131,6 @@
       ],
       "check:cases": [".config/"],
       "check:census": [".config/cases/", ".config/census/"],
-      "check:claims": [
-        ".cargo/",
-        ".config/",
-        ".github/ISSUE_TEMPLATE/unit.yml",
-        "Cargo.lock",
-        "Cargo.toml",
-        "contrib/",
-        "corpus/",
-        "crates/",
-        "ledger/concerns.sql",
-        "ledger/features.sql",
-        "library/"
-      ],
       "check:commits": [".config/commits/", ".config/pr-stack/", "commitlint.config.mjs"],
       "check:coverage": [
         ".cargo/",
@@ -199,7 +186,7 @@
         "crates/"
       ],
       "check:gate-rows": [".config/claims/", ".config/gate-rows/", ".config/mise/"],
-      "check:gh-budget": [".config/", ".github/"],
+      "check:gh-budget": [".config/", ".github/", "crates/"],
       "check:gh-direct": [".config/", ".github/", "crates/"],
       "check:hooks": ["prek.toml"],
       "check:host-lock": [".config/cases/", ".config/mise/"],
@@ -243,9 +230,15 @@
       "check:merge-residue": [".config/merge-residue/"],
       "check:mutants": [".config/cases/", ".config/mutants/"],
       "check:nightly": [
+        ".cargo/",
         ".config/cases/",
+        ".config/mise/scope",
+        ".config/mise/tasks/mise-tasks-ci.toml",
         ".config/nightly/",
-        ".github/workflows/nightly-sweeps.yml"
+        ".github/workflows/nightly-sweeps.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/"
       ],
       "check:positions": [
         ".config/cases/",

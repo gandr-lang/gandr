@@ -851,7 +851,7 @@ jobs:
       # - see: #8305, `.config/gh/calls.toml`
       - name: mint the token that reads the runs and files the lane budget
         id: budget-token
-        if: *own-runners
+        if: ${{ !cancelled() && github.repository == 'gandr-lang/gandr' && github.ref == 'refs/heads/main' && env.LANDING_APP_ID != '' }}
         continue-on-error: true
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:

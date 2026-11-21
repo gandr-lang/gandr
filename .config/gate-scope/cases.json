@@ -235,7 +235,7 @@
       "tasks": ["check:claims", "check:corpus", "check:doc", "check:typos"],
       "changed": []
     },
-    "output": ["check:typos"]
+    "output": ["check:claims", "check:typos"]
   },
   {
     "name": "#6895: a workflow change runs each scoped light check whose row it touches, and every unscoped one",
