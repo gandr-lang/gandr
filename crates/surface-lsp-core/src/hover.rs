@@ -2076,6 +2076,8 @@ mod tests
     use crate::reading::Reading;
     use crate::toolkit::grammar;
 
+    mod printer;
+
     /// The style a client keeping no HTML tags reads, in the explicit form
     /// the fixtures below are written in.
     const PLAIN: Style = Style {
