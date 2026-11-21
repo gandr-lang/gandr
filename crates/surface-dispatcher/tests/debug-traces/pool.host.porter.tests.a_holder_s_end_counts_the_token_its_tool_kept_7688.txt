@@ -1,0 +1,77 @@
+test: pool::host::porter::tests::a_holder_s_end_counts_the_token_its_tool_kept_7688
+package: gandr-surface-dispatcher
+command: mise run debug:test gandr-surface-dispatcher pool::host::porter::tests::a_holder_s_end_counts_the_token_its_tool_kept_7688 --break give_back$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-dispatcher/8d6e2498efae245d/out/gandr_surface_dispatcher-8d6e2498efae245d"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-dispatcher/8d6e2498efae245d/out/gandr_surface_dispatcher-8d6e2498efae245d' (arm64).
+(lldb) settings set -- target.run-args  "pool::host::porter::tests::a_holder_s_end_counts_the_token_its_tool_kept_7688" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex give_back$
+Breakpoint 1: where = gandr_surface_dispatcher-8d6e2498efae245d`gandr_surface_dispatcher::pool::host::give_back + 36 [inlined] <u64 as core::convert::From<u32>>::from at num.rs:154:17, address = 0x000000010061ce1c
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_dispatcher-8d6e2498efae245d`__rustc::rust_panic + 12 at panicking.rs:883:16, address = 0x000000010375fdd0
+(lldb) run
+
+running 1 test
+test pool::host::porter::tests::a_holder_s_end_counts_the_token_its_tool_kept_7688 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 10560 launched: 'target/debug-trace/debug/build/gandr-surface-dispatcher/8d6e2498efae245d/out/gandr_surface_dispatcher-8d6e2498efae245d' (arm64)
+Process 10560 stopped
+* thread #2, name = 'pool::host::porter::tests::a_holder_s_end_counts_the_token_its_', stop reason = breakpoint 1.1
+       frame #0: 0x000000010061ce1c gandr_surface_dispatcher-8d6e2498efae245d`<u64 as core::convert::From<u32>>::from(small=1) at num.rs:154:17 [inlined]
+   151 	            fn from(small: $small) -> Self {
+   152 	                debug_assert!(<$large>::MIN as i128 <= <$small>::MIN as i128);
+   153 	                debug_assert!(<$small>::MAX as u128 <= <$large>::MAX as u128);
+-> 154 	                small as Self
+    	                ^
+   155 	            }
+   156 	        }
+   157 	    }
+(lldb) bt 24
+error: gandr_surface_dispatcher-8d6e2498efae245d.gandr_surface_dispatcher.675b4d45c49740c2-cgu.02.rcgu.o 0x400002000010a181: DW_TAG_member 'strong' refers to type 0x000000000003dc67 which was unable to be parsed
+error: gandr_surface_dispatcher-8d6e2498efae245d.gandr_surface_dispatcher.675b4d45c49740c2-cgu.02.rcgu.o 0x400002000010a18d: DW_TAG_member 'weak' refers to type 0x000000000003dc67 which was unable to be parsed
+* thread #2, name = 'pool::host::porter::tests::a_holder_s_end_counts_the_token_its_', stop reason = breakpoint 1.1
+   * frame #0: 0x000000010061ce1c gandr_surface_dispatcher-8d6e2498efae245d`<u64 as core::convert::From<u32>>::from(small=1) at num.rs:154:17 [inlined]
+     frame #1: 0x000000010061ce1c gandr_surface_dispatcher-8d6e2498efae245d`gandr_surface_dispatcher::pool::host::give_back(counter={word:{v:{value:{0:12884901889}}}, waiters:{v:{value:{0:0}}}, wakes:{0:{v:{value:{0:0}}}}, urgent:{v:{value:{0:0}}}, urgent_wakes:{0:{v:{value:{0:0}}}}, hungry:{v:{value:{0:0}}}, stocked:{v:{value:{0:0}}}, porter_wakes:{0:{v:{value:{0:2}}}}}, count={0:1}) at host.rs:1311:9
+     frame #2: 0x000000010061cd54 gandr_surface_dispatcher-8d6e2498efae245d`gandr_surface_dispatcher::pool::host::reclaim(counter={word:{v:{value:{0:12884901889}}}, waiters:{v:{value:{0:0}}}, wakes:{0:{v:{value:{0:0}}}}, urgent:{v:{value:{0:0}}}, urgent_wakes:{0:{v:{value:{0:0}}}}, hungry:{v:{value:{0:0}}}, stocked:{v:{value:{0:0}}}, porter_wakes:{0:{v:{value:{0:2}}}}}, slot={pid:{v:{value:{0:0}}}, held:{v:{value:{0:0}}}, marked:{v:{value:{0:0}}}, urging:{v:{value:{0:0}}}, porting:{v:{value:{0:0}}}}) at host.rs:1293:13
+     frame #3: 0x0000000100669b98 gandr_surface_dispatcher-8d6e2498efae245d`<gandr_surface_dispatcher::pool::host::Host as core::ops::drop::Drop>::drop(self={mapping:{0:{inner:{ptr:0x000000010bd6c000, len:16512}}}, slots:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-porter-kept-10560/tokens3.d", place:{0:0}, class:Batch, deferred:{v:{value:{0:0}}}, _claim:{inner:{0:{0:{fd:{…}}}}}}) at host.rs:1165:12
+     frame #4: 0x0000000100595980 gandr_surface_dispatcher-8d6e2498efae245d`core::ptr::drop_glue::<gandr_surface_dispatcher::pool::host::Host>((null)={mapping:{0:{inner:{ptr:0x000000010bd6c000, len:16512}}}, slots:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-porter-kept-10560/tokens3.d", place:{0:0}, class:Batch, deferred:{v:{value:{0:0}}}, _claim:{inner:{0:{0:{fd:{…}}}}}}) at mod.rs:848:1
+     frame #5: 0x0000000100596d4c gandr_surface_dispatcher-8d6e2498efae245d`core::ptr::drop_glue::<gandr_surface_dispatcher::pool::host::porter::Carrying>((null)={host:{mapping:{0:{inner:{ptr:0x000000010bd6c000, len:16512}}}, slots:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-porter-kept-10560/tokens3.d", place:{0:0}, class:Batch, deferred:{v:{value:{0:0}}}, _claim:{inner:{0:{0:{…}}}}}, fifo:{ready:{inner:{0:{0:{…}}}}, waiting:{inner:{0:{0:{…}}}}, back:{inner:{0:{0:{…}}}}}, stop:{v:{value:{0:1}}}}) at mod.rs:848:1
+     frame #6: 0x0000000100229e20 gandr_surface_dispatcher-8d6e2498efae245d`core::ptr::drop_in_place::<gandr_surface_dispatcher::pool::host::porter::Carrying>(to_drop=<unavailable>) at mod.rs:843:14 [inlined]
+     frame #7: 0x0000000100229e18 gandr_surface_dispatcher-8d6e2498efae245d`<alloc::rcs::arc::Arc<gandr_surface_dispatcher::pool::host::porter::Carrying>>::drop_slow(self=strong=0, weak=1) at arc.rs:2242:18
+     frame #8: 0x00000001002370b0 gandr_surface_dispatcher-8d6e2498efae245d`<alloc::rcs::arc::Arc<gandr_surface_dispatcher::pool::host::porter::Carrying> as core::ops::drop::Drop>::drop(self=strong=0, weak=1) at arc.rs:3020:18
+     frame #9: 0x000000010057effc gandr_surface_dispatcher-8d6e2498efae245d`core::ptr::drop_glue::<alloc::rcs::arc::Arc<gandr_surface_dispatcher::pool::host::porter::Carrying>>((null)=strong=0, weak=1) at mod.rs:848:1
+     frame #10: 0x0000000100596cc4 gandr_surface_dispatcher-8d6e2498efae245d`core::ptr::drop_glue::<gandr_surface_dispatcher::pool::host::porter::Porter>((null)={carrying:strong=0, weak=1, path:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-porter-kept-10560/tokens3.0.fifo", thread:None}) at mod.rs:848:1
+     frame #11: 0x00000001003faba4 gandr_surface_dispatcher-8d6e2498efae245d`<gandr_surface_dispatcher::pool::host::porter::Porter>::end(self={carrying:strong=0, weak=1, path:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-porter-kept-10560/tokens3.0.fifo", thread:None}) at porter.rs:313:5
+     frame #12: 0x00000001006622e0 gandr_surface_dispatcher-8d6e2498efae245d`gandr_surface_dispatcher::pool::host::porter::tests::a_holder_s_end_counts_the_token_its_tool_kept_7688 at porter.rs:761:20
+     frame #13: 0x000000010060e998 gandr_surface_dispatcher-8d6e2498efae245d`gandr_surface_dispatcher::pool::host::porter::tests::a_holder_s_end_counts_the_token_its_tool_kept_7688::{closure#0}((null)={}) at porter.rs:743:60
+     frame #14: 0x00000001005e1cfc gandr_surface_dispatcher-8d6e2498efae245d`<gandr_surface_dispatcher::pool::host::porter::tests::a_holder_s_end_counts_the_token_its_tool_kept_7688::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #15: 0x000000010087bcd8 gandr_surface_dispatcher-8d6e2498efae245d`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #16: 0x000000010087bcd0 gandr_surface_dispatcher-8d6e2498efae245d`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:701:18 [opt]
+     frame #17: 0x0000000100886cc0 gandr_surface_dispatcher-8d6e2498efae245d`test::run_test_in_process::{closure#0} at lib.rs:724:74 [opt] [inlined]
+     frame #18: 0x0000000100886cb4 gandr_surface_dispatcher-8d6e2498efae245d`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #19: 0x0000000100886cb4 gandr_surface_dispatcher-8d6e2498efae245d`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:573:43 [opt] [inlined]
+     frame #20: 0x0000000100886cb0 gandr_surface_dispatcher-8d6e2498efae245d`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:541:19 [opt] [inlined]
+     frame #21: 0x0000000100886cb0 gandr_surface_dispatcher-8d6e2498efae245d`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #22: 0x0000000100886cb0 gandr_surface_dispatcher-8d6e2498efae245d`test::run_test_in_process at lib.rs:724:27 [opt] [inlined]
+     frame #23: 0x0000000100886ca4 gandr_surface_dispatcher-8d6e2498efae245d`test::run_test::{closure#0} at lib.rs:645:43 [opt]
+(lldb) frame variable --depth 3
+(unsigned int) small = 1
+(lldb) up
+frame #1: 0x000000010061ce1c gandr_surface_dispatcher-8d6e2498efae245d`gandr_surface_dispatcher::pool::host::give_back(counter={word:{v:{value:{0:12884901889}}}, waiters:{v:{value:{0:0}}}, wakes:{0:{v:{value:{0:0}}}}, urgent:{v:{value:{0:0}}}, urgent_wakes:{0:{v:{value:{0:0}}}}, hungry:{v:{value:{0:0}}}, stocked:{v:{value:{0:0}}}, porter_wakes:{0:{v:{value:{0:2}}}}}, count={0:1}) at host.rs:1311:9
+   1308	)
+   1309	{
+   1310	    counter.word.fetch_add(
+-> 1311	        u64::from(count.0).wrapping_add(GENERATION),
+    	        ^
+   1312	        Ordering::SeqCst,
+   1313	    );
+   1314	    for _ in 0 .. count.0 {
+(lldb) frame variable --depth 3
+(gandr_surface_dispatcher::pool::host::Counter *) counter = 0x000000010bd6c040 {word:{v:{value:{0:12884901889}}}, waiters:{v:{value:{0:0}}}, wakes:{0:{v:{value:{0:0}}}}, urgent:{v:{value:{0:0}}}, urgent_wakes:{0:{v:{value:{0:0}}}}, hungry:{v:{value:{0:0}}}, stocked:{v:{value:{0:0}}}, porter_wakes:{0:{v:{value:{0:2}}}}}
+(gandr_surface_dispatcher::pool::host::Count) count = {0:1}
