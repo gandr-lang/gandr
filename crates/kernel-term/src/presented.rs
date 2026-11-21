@@ -1088,15 +1088,17 @@ impl Presentation
     /// # Specification
     /// - requires: `self` passed [`Self::validate`] against the table `arities`
     ///   counts.
-    /// - ensures: [`Convergence::Diverges`] naming the first symmetry
-    ///   ([`RuleReading::Symmetry`]) as both rules, when the table holds one:
-    ///   its two orders are two normal forms, because no reader rewrites by it.
-    ///   Otherwise [`Convergence::Converges`] exactly when every critical
-    ///   pair's two sides normalize to one term; otherwise
-    ///   [`Convergence::Diverges`] naming the first pair that does not, in
-    ///   written order of the overlapped rule, the position and the overlapping
-    ///   rule. Each node unified, built, compared or copied costs one unit of
-    ///   `fuel`.
+    /// - ensures: a symmetry ([`RuleReading::Symmetry`]) is no rule of a pair:
+    ///   the decision reads the other rules under the symmetries. Each left
+    ///   side that overlaps stands in each order of the two fields of its nodes
+    ///   under a symmetry, and a rule overlaps its own other orders at the
+    ///   root. Two sides of a pair join when [`compared_under`] gives that they
+    ///   agree, which is their equality for a table with no symmetry.
+    ///   [`Convergence::Converges`] exactly when every critical pair's two
+    ///   sides join; otherwise [`Convergence::Diverges`] naming the first pair
+    ///   that does not, in written order of the overlapped rule, the position
+    ///   and the overlapping rule. Each node unified, built, compared or copied
+    ///   costs one unit of `fuel`.
     /// - provides: the convergence a decision over normal forms rests on: an
     ///   admitted presentation terminates, so joining every critical pair makes
     ///   it confluent (the critical pair lemma with Newman's lemma), and two
@@ -1133,44 +1135,89 @@ impl Presentation
         fuel: &mut RewriteFuel,
     ) -> Result<Convergence, Exhausted>
     {
-        if let Some(symmetry) = self
-            .rules()
-            .iter()
-            .position(|rule| matches!(rule.reading(), RuleReading::Symmetry(_)))
-        {
-            return Ok(Convergence::Diverges {
-                outer: RuleIndex(symmetry),
-                inner: RuleIndex(symmetry),
-            });
-        }
+        let symmetric = self.symmetries();
         for (outer_index, outer) in self.rules().iter().enumerate() {
+            if outer.reading() != RuleReading::Step {
+                continue;
+            }
             for (position, &node) in outer.left().iter().enumerate() {
                 if !matches!(node, RuleNode::Constructor(_)) {
                     continue;
                 }
                 for (inner_index, inner) in self.rules().iter().enumerate() {
-                    if position == 0 && inner_index == outer_index {
+                    if inner.reading() != RuleReading::Step {
                         continue;
                     }
-                    let Overlap::Pair {
-                        outer: mut by_outer,
-                        inner: mut by_inner,
-                    } = overlap((outer, TermPosition(position)), inner, arities, fuel)?
-                    else {
-                        continue;
-                    };
-                    let _outer = self.normalize(arities, &mut by_outer, |&()| (), fuel)?;
-                    let _inner = self.normalize(arities, &mut by_inner, |&()| (), fuel)?;
-                    if by_outer != by_inner {
-                        return Ok(Convergence::Diverges {
-                            outer: RuleIndex(outer_index),
-                            inner: RuleIndex(inner_index),
-                        });
+                    let sites = symmetric_sites(inner.left(), &symmetric);
+                    for swaps in 0 .. orders(&sites) {
+                        // A rule overlaps its own left side at the root in
+                        // the written order by one term, which is no pair.
+                        if swaps == 0 && position == 0 && inner_index == outer_index {
+                            continue;
+                        }
+                        let order = reordered(inner.left(), &sites, Swaps(swaps), arities, fuel)?;
+                        let Overlap::Pair {
+                            outer: mut by_outer,
+                            inner: mut by_inner,
+                        } = overlap(
+                            (outer, TermPosition(position)),
+                            (&order, inner.right()),
+                            arities,
+                            fuel,
+                        )?
+                        else {
+                            continue;
+                        };
+                        let _outer = self.normalize(arities, &mut by_outer, |&()| (), fuel)?;
+                        let _inner = self.normalize(arities, &mut by_inner, |&()| (), fuel)?;
+                        let joined = if symmetric.is_empty() {
+                            by_outer == by_inner
+                        }
+                        else {
+                            compared_under(&symmetric, &by_outer, &by_inner, fuel)?
+                                == Compared::Agree
+                        };
+                        if !joined {
+                            return Ok(Convergence::Diverges {
+                                outer: RuleIndex(outer_index),
+                                inner: RuleIndex(inner_index),
+                            });
+                        }
                     }
                 }
             }
         }
         Ok(Convergence::Converges)
+    }
+
+    /// The constructors that a symmetry of the table names, in ascending
+    /// order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the tag of each rule that reads as [`RuleReading::Symmetry`],
+    ///   sorted.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: one tag for each symmetry, growth within the rules
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::converges`].
+    /// - witness: `presented::tests::a_symmetry_keeps_apartness_of_distinct_classes_8323`
+    #[spec(ensures: |ret| ret.len() <= self.rules().len())]
+    fn symmetries(&self) -> SmallVec<ConstructorTag, 0, Global>
+    {
+        let mut symmetric: SmallVec<ConstructorTag, 0, Global> = self
+            .rules()
+            .iter()
+            .filter_map(|rule| match rule.reading() {
+                RuleReading::Symmetry(tag) => Some(tag),
+                RuleReading::Step => None,
+            })
+            .collect();
+        symmetric.sort_unstable();
+        symmetric
     }
 
     /// Decide whether two terms of the presented type are apart: no path at
@@ -1459,6 +1506,14 @@ where
             return Ok(Apartness::Open);
         }
     }
+    let symmetric = presentation.symmetries();
+    if !symmetric.is_empty() {
+        return Ok(match compared_under(&symmetric, left, right, fuel)? {
+            Compared::Agree => Apartness::Agree,
+            Compared::Apart => Apartness::Apart,
+            Compared::Unsettled => unsettled(table, left, right),
+        });
+    }
     for (one, other) in left.iter().zip(right.iter()) {
         fuel.charge()?;
         match (*one, *other) {
@@ -1482,6 +1537,223 @@ where
     else {
         Ok(unsettled(table, left, right))
     }
+}
+
+/// How two terms stand under the symmetries of a table, as
+/// [`compared_under`] reads them.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Compared
+{
+    /// One pairing of the fields at each node under a symmetry joins the two
+    /// terms.
+    Agree,
+    /// Each pairing meets two distinct constructors first.
+    Apart,
+    /// Some pairing meets a leaf first, and no pairing joins the two terms.
+    Unsettled,
+}
+
+impl Compared
+{
+    /// This result, then `next` for the pair of fields after it.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn then(
+        self,
+        next: Self,
+    ) -> Self
+    {
+        match self {
+            Self::Agree => next,
+            Self::Apart | Self::Unsettled => self,
+        }
+    }
+
+    /// The result of two pairings: this one and `other`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn or(
+        self,
+        other: Self,
+    ) -> Self
+    {
+        match (self, other) {
+            (Self::Agree, _) | (_, Self::Agree) => Self::Agree,
+            (Self::Apart, Self::Apart) => Self::Apart,
+            (Self::Apart | Self::Unsettled, Self::Apart | Self::Unsettled) => Self::Unsettled,
+        }
+    }
+}
+
+/// One past the last node of the subterm at each position of `term`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one end for each node: the position after a leaf, and the end of
+///   the last field after a constructor, by the arity that the node holds. A
+///   subterm that the term cuts short ends at the term's length.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: one end for each node, growth within the term's nodes
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`compared_under`].
+/// - witness: `presented::tests::a_symmetry_keeps_apartness_of_distinct_classes_8323`
+#[spec(ensures: |ret| ret.len() == term.len())]
+fn subterm_ends<L>(term: &[RuleTerm<(), L>]) -> SmallVec<usize, 0, Global>
+{
+    let mut ends = SmallVec::<usize, 0, Global>::new();
+    ends.resize(Count::from(term.len()), term.len());
+    for at in (0 .. term.len()).rev() {
+        let mut end = at.saturating_add(1);
+        if let Some(&RuleTerm::Constructor { arity, .. }) = term.get(at) {
+            for _field in 0 .. usize::from(arity) {
+                end = ends.get(end).copied().unwrap_or(term.len());
+            }
+        }
+        if let Some(slot) = ends.get_mut(at) {
+            *slot = end;
+        }
+    }
+    ends
+}
+
+/// Compare two terms under the symmetries of a table.
+///
+/// # Specification
+/// - requires: `symmetric` is in ascending order, and each of its tags is the
+///   constructor of a validated symmetry.
+/// - ensures: the result for the two whole terms, where the result of two
+///   subterms is: [`Compared::Apart`] for two constructors with distinct tags;
+///   [`Compared::Agree`] for two equal leaves; [`Compared::Unsettled`] for each
+///   other pair that holds a leaf. Two constructors of one tag give the first
+///   result of their pairs of fields, in order, that is not `Agree`. Under a
+///   tag of `symmetric` with two fields, the written pairing and the crossed
+///   pairing each give such a result: `Agree` when one agrees, `Apart` when the
+///   two are apart, `Unsettled` otherwise. A term that is not one term is
+///   `Unsettled`. Each pair of nodes costs one unit of `fuel`.
+/// - provides: the equality of two normal forms under the symmetries, and the
+///   apartness of two classes.
+/// - fails: [`Exhausted`] when `fuel` runs out.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: two `for` loops over the positions of the two terms, from the last
+///   to the first, with no recursion: each pair of subterms reads the results
+///   of pairs at later positions.
+/// - measure: the pairs of positions left; `fuel`.
+///
+/// # Cost
+/// - allocation: one result for each pair of nodes and the ends of the
+///   subterms, growth within the two terms' nodes
+///
+/// # Adequacy
+/// - hypothesis: L3 — two orders of a meet agree, two distinct constants are
+///   apart, two meets that no pairing joins are apart, and a meet that holds a
+///   leaf is unsettled against a meet that differs at the leaf.
+/// - witness: `presented::tests::a_symmetry_keeps_apartness_of_distinct_classes_8323`
+#[spec(captures: before = fuel.0, ensures: |ret| fuel.0 <= before
+    && (ret.is_ok() || fuel.0 == 0))]
+fn compared_under<L>(
+    symmetric: &[ConstructorTag],
+    left: &[RuleTerm<(), L>],
+    right: &[RuleTerm<(), L>],
+    fuel: &mut RewriteFuel,
+) -> Result<Compared, Exhausted>
+where
+    L: Copy + Eq,
+{
+    let (left_ends, right_ends) = (subterm_ends(left), subterm_ends(right));
+    let width = right.len();
+    let mut cells = SmallVec::<Compared, 0, Global>::new();
+    cells.resize(
+        Count::from(left.len().saturating_mul(width)),
+        Compared::Unsettled,
+    );
+    let slot = |one: usize, other: usize| one.saturating_mul(width).saturating_add(other);
+    for one in (0 .. left.len()).rev() {
+        for other in (0 .. width).rev() {
+            fuel.charge()?;
+            let read = |cells: &[Compared], first: usize, second: usize| {
+                if first < left.len() && second < width {
+                    cells
+                        .get(slot(first, second))
+                        .copied()
+                        .unwrap_or(Compared::Unsettled)
+                }
+                else {
+                    Compared::Unsettled
+                }
+            };
+            let end_of = |ends: &[usize], at: usize| ends.get(at).copied().unwrap_or(usize::MAX);
+            let result = match (left.get(one), right.get(other)) {
+                (
+                    Some(&RuleTerm::Constructor { tag, arity, .. }),
+                    Some(&RuleTerm::Constructor {
+                        tag: facing,
+                        arity: facing_arity,
+                        ..
+                    }),
+                ) => {
+                    let (first, facing_first) = (one.saturating_add(1), other.saturating_add(1));
+                    if tag != facing {
+                        Compared::Apart
+                    }
+                    else if arity != facing_arity {
+                        Compared::Unsettled
+                    }
+                    else if usize::from(arity) == 2 && symmetric.binary_search(&tag).is_ok() {
+                        let (second, facing_second) =
+                            (end_of(&left_ends, first), end_of(&right_ends, facing_first));
+                        let written = read(&cells, first, facing_first).then(read(
+                            &cells,
+                            second,
+                            facing_second,
+                        ));
+                        let crossed = read(&cells, first, facing_second).then(read(
+                            &cells,
+                            second,
+                            facing_first,
+                        ));
+                        written.or(crossed)
+                    }
+                    else {
+                        let (mut at, mut facing_at) = (first, facing_first);
+                        let mut fields = Compared::Agree;
+                        for _field in 0 .. usize::from(arity) {
+                            fields = fields.then(read(&cells, at, facing_at));
+                            at = end_of(&left_ends, at);
+                            facing_at = end_of(&right_ends, facing_at);
+                        }
+                        fields
+                    }
+                },
+                (Some(&RuleTerm::Leaf(leaf)), Some(&RuleTerm::Leaf(facing))) if leaf == facing => {
+                    Compared::Agree
+                },
+                (Some(_) | None, Some(_) | None) => Compared::Unsettled,
+            };
+            if let Some(cell) = cells.get_mut(slot(one, other)) {
+                *cell = result;
+            }
+        }
+    }
+    let whole = left_ends.first() == Some(&left.len()) && right_ends.first() == Some(&width);
+    Ok(if whole {
+        cells.first().copied().unwrap_or(Compared::Unsettled)
+    }
+    else {
+        Compared::Unsettled
+    })
 }
 
 /// Why two terms that differ short of two distinct constructors are not shown
@@ -1661,7 +1933,7 @@ enum Overlap
 #[spec(ensures: |ret| ret.is_ok() || fuel.0 == 0)]
 fn overlap(
     (outer, position): (&PresentedRule, TermPosition),
-    inner: &PresentedRule,
+    (inner_left, inner_right): (&[RuleNode], &[RuleNode]),
     arities: &[FieldCount],
     fuel: &mut RewriteFuel,
 ) -> Result<Overlap, Exhausted>
@@ -1676,7 +1948,7 @@ fn overlap(
     else {
         return Ok(Overlap::Disjoint);
     };
-    let overlapping = inner.left();
+    let overlapping = inner_left;
     let mut outer_bound: SmallVec<(RuleVariable, PairTerm), 0, Global> =
         SmallVec::<_, 0, Global>::new();
     let mut inner_bound: SmallVec<(RuleVariable, PairTerm), 0, Global> =
@@ -1718,7 +1990,7 @@ fn overlap(
     let by_outer = substituted(outer.right(), PairVariable::Outer, &outer_bound, arities);
     let mut by_inner = flattened(before, PairVariable::Outer, arities);
     by_inner.extend(substituted(
-        inner.right(),
+        inner_right,
         PairVariable::Inner,
         &inner_bound,
         arities,
@@ -2936,19 +3208,8 @@ fn matched_under<C, L>(
     if symmetric.is_empty() || !rooted || matches!(written, Matched::At { .. }) {
         return Ok(written);
     }
-    let sites: SmallVec<TermPosition, 0, Global> = left
-        .iter()
-        .enumerate()
-        .filter(|&(_, &node)| {
-            matches!(node, RuleNode::Constructor(tag) if symmetric.binary_search(&tag).is_ok())
-        })
-        .map(|(at, _)| TermPosition(at))
-        .collect();
-    let orders = u32::try_from(sites.len())
-        .ok()
-        .and_then(|nodes| 1_usize.checked_shl(nodes))
-        .unwrap_or(usize::MAX);
-    for swaps in 1 .. orders {
+    let sites = symmetric_sites(left, symmetric);
+    for swaps in 1 .. orders(&sites) {
         let order = reordered(left, &sites, Swaps(swaps), arities, fuel)?;
         let found = matched(term, start, &order, arities, fuel)?;
         if matches!(found, Matched::At { .. }) {
@@ -2956,6 +3217,49 @@ fn matched_under<C, L>(
         }
     }
     Ok(Matched::No)
+}
+
+/// The positions of `left` that hold a constructor of `symmetric`, in
+/// ascending order.
+///
+/// # Specification
+/// - requires: `symmetric` is in ascending order.
+/// - ensures: each position of `left` whose node is a constructor that
+///   `symmetric` holds, and no other position.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: one position for each such node, growth within the left side's
+///   nodes
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`matched_under`].
+/// - witness: `presented::tests::a_left_side_matches_in_each_order_under_a_symmetry_8299`
+#[spec(ensures: |ret| ret.len() <= left.len())]
+fn symmetric_sites(
+    left: &[RuleNode],
+    symmetric: &[ConstructorTag],
+) -> SmallVec<TermPosition, 0, Global>
+{
+    left.iter()
+        .enumerate()
+        .filter(|&(_, &node)| {
+            matches!(node, RuleNode::Constructor(tag) if symmetric.binary_search(&tag).is_ok())
+        })
+        .map(|(at, _)| TermPosition(at))
+        .collect()
+}
+
+/// How many orders a left side with the nodes `sites` under a symmetry has.
+///
+/// # Specification
+/// trivial.
+fn orders(sites: &[TermPosition]) -> usize
+{
+    u32::try_from(sites.len())
+        .ok()
+        .and_then(|nodes| 1_usize.checked_shl(nodes))
+        .unwrap_or(usize::MAX)
 }
 
 /// `left` with the two arguments in the other order at each node of `sites`
@@ -4042,11 +4346,8 @@ mod tests
         );
         assert_eq!(
             band.converges(&arities, &mut fuel),
-            Ok(Convergence::Diverges {
-                outer: RuleIndex::from(2_usize),
-                inner: RuleIndex::from(2_usize),
-            }),
-            "the two orders of a symmetry are two normal forms, so the table does not converge"
+            Ok(Convergence::Converges),
+            "the two steps join in each order of the arguments of the symmetry"
         );
         let mut terms = Terms::default();
         let (one_bit, zero_bit) = (
@@ -4056,11 +4357,92 @@ mod tests
         assert_eq!(
             band.apart(&table, (one_bit, zero_bit), |at, fields| terms
                 .read(at, fields)),
+            Apartness::Apart,
+            "two distinct constants are apart under a table that holds a symmetry"
+        );
+    }
+
+    /// - see: #8323
+    #[test]
+    fn a_symmetry_keeps_apartness_of_distinct_classes_8323()
+    {
+        let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+        let v = |ordinal: u32| RuleNode::Variable(RuleVariable::from(ordinal));
+        let table = bits();
+        let arities = [0_usize, 0, 2, 2, 2].map(FieldCount::from);
+        let symmetry = || PresentedRule::new([c(2), v(0), v(1)].into(), [c(2), v(1), v(0)].into());
+        let pick = Presentation::new(core::iter::once(symmetry()).collect());
+        assert_eq!(pick.validate(&table), Ok(()));
+        let mut fuel = RewriteFuel::from(10_000_u64);
+        assert_eq!(
+            pick.converges(&arities, &mut fuel),
+            Ok(Convergence::Converges),
+            "a table that holds a symmetry and no step converges"
+        );
+        let mut terms = Terms::default();
+        let (a, b) = (
+            terms.build(&[Node::C(0)], &arities),
+            terms.build(&[Node::C(1)], &arities),
+        );
+        let (a_b, b_a, a_a, b_b) = (
+            terms.build(&[Node::C(2), Node::C(0), Node::C(1)], &arities),
+            terms.build(&[Node::C(2), Node::C(1), Node::C(0)], &arities),
+            terms.build(&[Node::C(2), Node::C(0), Node::C(0)], &arities),
+            terms.build(&[Node::C(2), Node::C(1), Node::C(1)], &arities),
+        );
+        for (left, right, verdict, reading) in [
+            (a, b, Apartness::Apart, "two distinct constants are apart"),
+            (
+                a_b,
+                b_a,
+                Apartness::Agree,
+                "the two orders of a meet are one term",
+            ),
+            (
+                a_a,
+                b_b,
+                Apartness::Apart,
+                "no pairing joins two meets of two constants",
+            ),
+            (
+                a_b,
+                a_a,
+                Apartness::Apart,
+                "each pairing meets two distinct constants",
+            ),
+        ] {
+            assert_eq!(
+                pick.apart(&table, (left, right), |at, fields| terms.read(at, fields)),
+                verdict,
+                "{reading}"
+            );
+        }
+        // `band(bor(x, y), z) ~> x` joins with no symmetry. Under the symmetry
+        // of `band`, the rule overlaps its own other order at the root:
+        // `band(bor(x, y), bor(x', y'))` rewrites to `x` and to `x'`.
+        let first_of = || PresentedRule::new([c(2), c(3), v(0), v(1), v(2)].into(), [v(0)].into());
+        assert_eq!(
+            Presentation::new(core::iter::once(first_of()).collect())
+                .converges(&arities, &mut fuel),
+            Ok(Convergence::Converges)
+        );
+        let torn = Presentation::new([first_of(), symmetry()].into_iter().collect());
+        assert_eq!(torn.validate(&table), Ok(()));
+        assert_eq!(
+            torn.converges(&arities, &mut fuel),
+            Ok(Convergence::Diverges {
+                outer: RuleIndex::from(0_usize),
+                inner: RuleIndex::from(0_usize),
+            }),
+            "a rule that tears under the symmetry is found at its own other order"
+        );
+        assert_eq!(
+            torn.apart(&table, (a, b), |at, fields| terms.read(at, fields)),
             Apartness::Diverges {
-                outer: RuleIndex::from(2_usize),
-                inner: RuleIndex::from(2_usize),
+                outer: RuleIndex::from(0_usize),
+                inner: RuleIndex::from(0_usize),
             },
-            "no two terms are apart by a table that holds a symmetry"
+            "no two terms are apart by a table that tears"
         );
     }
 
