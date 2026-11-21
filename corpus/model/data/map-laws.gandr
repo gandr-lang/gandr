@@ -1,0 +1,40 @@
+//! `map` obeys functoriality.
+//!
+//! A composite map equals two consecutive maps.
+//! The list source gives `map` a function value.
+//!
+//! A rule names only the operations of its block.
+//! A defunctionalised `map` exposes `app` and `compose` as operations.
+//! The coincidence check uses the definition's rules.
+//! The `normalizes` row exercises the law.
+//!
+//! - cites: [Bird-1987-an_introduction_to_the_theory_of_lists]
+//! - cites: [Reynolds-1972-definitional_interpreters_higherorder_programming_languages]
+//! - see: `../../pathological/data/map-law-on-a-def.gandr` — the same law over
+//!   the `def` is refused
+//!
+//! [Bird-1987-an_introduction_to_the_theory_of_lists]: https://doi.org/10.1007/978-3-642-87374-4_1 "Bird, An Introduction to the Theory of Lists"
+//! [Reynolds-1972-definitional_interpreters_higherorder_programming_languages]: https://doi.org/10.1145/800194.805852 "Reynolds, Definitional Interpreters for Higher-Order Programming Languages"
+
+/// `ListMap` defines `map` and its branches.
+/// It defines composition and fuses two maps.
+@[normalizes("map(inc, map(dbl, cons(one, nil))) ~> cons(app(inc, app(dbl, one)), nil)")]
+theory ListMap where
+  sort E : Type;
+  sort F : Type;
+  sort L : Type;
+
+  oper nil : L;
+  oper cons : (x : E, xs : L) --> L;
+  oper app : (f : F, x : E) --> E;
+  oper compose : (f : F, g : F) --> F;
+  oper map : (f : F, xs : L) --> L;
+  oper inc : F;
+  oper dbl : F;
+  oper one : E;
+
+  rule mapNil : map f nil <=> nil;
+  rule mapCons : map f (cons x xs) <=> cons (app f x) (map f xs);
+  rule appCompose : app (compose f g) x <=> app f (app g x);
+  rule composeAssoc : compose (compose f g) h <=> compose f (compose g h);
+  rule mapMap : map f (map g xs) <=> map (compose f g) xs;

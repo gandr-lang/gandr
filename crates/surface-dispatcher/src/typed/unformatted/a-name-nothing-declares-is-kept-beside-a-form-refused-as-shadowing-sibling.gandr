@@ -1,0 +1,6 @@
+pub data Point : Type where {
+  | Here : Point
+}
+pub data Spot : Type where {
+  There : Spot;
+}

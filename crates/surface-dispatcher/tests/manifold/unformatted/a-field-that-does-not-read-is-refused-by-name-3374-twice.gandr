@@ -1,0 +1,6 @@
+pub module Site : Model(Site) where {{
+  def key = "{SITE_KEY}";
+  def sockets = "";
+  def secret = "far";
+}}
+pub def placements : List(Placement) = #[Instances "far" (pack Site at Model(Site)) 2];
