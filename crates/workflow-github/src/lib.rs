@@ -125,6 +125,35 @@ impl Site
             _ => self.verb.split(' ').map(Word).collect(),
         }
     }
+
+    /// The command `gh` with the words of the verb as its first arguments. The
+    /// call adds the rest of its arguments.
+    ///
+    /// # Specification
+    /// - requires: the verb is one that `sites.awk` prints.
+    /// - ensures: the program `gh`, and the words of [`Site::words`] as its
+    ///   arguments, in their order.
+    /// - provides: a call whose program and verb come from its declared line
+    ///   alone.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the outcome is a value.
+    ///
+    /// # Cost
+    /// - allocation: the command and its words, setup
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a REST site and a command site; a command that drops
+    ///   the program or a word of the verb gives other arguments.
+    /// - witness: `tests::a_site_gives_the_words_of_its_verb`
+    #[inline]
+    #[must_use]
+    pub fn command(&self) -> Command
+    {
+        let mut command = Command::new("gh");
+        command.args(self.words().into_iter().map(<&str>::from));
+        command
+    }
 }
 
 /// One word of a declared site: its scope, or one word of the arguments of its
@@ -384,6 +413,29 @@ mod tests
         assert_eq!(text(rest), ["api", "--method", "GET"]);
         assert_eq!(text(Site::new("graph", "api graphql")), ["api", "graphql"]);
         assert_eq!(text(Site::new("view", "pr view")), ["pr", "view"]);
+        let command = |site: Site| -> (String, Vec<String>) {
+            let command = site.command();
+            let arguments = command
+                .get_args()
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect();
+            (
+                command.get_program().to_string_lossy().into_owned(),
+                arguments,
+            )
+        };
+        assert_eq!(
+            command(rest),
+            ("gh".to_owned(), vec![
+                "api".to_owned(),
+                "--method".to_owned(),
+                "GET".to_owned()
+            ])
+        );
+        assert_eq!(
+            command(Site::new("list", "issue list")),
+            ("gh".to_owned(), vec!["issue".to_owned(), "list".to_owned()])
+        );
     }
 
     /// An emptied counter file of its own for the test named `$name`.

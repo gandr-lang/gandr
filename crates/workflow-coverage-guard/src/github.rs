@@ -3,12 +3,12 @@
 //! checkout.
 
 use core::fmt;
-use std::process::Command;
 
 use gandr_workflow_github::Body;
 use gandr_workflow_github::Feed;
 use gandr_workflow_github::GitHubError;
 use gandr_workflow_github::READ_PAUSE;
+use gandr_workflow_github::Site;
 use gandr_workflow_github::read;
 use gandr_workflow_github::run;
 use serde::Deserialize;
@@ -24,6 +24,15 @@ use crate::report::Unprocessed;
 /// The labels a new issue is opened with: a defect of CI, which triage picks
 /// up, kept by the guard as a collector.
 const LABELS: [&str; 3] = ["kind:defect", "area:ci", "collector"];
+
+/// The list of the open issues of a collector.
+const LIST: Site = Site::new("collect", "issue list");
+
+/// The edit of the open issue of a collector.
+const EDIT: Site = Site::new("collect", "issue edit");
+
+/// The issue that a collector opens.
+const CREATE: Site = Site::new("collect", "issue create");
 
 /// An issue's number in the repository.
 #[repr(transparent)]
@@ -196,6 +205,10 @@ pub fn file_unprocessed(unprocessed: &Unprocessed) -> Result<Filed, GuardError>
 /// - hypothesis: L3 — as [`file()`] and [`file_unprocessed`].
 /// - witness: `tests::cli::a_drop_opens_the_issue`
 /// - witness: `tests::cli::a_second_drop_updates_the_open_issue`
+///
+/// # Cost
+/// - allocation: the commands, the title, the body and the answers of `gh`,
+///   growth within the issue
 fn collect(
     collector: Collector,
     title: &IssueTitle,
@@ -207,10 +220,8 @@ fn collect(
         Collector::Unprocessed => UNPROCESSED_PREFIX,
     };
     let title = title.to_string();
-    let mut list = Command::new("gh");
+    let mut list = LIST.command();
     list.args([
-        "issue",
-        "list",
         "--state",
         "open",
         "--limit",
@@ -227,24 +238,21 @@ fn collect(
         .into_iter()
         .find(|issue| issue.title.starts_with(prefix))
     {
-        run(
-            Command::new("gh").args([
-                "issue",
-                "edit",
-                &issue.number.to_string(),
-                "--title",
-                &title,
-                "--body-file",
-                "-",
-                "--add-label",
-                "collector",
-            ]),
-            Feed::Body(Body::from(body)),
-        )?;
+        let mut edit = EDIT.command();
+        edit.args([
+            &issue.number.to_string(),
+            "--title",
+            &title,
+            "--body-file",
+            "-",
+            "--add-label",
+            "collector",
+        ]);
+        run(&mut edit, Feed::Body(Body::from(body)))?;
         return Ok(Filed::Updated(IssueNumber(issue.number)));
     }
-    let mut create = Command::new("gh");
-    create.args(["issue", "create", "--title", &title, "--body-file", "-"]);
+    let mut create = CREATE.command();
+    create.args(["--title", &title, "--body-file", "-"]);
     for label in LABELS {
         create.args(["--label", label]);
     }

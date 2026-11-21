@@ -8,12 +8,12 @@ use alloc::collections::BTreeMap;
 use core::fmt;
 use std::io;
 use std::path::Path;
-use std::process::Command;
 
 use gandr_workflow_github::Body;
 use gandr_workflow_github::Feed;
 use gandr_workflow_github::GitHubError;
 use gandr_workflow_github::READ_PAUSE;
+use gandr_workflow_github::Site;
 use gandr_workflow_github::run;
 use quenchant_shape::shape::Maybe;
 use serde::Deserialize;
@@ -49,6 +49,42 @@ use crate::report::Regression;
 use crate::report::Report;
 use crate::report::Unpulled;
 use crate::report::pull_of;
+
+/// The list of the check runs of a commit.
+const CHECKS: Site = Site::new("checks", "api GET");
+
+/// The read of a pull request, or of the pull requests of a commit.
+const PULL: Site = Site::new("pull", "api GET");
+
+/// The list of the artifacts of one name.
+const ARTIFACTS: Site = Site::new("kept", "api GET");
+
+/// The download of one artifact of a run.
+const DOWNLOAD: Site = Site::new("kept", "run download");
+
+/// The list of the issues of the guard.
+const ISSUES: Site = Site::new("file", "issue list");
+
+/// The issue that a function opens at its first regression.
+const CREATE: Site = Site::new("file_function", "issue create");
+
+/// The edit of the marked comment of a run.
+const COMMENT_EDIT: Site = Site::new("file_function", "api PATCH");
+
+/// The comment that a run posts when no comment holds its marker.
+const COMMENT: Site = Site::new("file_function", "issue comment");
+
+/// The edit of the index of an issue.
+const EDIT: Site = Site::new("file_function", "issue edit");
+
+/// The close of an issue whose functions all settle.
+const CLOSE: Site = Site::new("file_function", "issue close");
+
+/// The reopen of a settled issue that regresses again.
+const REOPEN: Site = Site::new("file_function", "issue reopen");
+
+/// The list of the comments of an issue.
+const COMMENTS: Site = Site::new("marked_comment", "api GET");
 
 /// An issue's number in the repository.
 #[repr(transparent)]
@@ -171,9 +207,8 @@ pub fn checks(
     sha: &CommitSha,
 ) -> Result<Vec<Concluded>, GuardError>
 {
-    let mut query = Command::new("gh");
+    let mut query = CHECKS.command();
     query.args([
-        "api",
         "--paginate",
         &format!("repos/{repository}/commits/{sha}/check-runs?per_page=100"),
         "--jq",
@@ -218,6 +253,10 @@ pub fn checks(
 /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
 /// - witness: `tests::cli::a_commit_without_a_pull_request_is_filed_by_its_sha`
 /// - witness: `tests::cli::the_event_s_pull_request_names_a_force_pushed_commit`
+///
+/// # Cost
+/// - allocation: the command, its path and the answer of `gh`, growth within
+///   the answer
 #[inline]
 pub fn pull(
     repository: &Repository,
@@ -225,10 +264,10 @@ pub fn pull(
     number: Maybe<PullNumber, Unstated>,
 ) -> Result<Maybe<Pull, Unpulled>, GuardError>
 {
-    let mut query = Command::new("gh");
+    let mut query = PULL.command();
     let listed: Vec<ListedPull> = match number {
         Maybe::Present(number) => {
-            query.args(["api", &number.api_path(repository)]);
+            query.arg(number.api_path(repository));
             let answer = gandr_workflow_github::read(&mut query, READ_PAUSE)?;
             vec![
                 serde_json::from_str(&answer)
@@ -236,7 +275,7 @@ pub fn pull(
             ]
         },
         Maybe::Absent(_) => {
-            query.args(["api", &format!("repos/{repository}/commits/{sha}/pulls")]);
+            query.arg(format!("repos/{repository}/commits/{sha}/pulls"));
             let answer = gandr_workflow_github::read(&mut query, READ_PAUSE)?;
             serde_json::from_str(&answer)
                 .map_err(|error| GitHubError::unread(&query, error.to_string()))?
@@ -399,6 +438,10 @@ struct Missing;
 /// # Adequacy
 /// - hypothesis: L3 — as [`readings`].
 /// - witness: `tests::cli::a_runner_shift_is_read_over_every_function`
+///
+/// # Cost
+/// - allocation: the commands, their paths and the answers of `gh`, growth
+///   within the artifact
 fn kept(
     repository: &Repository,
     sha: &CommitSha,
@@ -409,9 +452,8 @@ fn kept(
     let name = format!("hotpath-{sha}");
     let dir = scratch.join(&name);
     if !dir.exists() {
-        let mut query = Command::new("gh");
+        let mut query = ARTIFACTS.command();
         query.args([
-            "api",
             &format!("repos/{repository}/actions/artifacts?name={name}&per_page=100"),
             "--jq",
             "[.artifacts[] | select(.expired | not)] | sort_by(.created_at) | last | \
@@ -422,18 +464,9 @@ fn kept(
         if id.is_empty() {
             return Ok(Maybe::Absent(Unkept));
         }
-        let mut download = Command::new("gh");
+        let mut download = DOWNLOAD.command();
         download
-            .args([
-                "run",
-                "download",
-                id,
-                "-R",
-                &repository.to_string(),
-                "-n",
-                &name,
-                "-D",
-            ])
+            .args([id, "-R", &repository.to_string(), "-n", &name, "-D"])
             .arg(&dir);
         gandr_workflow_github::read(&mut download, READ_PAUSE)?;
     }
@@ -552,10 +585,8 @@ pub fn file(report: &Report) -> Result<Vec<Filed>, GuardError>
     if regressions.is_empty() && report.passed().is_empty() {
         return Ok(Vec::new());
     }
-    let mut list = Command::new("gh");
+    let mut list = ISSUES.command();
     list.args([
-        "issue",
-        "list",
         "--state",
         "all",
         "--label",
@@ -698,15 +729,8 @@ fn file_function(
         Maybe::Present((number, was)) => (number, was, None),
         Maybe::Absent(_) => {
             let title = IssueTitle::of(function);
-            let mut create = Command::new("gh");
-            create.args([
-                "issue",
-                "create",
-                "--title",
-                &title.to_string(),
-                "--body-file",
-                "-",
-            ]);
+            let mut create = CREATE.command();
+            create.args(["--title", &title.to_string(), "--body-file", "-"]);
             for label in labels(&entry.krate) {
                 create.args(["--label", &label]);
             }
@@ -731,10 +755,7 @@ fn file_function(
     let linked = match (marked, entry.comment) {
         (Some(comment), _) => {
             run(
-                Command::new("gh").args([
-                    "api",
-                    "--method",
-                    "PATCH",
+                COMMENT_EDIT.command().args([
                     &format!("repos/{}/issues/comments/{}", at.repository, comment.id),
                     "-F",
                     "body=@-",
@@ -745,8 +766,8 @@ fn file_function(
             Maybe::Present(comment.html_url)
         },
         (None, Comment::Owed) => {
-            let mut post = Command::new("gh");
-            post.args(["issue", "comment", &number_text, "--body-file", "-"]);
+            let mut post = COMMENT.command();
+            post.args([&number_text, "--body-file", "-"]);
             Maybe::Present(
                 run(
                     &mut post,
@@ -765,24 +786,21 @@ fn file_function(
         }
     }
     if opened.is_none() || matches!(linked, Maybe::Present(_)) {
-        let mut edit = Command::new("gh");
-        edit.args(["issue", "edit", &number_text, "--body-file", "-"]);
+        let mut edit = EDIT.command();
+        edit.args([&number_text, "--body-file", "-"]);
         for label in labels(&entry.krate) {
             edit.args(["--add-label", &label]);
         }
         run(&mut edit, Feed::Body(Body::from(entry.index.to_string())))?;
     }
     let standing = entry.index.standing();
-    let verb = match (was, standing) {
-        (Standing::Open, Standing::Settled) => Some("close"),
-        (Standing::Settled, Standing::Open) => Some("reopen"),
+    let act = match (was, standing) {
+        (Standing::Open, Standing::Settled) => Some(CLOSE),
+        (Standing::Settled, Standing::Open) => Some(REOPEN),
         (Standing::Open, Standing::Open) | (Standing::Settled, Standing::Settled) => None,
     };
-    if let Some(verb) = verb {
-        run(
-            Command::new("gh").args(["issue", verb, &number_text]),
-            Feed::Nothing,
-        )?;
+    if let Some(site) = act {
+        run(site.command().arg(&number_text), Feed::Nothing)?;
     }
     Ok(match opened {
         Some((title, url)) => Filed::Opened(title, url, standing),
@@ -827,15 +845,18 @@ struct ListedComment
 ///   changes the recorded invocations.
 /// - witness: `tests::cli::a_later_run_edits_its_comment_and_row`
 /// - witness: `tests::cli::a_second_pull_request_adds_a_row_and_a_comment`
+///
+/// # Cost
+/// - allocation: the command, its path and the comments of the issue, growth
+///   within the comments
 fn marked_comment(
     repository: &Repository,
     number: IssueNumber,
     marker: &Marker,
 ) -> Result<Option<ListedComment>, GuardError>
 {
-    let mut list = Command::new("gh");
+    let mut list = COMMENTS.command();
     list.args([
-        "api",
         "--paginate",
         &format!("repos/{repository}/issues/{}/comments", number.0),
         "--jq",

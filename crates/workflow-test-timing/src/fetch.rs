@@ -10,19 +10,25 @@ use core::fmt;
 use core::num::NonZeroUsize;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::Command;
 
 use anodized::spec;
 use gandr_kernel_data::SmallString;
 use gandr_kernel_data::SmallVec;
 use gandr_workflow_github::GitHubError;
 use gandr_workflow_github::READ_PAUSE;
+use gandr_workflow_github::Site;
 
 use crate::error::TimingError;
 use crate::report::History;
 use crate::report::Lane;
 use crate::report::ReportText;
 use crate::report::samples;
+
+/// The list of the merge-queue runs that passed.
+const RUNS: Site = Site::new("recent_runs", "run list");
+
+/// The download of the reports of one run.
+const DOWNLOAD: Site = Site::new("download", "run download");
 
 /// A workflow run's identifier; a later run has a greater one.
 #[repr(transparent)]
@@ -172,9 +178,9 @@ pub fn recent_runs(
         )
     )]
     let limit_text = limit.0.to_string();
-    let mut command = Command::new("gh");
+    let mut command = RUNS.command();
     command
-        .args(["run", "list", "--repo", &repository.0])
+        .args(["--repo", &repository.0])
         .args([
             "--workflow",
             "landing-checks.yml",
@@ -316,11 +322,9 @@ pub fn download(
         std::fs::remove_dir_all(&scratch).map_err(io(&scratch))?;
     }
     std::fs::create_dir_all(store).map_err(io(store))?;
-    let mut command = Command::new("gh");
+    let mut command = DOWNLOAD.command();
     command
         .args([
-            "run",
-            "download",
             destination_of(store, run)
                 .file_name()
                 .and_then(|name| name.to_str())
