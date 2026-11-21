@@ -2285,7 +2285,45 @@ pub trait Source
         let _ = head;
         None
     }
+
+    /// Whether `head` is a constant whose definition takes no input, so that
+    /// its bare name runs it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the mark the source records for `head`'s constant; the
+    ///   default records none, so each force is written as `force f`.
+    /// - provides: the bare name `f` that a printed run of such a definition
+    ///   writes, which reads back as the run.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run of a definition of no input, bare and with its
+    ///   implicits omitted, writes the bare name; a force of another constant
+    ///   keeps `force`.
+    /// - witness: `tests::goldens::a_run_of_a_definition_of_no_input_is_its_bare_name_8079`
+    #[inline]
+    fn invoked(
+        &self,
+        head: Self::Node,
+    ) -> Invoked
+    {
+        let _ = head;
+        Invoked(false)
+    }
 }
+
+/// Whether a constant's definition takes no input, so that its bare name
+/// runs it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Invoked(pub bool);
 
 /// A model implicit a function's telescope writes, `[s : Model(S) with sort
 /// x = A]`: the parameters from `at` on, one per component, bind its

@@ -3708,6 +3708,20 @@ where
     matches!(source.read(head), Former::Force(_)).then_some(node)
 }
 
+/// Whether `node` reads as a constant whose name is qualified, `M.f`.
+///
+/// # Specification
+/// trivial.
+fn qualified<S>(
+    source: &S,
+    node: S::Node,
+) -> bool
+where
+    S: Source + ?Sized,
+{
+    matches!(source.read(node), Former::Constant(name) if name.as_ref().contains('.'))
+}
+
 /// The comparison that `node` writes when it is a saturated call of a
 /// constant that a comparison calls: the infix operator, and the two operands
 /// first to last.
@@ -10598,6 +10612,23 @@ impl Walk<'_, '_>
                     Join::Prefix(Prefix::Pure),
                 )),
             },
+            // The run of a definition of no input is its bare name. Where a
+            // type is read, a qualified name keeps its empty list, `M.f()`,
+            // as the type grammar ends a qualified link at a value name only
+            // before a list.
+            Former::Force(forced)
+                if source.invoked(forced).0
+                    && (self.surface != Surface::Type || !qualified(source, forced)) =>
+            {
+                tasks.push(Task::Surface(self.surface));
+                tasks.push(Task::Visit {
+                    node: forced,
+                    admits: Admits::Value,
+                    depth,
+                });
+                tasks.push(Task::Surface(Surface::Enclosed));
+                return Ok(());
+            },
             // A call of no arguments where a type is read writes its empty
             // list, `empty()`: there `force empty` reads as no type, and the
             // head reads as an expression the type encloses (#5213).
@@ -11589,10 +11620,17 @@ impl Walk<'_, '_>
         if switched {
             tasks.push(Task::Surface(self.surface));
         }
+        // The run of a definition of no input writes no list when the call
+        // writes no explicit argument: its bare name is the call.
+        let bare = arguments.is_empty()
+            && passed_uniform.is_empty()
+            && matches!(source.read(head), Former::Force(thunk) if source.invoked(thunk).0);
         if residents.is_empty() {
-            tasks.push(Task::Join(Join::Apply(Arity(
-                arguments.len().saturating_add(passed_uniform.len()),
-            ))));
+            if !bare {
+                tasks.push(Task::Join(Join::Apply(Arity(
+                    arguments.len().saturating_add(passed_uniform.len()),
+                ))));
+            }
         }
         else {
             let mut parts = Parts::default();
@@ -11615,9 +11653,10 @@ impl Walk<'_, '_>
                     },
                 }
             }
-            let _ = parts
-                .text("]")
-                .applied(Arity(arguments.len()), self.surface);
+            let _ = parts.text("]");
+            if !bare {
+                let _ = parts.applied(Arity(arguments.len()), self.surface);
+            }
             let pieces = Arity(parts.pieces);
             self.forms.push(parts.parts);
             tasks.push(Task::Join(writes(
