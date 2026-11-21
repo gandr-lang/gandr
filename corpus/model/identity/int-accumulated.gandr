@@ -1,0 +1,25 @@
+/// This source states integer addition with an accumulator.
+///
+/// The recursion holds its second parameter and changes the accumulator.
+/// Each recursive call carries the accumulator through the held form.
+///
+/// Readback and conversion preserve that accumulated value.
+/// The kernel replays the same recursive computation.
+///
+/// - see: #626
+
+// The integers, one successor more and one predecessor more.
+import "./circle-base.gandr";
+
+/// The `count` function adds `b` to the accumulator by recursion.
+/// At `S(P(x))` it computes `count(P(S(acc)), x)`, which the second rule of
+/// `Int` reads as `count(acc, x)`, so it respects the rules.
+def rec count(acc : Int, b : Int) -> Int =
+  match b where
+    | Z => acc
+    | S(x) => count[<] (S acc) x
+    | P(x) => count[<] (P acc) x
+
+/// The sample adds one and two to produce three.
+@[runs("S (S (S Z))")]
+def accumulated : () -> Int = count (S Z) (S (S Z));
