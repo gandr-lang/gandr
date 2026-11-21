@@ -1,0 +1,5 @@
+# The codemod of the callbacks' wave (#7386): each `dyn Fn` and `dyn FnMut`
+# behind a reference in a function's parameter takes `impl`, a generic of the
+# function. The compiler's errors that stay are the wave's second phase.
+ruleDirs:
+  - rules

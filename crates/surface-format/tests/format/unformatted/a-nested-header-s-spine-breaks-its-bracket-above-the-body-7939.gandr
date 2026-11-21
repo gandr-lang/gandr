@@ -1,0 +1,4 @@
+module M where {
+  def first(p : Pair (Pair Integer Integer) (Pair Integer Integer)) -> Integer =
+    0
+}

@@ -1,0 +1,163 @@
+# The registry name `gandr` belongs to an unrelated crate, so the driver's
+# package is `gandr-lang`, the name this project holds; it installs the `gandr`
+# binary. The one exception to the `gandr-<directory>` package schema
+# (`crates/README.md`).
+[package]
+name = "gandr-lang"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Driver for the gandr language toolchain"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "language", "toolchain"]
+categories = ["development-tools"]
+# Publishing is manual: flipping this field is itself the deliberate act of a
+# manual publish.
+publish.workspace = true
+autotests = false
+
+[[bin]]
+name = "gandr"
+path = "src/main.rs"
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The benchmark report: the closure check of the largest model source, the
+# kernel's readmission of a fixed staged certificate set, the corpus's rule
+# completion, a walk of sixteen components and the language server's recheck
+# after a change, timed apart from the open, profiled by hotpath and uploaded
+# to hotpath Cloud from CI as the `gandr` series. Built only with the
+# `hotpath` feature.
+[[bench]]
+harness = false
+name = "hotpath"
+path = "benches/hotpath.rs"
+required-features = ["hotpath"]
+
+# The conversion series: the conversion subject's closed computations, each a
+# path the conversion settles by running both endpoints, profiled by hotpath
+# and uploaded from CI as the `conversion` series. Built only with the
+# `hotpath` feature.
+[[bench]]
+harness = false
+name = "conversion"
+path = "benches/conversion.rs"
+required-features = ["hotpath"]
+
+# The pinned anodized facade supplies the specification helpers for `core`
+# alone. The facade does not enable its logic and BigInt features. serde_json
+# encodes the summary line of a run under `--verbosity json`. The dispatcher
+# reads the `[presentation]` table of the user's configuration file. toml
+# reads its `[kernel]` table.
+#
+# `check` and `lock` open the store of the storage tier. A lock of a package
+# commits through that store. The runtime of the network reads the `--net-*`
+# flags. `run` binds the network of a program with them. hotpath profiles the
+# benchmark report behind the `hotpath` feature.
+#
+# A `check` keeps the verdicts of the kernel. It uses the key and the policy
+# of the kernel, the receipt store of the dispatcher, and the entropy of
+# getrandom. The entropy mints the key. The one writer publishes the key.
+#
+# `gandr-surface-build-identity` gives the identities of the kernel and the
+# sites that this binary links. Each verdict key and each stratum key binds
+# one of them. Under `instrument`, `check --activity` folds the activity ring
+# of the fork crate.
+[dependencies]
+anodized.workspace = true
+clap.workspace = true
+gandr-core-fork = { workspace = true, optional = true }
+gandr-core-publish.workspace = true
+gandr-kernel-core.workspace = true
+gandr-runtime-emitter.workspace = true
+gandr-runtime-net.workspace = true
+gandr-storage-store.workspace = true
+gandr-surface-agentic.workspace = true
+gandr-surface-build-identity.workspace = true
+gandr-surface-diagnostics.workspace = true
+gandr-surface-dispatcher.workspace = true
+gandr-surface-evaluate.workspace = true
+gandr-surface-features.workspace = true
+gandr-surface-format.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-lsp.workspace = true
+gandr-surface-render-terminal.workspace = true
+gandr-surface-repl.workspace = true
+getrandom.workspace = true
+hotpath = { workspace = true, optional = true }
+quenchant-shape.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+tracing = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
+
+# The `check --activity` witness reads the activity ring, so the crate's own
+# targets turn its `instrument` feature on. The counting allocator's witness
+# reads its thread's count through the checker's `Meter`. The benchmark
+# report's workloads type into a language-server session through the
+# language server's client.
+[dev-dependencies]
+gandr-core-checker.workspace = true
+gandr-core-fork.workspace = true
+gandr-lang = { workspace = true, features = ["counts", "instrument"] }
+gandr-surface-lsp = { workspace = true, features = ["client"] }
+gandr-workflow-sweep.workspace = true
+
+# The terminal face draws through crossterm, which has no WASI 0.3 terminal,
+# so `gandr tui` is absent from a `wasm32-wasip3` build.
+[target.'cfg(not(target_os = "wasi"))'.dependencies]
+gandr-surface-tui.workspace = true
+
+# The tests give a child one terminal stream through a pseudo-terminal pair.
+# The side view's witness reads the hub's render bus as frames and checks the
+# view's rendering of each against the visual language's rules.
+[target."cfg(unix)".dev-dependencies]
+gandr-surface-render-remote = { workspace = true, features = ["serde"] }
+nix.workspace = true
+
+[features]
+default = []
+# The small-device bench's count build (#7359): `gandr check --counts` prints
+# the run's allocations over every thread and the frames that its checks pop.
+# It takes the instrument's counting allocator. Off, no count is compiled.
+counts = ["gandr-kernel-core/counts", "instrument"]
+# The `hotpath` bench: the checker's judgement and readmission and the
+# language server's recheck timed and their allocations counted, the report
+# uploaded to hotpath Cloud when CI asks for it.
+hotpath = [
+  "dep:hotpath",
+  "gandr-surface-dispatcher/hotpath",
+  "gandr-surface-lsp/hotpath",
+  "hotpath/hotpath",
+  "hotpath/hotpath-alloc",
+  "hotpath/hotpath-cloud",
+]
+# The hub's build: each recheck of `gandr lsp` and `gandr serve` runs at the
+# instrument layer its client chose, or at the trace layer while a
+# `gandr view --trace` is attached, `gandr serve` offers `subscribe_activity`,
+# `gandr check --activity` prints each core's occupancy from the activity
+# ring, and the global allocator counts each allocation of its thread for the
+# timings layer. Off, as in `gandr check` and every artifact a recipe builds,
+# no recording sink, no ring and no count is compiled.
+instrument = [
+  "dep:gandr-core-fork",
+  "gandr-core-fork/instrument",
+  "gandr-surface-agentic/instrument",
+  "gandr-surface-dispatcher/instrument",
+  "gandr-surface-lsp/instrument",
+]
+# On macOS, serve every allocation from one private malloc zone rather than
+# the default zone; off, and on every other target, the system allocator.
+# Off by default: it missed its kill line. README § The global allocator.
+malloc-zone = []
+# Hosted stderr diagnostics; the dispatcher receives instrumentation only.
+tracing = ["dep:tracing", "dep:tracing-subscriber", "gandr-surface-dispatcher/tracing", "tracing/std"]
+
+[lints]
+workspace = true
