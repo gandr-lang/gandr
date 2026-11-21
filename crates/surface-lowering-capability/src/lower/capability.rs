@@ -196,6 +196,7 @@ use gandr_core_term::handler;
 use gandr_core_term::handler::HandlerLaw;
 use gandr_core_term::handler::subject;
 use gandr_core_term::session::SessionAction;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_lowering_base::lower::arity::Planned;
@@ -3145,7 +3146,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
                         span: exercised.head,
                         labelled: Labelled::CompType {
                             ty,
-                            context: Default::default(),
+                            context: ThinShared::default(),
                         },
                     });
                 }

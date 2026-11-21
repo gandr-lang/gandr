@@ -8667,7 +8667,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                     span,
                     labelled: crate::origin::Labelled::ValueType {
                         ty,
-                        context: Default::default(),
+                        context: gandr_kernel_data::ThinShared::default(),
                     },
                 });
             }
@@ -8712,7 +8712,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                 span,
                 labelled: crate::origin::Labelled::ValueType {
                     ty,
-                    context: Default::default(),
+                    context: gandr_kernel_data::ThinShared::default(),
                 },
             });
         }
@@ -13951,6 +13951,12 @@ impl<'source> NativeRef<'_, '_, 'source>
     ///   call computes takes its family over two wildcards, named apart from a
     ///   wildcard the form writes.
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_pair_in_a_field_at_a_computed_pair_type_takes_its_family_over_wildcards_6113`
+    ///
+    /// # Cost
+    /// - allocation: the family's name that the open arguments share, and the
+    ///   name of each parameter, durable by the arena's identifiers
+    /// - allocation: the arguments of the classifier, growth within the
+    ///   parameters and the indices of the family
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
     fn fielded_classifier(
         &self,

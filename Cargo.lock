@@ -2114,6 +2114,7 @@ name = "gandr-surface-lowering-capability"
 version = "0.0.0"
 dependencies = [
  "gandr-core-term",
+ "gandr-kernel-data",
  "gandr-kernel-term",
  "gandr-surface-grammar",
  "gandr-surface-lowering-base",
@@ -2141,6 +2142,7 @@ name = "gandr-surface-lowering-expression"
 version = "0.0.0"
 dependencies = [
  "gandr-core-term",
+ "gandr-kernel-data",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-runtime-rust-record",

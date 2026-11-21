@@ -21,6 +21,7 @@ autotests = false
 [dependencies]
 anodized.workspace = true
 gandr-core-term.workspace = true
+gandr-kernel-data.workspace = true
 gandr-kernel-term.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lowering-base.workspace = true

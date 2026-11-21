@@ -218,7 +218,10 @@ pub(super) fn unit_of(held: &[Option<&Readmitted>]) -> Maybe<ConstantIndex, entr
             return Maybe::Absent(entry::Absent::Unwhole);
         }
     }
-    first.map_or(Maybe::Absent(entry::Absent::Unadmitted), Maybe::Present)
+    match first {
+        Some(position) => Maybe::Present(position),
+        None => Maybe::Absent(entry::Absent::Unadmitted),
+    }
 }
 
 /// The entry of the declaration `judged`, kept in place from the record's
@@ -241,6 +244,12 @@ pub(super) fn unit_of(held: &[Option<&Readmitted>]) -> Maybe<ConstantIndex, entr
 ///   so, and the certificates of a kept entry name the definitions of the
 ///   edited source.
 /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+///
+/// # Cost
+/// - allocation: the kept outcome, a copy of an outcome of its own and a count
+///   of a shared one, and the certificates, growth within the record's entry
+/// - allocation: the definition and the kernel position filed in `positions`,
+///   durable by the declaration's module position
 #[spec(ensures: |ret| ret.constant == judged.constant() && ret.certificates.len() == entry.certificates.len())]
 pub(super) fn keep_entry(
     positions: &mut Positions,
@@ -296,6 +305,10 @@ pub(super) fn keep_entry(
 ///   a fresh admission crosses it; a retirement that a running check reads
 ///   waits, and the place does not cross beside a live entry of its own.
 /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+///
+/// # Cost
+/// - allocation: the kernel's retirement of the unit, durable by the unit's
+///   kernel position
 #[spec(captures: length = environment.entries().len(), ensures: environment.entries().len() == length)]
 pub(super) fn retire_unit(
     environment: &mut Environment,
@@ -510,6 +523,12 @@ fn leading_run(
 /// - witness: `bridge::tests::a_crossing_that_reads_a_kept_seed_first_takes_it_below_itself_7196`
 /// - witness: `bridge::tests::a_readmission_keeps_a_sealed_module_whose_seal_stays_whole_7200`
 /// - witness: `bridge::tests::a_readmission_keeps_the_witnesses_of_a_formation_its_edit_leaves_7200`
+///
+/// # Cost
+/// - allocation: the environment handed on, the positions and the resumed run,
+///   growth within the record
+/// - allocation: the kept entries, the retired positions and the rank rewrite,
+///   growth within the declarations past the run
 #[spec(ensures: |ret| match ret {
     Maybe::Present(ref kept) => kept.held.len() == keys.len(),
     Maybe::Absent(_) => true,

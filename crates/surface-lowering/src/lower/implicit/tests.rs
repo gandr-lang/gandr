@@ -1096,8 +1096,9 @@ fn the_holes_of_an_omitted_model_share_one_list_of_candidates_8284()
     let lists = holes
         .iter()
         .map(|&(at, _)| match module.origins().omitted(at) {
-            Maybe::Present(Omitted::Model { candidates, .. }) => candidates,
-            other => panic!("each hole is the model slot's: {other:?}"),
+            Maybe::Present(&Omitted::Model { ref candidates, .. }) => candidates,
+            Maybe::Present(omitted) => panic!("each hole is the model slot's: {omitted:?}"),
+            Maybe::Absent(reason) => panic!("each hole is the model slot's: {reason:?}"),
         })
         .collect::<Vec<_>>();
     let Some(&first) = lists.first()

@@ -1048,7 +1048,7 @@ fn substitution_laws()
         // each position.
         let mut term = BindingJudgement {
             context: fixture.binding.context.clone(),
-            sort: newest.sort.clone(),
+            sort: newest.sort,
             term: v::<0>(),
         };
         for (position, sort) in fixture.binding.context.iter().enumerate() {
@@ -1108,7 +1108,7 @@ fn substitution_laws()
     // One judgement over the target, its sort and its term set for each
     // image.
     let mut image = BindingJudgement {
-        context: target.clone(),
+        context: target,
         sort: Name::from("R"),
         term: v::<0>(),
     };

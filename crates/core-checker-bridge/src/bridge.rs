@@ -1633,6 +1633,10 @@ impl ArtifactAudit
     ///   introduced.
     /// - witness: `bridge::tests::an_empty_ledger_readmits_an_artifact_resting_on_no_axiom`
     /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
+    ///
+    /// # Cost
+    /// - allocation: the sets and the lists of the axioms and the unchecked
+    ///   admissions, growth within the audits of the entries
     #[spec(ensures: |ret| ret.axioms.iter().zip(ret.axioms.iter().skip(1)).all(|(a,b)| a < b)
         && ret.unchecked.iter().zip(ret.unchecked.iter().skip(1)).all(|(a,b)| a < b)
         && readmitted.iter().all(|entry| match *entry.outcome {
@@ -2492,6 +2496,10 @@ impl Crossed
     ///   over another to the answer a whole readmission gives.
     /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
     /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+    ///
+    /// # Cost
+    /// - allocation: the environment handed on, the positions and the entries
+    ///   of the record, durable by the record
     #[spec(ensures: |ret| match ret {
         Maybe::Present(ref crossed) => usize::from(crossed.boundary()) == built.2.len()
             && crossed.boundary() > from && built.1.open.is_empty(),
@@ -2588,6 +2596,10 @@ impl Crossed
     /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
     /// - witness: `bridge::tests::a_resumed_readmission_seeds_a_native_its_prefix_never_read`
     /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+    ///
+    /// # Cost
+    /// - allocation: the environment, the definitions, the positions and the
+    ///   entries of the run, growth within the run
     #[spec(ensures: |ret| ret.as_ref().is_none_or(|resumed| resumed.2.len() == usize::from(run)
         && resumed.2.iter().zip(report.judged()).all(|(entry, judged)|
             entry.constant == judged.constant() && entry.origin == judged.origin())))]
@@ -4278,6 +4290,12 @@ where
     /// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
     /// - witness: `bridge::tests::an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_3476`
     /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+    ///
+    /// # Cost
+    /// - allocation: the staged declaration and the kernel's release of its
+    ///   check, growth within the declarations of the module
+    /// - allocation: the slot of a running check, growth within the checks that
+    ///   run at once
     fn offer(
         &mut self,
         item: ItemIndex,
@@ -4669,6 +4687,10 @@ where
     ///   position that a later release took, or whose later releases keep their
     ///   runs, records other positions or outcomes than the serial run.
     /// - witness: `bridge::tests::an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_3476`
+    ///
+    /// # Cost
+    /// - allocation: the kernel's drop of the releases after the pair, growth
+    ///   within the running checks
     fn settle_at_cursor(
         &mut self,
         (offered, pending): (Offered<'report>, Pending),
@@ -4897,6 +4919,10 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — as [`readmit_from`].
     /// - witness: `bridge::tests::a_bound_sealed_atom_lowers_to_the_kernel_atom`
+    ///
+    /// # Cost
+    /// - allocation: the entry, the withheld atom and the open seal, growth
+    ///   within the declarations of the module
     fn apply(
         &mut self,
         crossing: Crossing,
@@ -5271,6 +5297,9 @@ struct OpenSeal
 /// - hypothesis: L3 — a sealed module's export replays with the atom closed
 ///   over its members, and a client past the seal reads the atom rigid.
 /// - witness: `bridge::tests::a_bound_sealed_atom_lowers_to_the_kernel_atom`
+///
+/// # Cost
+/// - allocation: the closing and the open seals, growth within the open seals
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(

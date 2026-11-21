@@ -2457,7 +2457,7 @@ fn a_scope_is_answered_by_the_model_in_scope_2272()
         module.origins().omitted(hole),
         Maybe::Present(&Omitted::Scope {
             theory: String::from("StatePutPut"),
-            candidates: [String::from("Passing")].into_iter().collect(),
+            candidates: core::iter::once(String::from("Passing")).collect(),
         }),
         "the hole is the scope's, `Passing` the one module that may answer it"
     );
