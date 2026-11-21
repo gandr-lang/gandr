@@ -1,0 +1,1296 @@
+use alloc::alloc::Global;
+use alloc::vec;
+use alloc::vec::Vec;
+
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::DefinitionalEnvironment;
+use gandr_core_term::Transparency;
+use gandr_core_term::ValueId;
+use gandr_core_term::Zone;
+use gandr_kernel_check_memo::NullMemo;
+use gandr_kernel_conversion_trace::TraceLog;
+use gandr_kernel_data::SmallVec;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorCount;
+use gandr_kernel_term::ConstructorTag;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldCount;
+use gandr_kernel_term::FreeCell;
+use gandr_kernel_term::FreeCells;
+use gandr_kernel_term::GlobalIndex;
+use gandr_kernel_term::Presentation;
+use gandr_kernel_term::RuleNode;
+
+use crate::arena::DomainArena;
+use crate::eval::Definitions;
+use crate::eval::Fuel;
+use crate::eval::LoweredChain;
+use crate::eval::eval_computation;
+use crate::machine::MachineSettings;
+use crate::machine::MachineVerdict;
+use crate::machine::Problem;
+use crate::machine::TraceNode;
+use crate::machine::decide;
+use crate::presented::Presented;
+
+/// The sort `S` of one point, `Base`.
+const SORT: usize = 0;
+/// The words of one loop at `Base`.
+const WORDS: usize = 1;
+/// `loop`, whose body is the word of its letter.
+const LOOP: usize = 2;
+/// `flip`, the case over `S` whose loop arm answers the inverse letter.
+const FLIP: usize = 3;
+/// `first`, a case over its first of two arguments whose loop arm answers
+/// the loop by its name.
+const FIRST: usize = 4;
+/// `second`, the same over its second of two arguments.
+const SECOND: usize = 5;
+/// `zero`, a call whose body returns the empty word.
+const ZERO: usize = 6;
+
+/// The terms the witnesses build on, in the checker's arena.
+struct Circle
+{
+    /// `S`.
+    carrier: gandr_core_term::ValueTypeId,
+    /// `Base`.
+    point: ValueId,
+    /// The empty word.
+    empty: ValueId,
+    /// The word of the loop's letter.
+    letter: ValueId,
+    /// The word of its inverse.
+    inverse: ValueId,
+    /// The constant `loop`.
+    named: ValueId,
+    /// `flip`'s body: `thunk (λx. case x { Base ⇒ return Base; loop ⇒
+    /// return back(loop) })`.
+    flip: ValueId,
+    /// `first`'s body: `thunk (λa. λb. case a { Base ⇒ return b; loop ⇒
+    /// return loop })`.
+    first: ValueId,
+    /// `second`'s body: `thunk (λb. λa. case a { Base ⇒ return b; loop ⇒
+    /// return loop })`.
+    second: ValueId,
+    /// `zero`'s body: `thunk (return ε)`.
+    zero: ValueId,
+}
+
+/// The circle's terms.
+///
+/// # Specification
+/// trivial.
+fn circle(core: &mut CoreArena) -> Circle
+{
+    let carrier = core.value_type_data(ConstantIndex::from(SORT), Vec::new());
+    let own = core.value_type_data(ConstantIndex::from(WORDS), Vec::new());
+    let point = core.value_constructor(
+        ConstantIndex::from(SORT),
+        carrier,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let empty = core.value_constructor(
+        ConstantIndex::from(WORDS),
+        own,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let letter = core.value_constructor(
+        ConstantIndex::from(WORDS),
+        own,
+        ConstructorTag::from(1_usize),
+        vec![empty],
+    );
+    let inverse = core.value_constructor(
+        ConstantIndex::from(WORDS),
+        own,
+        ConstructorTag::from(2_usize),
+        vec![empty],
+    );
+    let named = core.value_constant(ConstantIndex::from(LOOP));
+    let kept = core.comp_type_returner(carrier);
+    let at_point = core.computation_return(point);
+    let at_loop = core.computation_return(inverse);
+    let scrutinee = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let case = core.computation_data_case(
+        scrutinee,
+        kept,
+        vec![at_point, at_loop],
+        [0_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
+    let lambda = core.computation_lambda(case);
+    let flip = core.value_thunk(lambda);
+    // Over two arguments, the case over the one at `over`, the other
+    // returned at the point and the loop's name its loop arm.
+    let binary = |core: &mut CoreArena, over: u32, other: u32| {
+        let scrutinee = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(over));
+        let kept_value = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(other));
+        let at_point = core.computation_return(kept_value);
+        let at_loop = core.computation_return(named);
+        let case = core.computation_data_case(
+            scrutinee,
+            kept,
+            vec![at_point, at_loop],
+            [0_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+        );
+        let inner = core.computation_lambda(case);
+        let outer = core.computation_lambda(inner);
+        core.value_thunk(outer)
+    };
+    let first = binary(core, 1, 0);
+    let second = binary(core, 0, 1);
+    let returned = core.computation_return(empty);
+    let zero = core.value_thunk(returned);
+    Circle {
+        carrier,
+        point,
+        empty,
+        letter,
+        inverse,
+        named,
+        flip,
+        first,
+        second,
+        zero,
+    }
+}
+
+/// Whether a chain records the sort's constructor count.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Count
+{
+    /// The count is recorded.
+    Recorded,
+    /// It is not.
+    Missing,
+}
+
+/// The chain the witnesses run over: the words presented, `loop` and
+/// `flip` defined, and the sort's constructor count as `count` says.
+///
+/// # Specification
+/// trivial.
+fn chain(
+    circle: &Circle,
+    count: Count,
+) -> LoweredChain
+{
+    let base = || -> alloc::boxed::Box<[RuleNode]> {
+        [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+    };
+    let cells = FreeCells::new(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([FreeCell::new(base(), base())]),
+    );
+    let mut chain = LoweredChain::new();
+    chain.present(
+        ConstantIndex::from(WORDS),
+        Presented::new(
+            Presentation::words(cells),
+            [0_usize, 1, 1].map(FieldCount::from).into(),
+        ),
+    );
+    if count == Count::Recorded {
+        chain.admit_data(ConstantIndex::from(SORT), ConstructorCount::from(1_usize));
+    }
+    for (constant, global, body) in [
+        (ConstantIndex::from(LOOP), 0_u32, circle.letter),
+        (ConstantIndex::from(FLIP), 1_u32, circle.flip),
+        (ConstantIndex::from(FIRST), 2_u32, circle.first),
+        (ConstantIndex::from(SECOND), 3_u32, circle.second),
+        (ConstantIndex::from(ZERO), 4_u32, circle.zero),
+    ] {
+        let _height = chain
+            .define(
+                constant,
+                GlobalIndex::from(global),
+                Transparency::Manifest,
+                &[],
+                body,
+            )
+            .expect("the definition admits");
+    }
+    chain
+}
+
+/// Decide `left` against `right` over `chain`, or `None` when `left` does
+/// not evaluate.
+///
+/// # Specification
+/// trivial.
+fn decided(
+    core: &CoreArena,
+    chain: &LoweredChain,
+    (left, right): (ComputationId, ComputationId),
+) -> Option<MachineVerdict>
+{
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(chain, &environment, environment.root());
+    let mut domain = DomainArena::new();
+    let fuel = Fuel::from(512_u32);
+    let left = eval_computation(core, &mut domain, definitions, fuel, left).ok()?;
+    let right = eval_computation(core, &mut domain, definitions, fuel, right)
+        .expect("the expected side evaluates");
+    let mut log = TraceLog::<TraceNode>::new();
+    let report = decide::<_, NullMemo>(
+        core,
+        &mut domain,
+        definitions,
+        MachineSettings::default(),
+        Problem::computations(left, right),
+        &mut log,
+    )
+    .expect("the machine answers");
+    Some(report.verdict())
+}
+
+#[test]
+fn transport_along_the_loop_moves_the_endpoint()
+{
+    let mut core = CoreArena::new();
+    let circle = circle(&mut core);
+    let chain = chain(&circle, Count::Recorded);
+    let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let family = core.value_type_path(circle.carrier, circle.point, moving);
+    let moved = core.computation_return(circle.letter);
+    let stayed = core.computation_return(circle.empty);
+    // Along the word and along the constant naming it alike.
+    for path in [circle.letter, circle.named] {
+        let transported = core.computation_path_transport(family, path, circle.empty);
+        assert_eq!(
+            decided(&core, &chain, (transported, moved)),
+            Some(MachineVerdict::Convertible),
+            "reflexivity at the point carried along the loop is the loop"
+        );
+        assert_eq!(
+            decided(&core, &chain, (transported, stayed)),
+            Some(MachineVerdict::NotConvertible),
+            "and not reflexivity"
+        );
+    }
+}
+
+#[test]
+fn the_loop_conjugates_a_loop_to_itself()
+{
+    let mut core = CoreArena::new();
+    let circle = circle(&mut core);
+    let chain = chain(&circle, Count::Recorded);
+    let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let family = core.value_type_path(circle.carrier, moving, moving);
+    for operand in [circle.letter, circle.inverse, circle.empty] {
+        let transported = core.computation_path_transport(family, circle.named, operand);
+        let fixed = core.computation_return(operand);
+        assert_eq!(
+            decided(&core, &chain, (transported, fixed)),
+            Some(MachineVerdict::Convertible),
+            "conjugation by the loop fixes every loop at the point"
+        );
+    }
+    let transported = core.computation_path_transport(family, circle.named, circle.letter);
+    let moved = core.computation_return(circle.empty);
+    assert_eq!(
+        decided(&core, &chain, (transported, moved)),
+        Some(MachineVerdict::NotConvertible),
+        "and moves no loop to another"
+    );
+}
+
+#[test]
+fn cong_along_the_loop_is_the_arm_s_image()
+{
+    let mut core = CoreArena::new();
+    let circle = circle(&mut core);
+    let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let flip = core.value_constant(ConstantIndex::from(FLIP));
+    let forced = core.computation_force(flip);
+    let applied = core.computation_application(forced, moving);
+    let through = core.value_returned(applied);
+    // `cong(flip, loop)`: reflexivity at `flip(Base)`, carried along the
+    // loop in the family of paths from it to `flip(y)`.
+    let family = core.value_type_path(circle.carrier, circle.point, through);
+    let cong = core.computation_path_transport(family, circle.named, circle.empty);
+    let image = core.computation_return(circle.inverse);
+    assert_eq!(
+        decided(&core, &chain(&circle, Count::Recorded), (cong, image)),
+        Some(MachineVerdict::Convertible),
+        "the flip's image of the loop is its loop arm's answer, the inverse"
+    );
+    let looped = core.computation_return(circle.letter);
+    assert_eq!(
+        decided(&core, &chain(&circle, Count::Recorded), (cong, looped)),
+        Some(MachineVerdict::NotConvertible),
+        "and not the loop"
+    );
+    assert_ne!(
+        decided(&core, &chain(&circle, Count::Missing), (cong, image)),
+        Some(MachineVerdict::Convertible),
+        "without the sort's constructor count the arm is not found"
+    );
+}
+
+/// The 2-sphere's terms the cell witnesses build on, in the checker's arena.
+struct Sphere
+{
+    /// `S2`.
+    carrier: gandr_core_term::ValueTypeId,
+    /// `Base2`.
+    point: ValueId,
+    /// The empty word of the cell's words.
+    empty: ValueId,
+    /// The word of the cell's letter.
+    letter: ValueId,
+    /// The word of its inverse.
+    inverse: ValueId,
+    /// The constant `surf`.
+    named: ValueId,
+}
+
+/// The 2-sphere: the sort, the words of its cell at the point's reflexivity,
+/// the cell's name, the identity by cases and the case with no arm at the
+/// cell, with the chain that presents and defines them.
+///
+/// # Specification
+/// trivial.
+fn two_sphere(core: &mut CoreArena) -> (Sphere, LoweredChain)
+{
+    let (sort, words, cell) = (0_usize, 1_usize, 2_usize);
+    let carrier = core.value_type_data(ConstantIndex::from(sort), Vec::new());
+    let own = core.value_type_data(ConstantIndex::from(words), Vec::new());
+    let point = core.value_constructor(
+        ConstantIndex::from(sort),
+        carrier,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let empty = core.value_constructor(
+        ConstantIndex::from(words),
+        own,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let letter = core.value_constructor(
+        ConstantIndex::from(words),
+        own,
+        ConstructorTag::from(1_usize),
+        vec![empty],
+    );
+    let inverse = core.value_constructor(
+        ConstantIndex::from(words),
+        own,
+        ConstructorTag::from(2_usize),
+        vec![empty],
+    );
+    let named = core.value_constant(ConstantIndex::from(cell));
+    let kept = core.comp_type_returner(carrier);
+    let by_cases = |core: &mut CoreArena, arms: Vec<ComputationId>| {
+        let scrutinee = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let case = core.computation_data_case(
+            scrutinee,
+            kept,
+            arms,
+            [0_usize].map(FieldCount::from).to_vec(),
+        );
+        let lambda = core.computation_lambda(case);
+        core.value_thunk(lambda)
+    };
+    let at_point = core.computation_return(point);
+    let at_cell = core.computation_return(named);
+    let identity_body = by_cases(core, vec![at_point, at_cell]);
+    let squash_body = by_cases(core, vec![at_point]);
+    let base = || -> alloc::boxed::Box<[RuleNode]> {
+        [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+    };
+    let cells = FreeCells::new(
+        ConstantIndex::from(sort),
+        SmallVec::<_, 0, Global>::from_iter([FreeCell::new(base(), base())]),
+    )
+    .wrapped(gandr_kernel_term::Reflexivities::from(1_usize));
+    let mut chain = LoweredChain::new();
+    chain.present(
+        ConstantIndex::from(words),
+        Presented::new(
+            Presentation::words(cells),
+            [0_usize, 1, 1].map(FieldCount::from).into(),
+        ),
+    );
+    chain.admit_data(ConstantIndex::from(sort), ConstructorCount::from(1_usize));
+    for (constant, global, body) in [
+        (cell, 0_u32, letter),
+        (SPHERE_IDENTITY, 1_u32, identity_body),
+        (SPHERE_SQUASH, 2_u32, squash_body),
+    ] {
+        let _height = chain
+            .define(
+                ConstantIndex::from(constant),
+                GlobalIndex::from(global),
+                Transparency::Manifest,
+                &[],
+                body,
+            )
+            .expect("the definition admits");
+    }
+    let sphere = Sphere {
+        carrier,
+        point,
+        empty,
+        letter,
+        inverse,
+        named,
+    };
+    (sphere, chain)
+}
+
+/// The 2-sphere's identity by cases.
+const SPHERE_IDENTITY: usize = 3;
+/// The 2-sphere's case with no arm at the cell.
+const SPHERE_SQUASH: usize = 4;
+/// A second sort with one point and one 2-cell, `LT`.
+const OTHER_SORT: usize = 5;
+/// The words of `LT`'s 2-cell.
+const OTHER_WORDS: usize = 6;
+/// `LT`'s 2-cell, `tcell`.
+const OTHER_CELL: usize = 7;
+/// The map from the 2-sphere onto `LT`: the point to `LT`'s point, and the
+/// sphere's cell to `tcell`.
+const ONTO_OTHER: usize = 8;
+
+/// The second sort's terms, in the checker's arena.
+struct Other
+{
+    /// `LT`.
+    carrier: gandr_core_term::ValueTypeId,
+    /// `LT`'s point.
+    point: ValueId,
+    /// The empty word of `tcell`'s words.
+    empty: ValueId,
+}
+
+/// The second sort beside the 2-sphere: its words, its cell and the map onto
+/// it, added to the 2-sphere's chain.
+///
+/// # Specification
+/// trivial.
+fn onto_other(
+    core: &mut CoreArena,
+    chain: &mut LoweredChain,
+) -> Other
+{
+    let carrier = core.value_type_data(ConstantIndex::from(OTHER_SORT), Vec::new());
+    let own = core.value_type_data(ConstantIndex::from(OTHER_WORDS), Vec::new());
+    let point = core.value_constructor(
+        ConstantIndex::from(OTHER_SORT),
+        carrier,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let empty = core.value_constructor(
+        ConstantIndex::from(OTHER_WORDS),
+        own,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let letter = core.value_constructor(
+        ConstantIndex::from(OTHER_WORDS),
+        own,
+        ConstructorTag::from(1_usize),
+        vec![empty],
+    );
+    let named = core.value_constant(ConstantIndex::from(OTHER_CELL));
+    let kept = core.comp_type_returner(carrier);
+    let scrutinee = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let at_point = core.computation_return(point);
+    let at_cell = core.computation_return(named);
+    let case = core.computation_data_case(
+        scrutinee,
+        kept,
+        vec![at_point, at_cell],
+        [0_usize].map(FieldCount::from).to_vec(),
+    );
+    let lambda = core.computation_lambda(case);
+    let onto = core.value_thunk(lambda);
+    let base = || -> alloc::boxed::Box<[RuleNode]> {
+        [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+    };
+    let cells = FreeCells::new(
+        ConstantIndex::from(OTHER_SORT),
+        SmallVec::<_, 0, Global>::from_iter([FreeCell::new(base(), base())]),
+    )
+    .wrapped(gandr_kernel_term::Reflexivities::from(1_usize));
+    chain.present(
+        ConstantIndex::from(OTHER_WORDS),
+        Presented::new(
+            Presentation::words(cells),
+            [0_usize, 1, 1].map(FieldCount::from).into(),
+        ),
+    );
+    chain.admit_data(
+        ConstantIndex::from(OTHER_SORT),
+        ConstructorCount::from(1_usize),
+    );
+    for (constant, global, body) in [(OTHER_CELL, 3_u32, letter), (ONTO_OTHER, 4_u32, onto)] {
+        let _height = chain
+            .define(
+                ConstantIndex::from(constant),
+                GlobalIndex::from(global),
+                Transparency::Manifest,
+                &[],
+                body,
+            )
+            .expect("the definition admits");
+    }
+    Other {
+        carrier,
+        point,
+        empty,
+    }
+}
+
+/// The transport along the 2-sphere's cell that a dependent case into
+/// `x. Path[.A = LT](⟨g x⟩, ⟨g x⟩)` owes there, for `g` the definition `map`
+/// and `answer` the case's answer at the point: `answer` carried along the
+/// binder, against `answer`.
+///
+/// # Specification
+/// trivial.
+fn carried_along_the_cell(
+    core: &mut CoreArena,
+    (sphere, other): (&Sphere, &Other),
+    (map, answer): (ConstantIndex, ValueId),
+) -> gandr_core_term::ComputationId
+{
+    let lifted = core.value_here(answer);
+    let fibre = core.value_type_path(other.carrier, other.point, other.point);
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let map = core.value_constant(map);
+    let forced = core.computation_force(map);
+    let applied = core.computation_application(forced, bound);
+    let through = core.value_returned(applied);
+    let motive = core.value_type_path(other.carrier, through, through);
+    let along = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let transported = core.computation_path_transport(motive, along, answer);
+    let left = core.value_returned(transported);
+    let family = core.value_type_path(fibre, left, answer);
+    core.computation_path_transport(family, sphere.letter, lifted)
+}
+
+/// #6741: the family a dependent case owes at the 2-cell may carry its answer
+/// through a map onto another sort. Its two ends then map the cell to the
+/// other sort's cell, and the conjugation cancels there.
+#[test]
+fn transport_along_a_cell_carries_an_answer_through_a_map_onto_another_sort_6741()
+{
+    let mut core = CoreArena::new();
+    let (sphere, mut chain) = two_sphere(&mut core);
+    let other = onto_other(&mut core, &mut chain);
+    let answer = core.value_here(other.point);
+    let carried = carried_along_the_cell(
+        &mut core,
+        (&sphere, &other),
+        (ConstantIndex::from(ONTO_OTHER), answer),
+    );
+    let stayed = core.computation_return(other.empty);
+    assert_eq!(
+        decided(&core, &chain, (carried, stayed)),
+        Some(MachineVerdict::Convertible),
+        "the carried end maps the sphere's cell to the other cell's inverse, then the other cell"
+    );
+}
+
+/// The words of `LT`'s one loop at its point.
+const OTHER_LOOPS: usize = 9;
+/// `LT`'s loop, `lp`.
+const OTHER_LOOP: usize = 10;
+/// The map from the 2-sphere onto `LT`'s point, with no arm at the cell.
+const FLAT_ONTO_OTHER: usize = 11;
+
+/// #6741: a family whose two images of the 2-sphere's cell are empty carries
+/// a loop to itself, so the case owes no arm at the cell. Where the images
+/// are the other sort's cell, the loop whiskers them, and the transport is
+/// not the loop.
+#[test]
+fn transport_along_a_cell_carries_a_loop_past_two_empty_images_6741()
+{
+    let mut core = CoreArena::new();
+    let (sphere, mut chain) = two_sphere(&mut core);
+    let other = onto_other(&mut core, &mut chain);
+    let own = core.value_type_data(ConstantIndex::from(OTHER_LOOPS), Vec::new());
+    let empty = core.value_constructor(
+        ConstantIndex::from(OTHER_LOOPS),
+        own,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let letter = core.value_constructor(
+        ConstantIndex::from(OTHER_LOOPS),
+        own,
+        ConstructorTag::from(1_usize),
+        vec![empty],
+    );
+    let kept = core.comp_type_returner(other.carrier);
+    let scrutinee = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let at_point = core.computation_return(other.point);
+    let case = core.computation_data_case(
+        scrutinee,
+        kept,
+        vec![at_point],
+        [0_usize].map(FieldCount::from).to_vec(),
+    );
+    let lambda = core.computation_lambda(case);
+    let flat = core.value_thunk(lambda);
+    let base = || -> alloc::boxed::Box<[RuleNode]> {
+        [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+    };
+    let loops = FreeCells::new(
+        ConstantIndex::from(OTHER_SORT),
+        SmallVec::<_, 0, Global>::from_iter([FreeCell::new(base(), base())]),
+    );
+    chain.present(
+        ConstantIndex::from(OTHER_LOOPS),
+        Presented::new(
+            Presentation::words(loops),
+            [0_usize, 1, 1].map(FieldCount::from).into(),
+        ),
+    );
+    for (constant, global, body) in [(OTHER_LOOP, 5_u32, letter), (FLAT_ONTO_OTHER, 6_u32, flat)] {
+        let _height = chain
+            .define(
+                ConstantIndex::from(constant),
+                GlobalIndex::from(global),
+                Transparency::Manifest,
+                &[],
+                body,
+            )
+            .expect("the definition admits");
+    }
+    let looped = core.value_constant(ConstantIndex::from(OTHER_LOOP));
+    let stays = core.value_here(looped);
+    let flattened = carried_along_the_cell(
+        &mut core,
+        (&sphere, &other),
+        (ConstantIndex::from(FLAT_ONTO_OTHER), looped),
+    );
+    let stayed = core.computation_return(stays);
+    assert_eq!(
+        decided(&core, &chain, (flattened, stayed)),
+        Some(MachineVerdict::Convertible),
+        "two empty images carry the loop to itself"
+    );
+    let whiskered = carried_along_the_cell(
+        &mut core,
+        (&sphere, &other),
+        (ConstantIndex::from(ONTO_OTHER), looped),
+    );
+    assert_ne!(
+        decided(&core, &chain, (whiskered, stayed)),
+        Some(MachineVerdict::Convertible),
+        "the loop whiskers the other cell's two images, so the transport is not the loop"
+    );
+}
+
+#[test]
+fn cong_along_the_2_cell_is_the_arm_s_image()
+{
+    let mut core = CoreArena::new();
+    let (sphere, chain) = two_sphere(&mut core);
+    // `Path.ap f surf` as the lowering writes it: the cell one path type above
+    // the map's domain, so `Path.ap (Path.ap f)` in place.
+    let reflexivity = core.value_here(sphere.point);
+    let levels = [(sphere.point, sphere.point), (reflexivity, reflexivity)];
+    let image = |core: &mut CoreArena, map: usize| {
+        let map = core.value_constant(ConstantIndex::from(map));
+        gandr_core_term::identity::cong_above(core, (map, sphere.carrier), &levels, sphere.named)
+            .expect("two levels build")
+    };
+    let mapped = image(&mut core, SPHERE_IDENTITY);
+    let flattened = image(&mut core, SPHERE_SQUASH);
+    let looped = core.computation_return(sphere.letter);
+    let stayed = core.computation_return(sphere.empty);
+    assert_eq!(
+        decided(&core, &chain, (mapped, looped)),
+        Some(MachineVerdict::Convertible),
+        "the identity's image of the 2-cell is its arm's answer, the 2-cell"
+    );
+    assert_eq!(
+        decided(&core, &chain, (mapped, stayed)),
+        Some(MachineVerdict::NotConvertible),
+        "and not the empty word"
+    );
+    assert_eq!(
+        decided(&core, &chain, (flattened, stayed)),
+        Some(MachineVerdict::Convertible),
+        "a case with no arm at the 2-cell sends it to the empty word"
+    );
+}
+
+/// #6530: `Path.ap` of a case into the universe on the 2-cell is its arm
+/// there, `ua` of a cell, which no word holds.
+#[test]
+fn cong_into_the_universe_at_the_2_cell_is_the_arm_6530()
+{
+    let mut core = CoreArena::new();
+    let (sphere, mut chain) = two_sphere(&mut core);
+    let universe = core.value_type_universe(
+        gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+        gandr_kernel_strata::Level::zero(),
+    );
+    let unit = core.value_type_unit();
+    let boolean = core.value_type_sum(&[unit, unit]);
+    let code = core.value_quote(boolean);
+    // `h = λy. return *{y, y}`: an arm the machine runs, not a word.
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let doubled = core.value_tuple(&[bound, bound]);
+    let returned = core.computation_return(doubled);
+    let lambda = core.computation_lambda(returned);
+    let homotopy = core.value_thunk(lambda);
+    let forward = gandr_core_term::identity::univalence_forward(&mut core, homotopy);
+    let cell = core.value_univalence(homotopy, forward);
+    let typed = core.comp_type_returner(universe);
+    let arms = vec![core.computation_return(code), core.computation_return(cell)];
+    let case =
+        core.computation_data_case(bound, typed, arms, [0_usize].map(FieldCount::from).to_vec());
+    let lambda = core.computation_lambda(case);
+    let family = core.value_thunk(lambda);
+    let hopf = 5_usize;
+    let _height = chain
+        .define(
+            ConstantIndex::from(hopf),
+            GlobalIndex::from(3_u32),
+            Transparency::Manifest,
+            &[],
+            family,
+        )
+        .expect("the definition admits");
+    let reflexivity = core.value_here(sphere.point);
+    let levels = [(sphere.point, sphere.point), (reflexivity, reflexivity)];
+    let map = core.value_constant(ConstantIndex::from(hopf));
+    let image = gandr_core_term::identity::cong_above(
+        &mut core,
+        (map, sphere.carrier),
+        &levels,
+        sphere.named,
+    )
+    .expect("two levels build");
+    let armed = core.computation_return(cell);
+    let here = core.value_here(code);
+    let flat = core.value_here(here);
+    let stayed = core.computation_return(flat);
+    assert_eq!(
+        decided(&core, &chain, (image, armed)),
+        Some(MachineVerdict::Convertible),
+        "the family's image of the 2-cell is its arm's answer"
+    );
+    assert_eq!(
+        decided(&core, &chain, (image, stayed)),
+        Some(MachineVerdict::NotConvertible),
+        "and not reflexivity"
+    );
+}
+
+/// #6458: the family a dependent case owes at the 2-cell carries its answer
+/// along its binder, and the transport along the cell reads that endpoint.
+#[test]
+fn transport_along_a_cell_conjugates_its_carried_endpoint_6458()
+{
+    let mut core = CoreArena::new();
+    let (sphere, chain) = two_sphere(&mut core);
+    let answer = core.value_here(sphere.point);
+    let lifted = core.value_here(answer);
+    let fibre = core.value_type_path(sphere.carrier, sphere.point, sphere.point);
+    // The family at the cell for the motive `x. Path[.A = S2](⟨f x⟩, x)`:
+    // `q. Path[.A = Path(Base2, Base2)](⟨tr(A, q, b)⟩, b)`, moving `here(b)`
+    // along the cell, `b` the answer at the point.
+    let at_cell = |core: &mut CoreArena, map: usize, carried: ValueId| {
+        let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let map = core.value_constant(ConstantIndex::from(map));
+        let forced = core.computation_force(map);
+        let applied = core.computation_application(forced, bound);
+        let through = core.value_returned(applied);
+        let motive = core.value_type_path(sphere.carrier, through, bound);
+        let along = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let transported = core.computation_path_transport(motive, along, carried);
+        let left = core.value_returned(transported);
+        let family = core.value_type_path(fibre, left, carried);
+        core.computation_path_transport(family, sphere.letter, lifted)
+    };
+    let respected = at_cell(&mut core, SPHERE_IDENTITY, answer);
+    let squashed = at_cell(&mut core, SPHERE_SQUASH, answer);
+    let whiskered = at_cell(&mut core, SPHERE_IDENTITY, sphere.letter);
+    let stayed = core.computation_return(sphere.empty);
+    let looped = core.computation_return(sphere.letter);
+    let backward = core.computation_return(sphere.inverse);
+    assert_eq!(
+        decided(&core, &chain, (respected, stayed)),
+        Some(MachineVerdict::Convertible),
+        "under the identity the carried endpoint maps the cell to its inverse, then the cell"
+    );
+    assert_eq!(
+        decided(&core, &chain, (respected, looped)),
+        Some(MachineVerdict::NotConvertible),
+        "and not to the cell"
+    );
+    assert_eq!(
+        decided(&core, &chain, (squashed, backward)),
+        Some(MachineVerdict::Convertible),
+        "a map with no arm at the cell leaves the moving endpoint's image, so reflexivity moves \
+         to the cell's inverse"
+    );
+    assert_ne!(
+        decided(&core, &chain, (whiskered, stayed)),
+        Some(MachineVerdict::Convertible),
+        "an answer that holds a letter whiskers the images, and the transport stays held"
+    );
+}
+
+#[test]
+fn cong_along_the_loop_reads_a_map_its_binder_holds_5481()
+{
+    let mut core = CoreArena::new();
+    let circle = circle(&mut core);
+    let chain = chain(&circle, Count::Recorded);
+    // `(λf. cong(f, loop)) flip`, the family `y. Path[.A = S](Base, ⟨force f
+    // y⟩)` under the binder `f` of a definition's body, which holds `flip`.
+    let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let map = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let forced = core.computation_force(map);
+    let applied = core.computation_application(forced, moving);
+    let through = core.value_returned(applied);
+    let family = core.value_type_path(circle.carrier, circle.point, through);
+    let cong = core.computation_path_transport(family, circle.named, circle.empty);
+    let over = core.computation_lambda(cong);
+    let flip = core.value_constant(ConstantIndex::from(FLIP));
+    let called = core.computation_application(over, flip);
+    let image = core.computation_return(circle.inverse);
+    assert_eq!(
+        decided(&core, &chain, (called, image)),
+        Some(MachineVerdict::Convertible),
+        "the image of the loop under the map the binder holds is its loop arm's answer"
+    );
+    let looped = core.computation_return(circle.letter);
+    assert_eq!(
+        decided(&core, &chain, (called, looped)),
+        Some(MachineVerdict::NotConvertible),
+        "and not the loop"
+    );
+}
+
+#[test]
+fn cong_along_the_loop_reads_a_map_of_two_arguments()
+{
+    let mut core = CoreArena::new();
+    let circle = circle(&mut core);
+    let chain = chain(&circle, Count::Recorded);
+    let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let looped = core.computation_return(circle.letter);
+    let inverted = core.computation_return(circle.inverse);
+    // `cong(y. first(y, Base), loop)` and `cong(y. second(Base, y), loop)`:
+    // the point runs through one argument, the other stays at `Base`.
+    for (constant, arguments) in [
+        (FIRST, [moving, circle.point]),
+        (SECOND, [circle.point, moving]),
+    ] {
+        let named = core.value_constant(ConstantIndex::from(constant));
+        let mut applied = core.computation_force(named);
+        for argument in arguments {
+            applied = core.computation_application(applied, argument);
+        }
+        let through = core.value_returned(applied);
+        let family = core.value_type_path(circle.carrier, circle.point, through);
+        let cong = core.computation_path_transport(family, circle.named, circle.empty);
+        assert_eq!(
+            decided(&core, &chain, (cong, looped)),
+            Some(MachineVerdict::Convertible),
+            "the image of the loop is the arm's answer, the loop read by its name"
+        );
+        assert_eq!(
+            decided(&core, &chain, (cong, inverted)),
+            Some(MachineVerdict::NotConvertible),
+            "and not its inverse"
+        );
+    }
+}
+
+#[test]
+fn cong_along_the_loop_reads_both_arguments_of_a_diagonal_464()
+{
+    let mut core = CoreArena::new();
+    let circle = circle(&mut core);
+    let chain = chain(&circle, Count::Recorded);
+    let own = core.value_type_data(ConstantIndex::from(WORDS), Vec::new());
+    let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let twice = core.value_constructor(
+        ConstantIndex::from(WORDS),
+        own,
+        ConstructorTag::from(1_usize),
+        vec![circle.letter],
+    );
+    let twice = core.computation_return(twice);
+    let looped = core.computation_return(circle.letter);
+    // `cong(y. first(y, y), loop)` and `cong(y. second(y, y), loop)`: the
+    // loop runs through both arguments, the first route's image then the
+    // second's — the arm's `loop` through the argument the case is over,
+    // and through the other, the branch at the point returning it, the
+    // loop itself.
+    for constant in [FIRST, SECOND] {
+        let named = core.value_constant(ConstantIndex::from(constant));
+        let forced = core.computation_force(named);
+        let applied = core.computation_application(forced, moving);
+        let applied = core.computation_application(applied, moving);
+        let through = core.value_returned(applied);
+        let family = core.value_type_path(circle.carrier, circle.point, through);
+        let cong = core.computation_path_transport(family, circle.named, circle.empty);
+        assert_eq!(
+            decided(&core, &chain, (cong, twice)),
+            Some(MachineVerdict::Convertible),
+            "the diagonal's image of the loop is the loop through each argument in turn"
+        );
+        assert_eq!(
+            decided(&core, &chain, (cong, looped)),
+            Some(MachineVerdict::NotConvertible),
+            "and not the loop through one argument alone"
+        );
+    }
+}
+
+#[test]
+fn cong_along_the_loop_reads_a_call_bound_into_the_next()
+{
+    let mut core = CoreArena::new();
+    let circle = circle(&mut core);
+    let chain = chain(&circle, Count::Recorded);
+    let flip = core.value_constant(ConstantIndex::from(FLIP));
+    let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = core.computation_force(flip);
+    let inner = core.computation_application(forced, moving);
+    // Under the bind the bound result is the innermost variable.
+    let outer = core.computation_application(forced, moving);
+    let bound = core.computation_bind(inner, outer);
+    let through = core.value_returned(bound);
+    // `cong(y. ⟨x ← flip(y); flip(x)⟩, loop)`: the loop through the flip and
+    // then the flip again, the inverse of the inverse.
+    let family = core.value_type_path(circle.carrier, circle.point, through);
+    let cong = core.computation_path_transport(family, circle.named, circle.empty);
+    let looped = core.computation_return(circle.letter);
+    let inverted = core.computation_return(circle.inverse);
+    assert_eq!(
+        decided(&core, &chain, (cong, looped)),
+        Some(MachineVerdict::Convertible),
+        "the image of the loop through a flip bound into a flip is the loop"
+    );
+    assert_eq!(
+        decided(&core, &chain, (cong, inverted)),
+        Some(MachineVerdict::NotConvertible),
+        "and not its inverse"
+    );
+}
+
+#[test]
+fn a_word_appends_on_its_first_word()
+{
+    let mut core = CoreArena::new();
+    let circle = circle(&mut core);
+    let chain = chain(&circle, Count::Recorded);
+    let own = core.value_type_data(ConstantIndex::from(WORDS), Vec::new());
+    let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let family = core.value_type_path(circle.carrier, circle.point, moving);
+    // Under `λq. λp.`: `q` is index 1, `p` index 0.
+    let after = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let before = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let binary = |core: &mut CoreArena, body: ComputationId| {
+        let inner = core.computation_lambda(body);
+        core.computation_lambda(inner)
+    };
+    // `here(Base) then q` is `q`.
+    let unit = core.computation_path_transport(family, after, circle.empty);
+    let unit = binary(&mut core, unit);
+    let itself = core.computation_return(after);
+    let itself = binary(&mut core, itself);
+    assert_eq!(
+        decided(&core, &chain, (unit, itself)),
+        Some(MachineVerdict::Convertible),
+        "the empty word moved along a path is the path"
+    );
+    // `(loop ∷ p) then q` is `loop ∷ (p then q)`.
+    let consed = core.value_constructor(
+        ConstantIndex::from(WORDS),
+        own,
+        ConstructorTag::from(1_usize),
+        vec![before],
+    );
+    let appended = core.computation_path_transport(family, after, consed);
+    let appended = binary(&mut core, appended);
+    let rest = core.computation_path_transport(family, after, before);
+    let held = core.value_returned(rest);
+    let prefixed = core.value_constructor(
+        ConstantIndex::from(WORDS),
+        own,
+        ConstructorTag::from(1_usize),
+        vec![held],
+    );
+    let prefixed = core.computation_return(prefixed);
+    let prefixed = binary(&mut core, prefixed);
+    assert_eq!(
+        decided(&core, &chain, (appended, prefixed)),
+        Some(MachineVerdict::Convertible),
+        "a letter before a path moved along another stays first"
+    );
+    let inverted = core.value_constructor(
+        ConstantIndex::from(WORDS),
+        own,
+        ConstructorTag::from(2_usize),
+        vec![held],
+    );
+    let inverted = core.computation_return(inverted);
+    let inverted = binary(&mut core, inverted);
+    assert_eq!(
+        decided(&core, &chain, (appended, inverted)),
+        Some(MachineVerdict::NotConvertible),
+        "and is no other letter"
+    );
+}
+
+#[test]
+fn a_composite_over_a_call_to_the_empty_word_is_its_second_word_473()
+{
+    let mut core = CoreArena::new();
+    let circle = circle(&mut core);
+    let chain = chain(&circle, Count::Recorded);
+    let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let family = core.value_type_path(circle.carrier, circle.point, moving);
+    let after = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    // `zero then q` is `q`, `zero` a call that returns the empty word.
+    let zero = core.value_constant(ConstantIndex::from(ZERO));
+    let forced = core.computation_force(zero);
+    let held = core.value_returned(forced);
+    let composite = core.computation_path_transport(family, after, held);
+    let composite = core.computation_lambda(composite);
+    let itself = core.computation_return(after);
+    let itself = core.computation_lambda(itself);
+    // The checker holds an endpoint's call at its definition, as `spin(Z)`
+    // stands in `spin(Z) then spin(a)`.
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root())
+        .reading_endpoints(crate::eval::Endpoints::Hold);
+    let mut domain = DomainArena::new();
+    let fuel = Fuel::from(512_u32);
+    let left = eval_computation(&core, &mut domain, definitions, fuel, composite)
+        .expect("the composite evaluates");
+    let right = eval_computation(&core, &mut domain, definitions, fuel, itself)
+        .expect("the path evaluates");
+    let mut log = TraceLog::<TraceNode>::new();
+    let report = decide::<_, NullMemo>(
+        &core,
+        &mut domain,
+        definitions,
+        MachineSettings::default(),
+        Problem::computations(left, right),
+        &mut log,
+    )
+    .expect("the machine answers");
+    assert_eq!(
+        report.verdict(),
+        MachineVerdict::Convertible,
+        "a call returning the empty word moved along a path is the path"
+    );
+}
+
+/// A letter of a word over the one loop.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Letter
+{
+    /// The loop.
+    Loop,
+    /// Its inverse.
+    Inverse,
+}
+
+impl Letter
+{
+    /// The inverse letter.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn inverted(self) -> Self
+    {
+        match self {
+            Self::Loop => Self::Inverse,
+            Self::Inverse => Self::Loop,
+        }
+    }
+}
+
+/// How an endpoint of a path family over `S` reads the family's binder.
+#[derive(Clone, Copy, Debug)]
+enum Endpoint
+{
+    /// The point, never reading the binder.
+    Fixed,
+    /// The binder itself.
+    Moving,
+    /// `⟨flip(y)⟩`, a call on the binder.
+    Flipped,
+}
+
+/// What an endpoint makes of the word a transport runs along: nothing where
+/// it is fixed, the word where it moves, and each letter's image under `flip`
+/// — its loop arm, the inverse letter — where it is the call.
+///
+/// # Specification
+/// trivial.
+fn imaged(
+    endpoint: Endpoint,
+    word: &[Letter],
+) -> Vec<Letter>
+{
+    match endpoint {
+        Endpoint::Fixed => Vec::new(),
+        Endpoint::Moving => word.to_vec(),
+        Endpoint::Flipped => word.iter().map(|letter| letter.inverted()).collect(),
+    }
+}
+
+/// A word a transport reads: the path it runs along, or the operand it moves.
+#[derive(Clone, Copy, Debug)]
+enum Along
+{
+    /// The word spelled by its letters.
+    Spelled(&'static [Letter]),
+    /// The constant `loop`, whose body is the word of the loop's letter.
+    Named,
+}
+
+/// The word spelled by `letters`, the first letter outermost.
+///
+/// # Specification
+/// trivial.
+fn spelled(
+    core: &mut CoreArena,
+    letters: &[Letter],
+) -> ValueId
+{
+    let own = core.value_type_data(ConstantIndex::from(WORDS), Vec::new());
+    letters.iter().rev().fold(
+        core.value_constructor(
+            ConstantIndex::from(WORDS),
+            own,
+            ConstructorTag::from(0_usize),
+            Vec::new(),
+        ),
+        |tail, letter| {
+            let tag = match *letter {
+                Letter::Loop => ConstructorTag::from(1_usize),
+                Letter::Inverse => ConstructorTag::from(2_usize),
+            };
+            core.value_constructor(ConstantIndex::from(WORDS), own, tag, vec![tail])
+        },
+    )
+}
+
+/// `letters` in the free group's normal form: each letter met beside its
+/// inverse cancels with it.
+///
+/// # Specification
+/// trivial.
+fn reduced(letters: impl IntoIterator<Item = Letter>) -> Vec<Letter>
+{
+    let mut kept = Vec::new();
+    for letter in letters {
+        if kept.last() == Some(&letter.inverted()) {
+            let _cancelled = kept.pop();
+        }
+        else {
+            kept.push(letter);
+        }
+    }
+    kept
+}
+
+/// Transport along a word in `y. Path[.A = S](l(y), r(y))`, each endpoint
+/// fixed, the binder or a call on it, is conjugation: `l(w)⁻¹ · v · r(w)`, an
+/// endpoint's image of the word as [`imaged`] reads it, and the named `loop`,
+/// as path or as operand, reads as its letter. The answer is checked against
+/// the word the free group computes, and against that word with one more
+/// letter.
+#[test]
+fn transport_along_a_word_conjugates_by_its_moving_endpoints()
+{
+    let paths = [
+        Along::Spelled(&[]),
+        Along::Spelled(&[Letter::Loop]),
+        Along::Spelled(&[Letter::Inverse]),
+        Along::Spelled(&[Letter::Loop, Letter::Loop]),
+        Along::Spelled(&[Letter::Loop, Letter::Inverse]),
+        Along::Spelled(&[Letter::Loop, Letter::Loop, Letter::Inverse, Letter::Loop]),
+        Along::Named,
+    ];
+    let operands = [
+        Along::Spelled(&[]),
+        Along::Spelled(&[Letter::Inverse]),
+        Along::Named,
+    ];
+    let families = [
+        (Endpoint::Fixed, Endpoint::Moving),
+        (Endpoint::Moving, Endpoint::Fixed),
+        (Endpoint::Moving, Endpoint::Moving),
+        (Endpoint::Fixed, Endpoint::Fixed),
+        (Endpoint::Flipped, Endpoint::Fixed),
+        (Endpoint::Fixed, Endpoint::Flipped),
+        (Endpoint::Flipped, Endpoint::Moving),
+        (Endpoint::Moving, Endpoint::Flipped),
+        (Endpoint::Flipped, Endpoint::Flipped),
+    ];
+    for (left, right) in families {
+        for path in paths {
+            for operand in operands {
+                let mut core = CoreArena::new();
+                let circle = circle(&mut core);
+                let chain = chain(&circle, Count::Recorded);
+                let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                let flip = core.value_constant(ConstantIndex::from(FLIP));
+                let forced = core.computation_force(flip);
+                let applied = core.computation_application(forced, moving);
+                let flipped = core.value_returned(applied);
+                let at = |endpoint| match endpoint {
+                    Endpoint::Fixed => circle.point,
+                    Endpoint::Moving => moving,
+                    Endpoint::Flipped => flipped,
+                };
+                let family = core.value_type_path(circle.carrier, at(left), at(right));
+                let mut read = |word| match word {
+                    Along::Spelled(letters) => (spelled(&mut core, letters), letters),
+                    Along::Named => (circle.named, &[Letter::Loop][..]),
+                };
+                let (along, word) = read(path);
+                let (held, moved) = read(operand);
+                let expected = reduced(
+                    imaged(left, word)
+                        .iter()
+                        .rev()
+                        .map(|letter| letter.inverted())
+                        .chain(moved.iter().copied())
+                        .chain(imaged(right, word)),
+                );
+                let transported = core.computation_path_transport(family, along, held);
+                let answer = spelled(&mut core, &expected);
+                let answer = core.computation_return(answer);
+                let longer = reduced(expected.iter().copied().chain([Letter::Loop]));
+                let longer = spelled(&mut core, &longer);
+                let longer = core.computation_return(longer);
+                assert_eq!(
+                    [
+                        decided(&core, &chain, (transported, answer)),
+                        decided(&core, &chain, (transported, longer)),
+                    ],
+                    [
+                        Some(MachineVerdict::Convertible),
+                        Some(MachineVerdict::NotConvertible),
+                    ],
+                    "{left:?} {right:?} {path:?} {operand:?}"
+                );
+            }
+        }
+    }
+}
