@@ -16,11 +16,18 @@
 //! A rule presents its type when it is linear and constructor-headed over the
 //! declaration's own table, every constructor standing where the declaration's
 //! own type does, every right-side variable at the slot its left occurrence
-//! holds and at most once, and its right side holds fewer constructors than
-//! its left. Such a rule removes a constructor from every term it rewrites,
-//! so a term of `n` constructors normalizes in at most `n` rewrites: the
-//! kernel needs no termination claim and no budget argument beyond the term's
-//! own size. Confluence is not checked at admission. The normal form is taken
+//! holds and at most once, and its right side holds no more constructors than
+//! its left. A rule that keeps the count also orders the constructors: the
+//! root of its left side stands above each constructor of its right side, and
+//! no constructor stands above itself. The kernel computes that order from the
+//! rules alone, so it needs no termination claim.
+//!
+//! A rewrite removes a constructor or keeps the count. A rewrite that keeps
+//! the count lowers the multiset of the constructors of the term in that
+//! order. So after the last removal each rewrite lowers the multiset, and the
+//! rewrites end. Each reader runs them under its own budget.
+//!
+//! Confluence is not checked at admission. The normal form is taken
 //! by one fixed strategy (`Presentation::normalize` names it), so conversion
 //! is an equivalence and sound for the equational theory whether or not the
 //! rules are confluent; confluence makes it complete, and the producer's
@@ -28,14 +35,17 @@
 //! conversion. The apartness rule below does not lean on it: it joins every
 //! critical pair itself before it reads two normal forms as two elements.
 //!
-//! **Alternatives.** A recursive path order would admit size-preserving rules
-//! such as associativity, at the price of a precedence in the trusted base. A
+//! **Alternatives.** A lexicographic path order over the ranks of the theory
+//! value would admit associativity. It lost because a swap by a symmetry does
+//! not keep a lexicographic comparison: associativity beside commutativity
+//! does not end. The multiset of the constructors is the same after a swap. A
 //! critical-pair check at admission would make conversion complete for every
 //! admitted presentation, at the price of joining every overlap of every
-//! presented type, used or not. **Reversal.** The first presented type whose
-//! rules preserve size takes a path order; the first conversion the fixed
-//! strategy separates though the theory equates moves the critical-pair check
-//! of [`apart`] to admission.
+//! presented type, used or not. **Reversal.** The first presented type that
+//! needs associativity takes the path order of its theory where its table
+//! holds no symmetry; the first conversion the fixed strategy separates
+//! though the theory equates moves the critical-pair check of [`apart`] to
+//! admission.
 //!
 //! # Apartness
 //!

@@ -575,13 +575,18 @@ impl Presentation
     ///   [`RuleSlot::Dependent`] one, the left side's variables read in
     ///   pre-order as `0, 1, 2, …`, every right-side variable occurs on the
     ///   left at the same slot and at most once on the right, and the right
-    ///   side holds fewer constructors than the left. Otherwise the first
-    ///   failing rule and its first fault.
+    ///   side holds fewer constructors than the left, or as many where the
+    ///   rules of that kind order the constructors: the root of the left side
+    ///   of each one stands above each constructor of its right side, and no
+    ///   constructor stands above itself. A symmetry owes no decrease.
+    ///   Otherwise the first failing rule and its first fault.
     /// - provides: the admission check the kernel and the checker share, and
-    ///   with it termination of [`Self::normalize`]: a linear, non-duplicating
-    ///   rule with fewer constructors on its right removes at least one
-    ///   constructor from any term it rewrites, so a term of `n` constructors
-    ///   admits at most `n` rewrites.
+    ///   with it termination of [`Self::normalize`]. A rule is linear and it
+    ///   copies no variable, so it removes a constructor from a term or it
+    ///   keeps the count. A rule that keeps the count lowers the multiset of
+    ///   the constructors of the term in the order above. A swap by a symmetry
+    ///   keeps the count and the multiset. So after the last removal each
+    ///   rewrite lowers the multiset, and the rewrites end.
     /// - fails: [`RuleRefusal`] naming the rule and its [`RuleFault`].
     /// - panics: none.
     ///
@@ -610,6 +615,11 @@ impl Presentation
             SmallVec::<_, 0, Global>::new(),
             SmallVec::<_, 0, Global>::new(),
         );
+        let mut order = RuleOrder {
+            above: SmallVec::<_, 0, Global>::new(),
+            ranks: SmallVec::<_, 0, Global>::new(),
+        };
+        order.ranks.resize(Count::from(table.len()), 0);
         for (index, rule) in self.rules().iter().enumerate() {
             let refuse = |fault| RuleRefusal {
                 rule: RuleIndex(index),
@@ -643,10 +653,14 @@ impl Presentation
                     return Err(refuse(RuleFault::SlotMismatch));
                 }
             }
-            if right.constructors >= left.constructors
-                && !matches!(rule.reading(), RuleReading::Symmetry(_))
-            {
+            if matches!(rule.reading(), RuleReading::Symmetry(_)) {
+                continue;
+            }
+            if right.constructors > left.constructors {
                 return Err(refuse(RuleFault::NotDecreasing));
+            }
+            if right.constructors == left.constructors {
+                order.admit(rule).map_err(refuse)?;
             }
         }
         Ok(())
@@ -2784,8 +2798,9 @@ pub enum RuleFault
     /// The right side places a variable at a field of another type than the
     /// one it stands at on the left.
     SlotMismatch,
-    /// The right side holds as many constructors as the left or more, so the
-    /// rule is not seen to terminate.
+    /// The right side holds more constructors than the left, or it holds as
+    /// many and the rules of that kind put a constructor above itself. The
+    /// rule is then not seen to terminate.
     NotDecreasing,
     /// A variable stands at a [`RuleSlot::Dependent`] field, whose classifier
     /// is read only in its constructor's telescope.
@@ -3031,6 +3046,99 @@ where
         return Err(RuleFault::Arity);
     }
     Ok(reading)
+}
+
+/// The order that the rules that keep the count of constructors give the
+/// constructors of one table.
+///
+/// A rule that keeps the count puts the root of its left side above each
+/// constructor of its right side. The order holds while no constructor
+/// stands above itself.
+///
+/// # Specification
+/// - provides: the second half of the measure of [`Presentation::validate`].
+/// - invariant: `ranks` holds one rank for each constructor of the table, and
+///   each pair of `above` stands in the order of its two ranks.
+/// - panics: none.
+/// - executable: none — data declaration.
+struct RuleOrder
+{
+    /// Each pair of a root and a constructor that it stands above.
+    above: SmallVec<(ConstructorTag, ConstructorTag), 0, Global>,
+    /// The rank of each constructor: more than the rank of each one below it.
+    ranks: SmallVec<usize, 0, Global>,
+}
+
+impl RuleOrder
+{
+    /// Put the root of `rule`'s left side above each constructor of its
+    /// right side.
+    ///
+    /// # Specification
+    /// - requires: the two sides of `rule` name constructors of the table that
+    ///   `self.ranks` counts.
+    /// - ensures: `Ok(())` exactly when no constructor stands above itself with
+    ///   the pairs of `rule`; `self` then holds those pairs and ranks that
+    ///   agree with them.
+    /// - fails: [`RuleFault::NotDecreasing`] when a constructor stands above
+    ///   itself, and when the left side has no constructor at its root.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: each round but the last raises a rank, and a rank that reaches
+    ///   the count of the constructors ends the loop.
+    /// - measure: the sum of the distances of the ranks from that count.
+    ///
+    /// # Cost
+    /// - allocation: the pairs of the rule, growth within its right side
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one rule between two constants is admitted, and the
+    ///   same rule beside its reverse is refused at the reverse.
+    /// - witness: `presented::tests::a_rule_that_keeps_the_count_orders_the_constructors`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(RuleFault::NotDecreasing)))]
+    fn admit(
+        &mut self,
+        rule: &PresentedRule,
+    ) -> Result<(), RuleFault>
+    {
+        let Some(&RuleNode::Constructor(root)) = rule.left().first()
+        else {
+            return Err(RuleFault::NotDecreasing);
+        };
+        for &node in rule.right() {
+            if let RuleNode::Constructor(tag) = node {
+                self.above.push((root, tag));
+            }
+        }
+        let bound = self.ranks.len();
+        loop {
+            let mut raised = false;
+            for &(high, low) in &self.above {
+                let floor = self
+                    .ranks
+                    .get(usize::from(low))
+                    .map_or(bound, |&rank| rank.saturating_add(1));
+                // A rank as high as the count of the constructors needs a
+                // chain longer than the table, and such a chain is a cycle.
+                if floor >= bound {
+                    return Err(RuleFault::NotDecreasing);
+                }
+                if let Some(rank) = self.ranks.get_mut(usize::from(high))
+                    && *rank < floor
+                {
+                    *rank = floor;
+                    raised = true;
+                }
+            }
+            if !raised {
+                return Ok(());
+            }
+        }
+    }
 }
 
 /// A position in a flattened term.
@@ -4240,6 +4348,86 @@ mod tests
         ])
     }
 
+    /// - see: #8330
+    #[test]
+    fn a_rule_that_keeps_the_count_orders_the_constructors()
+    {
+        let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+        let v = |ordinal: u32| RuleNode::Variable(RuleVariable::from(ordinal));
+        let table = bits();
+        let arities = [0_usize, 0, 2, 2, 2].map(FieldCount::from);
+        let rule =
+            |left: &[RuleNode], right: &[RuleNode]| PresentedRule::new(left.into(), right.into());
+        let joined = one(&[c(0)], &[c(1)]);
+        assert_eq!(
+            joined.validate(&table),
+            Ok(()),
+            "one rule between two constants puts the first above the second"
+        );
+        assert_eq!(
+            Presentation::new(SmallVec::<_, 0, Global>::from_iter([
+                rule(&[c(0)], &[c(1)]),
+                rule(&[c(1)], &[c(0)]),
+            ]))
+            .validate(&table),
+            Err(RuleRefusal {
+                rule: RuleIndex::from(1_usize),
+                fault: RuleFault::NotDecreasing,
+            }),
+            "the reverse rule puts a constant above itself, and the refusal names that rule"
+        );
+        assert_eq!(
+            one(&[c(2), v(0), v(1)], &[c(3), v(1), v(0)]).validate(&table),
+            Ok(()),
+            "a rule that gives its two fields to a lower operation keeps the count"
+        );
+        assert_eq!(
+            Presentation::new(SmallVec::<_, 0, Global>::from_iter([
+                rule(&[c(0)], &[c(1)]),
+                rule(&[c(2), v(0), v(1)], &[c(3), v(0), v(1)]),
+                rule(&[c(3), v(0), v(1)], &[c(2), v(0), v(1)]),
+            ]))
+            .validate(&table),
+            Err(RuleRefusal {
+                rule: RuleIndex::from(2_usize),
+                fault: RuleFault::NotDecreasing,
+            }),
+            "the third rule closes a cycle of two operations"
+        );
+        assert_eq!(
+            one(&[c(0)], &[c(2), c(1), c(1)]).validate(&table),
+            Err(RuleRefusal {
+                rule: RuleIndex::from(0_usize),
+                fault: RuleFault::NotDecreasing,
+            }),
+            "a rule that adds a constructor stays refused"
+        );
+        let mut fuel = RewriteFuel::from(100_u64);
+        let mut amber: SmallVec<RuleTerm<Letter, Point>, 0, Global> =
+            SmallVec::<_, 0, Global>::from_iter([RuleTerm::Constructor {
+                tag: ConstructorTag::from(0_usize),
+                arity: FieldCount::from(0_usize),
+                payload: Letter(0),
+            }]);
+        assert_eq!(
+            joined.normalize(&arities, &mut amber, |&letter: &Letter| letter, &mut fuel),
+            Ok(Normalized::Rewritten)
+        );
+        assert_eq!(
+            amber,
+            [RuleTerm::Constructor {
+                tag: ConstructorTag::from(1_usize),
+                arity: FieldCount::from(0_usize),
+                payload: Letter(0),
+            }],
+            "the first constant rewrites to the second one, and the rewriting ends"
+        );
+        assert_eq!(
+            joined.converges(&arities, &mut fuel),
+            Ok(Convergence::Converges)
+        );
+    }
+
     /// - see: #8291
     #[test]
     fn a_rule_that_swaps_two_fields_is_a_symmetry()
@@ -4257,11 +4445,6 @@ mod tests
             (
                 &[c(2), v(0), v(1)][..],
                 &[c(2), v(0), v(1)][..],
-                RuleFault::NotDecreasing,
-            ),
-            (
-                &[c(2), v(0), v(1)],
-                &[c(3), v(1), v(0)],
                 RuleFault::NotDecreasing,
             ),
             (
@@ -4287,7 +4470,7 @@ mod tests
                     rule: RuleIndex::from(0_usize),
                     fault,
                 }),
-                "a step that removes no constructor stays refused: {left:?} to {right:?}"
+                "a step that keeps its root on its right side stays refused: {left:?} to {right:?}"
             );
         }
         assert_eq!(

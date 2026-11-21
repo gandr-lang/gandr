@@ -300,10 +300,12 @@
 //! against the constructor table ([`presented`]): each left side is headed by
 //! a constructor, linear, and matches constructors only where a field has the
 //! declaration's own type; each right side is built from the variables its
-//! left side binds, each at most once and at the field type it was bound at,
-//! and holds fewer constructors, so every rewrite shrinks the term and
-//! normalization ends. A rule that fails is refused `RuleNotPresentable`,
-//! naming the rule and its fault.
+//! left side binds, each at most once and at the field type it was bound at.
+//! A right side holds fewer constructors than its left side, or as many
+//! where the root of the left side stands above each one of them in an order
+//! with no cycle. So each rewrite shrinks the term or lowers it in that
+//! order, and normalization ends. A rule that fails is refused
+//! `RuleNotPresentable`, naming the rule and its fault.
 //!
 //! The replay reads a presented value by its normal form as part of weak head
 //! reduction, a forced step no decision records, and the mode switch sets a
