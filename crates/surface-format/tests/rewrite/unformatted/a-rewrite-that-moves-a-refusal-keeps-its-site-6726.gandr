@@ -1,0 +1,3 @@
+def refused : Integer = selfComposite;
+def pair : (Integer, String) -> Integer = fun (_pair) { 1 };
+def post : Integer -> Type = fun (_o) { return Unit };

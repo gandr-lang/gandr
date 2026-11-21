@@ -1,0 +1,3 @@
+module Facts : *{ answer : Integer, other : Integer } where {
+  def answer = ( 1 ;
+}

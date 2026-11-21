@@ -1,0 +1,25 @@
+[package]
+name = "gandr-boot-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The operations on a range of bytes that allocate nothing: a copy, a move, a fill, a comparison, two searches, and the checks of UTF-8 and of a zero byte"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["bytes", "gandr", "memcpy", "no-std", "utf8"]
+categories = ["no-std", "text-processing"]
+publish.workspace = true
+autotests = false
+
+# One target for the operations, each area a module, so a witness path reads
+# `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# No dependencies. The crate names no `alloc` and no `std`. The tests map
+# their guarded pages through the C library that `std` links.
+
+[lints]
+workspace = true
