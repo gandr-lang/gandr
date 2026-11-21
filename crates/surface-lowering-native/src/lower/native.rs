@@ -8446,7 +8446,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                 && results
                     .iter()
                     .flatten()
-                    .all(|&stated| closed_index(sink.arena, stated));
+                    .all(|&stated| closed_index(sink.arena, stated).is_some());
             if let (false, false, Some(&span)) = (form.indices.is_empty(), closed, written.first())
             {
                 let _first = cx.faults.insert(form.slot, LoweringRefusal::OutOfFragment {
@@ -9176,11 +9176,13 @@ fn tracked_motives(
     motives
 }
 
-/// Whether `index` is closed: a constructor term that holds no variable.
+/// The index `index` itself where it is closed: a constructor term that holds
+/// no variable.
 ///
 /// # Specification
 /// - requires: `index` lives in `arena`.
-/// - ensures: `true` exactly when every node of `index` is a constructor.
+/// - ensures: `index` exactly when every node of it is a constructor, and
+///   nothing otherwise.
 /// - provides: the test of the checkers' index classes, which key a closed
 ///   index by its constructors.
 /// - panics: none.
@@ -9197,21 +9199,21 @@ fn tracked_motives(
 ///   its rules, and one whose constructor states a field does not.
 /// - witness: `gandr-surface-lowering::lower::native::tests::a_family_at_closed_indices_presents_its_rules_8338`
 /// - witness: `gandr-surface-lowering::lower::native::tests::an_indexed_family_presents_no_rule_2865`
-#[spec(ensures: |ret| !ret || matches!(arena.value(index), Some(&Value::Constructor { .. })))]
+#[spec(ensures: |ret| ret.is_none_or(|closed| closed == index && matches!(arena.value(closed), Some(&Value::Constructor { .. }))))]
 fn closed_index(
     arena: &CoreArena,
     index: ValueId,
-) -> bool
+) -> Option<ValueId>
 {
     let mut pending = Vec::from([index]);
     while let Some(id) = pending.pop() {
         let Some(&Value::Constructor { ref fields, .. }) = arena.value(id)
         else {
-            return false;
+            return None;
         };
         pending.extend(fields.iter().copied());
     }
-    true
+    Some(index)
 }
 
 /// The branches of `tests`' data switches over bare families, and the

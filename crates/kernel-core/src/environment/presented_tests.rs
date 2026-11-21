@@ -148,13 +148,12 @@ enum Stated
 ///
 /// The family holds `Low` and `High` at `Bit`, and `Zero`, `One`, `Zext(b)`
 /// and `Choose(c, x, y)` at `Word`, in tag order. The field `b` and the field
-/// `c` stand at `Bit`, and the fields `x` and `y` at `Word`.
+/// `c` stand at `Bit`, and the fields `x` and `y` at `Word`. The answer is the
+/// position of `Width`, and the admission of the family at the position after
+/// it. Each use of an index is its own node of the arena.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: the position of `Width`, and the admission of the family at the
-///   position after it. Each use of an index is its own node of the arena.
-/// - panics: if `Width` is refused.
+/// trivial.
 fn widths(
     environment: &mut Environment,
     rules: Presentation,

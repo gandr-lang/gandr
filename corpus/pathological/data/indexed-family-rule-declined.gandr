@@ -1,9 +1,9 @@
 /// This source declares an indexed family whose data block writes a rule
-/// over its constructors, and one constructor states its index at a field.
+/// over its constructors. One constructor states its index at a field.
 ///
 /// It pins the refusal of a constructor rule on such a family. A rule relates
-/// two terms at one index, and the checkers read the index of a term where it
-/// is closed.
+/// two terms at one index. Each checker reads the index of a term that holds
+/// no variable.
 ///
 /// The lowering reads the rules of a family after the description route. A rule
 /// whose left side a constructor heads is refused as `OutOfFragment.Indexed`

@@ -2231,6 +2231,9 @@ impl Typer<'_>
             let _first =
                 operations.insert(operation.name.clone(), Operation { inputs, result, ty });
         }
+        // The index values still to read of one constructor's row, kept
+        // across the nodes of every rule.
+        let mut reading: Vec<ValueId> = Vec::new();
         for (face, member) in description.rules.iter().zip(&written.faces) {
             let mut variables: BTreeMap<&Name, ValueTypeId> = BTreeMap::new();
             let mut unsorted: Vec<(ByteSpan, Name)> = Vec::new();
@@ -2313,8 +2316,9 @@ impl Typer<'_>
                                 });
                                 match row {
                                     Some((constant, row)) => {
-                                        let mut pending = row.clone();
-                                        while let Some(index) = pending.pop() {
+                                        reading.clear();
+                                        reading.extend_from_slice(row);
+                                        while let Some(index) = reading.pop() {
                                             let Some(&gandr_core_term::Value::Constructor {
                                                 ref fields,
                                                 ..
@@ -2322,7 +2326,7 @@ impl Typer<'_>
                                             else {
                                                 return None;
                                             };
-                                            pending.extend(fields.iter().copied());
+                                            reading.extend(fields.iter().copied());
                                         }
                                         Some(self.arena.value_type_data(constant, row.clone()))
                                     },

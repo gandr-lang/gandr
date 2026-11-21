@@ -314,10 +314,9 @@ fn place(
             continue;
         };
         if let (Origin::Rewritten, Some(classifier)) = (payload.1, slot)
-            && closed_family(core, own, classifier)
+            && let Some(closed) = closed_family(core, own, classifier)
         {
-            payload.0 =
-                domain.value_closure_node(ValueBody::ValueType(classifier), Environment::new());
+            payload.0 = domain.value_closure_node(ValueBody::ValueType(closed), Environment::new());
         }
         let row = fields.get(usize::from(tag));
         expected.extend(
@@ -328,13 +327,13 @@ fn place(
     }
 }
 
-/// Whether `classifier` is the family `own` at closed arguments: each one a
-/// constructor term that holds no variable.
+/// The classifier `classifier` itself where it is the family `own` at closed
+/// arguments: each one a constructor term that holds no variable.
 ///
 /// # Specification
 /// - requires: `classifier` lives in `core`.
-/// - ensures: `true` exactly when `classifier` is a data type of `own` and
-///   every node of every argument is a constructor.
+/// - ensures: `classifier` exactly when it is a data type of `own` and every
+///   node of every argument is a constructor, and nothing otherwise.
 /// - panics: none.
 ///
 /// # Termination
@@ -348,32 +347,32 @@ fn place(
 /// # Adequacy
 /// - hypothesis: L3 — as [`place`].
 /// - witness: `gandr-core-checker-base::tests::native_formers::a_rule_of_a_family_keeps_its_index_in_the_checker_8338`
-#[spec(ensures: |ret| !ret || matches!(core.value_type(classifier), Some(&ValueType::Data { declaration, .. }) if declaration == own))]
+#[spec(ensures: |ret| ret.is_none_or(|closed| closed == classifier && matches!(core.value_type(closed), Some(&ValueType::Data { declaration, .. }) if declaration == own)))]
 fn closed_family(
     core: &CoreArena,
     own: ConstantIndex,
     classifier: ValueTypeId,
-) -> bool
+) -> Option<ValueTypeId>
 {
     let Some(&ValueType::Data {
         declaration,
         ref arguments,
     }) = core.value_type(classifier)
     else {
-        return false;
+        return None;
     };
     if declaration != own {
-        return false;
+        return None;
     }
     let mut pending: Vec<ValueId> = arguments.clone();
     while let Some(id) = pending.pop() {
         let Some(&Value::Constructor { ref fields, .. }) = core.value(id)
         else {
-            return false;
+            return None;
         };
         pending.extend(fields.iter().copied());
     }
-    true
+    Some(classifier)
 }
 
 /// What reading a leaf before the rules gave.
