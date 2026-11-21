@@ -177,6 +177,9 @@ impl Drop for Allowed
     /// # Specification
     /// trivial.
     ///
+    /// # Cost
+    /// - allocation: the path of the call to the system, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the file holds the keys of the signers for one read
     ///   alone; a file that stays is a file of the temporary directory, and no
@@ -223,6 +226,10 @@ impl fmt::Display for Short<'_>
 /// # Specification
 /// trivial.
 ///
+/// # Cost
+/// - allocation: the text of the digest and its 16 digits, growth within the
+///   key
+///
 /// # Adequacy
 /// - hypothesis: L2 — a check of inputs with no record names the hash of its
 ///   key; another digest changes the asserted line.
@@ -238,6 +245,9 @@ fn hash(key: &Key) -> String
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the part, growth within the name of the check
 ///
 /// # Adequacy
 /// - hypothesis: L2 — a record of `check:case` stands under `check-case`; a
@@ -373,6 +383,9 @@ fn objects(answer: &Answer) -> BTreeMap<String, Object>
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the values, growth within the body
 ///
 /// # Adequacy
 /// - hypothesis: L2 — a record whose body is another key reads as one value
@@ -642,6 +655,9 @@ fn start_scopes<'run>(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: each scope, growth within the scripts
 ///
 /// # Adequacy
 /// - hypothesis: L2 — a record of the tree on a base that the run does not
@@ -1517,6 +1533,10 @@ impl Records<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the prefix and the refs under it, growth within the
+    ///   listing
     ///
     /// # Adequacy
     /// - hypothesis: L2 — a signed record of the tree; a prefix of another

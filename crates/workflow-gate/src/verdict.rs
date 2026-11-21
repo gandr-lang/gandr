@@ -628,6 +628,9 @@ impl<'run> Shared<'run>
     /// # Specification
     /// trivial.
     ///
+    /// # Cost
+    /// - allocation: the name of the compiler, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — each case of the key names a fake compiler, and a
     ///   tree that reads three features; `rustc` in its place, or a grep of

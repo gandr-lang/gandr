@@ -626,6 +626,7 @@ digraph crates {
   "theory-virtual-doctrines" -> "theory-decomposition-spaces";
   "theory-virtual-doctrines" -> "theory-levitation";
   "workflow-coverage-guard" -> "workflow-github";
+  "workflow-gate" -> "workflow-github";
   "workflow-hotpath-guard" -> "workflow-github";
   "workflow-lane-budget" -> "workflow-github";
   "workflow-ledger-tasks" -> "core-term";
