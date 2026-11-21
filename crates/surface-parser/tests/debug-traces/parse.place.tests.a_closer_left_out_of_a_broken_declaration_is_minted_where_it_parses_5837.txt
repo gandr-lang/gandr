@@ -1,0 +1,58 @@
+test: parse::place::tests::a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837
+package: gandr-surface-parser
+command: mise run debug:test gandr-surface-parser parse::place::tests::a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-parser/0b940b37a30171e7/out/gandr_surface_parser-0b940b37a30171e7"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-parser/0b940b37a30171e7/out/gandr_surface_parser-0b940b37a30171e7' (x86_64).
+(lldb) settings set -- target.run-args  "parse::place::tests::a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = gandr_surface_parser-0b940b37a30171e7`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x00000000006a0c38
+(lldb) run
+
+running 1 test
+test parse::place::tests::a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837 ... 
+thread 'parse::place::tests::a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837' (3926503) panicked at crates/surface-parser/src/parse/place.rs:1524:13:
+assertion `left == right` failed: a `def`'s type that reads its `=` as an equality takes its `)` before the `=`, though the melder leaves `def quiet :` apart from the type: [ObligationInstance { class: MissingTile, span: ByteSpan { start: ByteOffset(10), end: ByteOffset(11) } }, ObligationInstance { class: MissingTile, span: ByteSpan { start: ByteOffset(17), end: ByteOffset(18) } }, ObligationInstance { class: MissingTile, span: ByteSpan { start: ByteOffset(46), end: ByteOffset(47) } }, ObligationInstance { class: MissingMeld, span: ByteSpan { start: ByteOffset(17), end: ByteOffset(17) } }]
+  left: [(ByteOffset(51), ByteOffset(51))]
+ right: [(ByteOffset(45), ByteOffset(45))]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 3926348 launched: 'target/debug-trace/debug/build/gandr-surface-parser/0b940b37a30171e7/out/gandr_surface_parser-0b940b37a30171e7' (x86_64)
+Process 3926348 stopped
+* thread #2, name = 'parse::place::t', stop reason = breakpoint 1.1
+       frame #0: 0x0000555555bf4c38 gandr_surface_parser-0b940b37a30171e7`__rustc::rust_panic at panicking.rs:887:25
+(lldb) bt 24
+* thread #2, name = 'parse::place::t', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555555bf4c38 gandr_surface_parser-0b940b37a30171e7`__rustc::rust_panic at panicking.rs:887:25
+     frame #1: 0x0000555555c11695 gandr_surface_parser-0b940b37a30171e7`std::panicking::panic_with_hook at panicking.rs:840:5
+     frame #2: 0x0000555555bf4252 gandr_surface_parser-0b940b37a30171e7`std::panicking::panic_handler::{closure#0} at panicking.rs:688:13
+     frame #3: 0x0000555555becc79 gandr_surface_parser-0b940b37a30171e7`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18
+     frame #4: 0x0000555555bf4e1d gandr_surface_parser-0b940b37a30171e7`__rustc::rust_begin_unwind at panicking.rs:679:5
+     frame #5: 0x0000555555c2ef2c gandr_surface_parser-0b940b37a30171e7`core::panicking::panic_fmt at panicking.rs:80:14
+     frame #6: 0x0000555555c2ee23 gandr_surface_parser-0b940b37a30171e7`core::panicking::assert_failed_inner at panicking.rs:447:23
+     frame #7: 0x000055555594fee7 gandr_surface_parser-0b940b37a30171e7`core::panicking::assert_failed::<alloc::vec::Vec<(gandr_surface_syntax::span::ByteOffset, gandr_surface_syntax::span::ByteOffset)>, [(gandr_surface_syntax::span::ByteOffset, gandr_surface_syntax::span::ByteOffset); 1]>(kind=Eq, left=size=1, right=0x00007ffff7bfe290, args=Some({template:{pointer:"\xc0\U00000002: \xc0"}, args:{pointer:{ty:Placeholder{value:{…}, formatter:{…}, _lifetime:{…}}}}})) at panicking.rs:407:5
+     frame #8: 0x0000555555902c59 gandr_surface_parser-0b940b37a30171e7`gandr_surface_parser::parse::place::tests::a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837 at place.rs:1524:13
+     frame #9: 0x00005555558ed9f7 gandr_surface_parser-0b940b37a30171e7`gandr_surface_parser::parse::place::tests::a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837::{closure#0}((null)={}) at place.rs:1488:82
+     frame #10: 0x0000555555908256 gandr_surface_parser-0b940b37a30171e7`<gandr_surface_parser::parse::place::tests::a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #11: 0x00005555559d348b gandr_surface_parser-0b940b37a30171e7`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #12: 0x00005555559d3489 gandr_surface_parser-0b940b37a30171e7`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #13: 0x00005555559e09d5 gandr_surface_parser-0b940b37a30171e7`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #14: 0x00005555559e09d0 gandr_surface_parser-0b940b37a30171e7`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #15: 0x00005555559e09d0 gandr_surface_parser-0b940b37a30171e7`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #16: 0x00005555559e09bb gandr_surface_parser-0b940b37a30171e7`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #17: 0x00005555559e09bb gandr_surface_parser-0b940b37a30171e7`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #18: 0x00005555559e09bb gandr_surface_parser-0b940b37a30171e7`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #19: 0x00005555559e09a6 gandr_surface_parser-0b940b37a30171e7`test::run_test::{closure#0} at lib.rs:677:43
+     frame #20: 0x00005555559db394 gandr_surface_parser-0b940b37a30171e7`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #21: 0x00005555559db319 gandr_surface_parser-0b940b37a30171e7`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #22: 0x00005555559e3b32 gandr_surface_parser-0b940b37a30171e7`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #23: 0x00005555559e3b23 gandr_surface_parser-0b940b37a30171e7`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

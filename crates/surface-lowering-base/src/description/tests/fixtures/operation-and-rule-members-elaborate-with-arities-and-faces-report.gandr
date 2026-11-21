@@ -1,0 +1,11 @@
+data NatOp : Type where {
+  | Zero : NatOp
+  | Succ : (n : NatOp) --> NatOp oper add : (m : NatOp, n : NatOp) --> NatOp;
+}
+data NatRule : Type where {
+  | Zero : NatRule
+  | Succ : (n : NatRule) --> NatRule rule : id Zero ==> Zero;
+}
+data NatDiv : Type where {
+  | Zero : NatDiv oper divmod : (m : NatDiv, n : NatDiv) --> (q : NatDiv, r : NatDiv);
+}
