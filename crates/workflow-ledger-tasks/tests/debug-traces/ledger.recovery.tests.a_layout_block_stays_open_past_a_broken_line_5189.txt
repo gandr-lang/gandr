@@ -1,0 +1,138 @@
+test: ledger::recovery::tests::a_layout_block_stays_open_past_a_broken_line_5189
+package: gandr-surface-dispatcher
+command: mise run debug:test gandr-surface-dispatcher ledger::recovery::tests::a_layout_block_stays_open_past_a_broken_line_5189 --break layout::dented
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-dispatcher/714617b6694ec824/out/gandr_surface_dispatcher-714617b6694ec824"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-dispatcher/714617b6694ec824/out/gandr_surface_dispatcher-714617b6694ec824' (x86_64).
+(lldb) settings set -- target.run-args  "ledger::recovery::tests::a_layout_block_stays_open_past_a_broken_line_5189" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex layout::dented
+Breakpoint 1: 8 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_dispatcher-714617b6694ec824`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x0000000006b5beb8
+(lldb) run
+
+running 1 test
+test ledger::recovery::tests::a_layout_block_stays_open_past_a_broken_line_5189 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1489450 launched: 'target/debug-trace/debug/build/gandr-surface-dispatcher/714617b6694ec824/out/gandr_surface_dispatcher-714617b6694ec824' (x86_64)
+Process 1489450 stopped
+* thread #2, name = 'ledger::recover', stop reason = breakpoint 1.3
+       frame #0: 0x00005555597124bb gandr_surface_dispatcher-714617b6694ec824`gandr_surface_parser::label::layout::dented(bytes={0:size=93}, tokens=size=43, index=2, column=0, frames=size=1) at layout.rs:776:37
+   773 	    frames: &mut [Frame],
+   774 	) -> Stays
+   775 	{
+-> 776 	    let Some((top, below)) = frames.split_last_mut()
+    	                                    ^
+   777 	    else {
+   778 	        return Stays(false);
+   779 	    };
+(lldb) bt 24
+* thread #2, name = 'ledger::recover', stop reason = breakpoint 1.3
+   * frame #0: 0x00005555597124bb gandr_surface_dispatcher-714617b6694ec824`gandr_surface_parser::label::layout::dented(bytes={0:size=93}, tokens=size=43, index=2, column=0, frames=size=1) at layout.rs:776:37
+     frame #1: 0x0000555559713be0 gandr_surface_dispatcher-714617b6694ec824`gandr_surface_parser::label::layout::lay_out(bytes={0:size=93}, tokens=size=43, next=End) at layout.rs:539:47
+     frame #2: 0x000055555974a9d7 gandr_surface_dispatcher-714617b6694ec824`gandr_surface_parser::label::label::{closure#0} at label.rs:854:5
+     frame #3: 0x0000555557548b3c gandr_surface_dispatcher-714617b6694ec824`anodized::__::eval_once::<alloc::vec::Vec<gandr_surface_parser::label::Token>, gandr_surface_parser::label::label::{closure#0}>(closure={_ref__src:{__0:"/// `block`: a block.\n@[ checks ]\ndef answer() -> -F Integer =\n  let x = (1 + 2);\n  return x\n"}}) at __.rs:32:5 [inlined]
+     frame #4: 0x0000555557548b2c gandr_surface_dispatcher-714617b6694ec824`gandr_surface_parser::label::label(src={0:"/// `block`: a block.\n@[ checks ]\ndef answer() -> -F Integer =\n  let x = (1 + 2);\n  return x\n"}) at label.rs:838:1
+     frame #5: 0x000055555788d19f gandr_surface_dispatcher-714617b6694ec824`gandr_surface_dispatcher::ledger::recovery::mutants::{closure#0} at recovery.rs:595:18
+     frame #6: 0x00005555578d67fa gandr_surface_dispatcher-714617b6694ec824`anodized::__::eval_once::<alloc::vec::Vec<gandr_surface_dispatcher::ledger::recovery::Mutant>, gandr_surface_dispatcher::ledger::recovery::mutants::{closure#0}>(closure={_ref__text:{__0:"/// `block`: a block.\n@[ checks ]\ndef answer() -> -F Integer =\n  let x = (1 + 2);\n  return x\n"}, _ref__literals:{__0:{map:{root:Some({…}), length:189, alloc:{value:{…}}, _marker:{}}}}, _ref__near_misses:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, _ref__exemplar:"/tmp/gandr-recovery-test-1489450-layout/syntax/block.gandr"}) at __.rs:32:5 [inlined]
+     frame #7: 0x00005555578d67d1 gandr_surface_dispatcher-714617b6694ec824`gandr_surface_dispatcher::ledger::recovery::mutants(exemplar="/tmp/gandr-recovery-test-1489450-layout/syntax/block.gandr", text={0:"/// `block`: a block.\n@[ checks ]\ndef answer() -> -F Integer =\n  let x = (1 + 2);\n  return x\n"}, literals={__0:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:189, alloc:{value:{0:{…}}}, _marker:{}}}}, near_misses={root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}) at recovery.rs:586:1
+     frame #8: 0x000055555788cfb1 gandr_surface_dispatcher-714617b6694ec824`gandr_surface_dispatcher::ledger::recovery::sweep::{closure#0} at recovery.rs:722:21
+     frame #9: 0x00005555578d66c9 gandr_surface_dispatcher-714617b6694ec824`anodized::__::eval_once::<core::result::Result<gandr_surface_dispatcher::ledger::recovery::RecoveryReport, gandr_surface_dispatcher::ledger::LedgerFault>, gandr_surface_dispatcher::ledger::recovery::sweep::{closure#0}>(closure={_ref__pbg:{dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{…}, _marker:{…}}), length:31, alloc:{value:{0:{…}}}, _marker:{}}, rules:size=171, rule_names:{map:{root:Some({…}), length:171, alloc:{value:{…}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3016, rctxs:size=3016, bounds:size=3016, owners:size=3016, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{…}, alloc:{…}, marker:{…}}}, menus:size=201, mold_labels:size=3016, adjacencies:size=7198, successor_starts:size=3017, has_pred:size=3016, has_succ:size=3016, form_first:size=206, is_first:size=3016, form_last:size=272, complete_last:size=233, is_complete_last:size=3016, required_tail:size=39, is_required_tail:size=3016, closing:size=3016, twins:size=3016, fingerprint:{0:11544002206173084391}}, automaton:{kinds:size=3016, observations:size=3016, width:48, sets:size=864}, application:Some({0:1515}), type_application:Some({0:2243}), flat:size=3}, _ref__directory:"/tmp/gandr-recovery-test-1489450-layout"}) at __.rs:32:5 [inlined]
+     frame #10: 0x00005555578d6690 gandr_surface_dispatcher-714617b6694ec824`gandr_surface_dispatcher::ledger::recovery::sweep(pbg={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=171, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:171, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3016, rctxs:size=3016, bounds:size=3016, owners:size=3016, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:23, items:201}, alloc:{}, marker:{}}}, menus:size=201, mold_labels:size=3016, adjacencies:size=7198, successor_starts:size=3017, has_pred:size=3016, has_succ:size=3016, form_first:size=206, is_first:size=3016, form_last:size=272, complete_last:size=233, is_complete_last:size=3016, required_tail:size=39, is_required_tail:size=3016, closing:size=3016, twins:size=3016, fingerprint:{0:11544002206173084391}}, automaton:{kinds:size=3016, observations:size=3016, width:48, sets:size=864}, application:Some({0:1515}), type_application:Some({0:2243}), flat:size=3}, directory="/tmp/gandr-recovery-test-1489450-layout") at recovery.rs:705:1
+     frame #11: 0x00005555573d5576 gandr_surface_dispatcher-714617b6694ec824`gandr_surface_dispatcher::ledger::recovery::tests::a_layout_block_stays_open_past_a_broken_line_5189 at recovery.rs:1096:22
+     frame #12: 0x00005555573aabf7 gandr_surface_dispatcher-714617b6694ec824`gandr_surface_dispatcher::ledger::recovery::tests::a_layout_block_stays_open_past_a_broken_line_5189::{closure#0}((null)={}) at recovery.rs:1083:59
+     frame #13: 0x00005555579b3866 gandr_surface_dispatcher-714617b6694ec824`<gandr_surface_dispatcher::ledger::recovery::tests::a_layout_block_stays_open_past_a_broken_line_5189::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #14: 0x0000555557aa2e5b gandr_surface_dispatcher-714617b6694ec824`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #15: 0x0000555557aa2e59 gandr_surface_dispatcher-714617b6694ec824`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #16: 0x0000555557ab03a5 gandr_surface_dispatcher-714617b6694ec824`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #17: 0x0000555557ab03a0 gandr_surface_dispatcher-714617b6694ec824`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #18: 0x0000555557ab03a0 gandr_surface_dispatcher-714617b6694ec824`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #19: 0x0000555557ab038b gandr_surface_dispatcher-714617b6694ec824`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #20: 0x0000555557ab038b gandr_surface_dispatcher-714617b6694ec824`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #21: 0x0000555557ab038b gandr_surface_dispatcher-714617b6694ec824`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #22: 0x0000555557ab0376 gandr_surface_dispatcher-714617b6694ec824`test::run_test::{closure#0} at lib.rs:677:43
+     frame #23: 0x0000555557aaad64 gandr_surface_dispatcher-714617b6694ec824`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+(lldb) frame variable --depth 3
+(gandr_surface_parser::label::SourceBytes) bytes = {0:size=93}
+(&[gandr_surface_parser::label::Token]) tokens = size=43 {
+  [0] = {lexeme:Space, start:0, end:21}
+  [1] = {lexeme:Space, start:21, end:22}
+  [2] = {lexeme:Punct, start:22, end:24}
+  [3] = {lexeme:Space, start:24, end:25}
+  [4] = {lexeme:LowerWord, start:25, end:31}
+  [5] = {lexeme:Space, start:31, end:32}
+  [6] = {lexeme:Punct, start:32, end:33}
+  [7] = {lexeme:Space, start:33, end:34}
+  [8] = {lexeme:LowerWord, start:34, end:37}
+  [9] = {lexeme:Space, start:37, end:38}
+  [10] = {lexeme:LowerWord, start:38, end:44}
+  [11] = {lexeme:Punct, start:44, end:45}
+  [12] = {lexeme:Punct, start:45, end:46}
+  [13] = {lexeme:Space, start:46, end:47}
+  [14] = {lexeme:Punct, start:47, end:49}
+  [15] = {lexeme:Space, start:49, end:50}
+  ...
+}
+(unsigned long) index = 2
+(unsigned int) column = 0
+(&mut [gandr_surface_parser::label::layout::Frame]) frames = size=1 {
+  [0] = {kind:Layout{column:0}, sep:Top, head:{opener:None, defined:false, lead:Other, more:false}, items:0}
+}
+*** Some of the displayed variables have more members than the debugger will show by default. To show all of them, you can either use the --show-all-children option to frame variable or raise the limit by changing the target.max-children-count setting.
+(lldb) up
+frame #1: 0x0000555559713be0 gandr_surface_dispatcher-714617b6694ec824`gandr_surface_parser::label::layout::lay_out(bytes={0:size=93}, tokens=size=43, next=End) at layout.rs:539:47
+   536 	            line_indent = column;
+   537 	        }
+   538 	        if line_start && !opened {
+-> 539 	            let stays = !closer && bool::from(dented(bytes, tokens, index, column, &mut frames));
+    	                                              ^
+   540 	            while !stays
+   541 	                && frames.len() > 1
+   542 	                && let Some(&frame) = frames.last()
+(lldb) frame variable --depth 3
+(gandr_surface_parser::label::SourceBytes) bytes = {0:size=93}
+(alloc::vec::Vec<gandr_surface_parser::label::Token, alloc::alloc::Global> *) tokens = 0x00007ffff79fb968 size=43
+(gandr_surface_parser::label::layout::Next) next = End
+(gandr_surface_parser::label::layout::lay_out::{closure_env#0}) text = {_ref__bytes__0:size=93}
+(gandr_surface_parser::label::layout::Plan) plan = {planned:size=0, after:0, end:0, prev:Start}
+(alloc::vec::Vec<gandr_surface_parser::label::layout::Frame, alloc::alloc::Global>) frames = size=1 {
+  [0] = {kind:Layout{column:0}, sep:Top, head:{opener:None, defined:false, lead:Other, more:false}, items:0}
+}
+(bool) line_start = true
+(unsigned int) line_begin = 22
+(unsigned int) line_indent = 0
+(gandr_surface_parser::label::layout::Pending) pending = None
+(&[u8]) before_arrow = size=0
+(core::option::Option<usize>) attribute = None
+(bool) after_attribute = false
+(bool) restart = false
+(gandr_surface_parser::label::layout::Frame) frame = {kind:Brace{column:None}, sep:0xa0, head:{opener:None, defined:false, lead:Other, more:false}, items:0}
+(gandr_surface_parser::label::layout::Frame *) base = 0x00007ffff01123a0 {kind:Brace{column:None}, sep:0x6c, head:{opener:0x60, defined:true, lead:Word | 0x38, more:true}, items:1646289184}
+(core::ops::range::Range<unsigned long>) iter = {start:3, end:43}
+(unsigned long) index = 2
+(gandr_surface_parser::label::Token) token = {lexeme:Punct, start:22, end:24}
+(core::option::Option<usize>) newline = Some(22) {
+  0 = 22
+}
+(bool) punct = true
+(gandr_surface_parser::label::layout::Frame *) frame = 0x0000005c00000001 {kind:{column:{}}, sep:(), head:{opener:(), defined:(), lead:(), more:()}, items:()}
+(unsigned int) column = 0
+(&[u8]) spelled = size=2 {
+  [0] = '@'
+  [1] = '['
+}
+(bool) closer = false
+(bool) brace = false
+(bool) members = false
+(bool) opened = false
+(gandr_surface_parser::label::layout::lay_out::{closure_env#3}) open = {_ref__column:0x00007ffff79fb404, _ref__opened:0x00007ffff79fb41f}
+(bool) reset = true
+(core::option::Option<u32> *) first = 0xf79fb7000000005c None
+(bool) begins = false
+(gandr_surface_parser::label::layout::Frame) frame = {kind:Brace{column:None}, sep:Decl, head:{opener:Arrow | 0xc, defined:true, lead:0xf0, more:true}, items:32767}
