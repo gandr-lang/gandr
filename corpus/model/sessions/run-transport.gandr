@@ -1,0 +1,82 @@
+// This source transports a recorded run across payload paths.
+//
+// The forward map transports each payload at its path.
+// Every move stays in place.
+// Every unrelated payload stays in place.
+// A run is a finite trace.
+// A run is covariant in every sent or received payload type.
+//
+// The machine matches run moves to the run conversion.
+//
+// - see: `std.session` — `Run`
+
+// The native session formers.
+import std.session (Run);
+
+/// A bit.
+pub data Bit : Type where
+  | Zero : Bit
+  | One : Bit
+
+/// An answer.
+pub data Answer : Type where
+  | No : Answer
+  | Yes : Answer
+
+/// A bit read as an answer.
+def decode(b : Bit) -> Answer =
+  match b where
+    | Zero => No
+    | One => Yes
+
+/// An answer written as a bit.
+def encode(a : Answer) -> Bit =
+  match a where
+    | No => Zero
+    | Yes => One
+
+/// `encoded` returns the original bit after `decode` and `encode`.
+def encoded(b : Bit) -> Path (encode (decode b)) b =
+  match b where
+    | Zero => Path.here Zero
+    | One => Path.here One
+
+/// `decoded` returns the original answer after `encode` and `decode`.
+def decoded(a : Answer) -> Path (decode (encode a)) a =
+  match a where
+    | No => Path.here No
+    | Yes => Path.here Yes
+
+/// The bits and the answers are one type, by univalence.
+pub def codes : Path[.A = Type] Bit Answer = ua (*{
+  decode,
+  *{*{encode, encoded}, *{encode, decoded}}
+});
+
+/// A protocol that hears a bit, and one that hears an answer.
+module Ask where
+  type Coded = Bit >? end;
+  type Decoded = Answer >? end;
+
+/// `heard` records `One` as a bit receipt.
+def heard : Run Ask.Coded = recorded (received One) closed;
+
+/// `heardDecoded` proves that the transported run receives `Yes`.
+def heardDecoded : Path[.A = Run Ask.Decoded] (Path.walk
+  (fun (X) { Run (type(X >? end)) })
+  codes
+  heard) (recorded (received Yes) closed) = Path.here (recorded (received Yes) closed);
+
+/// `heardKept` refuses a transported run that receives `No`.
+@[refuses("EndpointMismatch")]
+def heardKept : Path (Path.walk (fun (X) { Run (type(X >? end)) }) codes heard) (recorded
+  (received No)
+  closed) = Path.here (recorded (received No) closed);
+
+/// `heardRun` returns the transported run.
+def heardRun() -> Run Ask.Decoded =
+  Path.walk (fun (X) { Run (type(X >? end)) }) codes heard
+
+/// On the machine the carried run hears the yes, as it does by conversion.
+@[runs("recorded (received Yes) (closed)")]
+def decodedRun() -> Run Ask.Decoded = heardRun ();

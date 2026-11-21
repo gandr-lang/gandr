@@ -1,0 +1,7 @@
+data Item : Type where
+  /// The first.
+  @[item("one")]
+  | One : Item
+  /// The second.
+  @[item("two")]
+  | Two : Item

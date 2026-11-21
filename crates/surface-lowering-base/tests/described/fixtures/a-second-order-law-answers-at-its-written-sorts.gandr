@@ -1,0 +1,5 @@
+theory Let where {
+  sort Tm : Type+;
+  oper let : (u : Tm, t : pi+ (x : Tm). Tm) --> Tm;
+  rule zeta : let u t <=> t u;
+}
