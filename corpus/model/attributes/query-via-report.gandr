@@ -1,0 +1,14 @@
+//! `query-via-report` documents a declaration with its `doc` attribute.
+//!
+//! The attribute stores its text beside the declaration verdict. The source
+//! needs no doc comment.
+//!
+//! The checker reads the attribute into the declaration report. A query reads
+//! that report with the verdict. The attribute follows `#[doc]` of Rust (The
+//! Rust Reference, § Attributes).
+//!
+//! - see: https://doc.rust-lang.org/reference/
+
+// A greeting, its documentation given by the attribute alone.
+@[doc("Returns a fixed greeting.")]
+def greet = "hello";

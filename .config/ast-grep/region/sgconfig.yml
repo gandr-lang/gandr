@@ -1,0 +1,4 @@
+# The codemod of the region's adoption: each wave runs these rules over its
+# crates, and the compiler's errors that stay are the wave's second phase.
+ruleDirs:
+  - rules

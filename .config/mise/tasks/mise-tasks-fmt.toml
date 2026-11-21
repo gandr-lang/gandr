@@ -1,0 +1,36 @@
+#:tombi toml-version = "v1.0.0"
+#:schema https://mise.jdx.dev/schema/mise-task.json
+
+# Type-aware oxlint resolves the extension's tsconfig and types from the aube
+# workspace, so every treefmt pass installs it from the lockfile first.
+["aube:install"]
+description = "Install the aube workspace from its lockfile"
+run = "aube install --frozen-lockfile"
+
+[treefmt]
+description = "Run treefmt"
+depends = ["aube:install"]
+run = "treefmt"
+
+# The pre-commit hook's pass: the staged paths prek passes, every formatter
+# but the gandr one (#1243). A whole-tree `--ci` pass on every commit cost
+# about 21 s, most of it one rustfmt process over a batch of 1024 files, and
+# the gandr formatter rebuilt the optimized driver after any Rust change. The
+# gate and CI (`check:format`, `check:corpus-format`) still check every
+# file.
+["treefmt:staged"]
+description = "Check the staged paths with every formatter but the gandr one"
+depends = ["aube:install"]
+tools.yq = "4.54.1"
+usage = 'arg "<paths>..." help="the staged paths prek passes"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+formatters=$(yq -p toml -o yaml '.formatter | keys | map(select(. != "gandr")) | join(",")' treefmt.toml)
+eval "paths=(${usage_paths:?})"
+treefmt --fail-on-change --no-cache --formatters "$formatters" "${paths[@]}"
+'''
+
+[changelog]
+description = "Render the root changelog only when preparing a release"
+run = "git-cliff --output CHANGELOG.md"

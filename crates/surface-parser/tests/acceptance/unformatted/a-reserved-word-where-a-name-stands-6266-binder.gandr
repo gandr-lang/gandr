@@ -1,0 +1,4 @@
+def f() -> Integer =
+  let {keyword} = 1
+  pure 0
+def ok = 2 ;
