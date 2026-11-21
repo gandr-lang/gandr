@@ -1,0 +1,6 @@
+/// `native_attribute`: the retired attribute `native`. The key of a row of
+/// the builtin table names a native value, `@[builtin("string.append")]`, and
+/// the reader refuses `native` by its name.
+@[refuses("RetiredSpelling.native_attribute")]
+@[native("string.append")]
+def append : (a : String, b : String) -> String;

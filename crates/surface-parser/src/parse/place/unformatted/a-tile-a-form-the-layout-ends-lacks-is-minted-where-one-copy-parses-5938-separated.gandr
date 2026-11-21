@@ -1,0 +1,3 @@
+def atTurns(n : Spool) -> Spool n
+
+def next(k : Spool) -> Spool = k;
