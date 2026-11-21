@@ -1,0 +1,2 @@
+{{"jsonrpc":"2.0","id":7,"method":"textDocument/formatting","params":{{
+                    "textDocument":{{"uri":"file:///tmp/untidy.gandr"}},"options":{options}}}}}

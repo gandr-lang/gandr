@@ -1,0 +1,35 @@
+// This source tests rewrite rules under theory rows.
+//
+// Open rows permit extra theories. Closed rows require the exact theory set.
+//
+// The checker tests overlaps only in rows each rule describes.
+//
+// - see: `../../pathological/effects/rows.gandr` — row refusals
+
+// The theory `State.Eff`.
+import "./state.gandr";
+
+/// `Sink` discards written computations.
+pub theory Sink where
+  sort C : Type;
+
+/// `Marks` defines rules that flush and erase marks.
+/// Where a row holds `Sink` and the state theory, the rules `dropped` and
+/// `kept` overlap, and both reducts reach `k`.
+pub theory Marks where
+  sort C : Type;
+  oper mark : (k : C) --> C;
+  oper flush : (k : C) --> C;
+  rule dropped : flush (mark k) <=> k where {| under [Sink | r]};
+  rule kept : flush (mark k) <=> mark k where {| under [State.Eff | r]};
+  rule erased : mark k <=> k where {| under [State.Eff, Sink | r]};
+  rule flushed : flush k <=> k where {| under [Sink, State.Eff | r]};
+
+/// `ExactMarks` defines the rules under closed rows.
+/// No row holds both rules, so their overlap owes no join and no rule erases.
+theory ExactMarks where
+  sort C : Type;
+  oper mark : (k : C) --> C;
+  oper flush : (k : C) --> C;
+  rule dropped : flush (mark k) <=> k where {| under [Sink]};
+  rule kept : flush (mark k) <=> mark k where {| under [State.Eff]};
