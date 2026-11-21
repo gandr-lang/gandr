@@ -12,11 +12,16 @@ const { existsSync } = require("node:fs");
 const { delimiter, dirname } = require("node:path");
 const { spawnSync } = require("node:child_process");
 
-const wrapper = `${process.env.RUNNER_TEMP}/kache-wrapper`;
+// `setup-rust` writes the path of the wrapper to `RUSTC_WRAPPER`. A root
+// container job keeps its wrapper in the CI image, and each other job keeps
+// it under `RUNNER_TEMP`. So the step reads the path that the job set.
+const wrapper = process.env.RUSTC_WRAPPER || `${process.env.RUNNER_TEMP}/kache-wrapper`;
 const which = spawnSync("mise", ["which", "kache"], { encoding: "utf8" });
 const kache = which.status === 0 ? which.stdout.trim() : "";
-if (!existsSync(wrapper) || kache === "") {
-  console.log("kache drain: this job has no kache");
+if (!existsSync(wrapper)) {
+  console.log(`kache drain: this job has no kache: no wrapper stands at ${wrapper}`);
+} else if (kache === "") {
+  console.log("kache drain: this job has no kache: mise finds no kache");
 } else {
   const env = { ...process.env, PATH: `${dirname(kache)}${delimiter}${process.env.PATH}` };
   for (const args of [["stats", "--since", "6h"], ["daemon", "stop"]]) {
