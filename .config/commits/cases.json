@@ -1,0 +1,156 @@
+[
+  {
+    "name": "a commit carrying the owner co-author and the assistance line passes, under --empty too",
+    "commits": [
+      {
+        "message": "docs(kernel): a change with its trailers\n\nThe change states what kernel-core's items are for.",
+        "trailers": true,
+        "change": true
+      }
+    ],
+    "flag": "--empty",
+    "exit": 0
+  },
+  {
+    "name": "#2640: a trailer-less copy of a merged commit is refused",
+    "commits": [
+      {
+        "message": "docs(kernel): state what kernel-core's items are for (#2612)",
+        "trailers": false,
+        "change": false
+      }
+    ],
+    "flag": "",
+    "exit": 1
+  },
+  {
+    "name": "an empty commit carrying its trailers keeps the commit rules",
+    "commits": [
+      {
+        "message": "docs(kernel): an empty commit with its trailers\n\nThe commit records a decision and changes no file.",
+        "trailers": true,
+        "change": false
+      }
+    ],
+    "flag": "",
+    "exit": 0
+  },
+  {
+    "name": "#2640: an empty commit is refused under --empty, past a commit that passes",
+    "commits": [
+      {
+        "message": "docs(kernel): a change with its trailers\n\nThe change states what kernel-core's items are for.",
+        "trailers": true,
+        "change": true
+      },
+      {
+        "message": "docs(kernel): an empty commit with its trailers\n\nThe commit records a decision and changes no file.",
+        "trailers": true,
+        "change": false
+      }
+    ],
+    "flag": "--empty",
+    "exit": 1
+  },
+  {
+    "name": "#2980: a commit body putting a closing verb before an issue number in prose is refused, quoted or not",
+    "commits": [
+      {
+        "message": "fix(workflow): describe the epic close\n\nThe epics workflow `closed #628` when its one sub-issue closed.",
+        "trailers": true,
+        "change": true
+      }
+    ],
+    "flag": "",
+    "exit": 1
+  },
+  {
+    "name": "#2980: a commit closing its issues on their own keyword lines passes",
+    "commits": [
+      {
+        "message": "fix(workflow): refuse a stray closing keyword\n\nThe verb before a number in prose closes the issue on merge.\n\nCloses #2980\nFixes #2972, #2977",
+        "trailers": true,
+        "change": true
+      }
+    ],
+    "flag": "",
+    "exit": 0
+  },
+  {
+    "name": "#6628: a commit with a header and its trailers and no body is refused",
+    "commits": [
+      {
+        "message": "docs(kernel): a change with only its trailers",
+        "trailers": true,
+        "change": true
+      }
+    ],
+    "flag": "",
+    "exit": 1
+  },
+  {
+    "name": "#6628: a commit with a body before its trailers passes, a body line that reads as a trailer word included",
+    "commits": [
+      {
+        "message": "docs(kernel): a change with its body\n\nNote: the body states what the change does and why.",
+        "trailers": true,
+        "change": true
+      }
+    ],
+    "flag": "",
+    "exit": 0
+  },
+  {
+    "name": "a pushed branch's trailer-less commit is refused by the push tier",
+    "push": "refs/heads/topic",
+    "commits": [
+      {
+        "message": "docs(kernel): a change without its trailers",
+        "trailers": false,
+        "change": true
+      }
+    ],
+    "flag": "",
+    "exit": 1
+  },
+  {
+    "name": "#5651: a pushed notes ref, which shares no history with the trunk, passes the push tier",
+    "push": "refs/notes/rebased",
+    "commits": [
+      {
+        "message": "docs(kernel): a change with its trailers\n\nThe change states what kernel-core's items are for.",
+        "trailers": true,
+        "change": true
+      }
+    ],
+    "flag": "",
+    "exit": 0
+  },
+  {
+    "name": "#5932: held commits pass a push to the trunk: the trunk holds each under another hash, as a rebase of landing gives them",
+    "push": "refs/heads/landing",
+    "held": true,
+    "commits": [
+      {
+        "message": "docs(kernel): a change the queue wrote without trailers",
+        "trailers": false,
+        "change": true
+      }
+    ],
+    "flag": "",
+    "exit": 0
+  },
+  {
+    "name": "#5932: new trailer-less commits pushed to the trunk are still refused: the trunk lacks their patch",
+    "push": "refs/heads/landing",
+    "commits": [
+      {
+        "message": "docs(kernel): a change without its trailers",
+        "trailers": false,
+        "change": true
+      }
+    ],
+    "flag": "",
+    "exit": 1
+  }
+]
