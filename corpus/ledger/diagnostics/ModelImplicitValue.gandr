@@ -18,4 +18,4 @@ module Origin : Model(Pointed) where {
 def pointOf[s : Model Pointed]() -> s.C = s.point;
 
 @[refuses("ModelImplicitValue")]
-def packed() -> Integer = pointOf[.s = pack Origin at Model Pointed] ();
+def packed() -> Integer = pointOf[.s = pack Origin at Model Pointed];

@@ -1,2 +1,2 @@
-{SAY}def none() -> -F [std.io.Console.Eff] Unit = say ();
+{SAY}def none() -> -F [std.io.Console.Eff] Unit = say;
 def several() -> -F Integer = {};

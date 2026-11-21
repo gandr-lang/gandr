@@ -5176,13 +5176,12 @@ mod tests
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let mut arena = CoreArena::new();
-        // `g ()` at 52..56 with its head at 52..53; `M.z ()` at 138..144 with
-        // its head at 138..141.
+        // `g ()` at 52..56 with its head at 52..53; the run `M.z` at 138..141.
         let module = lowered(
             SourceText::from(
                 "def g = thunk { return 1 } ; def k = thunk { become g () } ; \
                  module M where { def z() -> -F Integer { return 0 } } \
-                 def m = thunk { become M.z () } ;",
+                 def m = thunk { become M.z } ;",
             ),
             &mut arena,
         );
@@ -5219,10 +5218,10 @@ mod tests
         assert_eq!(
             called("m"),
             (
-                Maybe::Present((Provenance::Written, at(138_usize, 144_usize))),
+                Maybe::Present((Provenance::Written, at(138_usize, 141_usize))),
                 Maybe::Present(at(138_usize, 141_usize)),
             ),
-            "a module member called with no arguments answers at its call too"
+            "a module member of no input runs at its bare name and answers there"
         );
     }
 
@@ -6728,22 +6727,20 @@ mod tests
         );
     }
 
-    /// #6787: a call of a dynamic function with no argument, at a family's
-    /// argument inside a type, is the expression grammar's `f()`: the force of
-    /// its head, which answers at the call. Its value is what that force
-    /// returns, in the call form and in the juxtaposed form. A plan of the call
-    /// over an empty stretch fails the postcondition of `Plan::Called`. The
-    /// juxtaposed form follows a type name: after a variable, `Pair a plus()`
-    /// reads `a plus()` as one call until the glued call head of #5752 lands.
+    /// #6787: the bare name of a definition of no input, at a family's
+    /// argument inside a type, runs it: the force of its constant, which
+    /// answers at the name. Its value is what that force returns, in the call
+    /// form and in the juxtaposed form. A plan of the call over an empty
+    /// stretch fails the postcondition of `Plan::Called`.
     #[test]
     fn a_nullary_call_at_a_family_s_argument_is_its_head_s_force_6787()
     {
         for text in [
             "data Pair(a : Type, b : Type) : Type where { | Mk : (x : a, y : b) --> Pair a b } def \
-             plus() -> -F Type { return Integer } def called(a : Type, x : Pair(a, plus())) -> -F \
+             plus() -> -F Type { return Integer } def called(a : Type, x : Pair(a, plus)) -> -F \
              Integer { return 1 }",
             "data Pair(a : Type, b : Type) : Type where { | Mk : (x : a, y : b) --> Pair a b } def \
-             plus() -> -F Type { return Integer } def called(a : Type, x : Pair Integer plus()) -> \
+             plus() -> -F Type { return Integer } def called(a : Type, x : Pair Integer plus) -> \
              -F Integer { return 1 }",
         ] {
             let mut arena = CoreArena::new();
@@ -6801,7 +6798,7 @@ mod tests
                 Some(Value::Constant(ConstantIndex::from(1_usize))),
                 "the head is `plus`, in `{text}`"
             );
-            let at = text.rfind("plus()").expect("the call is written");
+            let at = text.rfind("plus").expect("the run is written");
             let origin = module
                 .origins()
                 .computation(forced)
@@ -6809,7 +6806,7 @@ mod tests
             assert_eq!(
                 origin,
                 Maybe::Present((Provenance::Written, at)),
-                "the force is the call the source writes, in `{text}`"
+                "the force is the run the source writes, in `{text}`"
             );
         }
     }

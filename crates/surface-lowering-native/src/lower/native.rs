@@ -2935,16 +2935,18 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     }
 
     /// The result type the declaration a call names writes after its
-    /// parameter list.
+    /// parameter list, where the bare name of a definition of no input is its
+    /// call.
     ///
     /// # Specification
     /// - requires: `site` is the form `call` stands in, read under `frame`.
     /// - ensures: the operand written after `->` in the declaration form of the
     ///   slot the call's head names, as [`Self::called_slot`] reads it, when
-    ///   `call` is a call, the declaration is a function written with a
-    ///   parameter list in the source being lowered, refuses nothing and writes
-    ///   a result; nothing otherwise, a declaration of another source among
-    ///   them, since that source's own scope resolves its result's names.
+    ///   `call` is a call or the bare name of a definition of no input, the
+    ///   declaration is a function written with a parameter list in the source
+    ///   being lowered, refuses nothing and writes a result; nothing otherwise,
+    ///   a declaration of another source among them, since that source's own
+    ///   scope resolves its result's names.
     /// - provides: the type an observation off a call reads its entries from.
     /// - fails: as [`Self::called_slot`]; the refusals the tree's molds yield.
     /// - panics: none.
@@ -2965,17 +2967,21 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
         call: Placed,
     ) -> Result<Option<Placed>, LoweringRefusal<'source>>
     {
-        if !matches!(self.cx().form_at(call)?, Some((_, Former::Call))) {
-            return Ok(None);
-        }
-        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
-        let read = read_pieces(self.cx().pbg, self.cx().tree, call.node, &mut scratch);
-        let head = scratch.pieces.first().and_then(|piece| match *piece {
-            Piece::Operand(head) => Some(head),
-            Piece::Tile { .. } => None,
-        });
-        self.cx_mut().scratch = scratch;
-        read?;
+        let head = match self.cx().form_at(call)? {
+            Some((_, Former::Call)) => {
+                let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
+                let read = read_pieces(self.cx().pbg, self.cx().tree, call.node, &mut scratch);
+                let head = scratch.pieces.first().and_then(|piece| match *piece {
+                    Piece::Operand(head) => Some(head),
+                    Piece::Tile { .. } => None,
+                });
+                self.cx_mut().scratch = scratch;
+                read?;
+                head
+            },
+            Some((_, Former::Name)) => Some(call),
+            Some(_) | None => None,
+        };
         let Some(head) = head
         else {
             return Ok(None);
@@ -2984,6 +2990,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
         else {
             return Ok(None);
         };
+        if head == call && !self.cx().collected.no_input.contains(&slot) {
+            return Ok(None);
+        }
         let Some(declared) = self.cx().collected.slots.get(usize::from(slot))
         else {
             return Ok(None);

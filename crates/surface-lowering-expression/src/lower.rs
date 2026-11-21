@@ -10551,8 +10551,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 }
                 else {
                     matches!(ret, Err(LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::InertRead { .. } | LoweringRefusal::MethodAsValue { .. }))
+                        || ret.is_err() && self.cx().collected.no_input.contains(&target)
                         || ret.is_ok()
-                            && matches!(self.cx().plans.get(site.at.node), Some(&Plan::Constant(constant)) if constant == entry.constant)
+                            && matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Constant(constant) | Plan::Forced(Code::Constant(constant)) | Plan::Invoked(constant, _))) if constant == entry.constant)
                 }
             },
         },
@@ -10575,6 +10576,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 span: site.at.span,
                 name,
                 declared,
+            });
+        }
+        // A member of no input runs at its selection, as its bare name does.
+        if self.cx().collected.no_input.contains(&target) {
+            return self.named_term(site, Resolved::Declaration {
+                constant,
+                declared: Maybe::Absent(binder_type::Absent::Untyped),
             });
         }
         self.method_as_value(site, target)?;
@@ -13010,9 +13018,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// Read the head `resolved` as the call a type path or a type's call form
     /// writes: applied to the arguments `applied` holds, and its result to
     /// those `again` holds when it writes a second list (#5213). A head written
-    /// with no list stands bare. The type grammar ends a qualified link at a
-    /// value name only before a list, so an empty list after a definition of
-    /// no input stands for its bare name.
+    /// with no list stands bare. An empty list after a definition of no input
+    /// stands for its bare name.
     ///
     /// # Specification
     /// trivial.
@@ -13032,6 +13039,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             (Some(first), Some(second)) => {
                 self.listed_application(site, resolved, first, Lists::Again(second))
             },
+            // economy: the grammar ends a qualified link at a value name only
+            // before a list, so `M.f()` of a definition of no input is its
+            // bare name. The ceiling is that grammar: the unit that admits the
+            // bare `M.f` removes this arm.
             (Some(first), None)
                 if first.start == first.end
                     && matches!(resolved, Resolved::Declaration { constant, .. }

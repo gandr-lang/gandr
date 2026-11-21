@@ -1529,7 +1529,7 @@ pub enum LoweringRefusal<'source>
         implicit: SurfaceName<'source>,
     },
 
-    /// A call omitting an instance a label of the callee's row names, `f()`
+    /// A call omitting an instance a label of the callee's row names, `f`
     /// for `def f() -> [a : I] B`, where no instance of `I` stands: a call
     /// resolves an omitted instance among the instances of its interface in
     /// scope, a capability scope's capability and a label of the caller's own

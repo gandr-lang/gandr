@@ -1,0 +1,61 @@
+/// `thunks-and-force`: a computation of no input runs at its bare name.
+///
+/// A `def` with an empty input list is a computation of no input.
+/// Its bare name runs it in each position: a statement, an operand, an
+/// argument and the bound term of a `let`.
+/// A qualified name runs it by the same rule.
+/// `thunk { now }` passes the definition as a value, with no run.
+/// A parameter of a thunk type is a value, and `f ()` forces it.
+/// Where a type is read, the bare name of such a definition is its call.
+///
+/// - see: `../../model/identity/cong-thunk.gandr` — a returned thunk
+// `now` runs to three at each use, and `apply` forces the thunk it takes.
+
+import std.list (List);
+
+/// The computation of no input that each use runs.
+def now() -> Integer = 3;
+
+/// A module that holds a computation of no input.
+module Clock where
+  /// The computation of no input that a qualified name runs.
+  def tick() -> Integer = 4;
+
+/// The force of a thunk that the caller passes.
+def apply(f : () -> Integer) -> Integer = f ();
+
+/// The sum of an integer with itself.
+def twice(n : Integer) -> Integer = n + n;
+
+/// The bare name runs `now`.
+@[runs("3")]
+def bare() -> Integer = now;
+
+/// Each operand runs `now` again.
+@[runs("6")]
+def operand() -> Integer = now + now;
+
+/// The argument is the result of the run.
+@[runs("6")]
+def argument() -> Integer = twice now;
+
+/// The `let` binds the result of the run.
+@[runs("4")]
+def bound() -> Integer =
+  let n = now
+  n + 1
+
+/// The qualified name runs `Clock.tick`.
+@[runs("7")]
+def qualified() -> Integer = Clock.tick + now;
+
+/// `thunk { now }` passes `now` with no run, and `apply` runs it.
+@[runs("3")]
+def passed() -> Integer = apply (thunk { now });
+
+/// The type with one point, from a computation of no input.
+def unit() -> Type = return Unit;
+
+/// The type of `points` runs `unit` by its bare name.
+@[checks]
+def points() -> List unit = cons *{} nil;

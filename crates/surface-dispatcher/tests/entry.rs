@@ -356,14 +356,14 @@ fn a_declaration_naming_a_refused_one_is_a_note()
             .expect("ordered"),
         )
     };
-    let body = text.as_ref().find("return a ()").expect("the call");
+    let body = text.as_ref().find("return a;").expect("the call");
     assert_eq!(
         entries::<Evaluator>(&cascade, Verb::Check(Goals::Gated))
             .map(|diagnostic| (diagnostic.severity, diagnostic.span))
             .collect::<Vec<_>>(),
         [
             (Severity::Error, at("^", 0)),
-            (Severity::Note, at("a ()", body))
+            (Severity::Note, at("a;", body))
         ],
         "the refused declaration is the one error; the one calling it is a note at the call, \
              and the one calling a declaration that checks prints nothing"

@@ -17,4 +17,4 @@ module Flips : Model(Counter) where {
   def read(c : Bool) -> Integer = match c { | true => 1 | false => 0 };
 }
 def fromZero[s : Model Counter with sort C = Integer]() -> Integer = s.read (s.incr s.zero);
-def counted() -> Integer = fromZero ();
+def counted() -> Integer = fromZero;
