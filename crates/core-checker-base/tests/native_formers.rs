@@ -374,6 +374,164 @@ fn a_misplaced_rule_is_refused_in_both_checkers()
     );
 }
 
+/// `Width` at position zero, with the constants `Bit` and `Word`, and the
+/// family `Term : Width -> Type` at position one, presented by `rules`.
+///
+/// The family holds `Low` and `High` at `Bit`, and `Zero`, `One`, `Zext(b)`
+/// and `Choose(c, x, y)` at `Word`, in tag order. Each use of an index is its
+/// own node of the arena.
+///
+/// # Specification
+/// trivial.
+fn widths(
+    arena: &mut CoreArena,
+    rules: impl IntoIterator<Item = gandr_kernel_term::PresentedRule>,
+) -> [Declaration; 2]
+{
+    let (width, family) = (ConstantIndex::from(0_usize), ConstantIndex::from(1_usize));
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let sort = arena.value_type_data(width, vec![]);
+    let index = |arena: &mut CoreArena, tag: usize| {
+        arena.value_constructor(width, sort, ConstructorTag::from(tag), vec![])
+    };
+    let at = |arena: &mut CoreArena, tag: usize| {
+        let index = index(arena, tag);
+        arena.value_type_data(family, vec![index])
+    };
+    let (bit, word) = (0_usize, 1_usize);
+    let fields = vec![vec![], vec![], vec![], vec![], vec![at(arena, bit)], vec![
+        at(arena, bit),
+        at(arena, word),
+        at(arena, word),
+    ]];
+    let results = [bit, bit, word, word, word, word]
+        .map(|tag| vec![index(arena, tag)])
+        .to_vec();
+    [
+        Declaration::data(
+            width,
+            DataSignature::new(vec![], vec![vec![], vec![]], kind).into(),
+            OriginToken::from(0_usize),
+        ),
+        Declaration::data(
+            family,
+            DataSignature::new(vec![], fields, kind)
+                .presented(gandr_kernel_term::Presentation::new(
+                    rules.into_iter().collect(),
+                ))
+                .indexed(vec![sort], results)
+                .into(),
+            OriginToken::from(1_usize),
+        ),
+    ]
+}
+
+/// - see: #8338
+#[test]
+fn a_rule_of_a_family_keeps_its_index_in_the_checker_8338()
+{
+    use gandr_kernel_term::PresentedRule;
+    use gandr_kernel_term::RuleFault;
+    use gandr_kernel_term::RuleNode;
+    let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+    let v = |ordinal: u32| RuleNode::Variable(gandr_kernel_term::RuleVariable::from(ordinal));
+    let rule =
+        |left: &[RuleNode], right: &[RuleNode]| PresentedRule::new(left.into(), right.into());
+    let (width, family) = (ConstantIndex::from(0_usize), ConstantIndex::from(1_usize));
+    let mut arena = CoreArena::new();
+    // `Choose(High, x, y) ==> x`, and `Choose(Low, Zero, One) ==> Zext(Low)`,
+    // whose right side holds a bit below a word.
+    let [sorts, terms] = widths(&mut arena, [
+        rule(&[c(5), c(1), v(0), v(1)], &[v(0)]),
+        rule(&[c(5), c(0), c(2), c(3)], &[c(4), c(0)]),
+    ]);
+    let sort = arena.value_type_data(width, vec![]);
+    let term = |arena: &mut CoreArena, at: usize, tag: usize, fields: Vec<ValueId>| {
+        let index = arena.value_constructor(width, sort, ConstructorTag::from(at), vec![]);
+        let datatype = arena.value_type_data(family, vec![index]);
+        arena.value_constructor(family, datatype, ConstructorTag::from(tag), fields)
+    };
+    let (bit, word) = (0_usize, 1_usize);
+    let word_index = arena.value_constructor(width, sort, ConstructorTag::from(word), vec![]);
+    let words = arena.value_type_data(family, vec![word_index]);
+    // `here(One) : Path(Term Word, Choose(High, One, Zero), One)`.
+    let high = term(&mut arena, bit, 1, vec![]);
+    let one = term(&mut arena, word, 3, vec![]);
+    let zero = term(&mut arena, word, 2, vec![]);
+    let chosen = term(&mut arena, word, 5, vec![high, one, zero]);
+    let point = term(&mut arena, word, 3, vec![]);
+    let first = arena.value_type_path(words, chosen, point);
+    let first_proof = arena.value_here(point);
+    // `here(Zext(Low)) : Path(Term Word, Choose(Low, Zero, One), Zext(Low))`.
+    let low = term(&mut arena, bit, 0, vec![]);
+    let zero = term(&mut arena, word, 2, vec![]);
+    let one = term(&mut arena, word, 3, vec![]);
+    let built = term(&mut arena, word, 5, vec![low, zero, one]);
+    let low = term(&mut arena, bit, 0, vec![]);
+    let written = term(&mut arena, word, 4, vec![low]);
+    let second = arena.value_type_path(words, built, written);
+    let second_proof = arena.value_here(written);
+    let declarations = vec![
+        sorts,
+        terms,
+        definition(ConstantIndex::from(2_usize), first, first_proof),
+        definition(ConstantIndex::from(3_usize), second, second_proof),
+    ];
+    let (report, crossed) = run(&mut arena, &declarations);
+    assert_eq!(report.judged()[1].verdict(), Verdict::Data);
+    for (position, what) in [
+        (2_usize, "`Choose(High, One, Zero)` is `One`"),
+        (
+            3,
+            "`Choose(Low, Zero, One)` is `Zext(Low)`, whose bit the rewrite built",
+        ),
+    ] {
+        assert!(
+            matches!(report.judged()[position].verdict(), Verdict::Checked { .. }),
+            "{what}: {:?}",
+            report.judged()[position].verdict()
+        );
+        assert!(
+            matches!(
+                crossed.readmitted()[position].outcome(),
+                Outcome::Defined { .. }
+            ),
+            "the kernel admits it by the same normal forms; {what}: {:?}",
+            crossed.readmitted()[position].outcome()
+        );
+    }
+    for (left, right, fault, why) in [
+        (
+            &[c(4), v(0)][..],
+            &[v(0)][..],
+            RuleFault::SlotMismatch,
+            "`Zext(b) ==> b` moves a bit to the place of a word",
+        ),
+        (
+            &[c(4), c(0)],
+            &[c(0)],
+            RuleFault::NotOwnPosition,
+            "`Zext(Low) ==> Low` puts a bit where the left side is a word",
+        ),
+    ] {
+        let mut arena = CoreArena::new();
+        let declarations = widths(&mut arena, [rule(left, right)]);
+        let (report, _crossed) = run(&mut arena, &declarations);
+        let refused = report.judged()[1].verdict();
+        assert!(
+            matches!(
+                refused,
+                Verdict::Refused(CheckRefusal::RuleNotPresentable { refusal, .. })
+                    if refusal == gandr_kernel_term::RuleRefusal {
+                        rule: gandr_kernel_term::RuleIndex::from(0_usize),
+                        fault,
+                    }
+            ),
+            "{why}: {refused:?}"
+        );
+    }
+}
+
 #[test]
 fn a_rule_binding_a_dependent_field_is_refused_in_both_checkers()
 {

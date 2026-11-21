@@ -974,12 +974,22 @@ pub const KIND_CODATA: WireTag = WireTag(0x0D);
 ///
 /// After the [`KIND_DATA`] fields comes an index count, at least one, and each
 /// index classifier's root, then per constructor in tag order that many value
-/// roots, its result index. An indexed datatype presents no rules. A datatype
-/// indexed by nothing writes [`KIND_DATA`], so every other artifact keeps its
-/// bytes, and a reader predating this kind refuses it as an unknown
-/// declaration kind rather than misreading it, which is why the format
-/// version holds.
+/// roots, its result index. An indexed datatype that presents rules writes
+/// [`KIND_DATA_INDEXED_PRESENTED`]. A datatype indexed by nothing writes
+/// [`KIND_DATA`], so every other artifact keeps its bytes, and a reader
+/// predating this kind refuses it as an unknown declaration kind rather than
+/// misreading it, which is why the format version holds.
 pub const KIND_DATA_INDEXED: WireTag = WireTag(0x0B);
+/// Declaration tag: an indexed datatype whose segment closes with the rules
+/// its constructors are presented by.
+///
+/// After the [`KIND_DATA_INDEXED`] fields comes a rule count, at least one,
+/// and per rule its left and its right side as [`KIND_DATA_PRESENTED`] writes
+/// them. An indexed datatype with no rule writes [`KIND_DATA_INDEXED`], so
+/// every other artifact keeps its bytes, and a reader predating this kind
+/// refuses it as an unknown declaration kind rather than misreading it, which
+/// is why the format version holds.
+pub const KIND_DATA_INDEXED_PRESENTED: WireTag = WireTag(0x16);
 /// Declaration tag: a typed definition whose segment closes with the rules of
 /// the operation it lowered from.
 ///

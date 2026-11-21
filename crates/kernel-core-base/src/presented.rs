@@ -37,6 +37,22 @@
 //! strategy separates though the theory equates moves the critical-pair check
 //! of [`apart`] to admission.
 //!
+//! A family is one type at each index. Its rules are admitted as above, and
+//! each one keeps the index of each term ([`admit_indices`]): a constructor
+//! stands at a field whose index is its own result index, a variable stands
+//! at one index on the two sides, and the two sides stand at one index. The
+//! kernel reads each index as its constructor tree ([`index_classes`]), so
+//! two indices are one where their trees are equal. A family that states an
+//! index at a field presents no rule. A node that a rewrite builds takes the
+//! type of the family at the index its constructor states.
+//!
+//! **Alternative.** Indices compared by conversion, which reads two indices
+//! that a rule of their own type relates as one. It lost because admission
+//! would then run conversion at a type before the declaration that reads it
+//! is admitted. **Reversal.** The first family whose index is a term of a
+//! presented type that is not in normal form takes the normal form of each
+//! index before the comparison.
+//!
 //! # Apartness
 //!
 //! A case of no branches over a scrutinee of the path type `Path[.A = A](a,
@@ -80,10 +96,13 @@ use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::Apartness;
 use gandr_kernel_term::CellFault;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::Exhausted;
+use gandr_kernel_term::FieldClass;
 use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::FreeCells;
+use gandr_kernel_term::IndexClass;
 use gandr_kernel_term::Normalized;
 use gandr_kernel_term::Presentation;
 use gandr_kernel_term::PresentedRule;
@@ -127,6 +146,9 @@ pub struct PresentedType
     /// its cells loop in, in tag order: where a case over the sort keeps its
     /// loop arms, and how the cells' point builds.
     sort_arities: Option<Arc<[FieldCount]>>,
+    /// For a family, the indices each constructor states, in tag order: where
+    /// a constructor the rewriting builds stands.
+    results: Option<Arc<[SmallVec<ValueId, 0, Global>]>>,
     /// The rank of the declaration that presents it.
     rank: SourceRank,
 }
@@ -281,7 +303,9 @@ impl Presentations
             return;
         }
         let DeclarationContent::Data {
-            ref constructors, ..
+            ref constructors,
+            ref results,
+            ..
         } = *declaration.content()
         else {
             return;
@@ -302,6 +326,7 @@ impl Presentations
             presentation: declaration.presentation().clone(),
             arities: arities(constructors),
             sort_arities: declaration.presentation().cells().and(sort).map(arities),
+            results: (!results.is_empty()).then(|| results.iter().cloned().collect()),
             rank,
         });
     }
@@ -968,6 +993,224 @@ pub fn admit(
         .map_err(KernelError::RuleNotPresentable)
 }
 
+/// Check that the rules of a family keep the index of each term.
+///
+/// # Specification
+/// - requires: [`admit`] admits `presentation` against `constructors`, the
+///   table of the family at `position`; `results` holds the indices each
+///   constructor states, one row per constructor.
+/// - ensures: `Ok(())` exactly when the family holds no rule, or each stated
+///   index is closed and every rule keeps the index of each node
+///   ([`Presentation::validate_indices`] over [`index_classes`]).
+/// - provides: the admission obligation of a presented family: a rule relates
+///   two terms of the family at one index.
+/// - fails: [`KernelError::IndexedSignature`] for a family with a rule that
+///   states an index that is not closed; [`KernelError::RuleNotPresentable`]
+///   naming the first rule that does not keep an index and why.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Cost
+/// - allocation: the classes of the fields and of the results, growth within
+///   the declaration's constructor table
+///
+/// # Adequacy
+/// - hypothesis: L3 — a family at two indices admits the rule that keeps each
+///   index and refuses by name the rule that moves a variable to another.
+/// - witness: `gandr-kernel-core::environment::presented_tests::a_rule_of_a_family_keeps_its_index_in_the_kernel_8338`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::RuleNotPresentable(_) | KernelError::IndexedSignature)))]
+#[inline]
+pub fn admit_indices(
+    arena: &TermArena,
+    position: ConstantIndex,
+    (constructors, results): (
+        &[SmallVec<ValueTypeId, 0, Global>],
+        &[SmallVec<ValueId, 0, Global>],
+    ),
+    presentation: &Presentation,
+) -> Result<(), KernelError>
+{
+    if presentation.rules().is_empty() {
+        return Ok(());
+    }
+    let (classes, stated) = index_classes(arena, position, (constructors, results))
+        .ok_or(KernelError::IndexedSignature)?;
+    presentation
+        .validate_indices(&classes, &stated)
+        .map_err(KernelError::RuleNotPresentable)
+}
+
+/// The key of a tuple of closed indices: each constructor tree in order, as
+/// its constructors in pre-order.
+///
+/// The arena holds one term under more than one identifier, so an identifier
+/// is no key. A constructor has one arity, so the pre-order of a tree spells
+/// it.
+///
+/// # Specification
+/// - requires: `indices` live in `arena`.
+/// - ensures: the family and tag of each constructor of each index, in
+///   pre-order and in the order of `indices`, when every node is a constructor;
+///   nothing when a node is a variable or any other value.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `while let` loop over the pending stack, not recursion.
+/// - measure: the arena nodes still to read, each a strict subterm.
+///
+/// # Cost
+/// - allocation: the key and the pending stack, growth within the indices'
+///   constructor trees
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`index_classes`].
+/// - witness: `gandr-kernel-core::environment::presented_tests::a_rule_of_a_family_keeps_its_index_in_the_kernel_8338`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|key| key.len() >= indices.len()))]
+fn closed_key(
+    arena: &TermArena,
+    indices: &[ValueId],
+) -> Option<Vec<(ConstantIndex, ConstructorTag)>>
+{
+    let mut key = Vec::new();
+    let mut pending: Vec<ValueId> = indices.iter().rev().copied().collect();
+    while let Some(id) = pending.pop() {
+        let Some(&Value::Constructor {
+            family,
+            tag,
+            ref fields,
+            ..
+        }) = arena.value(id)
+        else {
+            return None;
+        };
+        key.push((family, tag));
+        pending.extend(fields.iter().rev().copied());
+    }
+    Some(key)
+}
+
+/// The classes of a family's indices, as a rule's index check reads them.
+///
+/// # Specification
+/// - requires: `constructors` is the table of the family at `position`, its
+///   field types in `arena`, and `results` the indices each constructor states,
+///   one row per constructor.
+/// - ensures: one row per constructor and one class per field, and the class of
+///   each constructor's result. Two tuples of indices take one class exactly
+///   when [`closed_key`] gives them one key. A field of the family at an index
+///   with no key reads [`FieldClass::Open`], and a field of another type
+///   [`FieldClass::Other`]. Nothing when a stated result has no key.
+/// - provides: the kernel's own reading of where each term of the family
+///   stands; no certificate names a class.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the classes of the fields and of the results, and the key of
+///   each class, growth within the declaration's constructors and their indices
+///
+/// # Adequacy
+/// - hypothesis: L3 — a family at two indices admits the rule that keeps each
+///   index and refuses by name the rule that moves a variable to another.
+/// - witness: `gandr-kernel-core::environment::presented_tests::a_rule_of_a_family_keeps_its_index_in_the_kernel_8338`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|classes| classes.0.len() == constructors.len() && classes.1.len() == results.len()))]
+fn index_classes(
+    arena: &TermArena,
+    position: ConstantIndex,
+    (constructors, results): (
+        &[SmallVec<ValueTypeId, 0, Global>],
+        &[SmallVec<ValueId, 0, Global>],
+    ),
+) -> Option<FamilyClasses>
+{
+    let mut classes: BTreeMap<Vec<(ConstantIndex, ConstructorTag)>, IndexClass> = BTreeMap::new();
+    let mut class = |key| {
+        let next = IndexClass::from(u32::try_from(classes.len()).ok()?);
+        Some(*classes.entry(key).or_insert(next))
+    };
+    let stated = results
+        .iter()
+        .map(|indices| class(closed_key(arena, indices)?))
+        .collect::<Option<SmallVec<IndexClass, 0, Global>>>()?;
+    let width = results.first().map_or(0, |indices| indices.len());
+    let fields = constructors
+        .iter()
+        .map(|fields| {
+            fields
+                .iter()
+                .map(|&field| match arena.value_type(field) {
+                    Some(&ValueType::Data {
+                        declaration,
+                        ref arguments,
+                    }) if declaration == position => arguments
+                        .len()
+                        .checked_sub(width)
+                        .and_then(|kept| arguments.get(kept ..))
+                        .and_then(|indices| closed_key(arena, indices))
+                        .and_then(&mut class)
+                        .map_or(FieldClass::Open, FieldClass::Family),
+                    _ => FieldClass::Other,
+                })
+                .collect()
+        })
+        .collect();
+    Some((fields, stated))
+}
+
+/// The classes [`index_classes`] gives: each constructor's fields, and each
+/// constructor's result.
+type FamilyClasses = (
+    SmallVec<SmallVec<FieldClass, 0, Global>, 0, Global>,
+    SmallVec<IndexClass, 0, Global>,
+);
+
+/// The family's data type at `indices`, under the parameters `root` holds.
+///
+/// # Specification
+/// - requires: `root` is a data type of `declaration` in `arena` that holds at
+///   least as many arguments as `indices`.
+/// - ensures: `root` itself when its last arguments are `indices` by identifier
+///   or it is no such type; otherwise a data type of `declaration` minted over
+///   the arguments of `root` before its indices, then `indices`.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the arguments of the minted type, durable by the arena's
+///   identifiers
+///
+/// # Adequacy
+/// - hypothesis: L3 — a rewrite of a term of a family builds a node at the
+///   index its constructor states.
+/// - witness: `gandr-kernel-core::environment::presented_tests::a_rewrite_in_a_family_builds_each_node_at_its_index_8338`
+#[spec(ensures: |ret| ret == root || arena.value_type(ret).is_some())]
+fn family_at(
+    arena: &mut TermArena,
+    declaration: ConstantIndex,
+    root: ValueTypeId,
+    indices: &[ValueId],
+) -> ValueTypeId
+{
+    let Some(&ValueType::Data { ref arguments, .. }) = arena.value_type(root)
+    else {
+        return root;
+    };
+    let Some(kept) = arguments.len().checked_sub(indices.len())
+    else {
+        return root;
+    };
+    if arguments.get(kept ..) == Some(indices) {
+        return root;
+    }
+    let arguments = arguments
+        .iter()
+        .take(kept)
+        .chain(indices)
+        .copied()
+        .collect();
+    arena.value_type_data(declaration, arguments)
+}
+
 /// Check a type of words against the cells it carries: re-mint the words and
 /// compare.
 ///
@@ -1218,6 +1461,7 @@ pub fn normal_form(
     if normalized == Normalized::Unchanged {
         return Ok(value);
     }
+    let stated = presented.results.as_deref();
     let mut built: Vec<ValueId> = Vec::new();
     while let Some(node) = term.pop() {
         match node {
@@ -1240,6 +1484,15 @@ pub fn normal_form(
                     Origin::Rewritten => None,
                 };
                 built.push(kept.unwrap_or_else(|| {
+                    // A node the rewriting built stands at the result index
+                    // its own constructor states, not at the redex's.
+                    let datatype =
+                        match (origin, stated.and_then(|rows| rows.get(usize::from(tag)))) {
+                            (Origin::Rewritten, Some(indices)) => {
+                                family_at(arena, declaration, datatype, indices)
+                            },
+                            (Origin::Rewritten | Origin::Written(_), _) => datatype,
+                        };
                     arena.value_constructor(declaration, datatype, tag, fields)
                 }));
             },

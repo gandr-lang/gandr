@@ -596,6 +596,81 @@ impl Presentation
         Ok(())
     }
 
+    /// Check that every rule of a family keeps the index of each node, in
+    /// written order, stopping at the first that does not.
+    ///
+    /// A term of a family stands at one index. [`Self::validate`] reads the
+    /// family as one type, so it admits a rule that puts a constructor at a
+    /// field of another index. That rule relates two terms of two types.
+    ///
+    /// # Specification
+    /// - requires: the rules validate against the declaration's table
+    ///   ([`Self::validate`]); `classes` lists each constructor's fields, in
+    ///   tag order, and `results` the class each constructor's result stands
+    ///   at.
+    /// - ensures: `Ok(())` exactly when, in every rule, each constructor stands
+    ///   at a slot of its own result class, the root of the right side stands
+    ///   at the result class of the left side's root, and every right-side
+    ///   variable stands at the class it stands at on the left. Otherwise the
+    ///   first failing rule and its first fault.
+    /// - provides: with [`Self::validate`], the preservation of the index: a
+    ///   rewrite of a term at one index gives a term at that index, and each
+    ///   node it builds stands at its constructor's result index.
+    /// - fails: [`RuleRefusal`] naming the rule: [`RuleFault::NotOwnPosition`]
+    ///   for a constructor at another class, [`RuleFault::SlotMismatch`] for a
+    ///   variable at another class, [`RuleFault::DependentSlot`] for a variable
+    ///   at an open index, and [`RuleFault::VariableHeaded`],
+    ///   [`RuleFault::UnknownConstructor`], [`RuleFault::Unbound`] or
+    ///   [`RuleFault::Arity`] for a rule the tables do not fit.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Cost
+    /// - allocation: the classes of each rule's variables, growth within the
+    ///   rule's sides
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a rule that keeps each index passes, and one rule per
+    ///   fault is refused by that fault and no other.
+    /// - witness: `presented::tests::a_rule_of_a_family_keeps_the_index_of_each_node_8338`
+    #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|refusal| usize::from(refusal.rule) < self.rules().len()))]
+    #[inline]
+    pub fn validate_indices(
+        &self,
+        classes: &[SmallVec<FieldClass, 0, Global>],
+        results: &[IndexClass],
+    ) -> Result<(), RuleRefusal>
+    {
+        for (index, rule) in self.rules().iter().enumerate() {
+            let refuse = |fault| RuleRefusal {
+                rule: RuleIndex(index),
+                fault,
+            };
+            let Some(&RuleNode::Constructor(head)) = rule.left().first()
+            else {
+                return Err(refuse(RuleFault::VariableHeaded));
+            };
+            let root = *results
+                .get(usize::from(head))
+                .ok_or_else(|| refuse(RuleFault::UnknownConstructor))?;
+            let bound = index_side(rule.left(), (classes, results), root).map_err(refuse)?;
+            let right = index_side(rule.right(), (classes, results), root).map_err(refuse)?;
+            for &(variable, class) in &right {
+                // The left side's variables read in pre-order as `0, 1, 2, …`.
+                let written = usize::try_from(u32::from(variable))
+                    .ok()
+                    .and_then(|ordinal| bound.get(ordinal))
+                    .ok_or_else(|| refuse(RuleFault::Unbound))?;
+                if written.1 != class {
+                    return Err(refuse(RuleFault::SlotMismatch));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Rewrite `term` to its normal form under these rules.
     ///
     /// `term` is a constructor term flattened in pre-order: a constructor
@@ -2372,6 +2447,69 @@ pub enum RuleSlot<T>
     Dependent,
 }
 
+/// The class of an index of a family: two slots of one class stand at one
+/// index.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct IndexClass(u32);
+
+impl From<u32> for IndexClass
+{
+    /// The class of the ordinal `class`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(class: u32) -> Self
+    {
+        Self(class)
+    }
+}
+
+impl From<IndexClass> for u32
+{
+    /// The ordinal of the class.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(class: IndexClass) -> Self
+    {
+        class.0
+    }
+}
+
+/// Where a constructor field of a family stands, as the index check of a rule
+/// reads it.
+///
+/// # Specification
+/// - provides: the family at the index of a class, where a constructor whose
+///   result has that class may stand; the family at an open index, where
+///   neither a constructor nor a variable may; or another classifier, where a
+///   variable keeps its place.
+/// - panics: none.
+/// - executable: none — data declaration; [`Presentation::validate_indices`]
+///   reads it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentation::validate_indices`].
+/// - witness: `presented::tests::a_rule_of_a_family_keeps_the_index_of_each_node_8338`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum FieldClass
+{
+    /// The declaration's own family at the index of this class.
+    Family(IndexClass),
+    /// The declaration's own family at an index that is not closed: the index
+    /// names a field before it, so a rule variable standing there would have no
+    /// index of its own.
+    Open,
+    /// Another classifier.
+    Other,
+}
+
 /// A rule's position in its declaration's written order.
 ///
 /// # Specification
@@ -2686,6 +2824,66 @@ where
     Ok(reading)
 }
 
+/// Read one side of a rule against the index classes of its family.
+///
+/// # Specification
+/// - requires: `classes` and `results` are the family's; `root` is the class
+///   the side stands at.
+/// - ensures: the side's variables in pre-order, each with the class of the
+///   slot it stands at, when each constructor stands at a slot of its own
+///   result class and the side's nodes fill the fields exactly.
+/// - fails: [`RuleFault::UnknownConstructor`] for a tag the tables do not hold,
+///   [`RuleFault::NotOwnPosition`] for a constructor at another class,
+///   [`RuleFault::DependentSlot`] for a variable at an open index,
+///   [`RuleFault::Arity`] for a side that does not fill its fields.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Cost
+/// - allocation: the pending slots and the variables of the side, growth within
+///   the side's nodes
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentation::validate_indices`].
+/// - witness: `presented::tests::a_rule_of_a_family_keeps_the_index_of_each_node_8338`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|variables| variables.len() <= side.len())
+    || matches!(ret, Err(RuleFault::UnknownConstructor | RuleFault::NotOwnPosition | RuleFault::DependentSlot | RuleFault::Arity)))]
+fn index_side(
+    side: &[RuleNode],
+    (classes, results): (&[SmallVec<FieldClass, 0, Global>], &[IndexClass]),
+    root: IndexClass,
+) -> Result<SmallVec<(RuleVariable, FieldClass), 0, Global>, RuleFault>
+{
+    let mut expected = SmallVec::<_, 0, Global>::from_iter([FieldClass::Family(root)]);
+    let mut variables = SmallVec::<_, 0, Global>::new();
+    for &node in side {
+        let slot = expected.pop().ok_or(RuleFault::Arity)?;
+        match node {
+            RuleNode::Constructor(tag) => {
+                let (Some(fields), Some(&result)) =
+                    (classes.get(usize::from(tag)), results.get(usize::from(tag)))
+                else {
+                    return Err(RuleFault::UnknownConstructor);
+                };
+                if slot != FieldClass::Family(result) {
+                    return Err(RuleFault::NotOwnPosition);
+                }
+                expected.extend(fields.iter().rev().copied());
+            },
+            RuleNode::Variable(_) if slot == FieldClass::Open => {
+                return Err(RuleFault::DependentSlot);
+            },
+            RuleNode::Variable(variable) => variables.push((variable, slot)),
+        }
+    }
+    if !expected.is_empty() {
+        return Err(RuleFault::Arity);
+    }
+    Ok(variables)
+}
+
 /// A position in a flattened term.
 ///
 /// # Specification
@@ -2798,9 +2996,11 @@ mod tests
     use super::CellFault;
     use super::Convergence;
     use super::Exhausted;
+    use super::FieldClass;
     use super::FieldCount;
     use super::FreeCell;
     use super::FreeCells;
+    use super::IndexClass;
     use super::Normalized;
     use super::Presentation;
     use super::PresentedRule;
@@ -2941,6 +3141,96 @@ mod tests
                 fault: RuleFault::Arity,
             }),
             "the second rule's right side is two terms, and it is named by position"
+        );
+    }
+
+    /// - see: #8338
+    #[test]
+    fn a_rule_of_a_family_keeps_the_index_of_each_node_8338()
+    {
+        let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+        let v = |ordinal: u32| RuleNode::Variable(RuleVariable::from(ordinal));
+        // A family at the two indices `Bit` and `Word`: `Low` and `High` at
+        // `Bit`; `Zero`, `One`, `Zext(b)` and `Choose(c, x, y)` at `Word`;
+        // `Same(x, y)` at `Bit`; `Held(n, d)` at `Word`, whose first field is
+        // of another type and whose second stands at an open index.
+        let (bit, word) = (IndexClass::from(0_u32), IndexClass::from(1_u32));
+        let (at_bit, at_word) = (FieldClass::Family(bit), FieldClass::Family(word));
+        let classes = SmallVec::<SmallVec<FieldClass, 0, Global>, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([at_bit]),
+            SmallVec::<_, 0, Global>::from_iter([at_bit, at_word, at_word]),
+            SmallVec::<_, 0, Global>::from_iter([at_word, at_word]),
+            SmallVec::<_, 0, Global>::from_iter([FieldClass::Other, FieldClass::Open]),
+        ]);
+        let results = [bit, bit, word, word, word, word, bit, word];
+        for (left, right) in [
+            // `Choose(High, x, y) ==> x`.
+            (&[c(5), c(1), v(0), v(1)][..], &[v(0)][..]),
+            // `Zext(Low) ==> Zero`.
+            (&[c(4), c(0)], &[c(2)]),
+            // `Same(Zext(b), y) ==> b`: a bit below two constructors keeps its
+            // index.
+            (&[c(6), c(4), v(0), v(1)], &[v(0)]),
+        ] {
+            assert_eq!(
+                one(left, right).validate_indices(&classes, &results),
+                Ok(()),
+                "{left:?} ==> {right:?}"
+            );
+        }
+        let refused = |fault| {
+            Err(RuleRefusal {
+                rule: RuleIndex::from(0_usize),
+                fault,
+            })
+        };
+        for (left, right, fault) in [
+            (&[v(0)][..], &[c(2)][..], RuleFault::VariableHeaded),
+            (&[c(9)], &[c(2)], RuleFault::UnknownConstructor),
+            (&[c(4), c(9)], &[c(2)], RuleFault::UnknownConstructor),
+            (&[c(5), c(1)], &[c(2)], RuleFault::Arity),
+            // `Choose(Zero, x, y)`: a word where a bit stands.
+            (
+                &[c(5), c(2), v(0), v(1)],
+                &[v(0)],
+                RuleFault::NotOwnPosition,
+            ),
+            // `Zext(Low) ==> Low`: the right side stands at a word.
+            (&[c(4), c(0)], &[c(0)], RuleFault::NotOwnPosition),
+            // `Zext(b) ==> b`: the bit moves to the place of a word.
+            (&[c(4), v(0)], &[v(0)], RuleFault::SlotMismatch),
+            // `Choose(c, x, y) ==> Zext(x)`: the word moves to the place of a
+            // bit.
+            (
+                &[c(5), v(0), v(1), v(2)],
+                &[c(4), v(1)],
+                RuleFault::SlotMismatch,
+            ),
+            (&[c(7), v(0), v(1)], &[c(2)], RuleFault::DependentSlot),
+            (&[c(7), v(0), c(2)], &[c(2)], RuleFault::NotOwnPosition),
+            (&[c(4), v(0)], &[c(4), v(1)], RuleFault::Unbound),
+        ] {
+            assert_eq!(
+                one(left, right).validate_indices(&classes, &results),
+                refused(fault),
+                "{left:?} ==> {right:?}"
+            );
+        }
+        let second = Presentation::new(SmallVec::<_, 0, Global>::from_iter([
+            PresentedRule::new([c(4), c(0)].into(), [c(2)].into()),
+            PresentedRule::new([c(4), v(0)].into(), [v(0)].into()),
+        ]));
+        assert_eq!(
+            second.validate_indices(&classes, &results),
+            Err(RuleRefusal {
+                rule: RuleIndex::from(1_usize),
+                fault: RuleFault::SlotMismatch,
+            }),
+            "the second rule moves its bit, and it is named by position"
         );
     }
 

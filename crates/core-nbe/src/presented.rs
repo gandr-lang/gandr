@@ -39,6 +39,8 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::CoreArena;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_kernel_data::SmallVec;
@@ -84,6 +86,10 @@ pub struct Presented
     /// The classifier `Data(w, [])` of the type's own terms, when the checker
     /// gave it: the type an empty word the evaluator mints stands at.
     own: Option<ValueTypeId>,
+    /// For a family, the classifier of each field of each constructor, when
+    /// the checker gave it: where a constructor that a rewrite builds reads
+    /// the type it stands at.
+    fields: Option<Arc<[Vec<ValueTypeId>]>>,
 }
 
 impl Presented
@@ -104,6 +110,7 @@ impl Presented
             presentation,
             arities,
             own: None,
+            fields: None,
         }
     }
 
@@ -124,6 +131,27 @@ impl Presented
     {
         Self {
             own: Some(own),
+            ..self
+        }
+    }
+
+    /// The same rules, for a family: `fields` is the family's table of field
+    /// classifiers.
+    ///
+    /// The evaluator writes no core node, so a constructor that a rewrite
+    /// builds takes the classifier of the field it stands at from here.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn indexed(
+        self,
+        fields: Arc<[Vec<ValueTypeId>]>,
+    ) -> Self
+    {
+        Self {
+            fields: Some(fields),
             ..self
         }
     }
@@ -238,6 +266,114 @@ fn declaration(
         Some(&ValueType::Data { declaration, .. }) => Ok(Some(declaration)),
         Some(_) | None => Ok(None),
     }
+}
+
+/// Give each constructor the rewriting built the classifier of the field it
+/// stands at.
+///
+/// The rewriting gives each node it builds the classifier of the redex. In a
+/// family a node below the root of a right side stands at another index, so it
+/// takes the classifier of its field. The root keeps the classifier of the
+/// redex, because a rule keeps the index of its root.
+///
+/// # Specification
+/// - requires: `term` is a constructor term of the family `own` in pre-order,
+///   and `fields` the family's table of field classifiers.
+/// - ensures: each node whose origin is [`Origin::Rewritten`] and whose field
+///   is the family at closed indices ([`closed_family`]) carries a closure of
+///   that classifier over no binding; every other node and every leaf is
+///   unchanged.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the pending fields of the walk, growth within the term
+/// - allocation: one closure for each node placed, durable by the domain
+///   arena's identifiers
+///
+/// # Adequacy
+/// - hypothesis: L3 — a rewrite in a family at two indices builds a node of the
+///   other index, and the term meets the same term as written.
+/// - witness: `gandr-core-checker-base::tests::native_formers::a_rule_of_a_family_keeps_its_index_in_the_checker_8338`
+#[spec(captures: nodes = term.len(), ensures: term.len() == nodes)]
+fn place(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    (own, fields): (ConstantIndex, &[Vec<ValueTypeId>]),
+    term: &mut [RuleTerm<(ValueClosureId, Origin), DomainValueId>],
+)
+{
+    let mut expected: Vec<Option<ValueTypeId>> = Vec::from([None]);
+    for node in &mut *term {
+        let slot = expected.pop().flatten();
+        let RuleTerm::Constructor {
+            tag,
+            arity,
+            ref mut payload,
+        } = *node
+        else {
+            continue;
+        };
+        if let (Origin::Rewritten, Some(classifier)) = (payload.1, slot)
+            && closed_family(core, own, classifier)
+        {
+            payload.0 =
+                domain.value_closure_node(ValueBody::ValueType(classifier), Environment::new());
+        }
+        let row = fields.get(usize::from(tag));
+        expected.extend(
+            (0 .. usize::from(arity))
+                .rev()
+                .map(|field| row.and_then(|row| row.get(field).copied())),
+        );
+    }
+}
+
+/// Whether `classifier` is the family `own` at closed arguments: each one a
+/// constructor term that holds no variable.
+///
+/// # Specification
+/// - requires: `classifier` lives in `core`.
+/// - ensures: `true` exactly when `classifier` is a data type of `own` and
+///   every node of every argument is a constructor.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `while let` loop over the pending stack, not recursion.
+/// - measure: the core nodes still to read, each a strict subterm.
+///
+/// # Cost
+/// - allocation: the pending stack, growth within the arguments' constructor
+///   trees
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`place`].
+/// - witness: `gandr-core-checker-base::tests::native_formers::a_rule_of_a_family_keeps_its_index_in_the_checker_8338`
+#[spec(ensures: |ret| !ret || matches!(core.value_type(classifier), Some(&ValueType::Data { declaration, .. }) if declaration == own))]
+fn closed_family(
+    core: &CoreArena,
+    own: ConstantIndex,
+    classifier: ValueTypeId,
+) -> bool
+{
+    let Some(&ValueType::Data {
+        declaration,
+        ref arguments,
+    }) = core.value_type(classifier)
+    else {
+        return false;
+    };
+    if declaration != own {
+        return false;
+    }
+    let mut pending: Vec<ValueId> = arguments.clone();
+    while let Some(id) = pending.pop() {
+        let Some(&Value::Constructor { ref fields, .. }) = core.value(id)
+        else {
+            return false;
+        };
+        pending.extend(fields.iter().copied());
+    }
+    true
 }
 
 /// What reading a leaf before the rules gave.
@@ -769,6 +905,9 @@ pub fn normal_form(
         Err(_) => return Ok(NormalForm::Exhausted),
         Ok(Normalized::Unchanged) if !read_any => return Ok(NormalForm::Kept),
         Ok(Normalized::Unchanged | Normalized::Rewritten) => {},
+    }
+    if let Some(fields) = presented.fields.as_deref() {
+        place(core, domain, (own, fields), &mut term);
     }
     let mut built: Vec<DomainValueId> = Vec::new();
     while let Some(node) = term.pop() {

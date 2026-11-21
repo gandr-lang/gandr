@@ -8487,12 +8487,10 @@ where
             ref results,
         } => {
             // An indexed family states one result index per index for each
-            // constructor, and presents no rules.
+            // constructor, and it is no type of words.
             let stated = results.len() == constructors.len()
                 && results.iter().all(|result| result.len() == indices.len());
-            let presented = !declaration.presentation().rules().is_empty()
-                || declaration.presentation().cells().is_some();
-            if !indices.is_empty() && (!stated || presented) {
+            if !indices.is_empty() && (!stated || declaration.presentation().cells().is_some()) {
                 return Err(KernelError::IndexedSignature);
             }
             if indices.is_empty() && !results.is_empty() {
@@ -8588,18 +8586,25 @@ where
             }
             // A presented type's rules are checked against the table its
             // fields just formed: linear, constructor-headed over the own
-            // type, and shrinking, so its conversion terminates. A type of
-            // words is re-minted from its cells and compared.
+            // type, and shrinking, so its conversion terminates. A rule of a
+            // family keeps the index of each node. A type of words is
+            // re-minted from its cells and compared.
+            let position = ConstantIndex::from(usize::from(judgement.entries.len()));
             crate::presented::admit(
                 arena,
                 judgement.entries,
-                (
-                    ConstantIndex::from(usize::from(judgement.entries.len())),
-                    parameters.as_slice(),
-                ),
+                (position, parameters.as_slice()),
                 constructors,
                 declaration.presentation(),
             )?;
+            if !indices.is_empty() {
+                crate::presented::admit_indices(
+                    arena,
+                    position,
+                    (constructors.as_slice(), results.as_slice()),
+                    declaration.presentation(),
+                )?;
+            }
             Ok(())
         },
         // A codata declaration's kind is a computation universe, and its

@@ -2990,7 +2990,8 @@ fn decode_declaration(
             // one per index. A count of none decodes, and the canonical
             // re-encoding, which writes such a declaration under the plain
             // kind, refuses it.
-            if kind_tag == tags::KIND_DATA_INDEXED {
+            if kind_tag == tags::KIND_DATA_INDEXED || kind_tag == tags::KIND_DATA_INDEXED_PRESENTED
+            {
                 let count = usize::from(reader.read_usize()?);
                 for _ in 0 .. count {
                     indices.push(decode_root(reader, table, Family::ValueType)?);
@@ -3003,15 +3004,19 @@ fn decode_declaration(
                     results.push(result);
                 }
             }
-            // A presented declaration closes with its rules, and a type of
+            // A presented declaration closes with its rules, an indexed one
+            // that presents rules with them after its results, and a type of
             // words with its rules and then its sort and cells. A rule count
-            // of none under the presented kind decodes, and the canonical
-            // re-encoding, which writes such a declaration under the plain
+            // of none under a presented kind decodes, and the canonical
+            // re-encoding, which writes such a declaration under the plainer
             // kind, refuses it; under a words kind it is the kernel's to
             // refuse, against the rules the cells mint.
             let worded =
                 kind_tag == tags::KIND_DATA_WORDS || kind_tag == tags::KIND_DATA_WORDS_HIGHER;
-            if kind_tag == tags::KIND_DATA_PRESENTED || worded {
+            if kind_tag == tags::KIND_DATA_PRESENTED
+                || kind_tag == tags::KIND_DATA_INDEXED_PRESENTED
+                || worded
+            {
                 let count = usize::from(reader.read_usize()?);
                 for _ in 0 .. count {
                     let left = decode_rule_side(reader)?;
@@ -4870,7 +4875,7 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 ///   validity.
 /// - witness: `decode::tests::tag_alphabets_partition_every_byte`
 #[spec(
-    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 | 14 | 16 | 19 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 17 => ret.as_ref() == Ok(&DeclKind::LiteralIdentity), 2 | 12 | 15 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 | 11 | 18 | 20 | 21 => ret.as_ref() == Ok(&DeclKind::Data), 13 => ret.as_ref() == Ok(&DeclKind::Codata), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
+    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 | 14 | 16 | 19 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 17 => ret.as_ref() == Ok(&DeclKind::LiteralIdentity), 2 | 12 | 15 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 | 11 | 18 | 20 | 21 | 22 => ret.as_ref() == Ok(&DeclKind::Data), 13 => ret.as_ref() == Ok(&DeclKind::Codata), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
 )]
 #[inline]
 fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
@@ -4881,6 +4886,7 @@ fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
         | tags::KIND_DATA_WORDS
         | tags::KIND_DATA_WORDS_HIGHER
         | tags::KIND_DATA_INDEXED
+        | tags::KIND_DATA_INDEXED_PRESENTED
         | tags::KIND_DATA_ROLED
         | tags::KIND_DATA_COINDUCTIVE => Ok(DeclKind::Data),
         tags::KIND_CODATA => Ok(DeclKind::Codata),
@@ -6152,7 +6158,7 @@ mod tests
                 5 => Err(DecodeError::ReservedDeclarationKind {
                     kind: super::ReservedKind::FunctorDef,
                 }),
-                6 | 8 | 10 | 11 | 18 | 20 | 21 => Ok(super::DeclKind::Data),
+                6 | 8 | 10 | 11 | 18 | 20 | 21 | 22 => Ok(super::DeclKind::Data),
                 13 => Ok(super::DeclKind::Codata),
                 _ => Err(unknown(super::TagSite::DeclarationKind)),
             };

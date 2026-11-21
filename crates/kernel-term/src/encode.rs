@@ -2081,10 +2081,12 @@ fn encode_minted_atom_table<Atoms>(
 ///   point is wrapped, less one, after the sort's position; an indexed data
 ///   declaration writes [`tags::KIND_DATA_INDEXED`] and closes with the index
 ///   count, each index classifier's root and each constructor's result roots,
-///   and no rules; a codata declaration writes [`tags::KIND_CODATA`] and closes
-///   with its parameter count and roots, then its observation count and roots;
-///   abstract types write their kind and representation roots and the extent of
-///   their scope, an open scope as `remaining`, and an interfaced one writes
+///   and one that presents rules writes [`tags::KIND_DATA_INDEXED_PRESENTED`]
+///   and closes with the rule block after them; a codata declaration writes
+///   [`tags::KIND_CODATA`] and closes with its parameter count and roots, then
+///   its observation count and roots; abstract types write their kind and
+///   representation roots and the extent of their scope, an open scope as
+///   `remaining`, and an interfaced one writes
 ///   [`tags::KIND_ABSTRACT_INTERFACED`] and closes with its relation's and its
 ///   reflexivity's roots, or, when its interface states a law,
 ///   [`tags::KIND_ABSTRACT_LAWFUL`] and the law's root after them; a literal
@@ -2437,21 +2439,22 @@ fn encode_declaration(
     // rule's left and right sides, a node count and the nodes in pre-order. A
     // type of words writes the block whatever its count, then its sort's
     // position and its cells, each endpoint a side as a rule's are. An indexed
-    // type presents no rules, which admission refuses, and writes none.
+    // type writes the block after its results when it presents a rule, under
+    // its own kind, and it writes no cells, which admission refuses.
     let presentation = declaration.presentation();
     let rules = presentation.rules();
     let cells = presentation.cells();
     let indexed =
         matches!(*content, DeclarationContent::Data { ref indices, .. } if !indices.is_empty());
-    if indexed {
-        return;
-    }
-    if !rules.is_empty() || cells.is_some() {
+    if !rules.is_empty() || cells.is_some() && !indexed {
         out.put_uvarint(WireU64::from(WireUsize::from(rules.len())));
         for rule in rules {
             encode_rule_side(out, rule.left());
             encode_rule_side(out, rule.right());
         }
+    }
+    if indexed {
+        return;
     }
     if let Some(cells) = cells {
         let sort = interner.positions.rename(cells.sort());
@@ -2513,6 +2516,11 @@ fn kind_tag(declaration: &Declaration) -> WireTag
 {
     let held = matches!(declaration.role(), Maybe::Present(_));
     match *declaration.content() {
+        DeclarationContent::Data { ref indices, .. }
+            if !indices.is_empty() && !declaration.presentation().rules().is_empty() =>
+        {
+            tags::KIND_DATA_INDEXED_PRESENTED
+        },
         DeclarationContent::Data { ref indices, .. } if !indices.is_empty() => {
             tags::KIND_DATA_INDEXED
         },
@@ -5996,6 +6004,114 @@ mod tests
         }
         assert_eq!(
             crate::decode::decode(ArtifactImage::from(plain.as_slice())),
+            Err(crate::error::DecodeError::Malformed {
+                site: crate::error::MalformedSite::TrailingBytes,
+            })
+        );
+    }
+
+    /// - see: #8338
+    #[test]
+    fn an_indexed_data_declaration_closes_its_segment_with_its_rules_8338()
+    {
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let kind = builder
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let index = builder.arena().value_type_unit();
+        let at = builder.arena().value_unit();
+        let own = builder.arena().value_type_data(
+            crate::term::ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::from_iter([at]),
+        );
+        // `Stop` and `Skip(k)` at one index, and `Skip(Skip(k)) ==> Skip(k)`.
+        let skip = crate::RuleNode::Constructor(crate::ConstructorTag::from(1_usize));
+        let k = crate::RuleNode::Variable(crate::RuleVariable::from(0_u32));
+        let rules = crate::Presentation::new(SmallVec::<_, 0, Global>::from_iter([
+            crate::PresentedRule::new([skip, skip, k].into(), [skip, k].into()),
+        ]));
+        let free = builder.indexed(
+            LevelSignature::monomorphic(),
+            SmallVec::<_, 0, Global>::new(),
+            (
+                SmallVec::<_, 0, Global>::from_iter([index]),
+                SmallVec::<_, 0, Global>::from_iter([
+                    SmallVec::<_, 0, Global>::new(),
+                    SmallVec::<_, 0, Global>::from_iter([own]),
+                ]),
+                SmallVec::<_, 0, Global>::from_iter([
+                    SmallVec::<_, 0, Global>::from_iter([at]),
+                    SmallVec::<_, 0, Global>::from_iter([at]),
+                ]),
+            ),
+            kind,
+        );
+        let presented = free.clone().presented(rules.clone());
+        let encoded = |declaration: &Declaration| {
+            let marked = [MarkedDeclaration::new(
+                AdmissionMark::Checked,
+                declaration.clone(),
+            )];
+            SmallVec::<_, 0, Global>::from_iter(
+                super::encode(&arena, &marked)
+                    .as_image()
+                    .as_ref()
+                    .iter()
+                    .copied(),
+            )
+        };
+        let (plain, ruled) = (encoded(&free), encoded(&presented));
+        assert_eq!(
+            (plain.get(12).copied(), ruled.get(12).copied()),
+            (
+                Some(u8::from(crate::tags::KIND_DATA_INDEXED)),
+                Some(u8::from(crate::tags::KIND_DATA_INDEXED_PRESENTED))
+            ),
+            "a family with a rule writes its own kind"
+        );
+        assert!(
+            ruled.len() > plain.len(),
+            "and the rule block after the results"
+        );
+        let decoded = crate::decode::decode(ArtifactImage::from(ruled.as_slice()))
+            .expect("an indexed declaration with a rule decodes");
+        let declaration = decoded
+            .declarations()
+            .first()
+            .expect("one data declaration");
+        let crate::decl::DeclarationContent::Data {
+            ref indices,
+            ref results,
+            ..
+        } = *declaration.declaration().content()
+        else {
+            panic!("a data declaration decodes as data");
+        };
+        assert_eq!(
+            (indices.len(), results.len()),
+            (1, 2),
+            "the index and each result are read back"
+        );
+        assert_eq!(
+            declaration.declaration().presentation(),
+            &rules,
+            "the rule is read back"
+        );
+        assert_eq!(
+            super::encode(decoded.arena(), decoded.declarations())
+                .as_image()
+                .as_ref(),
+            ruled.as_slice(),
+            "and re-encodes to the same bytes"
+        );
+        // The kind with no rule over the same bytes leaves the rules unread.
+        let mut unruled = ruled.clone();
+        if let Some(kind) = unruled.get_mut(12) {
+            *kind = u8::from(crate::tags::KIND_DATA_INDEXED);
+        }
+        assert_eq!(
+            crate::decode::decode(ArtifactImage::from(unruled.as_slice())),
             Err(crate::error::DecodeError::Malformed {
                 site: crate::error::MalformedSite::TrailingBytes,
             })

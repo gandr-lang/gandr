@@ -2280,10 +2280,10 @@ fn a_constructor_at_a_family_s_index_takes_the_index_s_type_4027()
     );
 }
 
-/// An indexed family presenting a rule over its constructors is declined over
-/// that rule's two sides, before either checker reads it (#2865); a rule over
-/// an operation rewrites a call, not the family's terms, and the family keeps
-/// its indices.
+/// An indexed family that states an index at a field is declined over the two
+/// sides of the first rule over its constructors, before either checker reads
+/// it (#2865); a rule over an operation rewrites a call, not the family's
+/// terms, and the family keeps its indices.
 #[test]
 fn an_indexed_family_presents_no_rule_2865()
 {
@@ -2317,6 +2317,48 @@ fn an_indexed_family_presents_no_rule_2865()
     assert!(
         skip.presentation().rules().is_empty(),
         "the operation's rule rewrites a call, not the family's terms"
+    );
+}
+
+/// A family that binds no parameter and states closed indices keeps the rule
+/// over its constructors. The same rule in a family with a parameter is
+/// declined over its two sides.
+///
+/// - see: #8338
+#[test]
+fn a_family_at_closed_indices_presents_its_rules_8338()
+{
+    let source =
+        include_str!("tests/fixtures/a-family-at-closed-indices-presents-its-rules-8338.gandr");
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let DeclarationOutcome::Data(prog) = outcome_of(&module, SurfaceName::from("Prog"))
+    else {
+        panic!("a family at the closed indices `Z` and `S Z` lowers with its rule");
+    };
+    let Maybe::Present(prog) = module.data(prog)
+    else {
+        panic!("the index names a signature");
+    };
+    assert_eq!(
+        (prog.indices().len(), prog.presentation().rules().len()),
+        (1_usize, 1_usize),
+        "`Prog` keeps its index and its one rule"
+    );
+    let written = |span: ByteSpan| source.get(usize::from(span.start()) .. usize::from(span.end()));
+    let LoweringRefusal::OutOfFragment {
+        span,
+        form: FormName::RULE_MEMBER,
+        sort: FragmentSort::Declaration,
+        boundary: FragmentBoundary::Indexed,
+    } = refusal_of(&module, SurfaceName::from("Boxed"))
+    else {
+        panic!("a family that binds a parameter presents no rule over its constructors");
+    };
+    assert_eq!(
+        written(span),
+        Some("Wrap (Wrap k) <=> Wrap k"),
+        "the refusal stands over the rule's two sides"
     );
 }
 

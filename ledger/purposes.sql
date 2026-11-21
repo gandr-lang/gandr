@@ -1743,6 +1743,7 @@ INSERT INTO purpose VALUES('kernel-core-base','presented::FREE','static','The pr
 INSERT INTO purpose VALUES('kernel-core-base','presented::Presentations','struct','The presented types of an environment, by admission position.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','presented::PresentedType','struct','One presented type as conversion reads it: its rules and the arity of each of its constructors, in tag order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','presented::admit','function','Check a data declaration''s rules against its constructor table, and a type of words''s cells against the sort they loop in.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core-base','presented::admit_indices','function','Check that the rules of a family keep the index of each term.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','presented::apart','function','Decide whether `left` and `right`, two terms of the data type `declaration` heads, are apart: the apartness rule a case of no branches over their path type rests on.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','presented::normal_form','function','The normal form of `value` under the rules of the presented type heading it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','presented::slot_table','function','A data declaration''s constructor table as a rule side reads it.',NULL,'fits','sound',NULL);
@@ -1998,9 +1999,11 @@ INSERT INTO purpose VALUES('kernel-term','presented::CellIndex','struct','A cell
 INSERT INTO purpose VALUES('kernel-term','presented::ConstructorCount','struct','How many constructors a declaration takes: a type of words, or the sort its words loop at.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::Convergence','enum','Whether a presentation''s rules give every term one normal form.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::Exhausted','struct','A normalization ran out of fuel.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','presented::FieldClass','enum','Where a constructor field of a family stands, as the index check of a rule reads it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::FieldCount','struct','How many fields a constructor has, as rewriting counts its subterms.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::FreeCell','struct','A free invertible 1-cell of a presented type''s sort: a generator between two closed terms of the sort, each a side over the sort''s own constructor table holding no variable.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::FreeCells','struct','The free cells a type of words is minted over: the sort whose closed terms they join, by its admission position, how many times the point is wrapped in its reflexivity, and the cells, one generator each, in written order.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','presented::IndexClass','struct','The class of an index of a family: two slots of one class stand at one index.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::Normalized','enum','Whether a normalization rewrote anything.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::Presentation','struct','A declaration''s rules, in the order the producer wrote them, shared, and for a type of words the free cells it is minted over.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::PresentedRule','struct','One oriented rule `left ==> right` over a declaration''s constructors.',NULL,'fits','sound',NULL);
@@ -2088,6 +2091,7 @@ INSERT INTO purpose VALUES('kernel-term','tags::KIND_AXIOM','constant','Declarat
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA','constant','Declaration tag: a generative datatype with a checked constructor table.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_COINDUCTIVE','constant','Declaration tag: a coinductive datatype, the greatest fixpoint of its constructors, whose segment holds the fields of a datatype alone.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_INDEXED','constant','Declaration tag: an indexed datatype, whose segment closes with its index classifiers and the index each constructor''s value stands at.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_INDEXED_PRESENTED','constant','Declaration tag: an indexed datatype whose segment closes with the rules its constructors are presented by.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_PRESENTED','constant','Declaration tag: a presented datatype, whose segment closes with the rules rewriting its constructor terms.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_WORDS','constant','Declaration tag: a type of words, a presented datatype whose segment closes with the free cells it is minted over.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_WORDS_HIGHER','constant','Declaration tag: a type of words over cells above dimension one, whose segment closes with the free cells it is minted over.',NULL,'fits','sound',NULL);

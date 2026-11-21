@@ -1,0 +1,67 @@
+//! A family over two widths with rules: each rule keeps the width of each term.
+//!
+//! The terms of a fragment stand at more than one sort: a bit and a word. An
+//! operation takes terms of some sorts and gives a term of one sort. A rule
+//! relates two terms of one sort.
+//!
+//! One family over the type of the sorts holds the terms, and each constructor
+//! states its sort. The kernel reads the sort of each node of each rule. A
+//! constructor stands where its own sort does, and a variable stands at one
+//! sort on the two sides. So a rewrite of a word gives a word, and a rule of
+//! the bits rewrites a bit below a word.
+//!
+//! - see: #8338
+
+/// The two widths of the fragment.
+pub data Width : Type where
+  /// One bit.
+  | Bit : Width
+  /// One word.
+  | Word : Width
+
+/// The terms of the fragment at each width.
+@[normalizes("Choose(And(High, High), One, Zero) ~> One")]
+pub data Fragment : Width -> Type where {
+  /// The low bit.
+  | Low : Fragment Bit
+  /// The high bit.
+  | High : Fragment Bit
+  /// The meet of two bits.
+  | And : (a : Fragment Bit, b : Fragment Bit) --> Fragment Bit
+  /// The word zero.
+  | Zero : Fragment Word
+  /// The word one.
+  | One : Fragment Word
+  /// The word of a bit.
+  | Zext : (b : Fragment Bit) --> Fragment Word
+  /// The first word under the high bit, and the second under the low bit.
+  | Choose : (c : Fragment Bit, x : Fragment Word, y : Fragment Word) --> Fragment Word
+  /// The high bit chooses the first word.
+  rule : Choose High x y <=> x;
+  /// The low bit chooses the second word.
+  rule : Choose Low x y <=> y;
+  /// The meet of the high bit and a bit is that bit.
+  rule : And High b <=> b;
+}
+
+/// A choice under the high bit.
+def picked() -> Fragment Word = Choose High One Zero;
+
+/// The word one.
+def unit() -> Fragment Word = One;
+
+/// A choice under the high bit is its first word.
+///
+/// - see: #8338
+def chosen : Path[.A = Fragment Word] (picked ()) (unit ()) = Path.here (unit ());
+
+/// The word of a meet with the high bit.
+def wide() -> Fragment Word = Zext (And High Low);
+
+/// The word of the low bit.
+def narrow() -> Fragment Word = Zext Low;
+
+/// The rule of the bits rewrites the bit below the word.
+///
+/// - see: #8338
+def metBits : Path[.A = Fragment Word] (wide ()) (narrow ()) = Path.here (narrow ());

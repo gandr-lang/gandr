@@ -1063,6 +1063,14 @@ impl CodeDefinitions
             .map(|fields| gandr_kernel_term::FieldCount::from(fields.len()))
             .collect();
         let presented = gandr_core_nbe::Presented::new(presentation.clone(), arities);
+        // A family gives the classifier of each field: a rewrite builds a
+        // node at the index of the field it stands at.
+        let presented = if signature.indices().is_empty() {
+            presented
+        }
+        else {
+            presented.indexed(signature.constructors().iter().cloned().collect())
+        };
         let own = presentation.cells().and_then(|_cells| {
             signature
                 .constructors()

@@ -18,10 +18,17 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::Presentation;
+use gandr_kernel_term::PresentedRule;
 use gandr_kernel_term::RewriteFuel;
 use gandr_kernel_term::RuleFault;
+use gandr_kernel_term::RuleIndex;
 use gandr_kernel_term::RuleNode;
+use gandr_kernel_term::RuleRefusal;
+use gandr_kernel_term::RuleVariable;
 use gandr_kernel_term::TermArena;
+use gandr_kernel_term::Value;
+use gandr_kernel_term::ValueId;
+use gandr_kernel_term::ValueType;
 
 use crate::Environment;
 use crate::error::KernelError;
@@ -120,6 +127,259 @@ fn a_circle_word_normalizes_keeping_what_it_did_not_touch()
         crate::presented::normal_form(arena, &free, word, &mut fuel),
         Ok(word),
         "without the declaration's rules the word is not read"
+    );
+}
+
+/// Whether a family states a result at a field.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Stated
+{
+    /// Each constructor stands at a constant.
+    Closed,
+    /// One constructor more, `At(w)`, stands at its own field.
+    Open,
+}
+
+/// Admit `Width`, with the constants `Bit` and `Word`, and then the family
+/// `Term : Width -> Type` under `rules`.
+///
+/// The family holds `Low` and `High` at `Bit`, and `Zero`, `One`, `Zext(b)`
+/// and `Choose(c, x, y)` at `Word`, in tag order. The field `b` and the field
+/// `c` stand at `Bit`, and the fields `x` and `y` at `Word`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the position of `Width`, and the admission of the family at the
+///   position after it. Each use of an index is its own node of the arena.
+/// - panics: if `Width` is refused.
+fn widths(
+    environment: &mut Environment,
+    rules: Presentation,
+    stated: Stated,
+) -> (ConstantIndex, Result<ConstantIndex, KernelError>)
+{
+    let width = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let kind = staging
+        .arena()
+        .value_type_universe(GroundSort::Value, Level::zero());
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::new(),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::new(),
+        ]),
+        kind,
+    );
+    let _width = environment
+        .add_decl(declaration)
+        .expect("the two widths admit");
+    let family = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let sort = arena.value_type_data(width, SmallVec::<_, 0, Global>::new());
+    let index = |arena: &mut TermArena, tag: usize| {
+        arena.value_constructor(
+            width,
+            sort,
+            ConstructorTag::from(tag),
+            SmallVec::<_, 0, Global>::new(),
+        )
+    };
+    let at = |arena: &mut TermArena, tag: usize| {
+        let index = index(arena, tag);
+        arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([index]))
+    };
+    let (bit, word) = (0_usize, 1_usize);
+    let mut fields = SmallVec::<SmallVec<_, 0, Global>, 0, Global>::from_iter([
+        SmallVec::<_, 0, Global>::new(),
+        SmallVec::<_, 0, Global>::new(),
+        SmallVec::<_, 0, Global>::new(),
+        SmallVec::<_, 0, Global>::new(),
+        SmallVec::<_, 0, Global>::from_iter([at(arena, bit)]),
+        SmallVec::<_, 0, Global>::from_iter([at(arena, bit), at(arena, word), at(arena, word)]),
+    ]);
+    let mut results = SmallVec::<SmallVec<_, 0, Global>, 0, Global>::new();
+    for tag in [bit, bit, word, word, word, word] {
+        results.push(SmallVec::<_, 0, Global>::from_iter([index(arena, tag)]));
+    }
+    if stated == Stated::Open {
+        fields.push(SmallVec::<_, 0, Global>::from_iter([sort]));
+        let field = arena.value_variable(DeBruijnIndex::from(0_u32));
+        results.push(SmallVec::<_, 0, Global>::from_iter([field]));
+    }
+    let staged = staging
+        .indexed(
+            LevelSignature::monomorphic(),
+            SmallVec::<_, 0, Global>::new(),
+            (SmallVec::<_, 0, Global>::from_iter([sort]), fields, results),
+            kind,
+        )
+        .presented(rules);
+    (
+        width,
+        environment
+            .add_decl(staged)
+            .map(|admitted| admitted.position()),
+    )
+}
+
+/// - see: #8338
+#[test]
+fn a_rule_of_a_family_keeps_its_index_in_the_kernel_8338()
+{
+    let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+    let v = |ordinal: u32| RuleNode::Variable(RuleVariable::from(ordinal));
+    let rule =
+        |left: &[RuleNode], right: &[RuleNode]| PresentedRule::new(left.into(), right.into());
+    // `Choose(High, x, y) ==> x`, `Choose(Low, x, y) ==> y` and
+    // `Zext(Low) ==> Zero`.
+    let kept = Presentation::new(SmallVec::<_, 0, Global>::from_iter([
+        rule(&[c(5), c(1), v(0), v(1)], &[v(0)]),
+        rule(&[c(5), c(0), v(0), v(1)], &[v(1)]),
+        rule(&[c(4), c(0)], &[c(2)]),
+    ]));
+    let mut environment = Environment::new();
+    let (_width, admitted) = widths(&mut environment, kept.clone(), Stated::Closed);
+    assert_eq!(
+        admitted,
+        Ok(ConstantIndex::from(1_usize)),
+        "each rule keeps the index of each node"
+    );
+    for (left, right, fault, why) in [
+        (
+            &[c(4), v(0)][..],
+            &[v(0)][..],
+            RuleFault::SlotMismatch,
+            "`Zext(b) ==> b` moves a bit to the place of a word",
+        ),
+        (
+            &[c(4), c(0)],
+            &[c(0)],
+            RuleFault::NotOwnPosition,
+            "`Zext(Low) ==> Low` puts a bit where the left side is a word",
+        ),
+        (
+            &[c(5), c(2), v(0), v(1)],
+            &[v(0)],
+            RuleFault::NotOwnPosition,
+            "`Choose(Zero, x, y)` holds a word where a bit stands",
+        ),
+    ] {
+        let mut environment = Environment::new();
+        let rules = Presentation::new(SmallVec::<_, 0, Global>::from_iter([rule(left, right)]));
+        let (_width, refused) = widths(&mut environment, rules, Stated::Closed);
+        assert_eq!(
+            refused,
+            Err(KernelError::RuleNotPresentable(RuleRefusal {
+                rule: RuleIndex::from(0_usize),
+                fault,
+            })),
+            "{why}"
+        );
+    }
+    let mut environment = Environment::new();
+    let (_width, refused) = widths(&mut environment, kept, Stated::Open);
+    assert_eq!(
+        refused,
+        Err(KernelError::IndexedSignature),
+        "a result that stands at a field has no class, so the family presents no rule"
+    );
+    let mut environment = Environment::new();
+    let free = Presentation::new(SmallVec::<_, 0, Global>::new());
+    let (_width, admitted) = widths(&mut environment, free, Stated::Open);
+    assert_eq!(
+        admitted,
+        Ok(ConstantIndex::from(1_usize)),
+        "the same family with no rule admits as before"
+    );
+}
+
+/// - see: #8338
+#[test]
+fn a_rewrite_in_a_family_builds_each_node_at_its_index_8338()
+{
+    let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+    // `Choose(High, Zero, One) ==> Zext(Low)`: the right side holds a bit below
+    // its root, and the redex is a word.
+    let rules = Presentation::new(SmallVec::<_, 0, Global>::from_iter([PresentedRule::new(
+        [c(5), c(1), c(2), c(3)].into(),
+        [c(4), c(0)].into(),
+    )]));
+    let mut environment = Environment::new();
+    let (width, admitted) = widths(&mut environment, rules, Stated::Closed);
+    let family = admitted.expect("the rule keeps the index of each node");
+    let presentations = crate::presented::Presentations::of(environment.entries());
+    let mut cloned = environment.arena().clone();
+    let arena = &mut cloned;
+    let sort = arena.value_type_data(width, SmallVec::<_, 0, Global>::new());
+    let term = |arena: &mut TermArena, at: usize, tag: usize, fields: &[ValueId]| {
+        let index = arena.value_constructor(
+            width,
+            sort,
+            ConstructorTag::from(at),
+            SmallVec::<_, 0, Global>::new(),
+        );
+        let datatype = arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([index]));
+        arena.value_constructor(
+            family,
+            datatype,
+            ConstructorTag::from(tag),
+            fields.iter().copied().collect(),
+        )
+    };
+    let (bit, word) = (0_usize, 1_usize);
+    let high = term(arena, bit, 1, &[]);
+    let zero = term(arena, word, 2, &[]);
+    let one = term(arena, word, 3, &[]);
+    let choice = term(arena, word, 5, &[high, zero, one]);
+    let mut fuel = RewriteFuel::from(1_000_u64);
+    let normal = crate::presented::normal_form(arena, &presentations, choice, &mut fuel)
+        .expect("the choice normalizes within its fuel");
+    // The tag of a term, the tag of the index its classifier holds, and its
+    // fields.
+    let read = |arena: &TermArena, value: ValueId| {
+        let Some(&Value::Constructor {
+            datatype,
+            tag,
+            ref fields,
+            ..
+        }) = arena.value(value)
+        else {
+            return None;
+        };
+        let Some(&ValueType::Data { ref arguments, .. }) = arena.value_type(datatype)
+        else {
+            return None;
+        };
+        let Some(&Value::Constructor { tag: index, .. }) = arena.value(*arguments.last()?)
+        else {
+            return None;
+        };
+        Some((tag, index, fields.iter().copied().collect::<Vec<_>>()))
+    };
+    let (tag, index, fields) =
+        read(arena, normal).expect("the normal form is a term of the family");
+    assert_eq!(
+        (tag, index, fields.len()),
+        (ConstructorTag::from(4_usize), ConstructorTag::from(word), 1),
+        "`Choose(High, Zero, One)` is `Zext(…)`, a word as the redex is"
+    );
+    let below = fields.first().copied().and_then(|field| read(arena, field));
+    assert_eq!(
+        below,
+        Some((
+            ConstructorTag::from(0_usize),
+            ConstructorTag::from(bit),
+            Vec::new()
+        )),
+        "the `Low` that the rewrite built stands at `Bit`, the index its constructor states, \
+         and not at the index of the redex"
     );
 }
 

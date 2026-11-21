@@ -157,6 +157,7 @@ INSERT INTO position VALUES('crates/kernel-term/src/operation_rules.rs','Positio
 INSERT INTO position VALUES('crates/kernel-term/src/presented.rs','CellIndex','kernel-term::encode','kept',NULL,'A cell''s place among the cells of one type of words.');
 INSERT INTO position VALUES('crates/kernel-term/src/presented.rs','ConstructorCount','','none',NULL,'A count of constructors.');
 INSERT INTO position VALUES('crates/kernel-term/src/presented.rs','FieldCount','','none',NULL,'A count of fields.');
+INSERT INTO position VALUES('crates/kernel-term/src/presented.rs','IndexClass','','none',NULL,'A tag of the indices of a family that are one index.');
 INSERT INTO position VALUES('crates/kernel-term/src/presented.rs','Reflexivities','','none',NULL,'A count of reflexivities.');
 INSERT INTO position VALUES('crates/kernel-term/src/presented.rs','RewriteFuel','','none',NULL,'A budget.');
 INSERT INTO position VALUES('crates/kernel-term/src/presented.rs','RuleIndex','','local',NULL,'A rule''s place in the written order of its declaration while a check reads it.');

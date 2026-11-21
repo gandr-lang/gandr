@@ -42,7 +42,9 @@
 //!   sort at the family's universe; each node of a rule's sides at its sort —
 //!   an application of an operation at its result, of a constructor at its
 //!   family, a variable at the sort of the position it is first written in —
-//!   and an operation's head at its type.
+//!   and an operation's head at its type. A constructor of an indexed family
+//!   answers at the family at the index it states, where that index is closed,
+//!   and at nothing where it names a field.
 //! - **A parameterised data family's** constructors read under its parameters:
 //!   each name at the type above with `F` applied to them, each field's name at
 //!   its type, the written result at the family's universe and each argument
@@ -2131,10 +2133,12 @@ impl Typer<'_>
     ///   their types and sorts, a field's sort at its family's universe and a
     ///   one-result operation's result at the family itself; an indexed
     ///   family's operation and rule answer at the family at the index its
-    ///   ports write, and its constructors at the index each states.
+    ///   ports write, its constructors at the index each states, and a
+    ///   constructor in a rule of the family at the closed index it states.
     /// - witness: `tests::described::a_data_rule_answers_each_node_at_its_sort`
     /// - witness: `tests::described::an_indexed_family_s_operation_answers_at_its_index_2940`
     /// - witness: `tests::described::an_indexed_constructor_answers_at_the_index_it_states_3528`
+    /// - witness: `tests::described::a_constructor_in_a_rule_of_a_family_answers_at_its_index_8338`
     fn family(
         &mut self,
         description: &TheoryDesc<DescriptionGrade>,
@@ -2294,7 +2298,38 @@ impl Typer<'_>
                                     (arg, constructor.and_then(|held| held.0.get(place).copied()))
                                 })
                                 .collect();
-                            (constructor.map(|&(_, family, _)| family), below)
+                            // A constructor of an indexed family stands at
+                            // the index its row states, where the row is
+                            // closed: the family at no index is no type.
+                            let ty = constructor.and_then(|&(_, family, tag)| {
+                                let row = stated.and_then(|(constant, rows)| {
+                                    let own = matches!(
+                                        self.arena.value_type(family),
+                                        Some(&ValueType::Data { declaration, .. }) if declaration == constant
+                                    );
+                                    rows.get(usize::from(tag))
+                                        .filter(|_| own)
+                                        .map(|row| (constant, row))
+                                });
+                                match row {
+                                    Some((constant, row)) => {
+                                        let mut pending = row.clone();
+                                        while let Some(index) = pending.pop() {
+                                            let Some(&gandr_core_term::Value::Constructor {
+                                                ref fields,
+                                                ..
+                                            }) = self.arena.value(index)
+                                            else {
+                                                return None;
+                                            };
+                                            pending.extend(fields.iter().copied());
+                                        }
+                                        Some(self.arena.value_type_data(constant, row.clone()))
+                                    },
+                                    None => Some(family),
+                                }
+                            });
+                            (ty, below)
                         },
                         TermView::Results { args } => {
                             let components: Vec<ValueTypeId> = match expected

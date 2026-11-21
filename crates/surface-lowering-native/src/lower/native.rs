@@ -8329,9 +8329,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     ///   presented reading ([`NativeRef::presentation`]), pushed onto the
     ///   module's list, its index recorded by the declaration's position in the
     ///   collection's data list; an indexed declaration whose presented reading
-    ///   writes a rule mints nothing and holds
-    ///   [`LoweringRefusal::OutOfFragment`] at [`FragmentBoundary::Indexed`],
-    ///   over the first such rule's two sides.
+    ///   writes a rule keeps the rule where it binds no parameter and each
+    ///   constructor states closed indices ([`closed_index`]), and elsewhere
+    ///   mints nothing and holds [`LoweringRefusal::OutOfFragment`] at
+    ///   [`FragmentBoundary::Indexed`], over the first such rule's two sides.
     /// - provides: the `DeclarationOutcome::Data` outcome's signature.
     /// - fails: never.
     /// - panics: none.
@@ -8340,10 +8341,12 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// - hypothesis: L3 — two declarations, one with parameters and one without
     ///   a written universe, lower to their own signatures; a vector lowers its
     ///   length index and the length each constructor states; an indexed
-    ///   family's constructor rule is declined, its operation rule kept.
+    ///   family's constructor rule is declined where a stated index names a
+    ///   field and kept where each one is closed, its operation rule kept.
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_data_declaration_lowers_to_its_signature`
     /// - witness: `gandr-surface-lowering::lower::native::tests::an_indexed_family_lowers_its_indices`
     /// - witness: `gandr-surface-lowering::lower::native::tests::an_indexed_family_presents_no_rule_2865`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_family_at_closed_indices_presents_its_rules_8338`
     #[spec(captures: [data = self.cx().data.len(), signed = self.cx().signatures.len()], ensures: self.cx().data.len() >= data && self.cx().signatures.len() >= signed)]
     #[inline]
     pub fn mint_data(
@@ -8435,10 +8438,17 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                 continue;
             }
             let (presentation, written) = NativeRef::over(cx).presentation(form);
-            // An indexed family presents no rules: the checkers read a
-            // presented type's rules over its terms at no index, so the family
-            // is declined at its first rule.
-            if let (false, Some(&span)) = (form.indices.is_empty(), written.first()) {
+            // A family presents its rules where it binds no parameter and
+            // each constructor states closed indices: the checkers read the
+            // index of each node of a rule there. Any other family is declined
+            // at its first rule.
+            let closed = parameters.is_empty()
+                && results
+                    .iter()
+                    .flatten()
+                    .all(|&stated| closed_index(sink.arena, stated));
+            if let (false, false, Some(&span)) = (form.indices.is_empty(), closed, written.first())
+            {
                 let _first = cx.faults.insert(form.slot, LoweringRefusal::OutOfFragment {
                     span,
                     form: FormName::RULE_MEMBER,
@@ -9164,6 +9174,44 @@ fn tracked_motives(
     }
 
     motives
+}
+
+/// Whether `index` is closed: a constructor term that holds no variable.
+///
+/// # Specification
+/// - requires: `index` lives in `arena`.
+/// - ensures: `true` exactly when every node of `index` is a constructor.
+/// - provides: the test of the checkers' index classes, which key a closed
+///   index by its constructors.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `while let` loop over the pending stack, not recursion.
+/// - measure: the arena nodes still to read, each a strict subterm.
+///
+/// # Cost
+/// - allocation: the pending stack, growth within the index's constructor tree
+///
+/// # Adequacy
+/// - hypothesis: L3 — a family whose constructors stand at two constants keeps
+///   its rules, and one whose constructor states a field does not.
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_family_at_closed_indices_presents_its_rules_8338`
+/// - witness: `gandr-surface-lowering::lower::native::tests::an_indexed_family_presents_no_rule_2865`
+#[spec(ensures: |ret| !ret || matches!(arena.value(index), Some(&Value::Constructor { .. })))]
+fn closed_index(
+    arena: &CoreArena,
+    index: ValueId,
+) -> bool
+{
+    let mut pending = Vec::from([index]);
+    while let Some(id) = pending.pop() {
+        let Some(&Value::Constructor { ref fields, .. }) = arena.value(id)
+        else {
+            return false;
+        };
+        pending.extend(fields.iter().copied());
+    }
+    true
 }
 
 /// The branches of `tests`' data switches over bare families, and the

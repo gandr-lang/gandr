@@ -1,12 +1,14 @@
-/// `OutOfFragment.Indexed`: an indexed family writes a rule
-/// over its generators.
+/// `OutOfFragment.Indexed`: an indexed family that states an index
+/// at a field writes a rule over its generators.
 data N : Type where {
   | Z : N
+  | S : (n : N) --> N
 }
 
 @[refuses("OutOfFragment.Indexed")]
 data Prog : N -> Type where {
   | Stop : Prog Z
+  | Step : (n : N, k : Prog n) --> Prog (S n)
   | Tell : (s : Integer, k : Prog Z) --> Prog Z
   rule : Tell s (Tell u k) <=> Tell u k;
 }

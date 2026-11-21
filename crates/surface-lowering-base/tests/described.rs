@@ -661,6 +661,60 @@ fn an_indexed_family_s_operation_answers_at_its_index_2940()
     );
 }
 
+/// - see: #8338
+#[test]
+fn a_constructor_in_a_rule_of_a_family_answers_at_its_index_8338()
+{
+    let source = SourceText::from(include_str!(
+        "described/fixtures/a-constructor-in-a-rule-of-a-family-answers-at-its-index-8338.gandr"
+    ));
+    let span = |around: &'static str, inner: &'static str| {
+        at(source, SourceText::from(around), SourceText::from(inner))
+    };
+    let (types, arena) = described(source);
+    // Each node mints its own index values, so a family is compared by the
+    // tag of the constructor its one index is.
+    let at_index = |entry: DescribedType| match arena.value_type(entry.ty) {
+        Some(&ValueType::Data { ref arguments, .. }) => match **arguments {
+            [index] => match arena.value(index) {
+                Some(&gandr_core_term::Value::Constructor { tag, .. }) => Some(usize::from(tag)),
+                Some(_) | None => None,
+            },
+            _ => None,
+        },
+        Some(_) | None => None,
+    };
+    let (bit, word) = (Some(0_usize), Some(1_usize));
+    let left = entry(
+        &types,
+        span("rule : Choose High x y", "Choose High x y"),
+        DescribedRole::Term,
+    );
+    assert_eq!(
+        at_index(left),
+        word,
+        "the left side at `Term Word`, the index `Choose` states"
+    );
+    let high = entry(
+        &types,
+        span("rule : Choose High", "High"),
+        DescribedRole::Term,
+    );
+    assert_eq!(
+        at_index(high),
+        bit,
+        "`High` at `Term Bit`, the index it states"
+    );
+    let first = entry(&types, span("High x y", "x"), DescribedRole::Term);
+    assert_eq!(at_index(first), word, "a variable at its field's index");
+    let right = entry(&types, span("<=> x", "x"), DescribedRole::Term);
+    assert_eq!(
+        at_index(right),
+        word,
+        "the right side at the index its variable was bound at"
+    );
+}
+
 #[test]
 fn a_data_rule_answers_each_node_at_its_sort()
 {

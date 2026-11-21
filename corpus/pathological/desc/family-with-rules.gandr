@@ -1,0 +1,56 @@
+//! No rule of a family moves a term from one width to another width.
+//!
+//! A rule relates two terms of one type. A family is one type at each index.
+//! A rule that gives a bit for a word relates two terms of two types, and a
+//! term then has no type.
+//!
+//! The checker reads the index of each node of each rule, and it refuses the
+//! family by the first rule that breaks an index. It refuses a case that gives
+//! two answers on the two sides of a rule of a family, as for any other type.
+//!
+//! - see: #8338
+
+// `Width` and `Fragment`.
+import "../../model/desc/family-with-rules.gandr";
+
+/// The rule gives a bit for the word of the turned bit.
+///
+/// - see: #8338
+@[refuses("RuleNotPresentable")]
+data Narrowed : Width -> Type where {
+  /// The low bit.
+  | Dim : Narrowed Bit
+  /// The turned bit.
+  | Turn : (b : Narrowed Bit) --> Narrowed Bit
+  /// The word of a bit.
+  | Widen : (b : Narrowed Bit) --> Narrowed Word
+  /// The word of a turned bit is the bit.
+  rule : Widen (Turn b) <=> b;
+}
+
+/// The rule holds a word where the choice takes a bit.
+///
+/// - see: #8338
+@[refuses("RuleNotPresentable")]
+data Misplaced : Width -> Type where {
+  /// The word zero.
+  | Nought : Misplaced Word
+  /// The low bit.
+  | Off : Misplaced Bit
+  /// The first word under the high bit.
+  | Pick : (c : Misplaced Bit, x : Misplaced Word) --> Misplaced Word
+  /// A choice under a word.
+  rule : Pick Nought x <=> x;
+}
+
+/// The case gives `false` for each choice. A choice under the high bit is its
+/// first word, and the case gives `true` for the word one.
+///
+/// - see: #8338
+@[refuses("RuleNotRespected")]
+def isOne(w : Fragment Word) -> Bool =
+  match w where
+    | Zero => false
+    | One => true
+    | Zext(b) => false
+    | Choose(c, x, y) => false

@@ -95,7 +95,14 @@
 //! their point is wrapped in its reflexivity after the sort's position. A
 //! coinductive datatype, the final coalgebra of its constructors, takes a kind
 //! of its own as well ([`KIND_DATA_COINDUCTIVE`]), with the datatype fields
-//! alone.
+//! alone. An indexed datatype that presents rules takes a kind of its own
+//! ([`KIND_DATA_INDEXED_PRESENTED`]), with the rule block after its results.
+//!
+//! A family is one type at each index, and a rule relates two terms of one
+//! type. [`Presentation::validate_indices`] reads where each node of a rule
+//! stands, against the class of the index of each field and of each result
+//! ([`FieldClass`], [`IndexClass`]). The reader of the declaration gives the
+//! classes, because an index is a term of its arena.
 //!
 //! # Specification attributes
 //!
@@ -296,9 +303,11 @@ pub use crate::presented::CellIndex;
 pub use crate::presented::ConstructorCount;
 pub use crate::presented::Convergence;
 pub use crate::presented::Exhausted;
+pub use crate::presented::FieldClass;
 pub use crate::presented::FieldCount;
 pub use crate::presented::FreeCell;
 pub use crate::presented::FreeCells;
+pub use crate::presented::IndexClass;
 pub use crate::presented::Normalized;
 pub use crate::presented::Presentation;
 pub use crate::presented::PresentedRule;
@@ -360,6 +369,7 @@ pub use crate::tags::KIND_AXIOM;
 pub use crate::tags::KIND_DATA;
 pub use crate::tags::KIND_DATA_COINDUCTIVE;
 pub use crate::tags::KIND_DATA_INDEXED;
+pub use crate::tags::KIND_DATA_INDEXED_PRESENTED;
 pub use crate::tags::KIND_DATA_PRESENTED;
 pub use crate::tags::KIND_DATA_WORDS;
 pub use crate::tags::KIND_DATA_WORDS_HIGHER;
