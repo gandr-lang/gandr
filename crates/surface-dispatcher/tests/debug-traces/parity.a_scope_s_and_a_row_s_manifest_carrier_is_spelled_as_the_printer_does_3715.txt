@@ -1,0 +1,68 @@
+test: parity::a_scope_s_and_a_row_s_manifest_carrier_is_spelled_as_the_printer_does_3715
+package: gandr-surface-dispatcher
+command: mise run debug:test gandr-surface-dispatcher parity::a_scope_s_and_a_row_s_manifest_carrier_is_spelled_as_the_printer_does_3715 --break rewrite::Band::admitted
+
+(lldb) target create "target/debug-trace/debug/deps/tests-dfc9ce70590df483"
+Current executable set to 'target/debug-trace/debug/deps/tests-dfc9ce70590df483' (x86_64).
+(lldb) settings set -- target.run-args  "parity::a_scope_s_and_a_row_s_manifest_carrier_is_spelled_as_the_printer_does_3715" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex rewrite::Band::admitted
+Breakpoint 1: no locations (pending).
+WARNING:  Unable to resolve breakpoint to any actual locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-dfc9ce70590df483`__rustc::rust_panic + 8 at panicking.rs:875:25, address = 0x0000000005eec138
+(lldb) run
+
+running 1 test
+test parity::a_scope_s_and_a_row_s_manifest_carrier_is_spelled_as_the_printer_does_3715 ... 
+thread 'parity::a_scope_s_and_a_row_s_manifest_carrier_is_spelled_as_the_printer_does_3715' (2676124) panicked at crates/surface-dispatcher/tests/parity.rs:1675:5:
+3 of 3 declarations differ:
+fixture/pathological/effects/cost-bound-too-small.gandr: `countedSteps` from Explicit into sugared:
+  formatter: def countedSteps ( ) -> ( Nat => Nat ) => Nat { handle a : Cost with sort N = Nat => Nat { run b <- threeSteps [ cost = a ] ( ) ; counted } with Counting }
+  printer:   def countedSteps ( ) -> ( Nat => Nat ) => Nat { handle a : Cost with sort N = ( Nat => Nat ) { run b <- threeSteps [ cost = a ] ( ) ; counted } with Counting }
+fixture/pathological/effects/cost-bound-too-small.gandr: `threeSteps` from Sugared into explicit:
+  formatter: def threeSteps ( ) -> [ cost : Cost with sort N = ( +U ( Nat -> -F Nat ) ) ] Integer { run a <- cost . charge ( costs ( ( 1 : Nat ) ) ) ; run b <- cost . charge ( costs ( ( 2 : Nat ) ) ) ; 7 }
+  printer:   def threeSteps ( ) -> [ cost : Cost with sort N = +U ( Nat -> -F Nat ) ] Integer { run a <- cost . charge ( costs ( ( 1 : Nat ) ) ) ; run b <- cost . charge ( costs ( ( 2 : Nat ) ) ) ; 7 }
+fixture/pathological/effects/cost-bound-too-small.gandr: `countedSteps` from Sugared into explicit:
+  formatter: def countedSteps ( ) -> +U ( +U ( Nat -> -F Nat ) -> -F Nat ) { handle a : Cost with sort N = ( +U ( Nat -> -F Nat ) ) { run b <- threeSteps [ cost = a ] ( ) ; counted } with Counting }
+  printer:   def countedSteps ( ) -> +U ( +U ( Nat -> -F Nat ) -> -F Nat ) { handle a : Cost with sort N = +U ( Nat -> -F Nat ) { run b <- threeSteps [ cost = a ] ( ) ; counted } with Counting }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 2675992 launched: 'target/debug-trace/debug/deps/tests-dfc9ce70590df483' (x86_64)
+Process 2675992 stopped
+* thread #2, name = 'parity::a_scope', stop reason = breakpoint 2.1
+       frame #0: 0x000055555b440138 tests-dfc9ce70590df483`__rustc::rust_panic at panicking.rs:875:25
+(lldb) bt 24
+* thread #2, name = 'parity::a_scope', stop reason = breakpoint 2.1
+   * frame #0: 0x000055555b440138 tests-dfc9ce70590df483`__rustc::rust_panic at panicking.rs:875:25
+     frame #1: 0x000055555b49b512 tests-dfc9ce70590df483`std::panicking::panic_with_hook at panicking.rs:839:5
+     frame #2: 0x000055555b43f352 tests-dfc9ce70590df483`std::panicking::panic_handler::{closure#0} at panicking.rs:687:13
+     frame #3: 0x000055555b4342a9 tests-dfc9ce70590df483`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18
+     frame #4: 0x000055555b4403ad tests-dfc9ce70590df483`__rustc::rust_begin_unwind at panicking.rs:678:5
+     frame #5: 0x000055555b46ff7c tests-dfc9ce70590df483`core::panicking::panic_fmt at panicking.rs:80:14
+     frame #6: 0x0000555556b40cde tests-dfc9ce70590df483`tests::parity::a_scope_s_and_a_row_s_manifest_carrier_is_spelled_as_the_printer_does_3715 at parity.rs:1675:5
+     frame #7: 0x0000555556b23e67 tests-dfc9ce70590df483`tests::parity::a_scope_s_and_a_row_s_manifest_carrier_is_spelled_as_the_printer_does_3715::{closure#0}((null)={}) at parity.rs:1654:80
+     frame #8: 0x0000555556a91b16 tests-dfc9ce70590df483`<tests::parity::a_scope_s_and_a_row_s_manifest_carrier_is_spelled_as_the_printer_does_3715::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #9: 0x0000555556d1bb4b tests-dfc9ce70590df483`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #10: 0x0000555556d1bb49 tests-dfc9ce70590df483`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:724:18
+     frame #11: 0x0000555556d291a5 tests-dfc9ce70590df483`test::run_test_in_process::{closure#0} at lib.rs:747:74 [inlined]
+     frame #12: 0x0000555556d291a0 tests-dfc9ce70590df483`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #13: 0x0000555556d291a0 tests-dfc9ce70590df483`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:575:43 [inlined]
+     frame #14: 0x0000555556d2918b tests-dfc9ce70590df483`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #15: 0x0000555556d2918b tests-dfc9ce70590df483`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #16: 0x0000555556d2918b tests-dfc9ce70590df483`test::run_test_in_process at lib.rs:747:27 [inlined]
+     frame #17: 0x0000555556d29176 tests-dfc9ce70590df483`test::run_test::{closure#0} at lib.rs:668:43
+     frame #18: 0x0000555556d23d04 tests-dfc9ce70590df483`test::run_test::{closure#1} at lib.rs:698:41 [inlined]
+     frame #19: 0x0000555556d23c89 tests-dfc9ce70590df483`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #20: 0x0000555556d2c2e2 tests-dfc9ce70590df483`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #21: 0x0000555556d2c2d3 tests-dfc9ce70590df483`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #22: 0x0000555556d2c2d3 tests-dfc9ce70590df483`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:575:43 [inlined]
+     frame #23: 0x0000555556d2c2c3 tests-dfc9ce70590df483`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:543:19 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

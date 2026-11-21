@@ -1,0 +1,9 @@
+/// `or_pattern`: an or-pattern: either alternative matches.
+data Color : Type where
+  | Red : Color
+  | Green : Color
+  | Blue : Color
+def cool(c : Color) -> Integer =
+  match c where
+    | Red | Green => 0
+    | Blue => 1
