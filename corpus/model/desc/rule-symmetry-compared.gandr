@@ -1,0 +1,24 @@
+//! Two terms that differ by the order of two arguments of a commutative
+//! operation are one term.
+//!
+//! The theory of a tally states that its meet is commutative. A proof about a
+//! layout then needs `meet x y` and `meet y x` as one term. No rule fires on
+//! two arguments that are variables, so the rewriting does not join them.
+//!
+//! The conversion pairs the two arguments of two meets in the written order
+//! or crossed. The checker records the crossed pairing in the trace. The
+//! kernel replays it only where its own rules hold the symmetry of the meet.
+//!
+//! - see: #8311
+
+// `Tally`, its two rules that rewrite, and its symmetry.
+import "./rule-symmetry.gandr";
+
+/// The two orders of a meet of two variables are one term.
+def swapped(x : Terms Tally, y : Terms Tally) -> Path (Tally.meet x y) (Tally.meet y x) = Path.here
+  (Tally.meet x y);
+
+/// The crossed pairing joins two meets below a second meet also.
+def swappedBelow(x : Terms Tally, y : Terms Tally, z : Terms Tally) -> Path (Tally.meet
+  (Tally.meet x y)
+  z) (Tally.meet z (Tally.meet y x)) = Path.here (Tally.meet (Tally.meet x y) z);

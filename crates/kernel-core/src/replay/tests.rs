@@ -5850,6 +5850,125 @@ fn a_refutation_at_a_presented_term_is_not_authoritative()
     );
 }
 
+/// The kernel replays the crossed pairing of two fields only where its own
+/// rule table holds the symmetry of the constructor. A refutation at such a
+/// pair is not authoritative.
+///
+/// - see: #8311
+#[test]
+fn a_crossed_pairing_is_replayed_only_under_a_symmetry_8311()
+{
+    let meet = ConstructorTag::from(0_usize);
+    let (x, y) = (
+        RuleNode::Variable(RuleVariable::from(0_u32)),
+        RuleNode::Variable(RuleVariable::from(1_u32)),
+    );
+    let symmetry = Presentation::new(SmallVec::<_, 0, Global>::from_iter([PresentedRule::new(
+        [RuleNode::Constructor(meet), x, y].into(),
+        [RuleNode::Constructor(meet), y, x].into(),
+    )]));
+    let crossed = [ConversionDecision::DecomposeCrossed, SHARED, SHARED, SHARED];
+    let refuted = [ConversionDecision::NegativeSubgoal {
+        position: SubgoalPosition::from(2),
+    }];
+    let verdicts = |presentation: Presentation| {
+        let mut environment = Environment::new();
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let own = staging.arena().value_type_data(
+            ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
+        let staged = staging
+            .data(
+                LevelSignature::monomorphic(),
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([
+                    own, own,
+                ])]),
+                kind,
+            )
+            .presented(presentation);
+        let _sort = environment.add_decl(staged).expect("the sort admits");
+        let mut arena = environment.arena().clone();
+        let own = arena.value_type_data(
+            ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
+        let (first, second) = (
+            arena.value_variable(DeBruijnIndex::from(0_u32)),
+            arena.value_variable(DeBruijnIndex::from(1_u32)),
+        );
+        let mut meet_of = |one, other| {
+            arena.value_constructor(
+                ConstantIndex::from(0_usize),
+                own,
+                meet,
+                SmallVec::<_, 0, Global>::from_iter([one, other]),
+            )
+        };
+        let (written, swapped, doubled) = (
+            meet_of(first, second),
+            meet_of(second, first),
+            meet_of(first, first),
+        );
+        let unfoldings = Unfoldings::new(alloc::vec![Unfoldable::Opaque])
+            .presenting(Presentations::of(environment.entries()));
+        [
+            run(
+                &mut arena,
+                &unfoldings,
+                ReplaySides::Values(written, swapped),
+                EngineClaim::Convertible,
+                &crossed,
+            ),
+            run(
+                &mut arena,
+                &unfoldings,
+                ReplaySides::Values(written, doubled),
+                EngineClaim::Convertible,
+                &crossed,
+            ),
+            run(
+                &mut arena,
+                &unfoldings,
+                ReplaySides::Values(written, doubled),
+                EngineClaim::NotConvertible,
+                &refuted,
+            ),
+        ]
+    };
+    assert_eq!(
+        verdicts(symmetry),
+        [
+            KernelVerdict::Convertible,
+            refused(ReplayRefusal::Contradicted {
+                at: TracePosition::from(4),
+            }),
+            refused(ReplayRefusal::NonAuthoritative {
+                at: TracePosition::from(0),
+            }),
+        ],
+        "under the symmetry, the crossed pairing joins the two orders and no other pair, and no \
+         pairing refutes"
+    );
+    assert_eq!(
+        verdicts(Presentation::default()),
+        [
+            refused(ReplayRefusal::Inapplicable {
+                at: TracePosition::from(0),
+            }),
+            refused(ReplayRefusal::Inapplicable {
+                at: TracePosition::from(0),
+            }),
+            KernelVerdict::NotConvertible,
+        ],
+        "with no symmetry, the crossed decision is refused and the refutation holds"
+    );
+}
+
 /// A λ, a lazy pairing or a return under an elimination it cannot take is
 /// unreadable, never a top-level shape.
 #[test]

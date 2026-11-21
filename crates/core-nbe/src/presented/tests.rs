@@ -1068,3 +1068,188 @@ fn a_dialogue_an_older_build_records_for_a_moved_word_replays_unchanged()
         );
     }
 }
+
+/// The one rule of a meet at tag 2 over two constants at tags 0 and 1: the
+/// symmetry `meet(x, y) ~> meet(y, x)`.
+///
+/// # Specification
+/// trivial.
+fn meet_symmetry() -> Presentation
+{
+    let meet = RuleNode::Constructor(ConstructorTag::from(2_usize));
+    let (x, y) = (
+        RuleNode::Variable(RuleVariable::from(0_u32)),
+        RuleNode::Variable(RuleVariable::from(1_u32)),
+    );
+    Presentation::new(SmallVec::<_, 0, Global>::from_iter([PresentedRule::new(
+        [meet, x, y].into(),
+        [meet, y, x].into(),
+    )]))
+}
+
+/// Whether the symmetry of the meet is recorded for a run.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Meets
+{
+    /// Presented by its symmetry.
+    Symmetric,
+    /// Free: each order its own term.
+    Free,
+}
+
+/// The meet of the two constants `fields`, in the checker's core arena.
+///
+/// # Specification
+/// trivial.
+fn core_meet(
+    core: &mut CoreArena,
+    fields: [ConstructorTag; 2],
+) -> gandr_core_term::ValueId
+{
+    let own = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let [first, second] = fields
+        .map(|tag| core.value_constructor(ConstantIndex::from(0_usize), own, tag, Vec::new()));
+    core.value_constructor(
+        ConstantIndex::from(0_usize),
+        own,
+        ConstructorTag::from(2_usize),
+        alloc::vec![first, second],
+    )
+}
+
+/// Decide the meet of `left` against the meet of `right`.
+///
+/// # Specification
+/// trivial.
+fn decided_meets(
+    meets: Meets,
+    left: [ConstructorTag; 2],
+    right: [ConstructorTag; 2],
+) -> (MachineVerdict, Vec<ConversionDecision<TraceNode>>)
+{
+    let mut core = CoreArena::new();
+    let left = core_meet(&mut core, left);
+    let right = core_meet(&mut core, right);
+    let mut chain = LoweredChain::new();
+    if meets == Meets::Symmetric {
+        chain.present(
+            ConstantIndex::from(0_usize),
+            Presented::new(
+                meet_symmetry(),
+                [0_usize, 0, 2].map(FieldCount::from).into(),
+            ),
+        );
+    }
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut domain = DomainArena::new();
+    let left = eval_value(&core, &mut domain, definitions, Fuel::from(64_u32), left)
+        .expect("the meet evaluates");
+    let right = eval_value(&core, &mut domain, definitions, Fuel::from(64_u32), right)
+        .expect("the meet evaluates");
+    let mut log = TraceLog::new();
+    let report = decide::<_, NullMemo>(
+        &core,
+        &mut domain,
+        definitions,
+        MachineSettings::default(),
+        Problem::values(left, right),
+        &mut log,
+    )
+    .expect("the machine answers");
+    (report.verdict(), log.decisions().copied().collect())
+}
+
+/// Two meets that differ by the order of their two fields convert under the
+/// symmetry, by the crossed pairing that the kernel replays.
+///
+/// - see: #8311
+#[test]
+fn two_orders_of_two_fields_convert_under_a_symmetry_8311()
+{
+    let (none, all) = (ConstructorTag::from(0_usize), ConstructorTag::from(1_usize));
+    let (verdict, decisions) = decided_meets(Meets::Symmetric, [none, all], [all, none]);
+    assert_eq!(
+        verdict,
+        MachineVerdict::Convertible,
+        "`meet(none, all)` is `meet(all, none)` under the symmetry: {decisions:?}"
+    );
+    let shared = ConversionDecision::ComparedShared {
+        left: ReplayNode::Other,
+        right: ReplayNode::Other,
+    };
+    let dialogue = replay_nodes(&decisions);
+    assert_eq!(
+        dialogue,
+        alloc::vec![ConversionDecision::DecomposeCrossed, shared, shared, shared],
+        "the dialogue names the crossed pairing"
+    );
+    let mut environment = Environment::new();
+    let mut staging = environment.stage();
+    let kind = staging
+        .arena()
+        .value_type_universe(GroundSort::Value, Level::zero());
+    let own = staging.arena().value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
+    let staged = staging
+        .data(
+            LevelSignature::monomorphic(),
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([own, own]),
+            ]),
+            kind,
+        )
+        .presented(meet_symmetry());
+    let _meets = environment.add_decl(staged).expect("the meets admit");
+    let mut arena = environment.arena().clone();
+    let own = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
+    let mut kernel_meet = |fields: [ConstructorTag; 2]| {
+        let [first, second] = fields.map(|tag| {
+            arena.value_constructor(
+                ConstantIndex::from(0_usize),
+                own,
+                tag,
+                SmallVec::<_, 0, Global>::new(),
+            )
+        });
+        arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            own,
+            ConstructorTag::from(2_usize),
+            SmallVec::<_, 0, Global>::from_iter([first, second]),
+        )
+    };
+    let (left, right) = (kernel_meet([none, all]), kernel_meet([all, none]));
+    let unfoldings =
+        Unfoldings::new(Vec::new()).presenting(Presentations::of(environment.entries()));
+    assert_eq!(
+        replay(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Values(left, right),
+            EngineClaim::Convertible,
+            dialogue.iter().copied(),
+            ReplayBudget::DEFAULT,
+        ),
+        KernelVerdict::Convertible,
+        "the kernel replays the crossed pairing under its own symmetry"
+    );
+    assert_eq!(
+        decided_meets(Meets::Symmetric, [none, all], [none, none]).0,
+        MachineVerdict::NotConvertible,
+        "no pairing joins `meet(none, all)` and `meet(none, none)`"
+    );
+    assert_eq!(
+        decided_meets(Meets::Free, [none, all], [all, none]).0,
+        MachineVerdict::NotConvertible,
+        "with no symmetry the two orders are two terms"
+    );
+}

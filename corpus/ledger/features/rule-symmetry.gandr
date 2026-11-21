@@ -3,14 +3,16 @@
 ///
 /// Implemented: the rule is admitted, and no reader rewrites by it. A model
 /// owes the law as a member, and a case on the terms owes its respect. Each
-/// rule of the operation fires in the two orders of its arguments.
+/// rule of the operation fires in the two orders of its arguments. Two terms
+/// that differ by the order of two arguments convert.
 ///
-/// Not implemented: the conversion of two terms that differ by the order of
-/// two arguments where no rule fires.
+/// Not implemented: the decision that two terms are apart under the law.
 ///
-/// The kernel replays each rewriting by the match that the checker uses.
+/// The kernel replays each rewriting by the match that the checker uses. It
+/// replays the crossed pairing of two arguments only where its own rules hold
+/// the symmetry.
 ///
-/// - owes: #8280 — the conversion of two terms under the symmetry
+/// - owes: #8280 — the apartness of two terms under the symmetry
 /// - see: corpus/model/desc/rule-symmetry.gandr
 
 // `Vote`, `Tally`, `TallyInVote` and `poll`.
@@ -28,3 +30,9 @@ def rightEmpty() -> Terms Vote = poll (Tally.meet Tally.all Tally.none);
 /// as the first argument.
 def emptySecond(x : Terms Tally) -> Path (Tally.meet x Tally.none) Tally.none = Path.here
   Tally.none;
+
+/// The two orders of a meet of two variables are one term.
+def bothOrders(x : Terms Tally, y : Terms Tally) -> Path (Tally.meet x y) (Tally.meet
+  y
+  x) = Path.here
+  (Tally.meet x y);
