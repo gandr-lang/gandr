@@ -1321,6 +1321,7 @@ fn attribute_json(row: &AttributeRow) -> Value
         AttributeSchema::MarkerOrRecord(fields) => {
             json!({ "schema": "marker_or_record", "fields": fields })
         },
+        AttributeSchema::Record(fields) => json!({ "schema": "record", "fields": fields }),
         AttributeSchema::Spelled => json!({ "schema": "spelled" }),
     };
     json!({

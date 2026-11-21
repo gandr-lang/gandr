@@ -5,7 +5,7 @@ Generated from the built-in grammar by `mise run ledger:syntax`; never edited by
 - Grammar fingerprint: `0x53c763f0bd91f147`
 - Rules: 161 — 160 committed, 1 internal
 - Molds: 3112
-- Attributes: 22
+- Attributes: 23
 
 ## Reading a form
 
@@ -236,7 +236,7 @@ An old spelling that the grammar still parses, so that a stale source reaches th
 | ---- | ------------ | ----------- | ------- | --------------------- |
 | `type_application` | `glued_type_application` | `type_application.juxtaposed` | removed by #5330 | the glued head `T(a, b)` stays read until the sources move to `T a b` |
 
-## Attributes — 22 attributes
+## Attributes — 23 attributes
 
 Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes and the places where it stands, linking its exemplar, which the exemplar gate lowers and checks the attribute is filed.
 
@@ -259,6 +259,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`form`](../corpus/ledger/attributes/form.gandr) | one of the words `explicit`, `sugared` | a declaration |
 | [`identity`](../corpus/ledger/attributes/identity.gandr) | a tuple of two or three declared names: a relation, its reflexivity and optionally its transport law | a declaration |
 | [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` | a declaration |
+| [`format`](../corpus/ledger/attributes/format.gandr) | a record of the texts `latex`, `typst`, `md` | a declaration |
 | [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names | a declaration |
 | [`builtin`](../corpus/ledger/attributes/builtin.gandr) | a text payload | a declaration |
 | [`thir`](../corpus/ledger/attributes/thir.gandr) | a text or a tuple of texts | a declaration |

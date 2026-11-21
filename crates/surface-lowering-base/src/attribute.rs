@@ -61,7 +61,9 @@
 //! and `entry` one declared name or a tuple of them, `identity` a tuple of two
 //! or three declared names, `form` one bare word, `explicit` or `sugared`, and
 //! `deprecated` none or a record of the texts `since` and `note`, either
-//! left out. The attribute block
+//! left out, and `format` a record of the texts `latex`, `typst` and `md`,
+//! each the spelling of the declared name in that markup, any left out. The
+//! attribute block
 //! admits one payload per attribute and refuses an attribute written twice,
 //! so several laws are one tuple, `respects((a, b))`, in the order of the
 //! rules they answer, and an entry's worlds one tuple, `entry((home, w, …))`,
@@ -229,6 +231,20 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a declaration has no `format` entry for a document format.
+    pub mod formatted {
+        /// The declaration states no spelling in the format.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No `format` attribute decorates the declaration.
+            Unformatted,
+            /// The `format` record leaves the format's field out.
+            Unstated,
+        }
+    }
+}
+
 /// The declarations a `respects` or `entry` payload names, in the order it
 /// names them.
 ///
@@ -375,6 +391,123 @@ pub fn members(
         },
         _ => Maybe::Absent(names::Absent::Unnamed),
     }
+}
+
+/// A format of a literate document: the markup that one field of a `format`
+/// record spells a declared name in, `latex`, `typst` or `md`.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum DocumentFormat
+{
+    /// LaTeX, the field `latex`.
+    Latex,
+    /// Typst, the field `typst`.
+    Typst,
+    /// Markdown, the field `md`.
+    Markdown,
+}
+
+/// What a `format` attribute states: the spelling of the declared name in
+/// each document format, each when written.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each spelling is the text its record field states.
+/// - panics: none.
+/// - executable: none — a carrier; [`formatting`] states what it holds.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`formatting`].
+/// - witness: `attribute::tests::a_format_payload_reads_one_text_for_each_format_6403`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Formatting<'arena>
+{
+    /// The spelling in LaTeX, the field `latex`.
+    pub latex: Maybe<&'arena StringLiteral, formatted::Absent>,
+    /// The spelling in Typst, the field `typst`.
+    pub typst: Maybe<&'arena StringLiteral, formatted::Absent>,
+    /// The spelling in Markdown, the field `md`.
+    pub markdown: Maybe<&'arena StringLiteral, formatted::Absent>,
+}
+
+impl<'arena> Formatting<'arena>
+{
+    /// The spelling in `format`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn of(
+        &self,
+        format: DocumentFormat,
+    ) -> Maybe<&'arena StringLiteral, formatted::Absent>
+    {
+        match format {
+            DocumentFormat::Latex => self.latex,
+            DocumentFormat::Typst => self.typst,
+            DocumentFormat::Markdown => self.markdown,
+        }
+    }
+}
+
+/// What a `format` record payload states, read off its lowered value.
+///
+/// # Specification
+/// - requires: `payload` is the lowered value of a payload the
+///   [`AttributeSchema::Record`] schema admitted.
+/// - ensures: the texts of `latex`, `typst` and `md`, each
+///   [`formatted::Absent::Unstated`] when left out, when `payload` is a record
+///   each of whose labels is one of [`RegisteredAttribute::FORMAT_FIELDS`] and
+///   each of whose values is a text literal; [`names::Absent::Unnamed`] for any
+///   other value, a record with another label or a field that is no text
+///   included.
+/// - fails: never — a payload of another shape is an absence, not an error.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one pass over the record's finite fields, not recursion.
+/// - measure: the fields left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a record of two texts, a foreign label, a field that is
+///   an integer and a tuple separate the answers.
+/// - witness: `attribute::tests::a_format_payload_reads_one_text_for_each_format_6403`
+#[spec(ensures: |ref ret| match (ret, arena.value(payload)) {
+    | (&Maybe::Present(_), Some(&Value::Record(ref written))) => written.keys().all(|label| matches!(label.as_ref(), "latex" | "typst" | "md")),
+    | (&Maybe::Present(_), _) => false,
+    | (&Maybe::Absent(_), _) => true,
+})]
+#[inline]
+pub fn formatting<'arena>(
+    arena: &'arena CoreArena,
+    payload: ValueId,
+) -> Maybe<Formatting<'arena>, names::Absent>
+{
+    let unnamed = Maybe::Absent(names::Absent::Unnamed);
+    let Some(&Value::Record(ref written)) = arena.value(payload)
+    else {
+        return unnamed;
+    };
+    let mut stated = Formatting {
+        latex: Maybe::Absent(formatted::Absent::Unstated),
+        typst: Maybe::Absent(formatted::Absent::Unstated),
+        markdown: Maybe::Absent(formatted::Absent::Unstated),
+    };
+    for (label, &value) in written {
+        let Some(&Value::Literal(Literal::Text(ref text))) = arena.value(value)
+        else {
+            return unnamed;
+        };
+        match label.as_ref() {
+            "latex" => stated.latex = Maybe::Present(text),
+            "typst" => stated.typst = Maybe::Present(text),
+            "md" => stated.markdown = Maybe::Present(text),
+            _ => return unnamed,
+        }
+    }
+    Maybe::Present(stated)
 }
 
 /// What a `deprecated` attribute states: the version that deprecated the
@@ -540,6 +673,13 @@ impl RegisteredAttribute
     pub const DEPRECATED: Self = Self("deprecated");
     /// The fields a `deprecated` record may state, each a text.
     pub const DEPRECATION_FIELDS: &'static [&'static str] = &["since", "note"];
+    /// `format`: the declared name it decorates is spelled, in each markup
+    /// that typesets it, by the text its record payload states for that
+    /// markup's field.
+    pub const FORMAT: Self = Self("format");
+    /// The fields a `format` record may state, each a text: one for each
+    /// [`DocumentFormat`].
+    pub const FORMAT_FIELDS: &'static [&'static str] = &["latex", "typst", "md"];
     /// `boundary`: the `extern "rust"` block it decorates is checked against
     /// the rows its payload names, one per member in written order. Each
     /// member's declared types, printed by Rust's default layout, realise its
@@ -631,6 +771,9 @@ pub enum AttributeSchema
     /// A bare marker, or a record whose fields are among those named, each a
     /// text literal, any of them left out.
     MarkerOrRecord(&'static [&'static str]),
+    /// A record whose fields are among those named, each a text literal, any
+    /// of them left out.
+    Record(&'static [&'static str]),
     /// One form written unquoted, read as its spelling and never lowered as a
     /// value.
     Spelled,
@@ -669,6 +812,14 @@ impl fmt::Display for AttributeSchema
             },
             Self::MarkerOrRecord(fields) => {
                 f.write_str("no payload or a record of the texts")?;
+                for (index, field) in fields.iter().enumerate() {
+                    let joint = if index == 0 { " " } else { ", " };
+                    write!(f, "{joint}`{field}`")?;
+                }
+                Ok(())
+            },
+            Self::Record(fields) => {
+                f.write_str("a record of the texts")?;
                 for (index, field) in fields.iter().enumerate() {
                     let joint = if index == 0 { " " } else { ", " };
                     write!(f, "{joint}`{field}`")?;
@@ -889,7 +1040,7 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema, AttributePlaces); 22_usize] = [
+const REGISTRY: [(&str, AttributeSchema, AttributePlaces); 23_usize] = [
     (
         "checks",
         AttributeSchema::Marker,
@@ -969,6 +1120,11 @@ const REGISTRY: [(&str, AttributeSchema, AttributePlaces); 22_usize] = [
     (
         RegisteredAttribute::DEPRECATED.0,
         AttributeSchema::MarkerOrRecord(RegisteredAttribute::DEPRECATION_FIELDS),
+        AttributePlaces::Declaration,
+    ),
+    (
+        RegisteredAttribute::FORMAT.0,
+        AttributeSchema::Record(RegisteredAttribute::FORMAT_FIELDS),
         AttributePlaces::Declaration,
     ),
     (
@@ -1226,7 +1382,9 @@ impl AttributeRegistry
                     PayloadForm::Word | PayloadForm::OtherValue
                 )
                 | (
-                    AttributeSchema::Interface | AttributeSchema::MarkerOrRecord(_),
+                    AttributeSchema::Interface
+                        | AttributeSchema::MarkerOrRecord(_)
+                        | AttributeSchema::Record(_),
                     PayloadForm::OtherValue
                 )
                 | (AttributeSchema::Word(_), PayloadForm::Word)
@@ -1241,6 +1399,7 @@ impl AttributeRegistry
                     | AttributeSchema::Names
                     | AttributeSchema::Interface
                     | AttributeSchema::Word(_)
+                    | AttributeSchema::Record(_)
                     | AttributeSchema::Spelled
             );
         matches!(ret, PayloadVerdict::Admitted) == admitted
@@ -1274,7 +1433,9 @@ pub const fn payload_verdict(
             PayloadForm::Word | PayloadForm::OtherValue,
         )
         | (
-            AttributeSchema::Interface | AttributeSchema::MarkerOrRecord(_),
+            AttributeSchema::Interface
+            | AttributeSchema::MarkerOrRecord(_)
+            | AttributeSchema::Record(_),
             PayloadForm::OtherValue,
         )
         | (AttributeSchema::Word(_), PayloadForm::Word)
@@ -1286,6 +1447,7 @@ pub const fn payload_verdict(
             | AttributeSchema::Names
             | AttributeSchema::Interface
             | AttributeSchema::Word(_)
+            | AttributeSchema::Record(_)
             | AttributeSchema::Spelled,
             PayloadForm::Absent,
         ) => PayloadVerdict::Missing,
@@ -1333,7 +1495,9 @@ pub const fn payload_verdict(
             | PayloadForm::OtherWord,
         )
         | (
-            AttributeSchema::Interface | AttributeSchema::MarkerOrRecord(_),
+            AttributeSchema::Interface
+            | AttributeSchema::MarkerOrRecord(_)
+            | AttributeSchema::Record(_),
             PayloadForm::Integer
             | PayloadForm::Text
             | PayloadForm::OtherText
@@ -1357,6 +1521,7 @@ pub const fn payload_verdict(
             | AttributeSchema::Names
             | AttributeSchema::Interface
             | AttributeSchema::MarkerOrRecord(_)
+            | AttributeSchema::Record(_)
             | AttributeSchema::Word(_),
             PayloadForm::Named,
         ) => PayloadVerdict::IllTyped,
@@ -1993,6 +2158,55 @@ impl AttributeTable
         })
     }
 
+    /// The spelling in `format` that the `format` entry filed under `key`
+    /// states, read off its payload in `arena`.
+    ///
+    /// The literate render reads it when it writes a declared name into a
+    /// document of one format. The presentation printer reads no entry,
+    /// because each spelling it writes parses back to the term it prints.
+    ///
+    /// # Specification
+    /// - requires: `arena` holds the payloads this table's entries were minted
+    ///   into.
+    /// - ensures: the text of the record field that `format` names, when a
+    ///   `format` entry under `key` writes it, as [`formatting`] reads it;
+    ///   [`formatted::Absent::Unstated`] when the record leaves that field out;
+    ///   [`formatted::Absent::Unformatted`] when `key` holds no `format` entry
+    ///   with a record payload.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a record of two formats read at each of the three
+    ///   formats, and a key with no entry, separate the answers.
+    /// - witness: `attribute::tests::a_format_payload_reads_one_text_for_each_format_6403`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(formatted::Absent::Unformatted)) || !self.entries(key).is_empty())]
+    #[inline]
+    pub fn format<'arena>(
+        &self,
+        key: UnitKey,
+        format: DocumentFormat,
+        arena: &'arena CoreArena,
+    ) -> Maybe<&'arena StringLiteral, formatted::Absent>
+    {
+        let unformatted = Maybe::Absent(formatted::Absent::Unformatted);
+        let Some(entry) = self
+            .entries(key)
+            .iter()
+            .find(|entry| entry.name() == RegisteredAttribute::FORMAT)
+        else {
+            return unformatted;
+        };
+        let Maybe::Present(payload) = entry.payload()
+        else {
+            return unformatted;
+        };
+        match formatting(arena, payload) {
+            Maybe::Present(stated) => stated.of(format),
+            Maybe::Absent(_) => unformatted,
+        }
+    }
+
     /// The worlds the `entry` entry filed under `key` names, its home first,
     /// in the order it names them.
     ///
@@ -2094,9 +2308,14 @@ mod tests
     use super::AttributeTable;
     use super::AttributedCount;
     use super::Deprecation;
+    use super::DocumentFormat;
+    use super::Formatting;
     use super::PayloadForm;
     use super::PayloadVerdict;
+    use super::RegisteredAttribute;
     use super::deprecation;
+    use super::formatted;
+    use super::formatting;
     use super::members;
     use super::names;
     use super::payload;
@@ -2191,6 +2410,7 @@ mod tests
                 "deprecated",
                 AttributeSchema::MarkerOrRecord(&["since", "note"]),
             ),
+            ("format", AttributeSchema::Record(&["latex", "typst", "md"])),
             ("boundary", AttributeSchema::Names),
             ("builtin", AttributeSchema::Text),
             ("thir", AttributeSchema::Texts),
@@ -2276,6 +2496,7 @@ mod tests
             ("forms", "form"),
             ("identiy", "identity"),
             ("deprecate", "deprecated"),
+            ("formats", "format"),
             ("decompose", "decomposes"),
             ("trace", "traces"),
             ("read", "reads"),
@@ -2348,6 +2569,9 @@ mod tests
             ]),
             (AttributeSchema::MarkerOrRecord(&["since", "note"]), [
                 A, I, I, I, I, I, A, I,
+            ]),
+            (AttributeSchema::Record(&["latex", "typst", "md"]), [
+                M, I, I, I, I, I, A, I,
             ]),
             (AttributeSchema::Spelled, [M, I, I, I, A, I, A, A]),
         ];
@@ -2489,6 +2713,78 @@ mod tests
                  refused"
             );
         }
+    }
+
+    #[test]
+    fn a_format_payload_reads_one_text_for_each_format_6403()
+    {
+        let mut arena = CoreArena::new();
+        let mut text = |written: &str| {
+            arena.value_literal(Literal::Text(gandr_kernel_term::StringLiteral::new(
+                String::from(written),
+            )))
+        };
+        let (latex, md) = (text("\\oplus"), text("⊕"));
+        let label = |written: &str| gandr_kernel_term::FieldLabel::from(String::from(written));
+        let written =
+            arena.value_record(BTreeMap::from([(label("latex"), latex), (label("md"), md)]));
+        let (latex_text, md_text) = (
+            gandr_kernel_term::StringLiteral::new(String::from("\\oplus")),
+            gandr_kernel_term::StringLiteral::new(String::from("⊕")),
+        );
+        assert_eq!(
+            formatting(&arena, written),
+            Maybe::Present(Formatting {
+                latex: Maybe::Present(&latex_text),
+                typst: Maybe::Absent(formatted::Absent::Unstated),
+                markdown: Maybe::Present(&md_text),
+            }),
+            "each field written is read with its text, and a field left out is unstated"
+        );
+        let unit = arena.value_unit();
+        let foreign = arena.value_record(BTreeMap::from([(label("html"), md)]));
+        let untexted = arena.value_record(BTreeMap::from([(label("latex"), unit)]));
+        let tuple = arena.value_tuple(&[latex, md]);
+        for refused in [foreign, untexted, tuple, unit] {
+            assert_eq!(
+                formatting(&arena, refused),
+                Maybe::Absent(names::Absent::Unnamed),
+                "a field of no format, a field that is no text, or a value that is no record \
+                 is refused"
+            );
+        }
+        let mut table = AttributeTable::new();
+        let key = keyed(SourceIndex::default(), NodeDigest::from([1_u8; 32_usize]));
+        let bare = keyed(SourceIndex::default(), NodeDigest::from([2_u8; 32_usize]));
+        table.file(
+            key,
+            AttributeEntry::new(
+                registered(SurfaceName::from("format")),
+                AttributeSchema::Record(RegisteredAttribute::FORMAT_FIELDS),
+                Maybe::Present(written),
+                span(ByteOffset::from(0_usize), ByteOffset::from(40_usize)),
+            ),
+        );
+        assert_eq!(
+            table.format(key, DocumentFormat::Latex, &arena),
+            Maybe::Present(&latex_text),
+            "LaTeX reads the field `latex`"
+        );
+        assert_eq!(
+            table.format(key, DocumentFormat::Markdown, &arena),
+            Maybe::Present(&md_text),
+            "Markdown reads the field `md`"
+        );
+        assert_eq!(
+            table.format(key, DocumentFormat::Typst, &arena),
+            Maybe::Absent(formatted::Absent::Unstated),
+            "a format whose field the record leaves out is unstated"
+        );
+        assert_eq!(
+            table.format(bare, DocumentFormat::Latex, &arena),
+            Maybe::Absent(formatted::Absent::Unformatted),
+            "a declaration with no `format` entry is unformatted"
+        );
     }
 
     #[test]
