@@ -1,0 +1,2 @@
+{theory}{module}def packed : Model({model}) ;
+def packed = pack Bare at Model({model}) ;
