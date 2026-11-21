@@ -1,0 +1,5 @@
+data Pair : Type where {
+  | Z : Pair
+  oper add : (m : Pair, n : Pair) --> Pair;
+  rule : add m n <=> add n m;
+}

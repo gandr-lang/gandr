@@ -1,0 +1,3 @@
+import "./shout.gandr" ;
+module Loud : Model(Shout) where { type C = Bool ; def say(flag : Bool) -> String = "loud" ; }
+module Quiet : Model(Shout) where { type C = Bool ; def say(flag : Bool) -> Integer = 0 ; }
