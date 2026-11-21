@@ -1,0 +1,18 @@
+// This source passes a module type as an expression argument.
+//
+// `Seat.SeatEnd` names a type code.
+// Its unqualified alias names the same type code.
+// The argument can occur before or after a comma.
+//
+// The lowering reads both names before it places the argument.
+//
+// - see: #1126
+
+// The seat's protocol and its messages.
+import "./seat-base.gandr";
+
+/// The seat's protocol simulates itself, both sides named through the module.
+def itself : Flow[.A = Type](Seat.SeatEnd, Seat.SeatEnd) = Flow.sim Seat.SeatEnd Seat.SeatEnd;
+
+/// The stationary flow at the seat's protocol, named through the module.
+def kept : Flow[.A = Type](Seat.SeatEnd, Seat.SeatEnd) = Flow.stay Seat.SeatEnd;

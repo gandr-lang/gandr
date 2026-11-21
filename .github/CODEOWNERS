@@ -1,0 +1,8 @@
+# The owner alone approves a licence. A pull request that changes one of these
+# files needs the owner's review, and the landing ruleset requires it. The
+# files are the allow list and the sources of `cargo-deny`, the list of the
+# licence files and notices, and this file.
+# - see: #7743
+/deny.toml @silvanshade
+/.config/licences/approved.json @silvanshade
+/.github/CODEOWNERS @silvanshade
