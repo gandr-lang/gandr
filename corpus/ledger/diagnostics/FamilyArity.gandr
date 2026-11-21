@@ -1,0 +1,7 @@
+/// `FamilyArity`: a type operator applied to more arguments than its
+/// static Pis take.
+def twice : Type -> Type = fun (Y) { type(Y * Y) };
+
+@[refuses("FamilyArity")]
+def over(p : twice(Integer, Integer)) -> Integer =
+  1

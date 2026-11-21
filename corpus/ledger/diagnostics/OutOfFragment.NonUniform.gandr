@@ -1,0 +1,14 @@
+/// `OutOfFragment.NonUniform`: a form out of the fragment: the form is a
+/// recursive call passing, where one of the definition's unchanging parameters
+/// stands, something other than that parameter.
+///
+/// The naturals.
+data Nat : Type where
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+
+@[refuses("OutOfFragment.NonUniform")]
+def rec shadowed(n : Nat, m : Nat) -> Nat =
+  match m where
+    | Zero => return n
+    | Succ(n) => shadowed[<] n n

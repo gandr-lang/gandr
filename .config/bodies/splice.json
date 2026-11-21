@@ -1,0 +1,14 @@
+[
+  {
+    "name": "#3784: a block of several lines replaces the stale one, after the re-verification section",
+    "body": "Closes #1.\n<!-- quenchant-obligations:start -->\n## Re-verification\n<!-- quenchant-obligations:end -->\n<!-- gandr-observed:start -->\n- [ ] observed — stale\n<!-- gandr-observed:end -->\nLast.\n",
+    "block": "<!-- gandr-observed:start -->\n### Observed\n\n- [x] observed — fresh\n<!-- gandr-observed:end -->",
+    "output": "Closes #1.\n<!-- quenchant-obligations:start -->\n## Re-verification\n<!-- quenchant-obligations:end -->\n<!-- gandr-observed:start -->\n### Observed\n\n- [x] observed — fresh\n<!-- gandr-observed:end -->\nLast.\n"
+  },
+  {
+    "name": "#3784: a body with no re-verification section takes a block of several lines at its end",
+    "body": "Closes #1.\nLast.\n",
+    "block": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — open\n<!-- gandr-observed:end -->",
+    "output": "Closes #1.\nLast.\n<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — open\n<!-- gandr-observed:end -->\n"
+  }
+]

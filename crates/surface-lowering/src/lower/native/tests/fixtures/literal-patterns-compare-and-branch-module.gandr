@@ -1,0 +1,2 @@
+def small(n : Integer) -> Integer = match n { | 0 => 10 | 1 => 11 | _ => 12 };
+def flip(b : Bool) -> Integer = match b { | true => 1 | false => 0 };

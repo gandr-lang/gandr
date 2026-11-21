@@ -1,0 +1,6823 @@
+//! The canonical byte form: one encoding for item identities, program
+//! addresses and persisted checkpoint sets.
+//!
+//! # One writer, two sinks
+//!
+//! Every value is written by one set of functions into a [`Sink`]: a byte
+//! buffer when the bytes are kept, a BLAKE3 hasher when only their digest is.
+//! An item's identity digest is therefore the digest of exactly the bytes its
+//! checkpoint would persist, and computing it allocates nothing.
+//!
+//! # Decoding refuses what encoding would not write
+//!
+//! The reader checks structure as it goes — tags, lengths, child indices and
+//! their sorts — and a decoded value is written again and compared with its
+//! input, so a payload that parses but is not the one canonical spelling of
+//! its value is refused rather than accepted under a second address. A table
+//! is also checked to be numbered by discovery from its roots, acyclic,
+//! listing no node twice and every cover the exact minimal cover of its node,
+//! none of which writing it again would reveal. A cover's arity is its
+//! former's and an edge's widths, like a root support's, are the scope of the
+//! node it selects for, so none of them is written: a table is its formers
+//! and scopes, then every edge's indices. The references each node carries
+//! are not written but rebuilt from the checked table. Counts read from the
+//! input never size an allocation: a corrupted count fails at the end of the
+//! input instead.
+//!
+//! # One canonical encoding
+//!
+//! A checkpoint set encodes to one byte string: magic, allowance, then each
+//! item’s content, footprint, support and typing, with sets ascending and
+//! tables in discovery order. Content producers establish the table invariants;
+//! the decoder checks them. Before framing, a borrowed pass refuses any level
+//! atom whose offset reaches 4,096, in the content, support or typing. The
+//! decoder enforces the same bound because it reconstructs each offset with
+//! that many successors. It also refuses truncated, malformed and trailing
+//! bytes, and any payload that parses but is not the canonical spelling of its
+//! value. After the level check, encoding names the sort of its first
+//! unresolved id (`UnsupportedPersistence::Dangling`); opaque content has no
+//! spelling.
+
+use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
+use core::borrow::Borrow;
+
+use anodized::spec;
+use gandr_core_checker::ArgumentPosition;
+use gandr_core_checker::CheckBudget;
+use gandr_core_checker::ConversionCount;
+use gandr_core_checker::EndpointMiss;
+use gandr_core_checker::Entered;
+use gandr_core_checker::ExpectedShape;
+use gandr_core_checker::RunFault;
+use gandr_core_checker::RunStep;
+use gandr_core_checker::StaticArity;
+use gandr_core_checker::UnadmittedFormer;
+use gandr_core_checker::access::AccessDefect;
+use gandr_core_checker::body;
+use gandr_core_checker::comonoid::Grade;
+use gandr_core_checker::session::Capture;
+use gandr_core_checker::session::ForkSide;
+use gandr_core_checker::session::ProtocolDefect;
+use gandr_core_checker::signature;
+use gandr_core_content::ContentNode;
+use gandr_core_content::NodeIndex;
+use gandr_core_content::Opacity;
+use gandr_core_content::Reference;
+use gandr_core_content::Sort;
+use gandr_core_content::SupportedNode;
+use gandr_core_content::TypeContent;
+use gandr_core_content::codec::Bytes;
+use gandr_core_content::codec::CodataWrite;
+use gandr_core_content::codec::CodecError;
+use gandr_core_content::codec::Count;
+use gandr_core_content::codec::MAX_DECODED_LEVEL_OFFSET;
+use gandr_core_content::codec::Reader;
+use gandr_core_content::codec::Sink;
+use gandr_core_content::codec::Tag;
+use gandr_core_content::codec::UnsupportedPersistence;
+use gandr_core_content::codec::Word;
+use gandr_core_content::codec::Writer;
+use gandr_core_content::codec::check_discovery;
+use gandr_core_content::codec::read_effect_row;
+use gandr_core_content::codec::read_index;
+use gandr_core_content::codec::read_indices;
+use gandr_core_content::codec::read_level;
+use gandr_core_content::codec::read_nodes;
+use gandr_core_content::codec::read_pasting;
+use gandr_core_content::codec::read_reference;
+use gandr_core_content::codec::read_row_tail;
+use gandr_core_content::codec::read_selection;
+use gandr_core_content::codec::read_table_place;
+use gandr_core_content::codec::read_type;
+use gandr_core_content::codec::read_world;
+use gandr_core_content::codec::write_effect_row;
+use gandr_core_content::codec::write_index;
+use gandr_core_content::codec::write_indices;
+use gandr_core_content::codec::write_level;
+use gandr_core_content::codec::write_nodes;
+use gandr_core_content::codec::write_pasting;
+use gandr_core_content::codec::write_reference;
+use gandr_core_content::codec::write_selection;
+use gandr_core_content::codec::write_type;
+use gandr_core_content::codec::write_world;
+use gandr_core_content::seating;
+use gandr_core_nbe::DomainCompId;
+use gandr_core_nbe::DomainValueId;
+use gandr_core_term::BinderDepth;
+use gandr_core_term::Zone;
+use gandr_core_term::effect::Purity;
+use gandr_core_term::session::ActionKind;
+use gandr_core_term::support::Thinning;
+use gandr_kernel_conversion_trace::ConversionDecision;
+use gandr_kernel_conversion_trace::ConversionSide;
+use gandr_kernel_conversion_trace::SubgoalPosition;
+use gandr_kernel_term::ConstructorTag;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldPosition;
+use gandr_kernel_term::OccurrenceSite;
+use gandr_kernel_term::ParameterPosition;
+use gandr_kernel_term::PlacedChild;
+use gandr_kernel_term::Stage;
+use gandr_kernel_term::StageBinder;
+use gandr_kernel_term::StageBound;
+use gandr_kernel_term::StageDepth;
+use gandr_kernel_term::StageId;
+use gandr_kernel_term::StageMark;
+use gandr_kernel_term::StageReach;
+use gandr_kernel_term::StageSignature;
+use gandr_kernel_term::StagedPosition;
+use gandr_kernel_term::Standing;
+use quenchant_shape::shape::Maybe;
+
+use crate::checkpoint::Answer;
+use crate::checkpoint::Answered;
+use crate::checkpoint::Checkpoints;
+use crate::checkpoint::ItemCheckpoint;
+use crate::content::ItemContent;
+use crate::entry::EntryContent;
+use crate::entry::elaborated;
+use crate::entry::written;
+use crate::failure::ComparedContent;
+use crate::failure::EndpointContent;
+use crate::failure::FailureContent;
+use crate::failure::FailureParts;
+use crate::failure::ObligationContent;
+use crate::failure::OutsideContent;
+use crate::failure::Placed;
+use crate::failure::PursuitContent;
+use crate::failure::Rooted;
+use crate::failure::failed;
+use crate::failure::solved;
+use crate::footprint::Footprint;
+use crate::footprint::HoleMark;
+use crate::report::CrossingContent;
+use crate::report::DirectedContent;
+use crate::report::ElaborationContent;
+use crate::report::EquationContent;
+use crate::report::EvaluationContent;
+use crate::report::HandledContent;
+use crate::report::MetContent;
+use crate::report::NestingContent;
+use crate::report::OperandContent;
+use crate::report::Place as ReportPlace;
+use crate::report::ReflexivityContent;
+use crate::report::ReportContent;
+use crate::report::RowContent;
+use crate::report::StalledContent;
+use crate::report::StepContent;
+use crate::report::SuspensionContent;
+use crate::report::TableContent;
+use crate::report::TraceContent;
+use crate::report::nesting;
+use crate::report::reported;
+use crate::report::tabled;
+use crate::report::waiting;
+use crate::typing::EndpointSite;
+use crate::typing::Forcing;
+use crate::typing::Form;
+use crate::typing::Linearity;
+use crate::typing::Located;
+use crate::typing::Mismatched;
+use crate::typing::Place;
+use crate::typing::Refusal;
+use crate::typing::Site;
+use crate::typing::Typing;
+
+/// The magic and version a persisted checkpoint set opens with. Version
+/// `0x1f` keeps the function extensionalities that the judgement added,
+/// beside the native paths that `0x1e` keeps, the directed flows that `0x1d`
+/// keeps, the payloads that `0x1c` keeps, the reflexivities that `0x1b` keeps,
+/// the entries of the rows and the handlers that `0x1a` keeps, what the
+/// judgement reported of an item that `0x19` keeps, the table parts that
+/// `0x18` keeps of an item that its judgement entered elaborated, the failure
+/// content that `0x17` keeps and the located program that `0x16` persists.
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x1f";
+
+/// The magic and version a program's address is computed over. Version
+/// `0x0d` reads its items' content as checkpoint versions `0x16` to `0x1f`
+/// write it.
+const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0d";
+
+/// Owned checkpoint bytes, canonical only after encoding or successful
+/// decoding.
+///
+/// # Specification
+/// - executable: none — the wrapper also accepts unchecked bytes from storage;
+///   canonicality is a decoder result, not a type invariant.
+///
+/// # Adequacy
+/// - hypothesis: L3 — malformed, truncated and trailing bytes can inhabit the
+///   wrapper and are rejected by decoding; successful finite checkpoint corpora
+///   have stable canonical encodings.
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_truncation_corruption_and_trailing_bytes`
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct CheckpointBytes(Vec<u8>);
+
+impl From<Vec<u8>> for CheckpointBytes
+{
+    /// Wraps bytes read from elsewhere, to be decoded.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: Vec<u8>) -> Self
+    {
+        Self(bytes)
+    }
+}
+
+impl From<CheckpointBytes> for Vec<u8>
+{
+    /// Unwraps the bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: CheckpointBytes) -> Self
+    {
+        bytes.0
+    }
+}
+
+impl AsRef<[u8]> for CheckpointBytes
+{
+    /// Borrows the bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &[u8]
+    {
+        &self.0
+    }
+}
+
+/// A hasher that keys one node's content: the one sink that takes a codata
+/// application.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Debug, Default)]
+pub struct ContentKeyHasher(blake3::Hasher);
+
+impl ContentKeyHasher
+{
+    /// The hasher, fed with each byte of the content written so far.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn hasher(&self) -> &blake3::Hasher
+    {
+        &self.0
+    }
+}
+
+impl Sink for ContentKeyHasher
+{
+    /// Feed the hasher.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn put(
+        &mut self,
+        bytes: Bytes<'_>,
+    )
+    {
+        let _hasher = self.0.update(bytes.0);
+    }
+
+    const CODATA: CodataWrite = CodataWrite::Keyed;
+}
+
+impl Sink for CheckpointBytes
+{
+    /// Append to the buffer.
+    ///
+    /// # Specification
+    /// - ensures: the length grows by the input length and the new suffix
+    ///   equals the input.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nonempty prefix survives tag, word and
+    ///   length-framed payload appends. The predicate observes length and
+    ///   suffix; the byte golden also checks prefix preservation.
+    /// - witness: `codec::tests::primitive_frames_have_known_bytes_and_digest`
+    ///
+    /// # Cost
+    /// - allocation: the appended bytes, growth within the checkpoint
+    #[spec(
+        captures: [before = self.0.len()],
+        ensures: self.0.len().checked_sub(before) == Some(bytes.0.len())
+            && self.0.get(before ..) == Some(bytes.0),
+    )]
+    #[inline]
+    fn put(
+        &mut self,
+        bytes: Bytes<'_>,
+    )
+    {
+        self.0.extend_from_slice(bytes.0);
+    }
+}
+
+/// A count as a word, for fields the vocabulary types as `usize`.
+///
+/// # Specification
+/// - ensures: the count is preserved when it fits a 64-bit word, otherwise it
+///   is unrepresentable.
+///
+/// # Adequacy
+/// - hypothesis: L3 — persisted checkpoint budgets round-trip through the word
+///   field. A count wider than 64 bits has no witness.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+#[spec(
+    ensures: |ret| {
+        ret == u64::try_from(count.0)
+            .map(Word)
+            .map_err(|_overflow| CodecError::Unrepresentable)
+    },
+)]
+fn word_of(count: Count) -> Result<Word, CodecError>
+{
+    let word = u64::try_from(count.0).map_err(|_overflow| CodecError::Unrepresentable)?;
+    Ok(Word(word))
+}
+
+/// The canonical bytes of one reference, for tests that rewrite a payload.
+///
+/// # Specification
+/// - ensures: the returned bytes contain the exact tag, framed key and
+///   occurrence of the reference.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a binary key containing zero and a non-UTF-8 byte has
+///   independently specified bytes; the unoccupied reference has its distinct
+///   one-byte frame.
+/// - witness: `codec::tests::reference_frames_preserve_binary_keys_and_occurrences`
+#[cfg(test)]
+#[spec(
+    ensures: |ret| {
+        let bytes = ret.as_ref();
+        match *reference {
+            | Reference::Unoccupied => bytes == [0],
+            | Reference::Item {
+                ref key,
+                occurrence,
+            } => {
+                bytes.first() == Some(&1)
+                    && u64::try_from(key.as_ref().len()).is_ok_and(|count| {
+                        bytes.get(1 .. 9) == Some(count.to_le_bytes().as_slice())
+                    })
+                    && bytes
+                        .get(9 ..)
+                        .and_then(|tail| tail.strip_prefix(key.as_ref()))
+                        .is_some_and(|tail| {
+                            u64::try_from(usize::from(occurrence))
+                                .is_ok_and(|word| tail == word.to_le_bytes())
+                        })
+            },
+        }
+    },
+)]
+pub fn reference_bytes(reference: &Reference) -> CheckpointBytes
+{
+    let mut bytes = CheckpointBytes::default();
+    let mut writer = Writer { sink: &mut bytes };
+    assert_eq!(
+        write_reference(&mut writer, reference),
+        Ok(()),
+        "a reference always encodes"
+    );
+    bytes
+}
+
+/// Write a stated entry: its home, then the count of its capabilities and the
+/// world of each.
+///
+/// # Specification
+/// - fails: as [`write_world`] and the writer's count.
+/// - panics: none.
+/// - executable: none — the bytes are the writer's own output; the witness
+///   reads them back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus model's entry round trips with its home and
+///   its capability.
+/// - witness: `tests::worlds::a_located_program_persists_and_judges_alike_3381`
+fn write_entry<Out>(
+    writer: &mut Writer<'_, Out>,
+    entry: &crate::content::EntryRoots,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    write_world(writer, &entry.home)?;
+    writer.count(Count(entry.capabilities.len()))?;
+    for world in &entry.capabilities {
+        write_world(writer, world)?;
+    }
+    Ok(())
+}
+
+/// Write a checkpoint's table parts: tag 0 and why it keeps none; else tag 1
+/// and each part in turn. A part opens with tag 0 when the item writes it,
+/// else with tag 1 and the part: the body's table, the declared type's table,
+/// the stage signature and the following position.
+///
+/// # Specification
+/// - ensures: [`read_elaborated`] reads back `entry` from what was written.
+/// - fails: as [`write_listed`], [`write_type`] and [`write_stage_signature`],
+///   and [`CodecError::Unrepresentable`] for a position past 64 bits.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — table parts that keep every part, with a bound stage
+///   binder and a mark below its binder, and parts that keep none, each read
+///   back as written, and each reason that keeps no parts reads back.
+/// - witness: `codec::tests::an_elaborated_entry_round_trips`
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
+fn write_elaborated<Out>(
+    writer: &mut Writer<'_, Out>,
+    entry: Maybe<&EntryContent, elaborated::Absent>,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let entry = match entry {
+        Maybe::Present(entry) => entry,
+        Maybe::Absent(reason) => {
+            writer.tag(Tag(0));
+            return write_listed(writer, &ELABORATEDS, &reason);
+        },
+    };
+    writer.tag(Tag(1));
+    for part in [entry.body(), entry.declared()] {
+        match part {
+            Maybe::Present(content) => {
+                writer.tag(Tag(1));
+                write_type(writer, content)?;
+            },
+            Maybe::Absent(written::Absent::Written) => writer.tag(Tag(0)),
+        }
+    }
+    match entry.stage() {
+        Maybe::Present(stage) => {
+            writer.tag(Tag(1));
+            write_stage_signature(writer, stage)?;
+        },
+        Maybe::Absent(written::Absent::Written) => writer.tag(Tag(0)),
+    }
+    match entry.following() {
+        Maybe::Present(position) => {
+            let position = u64::try_from(usize::from(position))
+                .map_err(|_wide| CodecError::Unrepresentable)?;
+            writer.tag(Tag(1));
+            writer.word(Word(position));
+        },
+        Maybe::Absent(written::Absent::Written) => writer.tag(Tag(0)),
+    }
+    Ok(())
+}
+
+/// Read a stated entry.
+///
+/// # Specification
+/// - fails: as [`read_world`] and the reader's count.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_entry`].
+/// - witness: `tests::worlds::a_located_program_persists_and_judges_alike_3381`
+///
+/// # Cost
+/// - allocation: the roots of the entry, growth within the bytes
+#[spec(captures: [before = reader.cursor], ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_entry(reader: &mut Reader<'_>) -> Result<crate::content::EntryRoots, CodecError>
+{
+    let home = read_world(reader)?;
+    let count = reader.count()?.0;
+    let mut capabilities = Vec::new();
+    for _capability in 0 .. count {
+        capabilities.push(read_world(reader)?);
+    }
+    Ok(crate::content::EntryRoots { home, capabilities })
+}
+
+/// Why a checkpoint keeps no report, in stable wire order.
+const REPORTEDS: [reported::Absent; 2] = [reported::Absent::Unreported, reported::Absent::Opaque];
+
+/// Read a checkpoint's table parts as [`write_elaborated`] writes them.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for an unknown tag, a body that is no
+///   value, a declared type that is no value type, or a position past the
+///   platform's width, and as the readers it calls.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_elaborated`].
+/// - witness: `codec::tests::an_elaborated_entry_round_trips`
+fn read_elaborated(
+    reader: &mut Reader<'_>
+) -> Result<Maybe<EntryContent, elaborated::Absent>, CodecError>
+{
+    match reader.tag()?.0 {
+        0 => return Ok(Maybe::Absent(read_listed(reader, &ELABORATEDS)?)),
+        1 => {},
+        _ => return Err(CodecError::Corrupt),
+    }
+    let mut table = |sort: Sort| -> Result<Maybe<TypeContent, written::Absent>, CodecError> {
+        match reader.tag()?.0 {
+            0 => Ok(Maybe::Absent(written::Absent::Written)),
+            1 => {
+                let content = read_outside(reader)?;
+                match content.nodes().first().map(SupportedNode::sort) {
+                    Some(found) if found == sort => Ok(Maybe::Present(content)),
+                    Some(_) | None => Err(CodecError::Corrupt),
+                }
+            },
+            _ => Err(CodecError::Corrupt),
+        }
+    };
+    let body = table(Sort::Value)?;
+    let declared = table(Sort::ValueType)?;
+    let stage = match reader.tag()?.0 {
+        0 => Maybe::Absent(written::Absent::Written),
+        1 => Maybe::Present(read_stage_signature(reader)?),
+        _ => return Err(CodecError::Corrupt),
+    };
+    let following = match reader.tag()?.0 {
+        0 => Maybe::Absent(written::Absent::Written),
+        1 => {
+            let word = reader.word()?;
+            let position = usize::try_from(word.0).map_err(|_wide| CodecError::Corrupt)?;
+            Maybe::Present(StagedPosition::from(position))
+        },
+        _ => return Err(CodecError::Corrupt),
+    };
+    Ok(Maybe::Present(EntryContent::from_parts(
+        (body, declared),
+        (stage, following),
+    )))
+}
+
+/// Write a checkpoint's report: tag 0 and why it keeps none; else tag 1, the
+/// report's own table and the place of each root in it, then the elaboration
+/// and the suspension, each tag 0 when the report keeps none, else tag 1 and
+/// the part.
+///
+/// # Specification
+/// - ensures: [`read_report`] reads back `report` from what was written, given
+///   the table of the body that the checkpoint keeps.
+/// - fails: as [`write_nodes`] and [`write_reference`], and as the count
+///   writer.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the reports of an elaborated item and of a suspended item
+///   read back as written.
+/// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
+fn write_report<Out>(
+    writer: &mut Writer<'_, Out>,
+    report: Maybe<&ReportContent, reported::Absent>,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let report = match report {
+        Maybe::Present(report) => report,
+        Maybe::Absent(reason) => {
+            writer.tag(Tag(0));
+            return write_listed(writer, &REPORTEDS, &reason);
+        },
+    };
+    writer.tag(Tag(1));
+    let (outside, roots) = report.outside();
+    write_nodes(writer, outside)?;
+    writer.count(Count(roots.len()))?;
+    for root in roots {
+        write_index(writer, root.node)?;
+        write_selection(writer, &root.support);
+    }
+    match report.elaboration() {
+        Maybe::Present(elaboration) => {
+            writer.tag(Tag(1));
+            write_elaboration(writer, elaboration)?;
+        },
+        Maybe::Absent(nesting::Absent::Unnested) => writer.tag(Tag(0)),
+    }
+    match report.suspension() {
+        Maybe::Present(suspension) => {
+            writer.tag(Tag(1));
+            write_report_place(writer, &suspension.declared)?;
+            writer.count(Count(suspension.equations.len()))?;
+            for equation in &suspension.equations {
+                write_reference(writer, &equation.hole)?;
+                write_report_place(writer, &equation.flex)?;
+                write_report_place(writer, &equation.rigid)?;
+            }
+            for references in [&suspension.blockers, &suspension.dependencies] {
+                writer.count(Count(references.len()))?;
+                for reference in references {
+                    write_reference(writer, reference)?;
+                }
+            }
+        },
+        Maybe::Absent(waiting::Absent::Unsuspended) => writer.tag(Tag(0)),
+    }
+    Ok(())
+}
+
+/// Write an elaboration's content: its decisions, its carried pairs, its
+/// binds and its crossings, each a count and its entries.
+///
+/// # Specification
+/// - ensures: [`read_elaboration`] reads back `elaboration`.
+/// - fails: as [`write_report_place`] and [`write_reference`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_report`].
+/// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+fn write_elaboration<Out>(
+    writer: &mut Writer<'_, Out>,
+    elaboration: &ElaborationContent,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(elaboration.decisions.len()))?;
+    for &(ref at, ref decided) in &elaboration.decisions {
+        write_report_place(writer, at)?;
+        match *decided {
+            NestingContent::Suspended => writer.tag(Tag(0)),
+            NestingContent::Ran(Purity::Pure) => writer.tag(Tag(1)),
+            NestingContent::Ran(Purity::Effectful) => writer.tag(Tag(2)),
+            NestingContent::Returned => writer.tag(Tag(3)),
+            NestingContent::Filled(ref fill) => {
+                writer.tag(Tag(4));
+                write_report_place(writer, fill)?;
+            },
+        }
+    }
+    for pairs in [&elaboration.carried, &elaboration.binds] {
+        writer.count(Count(pairs.len()))?;
+        for &(ref from, ref to) in pairs {
+            write_report_place(writer, from)?;
+            write_report_place(writer, to)?;
+        }
+    }
+    writer.count(Count(elaboration.crossings.len()))?;
+    for &(ref at, ref crossing) in &elaboration.crossings {
+        write_report_place(writer, at)?;
+        match crossing.by {
+            Maybe::Present(ref by) => {
+                writer.tag(Tag(1));
+                write_reference(writer, by)?;
+            },
+            Maybe::Absent(()) => writer.tag(Tag(0)),
+        }
+        writer.count(Count(crossing.carriers.len()))?;
+        for carrier in &crossing.carriers {
+            write_report_place(writer, carrier)?;
+        }
+        match crossing.operand {
+            OperandContent::Itself => writer.tag(Tag(0)),
+            OperandContent::Standing(ref standing) => {
+                writer.tag(Tag(1));
+                write_report_place(writer, standing)?;
+            },
+            OperandContent::Overlaid(ref overlay) => {
+                writer.tag(Tag(2));
+                write_report_place(writer, overlay)?;
+            },
+        }
+    }
+    Ok(())
+}
+
+/// Write a report's place: tag 0 and its discovery; tag 1, the judged body's
+/// node and its support; or tag 2 and its root in the report's own table.
+///
+/// # Specification
+/// - fails: as the count writer.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_report`].
+/// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+fn write_report_place<Out>(
+    writer: &mut Writer<'_, Out>,
+    place: &ReportPlace,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match *place {
+        ReportPlace::Written(discovery) => {
+            writer.tag(Tag(0));
+            writer.count(Count(usize::from(discovery)))
+        },
+        ReportPlace::Judged(ref at) => {
+            writer.tag(Tag(1));
+            write_index(writer, at.node)?;
+            write_selection(writer, &at.support);
+            Ok(())
+        },
+        ReportPlace::Outside(index) => {
+            writer.tag(Tag(2));
+            writer.count(Count(usize::from(index)))
+        },
+    }
+}
+
+/// Read a checkpoint's report as [`write_report`] writes it, a judged node's
+/// support read against `body`, the table of the body that the checkpoint
+/// keeps.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for an unknown tag, a judged place with no
+///   body or past it, a root or an outside place past the report's own table,
+///   and as the readers it calls; [`CodecError::NonCanonical`] for a table not
+///   numbered from its roots, or decisions, crossings or equations out of the
+///   order of their places.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_report`].
+/// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+///
+/// # Cost
+/// - allocation: the content of the report, growth within the bytes
+fn read_report(
+    reader: &mut Reader<'_>,
+    body: Option<&[SupportedNode]>,
+) -> Result<Maybe<ReportContent, reported::Absent>, CodecError>
+{
+    match reader.tag()?.0 {
+        0 => return Ok(Maybe::Absent(read_listed(reader, &REPORTEDS)?)),
+        1 => {},
+        _ => return Err(CodecError::Corrupt),
+    }
+    let outside = read_nodes(reader)?;
+    let count = reader.count()?.0;
+    let mut roots = Vec::new();
+    for _ in 0 .. count {
+        roots.push(read_table_place(reader, &outside)?);
+    }
+    check_discovery(&outside, roots.iter().map(|root| root.node))?;
+    let places = Places {
+        body,
+        roots: roots.len(),
+    };
+    let elaboration = match reader.tag()?.0 {
+        0 => Maybe::Absent(nesting::Absent::Unnested),
+        1 => Maybe::Present(read_elaboration(reader, &places)?),
+        _ => return Err(CodecError::Corrupt),
+    };
+    let suspension = match reader.tag()?.0 {
+        0 => Maybe::Absent(waiting::Absent::Unsuspended),
+        1 => {
+            let declared = places.read(reader)?;
+            let count = reader.count()?.0;
+            let mut equations = Vec::new();
+            for _ in 0 .. count {
+                equations.push(EquationContent {
+                    hole: read_reference(reader)?,
+                    flex: places.read(reader)?,
+                    rigid: places.read(reader)?,
+                });
+            }
+            if !equations.is_sorted() {
+                return Err(CodecError::NonCanonical);
+            }
+            let mut references = || -> Result<Vec<Reference>, CodecError> {
+                let count = reader.count()?.0;
+                let mut references = Vec::new();
+                for _ in 0 .. count {
+                    references.push(read_reference(reader)?);
+                }
+                Ok(references)
+            };
+            let blockers = references()?;
+            let dependencies = references()?;
+            Maybe::Present(SuspensionContent {
+                declared,
+                equations,
+                blockers,
+                dependencies,
+            })
+        },
+        _ => return Err(CodecError::Corrupt),
+    };
+    Ok(Maybe::Present(ReportContent::from_parts(
+        (elaboration, suspension),
+        (outside, roots),
+    )))
+}
+
+/// Why a checkpoint keeps no entries of the tables, in stable wire order.
+const TABLEDS: [tabled::Absent; 4] = [
+    tabled::Absent::Untabled,
+    tabled::Absent::Unkept,
+    tabled::Absent::Unread,
+    tabled::Absent::Unplaced,
+];
+
+/// Write the entries a checkpoint keeps of the rows, the handlers and the
+/// reflexivities: tag 0 and why it keeps none; else tag 1, the entries' own
+/// table and the place of each root in it, then the rows records, the
+/// handlers and the reflexivities, each a count and its entries.
+///
+/// # Specification
+/// - ensures: [`read_tables`] reads back `tables` from what was written, given
+///   the table of the body that the checkpoint keeps.
+/// - fails: as [`write_nodes`], [`write_report_place`], [`write_level`] and
+///   [`write_dialogue`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the entries of a handler at a row read back as written,
+///   and seat as the entries of a fresh judgement.
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_funext_keeps_its_steps_7463`
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
+fn write_tables<Out>(
+    writer: &mut Writer<'_, Out>,
+    tables: Maybe<&TableContent, tabled::Absent>,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let tables = match tables {
+        Maybe::Present(tables) => tables,
+        Maybe::Absent(reason) => {
+            writer.tag(Tag(0));
+            return write_listed(writer, &TABLEDS, &reason);
+        },
+    };
+    writer.tag(Tag(1));
+    let (outside, roots) = tables.outside();
+    write_nodes(writer, outside)?;
+    writer.count(Count(roots.len()))?;
+    for root in roots {
+        write_index(writer, root.node)?;
+        write_selection(writer, &root.support);
+    }
+    writer.count(Count(tables.rows().len()))?;
+    for row in tables.rows() {
+        match *row {
+            RowContent::Checked(ref at, ref ty) => {
+                writer.tag(Tag(0));
+                write_report_place(writer, at)?;
+                write_report_place(writer, ty)?;
+            },
+            RowContent::Synthesised(ref at, ref ty) => {
+                writer.tag(Tag(1));
+                write_report_place(writer, at)?;
+                write_report_place(writer, ty)?;
+            },
+            RowContent::Level(ref ty, ref level) => {
+                writer.tag(Tag(2));
+                write_report_place(writer, ty)?;
+                write_level(writer, level)?;
+            },
+        }
+    }
+    writer.count(Count(tables.handled().len()))?;
+    for &(ref at, ref types) in tables.handled() {
+        write_report_place(writer, at)?;
+        write_report_place(writer, &types.subject)?;
+        write_report_place(writer, &types.answer)?;
+        write_level(writer, &types.level)?;
+    }
+    writer.count(Count(tables.reflexivities().len()))?;
+    for &(ref at, ref reflexivity) in tables.reflexivities() {
+        write_report_place(writer, at)?;
+        write_dialogue(writer, &reflexivity.left, write_trace)?;
+        write_dialogue(writer, &reflexivity.right, write_trace)?;
+        for met in &reflexivity.met {
+            match *met {
+                None => writer.tag(Tag(0)),
+                Some(ref pair) => {
+                    writer.tag(Tag(1));
+                    write_report_place(writer, &pair.point)?;
+                    write_report_place(writer, &pair.endpoint)?;
+                    writer.count(Count(pair.returning.len()))?;
+                    for &index in &pair.returning {
+                        writer.word(Word(u64::from(u32::from(index))));
+                    }
+                },
+            }
+        }
+    }
+    writer.count(Count(tables.payloads().len()))?;
+    for &(ref at, ref moved) in tables.payloads() {
+        write_report_place(writer, at)?;
+        write_report_place(writer, moved)?;
+    }
+    writer.count(Count(tables.directed().len()))?;
+    for &(ref at, ref statement) in tables.directed() {
+        write_report_place(writer, at)?;
+        match *statement {
+            DirectedContent::Forward {
+                ref classifier,
+                ref images,
+                ref dialogues,
+            } => {
+                writer.tag(Tag(0));
+                write_report_place(writer, classifier)?;
+                writer.count(Count(images.len()))?;
+                for image in images {
+                    write_report_place(writer, image)?;
+                }
+                writer.count(Count(dialogues.len()))?;
+                for dialogue in dialogues.iter() {
+                    write_dialogue(writer, dialogue, |_writer, &()| Ok(()))?;
+                }
+            },
+            DirectedContent::Function(ref classifier) => {
+                writer.tag(Tag(1));
+                write_report_place(writer, classifier)?;
+            },
+        }
+    }
+    writer.count(Count(tables.natives().len()))?;
+    for &(ref at, ref path) in tables.natives() {
+        write_report_place(writer, at)?;
+        write_report_place(writer, path)?;
+    }
+    writer.count(Count(tables.funexts().len()))?;
+    for &(ref at, ref steps) in tables.funexts() {
+        write_report_place(writer, at)?;
+        writer.count(Count(steps.len()))?;
+        for step in steps {
+            match *step {
+                StepContent::Return {
+                    ref left,
+                    ref right,
+                } => {
+                    writer.tag(Tag(0));
+                    for side in [left, right] {
+                        write_report_place(writer, &side.normal)?;
+                        write_report_place(writer, &side.returned)?;
+                        write_dialogue(writer, &side.decisions, write_trace)?;
+                    }
+                },
+                StepContent::Apply {
+                    fibre,
+                    ref left,
+                    ref right,
+                } => {
+                    writer.tag(Tag(1));
+                    writer.word(Word(u64::from(u32::from(fibre))));
+                    for side in [left, right] {
+                        write_report_place(writer, &side.normal)?;
+                        write_dialogue(writer, &side.decisions, write_trace)?;
+                    }
+                },
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Write a kept dialogue: a count, then each decision as its tag and its
+/// fields in declaration order, each node through `write_node`.
+///
+/// # Specification
+/// - ensures: [`read_dialogue`] reads back `dialogue` from what was written,
+///   given the reader of `write_node`.
+/// - fails: as `write_node` fails.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_tables`].
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
+fn write_dialogue<Out, Node, WriteNode>(
+    writer: &mut Writer<'_, Out>,
+    dialogue: &[ConversionDecision<Node>],
+    write_node: WriteNode,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+    WriteNode: Fn(&mut Writer<'_, Out>, &Node) -> Result<(), CodecError>,
+{
+    let side = |writer: &mut Writer<'_, Out>, side: ConversionSide| {
+        writer.tag(Tag(match side {
+            ConversionSide::Left => 0,
+            ConversionSide::Right => 1,
+        }));
+    };
+    writer.count(Count(dialogue.len()))?;
+    for decision in dialogue {
+        match *decision {
+            ConversionDecision::ReduceLeft { ref redex } => {
+                writer.tag(Tag(0));
+                write_node(writer, redex)?;
+            },
+            ConversionDecision::ReduceRight { ref redex } => {
+                writer.tag(Tag(1));
+                write_node(writer, redex)?;
+            },
+            ConversionDecision::ConstShortcut { ref constant } => {
+                writer.tag(Tag(2));
+                write_node(writer, constant)?;
+            },
+            ConversionDecision::Unfold { ref constant } => {
+                writer.tag(Tag(3));
+                write_node(writer, constant)?;
+            },
+            ConversionDecision::Postpone { ref constant } => {
+                writer.tag(Tag(4));
+                write_node(writer, constant)?;
+            },
+            ConversionDecision::Freeze {
+                ref constant,
+                side: frozen,
+            } => {
+                writer.tag(Tag(5));
+                write_node(writer, constant)?;
+                side(writer, frozen);
+            },
+            ConversionDecision::EtaExpand {
+                side: applied,
+                ref variable,
+            } => {
+                writer.tag(Tag(6));
+                side(writer, applied);
+                write_node(writer, variable)?;
+            },
+            ConversionDecision::ReturnEta { side: at } => {
+                writer.tag(Tag(7));
+                side(writer, at);
+            },
+            ConversionDecision::Reassociate { side: at } => {
+                writer.tag(Tag(8));
+                side(writer, at);
+            },
+            ConversionDecision::Discard { side: at } => {
+                writer.tag(Tag(9));
+                side(writer, at);
+            },
+            ConversionDecision::Hold { side: at } => {
+                writer.tag(Tag(10));
+                side(writer, at);
+            },
+            ConversionDecision::Force { ref thunk } => {
+                writer.tag(Tag(11));
+                write_node(writer, thunk)?;
+            },
+            ConversionDecision::ComparedShared {
+                ref left,
+                ref right,
+            } => {
+                writer.tag(Tag(12));
+                write_node(writer, left)?;
+                write_node(writer, right)?;
+            },
+            ConversionDecision::Decompose => writer.tag(Tag(13)),
+            ConversionDecision::NegativeSubgoal { position } => {
+                writer.tag(Tag(14));
+                writer.word(Word(u64::from(u32::from(position))));
+            },
+            ConversionDecision::Evaluate => writer.tag(Tag(15)),
+            ConversionDecision::Admitted => writer.tag(Tag(16)),
+        }
+    }
+    Ok(())
+}
+
+/// Write one node of a kept dialogue: tag 0 and a constant's reference, or
+/// tag 1 or 2 and a run's domain id as a word.
+///
+/// # Specification
+/// - ensures: [`read_trace`] reads back `node` from what was written.
+/// - fails: as [`write_reference`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_tables`].
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
+fn write_trace<Out>(
+    writer: &mut Writer<'_, Out>,
+    node: &TraceContent,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match *node {
+        TraceContent::Constant(ref reference) => {
+            writer.tag(Tag(0));
+            write_reference(writer, reference)
+        },
+        TraceContent::Value(value) => {
+            writer.tag(Tag(1));
+            writer.word(Word(u64::from(u32::from(value))));
+            Ok(())
+        },
+        TraceContent::Computation(computation) => {
+            writer.tag(Tag(2));
+            writer.word(Word(u64::from(u32::from(computation))));
+            Ok(())
+        },
+    }
+}
+
+/// Read a kept dialogue as [`write_dialogue`] writes it, each node through
+/// `read_node`, into the container that the caller names.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for a tag that no decision or side takes;
+///   as `read_node` fails.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_tables`].
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
+///
+/// # Cost
+/// - allocation: the decoded dialogue, growth within the bytes
+fn read_dialogue<Dialogue, Node, ReadNode>(
+    reader: &mut Reader<'_>,
+    read_node: ReadNode,
+) -> Result<Dialogue, CodecError>
+where
+    Dialogue: Default + Extend<ConversionDecision<Node>>,
+    ReadNode: Fn(&mut Reader<'_>) -> Result<Node, CodecError>,
+{
+    let side = |reader: &mut Reader<'_>| match reader.tag()?.0 {
+        0 => Ok(ConversionSide::Left),
+        1 => Ok(ConversionSide::Right),
+        _ => Err(CodecError::Corrupt),
+    };
+    let count = reader.count()?.0;
+    let mut dialogue = Dialogue::default();
+    for _ in 0 .. count {
+        dialogue.extend([match reader.tag()?.0 {
+            0 => ConversionDecision::ReduceLeft {
+                redex: read_node(reader)?,
+            },
+            1 => ConversionDecision::ReduceRight {
+                redex: read_node(reader)?,
+            },
+            2 => ConversionDecision::ConstShortcut {
+                constant: read_node(reader)?,
+            },
+            3 => ConversionDecision::Unfold {
+                constant: read_node(reader)?,
+            },
+            4 => ConversionDecision::Postpone {
+                constant: read_node(reader)?,
+            },
+            5 => ConversionDecision::Freeze {
+                constant: read_node(reader)?,
+                side: side(reader)?,
+            },
+            6 => ConversionDecision::EtaExpand {
+                side: side(reader)?,
+                variable: read_node(reader)?,
+            },
+            7 => ConversionDecision::ReturnEta {
+                side: side(reader)?,
+            },
+            8 => ConversionDecision::Reassociate {
+                side: side(reader)?,
+            },
+            9 => ConversionDecision::Discard {
+                side: side(reader)?,
+            },
+            10 => ConversionDecision::Hold {
+                side: side(reader)?,
+            },
+            11 => ConversionDecision::Force {
+                thunk: read_node(reader)?,
+            },
+            12 => ConversionDecision::ComparedShared {
+                left: read_node(reader)?,
+                right: read_node(reader)?,
+            },
+            13 => ConversionDecision::Decompose,
+            14 => ConversionDecision::NegativeSubgoal {
+                position: read_narrow::<SubgoalPosition>(reader)?,
+            },
+            15 => ConversionDecision::Evaluate,
+            16 => ConversionDecision::Admitted,
+            _ => return Err(CodecError::Corrupt),
+        }]);
+    }
+    Ok(dialogue)
+}
+
+/// Read one node of a kept dialogue as [`write_trace`] writes it.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for a tag past 2 or a word past 32 bits; as
+///   [`read_reference`] fails.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_tables`].
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
+///
+/// # Cost
+/// - allocation: the decoded trace, growth within the bytes
+fn read_trace(reader: &mut Reader<'_>) -> Result<TraceContent, CodecError>
+{
+    match reader.tag()?.0 {
+        0 => Ok(TraceContent::Constant(read_reference(reader)?)),
+        1 => Ok(TraceContent::Value(read_narrow::<DomainValueId>(reader)?)),
+        2 => Ok(TraceContent::Computation(read_narrow::<DomainCompId>(
+            reader,
+        )?)),
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Read the entries a checkpoint keeps of the rows, the handlers and the
+/// reflexivities, as [`write_tables`] writes them, a judged node's support
+/// read against `body`, the table of the body that the checkpoint keeps.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] as [`read_report`] fails on a place or a
+///   root, or as [`read_dialogue`] fails; [`CodecError::NonCanonical`] for a
+///   table not numbered from its roots, or entries out of the order of their
+///   keys.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Cost
+/// - allocation: the roots, rows, handlers, reflexivities, payloads, flows,
+///   natives and funext steps of the table, growth within the checkpoint's
+///   bytes
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_tables`].
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_funext_keeps_its_steps_7463`
+///
+/// # Cost
+/// - allocation: the entries of the tables, growth within the bytes
+fn read_tables(
+    reader: &mut Reader<'_>,
+    body: Option<&[SupportedNode]>,
+) -> Result<Maybe<TableContent, tabled::Absent>, CodecError>
+{
+    match reader.tag()?.0 {
+        0 => return Ok(Maybe::Absent(read_listed(reader, &TABLEDS)?)),
+        1 => {},
+        _ => return Err(CodecError::Corrupt),
+    }
+    let outside = read_nodes(reader)?;
+    let count = reader.count()?.0;
+    let mut roots = Vec::new();
+    for _ in 0 .. count {
+        roots.push(read_table_place(reader, &outside)?);
+    }
+    check_discovery(&outside, roots.iter().map(|root| root.node))?;
+    let places = Places {
+        body,
+        roots: roots.len(),
+    };
+    let count = reader.count()?.0;
+    let mut rows = Vec::new();
+    for _ in 0 .. count {
+        rows.push(match reader.tag()?.0 {
+            0 => RowContent::Checked(places.read(reader)?, places.read(reader)?),
+            1 => RowContent::Synthesised(places.read(reader)?, places.read(reader)?),
+            2 => RowContent::Level(places.read(reader)?, read_level(reader)?),
+            _ => return Err(CodecError::Corrupt),
+        });
+    }
+    if !rows.is_sorted_by(|left, right| left.key() < right.key()) {
+        return Err(CodecError::NonCanonical);
+    }
+    let count = reader.count()?.0;
+    let mut handled = Vec::new();
+    for _ in 0 .. count {
+        let at = places.read(reader)?;
+        handled.push((at, HandledContent {
+            subject: places.read(reader)?,
+            answer: places.read(reader)?,
+            level: read_level(reader)?,
+        }));
+    }
+    if !handled.is_sorted_by(|left, right| left.0 < right.0) {
+        return Err(CodecError::NonCanonical);
+    }
+    let count = reader.count()?.0;
+    let mut reflexivities = Vec::new();
+    for _ in 0 .. count {
+        let at = places.read(reader)?;
+        let left = read_dialogue(reader, read_trace)?;
+        let right = read_dialogue(reader, read_trace)?;
+        let mut met = [None, None];
+        for slot in &mut met {
+            *slot = match reader.tag()?.0 {
+                0 => None,
+                1 => {
+                    let point = places.read(reader)?;
+                    let endpoint = places.read(reader)?;
+                    let binders = reader.count()?.0;
+                    let mut returning = Vec::new();
+                    for _ in 0 .. binders {
+                        returning.push(read_narrow::<DeBruijnIndex>(reader)?);
+                    }
+                    Some(MetContent {
+                        point,
+                        endpoint,
+                        returning,
+                    })
+                },
+                _ => return Err(CodecError::Corrupt),
+            };
+        }
+        reflexivities.push((at, ReflexivityContent { left, right, met }));
+    }
+    if !reflexivities.is_sorted_by(|left, right| left.0 < right.0) {
+        return Err(CodecError::NonCanonical);
+    }
+    let count = reader.count()?.0;
+    let mut payloads = Vec::new();
+    for _ in 0 .. count {
+        let at = places.read(reader)?;
+        payloads.push((at, places.read(reader)?));
+    }
+    if !payloads.is_sorted_by(|left, right| left.0 < right.0) {
+        return Err(CodecError::NonCanonical);
+    }
+    let count = reader.count()?.0;
+    let mut directed = Vec::new();
+    for _ in 0 .. count {
+        let at = places.read(reader)?;
+        let statement = match reader.tag()?.0 {
+            0 => {
+                let classifier = places.read(reader)?;
+                let patterns = reader.count()?.0;
+                let mut images = Vec::new();
+                for _ in 0 .. patterns {
+                    images.push(places.read(reader)?);
+                }
+                let patterns = reader.count()?.0;
+                let mut dialogues = Vec::new();
+                for _ in 0 .. patterns {
+                    dialogues.push(read_dialogue(reader, |_reader| Ok(()))?);
+                }
+                DirectedContent::Forward {
+                    classifier,
+                    images,
+                    dialogues: gandr_kernel_data::ThinShared::from_header_and_iter((), dialogues),
+                }
+            },
+            1 => DirectedContent::Function(places.read(reader)?),
+            _ => return Err(CodecError::Corrupt),
+        };
+        directed.push((at, statement));
+    }
+    if !directed.is_sorted_by(|left, right| left.0 < right.0) {
+        return Err(CodecError::NonCanonical);
+    }
+    let count = reader.count()?.0;
+    let mut natives = Vec::new();
+    for _ in 0 .. count {
+        let at = places.read(reader)?;
+        natives.push((at, places.read(reader)?));
+    }
+    if !natives.is_sorted_by(|left, right| left.0 < right.0) {
+        return Err(CodecError::NonCanonical);
+    }
+    let count = reader.count()?.0;
+    let mut funexts = Vec::new();
+    for _ in 0 .. count {
+        let at = places.read(reader)?;
+        let length = reader.count()?.0;
+        let mut steps = Vec::new();
+        for _ in 0 .. length {
+            steps.push(match reader.tag()?.0 {
+                0 => {
+                    let normal = places.read(reader)?;
+                    let returned = places.read(reader)?;
+                    let decisions = read_dialogue(reader, read_trace)?;
+                    let left = EvaluationContent {
+                        normal,
+                        returned,
+                        decisions,
+                    };
+                    let normal = places.read(reader)?;
+                    let returned = places.read(reader)?;
+                    let decisions = read_dialogue(reader, read_trace)?;
+                    let right = EvaluationContent {
+                        normal,
+                        returned,
+                        decisions,
+                    };
+                    StepContent::Return { left, right }
+                },
+                1 => {
+                    let fibre = read_narrow::<DeBruijnIndex>(reader)?;
+                    let normal = places.read(reader)?;
+                    let decisions = read_dialogue(reader, read_trace)?;
+                    let left = StalledContent { normal, decisions };
+                    let normal = places.read(reader)?;
+                    let decisions = read_dialogue(reader, read_trace)?;
+                    let right = StalledContent { normal, decisions };
+                    StepContent::Apply { fibre, left, right }
+                },
+                _ => return Err(CodecError::Corrupt),
+            });
+        }
+        funexts.push((at, steps));
+    }
+    if !funexts.is_sorted_by(|left, right| left.0 < right.0) {
+        return Err(CodecError::NonCanonical);
+    }
+    Ok(Maybe::Present(TableContent::from_parts(
+        (
+            rows,
+            handled,
+            reflexivities,
+            payloads,
+            directed,
+            natives,
+            funexts,
+        ),
+        (outside, roots),
+    )))
+}
+
+/// Read an elaboration's content as [`write_elaboration`] writes it.
+///
+/// # Specification
+/// - fails: as [`read_report`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_report`].
+/// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+///
+/// # Cost
+/// - allocation: the content of the elaboration, growth within the bytes
+fn read_elaboration(
+    reader: &mut Reader<'_>,
+    places: &Places<'_>,
+) -> Result<ElaborationContent, CodecError>
+{
+    let count = reader.count()?.0;
+    let mut decisions = Vec::new();
+    for _ in 0 .. count {
+        let at = places.read(reader)?;
+        let decided = match reader.tag()?.0 {
+            0 => NestingContent::Suspended,
+            1 => NestingContent::Ran(Purity::Pure),
+            2 => NestingContent::Ran(Purity::Effectful),
+            3 => NestingContent::Returned,
+            4 => NestingContent::Filled(places.read(reader)?),
+            _ => return Err(CodecError::Corrupt),
+        };
+        decisions.push((at, decided));
+    }
+    if !decisions.is_sorted() {
+        return Err(CodecError::NonCanonical);
+    }
+    let mut pairs = || -> Result<Vec<(ReportPlace, ReportPlace)>, CodecError> {
+        let count = reader.count()?.0;
+        let mut pairs = Vec::new();
+        for _ in 0 .. count {
+            pairs.push((places.read(reader)?, places.read(reader)?));
+        }
+        Ok(pairs)
+    };
+    let carried = pairs()?;
+    let binds = pairs()?;
+    let count = reader.count()?.0;
+    let mut crossings: Vec<(ReportPlace, CrossingContent)> = Vec::new();
+    for _ in 0 .. count {
+        let at = places.read(reader)?;
+        let by = match reader.tag()?.0 {
+            0 => Maybe::Absent(()),
+            1 => Maybe::Present(read_reference(reader)?),
+            _ => return Err(CodecError::Corrupt),
+        };
+        let carriers_count = reader.count()?.0;
+        let mut carriers = Vec::new();
+        for _ in 0 .. carriers_count {
+            carriers.push(places.read(reader)?);
+        }
+        let operand = match reader.tag()?.0 {
+            0 => OperandContent::Itself,
+            1 => OperandContent::Standing(places.read(reader)?),
+            2 => OperandContent::Overlaid(places.read(reader)?),
+            _ => return Err(CodecError::Corrupt),
+        };
+        crossings.push((at, CrossingContent {
+            by,
+            carriers,
+            operand,
+        }));
+    }
+    if !crossings.is_sorted_by(|left, right| left.0 <= right.0) {
+        return Err(CodecError::NonCanonical);
+    }
+    Ok(ElaborationContent {
+        decisions,
+        carried,
+        binds,
+        crossings,
+    })
+}
+
+/// What a report's places are read against: the judged body's table, and the
+/// count of the report's own roots.
+///
+/// # Specification
+/// trivial.
+struct Places<'body>
+{
+    /// The table of the body that the checkpoint keeps.
+    body: Option<&'body [SupportedNode]>,
+    /// The count of roots of the report's own table.
+    roots: usize,
+}
+
+impl Places<'_>
+{
+    /// Read one place as [`write_report_place`] writes it.
+    ///
+    /// # Specification
+    /// - fails: [`CodecError::Corrupt`] for an unknown tag, a judged place with
+    ///   no body or past it, or an outside place past the roots, and as the
+    ///   readers it calls.
+    /// - panics: none.
+    /// - executable: none — the witness reads the bytes back.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`write_report`].
+    /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    ///
+    /// # Cost
+    /// - allocation: the support of a judged place, growth within the report
+    fn read(
+        &self,
+        reader: &mut Reader<'_>,
+    ) -> Result<ReportPlace, CodecError>
+    {
+        match reader.tag()?.0 {
+            0 => Ok(ReportPlace::Written(gandr_core_content::Discovery::from(
+                reader.count()?.0,
+            ))),
+            1 => {
+                let body = self.body.ok_or(CodecError::Corrupt)?;
+                Ok(ReportPlace::Judged(read_table_place(reader, body)?))
+            },
+            2 => {
+                let index = reader.count()?.0;
+                if index >= self.roots {
+                    return Err(CodecError::Corrupt);
+                }
+                Ok(ReportPlace::Outside(crate::boundary::OutsideIndex::from(
+                    index,
+                )))
+            },
+            _ => Err(CodecError::Corrupt),
+        }
+    }
+}
+
+/// Write why a univalence statement's stratum is not certified.
+///
+/// # Specification
+/// - ensures: a tag naming the defect, then the degree or the bound it carries,
+///   and for a budget the classes counted after the bound.
+/// - fails: an unrepresentable count.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each defect of the stratum survives persistence under its
+///   own name.
+/// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
+fn write_stratum_defect<Out>(
+    writer: &mut Writer<'_, Out>,
+    defect: gandr_core_checker::ua::StratumDefect,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match defect {
+        gandr_core_checker::ua::StratumDefect::Degree { degree } => {
+            writer.tag(Tag(0));
+            writer.count(Count(usize::from(degree)))
+        },
+        gandr_core_checker::ua::StratumDefect::Condition { degree } => {
+            writer.tag(Tag(1));
+            writer.count(Count(usize::from(degree)))
+        },
+        gandr_core_checker::ua::StratumDefect::Allowance { bound } => {
+            writer.tag(Tag(2));
+            writer.count(Count(usize::from(bound)))
+        },
+        gandr_core_checker::ua::StratumDefect::Budget { bound, counted } => {
+            writer.tag(Tag(3));
+            writer.count(Count(usize::from(bound)))?;
+            writer.count(Count(usize::from(counted)))
+        },
+    }
+}
+
+/// Read a stratum defect [`write_stratum_defect`] wrote.
+///
+/// # Specification
+/// - ensures: the defect the tag names, with its count.
+/// - fails: an unknown tag or a truncated frame.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each defect of the stratum survives persistence under its
+///   own name.
+/// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_stratum_defect(
+    reader: &mut Reader<'_>
+) -> Result<gandr_core_checker::ua::StratumDefect, CodecError>
+{
+    match reader.tag()?.0 {
+        0 => Ok(gandr_core_checker::ua::StratumDefect::Degree {
+            degree: gandr_theory_sites::Degree::from(reader.count()?.0),
+        }),
+        1 => Ok(gandr_core_checker::ua::StratumDefect::Condition {
+            degree: gandr_theory_sites::Degree::from(reader.count()?.0),
+        }),
+        2 => Ok(gandr_core_checker::ua::StratumDefect::Allowance {
+            bound: gandr_theory_sites::ShapeSize::from(reader.count()?.0),
+        }),
+        3 => {
+            let bound = reader.count()?;
+            let counted = reader.count()?;
+            Ok(gandr_core_checker::ua::StratumDefect::Budget {
+                bound: gandr_theory_sites::ShapeSize::from(bound.0),
+                counted: gandr_theory_sites::ClassCount::from(counted.0),
+            })
+        },
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write why a univalence statement's translators are no equivalence.
+///
+/// # Specification
+/// - ensures: a tag naming the defect, then the way, profile, corolla and
+///   element it carries.
+/// - fails: an unrepresentable count.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each defect of the translators survives persistence under
+///   its own name.
+/// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
+fn write_ua_defect<Out>(
+    writer: &mut Writer<'_, Out>,
+    defect: gandr_core_checker::ua::UaDefect,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    use gandr_core_checker::ua::UaDefect;
+    use gandr_core_checker::ua::Way;
+    let (tag, counts): (u8, &[usize]) = match defect {
+        UaDefect::UnknownGenerator { way: Way::Forward } => (0, &[0]),
+        UaDefect::UnknownGenerator { way: Way::Backward } => (0, &[1]),
+        UaDefect::PastTheBound { profile } => (1, &[
+            usize::from(profile.inputs),
+            usize::from(profile.outputs),
+        ]),
+        UaDefect::Cardinality { corolla } => (2, &[usize::from(corolla)]),
+        UaDefect::Tables { corolla } => (3, &[usize::from(corolla)]),
+        UaDefect::NotInverse { corolla, element } => {
+            (4, &[usize::from(corolla), usize::from(element)])
+        },
+        UaDefect::NotNatural { corolla, element } => {
+            (5, &[usize::from(corolla), usize::from(element)])
+        },
+        UaDefect::Stuck { corolla, element } => (6, &[usize::from(corolla), usize::from(element)]),
+    };
+    writer.tag(Tag(tag));
+    for &count in counts {
+        writer.count(Count(count))?;
+    }
+    Ok(())
+}
+
+/// Read a translator defect [`write_ua_defect`] wrote.
+///
+/// # Specification
+/// - ensures: the defect the tag names, with its counts.
+/// - fails: an unknown tag or way, or a truncated frame.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each defect of the translators survives persistence under
+///   its own name.
+/// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_ua_defect(reader: &mut Reader<'_>) -> Result<gandr_core_checker::ua::UaDefect, CodecError>
+{
+    use gandr_core_checker::ua::UaDefect;
+    use gandr_core_checker::ua::Way;
+    use gandr_theory_sites::ElementIndex;
+    use gandr_theory_sites::ShapeIndex;
+    let tag = reader.tag()?.0;
+    let mut count = || reader.count().map(|count| count.0);
+    Ok(match tag {
+        0 => UaDefect::UnknownGenerator {
+            way: match count()? {
+                0 => Way::Forward,
+                1 => Way::Backward,
+                _ => return Err(CodecError::Corrupt),
+            },
+        },
+        1 => UaDefect::PastTheBound {
+            profile: gandr_theory_sites::Profile {
+                inputs: gandr_theory_sites::PortCount::from(count()?),
+                outputs: gandr_theory_sites::PortCount::from(count()?),
+            },
+        },
+        2 => UaDefect::Cardinality {
+            corolla: ShapeIndex::from(count()?),
+        },
+        3 => UaDefect::Tables {
+            corolla: ShapeIndex::from(count()?),
+        },
+        4 => UaDefect::NotInverse {
+            corolla: ShapeIndex::from(count()?),
+            element: ElementIndex::from(count()?),
+        },
+        5 => UaDefect::NotNatural {
+            corolla: ShapeIndex::from(count()?),
+            element: ElementIndex::from(count()?),
+        },
+        6 => UaDefect::Stuck {
+            corolla: ShapeIndex::from(count()?),
+            element: ElementIndex::from(count()?),
+        },
+        _ => return Err(CodecError::Corrupt),
+    })
+}
+
+/// Write why a composite's cells do not fill its pasting.
+///
+/// # Specification
+/// - ensures: a tag naming the defect, then the counts, vertex, profile or wire
+///   it carries.
+/// - fails: an unrepresentable count.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each defect of a diagram survives persistence under its
+///   own name.
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+fn write_unfilled<Out>(
+    writer: &mut Writer<'_, Out>,
+    defect: gandr_theory_sites::Unfilled,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    use gandr_theory_sites::Unfilled;
+    let (tag, counts): (u8, &[usize]) = match defect {
+        Unfilled::Cells { vertices, cells } => (0, &[usize::from(vertices), usize::from(cells)]),
+        Unfilled::Profile { vertex, found } => (1, &[
+            usize::from(vertex),
+            usize::from(found.inputs),
+            usize::from(found.outputs),
+        ]),
+        Unfilled::Wire { wire } => (2, &[usize::from(wire)]),
+    };
+    writer.tag(Tag(tag));
+    for &count in counts {
+        writer.count(Count(count))?;
+    }
+    Ok(())
+}
+
+/// Read a diagram defect [`write_unfilled`] wrote.
+///
+/// # Specification
+/// - ensures: the defect the tag names, with its counts.
+/// - fails: an unknown tag or a truncated frame.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each defect of a diagram survives persistence under its
+///   own name.
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_unfilled(reader: &mut Reader<'_>) -> Result<gandr_theory_sites::Unfilled, CodecError>
+{
+    use gandr_theory_sites::PortCount;
+    use gandr_theory_sites::Profile;
+    use gandr_theory_sites::Unfilled;
+    let tag = reader.tag()?.0;
+    let mut count = || reader.count().map(|count| count.0);
+    Ok(match tag {
+        0 => Unfilled::Cells {
+            vertices: count()?.into(),
+            cells: count()?.into(),
+        },
+        1 => Unfilled::Profile {
+            vertex: count()?.into(),
+            found: Profile {
+                inputs: PortCount::from(count()?),
+                outputs: PortCount::from(count()?),
+            },
+        },
+        2 => Unfilled::Wire {
+            wire: count()?.into(),
+        },
+        _ => return Err(CodecError::Corrupt),
+    })
+}
+
+/// Write an endpoint: its fork's site, then its side.
+///
+/// # Specification
+/// - ensures: the site and the side's wire tag follow in order.
+/// - fails: an unrepresentable site.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a residue and an arm disagreement round-trip with their
+///   endpoints.
+/// - witness: `codec::tests::session_refusals_round_trip_with_their_endpoints`
+fn write_endpoint<Out>(
+    writer: &mut Writer<'_, Out>,
+    endpoint: EndpointSite,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    write_site(writer, endpoint.fork)?;
+    write_listed(writer, &SIDES, &endpoint.side)
+}
+
+/// Read an endpoint written by [`write_endpoint`].
+///
+/// # Specification
+/// - ensures: the written fork site and side.
+/// - fails: malformed bytes or an unknown side.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a residue and an arm disagreement round-trip with their
+///   endpoints.
+/// - witness: `codec::tests::session_refusals_round_trip_with_their_endpoints`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_endpoint(reader: &mut Reader<'_>) -> Result<EndpointSite, CodecError>
+{
+    Ok(EndpointSite {
+        fork: read_site(reader)?,
+        side: read_listed(reader, &SIDES)?,
+    })
+}
+
+/// Write how an endpoint escaped its one linear use: the kind's tag, then its
+/// endpoint, state, capture, arms or index.
+///
+/// # Specification
+/// - ensures: the tag, then the defect's payloads in declaration order.
+/// - fails: an unrepresentable site or type table.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every defect kind round-trips with its payload.
+/// - witness: `codec::tests::session_refusals_round_trip_with_their_endpoints`
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
+fn write_linearity<Out>(
+    writer: &mut Writer<'_, Out>,
+    defect: &Linearity,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match *defect {
+        Linearity::Residue {
+            endpoint,
+            ref state,
+        } => {
+            writer.tag(Tag(0));
+            write_endpoint(writer, endpoint)?;
+            write_type(writer, state)?;
+        },
+        Linearity::Closed { endpoint } => {
+            writer.tag(Tag(1));
+            write_endpoint(writer, endpoint)?;
+        },
+        Linearity::UsedTwice { endpoint } => {
+            writer.tag(Tag(2));
+            write_endpoint(writer, endpoint)?;
+        },
+        Linearity::Captured { endpoint, by } => {
+            writer.tag(Tag(3));
+            write_endpoint(writer, endpoint)?;
+            write_listed(writer, &CAPTURES, &by)?;
+        },
+        Linearity::AsValue { endpoint } => {
+            writer.tag(Tag(5));
+            write_endpoint(writer, endpoint)?;
+        },
+        Linearity::ArmsDisagree {
+            endpoint,
+            first,
+            other,
+        } => {
+            writer.tag(Tag(6));
+            write_endpoint(writer, endpoint)?;
+            write_site(writer, first)?;
+            write_site(writer, other)?;
+        },
+        Linearity::Unrestricted => writer.tag(Tag(7)),
+        Linearity::Unbound { index } => {
+            writer.tag(Tag(8));
+            writer.word(Word(u64::from(u32::from(index))));
+        },
+        Linearity::BufferUnreturned { site } => {
+            writer.tag(Tag(9));
+            write_site(writer, site)?;
+        },
+        Linearity::BufferReturnedTwice { site } => {
+            writer.tag(Tag(10));
+            write_site(writer, site)?;
+        },
+        Linearity::BufferRead { site } => {
+            writer.tag(Tag(11));
+            write_site(writer, site)?;
+        },
+        Linearity::ContinuationUnspent { clause } => {
+            writer.tag(Tag(12));
+            write_site(writer, clause)?;
+        },
+        Linearity::ContinuationUsedTwice { clause } => {
+            writer.tag(Tag(13));
+            write_site(writer, clause)?;
+        },
+        Linearity::ContinuationCaptured { clause, by } => {
+            writer.tag(Tag(14));
+            write_site(writer, clause)?;
+            write_listed(writer, &CAPTURES, &by)?;
+        },
+        Linearity::ContinuationAsValue { clause } => {
+            writer.tag(Tag(15));
+            write_site(writer, clause)?;
+        },
+        Linearity::LinearSlotConsumed { lambda } => {
+            writer.tag(Tag(16));
+            write_site(writer, lambda)?;
+        },
+        Linearity::LinearSlotUnconsumed { lambda } => {
+            writer.tag(Tag(17));
+            write_site(writer, lambda)?;
+        },
+        Linearity::ShadowCaptured { lambda, by } => {
+            writer.tag(Tag(18));
+            write_site(writer, lambda)?;
+            write_listed(writer, &CAPTURES, &by)?;
+        },
+        Linearity::ComonoidAbsent { ref ty, grade } => {
+            writer.tag(Tag(19));
+            write_type(writer, ty)?;
+            write_listed(writer, &GRADES, &grade)?;
+        },
+    }
+    Ok(())
+}
+
+/// Read a linearity defect written by [`write_linearity`].
+///
+/// # Specification
+/// - ensures: the defect of the written kind over the written payloads.
+/// - fails: malformed bytes, an unknown kind, capture or side, or an index past
+///   the `u32` ceiling.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every defect kind round-trips with its payload.
+/// - witness: `codec::tests::session_refusals_round_trip_with_their_endpoints`
+///
+/// # Cost
+/// - allocation: the decoded linearity, growth within the bytes
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_linearity(reader: &mut Reader<'_>) -> Result<Linearity, CodecError>
+{
+    Ok(match reader.tag()?.0 {
+        0 => Linearity::Residue {
+            endpoint: read_endpoint(reader)?,
+            state: read_type(reader)?,
+        },
+        1 => Linearity::Closed {
+            endpoint: read_endpoint(reader)?,
+        },
+        2 => Linearity::UsedTwice {
+            endpoint: read_endpoint(reader)?,
+        },
+        3 => Linearity::Captured {
+            endpoint: read_endpoint(reader)?,
+            by: read_listed(reader, &CAPTURES)?,
+        },
+        5 => Linearity::AsValue {
+            endpoint: read_endpoint(reader)?,
+        },
+        6 => Linearity::ArmsDisagree {
+            endpoint: read_endpoint(reader)?,
+            first: read_site(reader)?,
+            other: read_site(reader)?,
+        },
+        7 => Linearity::Unrestricted,
+        8 => {
+            let word = reader.word()?;
+            Linearity::Unbound {
+                index: u32::try_from(word.0)
+                    .map(DeBruijnIndex::from)
+                    .map_err(|_overflow| CodecError::Corrupt)?,
+            }
+        },
+        9 => Linearity::BufferUnreturned {
+            site: read_site(reader)?,
+        },
+        10 => Linearity::BufferReturnedTwice {
+            site: read_site(reader)?,
+        },
+        11 => Linearity::BufferRead {
+            site: read_site(reader)?,
+        },
+        12 => Linearity::ContinuationUnspent {
+            clause: read_site(reader)?,
+        },
+        13 => Linearity::ContinuationUsedTwice {
+            clause: read_site(reader)?,
+        },
+        14 => Linearity::ContinuationCaptured {
+            clause: read_site(reader)?,
+            by: read_listed(reader, &CAPTURES)?,
+        },
+        15 => Linearity::ContinuationAsValue {
+            clause: read_site(reader)?,
+        },
+        16 => Linearity::LinearSlotConsumed {
+            lambda: read_site(reader)?,
+        },
+        17 => Linearity::LinearSlotUnconsumed {
+            lambda: read_site(reader)?,
+        },
+        18 => Linearity::ShadowCaptured {
+            lambda: read_site(reader)?,
+            by: read_listed(reader, &CAPTURES)?,
+        },
+        19 => Linearity::ComonoidAbsent {
+            ty: read_type(reader)?,
+            grade: read_listed(reader, &GRADES)?,
+        },
+        _ => return Err(CodecError::Corrupt),
+    })
+}
+
+/// Write a projected world: tag `0` for the host's, tag `1` and the
+/// declaration's reference for a declared one.
+///
+/// # Specification
+/// trivial.
+fn write_place<Out>(
+    writer: &mut Writer<'_, Out>,
+    place: &Place,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match *place {
+        Place::Host => writer.tag(Tag(0)),
+        Place::Declared(ref reference) => {
+            writer.tag(Tag(1));
+            write_reference(writer, reference)?;
+        },
+    }
+    Ok(())
+}
+
+/// Read a projected world written by [`write_place`].
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the decoded place, growth within the bytes
+fn read_place(reader: &mut Reader<'_>) -> Result<Place, CodecError>
+{
+    Ok(match reader.tag()?.0 {
+        0 => Place::Host,
+        1 => Place::Declared(read_reference(reader)?),
+        _ => return Err(CodecError::Corrupt),
+    })
+}
+
+/// The crossing predicates, in stable wire order.
+const PREDICATES: [gandr_core_checker::worlds::Predicate; 2] = [
+    gandr_core_checker::worlds::Predicate::Mobile,
+    gandr_core_checker::worlds::Predicate::Open,
+];
+
+/// What crosses at a refused crossing, in stable wire order.
+const CROSSINGS: [gandr_core_checker::worlds::Crossed; 4] = [
+    gandr_core_checker::worlds::Crossed::Result,
+    gandr_core_checker::worlds::Crossed::Constant,
+    gandr_core_checker::worlds::Crossed::Capture,
+    gandr_core_checker::worlds::Crossed::Homed,
+];
+
+/// Write how a located judgement broke: the kind's tag, then its payloads in
+/// declaration order.
+///
+/// # Specification
+/// - ensures: the tag, then the defect's payloads in declaration order.
+/// - fails: an unrepresentable reference or type table.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every defect kind round-trips with its payload.
+/// - witness: `codec::tests::located_refusals_round_trip_with_their_worlds`
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
+fn write_located<Out>(
+    writer: &mut Writer<'_, Out>,
+    defect: &Located,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match *defect {
+        Located::Immobile {
+            crossed,
+            ref ty,
+            ref former,
+            predicate,
+        } => {
+            writer.tag(Tag(0));
+            write_listed(writer, &CROSSINGS, &crossed)?;
+            write_type(writer, ty)?;
+            write_type(writer, former)?;
+            write_listed(writer, &PREDICATES, &predicate)?;
+        },
+        Located::CapabilityMissing { ref world } => {
+            writer.tag(Tag(1));
+            write_place(writer, world)?;
+        },
+        Located::CapabilityCaptured { ref world, by } => {
+            writer.tag(Tag(2));
+            write_place(writer, world)?;
+            write_listed(writer, &CAPTURES, &by)?;
+        },
+        Located::Elsewhere { ref bound } => {
+            writer.tag(Tag(3));
+            write_place(writer, bound)?;
+        },
+        Located::HoldElsewhere { ref wanted } => {
+            writer.tag(Tag(4));
+            write_place(writer, wanted)?;
+        },
+        Located::Unlocated => writer.tag(Tag(5)),
+        Located::UndeclaredWorld { ref world } => {
+            writer.tag(Tag(6));
+            write_reference(writer, world)?;
+        },
+        Located::HostWorldUndeclared => writer.tag(Tag(7)),
+        Located::MarkUnfounded {
+            ref atom,
+            ref former,
+            predicate,
+        } => {
+            writer.tag(Tag(8));
+            write_reference(writer, atom)?;
+            write_type(writer, former)?;
+            write_listed(writer, &PREDICATES, &predicate)?;
+        },
+        Located::EntryNamed { ref constant } => {
+            writer.tag(Tag(9));
+            write_reference(writer, constant)?;
+        },
+        Located::EntryUngranted { ref constant } => {
+            writer.tag(Tag(10));
+            write_reference(writer, constant)?;
+        },
+        Located::NotAHandle { ref found } => {
+            writer.tag(Tag(11));
+            write_type(writer, found)?;
+        },
+        Located::OpenedElsewhere {
+            ref written,
+            ref handle,
+        } => {
+            writer.tag(Tag(12));
+            write_place(writer, written)?;
+            write_place(writer, handle)?;
+        },
+    }
+    Ok(())
+}
+
+/// Read a located defect written by [`write_located`].
+///
+/// # Specification
+/// - ensures: the defect of the written kind over the written payloads.
+/// - fails: malformed bytes or an unknown kind, crossing, predicate or capture.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every defect kind round-trips with its payload.
+/// - witness: `codec::tests::located_refusals_round_trip_with_their_worlds`
+///
+/// # Cost
+/// - allocation: the decoded located, growth within the bytes
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_located(reader: &mut Reader<'_>) -> Result<Located, CodecError>
+{
+    Ok(match reader.tag()?.0 {
+        0 => Located::Immobile {
+            crossed: read_listed(reader, &CROSSINGS)?,
+            ty: read_type(reader)?,
+            former: read_type(reader)?,
+            predicate: read_listed(reader, &PREDICATES)?,
+        },
+        1 => Located::CapabilityMissing {
+            world: read_place(reader)?,
+        },
+        2 => Located::CapabilityCaptured {
+            world: read_place(reader)?,
+            by: read_listed(reader, &CAPTURES)?,
+        },
+        3 => Located::Elsewhere {
+            bound: read_place(reader)?,
+        },
+        4 => Located::HoldElsewhere {
+            wanted: read_place(reader)?,
+        },
+        5 => Located::Unlocated,
+        6 => Located::UndeclaredWorld {
+            world: read_reference(reader)?,
+        },
+        7 => Located::HostWorldUndeclared,
+        8 => Located::MarkUnfounded {
+            atom: read_reference(reader)?,
+            former: read_type(reader)?,
+            predicate: read_listed(reader, &PREDICATES)?,
+        },
+        9 => Located::EntryNamed {
+            constant: read_reference(reader)?,
+        },
+        10 => Located::EntryUngranted {
+            constant: read_reference(reader)?,
+        },
+        11 => Located::NotAHandle {
+            found: read_type(reader)?,
+        },
+        12 => Located::OpenedElsewhere {
+            written: read_place(reader)?,
+            handle: read_place(reader)?,
+        },
+        _ => return Err(CodecError::Corrupt),
+    })
+}
+
+/// Write every root of a nominal signature, then the rules presenting it, then
+/// the free cells of a type of words.
+///
+/// # Specification
+/// - ensures: parameters, constructor rows, kind, rules and cells retain their
+///   order; a rule side writes its node count, then per node a tag and either a
+///   constructor ordinal or a variable word; the trailing tag is `0` when the
+///   signature carries no cells and no index, `1` followed by the sort's
+///   reference, the cell count and each cell's two endpoints as rule sides when
+///   it carries cells, and `2` followed by the index roots and one row of
+///   stated-index roots per constructor when it is indexed.
+/// - fails: an unrepresentable count or index.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — signatures with equal kinds but unequal constructors stay
+///   distinct, a type of words round-trips its cells, and a vector its indices.
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+/// - witness: `codec::tests::a_type_of_words_round_trips_its_cells`
+/// - witness: `codec::tests::an_indexed_family_round_trips_its_indices`
+fn write_data_roots<Out>(
+    writer: &mut Writer<'_, Out>,
+    roots: &gandr_core_content::DataRoots,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    write_indices(writer, &roots.parameters)?;
+    writer.count(Count(roots.constructors.len()))?;
+    for fields in &roots.constructors {
+        write_indices(writer, fields)?;
+    }
+    write_index(writer, roots.kind)?;
+    let rules = &roots.presentation.rules;
+    writer.count(Count(rules.len()))?;
+    for rule in rules {
+        write_rule_side(writer, rule.left())?;
+        write_rule_side(writer, rule.right())?;
+    }
+    match (&roots.presentation.cells, roots.indices.is_empty()) {
+        (&Maybe::Absent(_), true) => writer.tag(Tag(0)),
+        (&Maybe::Present(ref cells), _) => {
+            // Words over cells above dimension one take a tag of their own,
+            // so the words over loops keep their bytes.
+            let above = usize::from(cells.reflexivities).checked_sub(1);
+            writer.tag(Tag(if above.is_some() { 3 } else { 1 }));
+            write_reference(writer, &cells.sort)?;
+            if let Some(above) = above {
+                writer.count(Count(above))?;
+            }
+            writer.count(Count(cells.cells.len()))?;
+            for cell in &cells.cells {
+                write_rule_side(writer, cell.source())?;
+                write_rule_side(writer, cell.target())?;
+            }
+        },
+        (&Maybe::Absent(_), false) => {
+            writer.tag(Tag(2));
+            write_indices(writer, &roots.indices)?;
+            writer.count(Count(roots.results.len()))?;
+            for stated in &roots.results {
+                write_indices(writer, stated)?;
+            }
+        },
+    }
+    Ok(())
+}
+
+/// Write one rule side: its node count, then per node a tag and either a
+/// constructor ordinal or a variable word.
+///
+/// # Specification
+/// - ensures: the count and every node are written in order, as
+///   [`read_rule_side`] reads them.
+/// - fails: an unrepresentable count.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_data_roots`].
+/// - witness: `codec::tests::a_type_of_words_round_trips_its_cells`
+fn write_rule_side<Out>(
+    writer: &mut Writer<'_, Out>,
+    side: &[gandr_core_term::RuleNode],
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(side.len()))?;
+    for &node in side {
+        match node {
+            gandr_core_term::RuleNode::Constructor(tag) => {
+                writer.tag(Tag(0));
+                writer.count(Count(usize::from(tag)))?;
+            },
+            gandr_core_term::RuleNode::Variable(variable) => {
+                writer.tag(Tag(1));
+                writer.word(Word(u64::from(u32::from(variable))));
+            },
+        }
+    }
+    Ok(())
+}
+
+/// Read all nominal roots, rules, cells and indices without allocating from
+/// untrusted counts.
+///
+/// # Specification
+/// - ensures: successful reads consume parameters, constructor rows, kind,
+///   rules and the trailing frame: the cells', or the indices'.
+/// - fails: truncated or malformed root frames, an unknown rule-node tag, a
+///   variable past `u32` and a trailing tag other than `0`, `1` or `2`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nominal round trips retain the complete constructor
+///   table, a type of words its cells, and a vector its indices.
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+/// - witness: `codec::tests::a_type_of_words_round_trips_its_cells`
+/// - witness: `codec::tests::an_indexed_family_round_trips_its_indices`
+///
+/// # Cost
+/// - allocation: the nominal roots and rules and cells, growth within the bytes
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(32))]
+fn read_data_roots(reader: &mut Reader<'_>) -> Result<gandr_core_content::DataRoots, CodecError>
+{
+    let parameters = read_indices(reader)?;
+    let count = reader.count()?;
+    let mut constructors = Vec::new();
+    for _ in 0 .. count.0 {
+        constructors.push(read_indices(reader)?);
+    }
+    let kind = read_index(reader)?;
+    let count = reader.count()?;
+    let mut rules = Vec::new();
+    for _ in 0 .. count.0 {
+        let left = read_rule_side(reader)?;
+        let right = read_rule_side(reader)?;
+        rules.push(gandr_core_term::PresentedRule::new(left, right));
+    }
+    let (cells, indices, results) = match reader.tag()?.0 {
+        0 => (
+            Maybe::Absent(gandr_core_content::words::Absent::Unworded),
+            Vec::new(),
+            Vec::new(),
+        ),
+        tag @ (1 | 3) => {
+            let sort = read_reference(reader)?;
+            let reflexivities = if tag == 3 {
+                reader.count()?.0.saturating_add(1)
+            }
+            else {
+                0
+            };
+            let count = reader.count()?;
+            let mut cells = Vec::new();
+            for _ in 0 .. count.0 {
+                let source = read_rule_side(reader)?;
+                let target = read_rule_side(reader)?;
+                cells.push(gandr_kernel_term::FreeCell::new(source, target));
+            }
+            (
+                Maybe::Present(gandr_core_content::CellsRoots {
+                    sort,
+                    reflexivities: gandr_kernel_term::Reflexivities::from(reflexivities),
+                    cells,
+                }),
+                Vec::new(),
+                Vec::new(),
+            )
+        },
+        2 => {
+            let indices = read_indices(reader)?;
+            let count = reader.count()?;
+            let mut results = Vec::new();
+            for _ in 0 .. count.0 {
+                results.push(read_indices(reader)?);
+            }
+            (
+                Maybe::Absent(gandr_core_content::words::Absent::Unworded),
+                indices,
+                results,
+            )
+        },
+        _ => return Err(CodecError::Corrupt),
+    };
+    Ok(gandr_core_content::DataRoots {
+        parameters,
+        indices,
+        constructors,
+        results,
+        kind,
+        presentation: gandr_core_content::PresentationRoots { rules, cells },
+    })
+}
+
+/// Read one rule side: a node count, then each node's tag and ordinal.
+///
+/// # Specification
+/// - ensures: successful reads consume the count and every node in order.
+/// - fails: truncation, a tag outside the constructor and variable alphabet,
+///   and a variable past `u32`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`read_data_roots`].
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+///
+/// # Cost
+/// - allocation: the decoded rule side, growth within the bytes
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(8))]
+fn read_rule_side(
+    reader: &mut Reader<'_>
+) -> Result<alloc::boxed::Box<[gandr_core_term::RuleNode]>, CodecError>
+{
+    let count = reader.count()?;
+    let mut side = Vec::new();
+    for _ in 0 .. count.0 {
+        let node = match reader.tag()?.0 {
+            0 => gandr_core_term::RuleNode::Constructor(gandr_core_term::ConstructorTag::from(
+                reader.count()?.0,
+            )),
+            1 => {
+                let word = reader.word()?;
+                let ordinal = u32::try_from(word.0).map_err(|_overflow| CodecError::Corrupt)?;
+                gandr_core_term::RuleNode::Variable(gandr_core_term::RuleVariable::from(ordinal))
+            },
+            _ => return Err(CodecError::Corrupt),
+        };
+        side.push(node);
+    }
+    Ok(side.into_boxed_slice())
+}
+
+/// Write a nominal signature's roots and shared node table.
+///
+/// # Specification
+/// - ensures: successful writes retain every signature root and reachable node.
+/// - fails: unrepresentable or process-local content.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — persisted support distinguishes equal-kind constructor
+///   edits.
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
+fn write_data_content<Out>(
+    writer: &mut Writer<'_, Out>,
+    content: &crate::content::DataContent,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    write_data_roots(writer, content.roots())?;
+    write_nodes(writer, content.nodes())?;
+    write_placements(writer, content.placements());
+    Ok(())
+}
+
+/// Read and validate a complete nominal signature table.
+///
+/// # Specification
+/// - ensures: every signature root has the sort [`DataRoots::sorted`] gives it
+///   — a stated index a value, every other root a value type — in a
+///   discovery-numbered supported table, with one support of its widths per
+///   root.
+/// - fails: malformed, ill-sorted or noncanonical content.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — native checkpoints preserve signatures and reject
+///   malformed roots.
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+///
+/// [`DataRoots::sorted`]: gandr_core_content::DataRoots::sorted
+///
+/// # Cost
+/// - allocation: the decoded data content, growth within the bytes
+#[spec(ensures: |ret| ret.as_ref().map_or(true,|content| content.roots().sorted().all(|(root, sort)| content.nodes().get(usize::from(root)).is_some_and(|node| node.sort() == sort))))]
+fn read_data_content(reader: &mut Reader<'_>) -> Result<crate::content::DataContent, CodecError>
+{
+    let roots = read_data_roots(reader)?;
+    let nodes = read_nodes(reader)?;
+    for (root, sort) in roots.sorted() {
+        root_of_sort(&nodes, root, sort)?;
+    }
+    check_discovery(&nodes, roots.iter())?;
+    let placements = read_placements(reader, &nodes, roots.iter())?;
+    Ok(crate::content::DataContent::from_parts(
+        roots, nodes, placements,
+    ))
+}
+
+/// Write each root's support, in root order; each is as wide as its root's
+/// scope, so neither the count nor the widths is written.
+///
+/// # Specification
+/// - ensures: each support's indices, in root order.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an item, a type and a data signature round-trip their
+///   root supports.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+fn write_placements<Out>(
+    writer: &mut Writer<'_, Out>,
+    placements: &[Thinning],
+) where
+    Out: Sink,
+{
+    for placement in placements {
+        write_selection(writer, placement);
+    }
+}
+
+/// Read one support per root of `nodes`, each as wide as its root's scope.
+///
+/// # Specification
+/// - ensures: one support per root, in root order, each with its root's widths.
+/// - fails: [`CodecError::Corrupt`] for a root out of range or a malformed
+///   support.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an item, a type and a data signature round-trip their
+///   root supports; a descending root support is refused.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[spec(captures: [count = roots.clone().count()], ensures: |ret| ret.as_ref().map_or(true, |placements| placements.len() == count))]
+fn read_placements<Roots>(
+    reader: &mut Reader<'_>,
+    nodes: &[SupportedNode],
+    roots: Roots,
+) -> Result<Vec<Thinning>, CodecError>
+where
+    Roots: Iterator<Item = NodeIndex> + Clone,
+{
+    roots
+        .map(|root| {
+            let node = nodes.get(usize::from(root)).ok_or(CodecError::Corrupt)?;
+            read_selection(reader, node.scope())
+        })
+        .collect()
+}
+
+/// Write an item's content.
+///
+/// # Specification
+/// trivial.
+pub fn write_item_content<Out>(
+    sink: &mut Out,
+    content: &ItemContent,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let mut writer = Writer { sink };
+    write_item_content_with(&mut writer, content)
+}
+
+/// Write an item's content.
+///
+/// # Specification
+/// - ensures: an unsupported refusal names the first unresolved table node, or
+///   a codata declaration; metadata precedes the table.
+///
+/// # Adequacy
+/// - hypothesis: L3 — independently built programs have identical content
+///   encodings, while unresolved nodes are refused. The predicate classifies
+///   table failures without duplicating serialization.
+/// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
+/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(()) => content
+                .nodes()
+                .iter()
+                .all(|node| !matches!(*node.former(), ContentNode::Unresolved(_)) && (Out::CODATA == CodataWrite::Keyed || !matches!(*node.former(), ContentNode::Codata { .. }))),
+        | Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => {
+            matches!(*content.declaration(), crate::content::DeclarationRoots::Codata)
+                || content.nodes().iter().any(|node| matches!(*node.former(), ContentNode::Codata { .. }))
+        },
+        | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
+            content.nodes().iter().find_map(|node| match *node.former() {
+                | ContentNode::Unresolved(found) => Some(found),
+                | _ => None,
+            }) == Some(sort)
+        },
+        | Err(CodecError::Unrepresentable) => true,
+        | _ => false,
+    },
+)]
+fn write_item_content_with<Out>(
+    writer: &mut Writer<'_, Out>,
+    content: &ItemContent,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    write_reference(writer, content.reference())?;
+    match *(content.declaration()) {
+        crate::content::DeclarationRoots::Value {
+            ref signature,
+            ref body,
+            ref laws,
+            ref rules,
+            ref stages,
+            ref supplies,
+            ref models,
+            ref entry,
+        } => {
+            // A value naming no law keeps its original tag; a lawful one
+            // takes its own, with the laws after the body; a ruled one takes
+            // its own, with the laws, however many, then the rules; one
+            // quantified over stages takes its own, with the laws and the
+            // rules, however many, then each binder's bound; one whose calls
+            // supply stages takes its own, with the laws, the rules and the
+            // bounds, however many, then each supply; one whose calls omit a
+            // model slot takes its own, with the laws, the rules, the bounds
+            // and the supplies, however many, then each slot: its holes, the
+            // codes it fixes, and each candidate's components and codes; one
+            // that states an entry takes its own, with every count however
+            // many, then the entry.
+            let entered = matches!(*entry, Maybe::Present(_));
+            writer.tag(Tag(if entered {
+                11
+            }
+            else if !models.is_empty() {
+                10
+            }
+            else if !supplies.is_empty() {
+                7
+            }
+            else if !stages.is_empty() {
+                6
+            }
+            else if !rules.is_empty() {
+                5
+            }
+            else if laws.is_empty() {
+                0
+            }
+            else {
+                3
+            }));
+            match *signature {
+                Maybe::Present(root) => {
+                    writer.tag(Tag(1));
+                    write_index(writer, root)?;
+                },
+                Maybe::Absent(signature::Absent::Unsigned) => writer.tag(Tag(0)),
+            }
+            match *body {
+                Maybe::Present(root) => {
+                    writer.tag(Tag(1));
+                    write_index(writer, root)?;
+                },
+                Maybe::Absent(body::Absent::Hole) => writer.tag(Tag(0)),
+                Maybe::Absent(body::Absent::Hosted) => writer.tag(Tag(2)),
+                Maybe::Absent(body::Absent::Discharged) => writer.tag(Tag(3)),
+            }
+            let supplied = !supplies.is_empty() || !models.is_empty() || entered;
+            let staged = !stages.is_empty() || supplied;
+            if !laws.is_empty() || !rules.is_empty() || staged {
+                writer.count(Count(laws.len()))?;
+                for law in laws {
+                    write_reference(writer, law)?;
+                }
+            }
+            if !rules.is_empty() || staged {
+                writer.count(Count(rules.len()))?;
+                for rule in rules {
+                    write_operation_side(writer, &rule.left)?;
+                    write_operation_side(writer, &rule.right)?;
+                }
+            }
+            if staged {
+                writer.count(Count(stages.len()))?;
+                for &bound in stages {
+                    writer.count(Count(match bound {
+                        gandr_kernel_term::StageBound::Unbounded => 0,
+                        gandr_kernel_term::StageBound::Below(binder) => {
+                            usize::from(binder).saturating_add(1)
+                        },
+                    }))?;
+                }
+            }
+            if supplied {
+                writer.count(Count(supplies.len()))?;
+                for &(head, binder, stage) in supplies {
+                    write_index(writer, head)?;
+                    writer.count(Count(usize::from(binder)))?;
+                    write_stage(writer, stage)?;
+                }
+            }
+            if !models.is_empty() || entered {
+                writer.count(Count(models.len()))?;
+                for slot in models {
+                    write_indices(writer, &slot.holes)?;
+                    write_indices(writer, &slot.fixed)?;
+                    writer.count(Count(slot.candidates.len()))?;
+                    for components in &slot.candidates {
+                        for &component in components {
+                            write_index(writer, component)?;
+                        }
+                    }
+                }
+            }
+            if let Maybe::Present(ref entry) = *entry {
+                write_entry(writer, entry)?;
+            }
+        },
+        crate::content::DeclarationRoots::Data(ref roots) => {
+            writer.tag(Tag(1));
+            write_data_roots(writer, roots)?;
+        },
+        crate::content::DeclarationRoots::Abstract(roots) => {
+            // An unmarked abstract type keeps its original tag; a mobile one
+            // takes its own, and an interfaced one of either mark its own.
+            writer.tag(Tag(match (roots.mobility, roots.interface) {
+                (gandr_core_checker::worlds::Mobility::Immobile, Maybe::Absent(_)) => 2,
+                (gandr_core_checker::worlds::Mobility::Mobile, Maybe::Absent(_)) => 4,
+                (gandr_core_checker::worlds::Mobility::Immobile, Maybe::Present(_)) => 8,
+                (gandr_core_checker::worlds::Mobility::Mobile, Maybe::Present(_)) => 9,
+            }));
+            write_index(writer, roots.kind)?;
+            write_index(writer, roots.representation)?;
+            writer.count(Count(usize::from(roots.extent)))?;
+            writer.count(Count(usize::from(roots.site.sealing())))?;
+            writer.count(Count(usize::from(roots.site.component())))?;
+            if let Maybe::Present(interface) = roots.interface {
+                write_index(writer, interface.relation)?;
+                write_index(writer, interface.reflexivity)?;
+                match interface.law {
+                    Maybe::Present(law) => {
+                        writer.count(Count(1))?;
+                        write_index(writer, law)?;
+                    },
+                    Maybe::Absent(_) => writer.count(Count(0))?,
+                }
+            }
+        },
+        // A world's roots take their own tag: the row its code performs in,
+        // then the row's tail, as a row literal writes them.
+        crate::content::DeclarationRoots::World(ref roots) => {
+            writer.tag(Tag(12));
+            write_effect_row(writer, &roots.row)?;
+            match roots.row.tail() {
+                None => writer.tag(Tag(0)),
+                Some(tail) => {
+                    writer.tag(Tag(1));
+                    write_index(writer, tail)?;
+                },
+            }
+        },
+        crate::content::DeclarationRoots::Codata => {
+            return Err(CodecError::Unsupported(UnsupportedPersistence::Codata));
+        },
+    }
+    write_nodes(writer, content.nodes())?;
+    write_placements(writer, content.placements());
+    Ok(())
+}
+
+/// Write one side of an operation rule's content: its node count, then each
+/// node's tag and payload.
+///
+/// # Specification
+/// - fails: as [`write_reference`] and the writer's count.
+/// - panics: none.
+/// - executable: none — the bytes written are the body's own output; the
+///   witness reads them back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a ruled item's content round-trips.
+/// - witness: `codec::tests::a_ruled_value_root_round_trips_and_its_rules_are_content`
+fn write_operation_side<Out>(
+    writer: &mut Writer<'_, Out>,
+    side: &[crate::content::RuleRoot],
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(side.len()))?;
+    for node in side {
+        match *node {
+            crate::content::RuleRoot::Operation { ref callee, arity } => {
+                writer.tag(Tag(0));
+                write_reference(writer, callee)?;
+                writer.count(Count(usize::from(arity)))?;
+            },
+            crate::content::RuleRoot::Constructor { ref family, tag } => {
+                writer.tag(Tag(1));
+                write_reference(writer, family)?;
+                writer.count(Count(usize::from(tag)))?;
+            },
+            crate::content::RuleRoot::Results(count) => {
+                writer.tag(Tag(2));
+                writer.count(Count(usize::from(count)))?;
+            },
+            crate::content::RuleRoot::Variable(variable) => {
+                writer.tag(Tag(3));
+                writer.count(Count(
+                    usize::try_from(u32::from(variable))
+                        .map_err(|_overflow| CodecError::Unrepresentable)?,
+                ))?;
+            },
+        }
+    }
+    Ok(())
+}
+
+/// Read one side of an operation rule's content.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for a node tag outside the four, or a
+///   variable past `u32`; as [`read_reference`] and the reader's count.
+/// - panics: none.
+/// - executable: none — the read nodes are the body's own output; the witness
+///   pins the round trip.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a ruled item's content round-trips.
+/// - witness: `codec::tests::a_ruled_value_root_round_trips_and_its_rules_are_content`
+///
+/// # Cost
+/// - allocation: the roots of one side of the rule, growth within the bytes
+fn read_operation_side(reader: &mut Reader<'_>)
+-> Result<Vec<crate::content::RuleRoot>, CodecError>
+{
+    let count = reader.count()?.0;
+    let mut side = Vec::new();
+    for _node in 0 .. count {
+        side.push(match reader.tag()?.0 {
+            0 => crate::content::RuleRoot::Operation {
+                callee: read_reference(reader)?,
+                arity: gandr_kernel_term::FieldCount::from(reader.count()?.0),
+            },
+            1 => crate::content::RuleRoot::Constructor {
+                family: read_reference(reader)?,
+                tag: gandr_kernel_term::ConstructorTag::from(reader.count()?.0),
+            },
+            2 => crate::content::RuleRoot::Results(gandr_kernel_term::FieldCount::from(
+                reader.count()?.0,
+            )),
+            3 => crate::content::RuleRoot::Variable(gandr_kernel_term::RuleVariable::from(
+                u32::try_from(reader.count()?.0).map_err(|_overflow| CodecError::Corrupt)?,
+            )),
+            _ => return Err(CodecError::Corrupt),
+        });
+    }
+    Ok(side)
+}
+
+/// Read an item's content.
+///
+/// # Specification
+/// - fails: as [`read_nodes`] and [`check_discovery`], and
+///   [`CodecError::Corrupt`] for a signature root that is no value type, a body
+///   root that is no value, or root supports that are not one per root of the
+///   root's widths.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — ordinary and signed contents round-trip, value, data and
+///   abstract declarations among them, an abstract one with an interface with
+///   and without its law; swapped discovery order and unreachable entries are
+///   refused. The predicate checks root sorts and canonical reach without
+///   allocating a second graph. This is structural validity, not a typing
+///   certificate.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+/// - witness: `tests::native_formers::an_atom_interface_persists_and_an_edit_to_it_reaches_every_reader`
+/// - witness: `codec::tests::an_atom_interface_round_trips_with_and_without_its_law`
+///
+/// # Cost
+/// - allocation: the tables and the roots of the item's content, growth within
+///   the stored item
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(ref content) => {
+            let nodes = content.nodes();
+            let roots = content.declaration().iter();
+            nodes.iter().all(|node| {
+                !matches!(*node.former(), ContentNode::Unresolved(_))
+                    && node.former().children().iter().all(|(child, sort)| {
+                        nodes
+                            .get(usize::from(child))
+                            .is_some_and(|found| found.sort() == sort)
+                    })
+            }) && roots.clone().all(|(root, sort)| {
+                nodes
+                    .get(usize::from(root))
+                    .is_some_and(|node| node.sort() == sort)
+            }) && 'discovery: {
+                let mut next = 0_usize;
+                for root in roots.map(|(root, _)| root) {
+                    let index = usize::from(root);
+                    if index >= nodes.len() {
+                        break 'discovery Err(CodecError::Corrupt);
+                    }
+                    if index > next {
+                        break 'discovery Err(CodecError::NonCanonical);
+                    }
+                    if index == next {
+                        next = next.saturating_add(1);
+                    }
+                }
+                for (index, node) in nodes.iter().enumerate() {
+                    if index >= next {
+                        break 'discovery Err(CodecError::NonCanonical);
+                    }
+                    for (child, _) in node.former().children().iter() {
+                        let child = usize::from(child);
+                        if child > next {
+                            break 'discovery Err(CodecError::NonCanonical);
+                        }
+                        if child == next {
+                            next = next.saturating_add(1);
+                        }
+                    }
+                }
+                Ok(())
+            } == Ok(())
+        },
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(CodecError::Corrupt | CodecError::NonCanonical) => true,
+        | Err(_) => false,
+    },
+)]
+fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
+{
+    let reference = read_reference(reader)?;
+    let declaration = match reader.tag()?.0 {
+        tag @ (0 | 3 | 5 | 6 | 7 | 10 | 11) => {
+            let signature = match reader.tag()?.0 {
+                0 => Maybe::Absent(signature::Absent::Unsigned),
+                1 => Maybe::Present(read_index(reader)?),
+                _ => return Err(CodecError::Corrupt),
+            };
+            let body = match reader.tag()?.0 {
+                0 => Maybe::Absent(body::Absent::Hole),
+                1 => Maybe::Present(read_index(reader)?),
+                2 => Maybe::Absent(body::Absent::Hosted),
+                3 => Maybe::Absent(body::Absent::Discharged),
+                _ => return Err(CodecError::Corrupt),
+            };
+            let mut laws = Vec::new();
+            if tag != 0 {
+                let count = reader.count()?.0;
+                if count == 0 && tag == 3 {
+                    return Err(CodecError::NonCanonical);
+                }
+                for _law in 0 .. count {
+                    laws.push(read_reference(reader)?);
+                }
+            }
+            let mut rules = Vec::new();
+            if tag >= 5 {
+                let count = reader.count()?.0;
+                if count == 0 && tag == 5 {
+                    return Err(CodecError::NonCanonical);
+                }
+                for _rule in 0 .. count {
+                    let left = read_operation_side(reader)?;
+                    let right = read_operation_side(reader)?;
+                    rules.push(crate::content::RuleRoots { left, right });
+                }
+            }
+            let mut stages = Vec::new();
+            if tag >= 6 {
+                let count = reader.count()?.0;
+                if count == 0 && tag == 6 {
+                    return Err(CodecError::NonCanonical);
+                }
+                for _binder in 0 .. count {
+                    stages.push(reader.count()?.0.checked_sub(1).map_or(
+                        gandr_kernel_term::StageBound::Unbounded,
+                        |bound| {
+                            gandr_kernel_term::StageBound::Below(
+                                gandr_kernel_term::StageBinder::from(bound),
+                            )
+                        },
+                    ));
+                }
+            }
+            let mut supplies = Vec::new();
+            if tag == 7 || tag == 10 || tag == 11 {
+                let count = reader.count()?.0;
+                if count == 0 && tag == 7 {
+                    return Err(CodecError::NonCanonical);
+                }
+                for _supply in 0 .. count {
+                    let head = read_index(reader)?;
+                    let binder = gandr_kernel_term::StageBinder::from(reader.count()?.0);
+                    supplies.push((head, binder, read_stage(reader)?));
+                }
+            }
+            let mut models = Vec::new();
+            if tag == 10 || tag == 11 {
+                let count = reader.count()?.0;
+                if count == 0 && tag == 10 {
+                    return Err(CodecError::NonCanonical);
+                }
+                for _slot in 0 .. count {
+                    let holes = read_indices(reader)?;
+                    if holes.is_empty() {
+                        return Err(CodecError::NonCanonical);
+                    }
+                    let fixed = read_indices(reader)?;
+                    let width = holes.len().saturating_add(fixed.len());
+                    let mut candidates = Vec::new();
+                    for _candidate in 0 .. reader.count()?.0 {
+                        let mut roots = Vec::with_capacity(width);
+                        for _root in 0 .. width {
+                            roots.push(read_index(reader)?);
+                        }
+                        candidates.push(roots);
+                    }
+                    models.push(crate::content::ModelRoots {
+                        holes,
+                        fixed,
+                        candidates,
+                    });
+                }
+            }
+            let entry = if tag == 11 {
+                Maybe::Present(read_entry(reader)?)
+            }
+            else {
+                Maybe::Absent(gandr_core_checker::entry::Absent::Unstated)
+            };
+            crate::content::DeclarationRoots::Value {
+                signature,
+                body,
+                laws,
+                rules,
+                stages,
+                supplies,
+                models,
+                entry,
+            }
+        },
+        1 => crate::content::DeclarationRoots::Data(read_data_roots(reader)?),
+        tag @ (2 | 4 | 8 | 9) => {
+            let kind = read_index(reader)?;
+            let representation = read_index(reader)?;
+            let extent = gandr_kernel_term::SealExtent::from(reader.count()?.0);
+            let sealing = gandr_core_checker::SealingSite::from(reader.count()?.0);
+            let component = gandr_core_checker::ComponentOrdinal::from(reader.count()?.0);
+            let interface = if matches!(tag, 8 | 9) {
+                let relation = read_index(reader)?;
+                let reflexivity = read_index(reader)?;
+                let law = match reader.count()?.0 {
+                    0 => Maybe::Absent(gandr_core_checker::law::Absent::Unstated),
+                    1 => Maybe::Present(read_index(reader)?),
+                    _ => return Err(CodecError::Corrupt),
+                };
+                Maybe::Present(crate::content::InterfaceRoots {
+                    relation,
+                    reflexivity,
+                    law,
+                })
+            }
+            else {
+                Maybe::Absent(gandr_core_checker::interface::Absent::Unstated)
+            };
+            crate::content::DeclarationRoots::Abstract(crate::content::AbstractRoots {
+                kind,
+                representation,
+                extent,
+                site: gandr_core_checker::SealSite::new(sealing, component),
+                mobility: if matches!(tag, 4 | 9) {
+                    gandr_core_checker::worlds::Mobility::Mobile
+                }
+                else {
+                    gandr_core_checker::worlds::Mobility::Immobile
+                },
+                interface,
+            })
+        },
+        12 => {
+            let row = read_effect_row(reader)?;
+            crate::content::DeclarationRoots::World(crate::content::WorldRoots {
+                row: row.with_tail(read_row_tail(reader)?),
+            })
+        },
+        _ => return Err(CodecError::Corrupt),
+    };
+    let nodes = read_nodes(reader)?;
+    for (root, sort) in declaration.iter() {
+        root_of_sort(&nodes, root, sort)?;
+    }
+    if let crate::content::DeclarationRoots::Value {
+        ref supplies,
+        ref models,
+        ..
+    } = declaration
+    {
+        for &(head, ..) in supplies {
+            root_of_sort(&nodes, head, Sort::Value)?;
+        }
+        for &hole in models.iter().flat_map(|slot| &slot.holes) {
+            root_of_sort(&nodes, hole, Sort::Value)?;
+        }
+    }
+    check_discovery(&nodes, declaration.iter().map(|(root, _)| root))?;
+    let placements = read_placements(reader, &nodes, declaration.iter().map(|(root, _)| root))?;
+    Ok(ItemContent::from_parts(
+        reference,
+        declaration,
+        nodes,
+        placements,
+    ))
+}
+
+/// Require that the root `root` of `nodes` has sort `sort`.
+///
+/// # Specification
+/// - ensures: success means the named root exists and has exactly the requested
+///   sort.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a value-type root succeeds only for its own sort, and a
+///   missing root is refused.
+/// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
+#[spec(
+    ensures: |ret| {
+        ret == if nodes
+            .get(usize::from(root))
+            .is_some_and(|node| node.sort() == sort)
+        {
+            Ok(())
+        }
+        else {
+            Err(CodecError::Corrupt)
+        }
+    },
+)]
+fn root_of_sort(
+    nodes: &[SupportedNode],
+    root: NodeIndex,
+    sort: Sort,
+) -> Result<(), CodecError>
+{
+    match nodes.get(usize::from(root)) {
+        Some(node) if node.sort() == sort => Ok(()),
+        Some(_) | None => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write a set of references, ascending.
+///
+/// # Specification
+/// - requires: the caller supplies ascending set iteration; this writer does
+///   not sort it.
+/// - ensures: an unrepresentable declared count is refused; later failures can
+///   only be field-width refusals.
+///
+/// # Adequacy
+/// - hypothesis: L3 — persisted footprint sets preserve their members and
+///   canonical ordering. Only the declared count and error alphabet are
+///   observed here: the owned iterator is not consumed a second time by the
+///   predicate.
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(
+    captures: [count = references.len()],
+    ensures: |ret| {
+        matches!(ret, Ok(()) | Err(CodecError::Unrepresentable))
+            && (u64::try_from(count).is_ok() || ret == Err(CodecError::Unrepresentable))
+    },
+)]
+fn write_references<'set, Out, References>(
+    writer: &mut Writer<'_, Out>,
+    references: References,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+    References: ExactSizeIterator<Item = &'set Reference>,
+{
+    writer.count(Count(references.len()))?;
+    for reference in references {
+        write_reference(writer, reference)?;
+    }
+    Ok(())
+}
+
+/// Read a set of references.
+///
+/// # Specification
+/// - ensures: duplicates collapse into a set no larger than the encoded count;
+///   only a zero count yields an empty set.
+///
+/// # Adequacy
+/// - hypothesis: L3 — reordered reference entries decode into a set and are
+///   rejected by the outer canonical-byte check. The predicate bounds
+///   cardinality rather than allocating a second decoded set.
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+///
+/// # Cost
+/// - allocation: the set of references, growth within the bytes
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match ret {
+        | Ok(ref references) => match before
+            .checked_add(8)
+            .and_then(|end| reader.bytes.get(before .. end))
+        {
+            | Some(&[byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7]) => {
+                usize::try_from(u64::from_le_bytes([
+                    byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7,
+                ]))
+                .is_ok_and(|count| {
+                    references.len() <= count && references.is_empty() == (count == 0)
+                })
+            },
+            | _ => false,
+        },
+        | Err(error) => error == CodecError::Corrupt,
+    },
+)]
+fn read_references(reader: &mut Reader<'_>) -> Result<BTreeSet<Reference>, CodecError>
+{
+    let count = reader.count()?;
+    let mut references = BTreeSet::new();
+    for _ in 0 .. count.0 {
+        let reference = read_reference(reader)?;
+        let _fresh = references.insert(reference);
+    }
+    Ok(references)
+}
+
+/// Write a footprint.
+///
+/// # Specification
+/// - ensures: encoding succeeds exactly when both set counts and every
+///   reference field fit word widths.
+///
+/// # Adequacy
+/// - hypothesis: L3 — stored footprints preserve finite reference sets and
+///   their flags through persistence. The predicate checks representability,
+///   not whether stored metadata describes the content.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+#[spec(
+    ensures: |ret| {
+        let fits = u64::try_from(footprint.reads().len()).is_ok()
+            && u64::try_from(footprint.type_reads().len()).is_ok()
+            && footprint.reads().all(|reference| match *reference {
+                | Reference::Unoccupied => true,
+                | Reference::Item {
+                    ref key,
+                    occurrence,
+                } => {
+                    u64::try_from(key.as_ref().len()).is_ok()
+                        && u64::try_from(usize::from(occurrence)).is_ok()
+                },
+            })
+            && footprint.type_reads().all(|reference| match *reference {
+                | Reference::Unoccupied => true,
+                | Reference::Item {
+                    ref key,
+                    occurrence,
+                } => {
+                    u64::try_from(key.as_ref().len()).is_ok()
+                        && u64::try_from(usize::from(occurrence)).is_ok()
+                },
+            });
+        ret == if fits {
+            Ok(())
+        }
+        else {
+            Err(CodecError::Unrepresentable)
+        }
+    },
+)]
+fn write_footprint<Out>(
+    writer: &mut Writer<'_, Out>,
+    footprint: &Footprint,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    write_references(writer, footprint.reads())?;
+    write_references(writer, footprint.type_reads())?;
+    writer.tag(match footprint.opacity() {
+        Opacity::Transparent => Tag(0),
+        Opacity::Opaque => Tag(1),
+    });
+    writer.tag(match footprint.hole() {
+        HoleMark::Filled => Tag(0),
+        HoleMark::Hole => Tag(1),
+    });
+    Ok(())
+}
+
+/// Read a footprint.
+///
+/// # Specification
+/// - ensures: the trailing flag bytes determine opacity and hole status;
+///   malformed flags are corrupt.
+///
+/// # Adequacy
+/// - hypothesis: L3 — finite persisted footprints retain their metadata and
+///   reordered sets fail outer canonicality. The flag predicate does not
+///   certify read provenance or the type-read subset relation; all four flag
+///   combinations are not separately witnessed. Out-of-domain opacity and hole
+///   flags stop at their respective bytes.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+/// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+/// - witness: `codec::tests::every_footprint_stance_and_answer_round_trips`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(ref footprint) => {
+            let flags = [
+                match footprint.opacity() {
+                    | Opacity::Transparent => 0,
+                    | Opacity::Opaque => 1,
+                },
+                match footprint.hole() {
+                    | HoleMark::Filled => 0,
+                    | HoleMark::Hole => 1,
+                },
+            ];
+            reader
+                .cursor
+                .checked_sub(2)
+                .and_then(|start| reader.bytes.get(start .. reader.cursor))
+                == Some(flags.as_slice())
+        },
+        | Err(error) => error == CodecError::Corrupt,
+    },
+)]
+fn read_footprint(reader: &mut Reader<'_>) -> Result<Footprint, CodecError>
+{
+    let reads = read_references(reader)?;
+    let type_reads = read_references(reader)?;
+    let opacity = reader.tag()?;
+    let opacity = match opacity.0 {
+        0 => Opacity::Transparent,
+        1 => Opacity::Opaque,
+        _ => return Err(CodecError::Corrupt),
+    };
+    let hole = reader.tag()?;
+    let hole = match hole.0 {
+        0 => HoleMark::Filled,
+        1 => HoleMark::Hole,
+        _ => return Err(CodecError::Corrupt),
+    };
+    Ok(Footprint::from_parts(reads, type_reads, opacity, hole))
+}
+
+/// Write a site.
+///
+/// # Specification
+/// - ensures: unreached sites always encode; a node site must fit the word
+///   width.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the finite refusal corpus preserves projected sites; an
+///   independent one-byte frame witnesses the unreached form. The generic sink
+///   has no byte observer; the predicate states the width outcome.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+#[spec(
+    ensures: |ret| {
+        ret == match site {
+            | Site::Unreached => Ok(()),
+            | Site::Node(index) => u64::try_from(usize::from(index))
+                .map(|_| ())
+                .map_err(|_overflow| CodecError::Unrepresentable),
+        }
+    },
+)]
+fn write_site<Out>(
+    writer: &mut Writer<'_, Out>,
+    site: Site,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match site {
+        Site::Node(index) => {
+            writer.tag(Tag(0));
+            write_index(writer, index)?;
+        },
+        Site::Unreached => writer.tag(Tag(1)),
+    }
+    Ok(())
+}
+
+/// Read a site.
+///
+/// # Specification
+/// - ensures: successful sites retain their tag and exact node-index word,
+///   consuming only their own frame.
+///
+/// # Adequacy
+/// - hypothesis: L3 — projected sites in the finite refusal corpus round-trip.
+///   A fixed unreached frame consumes only its tag; an unknown tag rejects
+///   before available payload bytes.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match ret {
+        | Ok(Site::Unreached) => {
+            reader.bytes.get(before) == Some(&1) && before.checked_add(1) == Some(reader.cursor)
+        },
+        | Ok(Site::Node(index)) => {
+            reader.bytes.get(before) == Some(&0)
+                && before.checked_add(9) == Some(reader.cursor)
+                && u64::try_from(usize::from(index)).is_ok_and(|word| {
+                    before
+                        .checked_add(1)
+                        .and_then(|start| reader.bytes.get(start .. reader.cursor))
+                        == Some(word.to_le_bytes().as_slice())
+                })
+        },
+        | Err(error) => error == CodecError::Corrupt && reader.cursor >= before,
+    },
+)]
+fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
+{
+    let tag = reader.tag()?;
+    match tag.0 {
+        0 => {
+            let index = read_index(reader)?;
+            Ok(Site::Node(index))
+        },
+        1 => Ok(Site::Unreached),
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// The tags of the unadmitted formers, in stable wire order: a former joins at
+/// the end, so every tag written before it reads back the same.
+const FORMERS: [UnadmittedFormer; 26] = [
+    UnadmittedFormer::ValueLift,
+    UnadmittedFormer::NumericLiteral,
+    UnadmittedFormer::NumericAtom,
+    UnadmittedFormer::TypeLift,
+    UnadmittedFormer::Abstract,
+    UnadmittedFormer::SortParameter,
+    UnadmittedFormer::TopUniverse,
+    UnadmittedFormer::StaticLambda,
+    UnadmittedFormer::EffectRow,
+    UnadmittedFormer::Reify,
+    UnadmittedFormer::Stack,
+    UnadmittedFormer::Perform,
+    UnadmittedFormer::Handle,
+    UnadmittedFormer::Resume,
+    UnadmittedFormer::Reset,
+    UnadmittedFormer::Shift,
+    UnadmittedFormer::Capability,
+    UnadmittedFormer::Exercise,
+    UnadmittedFormer::Scope,
+    UnadmittedFormer::Run,
+    UnadmittedFormer::Memory,
+    UnadmittedFormer::Stage,
+    UnadmittedFormer::Buffer,
+    UnadmittedFormer::Abandon,
+    UnadmittedFormer::Qubit,
+    UnadmittedFormer::EndpointLoop,
+];
+
+/// The shapes a rule can require, in stable wire order: a shape joins at the
+/// end, so every tag written before it reads back the same.
+const SHAPES: [ExpectedShape; 21] = [
+    ExpectedShape::Thunk,
+    ExpectedShape::Returner,
+    ExpectedShape::Arrow,
+    ExpectedShape::Product,
+    ExpectedShape::StaticPi,
+    ExpectedShape::PathUniverse,
+    ExpectedShape::Sum,
+    ExpectedShape::Data,
+    ExpectedShape::Record,
+    ExpectedShape::Stack,
+    ExpectedShape::With,
+    ExpectedShape::List,
+    ExpectedShape::Session,
+    ExpectedShape::Capability,
+    ExpectedShape::Flow,
+    ExpectedShape::Run,
+    ExpectedShape::Sigma,
+    ExpectedShape::Summand,
+    ExpectedShape::EmptySum,
+    ExpectedShape::Returns,
+    ExpectedShape::Positional,
+];
+
+/// The actions a session state admits, in stable wire order.
+const ACTIONS: [ActionKind; 5] = [
+    ActionKind::Send,
+    ActionKind::Receive,
+    ActionKind::Select,
+    ActionKind::Offer,
+    ActionKind::Close,
+];
+
+/// The binders of an endpoint, in stable wire order.
+const SIDES: [ForkSide; 4] = [
+    ForkSide::Child,
+    ForkSide::Parent,
+    ForkSide::Received,
+    ForkSide::Placed,
+];
+
+/// The grades of a binder that needs a comonoid, in stable wire order.
+const GRADES: [Grade; 2] = [Grade::Zero, Grade::Many];
+
+/// What may run an endpoint's use other than once, in stable wire order.
+const CAPTURES: [Capture; 6] = [
+    Capture::Thunk,
+    Capture::Recursion,
+    Capture::Branch,
+    Capture::Stack,
+    Capture::Continuation,
+    Capture::Task,
+];
+
+/// Write a stage a recursion refusal names: tag 0 and the stage's ordinal
+/// for a stage itself, tag 1, its anchor's ordinal and the steps below it
+/// for a bound.
+///
+/// # Specification
+/// - fails: [`CodecError::Unrepresentable`] for an ordinal past 64 bits.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a refusal at a stage and one at a bound round-trip.
+/// - witness: `codec::tests::a_stage_refusal_round_trips_with_where_it_stood`
+#[spec(ensures: |ret| ret.is_ok() || ret == Err(CodecError::Unrepresentable))]
+fn write_stage<Out>(
+    writer: &mut Writer<'_, Out>,
+    stage: Stage,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let ordinal =
+        |id: StageId| u64::try_from(usize::from(id)).map_err(|_wide| CodecError::Unrepresentable);
+    match stage {
+        Stage::At(id) => {
+            let id = ordinal(id)?;
+            writer.tag(Tag(0));
+            writer.word(Word(id));
+        },
+        Stage::Below { anchor, depth } => {
+            let anchor = ordinal(anchor)?;
+            writer.tag(Tag(1));
+            writer.word(Word(anchor));
+            writer.word(Word(u64::from(u32::from(depth))));
+        },
+    }
+    Ok(())
+}
+
+/// Read a stage as [`write_stage`] writes it.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for another tag, a short input, an ordinal
+///   past the platform's width, or a bound zero or more than 32 bits of steps
+///   below its anchor.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_stage`].
+/// - witness: `codec::tests::a_stage_refusal_round_trips_with_where_it_stood`
+#[spec(captures: before = reader.cursor, ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_stage(reader: &mut Reader<'_>) -> Result<Stage, CodecError>
+{
+    let tag = reader.tag()?;
+    let word = reader.word()?;
+    let id = usize::try_from(word.0).map_err(|_wide| CodecError::Corrupt)?;
+    let id = StageId::from(id);
+    match tag.0 {
+        0 => Ok(Stage::At(id)),
+        1 => {
+            let steps = reader.word()?;
+            let steps = u32::try_from(steps.0).map_err(|_wide| CodecError::Corrupt)?;
+            let depth = core::num::NonZeroU32::new(steps).ok_or(CodecError::Corrupt)?;
+            Ok(Stage::Below {
+                anchor: id,
+                depth: StageDepth::from(depth),
+            })
+        },
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write where a value stood in a stage order: tag 0 for the top, tag 1 and
+/// the stage otherwise.
+///
+/// # Specification
+/// - fails: as [`write_stage`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_stage`], and the top round-trips.
+/// - witness: `codec::tests::a_stage_refusal_round_trips_with_where_it_stood`
+#[spec(ensures: |ret| ret.is_ok() || ret == Err(CodecError::Unrepresentable))]
+fn write_standing<Out>(
+    writer: &mut Writer<'_, Out>,
+    standing: Standing,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match standing {
+        Standing::Top => {
+            writer.tag(Tag(0));
+            Ok(())
+        },
+        Standing::Staged(stage) => {
+            writer.tag(Tag(1));
+            write_stage(writer, stage)
+        },
+    }
+}
+
+/// Read where a value stood as [`write_standing`] writes it.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for another tag, and as [`read_stage`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_standing`].
+/// - witness: `codec::tests::a_stage_refusal_round_trips_with_where_it_stood`
+#[spec(captures: before = reader.cursor, ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_standing(reader: &mut Reader<'_>) -> Result<Standing, CodecError>
+{
+    let tag = reader.tag()?;
+    match tag.0 {
+        0 => Ok(Standing::Top),
+        1 => {
+            let stage = read_stage(reader)?;
+            Ok(Standing::Staged(stage))
+        },
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// The faults a presented type's rule is refused for, in stable wire order.
+const RULE_FAULTS: [gandr_kernel_term::RuleFault; 10] = [
+    gandr_kernel_term::RuleFault::VariableHeaded,
+    gandr_kernel_term::RuleFault::UnknownConstructor,
+    gandr_kernel_term::RuleFault::Arity,
+    gandr_kernel_term::RuleFault::NotOwnPosition,
+    gandr_kernel_term::RuleFault::NonLinear,
+    gandr_kernel_term::RuleFault::Unbound,
+    gandr_kernel_term::RuleFault::Duplicated,
+    gandr_kernel_term::RuleFault::SlotMismatch,
+    gandr_kernel_term::RuleFault::NotDecreasing,
+    gandr_kernel_term::RuleFault::DependentSlot,
+];
+
+/// Why an omitted implicit is unsolved, in stable wire order.
+const UNSOLVED: [gandr_core_checker::Unsolved; 15] = [
+    gandr_core_checker::Unsolved::Unforced,
+    gandr_core_checker::Unsolved::Unfolding,
+    gandr_core_checker::Unsolved::Gradual,
+    gandr_core_checker::Unsolved::Spine,
+    gandr_core_checker::Unsolved::Outside,
+    gandr_core_checker::Unsolved::Families,
+    gandr_core_checker::Unsolved::Neutral,
+    gandr_core_checker::Unsolved::Levels,
+    gandr_core_checker::Unsolved::Pruning,
+    gandr_core_checker::Unsolved::Escape,
+    gandr_core_checker::Unsolved::Occurs,
+    gandr_core_checker::Unsolved::Scope,
+    gandr_core_checker::Unsolved::Linear,
+    gandr_core_checker::Unsolved::Dangling,
+    gandr_core_checker::Unsolved::Budget,
+];
+
+/// Why a splice's tactic is refused, in stable wire order.
+const TACTIC_FAULTS: [gandr_core_checker::TacticFault; 4] = [
+    gandr_core_checker::TacticFault::NoHypothesis,
+    gandr_core_checker::TacticFault::NoFunction,
+    gandr_core_checker::TacticFault::Forged,
+    gandr_core_checker::TacticFault::Unplaced,
+];
+
+/// Write the parameter or field an occurrence refusal names.
+///
+/// # Specification
+/// - ensures: a parameter writes tag 0 and its position; a field writes tag 1,
+///   its constructor's tag and its position.
+/// - fails: [`CodecError::Unrepresentable`] for a count no word holds.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CodecError`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a field and a telescope site round-trip through a
+///   persisted refused declaration.
+/// - witness: `tests::recursive_data::recursive_data_checkpoints_round_trip_and_resume`
+#[spec(ensures: |ret| ret.is_ok() || ret == Err(CodecError::Unrepresentable))]
+fn write_occurrence_site<Out>(
+    writer: &mut Writer<'_, Out>,
+    site: OccurrenceSite,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match site {
+        OccurrenceSite::Parameter(position) => {
+            writer.tag(Tag(0));
+            writer.count(Count(usize::from(position)))?;
+        },
+        OccurrenceSite::Field { tag, field } => {
+            writer.tag(Tag(1));
+            writer.count(Count(usize::from(tag)))?;
+            writer.count(Count(usize::from(field)))?;
+        },
+    }
+    Ok(())
+}
+
+/// Read the parameter or field an occurrence refusal names.
+///
+/// # Specification
+/// - ensures: the inverse of [`write_occurrence_site`].
+/// - fails: [`CodecError::Corrupt`] for an unknown site tag, or the reader's
+///   own refusal.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CodecError`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a field and a telescope site round-trip through a
+///   persisted refused declaration.
+/// - witness: `tests::recursive_data::recursive_data_checkpoints_round_trip_and_resume`
+#[spec(captures: before = reader.cursor, ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_occurrence_site(reader: &mut Reader<'_>) -> Result<OccurrenceSite, CodecError>
+{
+    let tag = reader.tag()?;
+    match tag.0 {
+        0 => Ok(OccurrenceSite::Parameter(ParameterPosition::from(
+            reader.count()?.0,
+        ))),
+        1 => {
+            let constructor = ConstructorTag::from(reader.count()?.0);
+            let field = FieldPosition::from(reader.count()?.0);
+            Ok(OccurrenceSite::Field {
+                tag: constructor,
+                field,
+            })
+        },
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write why an absurd case's endpoints are not apart.
+///
+/// # Specification
+/// - ensures: one tag per reason in declaration order, `Diverges` followed by
+///   its two rule positions.
+/// - fails: [`CodecError::Unrepresentable`] for a count no word holds.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CodecError`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each reason, and each order of a divergent pair, keeps
+///   its own encoding and round-trips through a refusal.
+/// - witness: `codec::tests::an_absurd_case_s_refusal_round_trips_with_its_reason`
+#[spec(ensures: |ret| ret.is_ok() || ret == Err(CodecError::Unrepresentable))]
+fn write_apartness<Out>(
+    writer: &mut Writer<'_, Out>,
+    reason: gandr_kernel_term::Apartness,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match reason {
+        gandr_kernel_term::Apartness::Apart => writer.tag(Tag(0)),
+        gandr_kernel_term::Apartness::Agree => writer.tag(Tag(1)),
+        gandr_kernel_term::Apartness::Open => writer.tag(Tag(2)),
+        gandr_kernel_term::Apartness::Leaf => writer.tag(Tag(3)),
+        gandr_kernel_term::Apartness::Diverges { outer, inner } => {
+            writer.tag(Tag(4));
+            writer.count(Count(usize::from(outer)))?;
+            writer.count(Count(usize::from(inner)))?;
+        },
+        gandr_kernel_term::Apartness::Undecided => writer.tag(Tag(5)),
+    }
+    Ok(())
+}
+
+/// Read why an absurd case's endpoints are not apart.
+///
+/// # Specification
+/// - ensures: the inverse of [`write_apartness`].
+/// - fails: [`CodecError::Corrupt`] for an unknown reason tag, or the reader's
+///   own refusal.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CodecError`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_apartness`].
+/// - witness: `codec::tests::an_absurd_case_s_refusal_round_trips_with_its_reason`
+#[spec(captures: before = reader.cursor, ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_apartness(reader: &mut Reader<'_>) -> Result<gandr_kernel_term::Apartness, CodecError>
+{
+    let tag = reader.tag()?;
+    match tag.0 {
+        0 => Ok(gandr_kernel_term::Apartness::Apart),
+        1 => Ok(gandr_kernel_term::Apartness::Agree),
+        2 => Ok(gandr_kernel_term::Apartness::Open),
+        3 => Ok(gandr_kernel_term::Apartness::Leaf),
+        4 => {
+            let outer = gandr_kernel_term::RuleIndex::from(reader.count()?.0);
+            let inner = gandr_kernel_term::RuleIndex::from(reader.count()?.0);
+            Ok(gandr_kernel_term::Apartness::Diverges { outer, inner })
+        },
+        5 => Ok(gandr_kernel_term::Apartness::Undecided),
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write the position of `wanted` in `table` as a tag.
+///
+/// # Specification
+/// - fails: [`CodecError::Unrepresentable`] when `wanted` is absent or its
+///   first matching position does not fit in one byte.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — repeated values use the first position, index 255
+///   encodes, index 256 is refused, and an absent value writes no tag. The
+///   current callers use stable equality on enums.
+/// - witness: `codec::tests::enumeration_tags_use_first_matches_and_enforce_byte_width`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(
+    ensures: |ret| {
+        ret == table
+            .iter()
+            .position(|entry| entry == wanted)
+            .and_then(|position| u8::try_from(position).ok())
+            .map(|_| ())
+            .ok_or(CodecError::Unrepresentable)
+    },
+)]
+fn write_listed<Out, Entry>(
+    writer: &mut Writer<'_, Out>,
+    table: &[Entry],
+    wanted: &Entry,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+    Entry: PartialEq,
+{
+    let position = table
+        .iter()
+        .position(|entry| entry == wanted)
+        .ok_or(CodecError::Unrepresentable)?;
+    let tag = u8::try_from(position).map_err(|_overflow| CodecError::Unrepresentable)?;
+    writer.tag(Tag(tag));
+    Ok(())
+}
+
+/// Read a tag naming an entry of `table`.
+///
+/// # Specification
+/// - ensures: an available tag is consumed; success is exactly membership of
+///   its index in the table.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the byte-width boundary selects the expected entry, while
+///   an out-of-range tag is refused. The generic entry bound has no equality
+///   observer, so the predicate checks selection bounds and cursor movement;
+///   concrete witnesses check the selected value.
+/// - witness: `codec::tests::enumeration_tags_use_first_matches_and_enforce_byte_width`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match reader.bytes.get(before) {
+        | Some(&tag) => {
+            before.checked_add(1) == Some(reader.cursor)
+                && ret.as_ref().map(|_| ()).map_err(|&error| error)
+                    == table
+                        .get(usize::from(tag))
+                        .map(|_| ())
+                        .ok_or(CodecError::Corrupt)
+        },
+        | None => reader.cursor == before && matches!(ret, Err(CodecError::Corrupt)),
+    },
+)]
+fn read_listed<Entry>(
+    reader: &mut Reader<'_>,
+    table: &[Entry],
+) -> Result<Entry, CodecError>
+where
+    Entry: Copy,
+{
+    let tag = reader.tag()?;
+    table
+        .get(usize::from(tag.0))
+        .copied()
+        .ok_or(CodecError::Corrupt)
+}
+
+/// Write `survivors`: the count of named places, each place ascending, then
+/// the count beyond them.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`read_survivors`] reads back `survivors` from what was written.
+/// - fails: a place or count the codec cannot represent.
+/// - panics: none.
+/// - executable: none — the bytes go to a sink the predicate cannot read back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an ambiguous slot's refusal round-trips.
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+fn write_survivors<Out>(
+    writer: &mut Writer<'_, Out>,
+    survivors: gandr_core_term::model::Survivors,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(survivors.places().count()))?;
+    for place in survivors.places() {
+        writer.count(Count(usize::from(place)))?;
+    }
+    writer.word(Word(u64::from(u32::from(survivors.beyond()))));
+    Ok(())
+}
+
+/// Read survivors as [`write_survivors`] writes them.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the set whose named places and count beyond were read.
+/// - fails: [`CodecError::NonCanonical`] for more places than the set names,
+///   places not strictly ascending or at or past [`Survivors::NAMED`];
+///   [`CodecError::Corrupt`] for a count beyond past `u32`; the reader's own
+///   failures.
+/// - panics: none.
+/// - executable: none — the bytes read are consumed from the reader, so the
+///   predicate cannot see what was read.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an ambiguous slot's refusal round-trips.
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+///
+/// [`Survivors::NAMED`]: gandr_core_term::model::Survivors::NAMED
+fn read_survivors(reader: &mut Reader<'_>)
+-> Result<gandr_core_term::model::Survivors, CodecError>
+{
+    use gandr_core_term::model::CandidatePlace;
+    use gandr_core_term::model::Survivors;
+    let named = reader.count()?.0;
+    if named > usize::from(Survivors::NAMED) {
+        return Err(CodecError::NonCanonical);
+    }
+    let mut survivors = Survivors::default();
+    let mut floor = 0_usize;
+    for _ in 0 .. named {
+        let place = reader.count()?.0;
+        if place < floor || place >= usize::from(Survivors::NAMED) {
+            return Err(CodecError::NonCanonical);
+        }
+        survivors = survivors.with(CandidatePlace::from(place));
+        floor = place.saturating_add(1);
+    }
+    let beyond = u32::try_from(reader.word()?.0).map_err(|_overflow| CodecError::Corrupt)?;
+    Ok(survivors.beyond_named(gandr_core_term::model::Beyond::from(beyond)))
+}
+
+/// A payload of a stored refusal, written and read on its own: the arms the
+/// build script generates write a refusal's tag and then each of its fields
+/// through this trait, in declaration order.
+///
+/// # Specification
+/// - ensures: a field's write is followed by its read of the same bytes, which
+///   returns the field written.
+/// - executable: none — the trait's methods state their own clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every refusal round-trips, each payload type at least
+///   once.
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+trait Field: Sized
+{
+    /// Write the field.
+    ///
+    /// # Specification
+    /// - ensures: the field's bytes, which [`Self::read`] reads back.
+    /// - fails: [`CodecError::Unrepresentable`] for a count past the wire, or
+    ///   [`CodecError::Unsupported`] for a type naming an unresolved node.
+    /// - panics: none.
+    /// - executable: none — the bytes go to the writer's sink.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Field`].
+    /// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+    fn write<Out>(
+        &self,
+        writer: &mut Writer<'_, Out>,
+    ) -> Result<(), CodecError>
+    where
+        Out: Sink;
+
+    /// Read the field.
+    ///
+    /// # Specification
+    /// - ensures: the field [`Self::write`] wrote to the bytes read.
+    /// - fails: [`CodecError::Corrupt`] or [`CodecError::NonCanonical`] for
+    ///   bytes no write produces; the reader's own failures.
+    /// - panics: none.
+    /// - executable: none — the bytes read are consumed from the reader.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Field`].
+    /// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+    fn read(reader: &mut Reader<'_>) -> Result<Self, CodecError>;
+}
+
+/// Fields with a writer and a reader of their own, the writer taking the
+/// field by value or by reference.
+macro_rules! delegated {
+    ($($ty:ty => $write:ident($how:tt), $read:ident;)*) => {
+        $(
+            impl Field for $ty
+            {
+                /// Write the field by its own writer.
+                ///
+                /// # Specification
+                /// trivial.
+                ///
+                /// # Cost
+                /// - allocation: the bytes that the sink takes, growth within the checkpoint
+                #[inline]
+                fn write<Out>(
+                    &self,
+                    writer: &mut Writer<'_, Out>,
+                ) -> Result<(), CodecError>
+                where
+                    Out: Sink,
+                {
+                    delegated!(@call $write, writer, self, $how)
+                }
+
+                /// Read the field by its own reader.
+                ///
+                /// # Specification
+                /// trivial.
+                ///
+                /// # Cost
+                /// - allocation: the decoded field, growth within the bytes
+                #[inline]
+                fn read(reader: &mut Reader<'_>) -> Result<Self, CodecError>
+                {
+                    $read(reader)
+                }
+            }
+        )*
+    };
+    (@call $write:ident, $writer:ident, $field:ident, value) => {
+        $write($writer, *$field)
+    };
+    (@call $write:ident, $writer:ident, $field:ident, reference) => {
+        $write($writer, $field)
+    };
+}
+
+delegated! {
+    Site => write_site(value), read_site;
+    TypeContent => write_type(reference), read_type;
+    Reference => write_reference(reference), read_reference;
+    EndpointSite => write_endpoint(value), read_endpoint;
+    Linearity => write_linearity(reference), read_linearity;
+    Located => write_located(reference), read_located;
+    OccurrenceSite => write_occurrence_site(value), read_occurrence_site;
+    Stage => write_stage(value), read_stage;
+    Standing => write_standing(value), read_standing;
+    gandr_kernel_term::Apartness => write_apartness(value), read_apartness;
+    gandr_core_checker::ua::StratumDefect => write_stratum_defect(value), read_stratum_defect;
+    gandr_core_checker::ua::UaDefect => write_ua_defect(value), read_ua_defect;
+    gandr_core_term::compose::Pasting => write_pasting(value), read_pasting;
+    gandr_theory_sites::Unfilled => write_unfilled(value), read_unfilled;
+    gandr_core_term::model::Survivors => write_survivors(value), read_survivors;
+}
+
+/// Fields written as one entry of a table in stable wire order.
+macro_rules! listed {
+    ($($ty:ty => $table:ident;)*) => {
+        $(
+            impl Field for $ty
+            {
+                /// Write the field's position in its table.
+                ///
+                /// # Specification
+                /// trivial.
+                #[inline]
+                fn write<Out>(
+                    &self,
+                    writer: &mut Writer<'_, Out>,
+                ) -> Result<(), CodecError>
+                where
+                    Out: Sink,
+                {
+                    write_listed(writer, &$table, self)
+                }
+
+                /// Read the entry at the position read.
+                ///
+                /// # Specification
+                /// trivial.
+                #[inline]
+                fn read(reader: &mut Reader<'_>) -> Result<Self, CodecError>
+                {
+                    read_listed(reader, &$table)
+                }
+            }
+        )*
+    };
+}
+
+listed! {
+    ExpectedShape => SHAPES;
+    UnadmittedFormer => FORMERS;
+    gandr_core_checker::Unsolved => UNSOLVED;
+    gandr_core_checker::TacticFault => TACTIC_FAULTS;
+}
+
+/// Fields written as a count.
+macro_rules! counted {
+    ($($ty:ty;)*) => {
+        $(
+            impl Field for $ty
+            {
+                /// Write the field as a count.
+                ///
+                /// # Specification
+                /// trivial.
+                #[inline]
+                fn write<Out>(
+                    &self,
+                    writer: &mut Writer<'_, Out>,
+                ) -> Result<(), CodecError>
+                where
+                    Out: Sink,
+                {
+                    writer.count(Count(usize::from(*self)))
+                }
+
+                /// Read a count as the field.
+                ///
+                /// # Specification
+                /// trivial.
+                #[inline]
+                fn read(reader: &mut Reader<'_>) -> Result<Self, CodecError>
+                {
+                    Ok(Self::from(reader.count()?.0))
+                }
+            }
+        )*
+    };
+}
+
+counted! {
+    gandr_kernel_term::RuleIndex;
+    gandr_kernel_term::CellIndex;
+    gandr_core_term::ConstructorTag;
+    gandr_kernel_term::StageBinder;
+    BinderDepth;
+    CheckBudget;
+}
+
+/// Fields written as a 32-bit word.
+macro_rules! narrow {
+    ($($ty:ty;)*) => {
+        $(
+            impl Field for $ty
+            {
+                /// Write the field as a word.
+                ///
+                /// # Specification
+                /// trivial.
+                #[inline]
+                fn write<Out>(
+                    &self,
+                    writer: &mut Writer<'_, Out>,
+                ) -> Result<(), CodecError>
+                where
+                    Out: Sink,
+                {
+                    writer.word(Word(u64::from(u32::from(*self))));
+                    Ok(())
+                }
+
+                /// Read a word as the field, refusing one past 32 bits.
+                ///
+                /// # Specification
+                /// trivial.
+                #[inline]
+                fn read(reader: &mut Reader<'_>) -> Result<Self, CodecError>
+                {
+                    read_narrow(reader)
+                }
+            }
+        )*
+    };
+}
+
+narrow! {
+    StaticArity;
+    ArgumentPosition;
+    DeBruijnIndex;
+    RunStep;
+}
+
+/// Fields written as one tag of a fixed list, refused past it as the error
+/// each names.
+macro_rules! tagged {
+    ($($ty:ty [$refused:ident] { $($variant:ident = $tag:literal),* $(,)? })*) => {
+        $(
+            impl Field for $ty
+            {
+                /// Write the field's tag.
+                ///
+                /// # Specification
+                /// trivial.
+                #[inline]
+                fn write<Out>(
+                    &self,
+                    writer: &mut Writer<'_, Out>,
+                ) -> Result<(), CodecError>
+                where
+                    Out: Sink,
+                {
+                    writer.tag(Tag(match *self {
+                        $(<$ty>::$variant => $tag,)*
+                    }));
+                    Ok(())
+                }
+
+                /// Read the field its tag names.
+                ///
+                /// # Specification
+                /// trivial.
+                #[inline]
+                fn read(reader: &mut Reader<'_>) -> Result<Self, CodecError>
+                {
+                    match reader.tag()?.0 {
+                        $($tag => Ok(<$ty>::$variant),)*
+                        _ => Err(CodecError::$refused),
+                    }
+                }
+            }
+        )*
+    };
+}
+
+tagged! {
+    gandr_core_checker::LoopRespect [Corrupt] { Apart = 0, NotPresentedSet = 1 }
+    gandr_core_checker::fill::UnsupportedFamily [Corrupt] { Flow = 0, Bridge = 1 }
+    Zone [Corrupt] { Intuitionistic = 0, Linear = 1 }
+    gandr_core_checker::codata::CodataFault [NonCanonical] {
+        Undeclared = 0,
+        KindNotUniverse = 1,
+        WithoutObservations = 2,
+        Occurrence = 3,
+        ObservationLevel = 4,
+        Arity = 5,
+    }
+}
+
+/// Writes and reads a field by the two closures its `impl` states, beside
+/// the documentation each method carries.
+macro_rules! field {
+    ($ty:ty, | $field:ident, $writer:ident | $write:block, | $reader:ident | $read:block) => {
+        impl Field for $ty
+        {
+            /// Write the field's parts.
+            ///
+            /// # Specification
+            /// trivial.
+            ///
+            /// # Cost
+            /// - allocation: the bytes that the sink takes, growth within the
+            ///   checkpoint
+            #[inline]
+            fn write<Out>(
+                &self,
+                $writer: &mut Writer<'_, Out>,
+            ) -> Result<(), CodecError>
+            where
+                Out: Sink,
+            {
+                let $field = self;
+                $write
+            }
+
+            /// Read the field's parts.
+            ///
+            /// # Specification
+            /// trivial.
+            ///
+            /// # Cost
+            /// - allocation: the decoded parts, growth within the bytes
+            #[inline]
+            fn read($reader: &mut Reader<'_>) -> Result<Self, CodecError>
+            {
+                $read
+            }
+        }
+    };
+}
+
+field!(
+    gandr_kernel_term::RuleRefusal,
+    |refusal, writer| {
+        writer.count(Count(usize::from(refusal.rule)))?;
+        write_listed(writer, &RULE_FAULTS, &refusal.fault)
+    },
+    |reader| {
+        let rule = gandr_kernel_term::RuleIndex::from(reader.count()?.0);
+        let fault = read_listed(reader, &RULE_FAULTS)?;
+        Ok(gandr_kernel_term::RuleRefusal { rule, fault })
+    }
+);
+
+field!(
+    gandr_core_term::compose::Seam,
+    |seam, writer| {
+        writer.count(Count(match *seam {
+            gandr_core_term::compose::Seam::Outer => 0,
+            gandr_core_term::compose::Seam::Column(before) => usize::from(before).saturating_add(1),
+        }))
+    },
+    |reader| {
+        Ok(match reader.count()?.0.checked_sub(1) {
+            None => gandr_core_term::compose::Seam::Outer,
+            Some(before) => gandr_core_term::compose::Seam::Column(
+                gandr_core_term::compose::Column::try_from(before)
+                    .map_err(|_wide| CodecError::Corrupt)?,
+            ),
+        })
+    }
+);
+
+field!(
+    gandr_core_term::ua::Stratum,
+    |stratum, writer| {
+        writer.count(Count(usize::from(stratum.degree)))?;
+        writer.count(Count(usize::from(stratum.bound)))
+    },
+    |reader| {
+        Ok(gandr_core_term::ua::Stratum {
+            degree: gandr_theory_sites::Degree::from(reader.count()?.0),
+            bound: gandr_theory_sites::ShapeSize::from(reader.count()?.0),
+        })
+    }
+);
+
+field!(
+    gandr_core_checker::SealSite,
+    |site, writer| {
+        writer.count(Count(usize::from(site.sealing())))?;
+        writer.count(Count(usize::from(site.component())))
+    },
+    |reader| {
+        let sealing = gandr_core_checker::SealingSite::from(reader.count()?.0);
+        let component = gandr_core_checker::ComponentOrdinal::from(reader.count()?.0);
+        Ok(gandr_core_checker::SealSite::new(sealing, component))
+    }
+);
+
+/// The count each built-in role is written as. The counts of the roles that
+/// stored refusals already name stay as they are.
+///
+/// # Specification
+/// trivial.
+const fn role_count(role: gandr_kernel_term::Builtin) -> Count
+{
+    Count(match role {
+        gandr_kernel_term::Builtin::IrSignature => 0,
+        gandr_kernel_term::Builtin::IrArgs => 1,
+        gandr_kernel_term::Builtin::IrDecode => 2,
+        gandr_kernel_term::Builtin::IrPair => 3,
+    })
+}
+
+/// The built-in role written as `count`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
+const fn counted_role(count: Count) -> Result<gandr_kernel_term::Builtin, CodecError>
+{
+    match count.0 {
+        0 => Ok(gandr_kernel_term::Builtin::IrSignature),
+        1 => Ok(gandr_kernel_term::Builtin::IrArgs),
+        2 => Ok(gandr_kernel_term::Builtin::IrDecode),
+        3 => Ok(gandr_kernel_term::Builtin::IrPair),
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+field!(
+    gandr_kernel_term::Builtin,
+    |role, writer| { writer.count(role_count(*role)) },
+    |reader| { counted_role(reader.count()?) }
+);
+
+field!(
+    gandr_kernel_term::Departure,
+    |departure, writer| {
+        match *departure {
+            gandr_kernel_term::Departure::Parameters => writer.count(Count(0)),
+            gandr_kernel_term::Departure::Indices => writer.count(Count(1)),
+            gandr_kernel_term::Departure::Constructors => writer.count(Count(2)),
+            gandr_kernel_term::Departure::Arity(tag) => {
+                writer.count(Count(3))?;
+                writer.count(Count(usize::from(tag)))
+            },
+            gandr_kernel_term::Departure::Field { tag, field } => {
+                writer.count(Count(4))?;
+                writer.count(Count(usize::from(tag)))?;
+                writer.count(Count(usize::from(field)))
+            },
+            gandr_kernel_term::Departure::Reads(role) => {
+                writer.count(Count(5))?;
+                writer.count(role_count(role))
+            },
+            gandr_kernel_term::Departure::Answer(tag) => {
+                writer.count(Count(6))?;
+                writer.count(Count(usize::from(tag)))
+            },
+        }
+    },
+    |reader| {
+        let kind = reader.count()?;
+        match kind.0 {
+            0 => Ok(gandr_kernel_term::Departure::Parameters),
+            1 => Ok(gandr_kernel_term::Departure::Indices),
+            2 => Ok(gandr_kernel_term::Departure::Constructors),
+            3 => {
+                let tag = reader.count()?;
+                Ok(gandr_kernel_term::Departure::Arity(
+                    gandr_kernel_term::ConstructorTag::from(tag.0),
+                ))
+            },
+            4 => {
+                let tag = reader.count()?;
+                let field = reader.count()?;
+                Ok(gandr_kernel_term::Departure::Field {
+                    tag: gandr_kernel_term::ConstructorTag::from(tag.0),
+                    field: gandr_kernel_term::FieldPosition::from(field.0),
+                })
+            },
+            5 => Ok(gandr_kernel_term::Departure::Reads(counted_role(
+                reader.count()?,
+            )?)),
+            6 => {
+                let tag = reader.count()?;
+                Ok(gandr_kernel_term::Departure::Answer(
+                    gandr_kernel_term::ConstructorTag::from(tag.0),
+                ))
+            },
+            _ => Err(CodecError::Corrupt),
+        }
+    }
+);
+
+field!(
+    gandr_core_term::tactic::Tactic,
+    |tactic, writer| {
+        writer.tag(Tag(u8::from(*tactic)));
+        Ok(())
+    },
+    |reader| {
+        gandr_core_term::tactic::Tactic::try_from(reader.tag()?.0)
+            .map_err(|_too_many| CodecError::Corrupt)
+    }
+);
+
+field!(
+    ProtocolDefect,
+    |defect, writer| {
+        match *defect {
+            ProtocolDefect::Action { expected, observed } => {
+                writer.tag(Tag(0));
+                write_listed(writer, &ACTIONS, &expected)?;
+                write_listed(writer, &ACTIONS, &observed)?;
+            },
+            ProtocolDefect::Label => writer.tag(Tag(1)),
+            ProtocolDefect::Arms => writer.tag(Tag(2)),
+        }
+        Ok(())
+    },
+    |reader| {
+        match reader.tag()?.0 {
+            0 => Ok(ProtocolDefect::Action {
+                expected: read_listed(reader, &ACTIONS)?,
+                observed: read_listed(reader, &ACTIONS)?,
+            }),
+            1 => Ok(ProtocolDefect::Label),
+            2 => Ok(ProtocolDefect::Arms),
+            _ => Err(CodecError::Corrupt),
+        }
+    }
+);
+
+field!(
+    RunFault,
+    |fault, writer| {
+        let (kind, step) = match *fault {
+            RunFault::WrongDirection(step) => (0, step),
+            RunFault::WrongLabel(step) => (1, step),
+            RunFault::ResumeAfterEnd(step) => (2, step),
+            RunFault::Incomplete(step) => (3, step),
+            RunFault::OfferNarrowed => (4, RunStep::from(0_u32)),
+        };
+        writer.tag(Tag(kind));
+        writer.word(Word(u64::from(u32::from(step))));
+        Ok(())
+    },
+    |reader| {
+        let kind = reader.tag()?.0;
+        let step: RunStep = read_narrow(reader)?;
+        match kind {
+            0 => Ok(RunFault::WrongDirection(step)),
+            1 => Ok(RunFault::WrongLabel(step)),
+            2 => Ok(RunFault::ResumeAfterEnd(step)),
+            3 => Ok(RunFault::Incomplete(step)),
+            4 if u32::from(step) == 0 => Ok(RunFault::OfferNarrowed),
+            _ => Err(CodecError::NonCanonical),
+        }
+    }
+);
+
+field!(
+    AccessDefect,
+    |defect, writer| {
+        let (kind, by) = match *defect {
+            AccessDefect::NotHeld => (0, None),
+            AccessDefect::Lent => (1, None),
+            AccessDefect::HeldCaptured { by } => (2, Some(by)),
+            AccessDefect::Escaped { by } => (3, Some(by)),
+            AccessDefect::Unended => (4, None),
+            AccessDefect::Spent => (5, None),
+            AccessDefect::NotAView => (6, None),
+            AccessDefect::UnwindEffect => (7, None),
+            AccessDefect::ReadOnly => (8, None),
+            AccessDefect::Unindexed => (9, None),
+            AccessDefect::HeldShared => (10, None),
+            AccessDefect::HeldCopied => (11, None),
+            AccessDefect::Moved => (12, None),
+            AccessDefect::Kept => (13, None),
+            AccessDefect::KeptEscaped => (14, None),
+            AccessDefect::Consumed => (15, None),
+        };
+        writer.tag(Tag(kind));
+        if let Some(by) = by {
+            write_listed(writer, &CAPTURES, &by)?;
+        }
+        Ok(())
+    },
+    |reader| {
+        Ok(match reader.tag()?.0 {
+            0 => AccessDefect::NotHeld,
+            1 => AccessDefect::Lent,
+            2 => AccessDefect::HeldCaptured {
+                by: read_listed(reader, &CAPTURES)?,
+            },
+            3 => AccessDefect::Escaped {
+                by: read_listed(reader, &CAPTURES)?,
+            },
+            4 => AccessDefect::Unended,
+            5 => AccessDefect::Spent,
+            6 => AccessDefect::NotAView,
+            7 => AccessDefect::UnwindEffect,
+            8 => AccessDefect::ReadOnly,
+            9 => AccessDefect::Unindexed,
+            10 => AccessDefect::HeldShared,
+            11 => AccessDefect::HeldCopied,
+            12 => AccessDefect::Moved,
+            13 => AccessDefect::Kept,
+            14 => AccessDefect::KeptEscaped,
+            15 => AccessDefect::Consumed,
+            _ => return Err(CodecError::NonCanonical),
+        })
+    }
+);
+
+field!(
+    Mismatched,
+    |mismatched, writer| {
+        write_site(writer, mismatched.at)?;
+        write_type(writer, &mismatched.synthesised)?;
+        write_type(writer, &mismatched.expected)
+    },
+    |reader| {
+        Ok(Mismatched {
+            at: read_site(reader)?,
+            synthesised: read_type(reader)?,
+            expected: read_type(reader)?,
+        })
+    }
+);
+
+field!(
+    Forcing,
+    |forcing, writer| {
+        match *forcing {
+            Forcing::Type(ref ty) => {
+                writer.tag(Tag(0));
+                write_type(writer, ty)
+            },
+            Forcing::Unforced => {
+                writer.tag(Tag(1));
+                Ok(())
+            },
+        }
+    },
+    |reader| {
+        Ok(match reader.tag()?.0 {
+            0 => Forcing::Type(read_type(reader)?),
+            1 => Forcing::Unforced,
+            _ => return Err(CodecError::Corrupt),
+        })
+    }
+);
+
+field!(
+    Form,
+    |form, writer| {
+        let (tag, site) = match *form {
+            Form::Thunk(site) => (0, Some(site)),
+            Form::Lambda(site) => (1, Some(site)),
+            Form::Hole => (3, None),
+            Form::StaticLambda(site) => (4, Some(site)),
+            Form::Injection(site) => (5, Some(site)),
+            Form::Case(site) => (6, Some(site)),
+            Form::Fixpoint(site) => (7, Some(site)),
+            Form::List(site) => (8, Some(site)),
+            Form::Reify(site) => (9, Some(site)),
+            Form::Handle(site) => (10, Some(site)),
+            Form::Reset(site) => (11, Some(site)),
+            Form::Shift(site) => (12, Some(site)),
+            Form::With(site) => (13, Some(site)),
+            Form::Nested(site) => (15, Some(site)),
+            Form::Offer(site) => (16, Some(site)),
+            Form::Scope(site) => (17, Some(site)),
+            Form::Run(site) => (18, Some(site)),
+            Form::Decimal(site) => (19, Some(site)),
+        };
+        writer.tag(Tag(tag));
+        site.map_or(Ok(()), |site| write_site(writer, site))
+    },
+    |reader| {
+        Ok(match reader.tag()?.0 {
+            0 => Form::Thunk(read_site(reader)?),
+            1 => Form::Lambda(read_site(reader)?),
+            3 => Form::Hole,
+            4 => Form::StaticLambda(read_site(reader)?),
+            5 => Form::Injection(read_site(reader)?),
+            6 => Form::Case(read_site(reader)?),
+            7 => Form::Fixpoint(read_site(reader)?),
+            8 => Form::List(read_site(reader)?),
+            9 => Form::Reify(read_site(reader)?),
+            10 => Form::Handle(read_site(reader)?),
+            11 => Form::Reset(read_site(reader)?),
+            12 => Form::Shift(read_site(reader)?),
+            13 => Form::With(read_site(reader)?),
+            15 => Form::Nested(read_site(reader)?),
+            16 => Form::Offer(read_site(reader)?),
+            17 => Form::Scope(read_site(reader)?),
+            18 => Form::Run(read_site(reader)?),
+            19 => Form::Decimal(read_site(reader)?),
+            _ => return Err(CodecError::Corrupt),
+        })
+    }
+);
+
+/// A stored payload that holds type contents: the tables the codec writes
+/// whole and bounds by their levels. The build script passes each field of a
+/// refusal whose role `refusals.toml` marks with `contents` through this
+/// trait, in declaration order.
+///
+/// # Specification
+/// - ensures: a payload passes each type content it holds, in the order the
+///   codec writes them.
+/// - executable: none — the trait's method states its own clauses.
+///
+/// # Cost
+/// - allocation: the decoded node and its fields, branches and frames, growth
+///   within the artifact's bytes
+///
+/// # Adequacy
+/// - hypothesis: L3 — every refusal of every kind, its types holding a level
+///   the decoder caps, is refused when written or reads back as written.
+/// - witness: `codec::tests::every_refusal_holding_a_capped_level_is_refused_when_written_4451`
+/// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
+trait Contents
+{
+    /// Pass each type content the payload holds to `visit`, in the order the
+    /// codec writes them.
+    ///
+    /// # Specification
+    /// - ensures: `visit` sees each type content once, in write order.
+    /// - fails: the first error `visit` returns, which stops the walk.
+    /// - panics: none.
+    /// - executable: none — a required method; each payload's walk is its own,
+    ///   and the trait holds no body to check.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Contents`].
+    /// - witness: `codec::tests::every_refusal_holding_a_capped_level_is_refused_when_written_4451`
+    fn each_content<Error>(
+        &self,
+        visit: &mut impl FnMut(&TypeContent) -> Result<(), Error>,
+    ) -> Result<(), Error>;
+}
+
+impl Contents for TypeContent
+{
+    /// Pass the content itself.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn each_content<Error>(
+        &self,
+        visit: &mut impl FnMut(&Self) -> Result<(), Error>,
+    ) -> Result<(), Error>
+    {
+        visit(self)
+    }
+}
+
+impl Contents for Mismatched
+{
+    /// Pass the synthesised type, then the expected one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn each_content<Error>(
+        &self,
+        visit: &mut impl FnMut(&TypeContent) -> Result<(), Error>,
+    ) -> Result<(), Error>
+    {
+        visit(&self.synthesised)?;
+        visit(&self.expected)
+    }
+}
+
+impl Contents for Forcing
+{
+    /// Pass the forced type, when the call forces one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn each_content<Error>(
+        &self,
+        visit: &mut impl FnMut(&TypeContent) -> Result<(), Error>,
+    ) -> Result<(), Error>
+    {
+        match *self {
+            Self::Type(ref ty) => visit(ty),
+            Self::Unforced => Ok(()),
+        }
+    }
+}
+
+impl Contents for Linearity
+{
+    /// Pass a residue's session type, or the type a binder with no comonoid
+    /// held.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn each_content<Error>(
+        &self,
+        visit: &mut impl FnMut(&TypeContent) -> Result<(), Error>,
+    ) -> Result<(), Error>
+    {
+        match *self {
+            Self::Residue { ref state, .. } | Self::ComonoidAbsent { ty: ref state, .. } => {
+                visit(state)
+            },
+            Self::Closed { .. }
+            | Self::UsedTwice { .. }
+            | Self::Captured { .. }
+            | Self::AsValue { .. }
+            | Self::ArmsDisagree { .. }
+            | Self::Unrestricted
+            | Self::Unbound { .. }
+            | Self::BufferUnreturned { .. }
+            | Self::BufferReturnedTwice { .. }
+            | Self::BufferRead { .. }
+            | Self::ContinuationUnspent { .. }
+            | Self::ContinuationUsedTwice { .. }
+            | Self::ContinuationCaptured { .. }
+            | Self::ContinuationAsValue { .. }
+            | Self::LinearSlotConsumed { .. }
+            | Self::LinearSlotUnconsumed { .. }
+            | Self::ShadowCaptured { .. } => Ok(()),
+        }
+    }
+}
+
+impl Contents for Located
+{
+    /// Pass the types a located defect holds: an immobile value's type, then
+    /// the former that fails, or the former alone.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn each_content<Error>(
+        &self,
+        visit: &mut impl FnMut(&TypeContent) -> Result<(), Error>,
+    ) -> Result<(), Error>
+    {
+        match *self {
+            Self::Immobile {
+                ref ty, ref former, ..
+            } => {
+                visit(ty)?;
+                visit(former)
+            },
+            Self::MarkUnfounded { ref former, .. } | Self::NotAHandle { found: ref former } => {
+                visit(former)
+            },
+            Self::CapabilityMissing { .. }
+            | Self::CapabilityCaptured { .. }
+            | Self::Elsewhere { .. }
+            | Self::HoldElsewhere { .. }
+            | Self::OpenedElsewhere { .. }
+            | Self::Unlocated
+            | Self::UndeclaredWorld { .. }
+            | Self::HostWorldUndeclared
+            | Self::EntryNamed { .. }
+            | Self::EntryUngranted { .. } => Ok(()),
+        }
+    }
+}
+
+impl Contents for Refusal
+{
+    /// Pass the types of each field `refusals.toml` marks, in declaration
+    /// order: the arms the build script generates.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn each_content<Error>(
+        &self,
+        visit: &mut impl FnMut(&TypeContent) -> Result<(), Error>,
+    ) -> Result<(), Error>
+    {
+        refusal_contents!(self, visit)
+    }
+}
+
+impl Contents for Typing
+{
+    /// Pass a synthesised type, or the types a refusal holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn each_content<Error>(
+        &self,
+        visit: &mut impl FnMut(&TypeContent) -> Result<(), Error>,
+    ) -> Result<(), Error>
+    {
+        match *self {
+            Self::Synthesised { ref produced, .. } => visit(produced),
+            Self::Refused(ref refusal) => refusal.each_content(visit),
+            Self::Data | Self::Checked { .. } | Self::Owed | Self::Suspended => Ok(()),
+        }
+    }
+}
+
+/// The sort of the first unresolved node of `nodes`, as the error, or
+/// nothing when every node resolves: what writing the nodes refuses.
+///
+/// # Specification
+/// trivial.
+fn first_unresolved(nodes: &[SupportedNode]) -> Result<(), Sort>
+{
+    nodes.iter().try_for_each(|node| {
+        if let ContentNode::Unresolved(sort) = *node.former() {
+            Err(sort)
+        }
+        else {
+            Ok(())
+        }
+    })
+}
+
+/// Write a refusal.
+///
+/// # Specification
+/// - ensures: an unsupported refusal names the first unresolved node in
+///   serialized type-field order.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the finite corpus preserves selected refusal payloads;
+///   independently malformed type fields distinguish the first and second
+///   mismatch payloads. Not every refusal class is generated by the corpus. The
+///   predicate does not re-serialize site or enum fields.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
+#[spec(
+    ensures: |ret| {
+        let first = refusal.each_content(&mut |content| first_unresolved(content.nodes()));
+        match ret {
+            | Ok(()) => first.is_ok(),
+            | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => first == Err(sort),
+            | Err(CodecError::Unsupported(UnsupportedPersistence::Codata) | CodecError::Unrepresentable) => true,
+            | _ => false,
+        }
+    },
+)]
+fn write_refusal<Out>(
+    writer: &mut Writer<'_, Out>,
+    refusal: &Refusal,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    refusal_write!(writer, refusal, {
+        // The tag names the miss, so the arm is written by hand.
+        Refusal::EndpointMismatch {
+            at,
+            left,
+            right,
+            miss,
+        } => {
+            writer.tag(Tag(match miss {
+                EndpointMiss::Unshown => 40,
+                EndpointMiss::Budget => 95,
+            }));
+            write_site(writer, at)?;
+            write_site(writer, left)?;
+            write_site(writer, right)?;
+        },
+    });
+    Ok(())
+}
+
+/// Read a count a refusal names in 32 bits: an arity or a position.
+///
+/// # Specification
+/// - ensures: a complete word is consumed; it succeeds exactly when it fits in
+///   32 bits. The generic `From<u32>` conversion supplies the returned
+///   vocabulary value.
+/// - fails: [`CodecError::Corrupt`] when the word exceeds `u32::MAX`, which no
+///   write produces.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CodecError`] — as above, or the reader's own refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the largest 32-bit value succeeds and the next word is
+///   refused after consumption. Persisted arities and positions witness
+///   concrete vocabulary conversions; the generic output has no equality
+///   observer, so the predicate checks width, errors and cursor movement.
+/// - witness: `codec::tests::narrow_fields_refuse_out_of_range_words_after_consuming_them`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match before
+        .checked_add(8)
+        .and_then(|end| reader.bytes.get(before .. end))
+    {
+        | Some(&[byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7]) => {
+            before.checked_add(8) == Some(reader.cursor)
+                && ret.as_ref().map(|_| ()).map_err(|&error| error)
+                    == u32::try_from(u64::from_le_bytes([
+                        byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7,
+                    ]))
+                    .map(|_| ())
+                    .map_err(|_overflow| CodecError::Corrupt)
+        },
+        | _ => reader.cursor == before && matches!(ret, Err(CodecError::Corrupt)),
+    },
+)]
+fn read_narrow<Count32>(reader: &mut Reader<'_>) -> Result<Count32, CodecError>
+where
+    Count32: From<u32>,
+{
+    let word = reader.word()?;
+    let narrow = u32::try_from(word.0).map_err(|_overflow| CodecError::Corrupt)?;
+    Ok(Count32::from(narrow))
+}
+
+/// Read a refusal.
+///
+/// # Specification
+/// - ensures: a successful refusal is exactly the consumed frame: it writes
+///   back to the bytes read, its variant tag first. Only decoder failures are
+///   returned.
+///
+/// # Adequacy
+/// - hypothesis: L3 — selected refusal classes and their payloads survive the
+///   finite semantic corpus. The predicate re-encodes each refusal it reads, so
+///   a dropped, swapped or invented tag or payload field breaks it; the corpus
+///   is not an exhaustive refusal generator. Unknown outer tags, invalid
+///   non-synthesisable forms and invalid unbound zones reject at their field
+///   before the following payload.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `codec::tests::narrow_fields_refuse_out_of_range_words_after_consuming_them`
+/// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+/// - witness: `codec::tests::an_offer_narrowed_fault_is_read_only_at_step_zero`
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match ret {
+        | Ok(ref refusal) => {
+            let mut bytes = CheckpointBytes::default();
+            write_refusal(&mut Writer { sink: &mut bytes }, refusal).is_ok()
+                && reader.bytes.get(before .. reader.cursor) == Some(bytes.as_ref())
+        },
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(CodecError::Corrupt | CodecError::NonCanonical) => true,
+        | Err(_) => false,
+    },
+)]
+fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
+{
+    let tag = reader.tag()?;
+    let refusal = refusal_read!(reader, tag.0, {
+        40 => Refusal::EndpointMismatch {
+            at: read_site(reader)?,
+            left: read_site(reader)?,
+            right: read_site(reader)?,
+            miss: EndpointMiss::Unshown,
+        },
+        95 => Refusal::EndpointMismatch {
+            at: read_site(reader)?,
+            left: read_site(reader)?,
+            right: read_site(reader)?,
+            miss: EndpointMiss::Budget,
+        },
+        _ => return Err(CodecError::Corrupt),
+    });
+    Ok(refusal)
+}
+
+/// Write a typing.
+///
+/// # Specification
+/// - ensures: owed and checked verdicts have no unresolved type payload; other
+///   verdicts refuse the first unresolved type node.
+///
+/// # Adequacy
+/// - hypothesis: L3 — checked, synthesised, owed, suspended and selected
+///   refused verdicts round-trip. Malformed synthesised and refused payloads
+///   distinguish their failure paths; the predicate classifies type-plane
+///   failures rather than reproducing the byte encoding.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::a_suspended_typing_round_trips`
+/// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
+#[spec(
+    ensures: |ret| match *typing {
+        | Typing::Data | Typing::Owed | Typing::Suspended => ret == Ok(()),
+        | Typing::Checked { conversions } => {
+            ret == u64::try_from(usize::from(conversions))
+                .map(|_| ())
+                .map_err(|_overflow| CodecError::Unrepresentable)
+        },
+        | _ => {
+            let first = typing.each_content(&mut |content| first_unresolved(content.nodes()));
+            match ret {
+                | Ok(()) => first.is_ok(),
+                | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => first == Err(sort),
+                | Err(CodecError::Unsupported(UnsupportedPersistence::Codata) | CodecError::Unrepresentable) => true,
+                | _ => false,
+            }
+        },
+    },
+)]
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
+fn write_typing<Out>(
+    writer: &mut Writer<'_, Out>,
+    typing: &Typing,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match *typing {
+        Typing::Data => writer.tag(Tag(4)),
+        Typing::Checked { conversions } => {
+            writer.tag(Tag(0));
+            writer.count(Count(usize::from(conversions)))?;
+        },
+        Typing::Synthesised {
+            ref produced,
+            conversions,
+        } => {
+            writer.tag(Tag(1));
+            write_type(writer, produced)?;
+            writer.count(Count(usize::from(conversions)))?;
+        },
+        Typing::Owed => writer.tag(Tag(2)),
+        Typing::Suspended => writer.tag(Tag(5)),
+        Typing::Refused(ref refusal) => {
+            writer.tag(Tag(3));
+            write_refusal(writer, refusal)?;
+        },
+    }
+    Ok(())
+}
+
+/// Read a typing.
+///
+/// # Specification
+/// - ensures: successful verdicts retain the input tag; failures belong to the
+///   decoder error alphabet.
+///
+/// # Adequacy
+/// - hypothesis: L3 — checked, synthesised, owed, suspended and selected
+///   refused verdicts preserve their payloads. Tag classification is
+///   executable; this finite corpus does not witness every malformed field. An
+///   unknown outer tag stops before the available payload.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::a_suspended_typing_round_trips`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_truncation_corruption_and_trailing_bytes`
+/// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+///
+/// # Cost
+/// - allocation: the decoded typing, growth within the bytes
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match ret {
+        | Ok(ref typing) => {
+            reader.bytes.get(before)
+                == Some(&match *typing {
+                    Typing::Data => 4,
+                    | Typing::Checked { .. } => 0,
+                    | Typing::Synthesised { .. } => 1,
+                    | Typing::Owed => 2,
+                    | Typing::Suspended => 5,
+                    | Typing::Refused(_) => 3,
+                })
+        },
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(CodecError::Corrupt | CodecError::NonCanonical) => true,
+        | Err(_) => false,
+    },
+)]
+fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
+{
+    let tag = reader.tag()?;
+    match tag.0 {
+        4 => Ok(Typing::Data),
+        0 => {
+            let conversions = reader.count()?;
+            Ok(Typing::Checked {
+                conversions: ConversionCount::from(conversions.0),
+            })
+        },
+        1 => {
+            let produced = read_type(reader)?;
+            let conversions = reader.count()?;
+            Ok(Typing::Synthesised {
+                produced,
+                conversions: ConversionCount::from(conversions.0),
+            })
+        },
+        2 => Ok(Typing::Owed),
+        5 => Ok(Typing::Suspended),
+        3 => {
+            let refusal = read_refusal(reader)?;
+            Ok(Typing::Refused(refusal))
+        },
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write an answer.
+///
+/// # Specification
+/// - ensures: untyped answers always encode; typed answers refuse a codata
+///   application, then their first unresolved node.
+///
+/// # Adequacy
+/// - hypothesis: L3 — structured support answers survive persistence, and a
+///   malformed support type is refused before a later malformed verdict.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
+/// - witness: `codec::tests::a_stored_form_refuses_a_codata_application_7403`
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
+#[spec(
+    ensures: |ret| match ret {
+        Ok(()) => answer.nodes().iter().all(|node| !matches!(*node.former(),ContentNode::Unresolved(_)) && (Out::CODATA == CodataWrite::Keyed || !matches!(*node.former(), ContentNode::Codata { .. }))),
+        Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => answer.nodes().iter().any(|node| matches!(*node.former(), ContentNode::Codata { .. })),
+        Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => answer.nodes().iter().find_map(|node| match *(node.former()) {
+ContentNode::Unresolved(ref found) => Some(*found),
+ContentNode::Codata { .. } | ContentNode::Compose { .. } | ContentNode::Fill { .. } | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::RowValue(_) | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::BridgeType { .. } |
+ContentNode::ReturnAll(_) | ContentNode::BindAll(..) | ContentNode::Returns { .. } | ContentNode::Patched { .. } |
+ContentNode::LinearLambda(_) | ContentNode::LinearArrow { .. } |
+ContentNode::Hold(_) | ContentNode::Leta { .. } | ContentNode::Migrate { .. } | ContentNode::HeldType { .. } | ContentNode::CapabilityType(_) |
+ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Dialogue(_) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::DialogueType(_) | ContentNode::WebType | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::ValueLift { .. } | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::KeptType { .. } | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::TypeLift { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::QubitType | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } | ContentNode::UnknownComputationType => None
+}) == Some(sort),
+        Err(CodecError::Unrepresentable) => true,
+        _ => false,
+    },
+)]
+fn write_answer<Out>(
+    writer: &mut Writer<'_, Out>,
+    answer: &Answer,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match *answer {
+        Answer::Data(None) => writer.tag(Tag(2)),
+        Answer::Data(Some(ref signature)) => {
+            writer.tag(Tag(3));
+            write_data_content(writer, signature)?;
+        },
+        Answer::Untyped => writer.tag(Tag(0)),
+        Answer::Codata => writer.tag(Tag(4)),
+        Answer::Typed(ref ty) => {
+            writer.tag(Tag(1));
+            write_type(writer, ty)?;
+        },
+        Answer::Located { ref home, spending } => {
+            writer.tag(Tag(5));
+            write_world(writer, home)?;
+            write_spending(writer, spending);
+        },
+        Answer::Entered {
+            ref entry,
+            spending,
+        } => {
+            writer.tag(Tag(6));
+            match *entry {
+                None => writer.tag(Tag(0)),
+                Some(ref entry) => {
+                    writer.tag(Tag(1));
+                    write_entry(writer, entry)?;
+                },
+            }
+            write_spending(writer, spending);
+        },
+    }
+    Ok(())
+}
+
+/// Read an answer.
+///
+/// # Specification
+/// - ensures: tags zero and one retain absent and present value-signature
+///   answers; tags two and three retain absent and complete data signatures;
+///   tag four retains a codata answer; tag five a located answer, and tag six
+///   an entered one. A located or an entered answer that states the host's
+///   world, unspent, is refused as noncanonical.
+///
+/// # Adequacy
+/// - hypothesis: L3 — persisted support contains structured typed answers and
+///   preserves them on decoding. The predicate checks tag and root class, not
+///   provenance from a checker. An unknown outer tag stops before the available
+///   payload. A located answer of the host's world, unspent, is refused.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+/// - witness: `codec::tests::every_footprint_stance_and_answer_round_trips`
+/// - witness: `codec::tests::located_answers_round_trip_and_refuse_the_host_s_3381`
+///
+/// # Cost
+/// - allocation: the decoded answer, growth within the bytes
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match ret {
+        Ok(Answer::Data(None)) => reader.bytes.get(before) == Some(&2),
+        Ok(Answer::Data(Some(_))) => reader.bytes.get(before) == Some(&3),
+        | Ok(Answer::Untyped) => reader.bytes.get(before) == Some(&0),
+        | Ok(Answer::Codata) => reader.bytes.get(before) == Some(&4),
+        | Ok(Answer::Located { ref home, spending }) => {
+            reader.bytes.get(before) == Some(&5)
+                && (*home != gandr_core_content::WorldContent::Host
+                    || spending == gandr_core_checker::worlds::Spending::Spent)
+        },
+        | Ok(Answer::Entered { .. }) => reader.bytes.get(before) == Some(&6),
+        | Ok(Answer::Typed(ref ty)) => {
+            reader.bytes.get(before) == Some(&1)
+                && matches!(
+                    ty.nodes().first().map(SupportedNode::sort),
+                    Some(Sort::ValueType | Sort::CompType)
+                )
+        },
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(CodecError::Corrupt | CodecError::NonCanonical) => true,
+        | Err(_) => false,
+    },
+)]
+fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
+{
+    let tag = reader.tag()?;
+    match tag.0 {
+        2 => Ok(Answer::Data(None)),
+        3 => Ok(Answer::Data(Some(read_data_content(reader)?))),
+        0 => Ok(Answer::Untyped),
+        4 => Ok(Answer::Codata),
+        1 => {
+            let ty = read_type(reader)?;
+            Ok(Answer::Typed(ty))
+        },
+        5 => {
+            let home = read_world(reader)?;
+            let spending = read_spending(reader)?;
+            // The host's world, unspent, is what no located answer states.
+            if home == gandr_core_content::WorldContent::Host
+                && spending == gandr_core_checker::worlds::Spending::Unspent
+            {
+                return Err(CodecError::NonCanonical);
+            }
+            Ok(Answer::Located { home, spending })
+        },
+        6 => {
+            let entry = match reader.tag()?.0 {
+                0 => None,
+                1 => Some(read_entry(reader)?),
+                _ => return Err(CodecError::Corrupt),
+            };
+            let spending = read_spending(reader)?;
+            // The host's world with no capability, unspent, is what no
+            // entered answer states.
+            if spending == gandr_core_checker::worlds::Spending::Unspent
+                && entry.as_ref().is_some_and(|entry| {
+                    entry.home == gandr_core_content::WorldContent::Host
+                        && entry.capabilities.is_empty()
+                })
+            {
+                return Err(CodecError::NonCanonical);
+            }
+            Ok(Answer::Entered { entry, spending })
+        },
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write whether a run spent a capability: tag zero for unspent, one for
+/// spent.
+///
+/// # Specification
+/// trivial.
+fn write_spending<Out>(
+    writer: &mut Writer<'_, Out>,
+    spending: gandr_core_checker::worlds::Spending,
+) where
+    Out: Sink,
+{
+    writer.tag(Tag(match spending {
+        gandr_core_checker::worlds::Spending::Unspent => 0,
+        gandr_core_checker::worlds::Spending::Spent => 1,
+    }));
+}
+
+/// Read whether a run spent a capability.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for a tag past one.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a spent entry's answer round trips.
+/// - witness: `codec::tests::located_answers_round_trip_and_refuse_the_host_s_3381`
+#[spec(captures: [before = reader.cursor], ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_spending(
+    reader: &mut Reader<'_>
+) -> Result<gandr_core_checker::worlds::Spending, CodecError>
+{
+    match reader.tag()?.0 {
+        0 => Ok(gandr_core_checker::worlds::Spending::Unspent),
+        1 => Ok(gandr_core_checker::worlds::Spending::Spent),
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write one item's checkpoint.
+///
+/// # Specification
+/// - ensures: the first unresolved node is sought in content, then support,
+///   then verdict field order. A codata declaration, or a codata application in
+///   any plane, is refused as codata:
+///   [`write_node`](gandr_core_content::codec::write_node) states the second.
+///
+/// # Adequacy
+/// - hypothesis: L3 — separate malformed content, support, synthesised and
+///   two-field refused payloads identify the first failing plane. Successful
+///   finite checkpoints preserve every stored field. The predicate scans
+///   borrowed tables; it neither clones payloads nor serializes them again.
+/// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(
+    ensures: |ret| {
+        let support = checkpoint.support().iter().map(|answered| answered.answer().nodes());
+        let first = core::iter::once(checkpoint.content().nodes())
+            .chain(support)
+            .try_for_each(first_unresolved)
+            .and_then(|()| {
+                checkpoint
+                    .typing()
+                    .each_content(&mut |content| first_unresolved(content.nodes()))
+            });
+        match ret {
+            | Ok(()) => first.is_ok(),
+            | Err(CodecError::Unsupported(UnsupportedPersistence::Codata) | CodecError::Unrepresentable) => true,
+            | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => first == Err(sort),
+            | _ => false,
+        }
+    },
+)]
+fn write_checkpoint<Out>(
+    writer: &mut Writer<'_, Out>,
+    checkpoint: &ItemCheckpoint,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    write_item_content_with(writer, checkpoint.content())?;
+    write_footprint(writer, checkpoint.footprint())?;
+    writer.count(Count(checkpoint.support().len()))?;
+    for answered in checkpoint.support() {
+        write_reference(writer, answered.reference())?;
+        write_answer(writer, answered.answer())?;
+    }
+    write_typing(writer, checkpoint.typing())?;
+    write_entered(writer, checkpoint.entered());
+    write_failed(writer, checkpoint.failure())?;
+    write_elaborated(writer, checkpoint.entry())?;
+    write_report(writer, checkpoint.report())?;
+    write_tables(writer, checkpoint.tables())
+}
+
+/// Read one item's checkpoint.
+///
+/// # Specification
+/// - ensures: the checkpoint retains its source reference and its support is
+///   sorted with unique references.
+///
+/// # Adequacy
+/// - hypothesis: L3 — persisted finite checkpoints preserve content, footprint,
+///   support and verdict. The predicate checks the source identity and
+///   canonical support order; it does not assert that stored metadata is a
+///   checker certificate or decode a second copy.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+///
+/// # Cost
+/// - allocation: the checkpoint of one item, growth within the bytes
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match ret {
+        | Ok(ref checkpoint) => {
+            let reference = checkpoint.content().reference();
+            let length = match *reference {
+                | Reference::Unoccupied => Some(1),
+                | Reference::Item { ref key, .. } => key.as_ref().len().checked_add(17),
+            };
+            let support = checkpoint.support();
+            length
+                .and_then(|length| before.checked_add(length))
+                .and_then(|end| reader.bytes.get(before .. end))
+                .is_some_and(|bytes| match *reference {
+                    | Reference::Unoccupied => bytes == [0],
+                    | Reference::Item {
+                        ref key,
+                        occurrence,
+                    } => {
+                        bytes.first() == Some(&1)
+                            && u64::try_from(key.as_ref().len()).is_ok_and(|count| {
+                                bytes.get(1 .. 9) == Some(count.to_le_bytes().as_slice())
+                            })
+                            && bytes
+                                .get(9 ..)
+                                .and_then(|tail| tail.strip_prefix(key.as_ref()))
+                                .is_some_and(|tail| {
+                                    u64::try_from(usize::from(occurrence))
+                                        .is_ok_and(|word| tail == word.to_le_bytes())
+                                })
+                    },
+                })
+                && support
+                    .iter()
+                    .zip(support.iter().skip(1))
+                    .all(|(first,second)| (first.reference(),first.answer().consultation()) < (second.reference(),second.answer().consultation()))
+        },
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(CodecError::Corrupt | CodecError::NonCanonical) => true,
+        | Err(_) => false,
+    },
+)]
+fn read_checkpoint(reader: &mut Reader<'_>) -> Result<ItemCheckpoint, CodecError>
+{
+    let content = read_item_content(reader)?;
+    let footprint = read_footprint(reader)?;
+    let count = reader.count()?;
+    let mut support = Vec::new();
+    for _ in 0 .. count.0 {
+        let reference = read_reference(reader)?;
+        let answer = read_answer(reader)?;
+        support.push(Answered::new(reference, answer));
+    }
+    let typing = read_typing(reader)?;
+    let entered = read_entered(reader)?;
+    let checkpoint = ItemCheckpoint::new(content, footprint, support, typing, entered);
+    let checkpoint = checkpoint.with_failure(read_failed(reader)?);
+    let entry = read_elaborated(reader)?;
+    let body = match entry {
+        Maybe::Present(ref entry) => match entry.body() {
+            Maybe::Present(body) => Some(body.nodes()),
+            Maybe::Absent(written::Absent::Written) => None,
+        },
+        Maybe::Absent(_) => None,
+    };
+    let report = read_report(reader, body)?;
+    let tables = read_tables(reader, body)?;
+    Ok(checkpoint
+        .with_entry(entry)
+        .with_report(report)
+        .with_tables(tables))
+}
+
+/// Write the form the table held an item in: tag 0 as written, tag 1
+/// elaborated.
+///
+/// # Specification
+/// trivial.
+fn write_entered<Out>(
+    writer: &mut Writer<'_, Out>,
+    entered: Entered,
+) where
+    Out: Sink,
+{
+    writer.tag(Tag(match entered {
+        Entered::AsWritten => 0,
+        Entered::Elaborated => 1,
+    }));
+}
+
+/// Read the form the table held an item in.
+///
+/// # Specification
+/// trivial.
+fn read_entered(reader: &mut Reader<'_>) -> Result<Entered, CodecError>
+{
+    match reader.tag()?.0 {
+        0 => Ok(Entered::AsWritten),
+        1 => Ok(Entered::Elaborated),
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// The premises of a List fold, in stable wire order.
+const FOLD_PREMISES: [gandr_core_checker::FoldPremise; 5] = [
+    gandr_core_checker::FoldPremise::Element,
+    gandr_core_checker::FoldPremise::Result,
+    gandr_core_checker::FoldPremise::Input,
+    gandr_core_checker::FoldPremise::Nil,
+    gandr_core_checker::FoldPremise::Cons,
+];
+
+/// Where a refused machine stood, in stable wire order.
+const STAGES: [gandr_core_checker::Stage; 3] = [
+    gandr_core_checker::Stage::Starting,
+    gandr_core_checker::Stage::Resuming,
+    gandr_core_checker::Stage::Handing,
+];
+
+/// Why a judgement names no expected type, in stable wire order.
+const JUDGED: [gandr_core_checker::judged::Absent; 2] = [
+    gandr_core_checker::judged::Absent::Synthesised,
+    gandr_core_checker::judged::Absent::Formed,
+];
+
+/// Why a compared side is empty, in stable wire order.
+const COMPARED: [gandr_core_checker::compared::Absent; 2] = [
+    gandr_core_checker::compared::Absent::Unnamed,
+    gandr_core_checker::compared::Absent::InWeakHead,
+];
+
+/// Why a judgement keeps no failure, in stable wire order.
+const KEPT: [gandr_core_checker::kept::Absent; 3] = [
+    gandr_core_checker::kept::Absent::Accepted,
+    gandr_core_checker::kept::Absent::Unrun,
+    gandr_core_checker::kept::Absent::Reported,
+];
+
+/// The uses a linear endpoint stands at, in stable wire order.
+const USES: [gandr_core_term::LinearUse; 3] = [
+    gandr_core_term::LinearUse::Available,
+    gandr_core_term::LinearUse::Moved,
+    gandr_core_term::LinearUse::Consumed,
+];
+
+/// Why a content table does not mint, in stable wire order.
+const SEATINGS: [seating::Absent; 7] = [
+    seating::Absent::Unresolved,
+    seating::Absent::Cyclic,
+    seating::Absent::Unplaced,
+    seating::Absent::IllSorted,
+    seating::Absent::Unseatable,
+    seating::Absent::Unplaceable,
+    seating::Absent::Unwalked,
+];
+
+/// Why a node outside an item keeps no root place, in stable wire order.
+const ROOTINGS: [crate::failure::rooted::Absent; 1] = [crate::failure::rooted::Absent::Unrooted];
+
+/// Why a checkpoint keeps no failure content, in stable wire order.
+const FAILEDS: [failed::Absent; 2] = [failed::Absent::Unkept, failed::Absent::Opaque];
+
+/// Write the root place of a node outside an item: tag 0 and why it keeps
+/// none; else tag 1, the item's reference, the root and the node's discovery.
+///
+/// # Specification
+/// - ensures: [`read_rooted`] reads back `rooted` from what was written.
+/// - fails: as [`write_reference`] and [`write_listed`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_failed`].
+/// - witness: `codec::tests::a_failure_content_round_trips`
+fn write_rooted<Out>(
+    writer: &mut Writer<'_, Out>,
+    rooted: &Maybe<Rooted, crate::failure::rooted::Absent>,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match *rooted {
+        Maybe::Present(ref rooted) => {
+            writer.tag(Tag(1));
+            write_reference(writer, &rooted.item)?;
+            writer.count(Count(usize::from(rooted.root)))?;
+            writer.count(Count(usize::from(rooted.at)))
+        },
+        Maybe::Absent(reason) => {
+            writer.tag(Tag(0));
+            write_listed(writer, &ROOTINGS, &reason)
+        },
+    }
+}
+
+/// Read the root place of a node outside an item.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for an unknown tag, and as
+///   [`read_reference`] and [`read_listed`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_failed`].
+/// - witness: `codec::tests::a_failure_content_round_trips`
+///
+/// # Cost
+/// - allocation: the decoded rooted, growth within the bytes
+fn read_rooted(
+    reader: &mut Reader<'_>
+) -> Result<Maybe<Rooted, crate::failure::rooted::Absent>, CodecError>
+{
+    match reader.tag()?.0 {
+        1 => {
+            let item = read_reference(reader)?;
+            let root = crate::boundary::RootOrdinal::from(reader.count()?.0);
+            let at = gandr_core_content::Discovery::from(reader.count()?.0);
+            Ok(Maybe::Present(Rooted { item, root, at }))
+        },
+        0 => Ok(Maybe::Absent(read_listed(reader, &ROOTINGS)?)),
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write the item nodes that a node outside an item holds: their count, then
+/// for each its discovery, the length of its path and each child position.
+///
+/// # Specification
+/// - ensures: [`read_anchors`] reads back `anchors` from what was written.
+/// - fails: as [`Writer::count`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_failed`].
+/// - witness: `codec::tests::a_failure_content_round_trips`
+fn write_anchors<Out>(
+    writer: &mut Writer<'_, Out>,
+    anchors: &[crate::content::Anchor],
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(anchors.len()))?;
+    for anchor in anchors {
+        writer.count(Count(usize::from(anchor.at)))?;
+        writer.count(Count(anchor.path.len()))?;
+        for &position in &anchor.path {
+            writer.count(Count(usize::from(position)))?;
+        }
+    }
+    Ok(())
+}
+
+/// Read the item nodes that a node outside an item holds.
+///
+/// # Specification
+/// - fails: as [`Reader::count`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_failed`].
+/// - witness: `codec::tests::a_failure_content_round_trips`
+///
+/// # Cost
+/// - allocation: the list of anchors, growth within the bytes
+fn read_anchors(reader: &mut Reader<'_>) -> Result<Vec<crate::content::Anchor>, CodecError>
+{
+    let count = reader.count()?;
+    let mut anchors = Vec::new();
+    for _ in 0 .. count.0 {
+        let at = gandr_core_content::Discovery::from(reader.count()?.0);
+        let length = reader.count()?;
+        let mut path = Vec::new();
+        for _ in 0 .. length.0 {
+            path.push(gandr_core_content::ChildPosition::from(reader.count()?.0));
+        }
+        anchors.push(crate::content::Anchor { path, at });
+    }
+    Ok(anchors)
+}
+
+/// Write a node's place: tag 0 and its discovery, or tag 1 and its index
+/// outside the item.
+///
+/// # Specification
+/// trivial.
+fn write_placed<Out>(
+    writer: &mut Writer<'_, Out>,
+    placed: Placed,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let (tag, index) = match placed {
+        Placed::At(discovery) => (0, usize::from(discovery)),
+        Placed::Outside(index) => (1, usize::from(index)),
+    };
+    writer.tag(Tag(tag));
+    writer.count(Count(index))
+}
+
+/// Read a node's place.
+///
+/// # Specification
+/// trivial.
+fn read_placed(reader: &mut Reader<'_>) -> Result<Placed, CodecError>
+{
+    let tag = reader.tag()?;
+    let index = reader.count()?.0;
+    match tag.0 {
+        0 => Ok(Placed::At(gandr_core_content::Discovery::from(index))),
+        1 => Ok(Placed::Outside(crate::boundary::OutsideIndex::from(index))),
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write a count of places, then each place.
+///
+/// # Specification
+/// trivial.
+fn write_places<Out>(
+    writer: &mut Writer<'_, Out>,
+    places: &[Placed],
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(places.len()))?;
+    places
+        .iter()
+        .try_for_each(|&placed| write_placed(writer, placed))
+}
+
+/// Read a count of places, then each place.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the decoded places, growth within the bytes
+fn read_places(reader: &mut Reader<'_>) -> Result<Vec<Placed>, CodecError>
+{
+    let count = reader.count()?;
+    let mut places = Vec::new();
+    for _ in 0 .. count.0 {
+        places.push(read_placed(reader)?);
+    }
+    Ok(places)
+}
+
+/// Write a placed type or why there is none: tag 1 and the place, or tag 0
+/// and the reason's position in `reasons`.
+///
+/// # Specification
+/// trivial.
+fn write_expected<Out, Reason>(
+    writer: &mut Writer<'_, Out>,
+    expected: Maybe<Placed, Reason>,
+    reasons: &[Reason],
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+    Reason: Copy + PartialEq,
+{
+    match expected {
+        Maybe::Present(placed) => {
+            writer.tag(Tag(1));
+            write_placed(writer, placed)
+        },
+        Maybe::Absent(ref reason) => {
+            writer.tag(Tag(0));
+            write_listed(writer, reasons, reason)
+        },
+    }
+}
+
+/// Read a placed type or why there is none.
+///
+/// # Specification
+/// trivial.
+fn read_expected<Reason>(
+    reader: &mut Reader<'_>,
+    reasons: &[Reason],
+) -> Result<Maybe<Placed, Reason>, CodecError>
+where
+    Reason: Copy,
+{
+    match reader.tag()?.0 {
+        1 => Ok(Maybe::Present(read_placed(reader)?)),
+        0 => Ok(Maybe::Absent(read_listed(reader, reasons)?)),
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write a frame role by its stable name, then a fold's premise.
+///
+/// # Specification
+/// trivial.
+fn write_role<Out>(
+    writer: &mut Writer<'_, Out>,
+    role: gandr_core_checker::FrameRole,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let name: &[u8] = frame_role_name!(role, {
+        gandr_core_checker::FrameRole::ListFold(_) => b"ListFold",
+    });
+    writer.bytes(Bytes(name))?;
+    if let gandr_core_checker::FrameRole::ListFold(premise) = role {
+        write_listed(writer, &FOLD_PREMISES, &premise)
+    }
+    else {
+        Ok(())
+    }
+}
+
+/// Read a frame role by its stable name.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for a name no role holds.
+/// - panics: none.
+/// - executable: none — the generated arms state each name.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a kept failure's roles, a fold's among them, read back as
+///   written.
+/// - witness: `codec::tests::a_failure_content_round_trips`
+fn read_role(reader: &mut Reader<'_>) -> Result<gandr_core_checker::FrameRole, CodecError>
+{
+    let name = reader.bytes()?;
+    Ok(frame_role_named!(name.0, {
+        b"ListFold" => gandr_core_checker::FrameRole::ListFold(read_listed(reader, &FOLD_PREMISES)?),
+        _ => return Err(CodecError::Corrupt),
+    }))
+}
+
+/// Write a kept failure's parts.
+///
+/// # Specification
+/// trivial.
+fn write_parts<Out>(
+    writer: &mut Writer<'_, Out>,
+    parts: &FailureParts,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(parts.obligations.len()))?;
+    for obligation in &parts.obligations {
+        write_role(writer, obligation.role)?;
+        write_placed(writer, obligation.at)?;
+        write_expected(writer, obligation.expected, &JUDGED)?;
+        write_places(writer, &obligation.binders)?;
+    }
+    write_placed(writer, parts.pursuit.at)?;
+    write_expected(writer, parts.pursuit.expected, &JUDGED)?;
+    write_listed(writer, &STAGES, &parts.pursuit.stage)?;
+    write_places(writer, &parts.hypotheses)?;
+    writer.count(Count(parts.endpoints.len()))?;
+    for endpoint in &parts.endpoints {
+        write_placed(writer, endpoint.fork)?;
+        write_listed(writer, &SIDES, &endpoint.side)?;
+        write_placed(writer, endpoint.state)?;
+        write_listed(writer, &USES, &endpoint.use_state)?;
+    }
+    match parts.solved {
+        Maybe::Present(compared) => {
+            writer.tag(Tag(1));
+            write_expected(writer, compared.expected, &COMPARED)?;
+            write_expected(writer, compared.found, &COMPARED)?;
+            write_expected(writer, compared.unfolded, &COMPARED)
+        },
+        Maybe::Absent(solved::Absent::Unchanged) => {
+            writer.tag(Tag(0));
+            Ok(())
+        },
+    }
+}
+
+/// Read a kept failure's parts.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the decoded parts, growth within the bytes
+fn read_parts(reader: &mut Reader<'_>) -> Result<FailureParts, CodecError>
+{
+    let count = reader.count()?;
+    let mut obligations = Vec::new();
+    for _ in 0 .. count.0 {
+        obligations.push(ObligationContent {
+            role: read_role(reader)?,
+            at: read_placed(reader)?,
+            expected: read_expected(reader, &JUDGED)?,
+            binders: read_places(reader)?,
+        });
+    }
+    let pursuit = PursuitContent {
+        at: read_placed(reader)?,
+        expected: read_expected(reader, &JUDGED)?,
+        stage: read_listed(reader, &STAGES)?,
+    };
+    let hypotheses = read_places(reader)?;
+    let count = reader.count()?;
+    let mut endpoints = Vec::new();
+    for _ in 0 .. count.0 {
+        endpoints.push(EndpointContent {
+            fork: read_placed(reader)?,
+            side: read_listed(reader, &SIDES)?,
+            state: read_placed(reader)?,
+            use_state: read_listed(reader, &USES)?,
+        });
+    }
+    let solved = match reader.tag()?.0 {
+        1 => Maybe::Present(ComparedContent {
+            expected: read_expected(reader, &COMPARED)?,
+            found: read_expected(reader, &COMPARED)?,
+            unfolded: read_expected(reader, &COMPARED)?,
+        }),
+        0 => Maybe::Absent(solved::Absent::Unchanged),
+        _ => return Err(CodecError::Corrupt),
+    };
+    Ok(FailureParts {
+        obligations,
+        pursuit,
+        hypotheses,
+        endpoints,
+        solved,
+    })
+}
+
+/// Write a checkpoint's failure content: tag 0 and why it keeps none; else
+/// tag 1, the refusal's places, the failure's parts or why there are none,
+/// and each node outside the item: its content or why it does not mint, then
+/// its root place.
+///
+/// # Specification
+/// - ensures: [`read_failed`] reads back `failure` from what was written.
+/// - fails: as [`write_listed`] and [`write_type`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a refused item's failure content reads back as written.
+/// - witness: `codec::tests::a_failure_content_round_trips`
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
+fn write_failed<Out>(
+    writer: &mut Writer<'_, Out>,
+    failure: Maybe<&FailureContent, failed::Absent>,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let failure = match failure {
+        Maybe::Present(failure) => failure,
+        Maybe::Absent(reason) => {
+            writer.tag(Tag(0));
+            return write_listed(writer, &FAILEDS, &reason);
+        },
+    };
+    writer.tag(Tag(1));
+    write_places(writer, &failure.refusal)?;
+    match failure.parts {
+        Maybe::Present(ref parts) => {
+            writer.tag(Tag(1));
+            write_parts(writer, parts)?;
+        },
+        Maybe::Absent(reason) => {
+            writer.tag(Tag(0));
+            write_listed(writer, &KEPT, &reason)?;
+        },
+    }
+    writer.count(Count(failure.outside.len()))?;
+    for outside in &failure.outside {
+        match outside.content {
+            Maybe::Present(ref content) => {
+                writer.tag(Tag(1));
+                write_type(writer, content)?;
+            },
+            Maybe::Absent(reason) => {
+                writer.tag(Tag(0));
+                write_listed(writer, &SEATINGS, &reason)?;
+            },
+        }
+        write_rooted(writer, &outside.rooted)?;
+        write_anchors(writer, &outside.anchors)?;
+    }
+    Ok(())
+}
+
+/// Read a checkpoint's failure content.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for an unknown tag, and as the readers it
+///   calls.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_failed`].
+/// - witness: `codec::tests::a_failure_content_round_trips`
+///
+/// # Cost
+/// - allocation: the failure content, growth within the bytes
+fn read_failed(reader: &mut Reader<'_>)
+-> Result<Maybe<FailureContent, failed::Absent>, CodecError>
+{
+    match reader.tag()?.0 {
+        0 => return Ok(Maybe::Absent(read_listed(reader, &FAILEDS)?)),
+        1 => {},
+        _ => return Err(CodecError::Corrupt),
+    }
+    let refusal = read_places(reader)?;
+    let parts = match reader.tag()?.0 {
+        1 => Maybe::Present(read_parts(reader)?),
+        0 => Maybe::Absent(read_listed(reader, &KEPT)?),
+        _ => return Err(CodecError::Corrupt),
+    };
+    let count = reader.count()?;
+    let mut outside = Vec::new();
+    for _ in 0 .. count.0 {
+        let content = match reader.tag()?.0 {
+            1 => Maybe::Present(read_outside(reader)?),
+            0 => Maybe::Absent(read_listed(reader, &SEATINGS)?),
+            _ => return Err(CodecError::Corrupt),
+        };
+        outside.push(OutsideContent {
+            content,
+            rooted: read_rooted(reader)?,
+            anchors: read_anchors(reader)?,
+        });
+    }
+    Ok(Maybe::Present(FailureContent {
+        refusal,
+        parts,
+        outside,
+    }))
+}
+
+/// Read the content of a node outside an item: a table of any sort.
+///
+/// # Specification
+/// - fails: as [`read_nodes`] and [`check_discovery`], and
+///   [`CodecError::Corrupt`] for an empty table or a root support of other
+///   widths than the root's.
+/// - panics: none.
+/// - executable: none — as [`read_type`], whose clauses this reader shares but
+///   the root's sort.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_failed`].
+/// - witness: `codec::tests::a_failure_content_round_trips`
+///
+/// # Cost
+/// - allocation: the decoded outside, growth within the bytes
+fn read_outside(reader: &mut Reader<'_>) -> Result<TypeContent, CodecError>
+{
+    let nodes = read_nodes(reader)?;
+    check_discovery(&nodes, core::iter::once(NodeIndex::from(0_usize)))?;
+    let scope = nodes
+        .first()
+        .map(SupportedNode::scope)
+        .ok_or(CodecError::Corrupt)?;
+    let placement = read_selection(reader, scope)?;
+    Ok(TypeContent::from_parts(nodes, placement))
+}
+
+/// Why a checkpoint keeps no table parts, in stable wire order.
+const ELABORATEDS: [elaborated::Absent; 2] =
+    [elaborated::Absent::AsWritten, elaborated::Absent::Opaque];
+
+/// Write a stage signature: the count of its binders and each bound, tag 0
+/// for an unbounded binder and tag 1 and the earlier binder's ordinal for a
+/// bound one; then the count of its marks and each mark: the count of its
+/// path and each step, its binder's ordinal, and its reach, tag 0 at the
+/// binder and tag 1 and the steps below it.
+///
+/// # Specification
+/// - ensures: [`read_stage_signature`] reads back `stage` from what was
+///   written.
+/// - fails: [`CodecError::Unrepresentable`] for an ordinal past 64 bits, and as
+///   the count writer.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a stage signature with an unbounded and a bound binder,
+///   and a mark of two steps below its binder, reads back as written.
+/// - witness: `codec::tests::an_elaborated_entry_round_trips`
+fn write_stage_signature<Out>(
+    writer: &mut Writer<'_, Out>,
+    stage: &StageSignature,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let ordinal = |index: usize| u64::try_from(index).map_err(|_wide| CodecError::Unrepresentable);
+    writer.count(Count(stage.bounds().len()))?;
+    for &bound in stage.bounds() {
+        match bound {
+            StageBound::Unbounded => writer.tag(Tag(0)),
+            StageBound::Below(binder) => {
+                let binder = ordinal(usize::from(binder))?;
+                writer.tag(Tag(1));
+                writer.word(Word(binder));
+            },
+        }
+    }
+    writer.count(Count(stage.marks().len()))?;
+    for mark in stage.marks() {
+        writer.count(Count(mark.path().len()))?;
+        for &step in mark.path() {
+            writer.word(Word(ordinal(usize::from(step))?));
+        }
+        writer.word(Word(ordinal(usize::from(mark.binder()))?));
+        match mark.reach() {
+            StageReach::At => writer.tag(Tag(0)),
+            StageReach::Below(depth) => {
+                writer.tag(Tag(1));
+                writer.word(Word(u64::from(u32::from(depth))));
+            },
+        }
+    }
+    Ok(())
+}
+
+/// Read a stage signature as [`write_stage_signature`] writes it.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for an unknown tag, a short input, an
+///   ordinal past the platform's width, or a reach zero or more than 32 bits of
+///   steps below its binder.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Cost
+/// - allocation: the decoded bounds, marks and their paths, growth within the
+///   signature's bytes
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_stage_signature`].
+/// - witness: `codec::tests::an_elaborated_entry_round_trips`
+///
+/// # Cost
+/// - allocation: the decoded stage signature, growth within the bytes
+fn read_stage_signature(reader: &mut Reader<'_>) -> Result<StageSignature, CodecError>
+{
+    let ordinal = |reader: &mut Reader<'_>| -> Result<usize, CodecError> {
+        usize::try_from(reader.word()?.0).map_err(|_wide| CodecError::Corrupt)
+    };
+    let count = reader.count()?;
+    let mut bounds = gandr_kernel_data::SmallVec::new();
+    for _ in 0 .. count.0 {
+        bounds.push(match reader.tag()?.0 {
+            0 => StageBound::Unbounded,
+            1 => StageBound::Below(StageBinder::from(ordinal(reader)?)),
+            _ => return Err(CodecError::Corrupt),
+        });
+    }
+    let count = reader.count()?;
+    let mut marks = gandr_kernel_data::SmallVec::new();
+    for _ in 0 .. count.0 {
+        let steps = reader.count()?;
+        let mut path = gandr_kernel_data::SmallVec::new();
+        for _ in 0 .. steps.0 {
+            path.push(PlacedChild::from(ordinal(reader)?));
+        }
+        let binder = StageBinder::from(ordinal(reader)?);
+        let reach = match reader.tag()?.0 {
+            0 => StageReach::At,
+            1 => {
+                let steps = u32::try_from(reader.word()?.0).map_err(|_wide| CodecError::Corrupt)?;
+                let depth = core::num::NonZeroU32::new(steps).ok_or(CodecError::Corrupt)?;
+                StageReach::Below(StageDepth::from(depth))
+            },
+            _ => return Err(CodecError::Corrupt),
+        };
+        marks.push(StageMark::new(path, binder, reach));
+    }
+    Ok(StageSignature::new(bounds, marks))
+}
+
+/// Check the decoder work bound in every checkpoint plane without copying it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: success exactly when every level atom is below the decoder cap.
+/// - fails: the first capped offset in content, support, then typing order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — checker-produced capped levels leave memory and file
+///   records intact. Five node families and every auxiliary type slot are
+///   exercised; the predicate bounds reported offsets and checks item levels on
+///   success, without cloning the checkpoint.
+/// - witness: `persistence::tests::stores_refuse_capped_levels_without_replacing_records`
+/// - witness: `codec::tests::encoding_bounds_levels_in_every_node_family_and_plane`
+/// - witness: `codec::tests::encoding_bounds_levels_in_every_auxiliary_type_table`
+/// - witness: `codec::tests::every_refusal_holding_a_capped_level_is_refused_when_written_4451`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(()) => checkpoint.content().nodes().iter().all(|node| match *node.former() {
+            | ContentNode::ValueLift { ref target, .. }
+            | ContentNode::TypeLift { ref target, .. }
+            | ContentNode::Element { ref target, .. }
+            | ContentNode::ComputationElement { ref target, .. }
+            | ContentNode::Universe {
+                level: ref target, ..
+            } => target
+                .atoms()
+                .all(|(_, offset)| u64::from(offset) < MAX_DECODED_LEVEL_OFFSET),
+            | _ => true,
+        }),
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(_) => false,
+    },
+)]
+fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError>
+{
+    let bounded = |nodes: &[SupportedNode]| {
+        for node in nodes {
+            let (ContentNode::ValueLift { ref target, .. }
+            | ContentNode::TypeLift { ref target, .. }
+            | ContentNode::Element { ref target, .. }
+            | ContentNode::ComputationElement { ref target, .. }
+            | ContentNode::Universe {
+                level: ref target, ..
+            }) = *node.former()
+            else {
+                continue;
+            };
+            for (_, offset) in target.atoms() {
+                if u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET {
+                    return Err(CodecError::LevelOffsetTooLarge { offset });
+                }
+            }
+        }
+        Ok(())
+    };
+    let support = checkpoint
+        .support()
+        .iter()
+        .map(|answered| answered.answer().nodes());
+    core::iter::once(checkpoint.content().nodes())
+        .chain(support)
+        .try_for_each(bounded)?;
+    checkpoint
+        .typing()
+        .each_content(&mut |content| bounded(content.nodes()))?;
+    match checkpoint.failure() {
+        Maybe::Present(failure) => {
+            failure
+                .outside
+                .iter()
+                .try_for_each(|outside| match outside.content {
+                    Maybe::Present(ref content) => bounded(content.nodes()),
+                    Maybe::Absent(_) => Ok(()),
+                })?;
+        },
+        Maybe::Absent(_) => {},
+    }
+    match checkpoint.entry() {
+        Maybe::Present(entry) => {
+            [entry.body(), entry.declared()]
+                .into_iter()
+                .try_for_each(|part| match part {
+                    Maybe::Present(content) => bounded(content.nodes()),
+                    Maybe::Absent(_) => Ok(()),
+                })
+        },
+        Maybe::Absent(_) => Ok(()),
+    }
+}
+
+/// The canonical bytes of a checkpoint set.
+///
+/// # Specification
+/// - requires: tables retain the canonical numbering and sorts established by
+///   their producers or validated decoding; unresolved nodes remain admissible.
+/// - ensures: the returned frame decodes to the supplied checkpoint set.
+/// - fails: capped level offsets before framing, or an unsupported node or
+///   unrepresentable count while framing.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fixed empty-envelope bytes preserve budget and version;
+///   finite nonempty corpora preserve their fields. Capped levels are refused
+///   before a store can replace a readable record. The predicate checks the
+///   envelope and cap payload without decoding a copy.
+/// - witness: `codec::tests::empty_envelopes_preserve_budget_and_separate_formats`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
+/// - witness: `persistence::tests::stores_refuse_capped_levels_without_replacing_records`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(ref bytes) => {
+            let bytes = bytes.as_ref();
+            bytes.get(.. 8) == Some(CHECKPOINTS_MAGIC.as_slice())
+                && u64::try_from(usize::from(checkpoints.budget())).is_ok_and(|budget| {
+                    bytes.get(8 .. 16) == Some(budget.to_le_bytes().as_slice())
+                })
+                && u64::try_from(checkpoints.items().len()).is_ok_and(|count| {
+                    bytes.get(16 .. 24) == Some(count.to_le_bytes().as_slice())
+                })
+                && (!checkpoints.items().is_empty() || bytes.len() == 24)
+        },
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(CodecError::Unsupported(_) | CodecError::Unrepresentable) => true,
+        | Err(_) => false,
+    },
+)]
+pub fn encode_checkpoints(checkpoints: &Checkpoints) -> Result<CheckpointBytes, CodecError>
+{
+    for checkpoint in checkpoints.items() {
+        check_checkpoint_levels(checkpoint)?;
+    }
+    checkpoint_frame(checkpoints)
+}
+
+/// Frame checkpoint fields without checking graph canonicality or the decode
+/// cap.
+///
+/// # Specification
+/// - requires: nothing; invalid tables are admissible for wire-level fixtures.
+/// - ensures: magic, budget and each checkpoint's fields are written in order.
+/// - fails: the first unresolved plane or an unrepresentable count.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fixed envelopes distinguish the format and preserve
+///   budget; deliberately invalid tables and capped levels remain representable
+///   as wire fixtures. This is also the decoder’s canonical comparison, after
+///   validation.
+/// - witness: `codec::tests::empty_envelopes_preserve_budget_and_separate_formats`
+/// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(ref bytes) => {
+            bytes.as_ref().get(.. 8) == Some(CHECKPOINTS_MAGIC.as_slice())
+                && u64::try_from(usize::from(checkpoints.budget())).is_ok_and(|budget| {
+                    bytes.as_ref().get(8 .. 16) == Some(budget.to_le_bytes().as_slice())
+                })
+        },
+        | Err(CodecError::Unsupported(_) | CodecError::Unrepresentable) => true,
+        | Err(_) => false,
+    },
+)]
+pub fn checkpoint_frame(checkpoints: &Checkpoints) -> Result<CheckpointBytes, CodecError>
+{
+    let mut bytes = CheckpointBytes::default();
+    let mut writer = Writer { sink: &mut bytes };
+    writer.sink.put(Bytes(CHECKPOINTS_MAGIC));
+    let budget = word_of(Count(usize::from(checkpoints.budget())))?;
+    writer.word(budget);
+    writer.count(Count(checkpoints.items().len()))?;
+    for checkpoint in checkpoints.items() {
+        write_checkpoint(&mut writer, checkpoint)?;
+    }
+    Ok(bytes)
+}
+
+/// The checkpoint set `bytes` spell.
+///
+/// # Specification
+/// - requires: nothing — any bytes are admissible input.
+/// - ensures: on success the one checkpoint set whose canonical bytes are
+///   exactly `bytes`.
+/// - fails: [`CodecError::Corrupt`] for truncated, malformed or trailing bytes;
+///   [`CodecError::LevelOffsetTooLarge`] for an offset at the cap;
+///   [`CodecError::NonCanonical`] for a payload that parses but is not the
+///   canonical spelling of what it parses to.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fixed empty-envelope bytes and finite semantic corpora
+///   decode exactly, while every proper prefix of a populated checkpoint, wrong
+///   magic, trailing bytes, noncanonical tables and the level cap are refused.
+///   The predicate checks the envelope and failure classes; the decoder already
+///   performs the full canonical re-encoding comparison.
+/// - witness: `codec::tests::empty_envelopes_preserve_budget_and_separate_formats`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_truncation_corruption_and_trailing_bytes`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+///
+/// # Cost
+/// - allocation: the decoded checkpoint set, growth within the bytes
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(ref checkpoints) => {
+            let bytes = bytes.0;
+            bytes.get(.. 8) == Some(CHECKPOINTS_MAGIC.as_slice())
+                && u64::try_from(usize::from(checkpoints.budget())).is_ok_and(|budget| {
+                    bytes.get(8 .. 16) == Some(budget.to_le_bytes().as_slice())
+                })
+                && u64::try_from(checkpoints.items().len()).is_ok_and(|count| {
+                    bytes.get(16 .. 24) == Some(count.to_le_bytes().as_slice())
+                })
+                && (!checkpoints.items().is_empty() || bytes.len() == 24)
+        },
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(CodecError::Corrupt | CodecError::NonCanonical) => true,
+        | Err(_) => false,
+    },
+)]
+pub fn decode_checkpoints(bytes: Bytes<'_>) -> Result<Checkpoints, CodecError>
+{
+    let mut reader = Reader {
+        bytes: bytes.0,
+        cursor: 0,
+    };
+    let magic = reader.take(Count(CHECKPOINTS_MAGIC.len()))?;
+    if magic.0 != CHECKPOINTS_MAGIC {
+        return Err(CodecError::Corrupt);
+    }
+    let budget = reader.count()?;
+    let count = reader.count()?;
+    let mut items = Vec::new();
+    for _ in 0 .. count.0 {
+        let checkpoint = read_checkpoint(&mut reader)?;
+        items.push(checkpoint);
+    }
+    reader.finish()?;
+    let checkpoints = Checkpoints::new(CheckBudget::from(budget.0), items);
+    let canonical = checkpoint_frame(&checkpoints)?;
+    if canonical.0.as_slice() == bytes.0 {
+        Ok(checkpoints)
+    }
+    else {
+        Err(CodecError::NonCanonical)
+    }
+}
+
+/// Write the canonical program bytes an address is computed over.
+///
+/// # Specification
+/// - requires: `contents` are a program's items' contents, in order.
+/// - ensures: the magic, the count, then each item's content.
+/// - fails: [`CodecError::Unsupported`] naming a codata declaration, or the
+///   first unresolved node met.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fixed empty program bytes have a distinct format prefix;
+///   changed source order changes program identity, and unresolved content is
+///   refused with its exact sort. The predicate checks the unresolved-node
+///   order because the generic sink has no byte observer.
+/// - witness: `codec::tests::empty_envelopes_preserve_budget_and_separate_formats`
+/// - witness: `persistence::tests::meaningful_program_changes_and_source_order_change_identity`
+/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(()) => contents
+                .iter()
+                .map(Borrow::borrow)
+                .flat_map(ItemContent::nodes)
+                .all(|node| !matches!(*node.former(), ContentNode::Unresolved(_))),
+        | Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => {
+            contents.iter().map(Borrow::borrow).any(|content: &ItemContent| matches!(*content.declaration(), crate::content::DeclarationRoots::Codata)
+                || content.nodes().iter().any(|node| matches!(*node.former(), ContentNode::Codata { .. })))
+        },
+        | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
+            contents
+                .iter()
+                .map(Borrow::borrow)
+                .flat_map(ItemContent::nodes)
+                .find_map(|node| match *node.former() {
+                    | ContentNode::Unresolved(found) => Some(found),
+                    | _ => None,
+                })
+                == Some(sort)
+        },
+        | Err(CodecError::Unrepresentable) => true,
+        | _ => false,
+    },
+)]
+pub fn write_program<Out, Content>(
+    sink: &mut Out,
+    contents: &[Content],
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+    Content: Borrow<ItemContent>,
+{
+    let mut writer = Writer { sink };
+    writer.sink.put(Bytes(PROGRAM_MAGIC));
+    writer.count(Count(contents.len()))?;
+    for content in contents {
+        write_item_content_with(&mut writer, content.borrow())?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;

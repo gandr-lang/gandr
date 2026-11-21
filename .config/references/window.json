@@ -1,0 +1,68 @@
+[
+  {
+    "name": "a work before the cutoff at a site no entry covers is refused, naming the site, the work, its year and its newer work",
+    "cite": [
+      "locator\tdoi:10.1000/old\tdemo-crate\ta\tbackground\tcrates/demo-crate/src/a.rs:3",
+      "cite\tKept-2021-recent_work\tdemo-crate\ta\texemplar\tcrates/demo-crate/src/a.rs:5",
+      "corpus\tdoi:10.1000/old\tcorpus\tmodel/demo/a.gandr\tbackground\tcorpus/model/demo/a.gandr:2"
+    ],
+    "work": [["doi:10.1000/old", 1999, "doi:10.1000/new"]],
+    "policy": "cutoff = 2019\n",
+    "output": [
+      "corpus/model/demo/a.gandr:2: `doi:10.1000/old` appeared in 1999, before the citation window opens in 2019; cite the newest work that states what corpus/model/demo/a.gandr builds, such as `doi:10.1000/new`, or allow the site in .config/references/window.toml with why no newer work states it",
+      "crates/demo-crate/src/a.rs:3: `doi:10.1000/old` appeared in 1999, before the citation window opens in 2019; cite the newest work that states what demo-crate::a builds, such as `doi:10.1000/new`, or allow the site in .config/references/window.toml with why no newer work states it"
+    ]
+  },
+  {
+    "name": "a crate entry and a corpus subject entry cover their older works whole, and a site entry its one work at its one site",
+    "cite": [
+      "locator\tdoi:10.1000/old\tdemo-crate\ta\tbackground\tcrates/demo-crate/src/a.rs:3",
+      "cite\tOld-2010-construction\tother-crate\tm\texemplar\tcrates/other-crate/src/m.rs:4",
+      "corpus\tarXiv:1501.00001\tcorpus\tmodel/demo/a.gandr\tbackground\tcorpus/model/demo/a.gandr:2",
+      "cite\tvault:01a16c8c-a658-7c31-8c33-b2e2142c0b73\tother-crate\tm\tlineage\tcrates/other-crate/src/m.rs:5"
+    ],
+    "work": [["doi:10.1000/old", 1999, null]],
+    "policy": "cutoff = 2019\n\n[[crate]]\nname = \"demo-crate\"\n\n[[corpus]]\nsubject = \"model/demo\"\n\n[[site]]\nsite = \"other-crate::m\"\nwork = \"Old-2010-construction\"\nexemplar = \"no newer work states the construction\"\n",
+    "output": []
+  },
+  {
+    "name": "a site entry keeps its work at its site alone, and an older work cited at another site of the crate is refused",
+    "cite": [
+      "cite\tOld-2010-construction\tother-crate\tm\texemplar\tcrates/other-crate/src/m.rs:4",
+      "cite\tOld-2010-construction\tother-crate\t\texemplar\tcrates/other-crate/src/lib.rs:9"
+    ],
+    "work": [],
+    "policy": "cutoff = 2019\n\n[[site]]\nsite = \"other-crate::m\"\nwork = \"Old-2010-construction\"\nexemplar = \"no newer work states the construction\"\n",
+    "output": [
+      "crates/other-crate/src/lib.rs:9: `Old-2010-construction` appeared in 2010, before the citation window opens in 2019; cite the newest work that states what other-crate builds, or allow the site in .config/references/window.toml with why no newer work states it"
+    ]
+  },
+  {
+    "name": "a work row's year wins over its arXiv identifier's, and an old-style identifier reads its year",
+    "cite": [
+      "locator\tarXiv:1812.00001\tdemo-crate\t\tbackground\tcrates/demo-crate/src/lib.rs:2",
+      "locator\tarXiv:1812.00002\tdemo-crate\t\tbackground\tcrates/demo-crate/src/lib.rs:3",
+      "locator\tarXiv:math/0601001\tdemo-crate\t\tbackground\tcrates/demo-crate/src/lib.rs:4"
+    ],
+    "work": [["arXiv:1812.00001", 2019, null]],
+    "policy": "cutoff = 2019\n",
+    "output": [
+      "crates/demo-crate/src/lib.rs:3: `arXiv:1812.00002` appeared in 2018, before the citation window opens in 2019; cite the newest work that states what demo-crate builds, or allow the site in .config/references/window.toml with why no newer work states it",
+      "crates/demo-crate/src/lib.rs:4: `arXiv:math/0601001` appeared in 2006, before the citation window opens in 2019; cite the newest work that states what demo-crate builds, or allow the site in .config/references/window.toml with why no newer work states it"
+    ]
+  },
+  {
+    "name": "an entry missing what its kind needs is refused, a work with no year is refused, and an entry covering no older work is stale",
+    "cite": [
+      "locator\tdoi:10.1000/undated\tdemo-crate\ta\tbackground\tcrates/demo-crate/src/a.rs:3",
+      "locator\tarXiv:2101.00001\tquiet-crate\t\tbackground\tcrates/quiet-crate/src/lib.rs:2"
+    ],
+    "work": [],
+    "policy": "cutoff = 2019\n\n[[crate]]\nname = \"quiet-crate\"\n\n[[site]]\nsite = \"demo-crate::a\"\nwork = \"doi:10.1000/undated\"\n",
+    "output": [
+      "window.toml: [[site]] {\"site\":\"demo-crate::a\",\"work\":\"doi:10.1000/undated\"} needs a `site`, the `work` it keeps and its `exemplar`: why no newer work states what the site builds",
+      "crates/demo-crate/src/a.rs:3: `doi:10.1000/undated` states no year: add its row to `work` in ledger/references.sql, the year the work appeared",
+      "window.toml: [[crate]] quiet-crate covers no citation older than 2019; delete it"
+    ]
+  }
+]
