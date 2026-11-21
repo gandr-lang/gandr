@@ -2,6 +2,30 @@
 @[builtin("integer")]
 pub type Integer : Type;
 
+/// The strings of UTF-8 text, a value type that the toolchain gives.
+@[builtin("string")]
+pub type String : Type;
+
+/// The unit type, with one value.
+@[builtin("unit")]
+pub type Unit : Type;
+
+/// The empty type, with no value.
+@[builtin("void")]
+pub type Void : Type;
+
+/// The booleans, `true` and `false`.
+@[builtin("bool")]
+pub type Bool : Type;
+
+/// The Unicode scalar values.
+@[builtin("char")]
+pub type Char : Type;
+
+/// The rows of effects.
+@[builtin("row")]
+pub type Row : Type;
+
 /// Decidable equality over a carrier some value may be unequal to itself in:
 /// symmetric.
 pub theory PartialEq where
