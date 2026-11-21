@@ -1,0 +1,3 @@
+{"jsonrpc":"2.0","id":2,"method":"textDocument/references","params":{
+                    "textDocument":{"uri":"file:///tmp/halves.gandr"},
+                    "position":{"line":2,"character":8},"context":{"includeDeclaration":true}}}
