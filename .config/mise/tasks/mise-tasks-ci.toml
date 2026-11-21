@@ -4793,6 +4793,14 @@ fi
 # With `--findings` the task exits 0 with no refusal and 2 with one or more.
 # A `note:`, `wait:` or `arm:` line is no refusal. The task opens nothing,
 # pushes nothing, and writes the body file as the full task does.
+#
+# A host can run the gate and the tests of each landing in one queue. The
+# variable `GANDR_LANDING_QUEUE` names the program of that queue. With the
+# variable, the task gives the title and the body to the program as
+# `add <title> <body>`. The task ends with the status of the program.
+#
+# The queue runs the gate, then this task with no variable, then `pr:land`.
+# The task goes to no queue with `--findings`, `--hold` or `--unblocks`.
 ["pr:open"]
 description = "Open the pull request on the server's top once its tree passes the landing's gate"
 usage = '''
@@ -4809,6 +4817,9 @@ run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 body=$(realpath "${usage_body:?}")
+if [[ -n ${GANDR_LANDING_QUEUE:-} && ${usage_findings:-false} != true && -z ${usage_hold:-} && -z ${usage_unblocks:-} ]]; then
+  exec "$GANDR_LANDING_QUEUE" add "${usage_title:?}" "$body"
+fi
 source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
 repo=$(repo_name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
@@ -5271,6 +5282,11 @@ fi
 # reopened: `dequeuePullRequest` looks for a queue on the member's own base
 # branch and finds none, a push to a queued branch is refused, and a stack
 # member's base cannot be edited. The members below it stay queued.
+#
+# On a host with a landing queue, `pr:open` gives the head to the queue and
+# opens no pull request. So a branch with no pull request is no fault
+# there. With `GANDR_LANDING_QUEUE` and no number, the task says that the
+# queue lands the head. Then it exits 0.
 ["pr:land"]
 description = "Queue the ready prefix of the pull request's stack and wait for the merge queue outcome"
 tools.jq = "1.8.1"
@@ -5282,7 +5298,18 @@ run = '''
 set -euo pipefail
 source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 number=${usage_number:-}
-if [[ -z "$number" ]]; then number=$(gh pr view --json number --jq .number); fi
+if [[ -z "$number" ]]; then
+  status=0
+  number=$(gh pr view --json number --jq .number 2>&1) || status=$?
+  if (( status != 0 )); then
+    if [[ -n ${GANDR_LANDING_QUEUE:-} ]]; then
+      echo 'pr:land: this branch has no pull request. The landing queue of this host opens the pull request and lands it when the tests pass.'
+      exit 0
+    fi
+    echo "$number" >&2
+    exit "$status"
+  fi
+fi
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected a pull request number' >&2; exit 2; }
 source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
 repo=$(repo_name)
