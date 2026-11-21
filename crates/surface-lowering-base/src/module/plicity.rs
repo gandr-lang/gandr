@@ -1392,6 +1392,13 @@ impl<'source> Collector<'_, 'source>
 /// - panics: none.
 /// - executable: none — the cursor offers no count of its pieces to bound the
 ///   result by.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `def unit()` writes the empty list, `def zero = 0` writes
+///   none and `def pick(t : Integer)` writes a parameter, and only the first
+///   runs at its bare name.
+/// - witness: `gandr-surface-lowering::lower::tests::a_bare_name_of_no_input_where_a_type_is_read_decodes_its_run_8079`
+/// - witness: `gandr-surface-lowering::lower::tests::a_function_to_a_universe_unquotes_where_a_type_is_read`
 pub(super) fn empty_list(header: &Cursor<'_>) -> Maybe<ByteSpan, inputs::Absent>
 {
     let mut cursor = header.clone();

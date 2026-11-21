@@ -2323,6 +2323,7 @@ pub trait Source
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
 pub struct Invoked(pub bool);
 
 /// A model implicit a function's telescope writes, `[s : Model(S) with sort

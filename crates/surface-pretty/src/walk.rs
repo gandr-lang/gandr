@@ -3708,20 +3708,6 @@ where
     matches!(source.read(head), Former::Force(_)).then_some(node)
 }
 
-/// Whether `node` reads as a constant whose name is qualified, `M.f`.
-///
-/// # Specification
-/// trivial.
-fn qualified<S>(
-    source: &S,
-    node: S::Node,
-) -> bool
-where
-    S: Source + ?Sized,
-{
-    matches!(source.read(node), Former::Constant(name) if name.as_ref().contains('.'))
-}
-
 /// The comparison that `node` writes when it is a saturated call of a
 /// constant that a comparison calls: the infix operator, and the two operands
 /// first to last.
@@ -10615,10 +10601,12 @@ impl Walk<'_, '_>
             // The run of a definition of no input is its bare name. Where a
             // type is read, a qualified name keeps its empty list, `M.f()`,
             // as the type grammar ends a qualified link at a value name only
-            // before a list.
+            // before a list (#8307).
             Former::Force(forced)
                 if source.invoked(forced).0
-                    && (self.surface != Surface::Type || !qualified(source, forced)) =>
+                    && (self.surface != Surface::Type
+                        || !matches!(source.read(forced), Former::Constant(name)
+                            if name.as_ref().contains('.'))) =>
             {
                 tasks.push(Task::Surface(self.surface));
                 tasks.push(Task::Visit {

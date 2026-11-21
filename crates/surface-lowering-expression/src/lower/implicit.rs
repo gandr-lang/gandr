@@ -1234,6 +1234,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///
     /// # Errors
     /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the bare run `say` supplies its row's instance as a
+    ///   call that omits it does, and a run with no instance in scope is
+    ///   refused.
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_instance_is_the_one_handled_in_scope_2271`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_instance_is_refused_when_none_or_several_stand_2271`
     #[spec(
         captures: start = self.cx().operands.mark(),
         ensures: |ret| match ret {
