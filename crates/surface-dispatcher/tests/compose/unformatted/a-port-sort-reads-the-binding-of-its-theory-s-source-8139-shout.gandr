@@ -1,0 +1,2 @@
+type Integer = String ;
+pub theory Shout where { sort C : Type ; oper say : (c : C) --> Integer ; }

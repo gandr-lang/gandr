@@ -1,0 +1,6 @@
+def kept(n : Integer) -> -F Integer = n;
+def bound(n : Integer) -> -F Integer = { let m = kept n; kept m };
+def nested(n : Integer) -> -F Integer = kept (kept n);
+def nested_printed(a : Integer) -> -F Integer = kept (kept a);
+def written(n : Integer) -> -F Integer = kept (run kept n);
+def written_printed(a : Integer) -> -F Integer = kept (run kept a);
