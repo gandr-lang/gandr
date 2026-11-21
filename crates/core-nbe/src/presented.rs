@@ -262,7 +262,7 @@ fn declaration(
 ///   under a symmetry, and they do not convert under a table with no symmetry.
 /// - witness: `presented::tests::two_orders_of_two_fields_convert_under_a_symmetry_8311`
 #[spec(ensures: |ret| ret.is_ok() || ret == Err(ConversionFault::Domain(DomainFault::Dangling)))]
-pub(crate) fn field_order(
+pub fn field_order(
     core: &CoreArena,
     domain: &DomainArena,
     definitions: Definitions<'_>,
