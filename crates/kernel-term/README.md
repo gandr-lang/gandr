@@ -39,6 +39,7 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - `vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e` — anchor: the ambient primitive policy — a computational kernel primitive is admissible, priced as permanent trusted surface, so a literal identity test is a declaration form that the audit names.
 - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — anchor: the normal forms of presented types — the `presented` module reads a word of cells above dimension one as abelian, the count of each cell.
 - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — newest: the storage metatheory programme (§ storage-programme-gluing) — a reference names its target by content, so `encode_named` writes each named place by its content key; the offset inside a content piece is owed.
+- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the presented-spaces plan (§ presented-spaces-normal-forms) — the rules of a presented type give each term one normal form, and a rule that swaps the two fields of one constructor is a symmetry that no reader rewrites by.
 
 ## Provided features
 
