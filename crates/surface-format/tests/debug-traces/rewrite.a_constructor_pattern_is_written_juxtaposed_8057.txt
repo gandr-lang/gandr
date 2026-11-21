@@ -1,0 +1,59 @@
+test: rewrite::a_constructor_pattern_is_written_juxtaposed_8057
+package: gandr-surface-format
+command: mise run debug:test gandr-surface-format rewrite::a_constructor_pattern_is_written_juxtaposed_8057 --break a_constructor_pattern_is_written_juxtaposed_8057$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-format/a79b8d3041963999/out/tests-a79b8d3041963999"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-format/a79b8d3041963999/out/tests-a79b8d3041963999' (x86_64).
+(lldb) settings set -- target.run-args  "rewrite::a_constructor_pattern_is_written_juxtaposed_8057" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex a_constructor_pattern_is_written_juxtaposed_8057$
+Breakpoint 1: where = tests-a79b8d3041963999`tests::rewrite::a_constructor_pattern_is_written_juxtaposed_8057 + 7 at rewrite.rs:2360:9, address = 0x00000000008b8e77
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-a79b8d3041963999`__rustc::rust_panic + 8 at panicking.rs:883:16, address = 0x00000000027d9f28
+(lldb) run
+
+running 1 test
+test rewrite::a_constructor_pattern_is_written_juxtaposed_8057 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 2380636 launched: 'target/debug-trace/debug/build/gandr-surface-format/a79b8d3041963999/out/tests-a79b8d3041963999' (x86_64)
+Process 2380636 stopped
+* thread #2, name = 'rewrite::a_cons', stop reason = breakpoint 1.1
+       frame #0: 0x0000555555e0ce77 tests-a79b8d3041963999`tests::rewrite::a_constructor_pattern_is_written_juxtaposed_8057 at rewrite.rs:2360:9
+(lldb) bt 24
+* thread #2, name = 'rewrite::a_cons', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555555e0ce77 tests-a79b8d3041963999`tests::rewrite::a_constructor_pattern_is_written_juxtaposed_8057 at rewrite.rs:2360:9
+     frame #1: 0x0000555555e051e7 tests-a79b8d3041963999`tests::rewrite::a_constructor_pattern_is_written_juxtaposed_8057::{closure#0}((null)={}) at rewrite.rs:2357:54
+     frame #2: 0x0000555555e61a46 tests-a79b8d3041963999`<tests::rewrite::a_constructor_pattern_is_written_juxtaposed_8057::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #3: 0x0000555555e8100b tests-a79b8d3041963999`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #4: 0x0000555555e81009 tests-a79b8d3041963999`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:701:18
+     frame #5: 0x0000555555e8e1e5 tests-a79b8d3041963999`test::run_test_in_process::{closure#0} at lib.rs:724:74 [inlined]
+     frame #6: 0x0000555555e8e1e0 tests-a79b8d3041963999`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #7: 0x0000555555e8e1e0 tests-a79b8d3041963999`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:573:43 [inlined]
+     frame #8: 0x0000555555e8e1cb tests-a79b8d3041963999`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #9: 0x0000555555e8e1cb tests-a79b8d3041963999`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #10: 0x0000555555e8e1cb tests-a79b8d3041963999`test::run_test_in_process at lib.rs:724:27 [inlined]
+     frame #11: 0x0000555555e8e1b6 tests-a79b8d3041963999`test::run_test::{closure#0} at lib.rs:645:43
+     frame #12: 0x0000555555e88bd4 tests-a79b8d3041963999`test::run_test::{closure#1} at lib.rs:675:41 [inlined]
+     frame #13: 0x0000555555e88b59 tests-a79b8d3041963999`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #14: 0x0000555555e91272 tests-a79b8d3041963999`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #15: 0x0000555555e91263 tests-a79b8d3041963999`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #16: 0x0000555555e91263 tests-a79b8d3041963999`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:573:43 [inlined]
+     frame #17: 0x0000555555e91253 tests-a79b8d3041963999`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #18: 0x0000555555e91253 tests-a79b8d3041963999`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #19: 0x0000555555e91253 tests-a79b8d3041963999`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #20: 0x0000555555e91244 tests-a79b8d3041963999`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #21: 0x0000555557d51a0f tests-a79b8d3041963999`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2314:9 [inlined]
+     frame #22: 0x0000555557d51a08 tests-a79b8d3041963999`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:127:17
+     frame #23: 0x00007ffff7aacf71 libc.so.6`start_thread(arg=<unavailable>) at pthread_create.c:454:8
+(lldb) frame variable --depth 3
+(gandr_surface_grammar::model::Pbg) grammar = {dag:{names:size=0, assocs:size=0, edges:size=0, reachability:size=0, linear_extension:size=0}, forms:{root:None, length:0, alloc:{value:{}}, _marker:{}}, rules:size=0, rule_names:{map:{root:None, length:0, alloc:{value:{}}, _marker:{}}}, adaptations:size=0, molds:{molds:size=0, rctxs:size=0, bounds:size=0, owners:size=0, labels:{hash_builder:{per_hasher_seed:0}, table:{table:{bucket_mask:0, ctrl:{…}, growth_left:0, items:0}, alloc:{}, marker:{}}}, menus:size=0, mold_labels:size=0, adjacencies:size=0, successor_starts:size=0, has_pred:size=0, has_succ:size=0, form_first:size=0, is_first:size=0, form_last:size=0, complete_last:size=0, is_complete_last:size=0, required_tail:size=0, is_required_tail:size=0, closing:size=0, twins:size=0, fingerprint:{0:0}}, automaton:{kinds:size=0, observations:size=0, width:0, sets:size=0}, application:None, type_application:None, pattern_application:None}
+(&str) source = ""
+(lldb) up
+frame #1: 0x0000555555e051e7 tests-a79b8d3041963999`tests::rewrite::a_constructor_pattern_is_written_juxtaposed_8057::{closure#0}((null)={}) at rewrite.rs:2357:54
+(lldb) frame variable --depth 3
+(tests::rewrite::a_constructor_pattern_is_written_juxtaposed_8057::{closure_env#0} *)  = 0x00007ffff79fe4f6 {}
