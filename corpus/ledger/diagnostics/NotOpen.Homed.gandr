@@ -12,4 +12,4 @@ def pending() -> Integer =
 @[refuses("NotOpen.Homed")]
 @[entry(*{operator, seat})]
 def heldHomed() -> -F ((() -> Integer) at seat) =
-  migrate [seat] { (hold thunk { pending () }) }
+  migrate [seat] { (hold thunk { let n = pending; pure n }) }

@@ -49,13 +49,13 @@ def pointing() -> () -> (Seat.Dispatch at seat) =
 @[refuses("Immobile.Homed")]
 @[entry(*{operator, seat})]
 def homed() -> () -> Seat.Dispatch =
-  migrate [seat] { pure thunk { pending () } }
+  migrate [seat] { pure thunk { let n = pending; pure n } }
 
 /// A handle to that thunk is refused as not open.
 @[refuses("NotOpen.Homed")]
 @[entry(*{operator, seat})]
 def heldHomed() -> -F ((() -> Seat.Dispatch) at seat) =
-  migrate [seat] { (hold thunk { pending () }) }
+  migrate [seat] { (hold thunk { let n = pending; pure n }) }
 
 /// A thunk returned through the variable it is bound to is refused whole: a
 /// variable carries no image.

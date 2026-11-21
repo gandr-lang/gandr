@@ -41,12 +41,12 @@ module Versions where {
   /// The `both` flow composes the two translators.
   @[checks]
   def both() -> Flow[.A = Type](V1, V3) =
-    let start = early ()
+    let start = early
     Flow.then start second
   /// The `moved` function rides a record through the composite.
   @[checks]
   def moved(record : V1) -> V3 =
-    let along = both ()
+    let along = both
     Flow.ride (fun (X) { X }) along record
   /// The run migrates a first-version record to the third version.
   @[runs("*{+{.1 = *{}}, 30, \"ada\"}")]

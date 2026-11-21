@@ -4294,21 +4294,21 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - requires: nothing.
     /// - ensures: the frame the position carries when it reads the produced
     ///   sort. An application's head reads a computation and reaches a value by
-    ///   a force, and a call or a selection there is nested and forced, which
-    ///   the checker runs when it returns a function (#3935, #4818); a
-    ///   function's result reads a computation type and reaches a value type by
-    ///   a returner; a type position of either sort, a function's result
-    ///   included, reaches a computation by the decode of the code it returns
-    ///   (#7564); a value position reaches a type of either sort by a quote,
-    ///   and a computation as the value it returns at an endpoint or where a
-    ///   type reads it, a lambda there as its thunk (#3697, #3767), a lambda
-    ///   `cong` maps by as its thunk (#3773), and nested everywhere else; a
-    ///   tail, where a path through a body ends, reaches a value by the
-    ///   `return` its polarity names, recorded as inferred and leaving; a
-    ///   `while` loop's condition, and a tail of a handled subject, which is
-    ///   the subject's result, reach a value by a `return` recorded as no exit;
-    ///   the bridge is recorded for the form's node, and every other match
-    ///   records none.
+    ///   a force, and a call, a selection or the bare name of a definition of
+    ///   no input there is nested and forced, which the checker runs when it
+    ///   returns a function (#3935, #4818); a function's result reads a
+    ///   computation type and reaches a value type by a returner; a type
+    ///   position of either sort, a function's result included, reaches a
+    ///   computation by the decode of the code it returns (#7564); a value
+    ///   position reaches a type of either sort by a quote, and a computation
+    ///   as the value it returns at an endpoint or where a type reads it, a
+    ///   lambda there as its thunk (#3697, #3767), a lambda `cong` maps by as
+    ///   its thunk (#3773), and nested everywhere else; a tail, where a path
+    ///   through a body ends, reaches a value by the `return` its polarity
+    ///   names, recorded as inferred and leaving; a `while` loop's condition,
+    ///   and a tail of a handled subject, which is the subject's result, reach
+    ///   a value by a `return` recorded as no exit; the bridge is recorded for
+    ///   the form's node, and every other match records none.
     /// - provides: the sort check every former takes, and the seven insertions
     ///   decided by the sort of a position.
     /// - fails: yields the wrong-sort refusal when the position reads another
@@ -4348,7 +4348,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         ensures: |ret| {
             let expected = match (site.reading, produced) {
                 | (Reading::Head(frame), Produced::Computation)
-                    if self.cx().tree.node(site.at.node).is_some_and(|node| matches!(shape_of(self.cx().pbg, node), Ok(Shape::Form { former: Former::Call | Former::Projection, .. }))) =>
+                    if self.cx().invoked.contains(&site.at.node) || self.cx().tree.node(site.at.node).is_some_and(|node| matches!(shape_of(self.cx().pbg, node), Ok(Shape::Form { former: Former::Call | Former::Projection, .. }))) =>
                 {
                     Some((frame, Bridge::HeadCall))
                 },
@@ -4430,17 +4430,19 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         let (frame, bridge) = match (site.reading, produced) {
             // A call or a selection at an application's head may return the
             // function the application reads, which only the checker can say
-            // (#3935, #4818).
+            // (#3935, #4818). The bare name of a definition of no input runs
+            // it, so it is such a call.
             (Reading::Head(frame), Produced::Computation)
-                if self.cx().tree.node(site.at.node).is_some_and(|node| {
-                    matches!(
-                        shape_of(self.cx().pbg, node),
-                        Ok(Shape::Form {
-                            former: Former::Call | Former::Projection,
-                            ..
-                        })
-                    )
-                }) =>
+                if self.cx().invoked.contains(&site.at.node)
+                    || self.cx().tree.node(site.at.node).is_some_and(|node| {
+                        matches!(
+                            shape_of(self.cx().pbg, node),
+                            Ok(Shape::Form {
+                                former: Former::Call | Former::Projection,
+                                ..
+                            })
+                        )
+                    }) =>
             {
                 (frame, Bridge::HeadCall)
             },
@@ -5269,16 +5271,18 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///
     /// # Specification
     /// - requires: `site` is an identifier in term position.
-    /// - ensures: a name standing as a value resolves against the binder frame
-    ///   first and the declarations strictly earlier than its own second, and
-    ///   is planned as the variable or constant it resolved to; a binder named
+    /// - ensures: a name resolves against the binder frame first and the
+    ///   declarations strictly earlier than its own second, and is planned as
+    ///   [`Self::named_term`] plans it: a definition of no input as its run,
+    ///   any other as the variable or constant it resolved to; a binder named
     ///   inside a type is planned as [`Self::resolved_term`] plans it; a name
     ///   nothing binds that spells a type atom, as `f64` does, stands as that
     ///   type, quoted, as a capitalised atom such as `Integer` does.
     /// - provides: the term-name half of resolution.
     /// - fails: yields the wrong-sort refusal for a name in computation
-    ///   position, [`LoweringRefusal::RegionAsValue`] for a region binder of
-    ///   the definition the name stands in that nothing nearer binds,
+    ///   position, save the name of a definition of no input,
+    ///   [`LoweringRefusal::RegionAsValue`] for a region binder of the
+    ///   definition the name stands in that nothing nearer binds,
     ///   [`LoweringRefusal::ModelImplicitValue`] for a model implicit named
     ///   alone and [`LoweringRefusal::InertRead`] for an inert component read
     ///   from content, as [`Self::resolved_term`] refuses each, and the
@@ -5306,7 +5310,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             ret.is_err()
                 || matches!(
                     self.cx().plans.get(site.at.node),
-                    Some(&(Plan::Variable(..) | Plan::Constant(_) | Plan::Primitive(_) | Plan::StaticApplication(..) | Plan::ListNil | Plan::Atom(_)))
+                    Some(&(Plan::Variable(..) | Plan::Constant(_) | Plan::Forced(_) | Plan::Primitive(_) | Plan::StaticApplication(..) | Plan::ListNil | Plan::Atom(_)))
                 )
         },
     )]
@@ -5315,16 +5319,15 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         site: Site,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = self.require(site, Produced::Value)?;
         let name = self.cx().name_at(site.at);
-        match self.resolve_name(site, frame, name)? {
+        match self.resolve_name(site, site.reading.frame(), name)? {
             Maybe::Present(resolved) => {
                 self.resolved(site.at.span, resolved);
-                let plan = self.resolved_term(site, frame, resolved)?;
-                self.plan(site, plan);
+                self.named_term(site, resolved)?;
                 ModelsRef::new(self.host_ref()).opened_model(site)
             },
             Maybe::Absent(_) => {
+                let _frame = self.require(site, Produced::Value)?;
                 if name.as_ref() == identity::NIL {
                     self.plan(site, Plan::ListNil);
                     return Ok(());
@@ -5445,6 +5448,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                         &(Plan::Variable(..)
                             | Plan::StaticApplication(..)
                             | Plan::Constant(_)
+                            | Plan::Forced(_)
                             | Plan::Atom(_)
                             | Plan::Universe(_)
                             | Plan::Constructor(_)
@@ -5495,9 +5499,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 };
                 return Native::new(self.host()).codata_type(site, constant, arity, none);
             }
-            let frame = self.require(site, Produced::Value)?;
-            let plan = self.resolved_term(site, frame, resolved)?;
-            self.plan(site, plan);
+            self.named_term(site, resolved)?;
             return Ok(());
         }
         if let Maybe::Present(stated) = self.stated_named(site, name)? {
@@ -5653,6 +5655,92 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     .map_or_else(|| resolved.term(), |&primitive| Plan::Primitive(primitive)))
             },
         }
+    }
+
+    /// Plan the name at `site`, which resolved to `resolved`, as the term it
+    /// stands for: the run of a definition of no input, or the plan of
+    /// [`Self::resolved_term`] for any other resolution.
+    ///
+    /// # Specification
+    /// - requires: `resolved` is what the name at `site` resolves to.
+    /// - ensures: a declaration that [`Collected::no_input`] holds, and that is
+    ///   no native row, is read as a computation and its name is marked in
+    ///   [`Context::invoked`]: with implicits, instances or stage binders it is
+    ///   the call [`Self::ran_name`] plans, and with none it is its force,
+    ///   `Plan::Forced`. Any other resolution is read as a value and planned as
+    ///   [`Self::resolved_term`] plans it.
+    /// - provides: one rule for each place a name reads a declaration: a bare
+    ///   name, a capitalised name and a module's member.
+    /// - fails: the wrong-sort refusal where the position reads no sort that
+    ///   the plan reaches, and the refusals of [`Self::ran_name`] and of
+    ///   [`Self::resolved_term`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Cost
+    /// - allocation: the name's mark in [`Context::invoked`], growth within the
+    ///   source's nodes
+    #[spec(
+        ensures: |ret| ret.is_err()
+            || match resolved {
+                | Resolved::Declaration { constant, .. }
+                    if self.cx().invoked.contains(&site.at.node) =>
+                {
+                    matches!(self.cx().plans.get(site.at.node), Some(&Plan::Application(..)))
+                        || self.cx().plans.get(site.at.node) == Some(&Plan::Forced(Code::Constant(constant)))
+                },
+                | _ => !self.cx().invoked.contains(&site.at.node),
+            },
+    )]
+    pub fn named_term(
+        &mut self,
+        site: Site,
+        resolved: Resolved,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        if let Resolved::Declaration { constant, .. } = resolved {
+            let slot = SlotIndex::from(usize::from(constant));
+            // A name that heads a supply is no run of its own: the supply
+            // plans the call.
+            if self.cx().collected.no_input.contains(&slot)
+                && !self.cx().natives.contains_key(&slot)
+                && !self.cx().supplied.contains(&site.at.node)
+            {
+                let _fresh = self.cx_mut().invoked.insert(site.at.node);
+                let frame = self.require(site, Produced::Computation)?;
+                // The name's own tile, the last a name or a module's member
+                // writes, heads the call a supply plans.
+                let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
+                let read = read_pieces(self.cx().pbg, self.cx().tree, site.at.node, &mut scratch);
+                let tile = scratch.pieces.iter().rev().find_map(|piece| match *piece {
+                    Piece::Tile { label, at }
+                        if label == TileName::IDENTIFIER || label == TileName::TYPE_IDENTIFIER =>
+                    {
+                        Some(at)
+                    },
+                    Piece::Tile { .. } | Piece::Operand(_) => None,
+                });
+                self.cx_mut().scratch = scratch;
+                read?;
+                if let Some(tile) = tile {
+                    let name = self.cx().name_at(tile);
+                    if self.ran_name(site, frame, (tile, name), (slot, constant))?
+                        == arity::Planned(true)
+                    {
+                        return self.shared().admit_read(site, slot);
+                    }
+                }
+                let _constant = self.resolved_term(site, frame, resolved)?;
+                self.plan(site, Plan::Forced(Code::Constant(constant)));
+                return Ok(());
+            }
+        }
+        let frame = self.require(site, Produced::Value)?;
+        let plan = self.resolved_term(site, frame, resolved)?;
+        self.plan(site, plan);
+        Ok(())
     }
 
     /// Refuse the method at `slot` read as a value at `site` when its receiver
@@ -10063,7 +10151,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             ret.is_err()
                 || matches!(
                     self.cx().plans.get(site.at.node),
-                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::SelectedOutput { .. } | Plan::Data(..) | Plan::Codata(..) | Plan::Constructor(_) | Plan::Exercise(_) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
+                    Some(&(Plan::Constant(_) | Plan::Forced(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::SelectedOutput { .. } | Plan::Data(..) | Plan::Codata(..) | Plan::Constructor(_) | Plan::Exercise(_) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
                 )
         },
     )]
@@ -10144,9 +10232,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             {
                 return Native::new(self.host()).codata_type(site, constant, arity, none);
             }
-            let frame = self.require(site, Produced::Value)?;
-            let plan = self.resolved_term(site, frame, resolved)?;
-            self.plan(site, plan);
+            self.named_term(site, resolved)?;
             return Ok(());
         }
         // A selection off a value no module governs is the field of a record.
@@ -17444,6 +17530,19 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                 let id = sink.arena.value_static_lambda(under);
                 sink.value(id, origin)
             }),
+            // `thunk { now }` over a definition of no input is the definition
+            // itself: the thunk of its force is its constant.
+            Plan::Thunk(Block { statements, last })
+                if statements == FormStretch::default() && self.cx().invoked.contains(&last) =>
+            {
+                match self.cx().plans.get(last) {
+                    Some(&Plan::Forced(Code::Constant(constant))) => {
+                        let id = sink.arena.value_constant(constant);
+                        Maybe::Present(sink.value(id, origin))
+                    },
+                    Some(_) | None => Maybe::Absent(lowered::Absent::Unminted),
+                }
+            },
             Plan::Thunk(body) => ExitsRef::new(self.host_ref())
                 .mint_body(body, sink, origin)
                 .map(|suspended| {

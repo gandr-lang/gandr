@@ -58,7 +58,7 @@ def fromZero[s : Model Tally with sort C = Integer]() -> Integer =
 
 /// Both fix the carrier to the integers, as the slot does.
 @[refuses("ModelAmbiguous")]
-def manifest() -> Integer = fromZero ();
+def manifest() -> Integer = fromZero;
 
 /// The reading from zero over a tally of text.
 def fromText[s : Model Tally with sort C = String]() -> Integer =
@@ -66,4 +66,4 @@ def fromText[s : Model Tally with sort C = String]() -> Integer =
 
 /// No tally in scope counts text.
 @[refuses("ModelUnanswered")]
-def textTally() -> Integer = fromText ();
+def textTally() -> Integer = fromText;

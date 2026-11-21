@@ -1679,6 +1679,10 @@ pub struct Collected<'source>
     /// type names no entry of the implicit telescope: what each argument of a
     /// call naming the function checks against.
     pub parameters: BTreeMap<SlotIndex, Vec<plicity::ExplicitParameter>>,
+    /// The slots of the definitions written with an empty parameter list,
+    /// `def now() -> T`: each is a computation of no input, so its bare name
+    /// runs it.
+    pub no_input: BTreeSet<SlotIndex>,
     /// The stage binders of each function quantified over stages, by its
     /// slot: each binder's name in written order, its position the ordinal of
     /// the stage the checker mints for it.
@@ -3869,6 +3873,7 @@ pub fn begin_collection<'source>(
         inert: BTreeSet::new(),
         plicities: BTreeMap::new(),
         parameters: BTreeMap::new(),
+        no_input: BTreeSet::new(),
         stage_binders: BTreeMap::new(),
         written_implicits: BTreeMap::new(),
         receivers: BTreeMap::new(),
@@ -6425,6 +6430,9 @@ impl<'source> Collector<'_, 'source>
             let parameters = self.explicit_parameters(&header);
             if !parameters.is_empty() {
                 let _first = self.collected.parameters.insert(slot, parameters);
+            }
+            else if let Maybe::Present(_) = plicity::empty_list(&header) {
+                let _fresh = self.collected.no_input.insert(slot);
             }
             if let Ok(binders) = self.stage_binders(&header)
                 && !binders.is_empty()

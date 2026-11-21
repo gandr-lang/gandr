@@ -50,7 +50,7 @@ def tailOf(rest : List Integer) -> List Integer =
 /// list, and with 0 past its end.
 def summedFrom() -> (List Integer -> Integer) =
   handle r : std.rand.Eff {
-    let total = summed ();
+    let total = summed;
     pure fun (rest : List Integer) { pure total }
   } with {
     | pure(x) => pure x
@@ -70,4 +70,4 @@ def summedModelled() -> Integer =
 
 /// The entry: exit with the sum of two draws of two bits.
 def main() -> [std.rand.Eff] Integer =
-  summed ()
+  summed

@@ -79,4 +79,4 @@ def heardRun() -> Run Ask.Decoded =
 
 /// On the machine the carried run hears the yes, as it does by conversion.
 @[runs("recorded (received Yes) (closed)")]
-def decodedRun() -> Run Ask.Decoded = heardRun ();
+def decodedRun() -> Run Ask.Decoded = heardRun;

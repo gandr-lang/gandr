@@ -12,4 +12,4 @@ def pending() -> Integer =
 @[refuses("Immobile.Homed")]
 @[entry(*{operator, seat})]
 def homed() -> () -> Integer =
-  migrate [seat] { pure thunk { pending () } }
+  migrate [seat] { pure thunk { let n = pending; pure n } }

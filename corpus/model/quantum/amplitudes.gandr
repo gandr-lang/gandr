@@ -22,5 +22,5 @@ def circuit() -> Ket = hadamard (eighth (hadamard ground));
 /// The squared moduli of the two amplitudes sum to one.
 @[runs("Amp 1 0 0 0 Whole")]
 def total() -> Amplitude =
-  match circuit () where
+  match circuit where
     | Ket(x, y) => plus (norm x) (norm y)

@@ -148,6 +148,20 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a declaration's header writes no empty parameter list.
+    pub mod inputs {
+        /// The reason the header writes no `()`.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The header writes no parameter list, as `def three : T` does.
+            Unwritten,
+            /// The list holds a parameter, or it does not close.
+            Written,
+        }
+    }
+}
+
 /// One parameter of a function whose telescope binds a value, as the merged
 /// telescope places it.
 ///
@@ -1359,6 +1373,49 @@ impl<'source> Collector<'_, 'source>
             "Mode" => EntrySort::Mode,
             _ => EntrySort::Value,
         })
+    }
+}
+
+/// The empty parameter list that the header `header` writes just past a
+/// declaration's name, past an implicit telescope `[ … ]` when one is
+/// written: the `()` of `def now() -> T`.
+///
+/// # Specification
+/// - requires: `header` stands just past a declaration's name.
+/// - ensures: the span from `(` to `)` when the first two tiles past the
+///   telescope are `(` and `)`; [`inputs::Absent::Unwritten`] when no `(`
+///   stands there; [`inputs::Absent::Written`] for a list with a parameter and
+///   for a telescope that does not close. `header` is left where it was.
+/// - provides: [`super::Collected::no_input`], the definitions whose bare name
+///   runs them.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the cursor offers no count of its pieces to bound the
+///   result by.
+pub(super) fn empty_list(header: &Cursor<'_>) -> Maybe<ByteSpan, inputs::Absent>
+{
+    let mut cursor = header.clone();
+    if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN) {
+        loop {
+            match cursor.read() {
+                Maybe::Present(Piece::Tile { label, .. }) if label == TileName::BRACKET_CLOSE => {
+                    break;
+                },
+                Maybe::Present(_) => {},
+                Maybe::Absent(_) => return Maybe::Absent(inputs::Absent::Written),
+            }
+        }
+    }
+    let Maybe::Present(open) = cursor.tile(TileName::PAREN_OPEN)
+    else {
+        return Maybe::Absent(inputs::Absent::Unwritten);
+    };
+    match cursor.tile(TileName::PAREN_CLOSE) {
+        Maybe::Present(close) => match ByteSpan::new(open.span.start(), close.span.end()) {
+            Ok(span) => Maybe::Present(span),
+            Err(_) => Maybe::Absent(inputs::Absent::Written),
+        },
+        Maybe::Absent(_) => Maybe::Absent(inputs::Absent::Written),
     }
 }
 

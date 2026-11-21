@@ -117,7 +117,7 @@ def readState() -> [st : State.Eff with sort S = Integer] Integer =
 @[runs("7")]
 def readUnderScope() -> Integer =
   handle s : State.Eff with sort S = Integer {
-    readState ()
+    readState
   } with {
     | pure(x) => pure x
     | oper get(k) => k 7
@@ -184,7 +184,7 @@ def readSolved[a : Type]() -> [st : State.Eff with sort S = a] a =
 @[runs("7")]
 def readSolvedUnderScope() -> Integer =
   handle s : State.Eff with sort S = Integer {
-    readSolved ()
+    readSolved
   } with {
     | pure(x) => pure x
     | oper get(k) => k 7

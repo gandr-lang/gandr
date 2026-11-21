@@ -8,4 +8,4 @@ def next() -> Integer =
 
 /// The computation suspended as a value; a run forces it.
 @[runs("43")]
-def stepped() -> Integer = become next ();
+def stepped() -> Integer = become next;

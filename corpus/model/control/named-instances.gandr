@@ -27,7 +27,7 @@ pub def say() -> [out : std.io.Console.Eff] Unit = out.print "said";
 @[runs("1")]
 def resolved() -> Integer =
   handle a : std.io.Console.Eff {
-    say ();
+    say;
     pure 0
   } with {
     | pure(x) => pure x
@@ -40,7 +40,7 @@ def resolved() -> Integer =
 def namedOuter() -> Integer =
   handle a : std.io.Console.Eff {
     handle b : std.io.Console.Eff {
-      say[.out = a] ();
+      say[.out = a];
       pure 0
     } with {
       | pure(x) => pure x
@@ -56,7 +56,7 @@ def namedOuter() -> Integer =
 def namedInner() -> Integer =
   handle a : std.io.Console.Eff {
     handle b : std.io.Console.Eff {
-      say[.out = b] ();
+      say[.out = b];
       pure 0
     } with {
       | pure(x) => pure x
@@ -68,7 +68,7 @@ def namedInner() -> Integer =
   }
 
 /// `relayed` passes instance `o` to `say`.
-def relayed() -> [o : std.io.Console.Eff] Unit = say ();
+def relayed() -> [o : std.io.Console.Eff] Unit = say;
 
 /// An explicit parameter beside the instance, which comes after it.
 def sayLine(s : String) -> [out : std.io.Console.Eff] Unit = out.print s;
@@ -119,8 +119,8 @@ def descendRuns() -> Integer =
 /// `both` holds two console instances.
 /// It prints through `first` before `second`.
 def both() -> [first : std.io.Console.Eff, second : std.io.Console.Eff] Unit =
-  say[.out = first] ()
-  say[.out = second] ()
+  say[.out = first]
+  say[.out = second]
 
 /// `both` with its first instance the outer scope: the outer clause
 /// answers the first line.
@@ -128,7 +128,7 @@ def both() -> [first : std.io.Console.Eff, second : std.io.Console.Eff] Unit =
 def outerFirst() -> Integer =
   handle a : std.io.Console.Eff {
     handle b : std.io.Console.Eff {
-      both[.first = a, .second = b] ();
+      both[.first = a, .second = b];
       pure 0
     } with {
       | pure(x) => pure x
@@ -145,7 +145,7 @@ def outerFirst() -> Integer =
 def innerFirst() -> Integer =
   handle a : std.io.Console.Eff {
     handle b : std.io.Console.Eff {
-      both[.first = b, .second = a] ();
+      both[.first = b, .second = a];
       pure 0
     } with {
       | pure(x) => pure x
@@ -167,8 +167,8 @@ def bothWritten[r : Region, r1 : Region](
   first : Cap { print } at r,
   second : Cap { print } at r1
 ) -> [r : std.io.Console.Eff, r1 : std.io.Console.Eff] Unit =
-  say[.out = first] ()
-  say[.out = second] ()
+  say[.out = first]
+  say[.out = second]
 
 /// `bothWritten` passed the inner scope first: its clause answers.
 @[runs("2")]

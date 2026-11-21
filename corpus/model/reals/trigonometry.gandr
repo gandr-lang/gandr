@@ -65,7 +65,7 @@ pub def bounds() -> [std.reals.Eff] String =
 @[runs("\"holds holds holds holds\"")]
 def boundsModelled() -> String =
   handle r : std.reals.Eff {
-    bounds ()
+    bounds
   } with {
     | pure(x) => pure x
     | oper admit(plan, k) => k 0
@@ -98,7 +98,7 @@ def angleModelled() -> String =
 /// verdicts. Then enclose `β₁` no wider than `2^-16`, print its two ends, and
 /// exit with 0.
 def main() -> [std.reals.Eff, std.io.Console.Eff] Integer =
-  let verdicts = bounds ()
+  let verdicts = bounds
   std.io.Console.print verdicts
   let ends = enclosed betaOne 16
   std.io.Console.print ends

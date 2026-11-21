@@ -43,4 +43,4 @@ def boxed() -> Shapes.Box Integer = Shapes.Hold 2;
 /// A match opens the box through the module's constructor.
 @[runs("2")]
 def opened() -> Integer =
-  match force boxed { | Shapes.Hold(x) => x }
+  match boxed { | Shapes.Hold(x) => x }

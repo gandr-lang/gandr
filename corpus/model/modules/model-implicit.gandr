@@ -66,4 +66,4 @@ def passedOn() -> Integer = further[.t = Tens] 4;
 
 /// `manifest` passes `Up` at its manifest carrier.
 @[runs("1")]
-def manifest() -> Integer = fromZero[.s = Up] ();
+def manifest() -> Integer = fromZero[.s = Up];

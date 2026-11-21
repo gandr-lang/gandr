@@ -15,7 +15,7 @@ import "../../model/strings/unique-write.gandr";
 /// copied from, so the hold would hold a string another string holds.
 @[refuses("HeldShared")]
 def heldCopy() -> [Partial] Integer =
-  let s = force long
+  let s = long
   let c = copy s
   var[1] h = c
   access h as v { let w = pushInPlace v 33; let t = written w; resume v t; copies w }

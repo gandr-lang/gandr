@@ -20,4 +20,4 @@ def one() -> Seed.T = Seed.next Seed.zero;
 
 /// `shown` reads the abstract value through `Seed.read`.
 @[runs("1")]
-def shown() -> Integer = { let n = force one; Seed.read n };
+def shown() -> Integer = { let n = one; Seed.read n };

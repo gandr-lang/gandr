@@ -432,6 +432,10 @@ pub struct Context<'run, 'source>
     /// [`Insertion::Bound`](crate::origin::Insertion::Bound), the run the `let`
     /// writes.
     pub let_bound: BTreeSet<NodeIndex>,
+    /// The bare names of the definitions of no input, each the run of its
+    /// definition. At an application's head, the run stands nested under a
+    /// force, as a call's does.
+    pub invoked: BTreeSet<NodeIndex>,
     /// The computation positions a path through a handled subject passes: a
     /// `return` there leaves its body past every handler frame around it, and
     /// a `become` there is refused.
@@ -963,6 +967,7 @@ impl<'run, 'source> Context<'run, 'source>
             results: BTreeSet::new(),
             opened_models: BTreeMap::new(),
             let_bound: BTreeSet::new(),
+            invoked: BTreeSet::new(),
             framed: BTreeSet::new(),
             looped_past: BTreeSet::new(),
             bodies: BTreeMap::new(),
