@@ -10,20 +10,29 @@
 //! of the change and `GATE_SCOPE` the scope of each check.
 //! `GATE_VERDICT_RUSTC` names another compiler than `rustc`, and
 //! `GATE_VERDICT_POLICY` gives the revision of the policy.
+//! `gate verdict read <check>...` reads which check holds on the tree of
+//! `HEAD`, by the inputs of its base `GATE_BASE` or by a signed record of a
+//! pass on the remote `GATE_VERDICT_REMOTE`, `origin` by default. It prints
+//! one line for each fact to standard error. `GATE_VERDICT_SCOPE` gives the
+//! scope of the read, `GATE_VERDICT_SIGNERS` names a file of allowed signers,
+//! and `GATE_VERDICT_TRUNK_OK` lists the bases that the trunk holds.
 //!
-//! `--tables <directory>` names the directory of `inputs.json` and
-//! `verdicts.json`. `--times` prints each part of the run to standard error:
-//! the sum of its times, the count of its calls and its name.
-//! `GATE_INPUTS_TABLE` names another table than `inputs.json`, and
+//! `--tables <directory>` names the directory of `inputs.json`,
+//! `verdicts.json` and the scope script. `--times` prints each part of the
+//! run to standard error: the sum of its times, the count of its calls and
+//! its name. `GATE_INPUTS_TABLE` names another table than `inputs.json`, and
 //! `GATE_INPUTS_TASK` gives the definition of each task, for the cases of a
 //! scratch repository that holds no task.
 //!
 //! # Exit codes
 //!
-//! - `0`: the lines were printed; also `--help` and `--version`.
-//! - `2`: a refusal — a failed call of git, of Cargo, of mise or of the
-//!   compiler, a table that does not read, a check with no task or with no row
-//!   of a verdict, or standard output closed; also a malformed invocation.
+//! - `0`: the lines were printed, or each check of a read holds; also `--help`
+//!   and `--version`.
+//! - `1`: a read holds no record of a check, so the job runs it.
+//! - `2`: a refusal — a failed call of git, of Cargo, of mise, of GitHub or of
+//!   the compiler, a table that does not read, a check with no task or with no
+//!   row of a verdict, a read with no signing key, or standard output closed;
+//!   also a malformed invocation.
 
 use core::fmt::Write as _;
 use std::io::Write as _;
@@ -34,10 +43,15 @@ use std::time::Instant;
 use gandr_workflow_gate::Check;
 use gandr_workflow_gate::Commit;
 use gandr_workflow_gate::Elapsed;
+use gandr_workflow_gate::End;
 use gandr_workflow_gate::KeyRequest;
 use gandr_workflow_gate::Parts;
+use gandr_workflow_gate::ReadRequest;
 use gandr_workflow_gate::Request;
 use gandr_workflow_gate::Scope;
+
+/// The exit code of a read that holds no record of a check.
+const RUNS: u8 = 1;
 
 /// The exit code of a refusal or a malformed invocation.
 const REFUSED: u8 = 2;
@@ -116,6 +130,29 @@ enum Verdict
         #[arg(required = true)]
         checks: Vec<Check>,
     },
+    /// Read which check holds on the tree of `HEAD`, by its base or by a
+    /// record, one line for each fact.
+    Read
+    {
+        /// A check's task name; repeat for each.
+        #[arg(required = true)]
+        checks: Vec<Check>,
+    },
+}
+
+/// The value of the variable `name` when it is set and not empty.
+///
+/// # Specification
+/// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a key with an empty `GATE_BASE` binds the empty base; an
+///   empty variable read as a base fetches it and refuses the run.
+/// - witness: `tests::cli::a_key_is_the_line_of_the_script`
+#[inline]
+fn given(name: &str) -> Option<String>
+{
+    std::env::var(name).ok().filter(|value| !value.is_empty())
 }
 
 /// Runs the command, prints its lines and gives the exit code.
@@ -166,7 +203,7 @@ fn main() -> ExitCode
             for item in &listed {
                 let _written = write!(lines, "{}", item.list());
             }
-            lines
+            (lines, End::Held)
         }),
         Top::Inputs(Inputs::Digest {
             commits,
@@ -192,12 +229,14 @@ fn main() -> ExitCode
                     item.list().digest()
                 );
             }
-            lines
+            (lines, End::Held)
         }),
         Top::Verdict(Verdict::Key { tree, checks }) => gandr_workflow_gate::keys(
             &KeyRequest {
                 checks,
                 tree,
+                base: given("GATE_BASE").map(|base| Commit::from(base.as_str())),
+                scope: Scope::from(given("GATE_SCOPE").as_deref().unwrap_or("--workspace")),
                 tables: cli.tables,
             },
             &parts,
@@ -207,7 +246,25 @@ fn main() -> ExitCode
             for key in &keys {
                 let _written = writeln!(lines, "{key}");
             }
-            lines
+            (lines, End::Held)
+        }),
+        Top::Verdict(Verdict::Read { checks }) => gandr_workflow_gate::read(
+            &ReadRequest {
+                checks,
+                tables: cli.tables,
+                base: given("GATE_BASE").map(|base| Commit::from(base.as_str())),
+                scope: given("GATE_VERDICT_SCOPE").map(|scope| Scope::from(scope.as_str())),
+                signers: given("GATE_VERDICT_SIGNERS").map(PathBuf::from),
+                trunk_holds: std::env::var("GATE_VERDICT_TRUNK_OK").ok(),
+                remote: given("GATE_VERDICT_REMOTE").unwrap_or_else(|| "origin".to_owned()),
+                trunk: given("GANDR_TRUNK").unwrap_or_else(|| "landing".to_owned()),
+                token: given("GITHUB_ACTIONS").and_then(|_hosted| given("GH_TOKEN")),
+            },
+            &parts,
+        )
+        .map(|reading| {
+            let _written = std::io::stderr().lock().write_all(reading.lines.as_bytes());
+            (String::new(), reading.end)
         }),
     };
     let mut errors = std::io::stderr().lock();
@@ -219,11 +276,15 @@ fn main() -> ExitCode
         );
     }
     match result {
-        Ok(lines) => {
+        Ok((lines, end)) => {
             if std::io::stdout().write_all(lines.as_bytes()).is_err() {
                 return ExitCode::from(REFUSED);
             }
-            ExitCode::SUCCESS
+            match end {
+                End::Held => ExitCode::SUCCESS,
+                End::Runs => ExitCode::from(RUNS),
+                End::Refused => ExitCode::from(REFUSED),
+            }
         },
         Err(refusal) => {
             let _written = writeln!(errors, "gate: {refusal}");

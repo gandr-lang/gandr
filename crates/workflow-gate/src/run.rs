@@ -105,7 +105,7 @@ fn landing(
 }
 
 /// Where a run stands: the root of the worktree and its two tables.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Ground
 {
     /// The root of the worktree.
@@ -195,16 +195,14 @@ struct World
 
 impl World
 {
-    /// Reads the root and the tables of the worktree. Then it starts Cargo,
-    /// mise and git, and it takes their answers.
+    /// Takes the root and the tables of `ground`. Then it starts Cargo, mise
+    /// and git, and it takes their answers.
     ///
     /// # Specification
-    /// - requires: the working directory is in a worktree of git.
-    /// - ensures: the tables of `request.tables`, or of `.config/gate-scope` of
-    ///   the worktree; `GATE_INPUTS_TABLE` names another `inputs.json`. The
-    ///   crates of the workspace when a check of the request is no check of the
-    ///   table. The task of each check from `GATE_INPUTS_TASK`, or from mise
-    ///   when the variable is not set.
+    /// - requires: `ground` is the ground of the worktree of the run.
+    /// - ensures: the tables of `ground`. The crates of the workspace when a
+    ///   check of the request is no check of the table. The task of each check
+    ///   from `GATE_INPUTS_TASK`, or from mise when the variable is not set.
     /// - provides: each fact of the worktree that the lists of one run read,
     ///   read one time.
     /// - fails: [`GateError::Command`] when a program fails, and
@@ -220,8 +218,8 @@ impl World
     /// As `fails` lists.
     ///
     /// # Cost
-    /// - allocation: the tables, the crates, the tasks and the arguments of
-    ///   three programs, setup
+    /// - allocation: the crates, the tasks and the arguments of three programs,
+    ///   setup
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a check of the table with a Cargo that fails, a
@@ -233,11 +231,12 @@ impl World
     /// - witness: `tests::cli::the_task_that_mise_lists_is_an_input`
     #[inline]
     fn read(
+        ground: Ground,
         request: &Request,
         parts: &Parts,
     ) -> Result<Self, GateError>
     {
-        let Ground { root, tables } = Ground::read(request, parts)?;
+        let Ground { root, tables } = ground;
         let fixed = std::env::var("GATE_INPUTS_TASK").ok();
         let manifest = root.join("Cargo.toml");
         let manifest = manifest.to_string_lossy();
@@ -720,7 +719,41 @@ pub fn lists(
     parts: &Parts,
 ) -> Result<Vec<Listed>, GateError>
 {
-    let world = World::read(request, parts)?;
+    lists_on(Ground::read(request, parts)?, request, parts)
+}
+
+/// The list of the inputs of each check of `request` at each of its commits,
+/// on the root and the tables of `ground`.
+///
+/// # Specification
+/// - requires: `ground` is the ground of the worktree of the run, as
+///   [`Ground::read`] gives it for `request`.
+/// - ensures: the lists of [`lists`].
+/// - provides: the lists of a run that read its ground for its own use, with no
+///   second read of the root and the tables.
+/// - fails: each refusal of [`lists`].
+/// - panics: none.
+/// - executable: none — the outcome is the external processes'.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Cost
+/// - allocation: the plan, the lines of each list and the arguments of each
+///   grep, growth within the pairs of the request
+///
+/// # Adequacy
+/// - hypothesis: L2 — the keys of the script for a check of inputs; a ground of
+///   another table changes the asserted digest.
+/// - witness: `tests::cli::a_key_is_the_line_of_the_script`
+#[inline]
+pub fn lists_on(
+    ground: Ground,
+    request: &Request,
+    parts: &Parts,
+) -> Result<Vec<Listed>, GateError>
+{
+    let world = World::read(ground, request, parts)?;
     let start = Instant::now();
     let plan = Plan::new(&world, request);
     parts.add(Part::from("the paths of each pair"), start.elapsed());

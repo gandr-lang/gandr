@@ -8,6 +8,7 @@ use std::io::Write as _;
 use std::path::Path;
 use std::process::Child;
 use std::process::Command;
+use std::process::ExitStatus;
 use std::process::Stdio;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -318,9 +319,45 @@ impl<'call> Program<'call>
         cwd: &Path,
     ) -> Result<Running<'call>, GateError>
     {
+        self.start_with(cwd, &[])
+    }
+
+    /// Starts the program in `cwd` with each variable of `vars` in its
+    /// environment, and does not wait for it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Program::start`], and the program reads each name of
+    ///   `vars` with its value, over the environment of this process.
+    /// - provides: the scope of a record against its own base, which the scope
+    ///   script reads from `GATE_BASE`.
+    /// - fails: [`GateError::Command`] with the program and its arguments when
+    ///   it does not start.
+    /// - panics: none.
+    /// - executable: none — the outcome is the external process's.
+    ///
+    /// # Errors
+    /// As `fails` lists.
+    ///
+    /// # Cost
+    /// - allocation: the command of the process, setup
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a record of a check of the tree whose base is not the
+    ///   run's base; a scope read against the run's base gives another key, and
+    ///   the record does not hold.
+    /// - witness: `tests::cli::a_record_of_the_tree_holds_against_its_own_base`
+    #[inline]
+    pub fn start_with(
+        self,
+        cwd: &Path,
+        vars: &[(&str, &str)],
+    ) -> Result<Running<'call>, GateError>
+    {
         let start = Instant::now();
         let child = Command::new(self.name)
             .args(self.arguments)
+            .envs(vars.iter().copied())
             .current_dir(cwd)
             .stdin(if self.input.is_empty() {
                 Stdio::null()
@@ -340,20 +377,31 @@ impl<'call> Program<'call>
     }
 }
 
+/// How a program ended, and what it printed.
+#[derive(Debug)]
+pub struct Ended
+{
+    /// The status of its end.
+    pub status: ExitStatus,
+    /// What it printed to its standard output.
+    pub output: Answer,
+    /// What it printed to its standard error.
+    pub errors: Answer,
+}
+
 impl Running<'_>
 {
-    /// Waits for the program and gives what it printed. The call is one row
-    /// of its part in `parts`.
+    /// Waits for the program and gives how it ended. The call is one row of
+    /// its part in `parts`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the standard output of the program when it ends with success.
-    ///   `git grep` ends with 1 when no file holds its pattern, and that end is
-    ///   a success with an empty answer.
-    /// - provides: the one boundary of this crate to another program.
-    /// - fails: [`GateError::Command`] with the program, its arguments and its
-    ///   standard error when it ends with a failure, and [`GateError::Thread`]
-    ///   when the thread of its input does not start.
+    /// - ensures: the status of the program and both of its streams, for a
+    ///   success and for a failure alike.
+    /// - provides: the answer of a program whose status is itself the answer,
+    ///   as `git merge-base --is-ancestor` and `git diff --quiet` give it.
+    /// - fails: [`GateError::Command`] when the wait fails, and
+    ///   [`GateError::Thread`] when the thread of its input does not start.
     /// - panics: none.
     /// - executable: none — the outcome is the external process's.
     ///
@@ -361,16 +409,13 @@ impl Running<'_>
     /// As `fails` lists.
     ///
     /// # Cost
-    /// - allocation: the answer of the program, growth within what the program
-    ///   prints
+    /// - allocation: the two streams of the program, growth within what the
+    ///   program prints
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a fake Cargo that fails, and a grep whose pattern no
-    ///   file of crate `c` holds at tree three; a failure read as an answer
-    ///   changes the exit status, and an end with 1 read as a failure refuses
-    ///   the run of tree three.
-    /// - witness: `tests::cli::a_failed_cargo_is_refused_by_its_command`
-    /// - witness: `tests::cli::a_changed_crate_changes_its_digest_and_runs_its_own_grep`
+    /// - hypothesis: L2 — a change that holds a task file; a failed diff read
+    ///   as a success holds the check by its base.
+    /// - witness: `tests::cli::a_change_of_a_task_holds_no_check_by_its_base`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -379,10 +424,10 @@ impl Running<'_>
         )
     )]
     #[inline]
-    pub fn finish(
+    pub fn end(
         mut self,
         parts: &Parts,
-    ) -> Result<Answer, GateError>
+    ) -> Result<Ended, GateError>
     {
         let program = self.program;
         let waited = match self.child.stdin.take() {
@@ -400,13 +445,61 @@ impl Running<'_>
         };
         let output = waited.map_err(|error| program.refused(error.to_string()))?;
         parts.add(program.part, self.start.elapsed());
+        Ok(Ended {
+            status: output.status,
+            output: Answer::from(output.stdout),
+            errors: Answer::from(output.stderr),
+        })
+    }
+
+    /// Waits for the program and gives what it printed. The call is one row
+    /// of its part in `parts`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the standard output of the program when it ends with success.
+    ///   `git grep` ends with 1 when no file holds its pattern, and that end is
+    ///   a success with an empty answer.
+    /// - provides: the one boundary of this crate to another program.
+    /// - fails: [`GateError::Command`] with the program, its arguments and its
+    ///   standard error when it ends with a failure, and each refusal of
+    ///   [`Running::end`].
+    /// - panics: none.
+    /// - executable: none — the outcome is the external process's.
+    ///
+    /// # Errors
+    /// As `fails` lists.
+    ///
+    /// # Cost
+    /// - allocation: the answer of the program, growth within what the program
+    ///   prints
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fake Cargo that fails, and a grep whose pattern no
+    ///   file of crate `c` holds at tree three; a failure read as an answer
+    ///   changes the exit status, and an end with 1 read as a failure refuses
+    ///   the run of tree three.
+    /// - witness: `tests::cli::a_failed_cargo_is_refused_by_its_command`
+    /// - witness: `tests::cli::a_changed_crate_changes_its_digest_and_runs_its_own_grep`
+    #[inline]
+    pub fn finish(
+        self,
+        parts: &Parts,
+    ) -> Result<Answer, GateError>
+    {
+        let program = self.program;
+        let ended = self.end(parts)?;
         let no_file =
-            program.arguments.first() == Some(&"grep") && output.status.code() == Some(1_i32);
-        if output.status.success() || no_file {
-            Ok(Answer::from(output.stdout))
+            program.arguments.first() == Some(&"grep") && ended.status.code() == Some(1_i32);
+        if ended.status.success() || no_file {
+            Ok(ended.output)
         }
         else {
-            Err(program.refused(String::from_utf8_lossy(&output.stderr).trim().to_owned()))
+            Err(program.refused(
+                String::from_utf8_lossy(ended.errors.as_ref())
+                    .trim()
+                    .to_owned(),
+            ))
         }
     }
 }

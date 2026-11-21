@@ -22,11 +22,18 @@ path = "src/main.rs"
 name = "tests"
 path = "tests/lib.rs"
 
-# clap reads the command line. serde reads the tables of the gate and the
-# answers of Cargo and of mise. sha2 gives the digest that each record of a
-# verdict binds.
+# clap reads the command line. gandr-workflow-github declares the site of
+# each call of `gh`, so the check of the API budget prices it. serde reads
+# the tables of the gate and the answers of Cargo and of mise.
+#
+# sha2 gives the digest of the inputs of a check and the name of the ref of
+# each record of a verdict. Each record on the remote stands under a name of
+# a SHA-256, so sha2 stays while that name holds one. A change of the name to
+# another digest states how a reader finds a record under an old name, and
+# sha2 leaves the crate in that change.
 [dependencies]
 clap.workspace = true
+gandr-workflow-github.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

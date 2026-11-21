@@ -62,10 +62,14 @@ site = [
 
   # The records of a check's pass. The Clippy, policy and arm64 lint jobs of
   # the landing checks read them in each merge group. Each run of a stacked
-  # pull request takes them too.
-  # - see: #7684
-  { file = ".config/gate-scope/verdict.bash", scope = "signers", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 50, trigger = "landing-checks.yml: each read of a job, the signing keys of each login in verdicts.json's signers, 1 today; 3 jobs a merge group and 2 a stacked pull request's run, about 10 of each an hour" },
-  { file = ".config/gate-scope/verdict.bash", scope = "on_trunk", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 50, trigger = "landing-checks.yml: each record that a read takes, a compare of its base with the trunk, at most 1 a check; 4 checks a merge group and 3 a stacked pull request's run, about 10 of each an hour" },
+  # pull request takes them too, and so does the gate of a lane on its host.
+  # The program `gate` makes each call with no cache of the host, so each
+  # read of a host counts.
+  # - see: #7684, #8279
+  { file = "crates/workflow-gate/src/record.rs", scope = "prepare", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 50, trigger = "landing-checks.yml: each read of a job with a check that holds by no base, the signing keys of each login in verdicts.json's signers, 1 today; 3 jobs a merge group and 2 a stacked pull request's run, about 10 of each an hour" },
+  { file = "crates/workflow-gate/src/record.rs", scope = "prepare", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 20, trigger = "mise run check: each gate of a lane with a check that holds by no base, the signing keys of each login in verdicts.json's signers, 1 today; about 20 gates an hour on the queue host" },
+  { file = "crates/workflow-gate/src/record.rs", scope = "trunk_holds", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 50, trigger = "landing-checks.yml: each base that git does not find below the trunk, a compare of that base with the trunk, at most 1 a check; 4 checks a merge group and 3 a stacked pull request's run, about 10 of each an hour" },
+  { file = "crates/workflow-gate/src/record.rs", scope = "trunk_holds", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 20, trigger = "mise run check: each base of a gate that git does not find below the fetched trunk, a compare of that base with the trunk; at most 1 a gate, about 20 gates an hour on the queue host" },
 
   # Epics: tracker-close-epics.yml closes an epic whose last child closed (Actions).
   { file = ".config/epics/epics.sh", scope = "-", api = "graphql", identity = "actions", calls = 2, points = 4, measured = "rule", hour = 8, trigger = "tracker-close-epics.yml: each issue closed; a comment and a close; the repository comes from GITHUB_REPOSITORY (repo_name)" },

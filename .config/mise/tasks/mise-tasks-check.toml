@@ -2899,7 +2899,8 @@ echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as 
 # calls stays within its ceiling (#5061). `.config/gh/sites.awk` lists the
 # calls in the workflow's shell, tasks and workflows, with each call's text,
 # so a call that gives `--paginate` reads pages and its row states them
-# (#5681). A row that a workflow's cron runs names the workflow, and the
+# (#5681). It lists the declared site of each call of a workflow crate's
+# Rust too. A row that a workflow's cron runs names the workflow, and the
 # check reads that workflow's crons, so the row spends only in their UTC
 # hours. `.config/gh/budget.jq` reads them against `.config/gh/calls.toml`
 # and sums each of the 24 hours, and `.config/gh/cases.json` holds its
@@ -2917,7 +2918,7 @@ set -euo pipefail
 failed=0
 .config/cases/run.bash gh-budget .config/gh/cases.json --program .config/gh/budget.jq || failed=1
 .config/gh/budget-cases.bash || failed=1
-sites=$(git ls-files -z -- '.config/*.sh' '.config/*.bash' '.config/*.toml' '.github/*.yml' '.github/*.yaml' \
+sites=$(git ls-files -z -- '.config/*.sh' '.config/*.bash' '.config/*.toml' '.github/*.yml' '.github/*.yaml' 'crates/workflow-*.rs' \
   | xargs -0 awk -v text=1 -f .config/gh/sites.awk \
   | jq -R -s -c 'split("\n") | map(select(. != "") | split("\t")
       | {file: .[0], scope: .[1], verb: .[2], paginated: (.[3:] | join("\t") | test("(^|\\s)--paginate(\\s|$)")), input: (.[3:] | join("\t") | test("(^|\\s)--input(\\s|=|$)"))})')

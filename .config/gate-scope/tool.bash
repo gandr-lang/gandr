@@ -4,20 +4,23 @@
 #
 # A script that calls `cargo run` pays the start of Cargo at each call, and a
 # new worktree pays a build. So a host keeps each binary under its cache
-# directory. Four paths of the commit name a kept binary by their objects.
-# They are the crate's directory, the workspace's manifest, the lock file and
+# directory. The paths of the commit name a kept binary by their objects.
+# They are the crate's directory, the directory of each crate of the
+# workspace that it depends on, the workspace's manifest, the lock file and
 # the pin of the toolchain. A worktree whose commit holds those objects runs
 # the kept binary and starts no Cargo.
 #
 # A worktree that changes one of those paths has no object to name. So it
-# runs the binary through `cargo run`.
+# builds the binary through `cargo build` and runs it.
 # - see: #8273
 #
 # usage: tool.bash <package> <binary> [argument]...
 #
-# economy: the name holds no other crate of the workspace, so the launcher
-# serves a crate with no path dependency. ceiling: a crate with one names the
-# directory of that dependency here, or it stays on `cargo run`.
+# The binary reads the target and the flags of its caller, since the key of
+# a verdict binds them. The build of the binary reads none of them: a cross
+# target builds a binary that the host cannot run, and other flags build each
+# crate again. So the build runs with no such variable, and the binary runs
+# with the caller's environment.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 root=${here%/.config/gate-scope}
@@ -25,17 +28,26 @@ package=${1:?usage: tool.bash <package> <binary> [argument]...}
 binary=${2:?usage: tool.bash <package> <binary> [argument]...}
 shift 2
 directory=crates/${package#gandr-}
-paths=("$directory" Cargo.toml Cargo.lock rust-toolchain.toml)
+# The crates of the workspace that each package depends on. A hosted job
+# names the same paths in the key of its cache of the binary.
+# - see: `.github/workflows/landing-checks.yml`
+case $package in
+  gandr-workflow-gate) depends=(crates/workflow-github) ;;
+  *) depends=() ;;
+esac
+paths=("$directory" "${depends[@]}" Cargo.toml Cargo.lock rust-toolchain.toml)
+clean=(env -u CARGO_BUILD_TARGET -u RUSTFLAGS -u CARGO_ENCODED_RUSTFLAGS -u CARGO_BUILD_RUSTFLAGS)
 if [[ -z $(git -C "$root" status --porcelain --untracked-files=all -- "${paths[@]}") ]]; then
   mapfile -t objects < <(git -C "$root" rev-parse "${paths[@]/#/HEAD:}")
   printf -v name '%.16s' "${objects[@]}"
   kept=${XDG_CACHE_HOME:-$HOME/.cache}/gandr/tools/$binary/$name
   if [[ ! -x $kept/bin/$binary ]]; then
-    (cd "$root" && .config/mise/scope cargo install --quiet --locked --debug --force --path "$directory" --bin "$binary" --root "$kept") >&2
+    (cd "$root" && .config/mise/scope "${clean[@]}" cargo install --quiet --locked --debug --force --path "$directory" --bin "$binary" --root "$kept") >&2
     # The host keeps the six newest builds of a binary.
     mapfile -t builds < <(ls -1dt "${kept%/*}"/*/)
     for build in "${builds[@]:6}"; do rm -rf "$build"; done
   fi
   exec "$kept/bin/$binary" "$@"
 fi
-exec cargo run --quiet --locked --manifest-path "$root/Cargo.toml" --package "$package" --bin "$binary" -- "$@"
+(cd "$root" && "${clean[@]}" cargo build --quiet --locked --package "$package" --bin "$binary") >&2
+exec "${CARGO_TARGET_DIR:-$root/target}/debug/$binary" "$@"
