@@ -62,7 +62,7 @@ use gandr_kernel_term::FieldPosition;
 /// - hypothesis: L3 — a pair, a cons cell and a bind over a returner are each
 ///   read at the types that their judgements give.
 /// - witness: `annotate::tests::the_join_reads_each_field_and_binder_at_its_occurrence_8161`
-pub(crate) fn typed(
+pub fn typed(
     core: &CoreArena,
     annotations: &[Annotation],
     declared: BTreeMap<ConstantIndex, Arc<DataSignature>>,

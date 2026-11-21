@@ -1,7 +1,9 @@
 //! What a recording context keeps as each judgement of a typed run finishes:
-//! the term, the type it was judged at and the binders it stood under. Beside
-//! it, the value type that each judgement gives a binder of a bind and a field
-//! of a structural former, which focusing writes into the IL (#8161).
+//! the term, the type it was judged at and the binders it stood under.
+//!
+//! Beside it, the record holds the value type that each judgement gives a
+//! binder of a bind and a field of a structural former, which focusing writes
+//! into the IL (#8161).
 //!
 //! The context records, and the judgement's typed run reads the record back
 //! (`judgement::elaboration`). The record's types live here, below both.

@@ -3931,9 +3931,12 @@ impl<'run> Focusing<'run>
     /// - requires: nothing.
     /// - ensures: a closed type other than the unknown type resolves to the
     ///   node that the IL's annotations file for its content, so two types of
-    ///   one content resolve to one node; the unknown type, or a type that
-    ///   names a variable, counts `open`; an absent type counts its cause; each
-    ///   of the last two resolves to the arena's one unknown type.
+    ///   one content resolve to one node. A path type at a looped point, at any
+    ///   depth, enters as the type of its words that the table's signatures
+    ///   declare ([`gandr_core_term::identified_words`]), so a path and its
+    ///   words resolve to one node. The unknown type, or a type that names a
+    ///   variable, counts `open`; an absent type counts its cause; each of the
+    ///   last two resolves to the arena's one unknown type.
     /// - provides: the one door of a checker's type into the IL.
     /// - fails: a type that the core arena does not hold.
     /// - panics: none.
@@ -3949,6 +3952,7 @@ impl<'run> Focusing<'run>
     ///   that names a parameter and a field that no checker typed give their
     ///   three annotations and causes.
     /// - witness: `focus::tests::a_declared_field_takes_the_type_its_signature_states_8161`
+    /// - witness: `gandr-surface-dispatcher::tests::corpus::sweeps::focusing_counts_each_unknown_position_by_one_cause_8161`
     fn annotation(
         &mut self,
         looked: quenchant_shape::shape::Maybe<gandr_core_term::ValueTypeId, Unknown>,
@@ -3970,6 +3974,7 @@ impl<'run> Focusing<'run>
                         self.core,
                         self.arena.annotations_mut(),
                     )
+                    .reading_words(&self.typed.declared)
                     .value_type(ty)
                     .map_err(|gandr_core_term::ImportFault| {
                         MintRefusal::DanglingAnnotation(ty)

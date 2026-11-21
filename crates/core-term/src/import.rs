@@ -23,6 +23,10 @@ use crate::arena::Mint;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ImportFault;
 
+/// The signatures of the declarations, by position.
+type Signatures =
+    BTreeMap<gandr_kernel_term::ConstantIndex, alloc::sync::Arc<crate::DataSignature>>;
+
 /// A family-tagged handle in either arena.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Node
@@ -527,6 +531,9 @@ pub struct TypeImporter<'source, 'target>
     mint: Mint,
     /// Imported nodes, shared by every requested root.
     images: BTreeMap<Node, Node>,
+    /// The signatures by which a path type at a looped point enters as the
+    /// type of its words, when the session reads words.
+    words: Option<&'source Signatures>,
     /// The explicit postorder stack.
     pending: Vec<Task>,
 }
@@ -549,6 +556,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
             target,
             mint: Mint::Occurrence,
             images: BTreeMap::new(),
+            words: None,
             pending: Vec::new(),
         }
     }
@@ -572,6 +580,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
             target,
             mint: Mint::Interned,
             images: BTreeMap::new(),
+            words: None,
             pending: Vec::new(),
         }
     }
@@ -591,7 +600,44 @@ impl<'source, 'target> TypeImporter<'source, 'target>
             target: arena,
             mint: Mint::Interned,
             images: BTreeMap::new(),
+            words: None,
             pending: Vec::new(),
+        }
+    }
+
+    /// This session, with each path type at a looped point entering as the
+    /// type of its words that `signatures` declare (#8161).
+    ///
+    /// The checker identifies the two types by conversion
+    /// ([`crate::identified_words`]), and a word is the value of either. A
+    /// target that compares types by content then holds one node for them.
+    ///
+    /// # Specification
+    /// - requires: `signatures` are the signatures of the source's
+    ///   declarations.
+    /// - ensures: each later import writes each source path type that
+    ///   [`crate::identified_words`] reads as `words`, at any depth, as
+    ///   `Data(words, [])`, and copies every other node as before.
+    /// - panics: none.
+    /// - executable: none — the image of a node is the session's own state,
+    ///   which the witness reads through an import.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — over `corpus/model`, the bind of the rest of a word
+    ///   in `identity/circle-base.gandr` holds the path type that its source
+    ///   writes, and the letter states that field at the type of words. Both
+    ///   import to one node, so the check of the annotations verifies them.
+    /// - witness: `gandr-surface-dispatcher::tests::corpus::sweeps::focusing_counts_each_unknown_position_by_one_cause_8161`
+    #[must_use]
+    #[inline]
+    pub fn reading_words(
+        self,
+        signatures: &'source Signatures,
+    ) -> Self
+    {
+        Self {
+            words: Some(signatures),
+            ..self
         }
     }
 
@@ -797,6 +843,24 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                         Node::CompType(id) => source.comp_type(id).cloned().map(Image::CompType),
                     }
                     .ok_or(ImportFault)?;
+                    if let (Some(signatures), Node::ValueType(id)) = (self.words, node)
+                        && let Some(&ValueType::Path {
+                            carrier,
+                            left,
+                            right,
+                        }) = source.value_type(id)
+                        && let quenchant_shape::shape::Maybe::Present(words) =
+                            crate::identified_words(source, signatures, carrier, (left, right))
+                    {
+                        self.pending.push(Task::Close(
+                            node,
+                            Image::ValueType(ValueType::Data {
+                                declaration: words,
+                                arguments: Vec::new(),
+                            }),
+                        ));
+                        continue;
+                    }
                     let children = image.edges().map(|edge| edge.map(|edge| edge.node()));
                     self.pending.push(Task::Close(node, image));
                     if let Node::CompType(id) = node

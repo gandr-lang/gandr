@@ -2005,7 +2005,7 @@ pub fn check_declaration_supported(
         decision.failure,
         (decision.elaboration, residue),
     )
-    .tabling(tabled)
+    .tabling(tabled.annotating(decision.annotations))
 }
 
 /// The form the table holds `declaration` in after its judgement gave
