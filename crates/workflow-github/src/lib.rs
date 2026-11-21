@@ -5,6 +5,9 @@
 //!
 //! - [`run`] starts an invocation, feeds it a body when asked, and returns what
 //!   it wrote to standard output.
+//! - [`Site`] declares one call site of `gh`: the scope that holds it and its
+//!   verb, on one line that the check of the API budget reads. A call builds
+//!   the words of its verb from its site.
 //! - [`GitHubError`] is the one error family: the invocation did not start,
 //!   exited unsuccessfully, or answered what its caller does not read.
 //!
@@ -24,6 +27,132 @@ use std::process::Command;
 use std::process::Stdio;
 
 pub use crate::error::GitHubError;
+
+/// One call site of `gh`: the scope that holds the call and the verb of the
+/// call, as `.config/gh/sites.awk` prints them and `calls.toml` prices them.
+///
+/// A site stands on one line of the file that makes the call, as
+/// `const NAME: Site = Site::new("<scope>", "<verb>");`. The check of the
+/// budget reads each such line of a Rust file of a workflow crate, and one
+/// line is one call. The call takes the words of its verb from [`Site::words`],
+/// so no call of `gh` has another verb than its line.
+///
+/// # Specification
+/// - provides: the price of a call of `gh` that a Rust crate makes, read from
+///   the declared line and never from the call's own text.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Site
+{
+    /// The function that makes the call.
+    scope: &'static str,
+    /// The verb: a command and its first word, as `pr view`; `api graphql`;
+    /// or `api` and the method of a REST call, as `api GET`.
+    verb: &'static str,
+}
+
+impl Site
+{
+    /// The site of the call in `scope` with `verb`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the words of a REST site and of a command site; a
+    ///   site that drops its verb gives no words.
+    /// - witness: `tests::a_site_gives_the_words_of_its_verb`
+    #[inline]
+    #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            primitive_signature,
+            reason = "the declared line of a site names its scope and its verb as two literals in a `const`, and a `const` takes no `From`"
+        )
+    )]
+    pub const fn new(
+        scope: &'static str,
+        verb: &'static str,
+    ) -> Self
+    {
+        Self { scope, verb }
+    }
+
+    /// The function that makes the call.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the scope names the row of the call, and the check of
+    ///   the budget reads it from the line; a call reads no scope.
+    /// - witness: `tests::a_site_gives_the_words_of_its_verb`
+    #[inline]
+    #[must_use]
+    pub const fn scope(&self) -> Word
+    {
+        Word(self.scope)
+    }
+
+    /// The words of the verb as the first arguments of `gh`: `api` and
+    /// `--method` with the method of a REST site, and each word of another
+    /// verb.
+    ///
+    /// # Specification
+    /// - requires: the verb is one that `sites.awk` prints.
+    /// - ensures: for `api` and a method in upper case, `api`, `--method` and
+    ///   the method. For each other verb, its words in their order.
+    /// - provides: a call whose verb is the verb of its line.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the outcome is a value.
+    ///
+    /// # Cost
+    /// - allocation: the words, setup
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a REST site, a GraphQL site and a command site; a
+    ///   REST verb given as its words asks `gh` for a method as an endpoint.
+    /// - witness: `tests::a_site_gives_the_words_of_its_verb`
+    #[inline]
+    #[must_use]
+    pub fn words(&self) -> Vec<Word>
+    {
+        match self.verb.split_once(' ') {
+            Some(("api", method)) if method.bytes().all(|byte| byte.is_ascii_uppercase()) => {
+                vec![Word("api"), Word("--method"), Word(method)]
+            },
+            _ => self.verb.split(' ').map(Word).collect(),
+        }
+    }
+}
+
+/// One word of a declared site: its scope, or one word of the arguments of its
+/// verb.
+///
+/// # Specification
+/// - provides: a word that comes from a declared line and no other text.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Word(&'static str);
+
+impl From<Word> for &'static str
+{
+    /// The text of `word`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the words of a REST site; a text that is not the
+    ///   word's changes the asserted words.
+    /// - witness: `tests::a_site_gives_the_words_of_its_verb`
+    #[inline]
+    fn from(word: Word) -> Self
+    {
+        word.0
+    }
+}
 
 /// An invocation as a shell spells it: the program and its arguments,
 /// separated by spaces.
@@ -240,8 +369,22 @@ mod tests
     use super::Body;
     use super::Feed;
     use super::GitHubError;
+    use super::Site;
     use super::read;
     use super::run;
+
+    #[test]
+    fn a_site_gives_the_words_of_its_verb()
+    {
+        let text = |site: Site| -> Vec<&'static str> {
+            site.words().into_iter().map(<&str>::from).collect()
+        };
+        let rest = Site::new("signers", "api GET");
+        assert_eq!(<&str>::from(rest.scope()), "signers");
+        assert_eq!(text(rest), ["api", "--method", "GET"]);
+        assert_eq!(text(Site::new("graph", "api graphql")), ["api", "graphql"]);
+        assert_eq!(text(Site::new("view", "pr view")), ["pr", "view"]);
+    }
 
     /// An emptied counter file of its own for the test named `$name`.
     macro_rules! counter {

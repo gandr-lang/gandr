@@ -554,3 +554,402 @@ fn a_check_with_no_row_of_a_verdict_is_refused()
     assert_eq!(out!(output), "");
     assert_eq!(output.status.code(), Some(2_i32));
 }
+
+/// Runs `git commit-tree` in `$root` for the tree `$tree` with the words of
+/// `$more`, as a fixed author, and gives the commit.
+macro_rules! commit {
+    ($root:expr, $tree:expr, $more:expr $(,)?) => {{
+        let more: &[&str] = &$more;
+        let mut words = vec![
+            "-c",
+            "user.name=case",
+            "-c",
+            "user.email=case@example.invalid",
+            "commit-tree",
+            $tree,
+        ];
+        words.extend_from_slice(more);
+        git!($root, words)
+    }};
+}
+
+/// The first `$count` characters of `$text`, as a line of a read shows a
+/// name.
+macro_rules! cut {
+    ($text:expr, $count:literal) => {
+        $text.get(.. $count).unwrap()
+    };
+}
+
+/// The first 16 digits of the SHA-256 of `$text`: the last part of the ref
+/// of a record whose key is the text.
+macro_rules! hash {
+    ($text:expr) => {{
+        use std::io::Write as _;
+        let mut child = Command::new("sha256sum")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all($text.as_bytes())
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        cut!(String::from_utf8(output.stdout).unwrap(), 16).to_owned()
+    }};
+}
+
+/// Runs `gate verdict read` with `$args` in `$root`, as `key!` runs a key.
+/// The remote of the records is the bare repository `remote.git` beside the
+/// repository, and the file of allowed signers is `signers` there.
+macro_rules! read {
+    ($root:expr, $args:expr, $env:expr $(,)?) => {{
+        let root: &Path = &$root;
+        let base = root.parent().unwrap();
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut paths = vec![manifest.join("tests/fakes")];
+        paths.extend(std::env::split_paths(
+            &std::env::var_os("PATH").unwrap_or_default(),
+        ));
+        let variables: &[(&str, &str)] = &$env;
+        Command::new(env!("CARGO_BIN_EXE_gate"))
+            .arg("--tables")
+            .arg(manifest.join("tests/tables"))
+            .args(["verdict", "read"])
+            .args($args)
+            .current_dir(root)
+            .env_clear()
+            .env("PATH", std::env::join_paths(paths).unwrap())
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .env("FAKE_CARGO_METADATA", base.join("metadata.json"))
+            .env("FAKE_MISE_TASKS", base.join("tasks.json"))
+            .env("GATE_INPUTS_TASK", "case-task")
+            .env("GATE_VERDICT_RUSTC", manifest.join("tests/fakes/rustc"))
+            .env("GATE_VERDICT_POLICY", "case-policy")
+            .env("GATE_VERDICT_REMOTE", base.join("remote.git"))
+            .env("GATE_VERDICT_SIGNERS", base.join("signers"))
+            .envs(variables.iter().copied())
+            .output()
+            .unwrap()
+    }};
+}
+
+/// A scratch repository for the case `$name` with a bare remote of records
+/// beside it and an empty file of allowed signers.
+macro_rules! remote {
+    ($name:literal) => {{
+        let root = scratch!($name);
+        let base = root.parent().unwrap().to_path_buf();
+        let _bare = git!(base, [
+            "init",
+            "--quiet",
+            "--bare",
+            "--object-format=sha1",
+            "remote.git"
+        ]);
+        std::fs::write(base.join("signers"), "").unwrap();
+        root
+    }};
+}
+
+/// Points `HEAD` of `$root` at the commit `$commit`.
+macro_rules! head {
+    ($root:expr, $commit:expr) => {{
+        let commit: &str = &$commit;
+        let _moved = git!($root, ["update-ref", "HEAD", commit]);
+    }};
+}
+
+/// Sends each of `$refspecs` from `$root` to the bare remote beside it.
+macro_rules! push {
+    ($root:expr, $refspecs:expr) => {{
+        let refspecs: &[String] = &$refspecs;
+        let remote = $root
+            .parent()
+            .unwrap()
+            .join("remote.git")
+            .display()
+            .to_string();
+        let mut words = vec!["push", "--quiet", remote.as_str()];
+        words.extend(refspecs.iter().map(String::as_str));
+        let _pushed = git!($root, words);
+    }};
+}
+
+#[test]
+fn a_check_with_the_inputs_of_its_base_holds_with_no_remote()
+{
+    let root = scratch!("read-base");
+    let base = commit!(root, TWO, ["-m", "base"]);
+    let head = commit!(root, ONE, ["-p", base.as_str(), "-m", "head"]);
+    head!(root, head);
+    // Trees one and two differ in `docs/` alone, which is no input of the
+    // check. The run has no remote and no compiler, so a call of either
+    // refuses it.
+    let output = read!(root, ["check:scoped"], [
+        ("GATE_BASE", base.as_str()),
+        ("GATE_VERDICT_TRUNK_OK", base.as_str()),
+        ("GATE_VERDICT_SCOPE", "--workspace"),
+        ("GATE_VERDICT_REMOTE", "/nonexistent/remote.git"),
+        ("GATE_VERDICT_RUSTC", "/nonexistent/rustc"),
+    ]);
+    assert_eq!(
+        err!(output),
+        format!(
+            "verdict: check:scoped holds on {}: its inputs are those of the base {}, which passed, so the \
+             check does not run again\n",
+            cut!(ONE, 12),
+            cut!(base, 12)
+        )
+    );
+    assert_eq!(output.status.code(), Some(0_i32));
+}
+
+#[test]
+fn a_change_of_a_task_holds_no_check_by_its_base()
+{
+    let root = remote!("read-task");
+    // The index of the scratch holds tree three, and the change adds a task
+    // file to it.
+    let base = commit!(root, THREE, ["-m", "base"]);
+    put!(root, ".config/mise/tasks/case.toml", "[case]\n");
+    let _added = git!(root, ["add", "-A"]);
+    let tree = git!(root, ["write-tree"]);
+    let head = commit!(root, tree.as_str(), ["-p", base.as_str(), "-m", "head"]);
+    head!(root, head);
+    let key = out!(key!(root, ["--tree", tree.as_str(), "check:scoped"], [(
+        "GATE_BASE",
+        base.as_str()
+    )]));
+    let output = read!(root, ["check:scoped"], [
+        ("GATE_BASE", base.as_str()),
+        ("GATE_VERDICT_TRUNK_OK", base.as_str()),
+        ("GATE_VERDICT_SCOPE", "--workspace"),
+    ]);
+    // The task file is no input of the check, so its digest at the head is
+    // its digest at the base. The change of a task still holds no check.
+    assert_eq!(
+        err!(output),
+        format!(
+            "verdict: no record binds the inputs of check:scoped in this run, {}\n\
+             verdict: no record holds check:scoped on {}, so the job runs them\n",
+            hash!(key.trim_end()),
+            cut!(tree, 12)
+        )
+    );
+    assert_eq!(output.status.code(), Some(1_i32));
+}
+
+#[test]
+fn a_base_that_the_trunk_does_not_hold_holds_no_check()
+{
+    let root = remote!("read-trunk");
+    let base = commit!(root, TWO, ["-m", "base"]);
+    let head = commit!(root, ONE, ["-p", base.as_str(), "-m", "head"]);
+    head!(root, head);
+    let key = out!(key!(root, ["--tree", ONE, "check:scoped"], [(
+        "GATE_BASE",
+        base.as_str()
+    )]));
+    let output = read!(root, ["check:scoped"], [
+        ("GATE_BASE", base.as_str()),
+        ("GATE_VERDICT_TRUNK_OK", ""),
+        ("GATE_VERDICT_SCOPE", "--workspace"),
+    ]);
+    assert_eq!(
+        err!(output),
+        format!(
+            "verdict: no record binds the inputs of check:scoped in this run, {}\n\
+             verdict: no record holds check:scoped on {}, so the job runs them\n",
+            hash!(key.trim_end()),
+            cut!(ONE, 12)
+        )
+    );
+    assert_eq!(output.status.code(), Some(1_i32));
+}
+
+#[test]
+fn a_check_with_no_record_runs()
+{
+    let root = remote!("read-none");
+    let head = commit!(root, ONE, ["-m", "head"]);
+    head!(root, head);
+    let key = out!(key!(root, ["--tree", ONE, "check:scoped"], []));
+    // The listing names the check by its prefix, so it gives this record of
+    // another key too, and the read must not take it.
+    let other = commit!(root, ONE, [
+        "-m",
+        "verdict: check:scoped passes",
+        "-m",
+        key.trim_end()
+    ]);
+    push!(root, [format!(
+        "{other}:refs/verdicts/inputs/check-scoped/0123456789abcdef"
+    )]);
+    let output = read!(root, ["check:scoped", "check:tree"], [(
+        "GATE_VERDICT_SCOPE",
+        "--workspace"
+    )]);
+    assert_eq!(
+        err!(output),
+        format!(
+            "verdict: no record binds the inputs of check:scoped in this run, {}\n\
+             verdict: no record holds check:scoped check:tree on {}, so the job runs them\n",
+            hash!(key.trim_end()),
+            cut!(ONE, 12)
+        )
+    );
+    assert_eq!(output.status.code(), Some(1_i32));
+}
+
+#[test]
+fn a_record_with_a_body_of_another_key_does_not_hold()
+{
+    let root = remote!("read-forged");
+    let base = commit!(root, TWO, ["-m", "base"]);
+    let head = commit!(root, ONE, ["-p", base.as_str(), "-m", "head"]);
+    head!(root, head);
+    let key = out!(key!(root, ["--tree", ONE, "check:tree"], [(
+        "GATE_BASE",
+        base.as_str()
+    )]));
+    let key = key.trim_end();
+    let forged = key.replace("case-policy", "other-policy");
+    let record = commit!(root, ONE, [
+        "-m",
+        "verdict: check:tree passes",
+        "-m",
+        forged.as_str()
+    ]);
+    push!(root, [format!(
+        "{record}:refs/verdicts/{ONE}/check-tree/{}",
+        hash!(key)
+    )]);
+    let output = read!(root, ["check:tree"], [
+        ("GATE_BASE", base.as_str()),
+        ("GATE_VERDICT_TRUNK_OK", base.as_str()),
+        ("GATE_VERDICT_SCOPE", "--workspace"),
+    ]);
+    assert_eq!(
+        err!(output),
+        format!(
+            "verdict: the record {} of check:tree does not hold: its body is not the run's key\n\
+             verdict: no record holds check:tree on {}, so the job runs them\n",
+            hash!(key),
+            cut!(ONE, 12)
+        )
+    );
+    assert_eq!(output.status.code(), Some(1_i32));
+}
+
+#[test]
+fn a_record_of_the_tree_holds_against_its_own_base()
+{
+    let root = remote!("read-signed");
+    let dir = root.parent().unwrap().to_path_buf();
+    // The base changes crate `c` against the head, so the check of inputs
+    // does not hold by its base and reads its record.
+    let earlier = commit!(root, TWO, ["-m", "earlier base"]);
+    let base = commit!(root, THREE, ["-p", earlier.as_str(), "-m", "base"]);
+    let head = commit!(root, ONE, ["-p", base.as_str(), "-m", "head"]);
+    head!(root, head);
+    let signing = dir.join("signing");
+    let made = Command::new("ssh-keygen")
+        .args(["-q", "-t", "ed25519", "-N", "", "-C", "case", "-f"])
+        .arg(&signing)
+        .output()
+        .unwrap();
+    assert!(made.status.success(), "ssh-keygen: {}", err!(made));
+    let public = std::fs::read_to_string(dir.join("signing.pub")).unwrap();
+    std::fs::write(
+        dir.join("signers"),
+        format!("case@example.invalid namespaces=\"git\" {public}"),
+    )
+    .unwrap();
+    // The record of the tree passed on the earlier base, with the scope that
+    // the scope script gives against that base.
+    let earlier_scope = format!("--workspace --exclude base-{}", cut!(earlier, 7));
+    let tree_key = out!(key!(root, ["--tree", ONE, "check:tree"], [
+        ("GATE_BASE", earlier.as_str()),
+        ("GATE_SCOPE", earlier_scope.as_str()),
+    ]));
+    let tree_key = tree_key.trim_end();
+    let signing_key = format!("user.signingkey={}", signing.display());
+    let signed = git!(root, [
+        "-c",
+        "user.name=case",
+        "-c",
+        "user.email=case@example.invalid",
+        "-c",
+        "gpg.format=ssh",
+        "-c",
+        signing_key.as_str(),
+        "commit-tree",
+        "-S",
+        ONE,
+        "-m",
+        "verdict: check:tree passes",
+        "-m",
+        tree_key,
+    ]);
+    // The record of the inputs binds the run's own key, and no one signed
+    // it. So the one batch of signatures fails, and each record asks alone.
+    let own_scope = format!("--workspace --exclude base-{}", cut!(base, 7));
+    let inputs_key = out!(key!(root, ["--tree", ONE, "check:scoped"], [
+        ("GATE_BASE", base.as_str()),
+        ("GATE_SCOPE", own_scope.as_str()),
+    ]));
+    let inputs_key = inputs_key.trim_end();
+    let unsigned = commit!(root, ONE, [
+        "-m",
+        "verdict: check:scoped passes",
+        "-m",
+        inputs_key
+    ]);
+    push!(root, [
+        format!(
+            "{signed}:refs/verdicts/{ONE}/check-tree/{}",
+            hash!(tree_key)
+        ),
+        format!(
+            "{unsigned}:refs/verdicts/inputs/check-scoped/{}",
+            hash!(inputs_key)
+        ),
+    ]);
+    let trunk = format!("{earlier} {base}");
+    let output = read!(root, ["check:scoped", "check:tree"], [
+        ("GATE_BASE", base.as_str()),
+        ("GATE_VERDICT_TRUNK_OK", trunk.as_str()),
+    ]);
+    let said = err!(output);
+    let lines: Vec<&str> = said.lines().collect();
+    assert_eq!(lines.len(), 3, "{said}");
+    assert!(
+        lines[0].starts_with(&format!(
+            "verdict: the record {} of check:scoped does not hold: its signature does not verify: ",
+            hash!(inputs_key)
+        )),
+        "{said}"
+    );
+    assert_eq!(
+        lines[1],
+        format!(
+            "verdict: check:tree holds on {}: the record {} binds this run's key, so the check does not \
+             run again",
+            cut!(ONE, 12),
+            cut!(signed, 12)
+        )
+    );
+    assert_eq!(
+        lines[2],
+        format!(
+            "verdict: no record holds check:scoped on {}, so the job runs them",
+            cut!(ONE, 12)
+        )
+    );
+    assert_eq!(output.status.code(), Some(1_i32));
+}

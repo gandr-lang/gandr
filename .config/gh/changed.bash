@@ -19,7 +19,7 @@ table=.config/gh/calls.toml
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mapfile -t touched < <(git diff --no-renames --name-only "$base" "$head" -- \
-  '.config/*.sh' '.config/*.bash' '.config/*.toml' '.github/*.yml' '.github/*.yaml')
+  '.config/*.sh' '.config/*.bash' '.config/*.toml' '.github/*.yml' '.github/*.yaml' 'crates/workflow-*.rs')
 
 # One revision's calls in the touched files, as `[{file, scope, api, verb, text}]`.
 calls() {
