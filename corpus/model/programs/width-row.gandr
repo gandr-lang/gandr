@@ -19,5 +19,5 @@ def wrapped() -> u32 = u32.wrapping_add 4294967295u32 3u32;
 
 /// `main` returns the wrapped sum as its exit code.
 def main(args : List String) -> Integer =
-  let sum = wrapped ()
+  let sum = wrapped
   u32.to_integer sum
