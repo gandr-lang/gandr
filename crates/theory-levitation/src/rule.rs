@@ -1388,6 +1388,20 @@ quenchant_shape::reason_enum! {
     }
 }
 
+/// How the readers of a rule table read one rule.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum RuleReading
+{
+    /// The rule rewrites its left side to its right side.
+    Step,
+    /// The rule swaps the two arguments of one operation, `f x y <=> f y x`.
+    /// No reader rewrites by it.
+    Symmetry,
+}
+
 /// A 2-cell face `lhs ==> rhs`: the surface-to-cell intermediary a cell store
 /// elaborates through.
 ///
@@ -1471,6 +1485,81 @@ impl RuleFace
     ) -> Self
     {
         Self { under, ..self }
+    }
+
+    /// How the readers of the rules read this face: as a step, or as a
+    /// symmetry of one operation.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`RuleReading::Symmetry`] exactly when the face states no
+    ///   freshness condition and no row, and its two sides are one constructor
+    ///   or one operation applied to two distinct variables, in the two orders:
+    ///   `f x y` and `f y x`. [`RuleReading::Step`] for every other face.
+    /// - provides: the one test of the form each reader of a rule table shares,
+    ///   so the path order, the cells and the kernel's table agree on which
+    ///   rule is a symmetry.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `band x y <=> band y x` is a symmetry; the same sides
+    ///   in the written order, over one variable two times, over an argument
+    ///   that is no variable, or over two operations are steps.
+    /// - witness: `termination::tests::a_symmetry_needs_no_orientation_8291`
+    #[spec(ensures: |ret| ret == RuleReading::Step
+        || (self.fresh.is_empty() && matches!(self.under, Maybe::Absent(_))))]
+    #[inline]
+    #[must_use]
+    pub fn reading(&self) -> RuleReading
+    {
+        if !self.fresh.is_empty() || matches!(self.under, Maybe::Present(_)) {
+            return RuleReading::Step;
+        }
+        let ((
+            TermView::Op {
+                name: left,
+                args: mut left_args,
+            },
+            TermView::Op {
+                name: right,
+                args: mut right_args,
+            },
+        )
+        | (
+            TermView::Ctor {
+                name: left,
+                args: mut left_args,
+            },
+            TermView::Ctor {
+                name: right,
+                args: mut right_args,
+            },
+        )) = (self.lhs.view(), self.rhs.view())
+        else {
+            return RuleReading::Step;
+        };
+        let (Some(first), Some(second), None, Some(third), Some(fourth), None) = (
+            left_args.next(),
+            left_args.next(),
+            left_args.next(),
+            right_args.next(),
+            right_args.next(),
+            right_args.next(),
+        )
+        else {
+            return RuleReading::Step;
+        };
+        match (first.view(), second.view(), third.view(), fourth.view()) {
+            (
+                TermView::Var(first),
+                TermView::Var(second),
+                TermView::Var(third),
+                TermView::Var(fourth),
+            ) if left == right && first != second && first == fourth && second == third => {
+                RuleReading::Symmetry
+            },
+            _ => RuleReading::Step,
+        }
     }
 
     /// The first variable some occurrence of which stands under other

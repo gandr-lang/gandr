@@ -613,6 +613,9 @@ enum Reading
     /// first-order term, and its pairs are decided in the second-order
     /// reading.
     SecondOrder,
+    /// The rule swaps the two arguments of one symbol, `f x y` to `f y x`: it
+    /// rewrites no term and stands in no critical pair.
+    Symmetry,
 }
 
 impl Holes
@@ -856,17 +859,45 @@ impl TheoryRule
     }
 
     /// How the rule's critical pairs are decided: second-order when it
-    /// instantiates a variable, is conditioned or fires under a row.
+    /// instantiates a variable, is conditioned or fires under a row, and not
+    /// at all when it is a symmetry of one symbol.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: [`Reading::SecondOrder`] when the rule instantiates a
+    ///   variable, is conditioned or states a row. Otherwise
+    ///   [`Reading::Symmetry`] exactly when the left side is one symbol over
+    ///   the variables `0` and `1` and the right side is that symbol over `1`
+    ///   and `0`. Otherwise [`Reading::FirstOrder`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a rule that swaps the two arguments of one operation
+    ///   is a symmetry; the same rule over two symbols is first-order.
+    /// - witness: `theory_rules::tests::a_symmetry_is_oriented_by_no_order_and_stands_in_no_pair_8291`
+    #[spec(ensures: |ret| (ret == Reading::SecondOrder)
+        == (self.instantiates || self.conditioned || self.row != RuleRow::default()))]
     fn reading(&self) -> Reading
     {
         if self.instantiates || self.conditioned || self.row != RuleRow::default() {
-            Reading::SecondOrder
+            return Reading::SecondOrder;
         }
-        else {
-            Reading::FirstOrder
+        let (first, second) = (
+            TheoryNode::Variable(RuleVariable::from(0_u32)),
+            TheoryNode::Variable(RuleVariable::from(1_u32)),
+        );
+        match (&*self.left, &*self.right) {
+            (
+                &[TheoryNode::Symbol(symbol), left_first, left_second],
+                &[head, right_first, right_second],
+            ) if head == TheoryNode::Symbol(symbol)
+                && left_first == first
+                && left_second == second
+                && right_first == second
+                && right_second == first =>
+            {
+                Reading::Symmetry
+            },
+            _ => Reading::FirstOrder,
         }
     }
 
@@ -1282,7 +1313,9 @@ impl TheoryRules
         }
         let mut order = OrderBuffers::default();
         for (index, rule) in self.rules.iter().enumerate() {
-            if self.path_greater(rule, &mut order) == Verdict::Fails {
+            if rule.reading() != Reading::Symmetry
+                && self.path_greater(rule, &mut order) == Verdict::Fails
+            {
                 return Err(refuse(index, TheoryRuleFault::Unoriented));
             }
         }
@@ -1317,8 +1350,8 @@ impl TheoryRules
                         inner: RuleIndex::from(inner),
                     };
                     let other = decided.get(inner);
-                    if rule.reading() == Reading::SecondOrder
-                        || other.is_some_and(|other| other.reading() == Reading::SecondOrder)
+                    if rule.reading() != Reading::FirstOrder
+                        || other.is_some_and(|other| other.reading() != Reading::FirstOrder)
                     {
                         continue;
                     }
@@ -1405,6 +1438,8 @@ impl TheoryRules
                 }
                 for (inner, other) in self.rules.iter().enumerate() {
                     let apart = (position == 0 && inner == outer)
+                        || rule.reading() == Reading::Symmetry
+                        || other.reading() == Reading::Symmetry
                         || (rule.reading() == Reading::FirstOrder
                             && other.reading() == Reading::FirstOrder);
                     if apart {
@@ -1984,8 +2019,8 @@ impl TheoryRules
         else {
             return Ok(Verdict::Fails);
         };
-        if outer.reading() == Reading::SecondOrder
-            || inner.reading() == Reading::SecondOrder
+        if outer.reading() != Reading::FirstOrder
+            || inner.reading() != Reading::FirstOrder
             || self.overlap(rules, peak, work, fuel)? == Verdict::Fails
         {
             return Ok(Verdict::Fails);

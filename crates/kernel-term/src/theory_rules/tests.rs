@@ -249,6 +249,49 @@ fn a_rule_the_ranks_do_not_decrease_is_unoriented()
     assert_eq!(product.decide(&mut fuel()), Ok(()), "associativity orients");
 }
 
+/// - see: #8291
+#[test]
+fn a_symmetry_is_oriented_by_no_order_and_stands_in_no_pair_8291()
+{
+    // band = 0, zero = 1, one = 2, bor = 3.
+    let symbols = SmallVec::<_, 0, Global>::from_iter([
+        operation!(1, 2),
+        operation!(0, 0),
+        operation!(0, 0),
+        operation!(1, 2),
+    ]);
+    let absorbs = rule(&[s!(0), s!(1), v!(0)], &[s!(1)]);
+    let unit = rule(&[s!(0), s!(2), v!(0)], &[v!(0)]);
+    let symmetry = rule(&[s!(0), v!(0), v!(1)], &[s!(0), v!(1), v!(0)]);
+    let band = TheoryRules::new(
+        symbols.clone(),
+        SmallVec::<_, 0, Global>::from_iter([absorbs, unit, symmetry]),
+    );
+    assert_eq!(
+        band.decide(&mut fuel()),
+        Ok(()),
+        "no order orients the symmetry, and its overlap with each step is no pair"
+    );
+    let crossed = TheoryRules::new(
+        symbols.clone(),
+        SmallVec::<_, 0, Global>::from_iter([rule(&[s!(0), v!(0), v!(1)], &[s!(3), v!(1), v!(0)])]),
+    );
+    assert_eq!(
+        crossed.decide(&mut fuel()),
+        refused!(0, TheoryRuleFault::Unoriented),
+        "a swap from one operation to another is a step"
+    );
+    let written = TheoryRules::new(
+        symbols,
+        SmallVec::<_, 0, Global>::from_iter([rule(&[s!(0), v!(0), v!(1)], &[s!(0), v!(0), v!(1)])]),
+    );
+    assert_eq!(
+        written.decide(&mut fuel()),
+        refused!(0, TheoryRuleFault::Unoriented),
+        "a rule that keeps the order of the arguments is a step"
+    );
+}
+
 #[test]
 fn a_malformed_rule_is_refused_by_its_fault()
 {

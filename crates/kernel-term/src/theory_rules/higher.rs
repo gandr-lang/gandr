@@ -224,7 +224,7 @@ struct Rule
 pub(super) struct Higher
 {
     /// Each rule's reading, by its index; [`None`] where a rule names a
-    /// symbol outside the table.
+    /// symbol outside the table or is a symmetry, which rewrites no term.
     rules: SmallVec<Option<Rule>, 0, Global>,
     /// The binding field of one argument a metavariable expands under, when
     /// the table holds one.
@@ -251,7 +251,14 @@ impl Higher
             rules: rules
                 .rules
                 .iter()
-                .map(|rule| reading(rules, rule))
+                .map(|rule| {
+                    if rule.reading() == super::Reading::Symmetry {
+                        None
+                    }
+                    else {
+                        reading(rules, rule)
+                    }
+                })
                 .collect(),
             field: field.map(TheorySymbol),
         }
