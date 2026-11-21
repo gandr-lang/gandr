@@ -1763,7 +1763,7 @@ jobs:
       # The binary `gate` gives the inputs of each check to the read of the
       # records. A hosted runner keeps no binary, so the push to main builds
       # it and saves it, and a job restores it before it reads. The launcher
-      # names the binary by the four paths of this key.
+      # names the binary by the five paths of this key.
       # - see: #8276, `.config/gate-scope/tool.bash`
       - &restore-workflow-gate
         name: restore the binary of the gate's reader
@@ -1771,7 +1771,7 @@ jobs:
         uses: *cache-restore
         with:
           path: &workflow-gate ~/.cache/gandr/tools/gate
-          key: &workflow-gate-key workflow-gate-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/workflow-gate/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml') }}
+          key: &workflow-gate-key workflow-gate-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/workflow-gate/**', 'crates/workflow-github/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml') }}
       - *read-verdicts
       - name: restore the arm64 Clippy state
         if: ${{ steps.verdict.outputs.held != 'true' }}

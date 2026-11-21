@@ -1538,10 +1538,11 @@ default-features = false
 [workspace.dependencies.gandr-workflow-debt-ledger]
 path = "crates/workflow-debt-ledger"
 
-# The workflow crates' one `gh` runner and the error family its failures
-# share.
+# The workflow crates' one `gh` runner, the declared site of each call, and
+# the error family their failures share.
 # consumers:
 # - workflow-coverage-guard
+# - workflow-gate
 # - workflow-hotpath-guard
 # - workflow-lane-budget
 # - workflow-test-timing

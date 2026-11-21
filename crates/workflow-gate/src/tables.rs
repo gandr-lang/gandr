@@ -185,11 +185,50 @@ pub struct CheckRow
     pub greps: Vec<Grep>,
 }
 
-/// `verdicts.json`: the checks that hold a record of a verdict.
-#[repr(transparent)]
+impl CheckRow
+{
+    /// What the record of the check binds: the digest of its inputs, when its
+    /// row holds `inputs` or it is a row of the table, or else the tree.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a check of inputs and a check of the tree; a check of
+    ///   the table read as a check of the tree binds the tree, and the asserted
+    ///   line changes.
+    /// - witness: `tests::cli::a_key_is_the_line_of_the_script`
+    #[inline]
+    #[must_use]
+    pub const fn form(&self) -> Form
+    {
+        if self.inputs.is_some() || self.table {
+            Form::Inputs
+        }
+        else {
+            Form::Tree
+        }
+    }
+}
+
+/// What the record of a check binds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Form
+{
+    /// The digest of the inputs of the check.
+    Inputs,
+    /// The tree of the run.
+    Tree,
+}
+
+/// `verdicts.json`: the checks that hold a record of a verdict, and the
+/// logins that sign a record.
 #[derive(Clone, Debug, Default, Eq, PartialEq, serde::Deserialize)]
 struct Verdicts
 {
+    /// Each login whose signing keys a record verifies against.
+    #[serde(default)]
+    signers: Vec<String>,
     /// The row of each check, by its name.
     #[serde(default)]
     checks: BTreeMap<String, CheckRow>,
@@ -284,6 +323,23 @@ impl Tables
             .get(check.as_ref())
             .cloned()
             .unwrap_or_default()
+    }
+
+    /// Each login of `signers` in `verdicts.json`, in the order of the table.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a read with no file of allowed signers asks GitHub
+    ///   for the keys of each login, so no login asks for none and refuses the
+    ///   read; the hosted jobs witness it, and no case reaches GitHub.
+    /// - witness: `tests::cli::a_record_with_a_body_of_another_key_does_not_hold`
+    #[inline]
+    #[must_use]
+    pub fn signers(&self) -> &[String]
+    {
+        &self.verdicts.signers
     }
 
     /// The paths that the inputs of `check` over `scope` name. A path that

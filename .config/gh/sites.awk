@@ -14,12 +14,17 @@
 #   chooses it.
 # - With `-v text=1`, a fourth field holds the call's text from `gh` to the
 #   end of its line, so a measurement can run it.
+# - A Rust file of a workflow crate declares each call on one line, as
+#   `const NAME: Site = Site::new("<scope>", "<verb>");` of
+#   `gandr-workflow-github`, and the call takes its verb from that line. The
+#   scope and the verb are the two texts of the line, and the call's text is
+#   `gh` and the words of the verb. No other Rust text is read.
 # - `calls.toml` is the table of these calls, data and not a task file, so
 #   its triggers' prose names no call.
 
 function reset_file() {
   task = ""; fn = ""; job = ""; step = ""; in_jobs = 0; item = -1
-  kind = FILENAME ~ /\.toml$/ ? "toml" : FILENAME ~ /\.ya?ml$/ ? "yml" : "sh"
+  kind = FILENAME ~ /\.toml$/ ? "toml" : FILENAME ~ /\.ya?ml$/ ? "yml" : FILENAME ~ /\.rs$/ ? "rs" : "sh"
 }
 
 function scope() {
@@ -56,6 +61,16 @@ FILENAME ~ /(^|\/)\.config\/gh\/calls\.toml$/ { nextfile }
   line = held $0
   if (line ~ /\\$/) { held = substr(line, 1, length(line) - 1) " "; next }
   held = ""
+}
+
+kind == "rs" {
+  if (line ~ /^[ \t]*(pub(\([a-z]+\))?[ \t]+)?const[ \t]+[A-Z0-9_]+:[ \t]*Site[ \t]*=[ \t]*Site::new\("[^"]*",[ \t]*"[^"]*"\);/) {
+    split(line, texts, "\"")
+    words = texts[4]
+    if (words ~ /^api [A-Z]+$/) sub(/ /, " --method ", words)
+    print FILENAME "\t" texts[2] "\t" texts[4] (text ? "\tgh " words : "")
+  }
+  next
 }
 
 kind == "toml" && match(line, /^\[(tasks\.)?"[^"]+"\]/) {
