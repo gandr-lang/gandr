@@ -5,8 +5,8 @@
 //! calls the host for it. Both drivers give the same answer.
 //!
 //! `gandr run width-row.gandr` exits 2: the greatest `u32` and 3 wrap to 2.
-//!
-//! - see: #8300 — the wasm driver runs a width row
+
+// - see: #8300 — the wasm driver runs a width row
 
 // The native finite lists.
 import std.list (List);
