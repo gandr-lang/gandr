@@ -1,0 +1,54 @@
+[package]
+name = "gandr-core-nbe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The glued value domain with its per-run arena and policy parameters, weak-head evaluation, readback, the search-free conversion steps, the lazy concurrent conversion machine, and the sharing overlay with its erasure, its measure, its duplication walk and its evaluator"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "glued-evaluation", "normalization-by-evaluation", "scheduling", "sharing"]
+categories = ["data-structures"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The domain and its evaluator are built over the core language's syntax and
+# context, and read levels and the leaf vocabularies through them. The
+# domain's base, its arena, closures, values, identity and sharing overlay,
+# is its own crate below this one. The conversion machine emits its
+# derivation through the kernel's decision seam and re-shares its goals
+# through the kernel's check-memo seam. The pinned anodized facade supplies
+# core-only specification helpers; logic/BigInt stays disabled in this no_std
+# library. A dialogue's decomposition evaluates to the web the session crate
+# reads off its moves.
+[dependencies]
+anodized.workspace = true
+gandr-core-nbe-base.workspace = true
+gandr-core-session.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-check-memo.workspace = true
+gandr-kernel-conversion-trace.workspace = true
+gandr-kernel-data.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+tracing = { workspace = true, optional = true }
+
+# The end-to-end tests replay the machine's traces through the kernel.
+[dev-dependencies]
+gandr-kernel-core.workspace = true
+proptest.workspace = true
+
+[features]
+default = []
+# Evaluation/readback boundary diagnostics; no subscriber or std dependency.
+tracing = ["dep:tracing"]
+unfolding-probe = []
+
+[lints]
+workspace = true

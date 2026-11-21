@@ -1,0 +1,35 @@
+[package]
+name = "gandr-workflow-gate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The bookkeeping of a landing's gate as one program: the inputs of each check at each commit, and their digests, in one run"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["ci", "gandr", "gate", "workflow"]
+categories = ["development-tools"]
+publish.workspace = true
+autotests = false
+
+[[bin]]
+name = "gate"
+path = "src/main.rs"
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# clap reads the command line. serde reads the tables of the gate and the
+# answers of Cargo and of mise. sha2 gives the digest that each record of a
+# verdict binds.
+[dependencies]
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,5 @@
+pub def rec runState(e : Type, a : Type, p : Prog e a) -> Prog e a
+  match p where
+    | Done(x) => (Done x : Prog e a)
+
+{follower}

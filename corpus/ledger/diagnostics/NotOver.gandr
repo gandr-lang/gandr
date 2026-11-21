@@ -1,0 +1,27 @@
+/// `NotOver`: a telescope transport's second identity that does not lie
+/// over its path.
+data Circle : Type where
+  | Base : Circle
+  | loop : Base <-> Base
+
+@[normalizes("S(S(P(P(S(Z))))) ~> S(Z)")]
+data Int : Type where {
+  | Z : Int
+  | S : (x : Int) --> Int
+  | P : (x : Int) --> Int
+  rule : S (P x) <=> x;
+  rule : P (S x) <=> x;
+}
+
+data Nat : Type where
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+
+@[refuses("NotOver")]
+def astray(a : Nat, b : Nat, q : Path a b, v : Nat) -> Nat =
+  Path.walk
+    ((y : Nat, Path[.A = Nat] a y) -> Nat)
+    q
+    (Path.here a)
+    (Path.here (Path.here a))
+    v
