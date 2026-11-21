@@ -1,0 +1,30 @@
+/// `Undecided`: a claim the machine cannot decide: a `ua` whose translator
+/// branches on a lazy record's entry, which the machine does not observe.
+theory Magma where
+  sort M : Type;
+  oper mul : (x : M, y : M) --> (z : M);
+  oper one : () --> (z : M);
+
+def keep(e : +{Unit}) -> +{Unit} =
+  e
+
+def flag() -> &{get : -F Bool} =
+  &{.get => true}
+
+def observed(m : +U &{get : -F Bool}) -> Bool =
+  m.get
+
+def measured(b : Bool) -> Bool =
+  if observed flag {
+    match b where
+      | true => +{.1 = *{}}
+      | false => +{.0 = *{}}
+  } else {
+    b
+  }
+
+@[refuses("Undecided")]
+def compared = ua[
+  1,
+  4
+] Magma Magma (*{.mul = measured, .one = keep}) (*{.mul = measured, .one = keep});
