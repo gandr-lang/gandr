@@ -356,9 +356,10 @@ pub fn damage(
     }
 }
 
-/// Names the checkout's `library/std` as the place of the standard library
-/// that the host's profile states, for this process. A fixture outside the
-/// tree reads the standard library through it. A place named already stays.
+/// Names the checkout's `library/std` as the profile's standard library.
+///
+/// The place holds for this process, so a fixture outside the tree reads
+/// the standard library through it. A place named already stays.
 ///
 /// # Specification
 /// trivial.
