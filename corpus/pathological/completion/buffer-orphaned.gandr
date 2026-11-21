@@ -1,0 +1,35 @@
+//! A frame-region buffer orphaned: abandoning a task whose stack holds a
+//! pending completion may hand the completion, buffer inside, to a reactor that
+//! reaps it later [boats-2020-notes_on_io_uring]. That is sound only for a
+//! buffer the reactor's region outlives, never one living in the abandoned
+//! frame.
+//!
+//! - see: #1183 — `bufferOrphaned`
+//! - cites: [boats-2020-notes_on_io_uring]
+//!
+//! [boats-2020-notes_on_io_uring]: https://without.boats/blog/io-uring/ "boats, Notes on io-uring"
+
+// The ring's protocol and its entries.
+import "../../model/completion/ring-base.gandr";
+
+/// A pending completion handed to a reaping peer while its frame ends.
+/// Delegation admits the handover, and nothing ties the buffer to a region. A
+/// kernel handed a buffer kept in a hold's region is refused where it is
+/// forked, since no region bounds a forked peer (`region-ended.gandr`), so
+/// this checks until a kernel can be bounded by the buffer's hold,
+/// when a reaper that outlives the hold becomes the refusal.
+def bufferOrphaned() -> Unit =
+  let reaper = fork (reactor : Ring.Reaping) {
+    let pending = recv reactor;
+    let cqe = recv pending;
+    close pending;
+    close reactor
+  };
+  let ring = fork (kernel : Ring.Submission) {
+    let sqe = recv kernel;
+    send kernel Ring.done;
+    close kernel
+  };
+  send ring Ring.read
+  send reaper ring
+  close reaper

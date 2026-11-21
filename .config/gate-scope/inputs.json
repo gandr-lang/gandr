@@ -1,0 +1,127 @@
+{
+  "workspace": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "clippy.toml",
+    "rust-toolchain.toml",
+    ".cargo/",
+    ".config/kache/",
+    "mise.toml",
+    "mise.lock"
+  ],
+  "outside": {
+    "gandr-core-fork": ["crates/theory-exact-reals/benches/support.rs"],
+    "gandr-core-incremental": [
+      "crates/core-checker-base/src/failure.rs",
+      "crates/core-checker-base/src/lib.rs",
+      "crates/core-checker-base/src/refusal.rs"
+    ],
+    "gandr-core-term": ["ledger/builtins.sql"],
+    "gandr-kernel-core": [
+      "crates/kernel-check-memo/",
+      "crates/kernel-conversion-trace/",
+      "crates/kernel-core-base/",
+      "crates/kernel-data/",
+      "crates/kernel-strata/",
+      "crates/kernel-term/"
+    ],
+    "gandr-lang": ["corpus/pathological/holes/pattern-hole-arms.gandr"],
+    "gandr-runtime-emitter": [
+      "crates/runtime-stencils/src/",
+      "crates/runtime-stencils/tests/count.rs",
+      "crates/runtime-stencils/tests/support.rs"
+    ],
+    "gandr-surface-diagnostics": [
+      "corpus/ledger/diagnostics/RulesNeverComplete.gandr",
+      "corpus/ledger/diagnostics/RulesUncompleted.gandr",
+      "corpus/ledger/diagnostics/RulesUnoriented.gandr",
+      "corpus/pathological/desc/rules-diverge.gandr"
+    ],
+    "gandr-surface-dispatcher": [
+      "corpus/model/builtins/list-patterns.gandr",
+      "corpus/model/data/data-base.gandr",
+      "corpus/model/desc/record-faces.gandr",
+      "corpus/model/extension/generated.gandr",
+      "corpus/model/identity/model-counter-manifest.gandr",
+      "corpus/model/identity/model-counter.gandr",
+      "corpus/model/include/monoid.gandr",
+      "corpus/model/include/reduct.gandr",
+      "corpus/model/probability/one-time-pad.gandr",
+      "corpus/model/records/iterated-pair.gandr",
+      "corpus/pathological/universe/closed.gandr",
+      "crates/surface-corpus/strict/classifier/relative-monad.gandr",
+      "crates/theory-exact-reals/benches/support.rs"
+    ],
+    "gandr-surface-evaluate": [
+      "corpus/model/probability/coin-exchange.gandr",
+      "crates/surface-dispatcher/tests/digest.rs",
+      "crates/theory-exact-reals/benches/support.rs"
+    ],
+    "gandr-surface-features": ["ledger/features.sql"],
+    "gandr-surface-lowering": [
+      "corpus/model/desc/wide-face-poset.gandr",
+      "corpus/model/identity/cong-over-a-lambda.gandr",
+      "corpus/model/identity/reflexivity-composed-in-a-type.gandr",
+      "corpus/model/identity/then-and-cong-in-a-type.gandr",
+      "corpus/model/include/monoid.gandr",
+      "crates/surface-lowering-base/src/coincide/tests/unformatted/a-call-reads-its-normal-form-or-says-why-not-restriction.gandr",
+      "crates/surface-lowering-base/src/coincide/tests/unformatted/a-call-reads-its-normal-form-or-says-why-not.gandr",
+      "crates/surface-lowering-base/src/description/theory/tests/unformatted/a-top-level-operation-declines-its-filler-by-name.gandr",
+      "crates/surface-lowering-base/src/form/tests/unformatted/a-closed-form-is-marked-where-it-first-leaves-its-shape-1829-tree-1.gandr",
+      "crates/surface-lowering-base/src/form/tests/unformatted/a-closed-form-is-marked-where-it-first-leaves-its-shape-1829-tree-2.gandr",
+      "crates/surface-lowering-base/src/form/tests/unformatted/a-closer-owed-at-two-places-is-marked-over-both-3812.gandr",
+      "crates/surface-lowering-base/src/form/tests/unformatted/a-keyword-in-a-classifier-slot-is-read-with-its-offer-293-tree.gandr",
+      "crates/surface-lowering-base/src/form/tests/unformatted/a-missing-close-is-reported-at-the-innermost-form-tree.gandr",
+      "crates/surface-lowering-base/src/form/tests/unformatted/an-unended-form-names-its-missing-tile-where-it-belongs-1.gandr",
+      "crates/surface-lowering-base/src/form/tests/unformatted/an-unended-form-names-its-missing-tile-where-it-belongs-2.gandr",
+      "library/std/src/build.gandr"
+    ],
+    "gandr-surface-lowering-base": [
+      "corpus/model/desc/second-order-signatures.gandr",
+      "corpus/model/include/monoid.gandr"
+    ],
+    "gandr-surface-lsp": ["corpus/model/higher-cells/ua-corolla.gandr"],
+    "gandr-surface-parser": ["crates/surface-corpus/strict/values.gandr"],
+    "gandr-surface-session": [
+      "corpus/model/control/module-effect.gandr",
+      "corpus/model/records/iterated-pair.gandr",
+      "crates/surface-corpus/strict/functions.gandr"
+    ],
+    "gandr-theory-cellular-sheaves": ["crates/theory-exact-reals/benches/support.rs"],
+    "gandr-theory-discrete-morse": ["crates/theory-graded-posets/tests/faces.rs"],
+    "gandr-theory-ordered-algebras": ["crates/theory-exact-reals/benches/support.rs"],
+    "gandr-theory-probability": ["crates/theory-exact-reals/benches/support.rs"],
+    "gandr-theory-sites": [
+      "crates/theory-cell-complexes/",
+      "crates/theory-cell-complexes-tools/",
+      "crates/theory-cellular-sheaves/",
+      "crates/theory-circuit-algebras/",
+      "crates/theory-coherent-resolutions/",
+      "crates/theory-computads/",
+      "crates/theory-decomposition-spaces/",
+      "crates/theory-deep-inference/",
+      "crates/theory-discrete-morse/",
+      "crates/theory-dynamic-graphs/",
+      "crates/theory-e-graphs/",
+      "crates/theory-exact-reals/",
+      "crates/theory-graded-posets/",
+      "crates/theory-graphs/",
+      "crates/theory-levitation/",
+      "crates/theory-nominal-automata/",
+      "crates/theory-order-maintenance/",
+      "crates/theory-ordered-algebras/",
+      "crates/theory-path-orders/",
+      "crates/theory-probability/",
+      "crates/theory-shapes/",
+      "crates/theory-spec-combinators/",
+      "crates/theory-stone-duality/",
+      "crates/theory-virtual-doctrines/"
+    ],
+    "gandr-workflow-hotpath-guard": [
+      "hotpath/gandr-policy.toml",
+      "hotpath/gandr-timing-policy.toml"
+    ],
+    "gandr-workflow-ledger-tasks": ["corpus/ledger/syntax/"],
+    "gandr-workflow-parser-report": ["crates/surface-driver/benches/shared/lsp.rs"]
+  }
+}

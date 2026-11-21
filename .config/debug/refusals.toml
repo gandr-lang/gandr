@@ -1,0 +1,129 @@
+#:tombi toml-version = "v1.0.0"
+
+# Where each refusal is made, for `mise run debug:refusal` (#3758). A site is
+# a source file and an extended regular expression over its lines; every
+# matching line is a breakpoint, its number read from the source when the
+# task runs, so a site that moves needs no edit here. A refusal this table
+# lacks is one more `[refusal.<Name>]` table.
+
+[refusal.Unheld]
+sites = [
+  { file = "crates/storage-store/src/roots.rs", pattern = '^\s*unrooted\(RootsFault::Unheld \{' },
+]
+
+[refusal.EndpointMismatch]
+sites = [
+  { file = "crates/core-checker-base/src/judgement.rs", pattern = '^\s*return Err\(CheckRefusal::EndpointMismatch \{' },
+  { file = "crates/kernel-core/src/flow_universe.rs", pattern = 'Err\(FlowError::EndpointMismatch\)' },
+]
+
+[refusal.UnboundIndex]
+sites = [
+  { file = "crates/core-checker-base/src/judgement.rs", pattern = '^\s*Err\(CheckRefusal::UnboundIndex \{' },
+  { file = "crates/core-checker-base/src/judgement/access.rs", pattern = '^\s*return Err\(CheckRefusal::UnboundIndex \{' },
+  { file = "crates/core-checker-base/src/judgement/session.rs", pattern = '^\s*CheckRefusal::UnboundIndex \{' },
+  { file = "crates/core-term/src/context.rs", pattern = '^\s*let unbound = ContextError::UnboundIndex' },
+]
+
+[refusal.DescentOnSeveralParameters]
+sites = [
+  { file = "crates/surface-lowering/src/lower/native.rs", pattern = '^\s*Err\(LoweringRefusal::DescentOnSeveralParameters \{' },
+]
+
+[refusal.WrongSort]
+sites = [
+  { file = "crates/surface-lowering-base/src/classify.rs", pattern = '^\s*boundary: FragmentBoundary::WrongSort,' },
+  { file = "crates/surface-dispatcher/src/compose.rs", pattern = '^\s*boundary: FragmentBoundary::WrongSort,' },
+]
+
+[refusal.NotSynthesisable]
+sites = [
+  { file = "crates/core-checker-base/src/judgement.rs", pattern = 'Err\(CheckRefusal::NotSynthesisable \{' },
+  { file = "crates/core-checker-base/src/judgement/session.rs", pattern = '^\s*Err\(CheckRefusal::NotSynthesisable \{' },
+]
+
+[refusal.UnknownMember]
+sites = [
+  { file = "crates/surface-lowering/src/lower.rs", pattern = '^\s*(Err|return Err)\(LoweringRefusal::UnknownMember \{' },
+  { file = "crates/surface-lowering/src/lower.rs", pattern = '^\s*None => LoweringRefusal::UnknownMember \{' },
+  { file = "crates/surface-lowering/src/lower.rs", pattern = '^\s*let unknown = LoweringRefusal::UnknownMember \{' },
+]
+
+[refusal.OutOfFragment]
+sites = [
+  { file = "crates/core-checker-bridge/src/bridge.rs", pattern = '(return Err\(|= |\|former\| |^\s*)Refusal::OutOfFragment \{' },
+]
+
+[refusal.Unannotated]
+sites = [
+  { file = "crates/surface-lowering/src/lower/identity.rs", pattern = '(Err\(unannotated\)|site\.out\(FragmentBoundary::Unannotated\)\))' },
+]
+
+[refusal.ComposePasting]
+sites = [
+  { file = "crates/surface-lowering/src/lower/identity.rs", pattern = 'FragmentBoundary::Unadmitted\(Unbuilt::ComposePasting\)' },
+]
+
+[refusal.Unstated]
+sites = [
+  { file = "crates/surface-lowering-base/src/description/theory.rs", pattern = '^\s*fault: DescriptionFault::Unstated \{$' },
+]
+
+[refusal.StrayReceiverMode]
+sites = [
+  { file = "crates/surface-lowering/src/lower/method.rs", pattern = '(return )?Err\(LoweringRefusal::StrayReceiverMode \{' },
+]
+
+[refusal.UnresolvedName]
+sites = [
+  { file = "crates/surface-lowering/src/lower.rs", pattern = '^\s*(return )?Err\(LoweringRefusal::UnresolvedName \{$' },
+  { file = "crates/surface-lowering/src/lower/native.rs", pattern = '^\s*Ok\(LoweringRefusal::UnresolvedName \{$' },
+]
+
+[refusal.ExtraOperand]
+sites = [
+  { file = "crates/surface-lowering-base/src/module.rs", pattern = 'Err\(extra_operand\(FormName::ATTRIBUTE, (stray|extra)\)\)' },
+]
+
+[refusal.MalformedForm]
+sites = [
+  { file = "crates/surface-lowering-base/src/lower.rs", pattern = '^\s*LoweringRefusal::MalformedForm \{$' },
+]
+
+[refusal.FixedFieldDiffers]
+sites = [
+  { file = "crates/core-checker-base/src/judgement/native.rs", pattern = '^\s*Ok\(_\) => CheckRefusal::FixedFieldDiffers \{$' },
+]
+
+[refusal.UnresolvedTypeHead]
+sites = [
+  { file = "crates/surface-lowering-expression/src/lower.rs", pattern = '^\s*return Err\(unresolved\(HeadArity::' },
+  { file = "crates/surface-lowering-expression/src/lower.rs", pattern = '^\s*PathResolution::Ungoverned => Err\(LoweringRefusal::UnresolvedTypeHead \{$' },
+]
+
+[refusal.IllFormedDescription]
+sites = [
+  { file = "crates/surface-lowering-base/src/module/sealing.rs", pattern = '^\s*return Err\(LoweringRefusal::IllFormedDescription \{$' },
+  { file = "crates/surface-lowering-base/src/description.rs", pattern = 'LoweringRefusal::IllFormedDescription \{$' },
+]
+
+[refusal.UndecidedCoverage]
+sites = [
+  { file = "crates/core-checker-base/src/judgement.rs", pattern = '^\s*Err\(CheckRefusal::UndecidedCoverage\(term\)\)' },
+]
+
+[refusal.CrossBlockReference]
+sites = [
+  { file = "crates/core-checker-base/src/occurrence.rs", pattern = '\.map_err\(\|later\| CheckRefusal::CrossBlockReference \{ site, index: later \}\)\?;' },
+]
+
+[refusal.InertRead]
+sites = [
+  { file = "crates/surface-lowering-expression/src/lower/inert.rs", pattern = '^\s*Err\(LoweringRefusal::InertRead \{$' },
+]
+
+[refusal.ShapeMismatch]
+sites = [
+  { file = "crates/core-checker-base/src/judgement.rs", pattern = '^\s*(return Err\(|Err\()?CheckRefusal::ShapeMismatch \{$' },
+  { file = "crates/core-checker-base/src/judgement.rs", pattern = '^\s*mismatch\(ExpectedShape::Product, head\),$' },
+]
