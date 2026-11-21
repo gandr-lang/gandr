@@ -3041,6 +3041,37 @@ fn a_call_leaves_out_the_implicits_it_omits_1216()
     );
 }
 
+/// #8079: the run of a definition of no input writes its bare name, which
+/// reads back as the run: alone, and as a call whose implicits it omits. A
+/// force of a constant the source does not mark keeps `force`.
+#[test]
+fn a_run_of_a_definition_of_no_input_is_its_bare_name_8079()
+{
+    let names = [Name::from("now"), Name::from("pick")];
+    let mut core = CoreArena::new();
+    let hole =
+        core.value_hole(HoleId::nominated(NominationIndex::from(0_u32)).expect("a nominated name"));
+    let now = core.value_constant(ConstantIndex::from(0_usize));
+    let ran = core.computation_force(now);
+    let pick = core.value_constant(ConstantIndex::from(1_usize));
+    let forced = core.computation_force(pick);
+    let supplied = core.computation_application(forced, hole);
+    let invoked = [ConstantIndex::from(0_usize), ConstantIndex::from(1_usize)];
+    let body = |id| Root::Computation(CoreNode::Computation(id));
+    let unmarked = CoreSource::new(&core, &names);
+    assert_eq!(
+        spelled(&unmarked, body(ran)),
+        faithful(Written("force now"))
+    );
+    let marked = CoreSource::new(&core, &names).invoking(&invoked);
+    assert_eq!(spelled(&marked, body(ran)), faithful(Written("now")));
+    assert_eq!(
+        spelled(&marked, body(supplied)),
+        faithful(Written("pick")),
+        "a run that omits its every implicit writes no list"
+    );
+}
+
 /// A call holding a wildcard writes its `_` where the source wrote it, beside
 /// an implicit the same call omits, which it leaves out: `_` reads back as a
 /// wildcard at the same place, so the spelling is faithful, where leaving it

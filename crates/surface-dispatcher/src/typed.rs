@@ -1093,6 +1093,9 @@ pub struct TypeTable
     /// infix operator that calls it, ascending by the constant: a printed
     /// call of one is written as the comparison.
     operators: Vec<(ConstantIndex, gandr_core_term::primitive::Operator)>,
+    /// The definitions of no input, ascending by the constant: a printed run
+    /// of one is written as its bare name.
+    invoked: Vec<ConstantIndex>,
     /// Each shift and exit the source's own text leaves out, by the offset
     /// the explicit form writes it at, ascending.
     shifts: Vec<(ByteOffset, Shift)>,
@@ -3491,6 +3494,7 @@ impl TypeTable
             })
             .collect();
         let operators = module.operators().to_vec();
+        let invoked = module.invoked().to_vec();
         // A variable's type is its slot's read past the binders between
         // them, copied to fresh nodes: each copy is named as its source.
         let mut naming = Naming::of(&module, source);
@@ -3554,6 +3558,7 @@ impl TypeTable
             telescopes,
             blocks,
             operators,
+            invoked,
             shifts,
         }
     }
@@ -5088,6 +5093,7 @@ impl TypeTable
             .ordering_implicits(&blocks)
             .flattening(&flattened)
             .operating(&self.operators)
+            .invoking(&self.invoked)
             .within(&binders)
             .typing(&types)
             .scoped(&regions);

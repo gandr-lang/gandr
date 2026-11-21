@@ -1,12 +1,12 @@
 error[NotOpen.Homed]: a thunk crossing to another world reads this declaration away from its home, and its type is not open
-   ╭▸ corpus/ledger/diagnostics/NotOpen.Homed.gandr:15:34
+   ╭▸ corpus/ledger/diagnostics/NotOpen.Homed.gandr:15:42
    │
 14 │ ┌ def heldHomed() -> -F ((() -> Integer) at seat) =
-15 │ │   migrate [seat] { (hold thunk { pending () }) }
-   │ │   ┬──────────────────────────────┯━━━━━━───────│
-   │ └───│──────────────────────────────│─────────────┤
-   │     │                              │             checked against `() -> (() -> Integer) at seat`; while checking the body of this thunk
-   │     │                              a declaration homed where the thunk is formed, whose type is not open: found `() -> Integer`
+15 │ │   migrate [seat] { (hold thunk { let n = pending; pure n }) }
+   │ │   ┬──────────────────────────────────────┯━━━━━━────────────│
+   │ └───│──────────────────────────────────────│──────────────────┤
+   │     │                                      │                  checked against `() -> (() -> Integer) at seat`; while checking the body of this thunk
+   │     │                                      a declaration homed where the thunk is formed, whose type is not open: found `() -> Integer`
    │     checked against `-F ((() -> Integer) at seat)`; while checking the body of this migration at its world
    │
    ├ note: `heldHomed` is refused with NotOpen.Homed, as its expectation states

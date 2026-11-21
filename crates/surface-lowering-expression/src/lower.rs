@@ -10236,7 +10236,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         if Models::new(self.host()).field(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
-        let _frame = self.require(site, Produced::Value)?;
+        // A member of no input runs, so it stands where a computation is read
+        // too. Any other selection reads a value, and that reading's refusal
+        // waits until the member is known.
+        let unrequired = self.require(site, Produced::Value).err();
         let mut links: Vec<(Placed, Placed)> = Vec::new();
         let (mut target, member) = Context::link(site, &pieces.pieces, site.at.span)?;
         links.push((target, member));
@@ -10288,13 +10291,19 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 },
             }
         };
-        if let Some(&(_, first)) = links.last()
+        if unrequired.is_none()
+            && let Some(&(_, first)) = links.last()
             && self.parameter_value(site, head, first, functor::Deeper(links.len() > 1_usize))?
                 == functor::Read::Planned
         {
             return Ok(());
         }
         if let Maybe::Present(member) = self.enclosed_member(site, head, &links)? {
+            if let Some(refusal) = unrequired
+                && !self.cx().collected.no_input.contains(&member)
+            {
+                return Err(refusal);
+            }
             self.select(site, member)?;
             if let Some(&(_, last)) = links.first()
                 && let Some(entry) = self.cx().collected.slots.get(usize::from(member))
@@ -10318,7 +10327,14 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             cx.name_at(head),
         );
         self.see_module(site, self.cx().name_at(head));
-        match self.cx().recognition.resolve_path(&path) {
+        let resolution = self.cx().recognition.resolve_path(&path);
+        if let Some(refusal) = unrequired
+            && !matches!(resolution, PathResolution::Complete(Recognized::ModuleComponent)
+                if self.cx().exported.get(&path).is_some_and(|exported| self.cx().collected.no_input.contains(exported)))
+        {
+            return Err(refusal);
+        }
+        match resolution {
             PathResolution::Complete(Recognized::BuiltinPrimitive { primitive, .. }) => {
                 self.plan(site, Plan::Primitive(primitive));
                 Ok(())

@@ -887,6 +887,7 @@ where
                 .ordering_implicits(&blocks)
                 .flattening(&slots)
                 .operating(module.operators())
+                .invoking(module.invoked())
         })
         .collect();
     // A place's scope names its failure by declaration, so the place is one

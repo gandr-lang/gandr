@@ -1055,7 +1055,8 @@ fn read(
         .ordering_implicits(&blocks)
         .staging(&stages)
         .flattening(&slots)
-        .operating(module.operators());
+        .operating(module.operators())
+        .invoking(module.invoked());
     // A body leaves each written reduct's or forgetting map's call to the
     // checker, which applies the map where the call stands; a type, read by
     // its value, keeps it.

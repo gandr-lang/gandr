@@ -17,7 +17,7 @@ module Origin where
 
 /// `started` calls `Origin.zero`.
 @[runs("0")]
-def started() -> Integer = Origin.zero ();
+def started() -> Integer = Origin.zero;
 
 /// `restarted` calls `started`.
 @[runs("0")]

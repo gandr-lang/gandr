@@ -6,4 +6,4 @@ pub module Origin where
 
 /// The member called through its module's name.
 @[runs("0")]
-def started() -> Integer = Origin.zero ();
+def started() -> Integer = Origin.zero;
