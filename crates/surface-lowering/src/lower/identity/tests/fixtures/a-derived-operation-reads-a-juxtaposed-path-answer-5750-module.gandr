@@ -1,0 +1,16 @@
+/// The naturals, by their successor.
+data N : Type where
+  | Z : N
+  | S : (n : N) --> N
+
+/// One more.
+def up(n : N) -> N = S n
+
+/// The natural itself.
+def same(n : N) -> N = n
+
+/// A derived action states its answer with juxtaposed endpoints.
+def rec kept(n : N) -> Path[.A = N] (same n) n =
+  match n where
+    | Z => Path.here Z
+    | S(x) => Path.ap up (kept[<] x)

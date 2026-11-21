@@ -1,0 +1,153 @@
+# gandr for Visual Studio Code
+
+Language support for `.gandr` sources. The extension registers the `gandr` language and starts the gandr language server, `gandr lsp`, over standard input and output for every `.gandr` file opened from disk. The server publishes the diagnostics `gandr check` prints, answers semantic-token requests with the highlighter's roles, and answers hovers with types coloured by the same roles. A small TextMate grammar colors comments, their backquoted code, and a few keywords until the server's tokens arrive.
+
+## Contents
+
+- [Requirements](#requirements)
+- [Install the gandr binary](#install-the-gandr-binary)
+- [Install the extension](#install-the-extension)
+- [Check the connection](#check-the-connection)
+- [Hover colours](#hover-colours)
+- [Kernel tiers](#kernel-tiers)
+- [Drop to import](#drop-to-import)
+- [Paste with imports](#paste-with-imports)
+- [Unicode input](#unicode-input)
+- [Develop the extension](#develop-the-extension)
+
+## Requirements
+
+- Visual Studio Code 1.140 or later.
+- `rustup`, which installs the toolchain the repository pins in `rust-toolchain.toml`.
+- `mise`, which installs Node.js and the `aube` package manager at the versions `mise.toml` pins.
+- A trusted workspace: the extension runs a local binary, so it stays disabled in Restricted Mode.
+
+## Install the gandr binary
+
+The extension runs `gandr` from `PATH`. Install it from a clone of the repository:
+
+```sh
+git clone https://github.com/gandr-lang/gandr
+cd gandr
+cargo install --locked --path crates/surface-driver
+```
+
+The driver's package is `gandr-lang`; it installs one binary, `gandr`, into Cargo's binary directory, `~/.cargo/bin` unless `CARGO_HOME` moves it. Confirm that the directory is on `PATH` and that the server starts:
+
+```sh
+gandr --version
+gandr lsp --capabilities
+```
+
+The second command prints the server's capabilities as one line of JSON. Rerun `cargo install` after pulling to update the binary; a running editor picks it up after **Developer: Restart Extension Host** or a window reload.
+
+## Install the extension
+
+From the repository root, install the tools and the aube workspace, then package the extension:
+
+```sh
+mise install
+mise exec -- aube install --frozen-lockfile
+cd contrib/gandr-vscode
+mise exec -- aube run package
+```
+
+`aube run package` type-checks the sources with `tsc`, bundles them with the language client into `dist/extension.js`, and writes `gandr-vscode-0.1.0.vsix`. Install the package:
+
+```sh
+code --install-extension gandr-vscode-0.1.0.vsix
+```
+
+**Extensions: Install from VSIX…** in the Command Palette does the same. Reinstall the same way after rebuilding; `code --uninstall-extension gandr-lang.gandr-vscode` removes it.
+
+## Check the connection
+
+Open a folder that contains a `.gandr` file, then open the file. The extension activates for the `gandr` language and for a folder that holds a `package.gandr` or a `workspace.gandr`. A source with an unresolved name shows the refusal in the editor and in the Problems panel:
+
+```gandr
+def answer = 42 ;
+def broken = missing ;
+```
+
+The **gandr language server** output channel (**View: Toggle Output**) carries the server's standard error, one timing line per synchronisation. When the server fails to start, the channel names the error; the usual cause is `gandr` missing from the `PATH` that Visual Studio Code inherited. On macOS, quit and relaunch the editor after changing the shell profile. To log every protocol message, set the **gandr language server trace** channel's log level to Trace with **Developer: Set Log Level…**; `"gandr.trace.server": "verbose"` in the user settings adds each message's parameters.
+
+No setting selects the server's features. The client adopts what `initialize` advertises: incremental document synchronisation, so an edit sends only the changed range, and semantic tokens for the whole document and for a range.
+
+`gandr.diagnostics.verbosity` chooses how much of each report a diagnostic shows, at the levels `gandr check --verbosity` names: `user`, the default, shows the message, the label and the note; `detailed` adds the report's class, the checker's own wording and the offending source text; `debug` adds every locus's byte span and the checker's refusal as its implementers print it; `json` shows the whole report as one line of JSON. Changing it republishes the open files' diagnostics at the new level.
+
+`gandr.diagnostics.quiet` keeps the form you are typing free of red: a diagnostic of the form the cursor is in waits until the cursor leaves the form, the form's `;` or `}` arrives, or the file goes that many seconds without a change, 1.5 by default. A diagnostic elsewhere in the file shows at once. `0` shows every diagnostic at once.
+
+`gandr.diagnostics.shadowing` sets the severity of a diagnostic at each binder that hides another binding: `off`, the default, `hint`, `information`, `warning` or `error`.
+
+`gandr.inlineCompletion.trigger` chooses when the syntax the parser expects next shows as ghost text. `automatic`, the default, shows it as you type. `invoked` turns that off: ghost text shows only when asked for with **Trigger Inline Suggestion** (`Alt+\`).
+
+`gandr.presentation.form` chooses how a hover spells a type. `sugared`, the default, writes every sugar the surface reads where the type has its shape: `Integer => String` for `+U (Integer -> -F String)`, `A * B`, `A + B`, `C & D`, and `(a, b)` for a tuple. `explicit` writes the formers the core is made of. **gandr: Toggle sugared/explicit types** in the Command Palette flips it and hovers again at the cursor.
+
+`gandr.presentation.spelling` chooses how hovers and diagnostics write a construct that has a glyph: `unicode` writes `≃`, `≅`, `⇝` and `∷`; `ascii` writes `<~>`, `Iso(A, B)`, `~~>` and `::`. Unset, the default, the server follows `presentation.spelling` in the user's `gandr/config.toml`, else Unicode. Changing it republishes the open files' diagnostics in the new spelling.
+
+## Hover colours
+
+The server colours a hover by the roles its semantic tokens carry: the extension's client announces that its hovers render HTML, and the server writes each type, name and checked fill as `<pre><code>` with every classified run in a `span` coloured by a theme colour the extension contributes. Each colour defaults, per theme kind, to what the built-in theme of that kind gives the role's semantic token, so a hover reads as the line it describes. Override any of them under `workbench.colorCustomizations`. A run the highlighter classifies as `other`, such as the `:` of a signature, is left in the hover's foreground, as the editor leaves it.
+
+| Role | Colour | Semantic token |
+| ---- | ------ | -------------- |
+| keyword | `gandr.hover.keyword` | `keyword` |
+| boolean | `gandr.hover.boolean` | `keyword` |
+| operator | `gandr.hover.operator` | `operator` |
+| functionDef | `gandr.hover.functionDef` | `function` |
+| functionCall | `gandr.hover.functionCall` | `function` |
+| variableDef | `gandr.hover.variableDef` | `variable` |
+| variable | `gandr.hover.variable` | `variable` |
+| variableParam | `gandr.hover.variableParam` | `parameter` |
+| member | `gandr.hover.member` | `property` |
+| constructor | `gandr.hover.constructor` | `enumMember` |
+| type | `gandr.hover.type` | `type` |
+| typeBuiltin | `gandr.hover.typeBuiltin` | `type.defaultLibrary` |
+| typeVariable | `gandr.hover.typeVariable` | `typeParameter` |
+| number | `gandr.hover.number` | `number` |
+| stringLit | `gandr.hover.stringLit` | `string` |
+| character | `gandr.hover.character` | `string` |
+| escape | `gandr.hover.escape` | `string` |
+| path | `gandr.hover.path` | `string` |
+| comment | `gandr.hover.comment` | `comment` |
+| hole | `gandr.hover.hole` | `macro` |
+| directive | `gandr.hover.directive` | `macro` |
+| label | `gandr.hover.label` | `label` |
+
+`package.json` holds the default of each colour for each theme kind.
+
+## Kernel tiers
+
+A lens above each declaration states how far the kernel certifies it. A glyph before the declaration's first line shows the same tier in the colour of its warrant.
+
+| Glyph | Warrant | Colour | The kernel tier |
+| ----- | ------- | ------ | --------------- |
+| `·` | pending | `gandr.warrant.pending` | The kernel has not replayed this revision yet. |
+| `✓` | checked | `gandr.warrant.checked` | The kernel admitted the signature and owes the body. |
+| `✓✓` | replayed | `gandr.warrant.replayed` | The kernel replayed it. |
+| `✗` | refused | `gandr.warrant.refused` | The kernel refused it. |
+| `○` | withheld | `gandr.warrant.withheld` | It did not cross to the kernel, and the lens states why. |
+
+A declaration with no glyph did not reach the kernel, and its diagnostic states why. `package.json` holds the default of each colour.
+
+## Drop to import
+
+Drag `.gandr` files from the Explorer into a gandr editor, holding Shift, and each source the document does not import yet is imported: the server writes an `import "…" ;` line for it after the document's last import, or at its start when it has none, addressed from the document's directory. Nothing is written where the files were dropped. A drop of only sources the document imports already falls back to the editor's own drop.
+
+## Paste with imports
+
+Copy text from one gandr editor and paste it into another, and the paste control offers _Paste with gandr imports_: the pasted text, plus an `import "…" ;` line for each source declaring a name it uses that the document does not import yet. A name declared in the text copied, or bound inside it, needs no import. The editor's plain paste stays the default; set `"editor.pasteAs.preferences": ["text.updateImports.gandr"]` to make the imports the default. A paste into the document copied from adds nothing.
+
+## Unicode input
+
+Type a `\`-command and the suggest list offers its glyphs: `\to` offers `→`, `\lambda` `λ`, `\::` `∷`. A command that others continue lists them beneath its glyphs, each with the glyphs it leads to: accepting `\r-` writes the command and asks again, so a fork completes one step at a time. Space, Enter or Tab accepts the selected suggestion, a glyph replacing the command; a space typed after a command that offers glyphs accepts its first, so write a lambda's binder as `\x.`, as the formatter does. The method is on for gandr; `"[gandr]": { "gandr.inputMethod.enabled": false }` turns it off, and the same setting under another language turns it on there.
+
+The command names are those of Agda's input method and of TeX, so a user keeps the same habits. The table comes from three public files, each pinned by its digest: Agda's `agda-input.el`, the W3C list of character entities and the LaTeX kernel's `fontdef.dtx`. `src/input/table.json` names each file and what the table reads from it. `node scripts/input-table.mts src/input/table.json` makes the table again, and `mise run check:input-table` fails while the committed table differs.
+
+## Develop the extension
+
+`mise exec -- aube run watch` recompiles on every change into `dist/src`.
+
+Formatting and linting run with the repository's treefmt pass: oxfmt formats the TypeScript and JSON, and type-aware oxlint applies its rules and the TypeScript checker under the strict `tsconfig.json`. `mise run check:extension` from the repository root type-checks, lints, compiles, runs the `node:test` suites under `src/`, bundles, and packages the extension; a deprecation fails that gate.
+
+`mise run check:vscode-smoke` runs the end-to-end smoke after that gate, and it is the extension's only surface check. VS Code at the manifest's floor, downloaded once into `~/.cache/gandr/vscode`, starts without a display on a scratch copy of `corpus/model/basics/definitions.gandr` with this extension alone, served by the `gandr` the workspace builds. The scene in `src/smoke/scene.ts` activates the extension, types a definition, and holds its hover to exactly one answer in the server's HTML. The smoke runs only on Linux in GitHub Actions, where the editor starts headless. Anywhere else the task exits at once and names #3696, so no workstation opens an editor window. Hosted CI does not run it yet, as its image carries no Electron runtime.
