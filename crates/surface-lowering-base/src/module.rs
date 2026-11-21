@@ -1710,7 +1710,7 @@ pub struct Collected<'source>
     pub offers: BTreeMap<SourceIndex, world::SiteOffer>,
     /// The type member that each kept port sort of a theory names, keyed by
     /// the theory's written declaration: the resolve of its source's scope,
-    /// kept apart from the descriptions that a layer can share (#8139).
+    /// kept apart from the descriptions that a layer can share.
     pub port_sorts:
         BTreeMap<NodeIndex, Vec<(gandr_theory_levitation::Name, TypeComponent<'source>)>>,
 }
@@ -2936,6 +2936,77 @@ impl<'source> Collected<'source>
             },
             |_| None,
         )
+    }
+
+    /// The type member that `name` names in the scope of `container`, for a
+    /// form written at `at`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the nearest container outward from `container`, its module,
+    ///   each module enclosing it, then its source's top level, that writes a
+    ///   type member of the name wholly before `at` answers it, the last such
+    ///   of that container; past the top level, the member that
+    ///   [`Self::imported_type_member`] answers for its source. A name that no
+    ///   such member has answers nothing.
+    /// - fails: [`Ambiguity`] when two imports write a type member of the name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Ambiguity`].
+    ///
+    /// # Termination
+    /// - reason: each step leaves a module for the container that encloses it.
+    /// - measure: the depth of the modules around `container`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a port at a name that its source binds reads that
+    ///   source's member, and a name that nothing binds answers nothing.
+    /// - witness: `gandr-surface-dispatcher::compose::a_port_sort_reads_the_binding_of_its_theory_s_source_8139`
+    /// - witness: `gandr-surface-lowering::lower::row::tests::a_port_sort_no_scope_binds_is_refused_at_its_bytes_8139`
+    #[spec(ensures: |ref ret| match *ret {
+        Ok(Maybe::Present(member)) => member.name == name,
+        Ok(Maybe::Absent(_)) => true,
+        Err(ref ambiguity) => ambiguity.import != ambiguity.other,
+    })]
+    #[inline]
+    pub fn scoped_type_member(
+        &self,
+        mut container: Container,
+        at: ByteOffset,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<TypeComponent<'source>, imported::Absent>, Ambiguity>
+    {
+        loop {
+            let written = self
+                .type_members_in(container)
+                .filter(|member| {
+                    member.name == name
+                        && self
+                            .slots
+                            .get(usize::from(member.held))
+                            .is_some_and(|held| held.introduced_by.span.end() <= at)
+                })
+                .last();
+            if let Some(&member) = written {
+                return Ok(Maybe::Present(member));
+            }
+            match container {
+                Container::Module(module) => {
+                    let Some(structure) = self.structures.get(module.0)
+                    else {
+                        return Ok(Maybe::Absent(imported::Absent::Unbound));
+                    };
+                    container = structure.container;
+                },
+                Container::TopLevel(source) => {
+                    return match self.imported_type_member(source, name)? {
+                        Maybe::Present((member, _)) => Ok(Maybe::Present(member)),
+                        Maybe::Absent(absent) => Ok(Maybe::Absent(absent)),
+                    };
+                },
+            }
+        }
     }
 
     /// The module or instance `source`'s unqualified imports answer `name`

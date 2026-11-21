@@ -95,6 +95,30 @@ fn a_leaf_reads_a_source_s_family_before_the_prelude_s_3287()
     assert_checked(&module, &mut arena);
 }
 
+/// #8139: a field at a name that its source binds to another type reads that
+/// binding, and never the atom of the name. The source binds `Bool` to the
+/// strings, which the decoder does not read as a leaf, so the derivation is
+/// refused at the field, where the atom would derive an equality of flags.
+#[test]
+fn a_derived_field_reads_the_binding_of_its_source_8139()
+{
+    let (text, unit) = laid(SourceText::from(include_str!(
+        "tests/fixtures/a-derived-field-reads-the-binding-of-its-source-8139.gandr"
+    )));
+    let mut arena = CoreArena::new();
+    let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
+    let refusal = refusal_of(&module, SurfaceName::from("eqTagged"));
+    let LoweringRefusal::GenericUncovered { data, fault, .. } = refusal
+    else {
+        panic!("`eqTagged` is refused uncovered: {refusal:?}");
+    };
+    assert_eq!(data, SurfaceName::from("Tagged"));
+    assert!(
+        matches!(fault, Uncovered::Uncoded(..)),
+        "the field at the source's `Bool` is no atom: {fault:?}"
+    );
+}
+
 #[test]
 fn a_derived_law_lowers_to_its_proof_2302()
 {

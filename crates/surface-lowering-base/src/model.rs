@@ -502,7 +502,7 @@ pub struct Presentation
     pub frobenius: BTreeSet<Name>,
     /// Each port whose sort names no sort of the signature and no index, in
     /// written order: a name that the scope of the declaring source resolves
-    /// once it stands (#8139).
+    /// once it stands.
     pub ported: Vec<PortedName>,
 }
 
@@ -1746,7 +1746,7 @@ pub struct ModelSignature
     /// The components, in signature order.
     pub components: Vec<ModelComponent>,
     /// The written declaration of the theory the signature derives from,
-    /// whose port sorts the scope of its source resolves (#8139).
+    /// whose port sorts the scope of its source resolves.
     pub theory: Maybe<NodeIndex, signature_theory::Absent>,
 }
 
@@ -2119,7 +2119,7 @@ fn derive_heads(
 {
     /// Hold the bare sort `term` names as a closed sort, once, when no sort
     /// of the members declares it: the type universe or a port sort that the
-    /// scope of the theory's source resolves (#8139).
+    /// scope of the theory's source resolves.
     ///
     /// # Specification
     /// trivial.

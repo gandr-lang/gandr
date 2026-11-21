@@ -288,7 +288,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     pub fn resolve_ports(&mut self)
     {
         let cx = self.cx_mut();
-        let source = cx.current.source;
         let mut resolved = Vec::new();
         for index in cx.current.slots .. cx.collected.slots.len() {
             let Some((_, presentation)) = cx.collected.presentation_of(SlotIndex::from(index))
@@ -326,15 +325,14 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     .find_map(|node| cx.tree.fragment(node))
                     .map(SurfaceName::from);
                 let member = named.and_then(|name| {
-                    cx.collected
-                        .type_members_in(slot.container)
-                        .filter(|member| member.name == name)
-                        .last()
-                        .copied()
-                        .or_else(|| match cx.collected.imported_type_member(source, name) {
-                            Ok(Maybe::Present((member, _))) => Some(member),
-                            Ok(Maybe::Absent(_)) | Err(_) => None,
-                        })
+                    match cx.collected.scoped_type_member(
+                        slot.container,
+                        slot.introduced_by.span.start(),
+                        name,
+                    ) {
+                        Ok(Maybe::Present(member)) => Some(member),
+                        Ok(Maybe::Absent(_)) | Err(_) => None,
+                    }
                 });
                 match member {
                     Some(member) => members.push((ported.sort.clone(), member)),

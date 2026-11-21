@@ -5965,17 +5965,24 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             self.plan(site, Plan::Natural(naturals, integer.magnitude().clone()));
             return Ok(());
         }
-        let annotated = self
+        let written = self
             .cx()
             .classifiers
             .get(&site.at.node)
             .and_then(|&written| self.cx().tree.fragment(written))
-            .is_some_and(|written| {
-                matches!(
-                    type_atom(SurfaceName::from(written)),
+            .map(SurfaceName::from);
+        let annotated = match written {
+            Some(name) => match self.stated_named(site, name)? {
+                Maybe::Present(stated) => matches!(
+                    self.cx().builtin_atom(stated.held),
                     Maybe::Present(TypeAtom::Float64)
-                )
-            });
+                ),
+                // economy: a name that no member binds reads the table of
+                // atoms, until #8140 declares each atom as a type member.
+                Maybe::Absent(_) => matches!(type_atom(name), Maybe::Present(TypeAtom::Float64)),
+            },
+            None => false,
+        };
         let suffixed = spelled.strip_suffix("f64");
         if suffixed.is_some() || annotated {
             let Ok(float) = suffixed.unwrap_or(spelled).parse::<Float64Literal>()

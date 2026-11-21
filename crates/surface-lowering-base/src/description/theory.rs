@@ -3494,7 +3494,7 @@ fn surface_span(span: ByteSpan) -> SurfaceSpan
 /// The refusal of each port of `operation`, written at `written`, that sits
 /// at a sort none of `sorts` names and writes an index (#2410); each such
 /// port with no index is kept in `ported`, for the scope of the declaring
-/// source to resolve once it stands (#8139).
+/// source to resolve once it stands.
 ///
 /// A port's sort names a sort of the signature, one an `include` or an `ext`
 /// member brought in among them, or, written bare, a type that the scope of

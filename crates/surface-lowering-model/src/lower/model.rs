@@ -429,7 +429,7 @@ struct Minting<'source, 'model>
     /// The origin every minted node carries.
     origin: Origin,
     /// The type member that each port sort of the theory's source names,
-    /// which a sort no member of the model names reads (#8139).
+    /// which a sort no member of the model names reads.
     ported: &'model [(Name, crate::module::TypeComponent<'source>)],
 }
 
