@@ -1,0 +1,39 @@
+data Expr(f : Type) : Type where
+  | Lit : (n : Integer) --> Expr f
+  | Param : Expr f
+  | If : (c : Expr f, t : Expr f, e : Expr f) --> Expr f
+  | Return : (e : Expr f) --> Expr f
+  | Call : (g : f, e : Expr f) --> Expr f
+
+@[item(("identity Identity", "example Example"))]
+data Item : Type where
+  | Identity : Item
+  | Example : Item
+
+@[item("helper Missing")]
+data Broken : Type where
+  | Helper : Broken
+
+@[thir(("a.rs", "bodied"))]
+def bodied : Expr Item = Param;
+
+@[thir(("a.rs", "unanswered"))]
+def unanswered : Expr Item;
+
+@[thir(("a.rs", "noReader"))]
+def noReader : Expr Item;
+
+@[thir(("a.rs", "unread"))]
+def unread : Expr Item;
+
+@[thir(("a.rs", "outside"))]
+def outside : Expr Item;
+
+@[thir(("a.rs", "notExpr"))]
+def notExpr : Integer;
+
+@[thir(("a.rs", "unmapped"))]
+def unmapped : Expr Item;
+
+@[thir(("a.rs", "broken"))]
+def broken : Expr Broken;

@@ -1,0 +1,14 @@
+/// An octet, declared by the row of the one table that the key `u8` names.
+@[builtin("u8")]
+pub type Octet : Type;
+
+/// A value at the declared atom is a value at the atom that the table
+/// answers.
+def onward(n : Octet) -> u8 = n;
+
+/// A value at the atom that the table answers is a value at the declared
+/// atom.
+def back(n : u8) -> Octet = n;
+
+/// The declared atom is no other atom.
+def wide(n : Octet) -> Integer = n;
