@@ -1,0 +1,27 @@
+/// A univalence statement at a signature corolla. The judgement derives the
+/// statement's native path, and a checkpoint keeps it by place.
+theory Magma where
+  sort M : Type;
+  oper mul : (x : M, y : M) --> (z : M);
+  oper one : () --> (z : M);
+
+/// The swap of the booleans translates the binary corolla.
+def exchange(b : Bool) -> Bool =
+  match b where
+    | true => +{.1 = *{}}
+    | false => +{.0 = *{}}
+
+/// The identity translates the constant corolla.
+def keep(e : +{Unit}) -> +{Unit} =
+  e
+
+/// The degree telescope of the magma at degree one.
+type Tel = Unit * (+{Unit} * Bool);
+
+/// The swap at the binary corolla, as a path of the degree telescopes. The
+/// statement stands inside a function body, so the bridge reads its native
+/// path at the statement's node.
+def opposite() -> Path[.A = Type](Tel, Tel) = ua[
+  1,
+  4
+] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});

@@ -1,0 +1,4003 @@
+//! The diagnostics model over real compositions.
+//!
+//! Each case composes its source through the dispatcher — a walk over a
+//! scratch tree, or the composition itself where a case needs a fixed path —
+//! and asserts the diagnostics its step yields: their classes, their spans,
+//! their annotations, their contexts and their words.
+//!
+//! The cases, in a `cfg(test)` module so the crate's lint wall reads them as
+//! test code rather than as shipping code.
+
+use core::convert::Infallible;
+use core::ops::ControlFlow;
+use std::path::Path;
+use std::path::PathBuf;
+
+use anodized::spec;
+use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::CheckRefusalOf;
+use gandr_core_checker::EndpointMiss;
+use gandr_core_checker::FrameRole;
+use gandr_core_checker::MismatchOf;
+use gandr_core_checker::TermNode;
+use gandr_core_checker::TypeNodeOf;
+use gandr_core_term::BinderDepth;
+use gandr_core_term::FailureClass;
+use gandr_core_term::TrackingIssue;
+use gandr_core_term::Value;
+use gandr_surface_corpus::Refusal;
+use gandr_surface_corpus::Settlement;
+use gandr_surface_diagnostics::AnnotationKind;
+use gandr_surface_diagnostics::Class;
+use gandr_surface_diagnostics::Diagnostic;
+use gandr_surface_diagnostics::Failures;
+use gandr_surface_diagnostics::Families;
+use gandr_surface_diagnostics::Fix;
+use gandr_surface_diagnostics::Identifier;
+use gandr_surface_diagnostics::Lint;
+use gandr_surface_diagnostics::Naming;
+use gandr_surface_diagnostics::Reading;
+use gandr_surface_diagnostics::Renaming;
+use gandr_surface_diagnostics::Severity;
+use gandr_surface_diagnostics::SpelledNode;
+use gandr_surface_diagnostics::SpellingPlace;
+use gandr_surface_diagnostics::Subject;
+use gandr_surface_diagnostics::Unsettlement;
+use gandr_surface_diagnostics::Verbosity;
+use gandr_surface_diagnostics::constant_names;
+use gandr_surface_diagnostics::diagnose;
+use gandr_surface_diagnostics::fix;
+use gandr_surface_diagnostics::obstructed;
+use gandr_surface_diagnostics::parting;
+use gandr_surface_diagnostics::repair;
+use gandr_surface_diagnostics::report_identifier;
+use gandr_surface_diagnostics::report_span;
+use gandr_surface_diagnostics::tracking;
+use gandr_surface_diagnostics::upstream;
+use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Goals;
+use gandr_surface_dispatcher::Lints;
+use gandr_surface_dispatcher::Lowered;
+use gandr_surface_dispatcher::LoweringCount;
+use gandr_surface_dispatcher::Pool;
+use gandr_surface_dispatcher::Refusals;
+use gandr_surface_dispatcher::SourceRoot;
+use gandr_surface_dispatcher::Standing;
+use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::Verb;
+use gandr_surface_dispatcher::Walk;
+use gandr_surface_dispatcher::Width;
+use gandr_surface_dispatcher::compose;
+use gandr_surface_dispatcher::entries;
+use gandr_surface_dispatcher::lower_source;
+use gandr_surface_dispatcher::lower_unit_source;
+use gandr_surface_evaluate::Evaluator;
+use gandr_surface_grammar::built_in;
+use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::FormFault;
+use gandr_surface_lowering::ImportTarget;
+use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::OriginTable;
+use gandr_surface_lowering::SourceIndex;
+use gandr_surface_lowering::Unit;
+use gandr_surface_lowering::UnitSource;
+use gandr_surface_lowering::coincide::CoherenceFault;
+use gandr_surface_lowering::desc_cells::CellDiagnostic;
+use gandr_surface_lowering::desc_cells::CellFault;
+use gandr_surface_pretty::CoreNode;
+use gandr_surface_pretty::CoreSource;
+use gandr_surface_pretty::Fidelity;
+use gandr_surface_pretty::Form;
+use gandr_surface_pretty::Name;
+use gandr_surface_pretty::Notation;
+use gandr_surface_pretty::PageWidth;
+use gandr_surface_pretty::Spelling;
+use gandr_surface_pretty::Unspelled;
+use gandr_surface_pretty::present_computation;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
+
+/// A declaration whose definition synthesises a type its signature does
+/// not convert to.
+const MISMATCH: &str = include_str!("diagnostics/fixtures/mismatch.gandr");
+
+/// A force of an integer, inside a thunk.
+const FORCE: &str = include_str!("diagnostics/fixtures/force.gandr");
+
+/// An application whose head is a return, not a function.
+const APPLICATION: &str = include_str!("diagnostics/fixtures/application.gandr");
+
+/// A mismatch under a `let` binder.
+const BOUND: &str = include_str!("diagnostics/fixtures/bound.gandr");
+
+/// Unary naturals, addition, Fibonacci both ways and two closed points.
+const FIBONACCI: &str = include_str!("diagnostics/fixtures/fibonacci.gandr");
+
+/// Both definitions at nineteen: equal, but past the conversion's step budget.
+const FIBONACCI_AGREE: &str = include_str!("diagnostics/fixtures/fibonacci-agree.gandr");
+
+/// Fibonacci at five against the iteration started one step on: apart.
+const FIBONACCI_APART: &str = include_str!("diagnostics/fixtures/fibonacci-apart.gandr");
+
+/// The circle, its identity map and a claim that `Path.ap` of the map on a
+/// word of 300 letters is that word.
+const LONG_WORD: &str =
+    include_str!("diagnostics/fixtures/a-path-ap-claim-on-a-long-word-6478.gandr");
+
+/// Names the checkout's `library/std` as the profile's standard library for
+/// this process, so a fixture outside the tree reads it. A place named
+/// already stays.
+///
+/// # Specification
+/// trivial.
+fn profiled()
+{
+    let library = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../library/std");
+    drop(gandr_surface_dispatcher::profile_standard(library));
+}
+
+/// A fresh scratch directory, removed when dropped.
+#[repr(transparent)]
+struct Scratch(PathBuf);
+
+impl Scratch
+{
+    /// An empty directory named for `test` and this process.
+    ///
+    /// # Specification
+    /// - requires: `test` is one file-name component, owned by this test.
+    /// - ensures: the returned path is an empty directory.
+    /// - provides: isolated storage for walk witnesses.
+    /// - fails: never returns a failure.
+    /// - panics: if an existing directory cannot be removed or creation fails.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fresh owned directory holds exactly the sources the
+    ///   walk witnesses write; stale entries would add diagnostics.
+    /// - witness: `tests::diagnostics::each_verb_prints_its_entries`
+    #[spec(
+            requires: test.file_name() == Some(test.as_os_str()),
+            ensures: |ref ret| std::fs::read_dir(&ret.0).is_ok_and(|mut entries| entries.next().is_none()),
+        )]
+    fn new(test: &Path) -> Self
+    {
+        let root = std::env::temp_dir().join(format!(
+            "gandr-diagnostics-{}-{}",
+            test.display(),
+            std::process::id()
+        ));
+        if root.exists() {
+            std::fs::remove_dir_all(&root).expect("a stale scratch directory is removed");
+        }
+        std::fs::create_dir_all(&root).expect("the scratch directory is created");
+        Self(root)
+    }
+
+    /// Write `text` at `relative`, creating its directories.
+    ///
+    /// # Specification
+    /// - requires: `relative` names a file through normal components within
+    ///   this exclusively owned scratch directory.
+    /// - ensures: the file under the scratch root holds `text`.
+    /// - provides: a source for a real filesystem walk.
+    /// - fails: never returns a failure.
+    /// - panics: if the parent directories or the file cannot be written.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each written source is read back through a real walk
+    ///   and reports at its own path.
+    /// - witness: `tests::diagnostics::each_verb_prints_its_entries`
+    #[spec(
+            requires: relative.file_name().is_some() && relative.components().all(|component|
+                matches!(component, std::path::Component::Normal(_))),
+            ensures: std::fs::read_to_string(self.0.join(relative)).is_ok_and(|held| held == text.as_ref()),
+        )]
+    fn file(
+        &self,
+        relative: &Path,
+        text: SourceText<'_>,
+    )
+    {
+        let path = self.0.join(relative);
+        std::fs::create_dir_all(path.parent().expect("a file has a parent"))
+            .expect("the directories are created");
+        std::fs::write(&path, text.as_ref()).expect("the file is written");
+    }
+}
+
+impl Drop for Scratch
+{
+    /// Remove the directory and everything under it.
+    ///
+    /// # Specification
+    /// - requires: this test exclusively owns the scratch path.
+    /// - ensures: the directory and its descendants no longer exist.
+    /// - provides: cleanup at the end of the fixture scope.
+    /// - fails: never returns a failure.
+    /// - panics: if removal fails.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the walk witness leaves no tree behind.
+    /// - witness: `tests::diagnostics::each_verb_prints_its_entries`
+    #[spec(ensures: matches!(self.0.try_exists(), Ok(false)))]
+    fn drop(&mut self)
+    {
+        let removed = std::fs::remove_dir_all(&self.0);
+        assert!(removed.is_ok(), "the scratch directory is removed");
+    }
+}
+
+/// The step of a source at `path` under `root` whose text is `text`,
+/// standing unsettled.
+///
+/// # Specification
+/// - requires: `text` composes within the built-in limits.
+/// - ensures: an unsettled source step borrowing `path` and `text` under
+///   `root`.
+/// - provides: a source step for diagnostic observations.
+/// - fails: never returns a failure.
+/// - panics: if grammar construction or composition fails.
+///
+/// # Adequacy
+/// - hypothesis: L3 — strict refusals and fixture expectations build different
+///   diagnostics at their own spans; a wrong root or source changes those
+///   observations.
+/// - witness: `tests::diagnostics::a_type_mismatch_is_located_at_its_term`
+/// - witness: `tests::diagnostics::the_settle_note_says_what_was_expected_in_words`
+#[spec(ensures: |ref ret| matches!(*ret,
+        Step::Source { path: held, root: actual, standing: Standing::Unsettled, .. }
+            if core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(path)) && actual == root))]
+fn unsettled<'step>(
+    path: &'step Path,
+    root: SourceRoot,
+    text: SourceText<'step>,
+) -> Step<'step>
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    Step::Source {
+        path,
+        root,
+        text,
+        base: gandr_surface_syntax::ByteOffset::from(0_usize),
+        composed: compose::<Evaluator>(
+            &grammar,
+            root.corpus_root(),
+            text,
+            &mut LoweringCount::default(),
+        )
+        .expect("the source composes"),
+        standing: Standing::Unsettled,
+    }
+}
+
+/// The diagnostics a source at `path` under `root` with `text` prints
+/// under `verb`.
+///
+/// # Specification
+/// trivial.
+fn printed(
+    path: &Path,
+    root: SourceRoot,
+    text: SourceText<'_>,
+    verb: Verb,
+) -> Vec<Diagnostic>
+{
+    let step = unsettled(path, root, text);
+    entries::<Evaluator>(&step, verb).collect()
+}
+
+/// The one diagnostic a strict source with `text` prints under plain
+/// `check`.
+///
+/// # Specification
+/// - requires: the source prints exactly one diagnostic.
+/// - ensures: that diagnostic.
+/// - provides: the subject of most cases.
+/// - fails: never returns a failure.
+/// - panics: if the source prints another number of diagnostics.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every single-refusal source prints one diagnostic; a
+///   source printing two fails loudly rather than asserting the wrong one.
+/// - witness: `tests::diagnostics::a_refusal_names_the_rules_it_stood_inside`
+#[spec(ensures: |ref ret| ret.path.as_path() == path)]
+fn only(
+    path: &Path,
+    text: SourceText<'_>,
+) -> Diagnostic
+{
+    let mut printed = printed(path, SourceRoot::Strict, text, Verb::Check(Goals::Gated));
+    assert_eq!(printed.len(), 1_usize, "one diagnostic: {printed:?}");
+    printed.remove(0)
+}
+
+/// The diagnostics a strict source with `text` prints under plain `check`,
+/// walked from a file named `name` in a scratch directory of its own, so each
+/// `std` module it imports is laid before it (#4520, #4523).
+///
+/// # Specification
+/// trivial.
+fn walked(
+    name: &Path,
+    text: SourceText<'_>,
+) -> Vec<Diagnostic>
+{
+    let scratch = Scratch::new(name);
+    scratch.file(
+        &Path::new("strict").join(name).with_extension("gandr"),
+        text,
+    );
+    let mut printed = Vec::new();
+    let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()])
+        .visit::<Evaluator, _, _>(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                printed.extend(entries::<Evaluator>(&step, Verb::Check(Goals::Gated)));
+                ControlFlow::Continue(())
+            },
+        );
+    printed
+}
+
+/// The lines a source writes to import the module of every host interface
+/// (#4523).
+const HOSTING: &str =
+    "import std.env ;\nimport std.fs ;\nimport std.io ;\nimport std.net ;\nimport std.process ;\n";
+
+/// A newline standing in for every host interface's module, `source`, then
+/// [`HOSTING`]; and the unit laying them, each of the second source's
+/// imports resolving to the first.
+///
+/// # Specification
+/// trivial.
+fn hosted<Source>(source: Source) -> (String, Unit)
+where
+    Source: core::fmt::Display,
+{
+    let unit = Unit::new(vec![
+        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+        UnitSource::new(ByteOffset::from(1_usize), vec![
+            ImportTarget::Source(
+                SourceIndex::from(0_usize)
+            );
+            HOSTING.lines().count()
+        ]),
+    ])
+    .expect("two sources make a unit");
+    (format!("\n{source}{HOSTING}"), unit)
+}
+
+/// The bytes of each appearance of `needle` in `text`, in order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the span of every occurrence, first to last.
+/// - provides: an independent expected locus, indexed by occurrence.
+/// - fails: never returns a failure.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — repeated equal siblings are told apart by their
+///   occurrence index.
+/// - witness: `tests::diagnostics::repeated_equal_siblings_point_at_the_right_occurrence`
+#[spec(ensures: |ref ret| ret.iter().all(|&span| text.fragment(span).is_ok_and(|fragment| fragment.as_ref() == needle.as_ref())))]
+fn nth(
+    text: SourceText<'_>,
+    needle: SourceText<'_>,
+) -> Vec<ByteSpan>
+{
+    text.as_ref()
+        .match_indices(needle.as_ref())
+        .map(|(start, _)| {
+            ByteSpan::new(
+                ByteOffset::from(start),
+                ByteOffset::from(start.saturating_add(needle.as_ref().len())),
+            )
+            .expect("the span is ordered")
+        })
+        .collect()
+}
+
+/// Each context `diagnostic` carries, as the source text of its bytes
+/// (empty when unlocated) and its label.
+///
+/// # Specification
+/// trivial.
+fn contexts(
+    text: SourceText<'_>,
+    diagnostic: &Diagnostic,
+) -> Vec<(String, String)>
+{
+    diagnostic
+        .contexts
+        .iter()
+        .map(|context| match context.locus {
+            Maybe::Present(locus) => (
+                String::from(
+                    text.fragment(locus.span)
+                        .expect("a context lies inside the text")
+                        .as_ref(),
+                ),
+                context.label(),
+            ),
+            Maybe::Absent(_) => (String::new(), context.note()),
+        })
+        .collect()
+}
+
+/// What an origin table cut down for the unlocated cases keeps.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Kept
+{
+    /// The primary node alone.
+    Primary,
+    /// Nothing.
+    Nothing,
+}
+
+/// The force refusal built over an origin table cut down to `kept`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the force refusal's diagnostic, located at its operand when the
+///   primary node is kept, unlocated otherwise; every rule it stood inside
+///   names a node the table records nothing for, as a node the checker minted
+///   does.
+/// - provides: the subject of the unlocated cases.
+/// - fails: never returns a failure.
+/// - panics: if the force source does not refuse with a shape mismatch.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one table keeps the primary node alone, the other
+///   nothing; the rules lose their loci in both.
+/// - witness: `tests::diagnostics::an_unlocated_rule_becomes_a_note`
+/// - witness: `tests::diagnostics::an_unlocated_report_claims_no_span`
+#[spec(ensures: |ref ret| matches!(ret.span, Maybe::Present(_)) == (kept == Kept::Primary))]
+fn force_without_rules(kept: Kept) -> Diagnostic
+{
+    let path = Path::new("force.gandr");
+    let text = SourceText::from(FORCE);
+    let grammar = built_in().expect("the built-in grammar builds");
+    let Lowered::Module { module, arena } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the force source lowers")
+            .into_lowered()
+    else {
+        panic!("the force source is one module");
+    };
+    let (settled, admission) = gandr_surface_dispatcher::judge_member::<Evaluator>(
+        gandr_surface_corpus::CorpusRoot::Strict,
+        (module, text),
+        arena,
+        &gandr_core_checker::HostGrant::UNBOUNDED,
+        gandr_surface_syntax::ByteOffset::from(0_usize),
+    )
+    .into_parts();
+    let Ok(Composed::Settled {
+        ref report,
+        ref origins,
+        ref spellings,
+        ref failures,
+        ..
+    }) = settled
+    else {
+        panic!("the force source settles");
+    };
+    let declaration = report
+        .declarations()
+        .iter()
+        .find(|declaration| matches!(declaration.produced().refusal(), Maybe::Present(_)))
+        .expect("one declaration refuses");
+    let Maybe::Present(refusal @ Refusal::Checking(CheckRefusalOf::ShapeMismatch { .. })) =
+        declaration.produced().refusal()
+    else {
+        panic!("the force refuses its operand's shape");
+    };
+    // The checker's own refusal and failure name their nodes by place: the
+    // record is located from them, as a composition locates it.
+    let verdicts = admission.verdicts();
+    let judged = verdicts.judged();
+    let Some(gandr_core_checker::Verdict::Refused(
+        checked @ CheckRefusal::ShapeMismatch {
+            at: TermNode::Value(value),
+            ..
+        },
+    )) = judged
+        .binary_search_by_key(
+            &declaration.constant(),
+            gandr_core_checker::Judged::constant,
+        )
+        .ok()
+        .and_then(|at| judged.get(at))
+        .map(gandr_core_checker::Judged::verdict)
+    else {
+        panic!("the force refuses a value operand's shape");
+    };
+    let mut table = OriginTable::new();
+    if kept == Kept::Primary {
+        let Maybe::Present(origin) = origins.value(value)
+        else {
+            panic!("the operand is recorded");
+        };
+        table.record_value(value, origin);
+    }
+    let located = gandr_surface_diagnostics::Located::of(
+        checked,
+        verdicts.failures().get(&declaration.constant()),
+        declaration.span(),
+        (&table, text),
+    );
+    diagnose(path, text, &[], Subject::Refused {
+        declaration,
+        refusal,
+        located: Maybe::Present(&located),
+        spellings: spellings.spelled(Spelling::Unicode),
+        failure: failures.get(declaration.constant()),
+        upstream: Maybe::Absent(upstream::Absent::Own),
+        obstruction: Maybe::Absent(obstructed::Absent::Unparted),
+    })
+}
+
+#[test]
+fn a_conversion_past_its_step_budget_is_a_budget_miss_not_endpoints_apart_3139()
+{
+    let miss = |claim: &str| {
+        let text = format!("{FIBONACCI}{claim}");
+        let step = unsettled(
+            Path::new("fibonacci.gandr"),
+            SourceRoot::Strict,
+            SourceText::from(text.as_str()),
+        );
+        let Step::Source {
+            composed: Composed::Settled { ref report, .. },
+            ..
+        } = step
+        else {
+            panic!("the Fibonacci source settles");
+        };
+        let refusals: Vec<Refusal<'_>> = report
+            .declarations()
+            .iter()
+            .filter_map(|declaration| match declaration.produced().refusal() {
+                Maybe::Present(refusal) => Some(refusal),
+                Maybe::Absent(_) => None,
+            })
+            .collect();
+        let [Refusal::Checking(CheckRefusalOf::EndpointMismatch { miss, .. })] =
+            *refusals.as_slice()
+        else {
+            panic!("the claim alone is refused, as an endpoint mismatch: {refusals:?}");
+        };
+        miss
+    };
+    assert_eq!(
+        miss(FIBONACCI_AGREE),
+        EndpointMiss::Budget,
+        "equal endpoints whose conversion outruns the budget are a budget miss"
+    );
+    assert_eq!(
+        miss(FIBONACCI_APART),
+        EndpointMiss::Unshown,
+        "endpoints the conversion finds apart are no budget miss"
+    );
+}
+
+/// #6478: before the fix, each side of a pair ran under a budget of 4,096
+/// steps, far below the machine's own. A `Path.ap` claim on a word above 194
+/// letters ran out of it, and the check reported an endpoint mismatch with no
+/// budget.
+#[test]
+fn a_path_ap_claim_on_a_long_word_settles_6478()
+{
+    let step = unsettled(
+        Path::new("circle.gandr"),
+        SourceRoot::Strict,
+        SourceText::from(LONG_WORD),
+    );
+    let Step::Source {
+        composed: Composed::Settled { ref report, .. },
+        ..
+    } = step
+    else {
+        panic!("the circle source settles");
+    };
+    let refusals: Vec<Refusal<'_>> = report
+        .declarations()
+        .iter()
+        .filter_map(|declaration| match declaration.produced().refusal() {
+            Maybe::Present(refusal) => Some(refusal),
+            Maybe::Absent(_) => None,
+        })
+        .collect();
+    assert_eq!(
+        refusals,
+        [],
+        "a claim of 300 letters settles within the machine's budget"
+    );
+}
+
+#[test]
+fn a_type_mismatch_is_located_at_its_term()
+{
+    let diagnostic = only(Path::new("mismatch.gandr"), SourceText::from(MISMATCH));
+    assert_eq!(diagnostic.severity, Severity::Error);
+    assert_eq!(
+        diagnostic.detail.class,
+        Class::Refusal(FailureClass::MalformedSource),
+        "a type mismatch is malformed source"
+    );
+    assert_eq!(
+        diagnostic.span,
+        Maybe::Present(nth(SourceText::from(MISMATCH), SourceText::from("\"text\""))[0]),
+        "the checker's refusal is located at the mismatched term through the origin table"
+    );
+    let primary = match diagnostic.primary() {
+        Maybe::Present(primary) => primary,
+        Maybe::Absent(reason) => panic!("the mismatch is located: {reason:?}"),
+    };
+    assert_eq!(
+        (primary.locus.line, primary.locus.column),
+        (2_usize, 13_usize)
+    );
+    assert_eq!(
+        (
+            diagnostic.message.text.as_str(),
+            diagnostic.detail.title.as_str()
+        ),
+        (
+            "the type of this term does not match the type it is checked against",
+            "the type this term synthesises does not convert to the type it is checked against"
+        ),
+        "the message is plain; the checker's own words stay the title"
+    );
+    assert_eq!(
+        diagnostic.help,
+        Maybe::Present(String::from(
+            "change the term or the type it is checked against, so that the two types agree"
+        )),
+        "the help says what to do about the mismatch"
+    );
+    assert_eq!(
+        diagnostic.expression,
+        Maybe::Present(String::from("\"text\""))
+    );
+}
+
+/// #2340: an injection the sum it is checked against has no summand for is
+/// headed by what the sum lacks, not as a sum the type is not; the empty sum
+/// is named as such.
+#[test]
+fn an_injection_past_the_summands_names_what_the_sum_lacks_2340()
+{
+    for (text, message, label) in [
+        (
+            include_str!(
+                "diagnostics/fixtures/an-injection-past-the-summands-names-what-the-sum-lacks-2340-1.gandr"
+            ),
+            "the empty sum `+{}` has no summand for this injection to name",
+            "the type met, where a sum with a summand is required",
+        ),
+        (
+            include_str!(
+                "diagnostics/fixtures/an-injection-past-the-summands-names-what-the-sum-lacks-2340-2.gandr"
+            ),
+            "this injection names a summand its sum does not have",
+            "the type met, where a sum with the summand this injection names is required",
+        ),
+    ] {
+        let diagnostic = only(Path::new("summand.gandr"), SourceText::from(text));
+        assert_eq!(diagnostic.message.text, message, "{text}");
+        assert!(
+            diagnostic
+                .annotations
+                .iter()
+                .any(|annotation| annotation.label == label),
+            "the sum met is labelled with what it lacks: {diagnostic:?}"
+        );
+    }
+}
+
+#[test]
+fn a_mismatch_label_spells_both_types()
+{
+    let label = |diagnostic: &Diagnostic| match diagnostic.primary() {
+        Maybe::Present(primary) => primary.label.clone(),
+        Maybe::Absent(reason) => panic!("a located refusal carries a label: {reason:?}"),
+    };
+    let mismatch = only(Path::new("spelled.gandr"), SourceText::from(MISMATCH));
+    assert_eq!(
+        (
+            mismatch.detail.compared.expected.clone(),
+            mismatch.detail.compared.found.clone()
+        ),
+        (
+            Maybe::Present(String::from("Integer")),
+            Maybe::Present(String::from("String"))
+        ),
+        "a mismatch expects its signature's type and found its body's"
+    );
+    assert_eq!(
+        label(&mismatch),
+        "its type does not convert: expected `Integer`, found `String`"
+    );
+    assert_eq!(
+        label(&only(Path::new("spelled.gandr"), SourceText::from(FORCE))),
+        "its type is not of the required shape: found `Integer`",
+        "a shape mismatch expects a former, which its title names, and spells what it found"
+    );
+    let head = label(&only(
+        Path::new("spelled.gandr"),
+        SourceText::from(include_str!(
+            "diagnostics/fixtures/a-mismatch-label-spells-both-types-head.gandr"
+        )),
+    ));
+    assert!(
+        !head.contains(": "),
+        "a refusal that compares no types carries none: {head}"
+    );
+}
+
+/// A shape refusal at a type a definition computes names the type as written
+/// and the type it unfolds to, and keeps the written type's own label: a
+/// tuple at `pairOf(Integer, Bool)`, which unfolds to a record type. A tuple
+/// and a projection at a product a definition computes check: `prodOf`, the
+/// recursive `tower`, and an evaluator's environment `env`.
+#[test]
+fn a_shape_mismatch_names_the_type_its_found_type_unfolds_to_5034()
+{
+    let refused = only(
+        Path::new("unfolded.gandr"),
+        SourceText::from(include_str!(
+            "diagnostics/fixtures/a-shape-mismatch-names-the-type-its-found-type-unfolds-to-5034-refused.gandr"
+        )),
+    );
+    assert_eq!(
+        (
+            refused.detail.compared.found.clone(),
+            refused.detail.compared.unfolded.clone()
+        ),
+        (
+            Maybe::Present(String::from("pairOf(Integer, Bool)")),
+            Maybe::Present(String::from("*{x : Integer, y : Bool}"))
+        ),
+        "the refusal compares the written type and the type it unfolds to"
+    );
+    let Maybe::Present(primary) = refused.primary()
+    else {
+        panic!("a located refusal carries a label: {refused:?}");
+    };
+    assert_eq!(
+        primary.label,
+        "its type is not of the required shape: found `pairOf(Integer, Bool)`, which unfolds to \
+         `*{x : Integer, y : Bool}`"
+    );
+    assert!(
+        refused
+            .annotations
+            .iter()
+            .any(|annotation| annotation.label.starts_with("the type met")),
+        "the written type keeps its own label: {refused:?}"
+    );
+    let computed = printed(
+        Path::new("computed.gandr"),
+        SourceRoot::Strict,
+        SourceText::from(include_str!(
+            "diagnostics/fixtures/a-shape-mismatch-names-the-type-its-found-type-unfolds-to-5034-computed.gandr"
+        )),
+        Verb::Check(Goals::Gated),
+    );
+    assert!(
+        computed.is_empty(),
+        "a tuple and a projection at a computed product check: {computed:?}"
+    );
+}
+
+#[test]
+fn a_mismatch_spells_the_constructors_its_type_mentions()
+{
+    let mismatch = only(
+        Path::new("constructed.gandr"),
+        SourceText::from(include_str!(
+            "diagnostics/fixtures/a-mismatch-spells-the-constructors-its-type-mentions-mismatch.gandr"
+        )),
+    );
+    assert_eq!(
+        mismatch.detail.compared.expected,
+        Maybe::Present(String::from("Path[.A = Box] (Wrap 4) (Wrap 5)")),
+        "a constructor value is spelled by the name its declaration writes"
+    );
+}
+
+#[test]
+fn a_word_spells_by_its_letters()
+{
+    let mismatch = only(
+        Path::new("worded.gandr"),
+        SourceText::from(include_str!("diagnostics/fixtures/worded.gandr")),
+    );
+    assert_eq!(
+        mismatch.detail.compared.expected,
+        Maybe::Present(String::from(
+            "Path[.A = Path[.A = Circle] Base Base] (back loop ∷ Path.here Base) (Path.here Base)"
+        )),
+        "a word's type is its path type, a letter conses before the rest, and the empty \
+             word is `here` at the point"
+    );
+    let preceded = only(
+        Path::new("preceded.gandr"),
+        SourceText::from(include_str!("diagnostics/fixtures/preceded.gandr")),
+    );
+    assert_eq!(
+        preceded.detail.compared.expected,
+        Maybe::Present(String::from(
+            "Path[.A = Path[.A = Circle] Base Base] (back loop ∷ Path.here Base) (Path.here Base)"
+        )),
+        "the point is spelled by its own family's constructors, not an earlier family's"
+    );
+}
+
+#[test]
+fn a_body_names_its_match_arms_by_their_constructors_809()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-body-names-its-match-arms-by-their-constructors-809.gandr"
+    ));
+    let Lowered::Module { module, arena } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is one module");
+    };
+    let body = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name().as_ref() == "down")
+        .and_then(|declaration| match declaration.outcome() {
+            DeclarationOutcome::Bodied { body } | DeclarationOutcome::Completed { body, .. } => {
+                arena.value(body)
+            },
+            DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World
+            | DeclarationOutcome::Refused(_) => None,
+        });
+    let Some(&Value::Thunk(computation)) = body
+    else {
+        panic!("`down` is defined by a thunk");
+    };
+    let spelled = constant_names(&module, module.unit().last());
+    let names: Vec<Name<'_>> = spelled
+        .iter()
+        .map(|name| Name::from(name.as_str()))
+        .collect();
+    let families = Families::of(&module);
+    let constructors = families.naming();
+    let source = CoreSource::new(&arena, &names).naming(&constructors);
+    let presentation = present_computation(
+        &source,
+        CoreNode::Computation(computation),
+        PageWidth::from(100_u32),
+        Form::Sugared.into(),
+    )
+    .expect("the body lays out");
+    // The anonymous fixpoint has no surface form, so the body is approximate
+    // as a whole and names that notation; its arms leave nothing unspelled.
+    assert_eq!(
+        (
+            presentation.to_string(),
+            presentation.unspelled().iter().copied().collect::<Vec<_>>()
+        ),
+        (
+            String::from("rec a { fun (b) { match b { | Zero => b | Succ(c) => a c } } }"),
+            vec![Unspelled::Notation(Notation::Fixpoint)]
+        ),
+        "each arm is written under the constructor it matches: {:?}",
+        presentation.unspelled()
+    );
+}
+
+/// A constructor of `Theory` whose bare name the source's own constructor
+/// takes is spelled by its family, `Theory.App`, so the printed arm reads back
+/// as `Theory`'s; one the source leaves free stays bare (#2428).
+#[test]
+fn a_shadowed_constructor_spells_by_its_family_2428()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-shadowed-constructor-spells-by-its-family-2428.gandr"
+    ));
+    let Lowered::Module { module, arena } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is one module");
+    };
+    let body = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name().as_ref() == "applies")
+        .and_then(|declaration| match declaration.outcome() {
+            DeclarationOutcome::Bodied { body } | DeclarationOutcome::Completed { body, .. } => {
+                arena.value(body)
+            },
+            DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World
+            | DeclarationOutcome::Refused(_) => None,
+        });
+    let Some(&Value::Thunk(computation)) = body
+    else {
+        panic!("`applies` is defined by a thunk");
+    };
+    let spelled = constant_names(&module, module.unit().last());
+    let names: Vec<Name<'_>> = spelled
+        .iter()
+        .map(|name| Name::from(name.as_str()))
+        .collect();
+    let families = Families::of(&module);
+    let constructors = families.naming();
+    let source = CoreSource::new(&arena, &names).naming(&constructors);
+    let printed = present_computation(
+        &source,
+        CoreNode::Computation(computation),
+        PageWidth::from(1_000_u32),
+        Form::Sugared.into(),
+    )
+    .expect("the body lays out")
+    .to_string();
+    for written in ["Theory.App(", "Theory.Var(", " Oper("] {
+        assert!(
+            printed.contains(written),
+            "the arms write `{written}`: {printed}"
+        );
+    }
+    assert!(
+        !printed.contains(" App(") && !printed.contains(" Var("),
+        "no shadowed constructor is written bare: {printed}"
+    );
+}
+
+/// The binders a node inside a declaration stands under are named as the
+/// source writes them, outermost first: a recursive function's own name, its
+/// parameter, and the pattern variable an arm binds (#803: the formatter
+/// spells a composite's motive under these names).
+#[test]
+fn a_declaration_s_binders_are_named_as_written_803()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-declaration-s-binders-are-named-as-written-803.gandr"
+    ));
+    let Lowered::Module { module, arena } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is one module");
+    };
+    let written = <&str>::from(text);
+    let used = written
+        .rfind('m')
+        .expect("the arm uses its pattern variable");
+    let variables: Vec<_> = module
+        .origins()
+        .values()
+        .iter()
+        .filter(|&&(_, origin)| usize::from(origin.span().start()) == used)
+        .map(|&(variable, _)| variable)
+        .collect();
+    let naming = Naming::of(&module, text);
+    let names = constant_names(&module, module.unit().last());
+    let around: Vec<Vec<Option<String>>> = naming
+        .declarations()
+        .flat_map(|(_, roots)| {
+            let scoped = naming.scoped(&arena, &names, roots, &Renaming::default());
+            variables
+                .iter()
+                .filter_map(|&variable| scoped.around(CoreNode::Value(variable)))
+                .map(|around| {
+                    around
+                        .into_iter()
+                        .map(|binder| binder.name.map(String::from))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert_eq!(around, [[
+        Some(String::from("down")),
+        Some(String::from("n")),
+        Some(String::from("m"))
+    ]]);
+}
+
+/// A model implicit's components are named by the paths a body reads them
+/// by, `s.x`, where every component's binder is written at the implicit's
+/// one name, and the explicit parameter after them keeps its own (#2364).
+#[test]
+fn a_model_implicit_s_components_are_named_by_their_paths_2364()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-model-implicit-s-components-are-named-by-their-paths-2364.gandr"
+    ));
+    let Lowered::Module { module, arena } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is one module");
+    };
+    let used = <&str>::from(text)
+        .rfind("incr c")
+        .and_then(|at| at.checked_add(5))
+        .expect("the body reads `c`");
+    let variables: Vec<_> = module
+        .origins()
+        .values()
+        .iter()
+        .filter(|&&(_, origin)| usize::from(origin.span().start()) == used)
+        .map(|&(variable, _)| variable)
+        .collect();
+    let naming = Naming::of(&module, text);
+    let names = constant_names(&module, module.unit().last());
+    let around: Vec<Vec<Option<String>>> = naming
+        .declarations()
+        .flat_map(|(_, roots)| {
+            let scoped = naming.scoped(&arena, &names, roots, &Renaming::default());
+            variables
+                .iter()
+                .filter_map(|&variable| scoped.around(CoreNode::Value(variable)))
+                .map(|around| {
+                    around
+                        .into_iter()
+                        .map(|binder| binder.name.map(String::from))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert_eq!(around, [
+        ["s.C", "s.zero", "s.incr", "s.read", "c"].map(|name| Some(String::from(name)))
+    ]);
+}
+
+/// A dependent record's field variable under `≃` is one node in each copy of
+/// the record the relation abbreviates; at the depth its type was judged, the
+/// written side's `Path[.A = b](x, y)`, it stands under the parameter and the
+/// fields before it, not under the first copy the walk reached (#1515).
+#[test]
+fn a_shared_field_variable_answers_at_the_depth_it_was_judged_1515()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-shared-field-variable-answers-at-the-depth-it-was-judged-1515.gandr"
+    ));
+    let Lowered::Module { module, arena } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is one module");
+    };
+    let used = <&str>::from(text)
+        .find("Path[.A = b](x, y)")
+        .expect("the record's last field reads the earlier ones")
+        .saturating_add("Path[.A = b](".len());
+    let variables: Vec<_> = module
+        .origins()
+        .values()
+        .iter()
+        .filter(|&&(_, origin)| usize::from(origin.span().start()) == used)
+        .map(|&(variable, _)| variable)
+        .collect();
+    assert!(!variables.is_empty(), "the written `x` has an origin");
+    let naming = Naming::of(&module, text);
+    let names = constant_names(&module, module.unit().last());
+    let spelled = |around: Option<Vec<gandr_surface_diagnostics::Around<'_>>>| {
+        around.map(|around| {
+            around
+                .into_iter()
+                .map(|binder| binder.name.map(String::from))
+                .collect::<Vec<_>>()
+        })
+    };
+    for (_, roots) in naming.declarations() {
+        let scoped = naming.scoped(&arena, &names, roots, &Renaming::default());
+        for &variable in &variables {
+            let node = CoreNode::Value(variable);
+            assert_eq!(
+                spelled(scoped.around_at(node, BinderDepth::from(3_usize))),
+                Some(vec![
+                    Some(String::from("b")),
+                    Some(String::from("x")),
+                    Some(String::from("y"))
+                ]),
+                "the parameter, then the fields before `p`"
+            );
+            assert_ne!(
+                spelled(scoped.around(node)),
+                spelled(scoped.around_at(node, BinderDepth::from(3_usize))),
+                "the first place the walk reached is a copy the relation abbreviates"
+            );
+        }
+    }
+}
+
+/// A node stands in the region of each capability scope and each hold around
+/// it, outermost first, named as the source writes their binders.
+#[test]
+fn a_node_stands_in_the_regions_of_each_scope_and_hold_around_it()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let (laid, unit) = hosted(include_str!(
+        "diagnostics/fixtures/a-node-stands-in-the-regions-of-each-scope-and-hold-around-it.gandr"
+    ));
+    let text = SourceText::from(laid.as_str());
+    let Lowered::Module { module, arena } =
+        lower_unit_source(&grammar, text, &unit, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is one module");
+    };
+    let used = <&str>::from(text)
+        .find("let m = k")
+        .expect("the body uses the kept value")
+        .saturating_add(8);
+    let variables: Vec<_> = module
+        .origins()
+        .values()
+        .iter()
+        .filter(|&&(_, origin)| usize::from(origin.span().start()) == used)
+        .map(|&(variable, _)| variable)
+        .collect();
+    let naming = Naming::of(&module, text);
+    let names = constant_names(&module, module.unit().last());
+    let regions: Vec<Vec<Option<String>>> = naming
+        .declarations()
+        .flat_map(|(_, roots)| {
+            let scoped = naming.scoped(&arena, &names, roots, &Renaming::default());
+            variables
+                .iter()
+                .filter_map(|&variable| scoped.regions(CoreNode::Value(variable)))
+                .map(|regions| {
+                    regions
+                        .into_iter()
+                        .map(|region| region.name.map(String::from))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert_eq!(
+        regions,
+        [[Some(String::from("s")), Some(String::from("c"))]],
+        "the hold's region, then the scope's inside it"
+    );
+}
+
+/// A match over a family with a loop writes the loop's arm under the loop's
+/// name: the lowering appends a branch per loop after the constructors', and a
+/// table naming the constructors alone printed that arm `?` (#813, #823).
+#[test]
+fn a_loop_arm_is_named_by_its_loop_823()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-loop-arm-is-named-by-its-loop-823.gandr"
+    ));
+    let Lowered::Module { module, arena } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is one module");
+    };
+    let body = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name().as_ref() == "invLooper")
+        .and_then(|declaration| match declaration.outcome() {
+            DeclarationOutcome::Bodied { body } | DeclarationOutcome::Completed { body, .. } => {
+                arena.value(body)
+            },
+            DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World
+            | DeclarationOutcome::Refused(_) => None,
+        });
+    let Some(&Value::Thunk(computation)) = body
+    else {
+        panic!("`invLooper` is defined by a thunk");
+    };
+    let spelled = constant_names(&module, module.unit().last());
+    let names: Vec<Name<'_>> = spelled
+        .iter()
+        .map(|name| Name::from(name.as_str()))
+        .collect();
+    let families = Families::of(&module);
+    let constructors = families.naming();
+    let source = CoreSource::new(&arena, &names).naming(&constructors);
+    let presentation = present_computation(
+        &source,
+        CoreNode::Computation(computation),
+        PageWidth::from(120_u32),
+        Form::Sugared.into(),
+    )
+    .expect("the body lays out");
+    assert_eq!(
+        (
+            presentation.to_string(),
+            presentation.fidelity(),
+            presentation.unspelled().is_empty()
+        ),
+        (
+            String::from(
+                "fun (a) { match a { | Base => Base | loop => Path.walk (fun (b) { type(Path[.A = Circle] b Base) }) \
+                 loop (Path.here\n                      Base) } }"
+            ),
+            Fidelity::Faithful,
+            true
+        ),
+        "the loop arm is written under its loop: {:?}",
+        presentation.unspelled()
+    );
+}
+
+#[test]
+fn a_refusal_keeps_its_failure_and_spells_its_types()
+{
+    let text = SourceText::from(MISMATCH);
+    let step = unsettled(Path::new("kept.gandr"), SourceRoot::Strict, text);
+    let Step::Source {
+        composed:
+            Composed::Settled {
+                ref report,
+                ref failures,
+                ..
+            },
+        ..
+    } = step
+    else {
+        panic!("the source settles");
+    };
+    let refused = report
+        .declarations()
+        .iter()
+        .find(|declaration| matches!(declaration.produced().refusal(), Maybe::Present(_)))
+        .expect("one declaration refuses");
+    let Maybe::Present(failure) = failures.get(refused.constant())
+    else {
+        panic!("the refused body keeps its failure");
+    };
+    assert!(
+        !failure.obligations().is_empty(),
+        "the failure keeps the rules it stood inside"
+    );
+    let clean = unsettled(
+        Path::new("clean.gandr"),
+        SourceRoot::Strict,
+        SourceText::from("def a = 1 ;\n"),
+    );
+    let Step::Source {
+        composed: Composed::Settled { ref failures, .. },
+        ..
+    } = clean
+    else {
+        panic!("the clean source settles");
+    };
+    assert_eq!(
+        *failures,
+        Failures::default(),
+        "a module that refuses nothing keeps no failure"
+    );
+}
+
+/// #776: a unit judged after its closure, the closure judged once, spells each
+/// type its checker refusals compare and its failures' hypotheses name — the
+/// closure's own refusal among them, a failure under binders among the
+/// document's — in both spellings, as the unit judged at once spells it.
+#[test]
+fn a_document_judged_after_its_closure_spells_as_the_whole_unit_776()
+{
+    use alloc::sync::Arc;
+
+    use gandr_core_checker::HostGrant;
+    use gandr_surface_corpus::CorpusRoot;
+    use gandr_surface_dispatcher::Checking;
+    use gandr_surface_dispatcher::Judged;
+    use gandr_surface_dispatcher::JudgedClosure;
+    use gandr_surface_dispatcher::judge_member;
+    use gandr_surface_dispatcher::judge_member_after;
+    use gandr_surface_dispatcher::lower_closure;
+    use gandr_surface_dispatcher::lower_onto_closure;
+    use gandr_surface_dispatcher::lower_parsed_unit;
+    use gandr_surface_lowering::ImportTarget;
+    use gandr_surface_lowering::SourceIndex;
+    use gandr_surface_lowering::Unit;
+    use gandr_surface_lowering::UnitSource;
+
+    /// Each type `judged`'s checker refusals compare and its failures'
+    /// hypotheses name, in declaration order, in each spelling.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spelled(judged: Judged<'_>) -> Vec<[Option<String>; 2]>
+    {
+        let (settled, _admission) = judged.into_parts();
+        let Ok(Composed::Settled {
+            report,
+            failures,
+            spellings,
+            ..
+        }) = settled
+        else {
+            panic!("the unit settles");
+        };
+        let mut nodes = Vec::new();
+        for declaration in report.declarations() {
+            let place = spellings
+                .spelled(Spelling::Unicode)
+                .place_of(declaration.constant());
+            if let Maybe::Present(Refusal::Checking(refusal)) = declaration.produced().refusal() {
+                let compared = refusal.compared();
+                nodes.extend(
+                    [compared.expected, compared.found]
+                        .into_iter()
+                        .filter_map(|side| match side {
+                            Maybe::Present(node) => Some(SpelledNode { node, place }),
+                            Maybe::Absent(_) => None,
+                        }),
+                );
+            }
+            if let Maybe::Present(failure) = failures.get(declaration.constant()) {
+                nodes.extend(failure.hypotheses().iter().enumerate().map(|(depth, &ty)| {
+                    SpelledNode {
+                        node: TypeNodeOf::Value(ty),
+                        place: SpellingPlace {
+                            depth: depth.min(place.depth),
+                            reading: Reading::Hypothesis,
+                            ..place
+                        },
+                    }
+                }));
+            }
+        }
+        nodes
+            .into_iter()
+            .map(|node| {
+                [Spelling::Unicode, Spelling::Ascii].map(|spelling| {
+                    match spellings.spelled(spelling).get(node) {
+                        Maybe::Present(presentation) => Some(presentation.to_string()),
+                        Maybe::Absent(_) => None,
+                    }
+                })
+            })
+            .collect()
+    }
+
+    let pbg = built_in().expect("the built-in grammar builds");
+    let own = format!(
+        include_str!("diagnostics/unformatted/spelled-own.gandr"),
+        BOUND = BOUND
+    );
+    let text = format!("{MISMATCH}{own}");
+    let text = SourceText::from(text.as_str());
+    let base = ByteOffset::from(MISMATCH.len());
+    let unit = Unit::new(vec![
+        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+        UnitSource::new(base, vec![ImportTarget::Source(SourceIndex::from(0_usize))]),
+    ])
+    .expect("two sources make a unit");
+    let closure = Arc::new(
+        lower_closure(
+            Arc::new(built_in().expect("the built-in grammar builds")),
+            String::from(MISMATCH),
+            Unit::new(vec![UnitSource::new(ByteOffset::from(0_usize), Vec::new())])
+                .expect("one source makes a unit"),
+            &mut LoweringCount::default(),
+        )
+        .expect("the closure is held"),
+    );
+    let parsed = || {
+        gandr_surface_parser::parse(&pbg, SourceText::from(own.as_str()))
+            .expect("the document parses")
+            .after(closure.tree(), text)
+            .expect("the document lays after its closure")
+    };
+    let judged = JudgedClosure::new::<Evaluator>(
+        Arc::clone(&closure),
+        &HostGrant::UNBOUNDED,
+        CorpusRoot::Strict,
+    )
+    .expect("the closure lowers to its end");
+    let (lowering, checking) = lower_onto_closure(
+        &judged,
+        judged.arena(),
+        parsed(),
+        &unit,
+        &mut LoweringCount::default(),
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
+    )
+    .expect("the document lowers");
+    assert!(
+        matches!(checking, Checking::After(_)),
+        "the document is judged after its closure"
+    );
+    let Lowered::Module { module, arena } = lowering.into_lowered()
+    else {
+        panic!("the unit is one module");
+    };
+    let after = spelled(judge_member_after::<Evaluator>(
+        CorpusRoot::Strict,
+        (module, text),
+        arena,
+        (&HostGrant::UNBOUNDED, checking),
+        ByteOffset::from(0_usize),
+    ));
+    let Lowered::Module { module, arena } = lower_parsed_unit(
+        &pbg,
+        parsed(),
+        &unit,
+        &mut LoweringCount::default(),
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
+    )
+    .expect("the unit lowers")
+    .into_lowered()
+    else {
+        panic!("the unit is one module");
+    };
+    let whole = spelled(judge_member::<Evaluator>(
+        CorpusRoot::Strict,
+        (module, text),
+        arena,
+        &HostGrant::UNBOUNDED,
+        ByteOffset::from(0_usize),
+    ));
+    assert_eq!(after, whole, "the unit spells as it does judged at once");
+    assert!(
+        whole.iter().flatten().all(Option::is_some),
+        "every type is spelled: {whole:?}"
+    );
+}
+
+#[test]
+fn a_sealed_type_is_spelled_by_its_path()
+{
+    let step = unsettled(
+        Path::new("sealed.gandr"),
+        SourceRoot::Strict,
+        SourceText::from(include_str!(
+            "diagnostics/fixtures/a-sealed-type-is-spelled-by-its-path.gandr"
+        )),
+    );
+    let Step::Source {
+        composed:
+            Composed::Settled {
+                ref report,
+                ref spellings,
+                ..
+            },
+        ..
+    } = step
+    else {
+        panic!("the module settles");
+    };
+    let Some(Maybe::Present(Refusal::Checking(CheckRefusalOf::TypeMismatch(MismatchOf::Value {
+        synthesised,
+        expected,
+        ..
+    })))) = report
+        .declarations()
+        .last()
+        .map(|declaration| declaration.produced().refusal())
+    else {
+        panic!("the leak is a value mismatch");
+    };
+    let place = spellings.spelled(Spelling::Unicode).place_of(
+        report
+            .declarations()
+            .last()
+            .expect("the leak is reported")
+            .constant(),
+    );
+    let spelled = |node| match spellings
+        .spelled(Spelling::Unicode)
+        .get(SpelledNode { node, place })
+    {
+        Maybe::Present(presentation) => presentation.as_ref().to_owned(),
+        Maybe::Absent(reason) => format!("{reason:?}"),
+    };
+    assert_eq!(
+        (
+            spelled(TypeNodeOf::Value(expected)),
+            spelled(TypeNodeOf::Value(synthesised))
+        ),
+        ("Integer".to_owned(), "Counter.T".to_owned()),
+        "the atom is named as a client writes it"
+    );
+}
+
+/// The types a refusal compares are spelled in each spelling while the arena
+/// is at hand, and a face reads the one its reader chose (#782).
+#[test]
+fn a_refusal_spells_its_types_in_either_spelling_782()
+{
+    for (source, unicode, ascii) in [
+        (
+            include_str!(
+                "diagnostics/fixtures/a-refusal-spells-its-types-in-either-spelling-782-1.gandr"
+            ),
+            "Integer ≃ String",
+            "Integer <~> String",
+        ),
+        (
+            include_str!(
+                "diagnostics/fixtures/a-refusal-spells-its-types-in-either-spelling-782-2.gandr"
+            ),
+            "Integer ≅ String",
+            "Iso Integer String",
+        ),
+    ] {
+        let step = unsettled(
+            Path::new("relations.gandr"),
+            SourceRoot::Strict,
+            SourceText::from(source),
+        );
+        let Step::Source {
+            composed:
+                Composed::Settled {
+                    ref report,
+                    ref spellings,
+                    ..
+                },
+            ..
+        } = step
+        else {
+            panic!("the module settles");
+        };
+        let Some(Maybe::Present(Refusal::Checking(CheckRefusalOf::TypeMismatch(
+            MismatchOf::Value {
+                synthesised,
+                expected,
+                ..
+            },
+        )))) = report
+            .declarations()
+            .last()
+            .map(|declaration| declaration.produced().refusal())
+        else {
+            panic!("the literal is a value mismatch");
+        };
+        let place = spellings.spelled(Spelling::Unicode).place_of(
+            report
+                .declarations()
+                .last()
+                .expect("the literal is reported")
+                .constant(),
+        );
+        let spelled =
+            |spelling, node| match spellings.spelled(spelling).get(SpelledNode { node, place }) {
+                Maybe::Present(presentation) => presentation.as_ref().to_owned(),
+                Maybe::Absent(reason) => format!("{reason:?}"),
+            };
+        for (spelling, relation) in [(Spelling::Unicode, unicode), (Spelling::Ascii, ascii)] {
+            assert_eq!(
+                [
+                    spelled(spelling, TypeNodeOf::Value(expected)),
+                    spelled(spelling, TypeNodeOf::Value(synthesised))
+                ],
+                [String::from(relation), String::from("Integer")],
+                "{source:?} in {spelling:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_refusal_names_the_rules_it_stood_inside()
+{
+    assert_eq!(
+        contexts(
+            SourceText::from(FORCE),
+            &only(Path::new("force.gandr"), SourceText::from(FORCE))
+        ),
+        [
+            (
+                String::from("thunk { become force 1 }"),
+                String::from(
+                    "checked against `() -> Integer`; while checking the body of this thunk"
+                )
+            ),
+            (
+                String::from("force 1"),
+                String::from("checked against `-F Integer`; while forcing this")
+            ),
+        ],
+        "the force of an integer stands inside the thunk, outermost first"
+    );
+    let application = only(
+        Path::new("application.gandr"),
+        SourceText::from(APPLICATION),
+    );
+    assert_eq!(
+        contexts(SourceText::from(APPLICATION), &application),
+        [
+            (
+                String::from("thunk { become (pure 1) 2 }"),
+                String::from(
+                    "checked against `() -> Integer`; while checking the body of this thunk"
+                )
+            ),
+            (
+                String::from("(pure 1) 2"),
+                String::from(
+                    "checked against `-F Integer`; while synthesising the function this \
+                         applies"
+                )
+            ),
+        ],
+        "the head that is not a function stands inside the application and the thunk"
+    );
+    assert_eq!(
+        application
+            .contexts
+            .iter()
+            .map(|context| context.role)
+            .collect::<Vec<_>>(),
+        [FrameRole::ThunkBody, FrameRole::ApplicationHead],
+        "each context keeps its rule's stable name"
+    );
+    assert_eq!(
+        contexts(
+            SourceText::from(MISMATCH),
+            &only(Path::new("mismatch.gandr"), SourceText::from(MISMATCH))
+        ),
+        Vec::new(),
+        "a body refused where it stands has no rule beyond its primary locus"
+    );
+}
+
+#[test]
+fn a_mismatch_under_a_binder_names_it()
+{
+    let diagnostic = only(Path::new("bound.gandr"), SourceText::from(BOUND));
+    let named = contexts(SourceText::from(BOUND), &diagnostic);
+    assert!(
+        named.contains(&(
+            String::from("let"),
+            String::from(
+                "checked against `-F String`; while checking the body under this binding; \
+                     binds m : Integer"
+            )
+        )),
+        "the let names the binder it opened and its type: {named:?}"
+    );
+    assert_eq!(
+        diagnostic
+            .hypotheses
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        ["n : Integer", "m : Integer"],
+        "the hypotheses in scope are the parameter and the run's binder, outermost first"
+    );
+    assert_eq!(
+        diagnostic.span,
+        Maybe::Present(nth(SourceText::from(BOUND), SourceText::from("m"))[1]),
+        "the mismatch is the returned binder"
+    );
+}
+
+/// A refusal spells a type under the binders in scope by the names the
+/// source wrote, never `?`, and the declared type a frame names by the
+/// parameters the declaration writes, never fresh letters (#418).
+#[test]
+fn a_refusal_spells_its_binders_by_name_418()
+{
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-refusal-spells-its-binders-by-name-418.gandr"
+    ));
+    let diagnostic = only(Path::new("moved.gandr"), text);
+    assert_eq!(
+        (
+            diagnostic.detail.compared.expected.clone(),
+            diagnostic.detail.compared.found.clone()
+        ),
+        (
+            Maybe::Present(String::from("counted_at(other)")),
+            Maybe::Present(String::from("counted_at(presented)"))
+        ),
+        "the mismatch names the two binders it is over"
+    );
+    assert_eq!(
+        diagnostic
+            .hypotheses
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        [
+            "presented : Theory",
+            "other : Theory",
+            "n : counted_at(presented)"
+        ],
+        "a hypothesis's type names the binders before it"
+    );
+    let notes: Vec<String> = contexts(text, &diagnostic)
+        .into_iter()
+        .map(|(_, note)| note)
+        .collect();
+    assert!(
+        notes.iter().any(|note| {
+            note.contains(
+                "(presented : Theory) -> (other : Theory) -> counted_at(presented) -> -F \
+                     counted_at(other)",
+            )
+        }),
+        "the declared type a frame names binds the declaration's parameters: {notes:?}"
+    );
+}
+
+/// A refusal inside a data declaration spells a type under the declaration's
+/// binders by the names the source writes: a parameter, an index and a
+/// constructor's field, never `?` (#4028).
+#[test]
+fn a_data_declaration_s_refusal_spells_its_binders_by_name_4028()
+{
+    const BOUNDS: &str = include_str!("diagnostics/fixtures/bounds-1.gandr");
+    for (declaration, expected, found) in [
+        (
+            include_str!("diagnostics/fixtures/bounds-2.gandr"),
+            "Nat",
+            "Fin n",
+        ),
+        (
+            include_str!("diagnostics/fixtures/bounds-3.gandr"),
+            "Nat",
+            "Fin n",
+        ),
+        (
+            include_str!("diagnostics/fixtures/bounds-4.gandr"),
+            "Fin (Succ n)",
+            "Fin n",
+        ),
+    ] {
+        let source = format!("{BOUNDS}{declaration}");
+        let diagnostic = only(Path::new("bounds.gandr"), SourceText::from(source.as_str()));
+        assert_eq!(
+            (
+                diagnostic.detail.compared.expected.clone(),
+                diagnostic.detail.compared.found.clone()
+            ),
+            (
+                Maybe::Present(String::from(expected)),
+                Maybe::Present(String::from(found))
+            ),
+            "the mismatch names the binders it stands under: {declaration}"
+        );
+        assert_eq!(
+            diagnostic
+                .hypotheses
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["n : Nat", "i : Fin n"],
+            "the hypotheses are the declaration's binders before the refused site, each \
+             named: {declaration}"
+        );
+    }
+}
+
+/// A refusal inside a declared type spells the type under the signature's
+/// binders by the names the source writes, a dependent arrow's binder among
+/// them: a value's signature and a constructor's field, never `?` or `_`
+/// (#4043).
+#[test]
+fn a_signature_s_refusal_spells_its_binders_by_name_4043()
+{
+    const BOUNDS: &str = include_str!("diagnostics/fixtures/bounds-1.gandr");
+    for (declaration, hypotheses) in [
+        (
+            "def atZero(k : Nat, f : (x : Fin(k)) -> Fin(x)) -> Nat { Zero }\n",
+            &["k : Nat", "x : Fin k"][..],
+        ),
+        (
+            "data Inner(n : Nat) : Type where { | C : (k : Nat, f : (x : Fin(k)) -> Fin(x)) --> Inner(n) }\n",
+            &["n : Nat", "k : Nat", "x : Fin k"][..],
+        ),
+    ] {
+        let source = format!("{BOUNDS}{declaration}");
+        let diagnostic = only(
+            Path::new("signature.gandr"),
+            SourceText::from(source.as_str()),
+        );
+        assert_eq!(
+            diagnostic.detail.compared.found,
+            Maybe::Present(String::from("Fin k")),
+            "the mismatch names the binder it stands under: {declaration}"
+        );
+        assert_eq!(
+            diagnostic
+                .hypotheses
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            hypotheses,
+            "the hypotheses are the signature's binders, each named: {declaration}"
+        );
+    }
+}
+
+/// A trace spells a type kept at a region by the name of the scope or hold
+/// that opened it, never `?`: a capability scope's region by its capability,
+/// a hold's by its held slot, counted outermost first (#1494).
+#[test]
+fn a_trace_spells_a_kept_region_by_its_name_1494()
+{
+    profiled();
+    for (kept, text) in [
+        (
+            "c",
+            SourceText::from(include_str!(
+                "diagnostics/fixtures/a-trace-spells-a-kept-region-by-its-name-1494-1.gandr"
+            )),
+        ),
+        (
+            "l",
+            SourceText::from(include_str!(
+                "diagnostics/fixtures/a-trace-spells-a-kept-region-by-its-name-1494-2.gandr"
+            )),
+        ),
+    ] {
+        let mut printed = walked(Path::new(&format!("traced-{kept}")), text);
+        assert_eq!(printed.len(), 1_usize, "one diagnostic: {printed:?}");
+        let diagnostic = printed.remove(0);
+        let labels: Vec<String> = contexts(text, &diagnostic)
+            .into_iter()
+            .map(|(_, label)| label)
+            .collect();
+        let spelled = format!("(() -> Integer) at {kept}");
+        assert!(
+            labels.iter().any(|label| label.contains(&spelled)),
+            "the kept type names its region `{kept}`: {labels:?}"
+        );
+        assert!(
+            labels.iter().all(|label| !label.contains("at ?")),
+            "no region spells `?`: {labels:?}"
+        );
+    }
+}
+
+/// A type kept at a definition's own region binder, `[r : Region]`, is spelled
+/// by the binder's name, so a mismatch between two binders names both, never
+/// `?` (#2138).
+#[test]
+fn a_mismatch_between_two_region_binders_names_both_2138()
+{
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-mismatch-between-two-region-binders-names-both-2138.gandr"
+    ));
+    let diagnostic = only(Path::new("crossed.gandr"), text);
+    assert_eq!(
+        match diagnostic.primary() {
+            Maybe::Present(primary) => primary.label.clone(),
+            Maybe::Absent(reason) => panic!("a located refusal carries a label: {reason:?}"),
+        },
+        "its type does not convert: expected `(() -> Integer) at s`, found `(() -> Integer) at r`"
+    );
+    let labels: Vec<String> = contexts(text, &diagnostic)
+        .into_iter()
+        .map(|(_, label)| label)
+        .collect();
+    assert!(
+        labels
+            .iter()
+            .any(|label| label.contains("binds k : (() -> Integer) at r")),
+        "a parameter kept at a binder names it: {labels:?}"
+    );
+    assert!(
+        labels.iter().all(|label| !label.contains("at ?")),
+        "no region spells `?`: {labels:?}"
+    );
+}
+
+#[test]
+fn an_unlocated_rule_becomes_a_note()
+{
+    let diagnostic = force_without_rules(Kept::Primary);
+    assert!(
+        diagnostic
+            .contexts
+            .iter()
+            .all(|context| matches!(context.locus, Maybe::Absent(_))),
+        "a rule whose node the table records nothing for marks no bytes"
+    );
+    assert_eq!(
+        contexts(SourceText::from(FORCE), &diagnostic)
+            .into_iter()
+            .map(|(_, note)| note)
+            .collect::<Vec<_>>(),
+        [
+            "while checking the body of this thunk",
+            "while comparing the type this synthesises with the one it is checked against",
+            "while forcing this",
+        ],
+        "each unlocated rule reads as its sentence, outermost first"
+    );
+    assert!(
+        diagnostic
+            .annotations
+            .iter()
+            .all(|annotation| annotation.kind == AnnotationKind::Primary),
+        "an unlocated rule adds no annotation"
+    );
+}
+
+#[test]
+fn an_unlocated_report_claims_no_span()
+{
+    let diagnostic = force_without_rules(Kept::Nothing);
+    assert_eq!(
+        diagnostic.span,
+        Maybe::Absent(report_span::Absent::Unrecorded),
+        "a node the table records nothing for is no locus"
+    );
+    assert!(matches!(diagnostic.primary(), Maybe::Absent(_)));
+    assert!(
+        diagnostic.annotations.is_empty(),
+        "an unlocated report marks nothing"
+    );
+    assert!(
+        matches!(diagnostic.excerpt, Maybe::Absent(_)),
+        "and quotes no line"
+    );
+    assert!(
+        matches!(diagnostic.expression, Maybe::Absent(_)),
+        "and names no expression"
+    );
+}
+
+#[test]
+fn a_return_position_failure_points_at_the_returned_value()
+{
+    let text = "def g(v : Integer) -> -F String { return v }\n";
+    let diagnostic = only(Path::new("returned.gandr"), SourceText::from(text));
+    assert_eq!(
+        diagnostic.span,
+        Maybe::Present(nth(SourceText::from(text), SourceText::from("v"))[1]),
+        "the mismatch is the value returned, not the return or the function"
+    );
+    assert_eq!(
+        diagnostic.contexts.last().map(|context| context.role),
+        Some(FrameRole::ReturnValue),
+        "the innermost rule is the return's"
+    );
+}
+
+#[test]
+fn a_head_that_is_no_function_names_its_repair_5474()
+{
+    profiled();
+    let list = include_str!(
+        "diagnostics/unformatted/a-head-that-is-no-function-names-its-repair-5474-list.gandr"
+    );
+    let repaired_list = include_str!(
+        "diagnostics/unformatted/a-head-that-is-no-function-names-its-repair-5474-repaired-list.gandr"
+    );
+    for (source, help, repaired) in [
+        (
+            list,
+            "add a `,` after `7` to separate the two items",
+            repaired_list,
+        ),
+        (
+            include_str!(
+                "diagnostics/unformatted/a-head-that-is-no-function-names-its-repair-5474-1.gandr"
+            ),
+            "move the line after `x` to its block's column to start a statement",
+            "def g(x : Integer, y : Integer) -> Integer =\n  let a = x\n  y\n  a\n",
+        ),
+    ] {
+        let printed = walked(Path::new("juxtaposed.gandr"), SourceText::from(source));
+        assert_eq!(printed.len(), 1_usize, "one refusal: {printed:?}");
+        let fixed = printed
+            .iter()
+            .find_map(|diagnostic| match diagnostic.repair {
+                Maybe::Present(ref named) => {
+                    let mut fixed = String::from(source);
+                    fixed.replace_range(
+                        usize::from(named.span.start()) .. usize::from(named.span.end()),
+                        &named.replacement,
+                    );
+                    Some(fixed)
+                },
+                Maybe::Absent(_) => None,
+            });
+        assert_eq!(
+            (
+                printed
+                    .iter()
+                    .map(|diagnostic| diagnostic.help.clone())
+                    .collect::<Vec<_>>(),
+                fixed.as_deref()
+            ),
+            (vec![Maybe::Present(String::from(help))], Some(repaired)),
+            "the help names the repair, and the repair writes it: {source}"
+        );
+        assert_eq!(
+            printed
+                .iter()
+                .map(|diagnostic| diagnostic.fix.clone())
+                .collect::<Vec<_>>(),
+            [Maybe::Absent(fix::Absent::Unproposed)],
+            "a report checks no repair, so it proposes none as a fix: {source}"
+        );
+    }
+    assert_eq!(
+        walked(
+            Path::new("juxtaposed.gandr"),
+            SourceText::from(repaired_list)
+        ),
+        [],
+        "the list the repair writes checks"
+    );
+    assert_eq!(
+        only(
+            Path::new("applied.gandr"),
+            SourceText::from(include_str!(
+                "diagnostics/unformatted/a-head-that-is-no-function-names-its-repair-5474-2.gandr"
+            ))
+        )
+        .repair,
+        Maybe::Absent(repair::Absent::Unnamed),
+        "an operand on its head's line inside no group names no repair"
+    );
+}
+
+#[test]
+fn repeated_equal_siblings_point_at_the_right_occurrence()
+{
+    let text = include_str!(
+        "diagnostics/fixtures/repeated-equal-siblings-point-at-the-right-occurrence.gandr"
+    );
+    assert_eq!(
+        only(Path::new("siblings.gandr"), SourceText::from(text)).span,
+        Maybe::Present(nth(SourceText::from(text), SourceText::from("\"no\""))[1]),
+        "the second of two equal arguments is the one that mismatches"
+    );
+}
+
+/// A call whose omitted model two modules answer names both, in the order
+/// they are declared, and the supply that settles it (#739).
+#[test]
+fn an_ambiguous_model_slot_names_every_module_that_answers_it_739()
+{
+    let text = include_str!(
+        "diagnostics/fixtures/an-ambiguous-model-slot-names-every-module-that-answers-it-739.gandr"
+    );
+    assert_eq!(
+        only(Path::new("ambiguous.gandr"), SourceText::from(text))
+            .message
+            .text,
+        "more than one module in scope answers the model implicit `s` this call to `stepped` \
+         omits: `Up` and `Tens`; supply the one meant as `stepped[.s = …](…)`"
+    );
+}
+
+#[test]
+fn a_shadowed_builtin_is_a_warning()
+{
+    let text = include_str!("diagnostics/fixtures/a-shadowed-builtin-is-a-warning-1.gandr");
+    let checked = printed(
+        Path::new("shadow.gandr"),
+        SourceRoot::Strict,
+        SourceText::from(text),
+        Verb::Check(Goals::Gated),
+    );
+    assert_eq!(
+        checked
+            .iter()
+            .map(|diagnostic| (
+                diagnostic.severity,
+                diagnostic.detail.class,
+                diagnostic.span
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (
+                Severity::Warning,
+                Class::Warning,
+                Maybe::Present(nth(SourceText::from(text), SourceText::from("add"))[0])
+            ),
+            (
+                Severity::Warning,
+                Class::Warning,
+                Maybe::Present(nth(SourceText::from(text), SourceText::from("int"))[0])
+            ),
+            (
+                Severity::Error,
+                Class::Refusal(FailureClass::MalformedSource),
+                Maybe::Present(nth(SourceText::from(text), SourceText::from("missing"))[0])
+            ),
+        ],
+        "each shadowed builtin is a warning at its name, printed before the declarations"
+    );
+    for warning in &checked[.. 2] {
+        assert_eq!(
+            warning.identifier,
+            Maybe::Present(Identifier::Refusal(
+                gandr_surface_corpus::RefusalName::ShadowedBuiltin.spelling()
+            )),
+            "a warning is named as the refusal the reject policy files"
+        );
+        assert_eq!(
+            warning
+                .annotations
+                .first()
+                .map(|primary| primary.label.as_str()),
+            Some("shadows a builtin")
+        );
+    }
+    assert_eq!(
+        checked[1].message.text,
+        "`int` shadows a builtin name; the source's binding wins"
+    );
+    assert!(
+        printed(
+            Path::new("shadow.gandr"),
+            SourceRoot::Strict,
+            SourceText::from(text),
+            Verb::Test
+        )
+        .iter()
+        .all(|diagnostic| diagnostic.severity != Severity::Warning),
+        "`test` prints settlements, never a warning"
+    );
+    assert!(
+        printed(
+            Path::new("shadow.gandr"),
+            SourceRoot::Strict,
+            SourceText::from(include_str!(
+                "diagnostics/fixtures/a-shadowed-builtin-is-a-warning-2.gandr"
+            )),
+            Verb::Check(Goals::Gated),
+        )
+        .iter()
+        .all(|diagnostic| diagnostic.severity == Severity::Warning),
+        "a warning unsettles nothing"
+    );
+}
+
+#[test]
+fn a_deprecated_use_is_a_finding_naming_its_note()
+{
+    let text =
+        include_str!("diagnostics/fixtures/a-deprecated-use-is-a-finding-naming-its-note.gandr");
+    let checked = printed(
+        Path::new("deprecated.gandr"),
+        SourceRoot::Strict,
+        SourceText::from(text),
+        Verb::Check(Goals::Gated),
+    );
+    let at = |name: &str| {
+        let start = text
+            .find(&format!("= {name};"))
+            .expect("the use is written")
+            .saturating_add(2);
+        Maybe::Present(
+            ByteSpan::new(
+                ByteOffset::from(start),
+                ByteOffset::from(start.saturating_add(name.len())),
+            )
+            .expect("the use is ordered"),
+        )
+    };
+    assert_eq!(
+        checked
+            .iter()
+            .map(|diagnostic| (
+                diagnostic.severity,
+                diagnostic.detail.class,
+                diagnostic.identifier,
+                diagnostic.span,
+                diagnostic.message.text.as_str(),
+                diagnostic
+                    .annotations
+                    .first()
+                    .map(|primary| primary.label.as_str()),
+                diagnostic.fix.clone(),
+            ))
+            .collect::<Vec<_>>(),
+        [
+            ("square", "`square` is deprecated since 0.2: use cube"),
+            ("single", "`single` is deprecated: use one"),
+            ("old", "`old` is deprecated"),
+        ]
+        .map(|(name, message)| (
+            Severity::Warning,
+            Class::Lint(Lint::Deprecated),
+            Maybe::Present(Identifier::Lint(Lint::Deprecated)),
+            at(name),
+            message,
+            Some("names a deprecated declaration"),
+            Maybe::Absent(fix::Absent::Unproposed),
+        )),
+        "each use of a marked declaration is a finding at the use, naming what its attribute \
+         states and no more; the declarations themselves and an unmarked use are not, and \
+         nothing unsettles"
+    );
+    assert!(
+        printed(
+            Path::new("deprecated.gandr"),
+            SourceRoot::Strict,
+            SourceText::from(text),
+            Verb::Test
+        )
+        .iter()
+        .all(|diagnostic| diagnostic.severity != Severity::Warning),
+        "`test` prints settlements, never a finding"
+    );
+}
+
+#[test]
+fn an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword()
+{
+    let text = include_str!(
+        "diagnostics/fixtures/an-inferred-exit-is-a-finding-whose-fix-writes-its-keyword.gandr"
+    );
+    let path = Path::new("exits.gandr");
+    let tail = |needle: &str| {
+        let start = text
+            .find(needle)
+            .expect("the tail is written")
+            .saturating_add(2);
+        let end = start.saturating_add(needle.len()).saturating_sub(3);
+        (
+            ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end))
+                .expect("the tail is ordered"),
+            ByteSpan::new(ByteOffset::from(start), ByteOffset::from(start))
+                .expect("an insertion is ordered"),
+        )
+    };
+    let (returned, before_returned) = tail("= n;");
+    let (called, before_called) = tail("= kept n;");
+    let finding = |diagnostic: &Diagnostic| {
+        (
+            diagnostic.severity,
+            diagnostic.detail.class,
+            diagnostic.identifier,
+            diagnostic.span,
+            diagnostic
+                .annotations
+                .first()
+                .map(|primary| primary.label.clone()),
+            diagnostic.fix.clone(),
+        )
+    };
+    let lint = (
+        Severity::Warning,
+        Class::Lint(Lint::ExplicitExits),
+        Maybe::Present(Identifier::Lint(Lint::ExplicitExits)),
+    );
+    let asked = printed(
+        path,
+        SourceRoot::Strict,
+        SourceText::from(text),
+        Verb::Check(Goals::Gated),
+    );
+    assert_eq!(
+        asked.iter().map(finding).collect::<Vec<_>>(),
+        [(
+            lint.0,
+            lint.1,
+            lint.2,
+            Maybe::Present(returned),
+            Some(String::from("exits by an inferred `return`")),
+            Maybe::Present(Fix {
+                span: before_returned,
+                replacement: String::from("return "),
+            }),
+        )],
+        "the attribute asks for the exit its declaration's body left out, and nowhere else"
+    );
+    let step = unsettled(path, SourceRoot::Strict, SourceText::from(text));
+    let everywhere: Vec<Diagnostic> = entries::<Evaluator>(&step, Verb::Check(Goals::Gated))
+        .linting(Lints::enabling([Lint::ExplicitExits]))
+        .collect();
+    assert_eq!(
+        everywhere.iter().map(finding).collect::<Vec<_>>(),
+        [
+            (
+                lint.0,
+                lint.1,
+                lint.2,
+                Maybe::Present(returned),
+                Some(String::from("exits by an inferred `return`")),
+                Maybe::Present(Fix {
+                    span: before_returned,
+                    replacement: String::from("return "),
+                }),
+            ),
+            (
+                lint.0,
+                lint.1,
+                lint.2,
+                Maybe::Present(called),
+                Some(String::from("exits by an inferred `become`")),
+                Maybe::Present(Fix {
+                    span: before_called,
+                    replacement: String::from("become "),
+                }),
+            ),
+        ],
+        "the lint enabled by the run finds every elided exit, each in source order"
+    );
+    assert!(
+        entries::<Evaluator>(&step, Verb::Test)
+            .linting(Lints::enabling([Lint::ExplicitExits]))
+            .all(|diagnostic| diagnostic.severity != Severity::Warning),
+        "`test` prints settlements, never a lint's finding"
+    );
+    let mut fixed = String::from(text);
+    for diagnostic in everywhere.iter().rev() {
+        if let Maybe::Present(ref fix) = diagnostic.fix {
+            fixed.replace_range(
+                usize::from(fix.span.start()) .. usize::from(fix.span.end()),
+                &fix.replacement,
+            );
+        }
+    }
+    assert_eq!(
+        fixed,
+        "@[explicit_exits]\ndef kept(n : Integer) -> -F Integer = return n;\ndef called(n : \
+             Integer) -> -F Integer = become kept n;\n"
+    );
+    let rechecked = unsettled(path, SourceRoot::Strict, SourceText::from(fixed.as_str()));
+    assert_eq!(
+        entries::<Evaluator>(&rechecked, Verb::Check(Goals::Gated))
+            .linting(Lints::enabling([Lint::ExplicitExits]))
+            .collect::<Vec<_>>(),
+        [],
+        "the fixed source settles and the lint finds nothing in it"
+    );
+}
+
+#[test]
+fn an_inferred_run_is_a_finding_whose_fix_writes_its_keyword()
+{
+    let text = include_str!(
+        "diagnostics/fixtures/an-inferred-run-is-a-finding-whose-fix-writes-its-keyword.gandr"
+    );
+    let path = Path::new("runs.gandr");
+    let call = |context: &str, offset: usize, width: usize| {
+        let start = text
+            .find(context)
+            .expect("the call is written")
+            .saturating_add(offset);
+        (
+            ByteSpan::new(
+                ByteOffset::from(start),
+                ByteOffset::from(start.saturating_add(width)),
+            )
+            .expect("the call is ordered"),
+            ByteSpan::new(ByteOffset::from(start), ByteOffset::from(start))
+                .expect("an insertion is ordered"),
+        )
+    };
+    let (inner, before_inner) = call("= id (id n);", 6_usize, 4_usize);
+    let (returned, before_returned) = call("= return id n;", 9_usize, 4_usize);
+    let (leading, before_leading) = call("= id n + 1;", 2_usize, 4_usize);
+    let (grouped, _) = call("= return n + 1;", 9_usize, 5_usize);
+    let finding = |diagnostic: &Diagnostic| {
+        (
+            diagnostic.severity,
+            diagnostic.detail.class,
+            diagnostic.identifier,
+            diagnostic.span,
+            diagnostic
+                .annotations
+                .first()
+                .map(|primary| primary.label.clone()),
+            diagnostic.fix.clone(),
+        )
+    };
+    let found = |span: ByteSpan, fix: (ByteSpan, &str)| {
+        (
+            Severity::Warning,
+            Class::Lint(Lint::ExplicitRuns),
+            Maybe::Present(Identifier::Lint(Lint::ExplicitRuns)),
+            Maybe::Present(span),
+            Some(String::from("runs by an inferred `run`")),
+            Maybe::Present(Fix {
+                span: fix.0,
+                replacement: String::from(fix.1),
+            }),
+        )
+    };
+    let asked = printed(
+        path,
+        SourceRoot::Strict,
+        SourceText::from(text),
+        Verb::Check(Goals::Gated),
+    );
+    assert_eq!(
+        asked.iter().map(finding).collect::<Vec<_>>(),
+        [found(inner, (before_inner, "run "))],
+        "the attribute asks for the run its declaration's body left out, and nowhere else"
+    );
+    assert_eq!(
+        asked
+            .first()
+            .map(|diagnostic| diagnostic.message.text.as_str()),
+        Some(
+            "this computation stands where a value is read; the checker infers `run`, which \
+                 the `explicit-runs` lint asks to be written"
+        )
+    );
+    let step = unsettled(path, SourceRoot::Strict, SourceText::from(text));
+    let everywhere: Vec<Diagnostic> = entries::<Evaluator>(&step, Verb::Check(Goals::Gated))
+        .linting(Lints::enabling([Lint::ExplicitRuns]))
+        .collect();
+    assert_eq!(
+        everywhere.iter().map(finding).collect::<Vec<_>>(),
+        [
+            found(inner, (before_inner, "run ")),
+            found(returned, (before_returned, "run ")),
+            found(leading, (before_leading, "run ")),
+            found(grouped, (grouped, "run (n + 1)")),
+        ],
+        "the lint enabled by the run finds every inferred run, each in source order; an \
+             operator call is grouped after `run`, which would otherwise run its first operand \
+             alone"
+    );
+    let mut fixed = String::from(text);
+    for diagnostic in everywhere.iter().rev() {
+        if let Maybe::Present(ref fix) = diagnostic.fix {
+            fixed.replace_range(
+                usize::from(fix.span.start()) .. usize::from(fix.span.end()),
+                &fix.replacement,
+            );
+        }
+    }
+    assert_eq!(
+        fixed,
+        "def id(n : Integer) -> -F Integer = n;\n@[explicit_runs]\ndef nested(n : Integer) \
+             -> -F Integer = id (run id n);\ndef returned(n : Integer) -> -F Integer = return run \
+             id n;\ndef leading(n : Integer) -> -F Integer = run id n + 1;\ndef grouped(n : \
+             Integer) -> -F Integer = return run (n + 1);\n"
+    );
+    let rechecked = unsettled(path, SourceRoot::Strict, SourceText::from(fixed.as_str()));
+    assert_eq!(
+        entries::<Evaluator>(&rechecked, Verb::Check(Goals::Gated))
+            .linting(Lints::enabling([Lint::ExplicitRuns]))
+            .collect::<Vec<_>>(),
+        [],
+        "the fixed source settles and the lint finds nothing in it"
+    );
+}
+
+#[test]
+fn refusals_of_one_class_label_what_their_locus_is()
+{
+    let mismatch = only(Path::new("mismatch.gandr"), SourceText::from(MISMATCH));
+    let head = only(
+        Path::new("head.gandr"),
+        SourceText::from(include_str!(
+            "diagnostics/fixtures/a-mismatch-label-spells-both-types-head.gandr"
+        )),
+    );
+    assert_eq!(
+        (mismatch.detail.class, head.detail.class),
+        (
+            Class::Refusal(FailureClass::MalformedSource),
+            Class::Refusal(FailureClass::MalformedSource)
+        ),
+        "both refusals are the author's mistake"
+    );
+    let label = |diagnostic: &Diagnostic| match diagnostic.primary() {
+        Maybe::Present(primary) => primary.label.clone(),
+        Maybe::Absent(reason) => panic!("a located refusal carries a label: {reason:?}"),
+    };
+    assert_ne!(
+        label(&mismatch),
+        label(&head),
+        "a term whose type does not convert and a head nothing answers are different loci"
+    );
+    for diagnostic in [&mismatch, &head] {
+        assert_ne!(
+            label(diagnostic),
+            diagnostic.detail.class.to_string(),
+            "the underline says what the bytes are, not the class"
+        );
+        assert!(
+            !diagnostic.detail.title.contains(".."),
+            "the annotation locates the refusal; the title repeats no byte range"
+        );
+    }
+}
+
+#[test]
+fn a_report_exposes_the_context_it_marks()
+{
+    let marked = |diagnostic: &Diagnostic| -> Vec<(ByteSpan, String)> {
+        diagnostic
+            .annotations
+            .iter()
+            .filter(|annotation| annotation.kind == AnnotationKind::Context)
+            .map(|annotation| (annotation.locus.span, annotation.label.clone()))
+            .collect()
+    };
+    assert_eq!(
+        marked(&only(
+            Path::new("mismatch.gandr"),
+            SourceText::from(MISMATCH)
+        )),
+        [(
+            nth(SourceText::from(MISMATCH), SourceText::from("Integer"))[0],
+            String::from("the type it is checked against")
+        )],
+        "the signature stands as the expected type; the synthesised type has no origin"
+    );
+    let duplicate =
+        include_str!("diagnostics/fixtures/a-report-exposes-the-context-it-marks-duplicate.gandr");
+    assert_eq!(
+        marked(&only(
+            Path::new("duplicate.gandr"),
+            SourceText::from(duplicate)
+        )),
+        [(
+            nth(
+                SourceText::from(duplicate),
+                SourceText::from("def a : Integer;")
+            )[0],
+            String::from("first written here")
+        )],
+        "the first signature is the duplicate's one context locus"
+    );
+    let goals = printed(
+        Path::new("hole.gandr"),
+        SourceRoot::Strict,
+        SourceText::from("def hole : Integer ;\n"),
+        Verb::Check(Goals::Reported),
+    );
+    let [ref goal] = *goals.as_slice()
+    else {
+        panic!("one goal");
+    };
+    assert_eq!(goal.severity, Severity::Goal);
+    assert_eq!(marked(goal), Vec::new(), "a goal names no context");
+}
+
+#[test]
+fn a_suspended_goal_names_the_hole_it_waits_on()
+{
+    let goals = printed(
+        Path::new("suspended.gandr"),
+        SourceRoot::Strict,
+        SourceText::from(include_str!(
+            "diagnostics/fixtures/a-suspended-goal-names-the-hole-it-waits-on-goals.gandr"
+        )),
+        Verb::Check(Goals::Reported),
+    );
+    let [ref hole, ref waiting] = *goals.as_slice()
+    else {
+        panic!("the hole and the declaration waiting on it are goals: {goals:?}");
+    };
+    assert_eq!(
+        (hole.severity, waiting.severity),
+        (Severity::Goal, Severity::Goal),
+        "a suspension is an obligation, not a refusal"
+    );
+    assert_eq!(
+        waiting.message.text,
+        "`three` states checks owing 0; produced checks owing 1; it waits on `code`"
+    );
+    assert!(
+        !hole.message.text.contains("waits on"),
+        "the hole itself waits on nothing: {}",
+        hole.message.text
+    );
+}
+
+#[test]
+fn a_labeled_context_retains_its_locus_and_cause()
+{
+    let duplicate =
+        include_str!("diagnostics/fixtures/a-report-exposes-the-context-it-marks-duplicate.gandr");
+    let diagnostic = only(Path::new("duplicate.gandr"), SourceText::from(duplicate));
+    assert_eq!(
+        diagnostic
+            .annotations
+            .iter()
+            .map(|annotation| (annotation.kind, annotation.locus.line))
+            .collect::<Vec<_>>(),
+        [
+            (AnnotationKind::Primary, 2_usize),
+            (AnnotationKind::Context, 1_usize)
+        ],
+        "the duplicate is primary on its own line; the first signature is context on its own"
+    );
+    assert!(
+        diagnostic
+            .annotations
+            .iter()
+            .all(|annotation| !annotation.label.is_empty()),
+        "each annotation says what its bytes are"
+    );
+}
+
+#[test]
+fn a_report_preserves_refusal_identity_and_title_payloads()
+{
+    let cases = [
+        (
+            MISMATCH,
+            Verb::Check(Goals::Gated),
+            Maybe::Present("TypeMismatch"),
+            &[][..],
+            &[][..],
+        ),
+        (
+            "def broken = missing ;\n",
+            Verb::Check(Goals::Gated),
+            Maybe::Present("UnresolvedName"),
+            &[][..],
+            &["missing"][..],
+        ),
+        (
+            "@[ owes(0) ] def hole : Integer ;\n",
+            Verb::Check(Goals::Reported),
+            Maybe::Absent(report_identifier::Absent::Statement),
+            &[0_usize, 1_usize][..],
+            &["hole"][..],
+        ),
+    ];
+    for (source, verb, identifier, numbers, names) in cases {
+        let held = printed(
+            Path::new("named.gandr"),
+            SourceRoot::Fixture,
+            SourceText::from(source),
+            verb,
+        );
+        let [ref diagnostic] = *held.as_slice()
+        else {
+            panic!("one diagnostic for {source:?}");
+        };
+        let named = match diagnostic.identifier {
+            Maybe::Present(ref spelling) => Maybe::Present(spelling.to_string()),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+        let expected = match identifier {
+            Maybe::Present(spelling) => Maybe::Present(spelling.to_owned()),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+        assert_eq!(named, expected, "stable refusal identity for {source:?}");
+        let title = &diagnostic.detail.title;
+        for name in names {
+            assert!(title.contains(name), "source name in {title}");
+        }
+        assert!(
+            title
+                .split(|character: char| !character.is_ascii_digit())
+                .filter_map(|digits| digits.parse::<usize>().ok())
+                .eq(numbers.iter().copied()),
+            "the title keeps its numeric roles without core addresses: {title}"
+        );
+    }
+}
+
+#[test]
+fn the_settle_note_says_what_was_expected_in_words()
+{
+    for (source, note) in [
+        (
+            "@[ owes(0) ] def a = missing ;\n",
+            "`a` is expected to check, and this refusal leaves it unsettled",
+        ),
+        (
+            "@[ owes(3) ] def b = missing ;\n",
+            "`b` is expected to check owing 3 obligations, and this refusal leaves it \
+                 unsettled; surviving obligations: 0 undeclared, 3 unproduced",
+        ),
+        (
+            "@[ refuses(\"TypeMismatch\") ] def c = missing ;\n",
+            "`c` is expected to be refused with TypeMismatch, and this refusal is not that \
+                 one",
+        ),
+    ] {
+        let held = printed(
+            Path::new("noted.gandr"),
+            SourceRoot::Fixture,
+            SourceText::from(source),
+            Verb::Check(Goals::Gated),
+        );
+        let [ref diagnostic] = *held.as_slice()
+        else {
+            panic!("one refusal for {source:?}");
+        };
+        assert_eq!(
+            diagnostic.note,
+            Maybe::Present(String::from(note)),
+            "the note says what was expected and why it did not happen"
+        );
+    }
+}
+
+#[test]
+fn a_refusal_its_expectation_states_is_noted_as_stated()
+{
+    let step = unsettled(
+        Path::new("stated.gandr"),
+        SourceRoot::Fixture,
+        SourceText::from("@[ refuses(\"UnresolvedName\") ] def d = missing ;\n"),
+    );
+    let held: Vec<Diagnostic> = entries::<Evaluator>(&step, Verb::Check(Goals::Gated))
+        .refusals(Refusals::Every)
+        .collect();
+    let [ref diagnostic] = *held.as_slice()
+    else {
+        panic!("the expected refusal prints once: {held:?}");
+    };
+    assert_eq!(
+        diagnostic.note,
+        Maybe::Present(String::from(
+            "`d` is refused with UnresolvedName, as its expectation states"
+        )),
+        "a refusal its expectation states is not called another one"
+    );
+}
+
+#[test]
+fn a_parting_pair_names_its_peak_and_both_normal_forms()
+{
+    // The corpus block's unit laws overlap at `add(Zero, Zero)`: the earlier
+    // rule rewrites it to `Zero` and the later one to `Succ(Zero)`. The
+    // refusal fills the obstruction shape, and its message reads the peak and
+    // both normal forms from it.
+    let text = SourceText::from(include_str!(
+        "../../../corpus/pathological/desc/rules-diverge.gandr"
+    ));
+    let step = unsettled(Path::new("rules-diverge.gandr"), SourceRoot::Fixture, text);
+    let held: Vec<Diagnostic> = entries::<Evaluator>(&step, Verb::Check(Goals::Gated))
+        .refusals(Refusals::Every)
+        .collect();
+    let [ref diagnostic] = *held.as_slice()
+    else {
+        panic!("the expected refusal prints once: {held:?}");
+    };
+    assert_eq!(
+        diagnostic.message.text,
+        "this rule and an earlier one rewrite `add(Zero, Zero)` to two different constructor \
+         terms, `Zero` and `Succ(Zero)`, so the block's rules are refused"
+    );
+    let ranges: Vec<String> = diagnostic
+        .annotations
+        .iter()
+        .map(|annotation| {
+            String::from(
+                text.fragment(annotation.locus.span)
+                    .expect("an annotation inside the text")
+                    .as_ref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        ranges,
+        ["rule : add m Zero ==> Succ m", "rule : add Zero n ==> n"],
+        "the annotations name the later rule, then the earlier one"
+    );
+}
+
+/// The cell diagnostics that lowering `text` records.
+///
+/// # Specification
+/// trivial.
+fn cell_diagnostics(text: SourceText<'_>) -> Vec<CellDiagnostic>
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let Lowered::Module { module, .. } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is a list of declarations");
+    };
+    module.cells().diagnostics.clone()
+}
+
+#[test]
+fn a_parting_pair_borrows_the_faults_rules_peak_and_normal_forms()
+{
+    for source in [
+        include_str!("../../../corpus/pathological/desc/rules-diverge.gandr"),
+        include_str!("../../../corpus/ledger/diagnostics/RulesUncompleted.gandr"),
+    ] {
+        let diagnostics = cell_diagnostics(SourceText::from(source));
+        let [ref diagnostic] = *diagnostics.as_slice()
+        else {
+            panic!("one cell diagnostic: {diagnostics:?}");
+        };
+        let CellFault::Coherence(
+            CoherenceFault::Diverges {
+                first,
+                ref peak,
+                ref left,
+                ref right,
+            }
+            | CoherenceFault::Uncompleted {
+                first,
+                ref peak,
+                ref left,
+                ref right,
+            },
+        ) = diagnostic.fault
+        else {
+            panic!("the pair parts: {:?}", diagnostic.fault);
+        };
+        let Maybe::Present(pair) = parting(diagnostic)
+        else {
+            panic!("the parting pair fills the shape");
+        };
+        assert_eq!(pair.cells.later, diagnostic.span, "the later rule");
+        assert_eq!(pair.cells.earlier, first, "the earlier rule");
+        assert!(
+            core::ptr::eq(core::ptr::from_ref(pair.cells.peak), &raw const **peak)
+                && core::ptr::eq(core::ptr::from_ref(pair.witness.earlier), &raw const **left)
+                && core::ptr::eq(core::ptr::from_ref(pair.witness.later), &raw const **right),
+            "the shape borrows the peak and the normal forms in order"
+        );
+    }
+}
+
+#[test]
+fn a_fault_with_no_second_normal_form_fills_no_shape()
+{
+    for (source, unparted) in [
+        (
+            include_str!("../../../corpus/ledger/diagnostics/RulesUnoriented.gandr"),
+            "an unoriented rule",
+        ),
+        (
+            include_str!("../../../corpus/ledger/diagnostics/RulesNeverComplete.gandr"),
+            "a completion that never ends",
+        ),
+    ] {
+        let diagnostics = cell_diagnostics(SourceText::from(source));
+        let [ref diagnostic] = *diagnostics.as_slice()
+        else {
+            panic!("{unparted}: one cell diagnostic: {diagnostics:?}");
+        };
+        assert!(
+            matches!(
+                diagnostic.fault,
+                CellFault::Coherence(
+                    CoherenceFault::Unoriented | CoherenceFault::NeverCompletes { .. }
+                )
+            ),
+            "{unparted}: {:?}",
+            diagnostic.fault
+        );
+        assert_eq!(
+            parting(diagnostic),
+            Maybe::Absent(obstructed::Absent::Unparted),
+            "{unparted} fills no shape"
+        );
+    }
+}
+
+#[test]
+fn a_refused_declaration_is_located()
+{
+    let text = include_str!("diagnostics/fixtures/a-refused-declaration-is-located.gandr");
+    let malformed = Class::Refusal(FailureClass::MalformedSource);
+    for verb in [
+        Verb::Check(Goals::Gated),
+        Verb::Check(Goals::Reported),
+        Verb::Test,
+    ] {
+        assert_eq!(
+            printed(
+                Path::new("refused.gandr"),
+                SourceRoot::Strict,
+                SourceText::from(text),
+                verb
+            )
+            .iter()
+            .map(|diagnostic| (diagnostic.detail.class, diagnostic.span))
+            .collect::<Vec<_>>(),
+            [
+                (
+                    malformed,
+                    Maybe::Present(nth(SourceText::from(text), SourceText::from("missing"))[0])
+                ),
+                (
+                    malformed,
+                    Maybe::Present(nth(SourceText::from(text), SourceText::from("\"text\""))[0])
+                ),
+                (
+                    malformed,
+                    Maybe::Present(nth(SourceText::from(text), SourceText::from("owes(1)"))[0])
+                ),
+            ],
+            "the lowering's, the checker's and the corpus root's refusals each sit at their \
+                 own span under {verb:?}"
+        );
+    }
+}
+
+#[test]
+fn an_importer_s_refusal_is_located_in_its_own_text()
+{
+    let scratch = Scratch::new(Path::new("importer"));
+    let user = include_str!(
+        "diagnostics/fixtures/an-importer-s-refusal-is-located-in-its-own-text-user.gandr"
+    );
+    scratch.file(
+        Path::new("strict/base.gandr"),
+        SourceText::from(include_str!(
+            "diagnostics/fixtures/an-importer-s-refusal-is-located-in-its-own-text.gandr"
+        )),
+    );
+    scratch.file(Path::new("strict/user.gandr"), SourceText::from(user));
+    let mut found = Vec::new();
+    let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()])
+        .visit::<Evaluator, _, _>(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                found.extend(
+                    entries::<Evaluator>(&step, Verb::Check(Goals::Reported))
+                        .filter(|diagnostic| diagnostic.path.ends_with("user.gandr")),
+                );
+                ControlFlow::Continue(())
+            },
+        );
+    let [ref refusal] = *found.as_slice()
+    else {
+        panic!("the importer reports its one refusal: {found:?}");
+    };
+    assert_eq!(
+        refusal.span,
+        Maybe::Present(nth(SourceText::from(user), SourceText::from("missing"))[0]),
+        "the span is measured in the importer's own text, not the unit's"
+    );
+    let Maybe::Present(primary) = refusal.primary()
+    else {
+        panic!("the refusal is located");
+    };
+    assert_eq!(
+        (primary.locus.line, primary.locus.column),
+        (3_usize, 11_usize),
+        "its line and column are the importer's own"
+    );
+    let Maybe::Present(ref excerpt) = refusal.excerpt
+    else {
+        panic!("the refusal quotes its line");
+    };
+    assert_eq!(
+        (excerpt.line, excerpt.text.lines().next()),
+        (3_usize, Some("def two = missing;")),
+        "the excerpt is the importer's line, not the sibling's"
+    );
+}
+
+#[test]
+fn an_importer_keeps_the_marks_its_import_holds_1199()
+{
+    let scratch = Scratch::new(Path::new("consumable"));
+    let base = include_str!(
+        "diagnostics/fixtures/an-importer-keeps-the-marks-its-import-holds-1199-base.gandr"
+    );
+    let user = include_str!(
+        "diagnostics/fixtures/an-importer-keeps-the-marks-its-import-holds-1199-user.gandr"
+    );
+    scratch.file(Path::new("strict/base.gandr"), SourceText::from(base));
+    scratch.file(Path::new("strict/user.gandr"), SourceText::from(user));
+    let mut found = Vec::new();
+    let mut unit = String::new();
+    let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()])
+        .visit::<Evaluator, _, _>(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                if let Step::Source { path, ref text, .. } = step
+                    && path.ends_with("user.gandr")
+                {
+                    let laid: &str = text.as_ref();
+                    laid.clone_into(&mut unit);
+                }
+                found.extend(
+                    entries::<Evaluator>(&step, Verb::Check(Goals::Reported))
+                        .filter(|diagnostic| diagnostic.path.ends_with("user.gandr")),
+                );
+                ControlFlow::Continue(())
+            },
+        );
+    let [ref refusal] = *found.as_slice()
+    else {
+        panic!("the importer reports its one refusal: {found:?}");
+    };
+    assert!(
+        matches!(refusal.primary(), Maybe::Absent(_)),
+        "the refused payload is the import's, so the importer's own text marks none"
+    );
+    // A mark elsewhere keeps its bytes in the unit the importer was judged in,
+    // which lays the prelude and the base before it.
+    let marked: Vec<&str> = refusal
+        .elsewhere
+        .iter()
+        .map(|mark| unit.get(usize::from(mark.span.start()) .. usize::from(mark.span.end())))
+        .collect::<Option<_>>()
+        .expect("every mark lies in the unit");
+    assert_eq!(
+        marked,
+        ["Cap[1] { write }"],
+        "the refused payload, where the import writes it"
+    );
+}
+
+#[test]
+fn one_refusal_details_each_verbosity()
+{
+    let diagnostic = only(Path::new("force.gandr"), SourceText::from(FORCE));
+    let names = |verbosity| {
+        diagnostic
+            .details(verbosity)
+            .into_iter()
+            .map(|detail| detail.name)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(names(Verbosity::User), Vec::<&str>::new());
+    assert_eq!(names(Verbosity::Json), Vec::<&str>::new());
+    assert_eq!(names(Verbosity::Detailed), [
+        "class",
+        "detail",
+        "expression"
+    ]);
+    assert_eq!(names(Verbosity::Debug), [
+        "class",
+        "detail",
+        "expression",
+        "spans",
+        "rules",
+        "refusal"
+    ]);
+    let bound = only(Path::new("bound.gandr"), SourceText::from(BOUND));
+    assert!(
+        bound
+            .details(Verbosity::Detailed)
+            .iter()
+            .any(|detail| detail.name == "hypotheses"
+                && detail.text == "`n : Integer`, `m : Integer`"),
+        "the hypotheses show from the detailed level"
+    );
+    let image: serde_json::Value =
+        serde_json::from_str(&diagnostic.json()).expect("the JSON image parses");
+    assert_eq!(image["name"], "ShapeMismatch");
+    assert_eq!(image["message"], diagnostic.message.text.as_str());
+    assert_eq!(image["title"], diagnostic.detail.title.as_str());
+    assert_eq!(
+        (&image["primary"]["line"], &image["primary"]["column"]),
+        (&serde_json::json!(2_u64), &serde_json::json!(30_u64)),
+        "the primary locus is where the terminal points"
+    );
+    assert_eq!(
+        image["contexts"].as_array().map(Vec::len),
+        Some(diagnostic.contexts.len()),
+        "every context is in the image"
+    );
+}
+
+#[test]
+fn each_verb_prints_its_entries()
+{
+    let scratch = Scratch::new(Path::new("entries"));
+    for (relative, text) in [
+        ("fixture/hole.gandr", "def hole : Integer ;\n"),
+        ("fixture/pending/lowered.gandr", "def a = 1 ;\n"),
+        ("fixture/pending/whole.gandr", "@[ checks ]\n"),
+        (
+            "fixture/settled.gandr",
+            "@[ owes(1) ] def later : Integer ;\n",
+        ),
+        (
+            "fixture/unproduced.gandr",
+            "@[ refuses(\"UnresolvedName\") ] def answer = 42 ;\n",
+        ),
+        ("strict/whole.gandr", "@[ checks ]\n"),
+    ] {
+        scratch.file(Path::new(relative), SourceText::from(text));
+    }
+    let printed = |verb: Verb| {
+        let mut printed = Vec::new();
+        let mut line = String::new();
+        let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()])
+            .visit::<Evaluator, _, _>(
+                &Pool::new(Width::SERIAL),
+                |step| -> ControlFlow<Infallible> {
+                    for diagnostic in entries::<Evaluator>(&step, verb) {
+                        if diagnostic.severity == Severity::Ledger {
+                            let image: serde_json::Value = serde_json::from_str(&diagnostic.json())
+                                .expect("a ledger line's JSON image parses");
+                            assert_eq!(image["level"], "line");
+                            line.clear();
+                            core::fmt::Write::write_fmt(
+                                &mut line,
+                                format_args!(
+                                    "{}: {}",
+                                    diagnostic.path.display(),
+                                    diagnostic.message.text
+                                ),
+                            )
+                            .expect("a ledger line writes");
+                            assert_eq!(
+                                image["line"],
+                                line.as_str(),
+                                "the JSON image carries the line as the terminal prints it"
+                            );
+                        }
+                        printed.push((
+                            diagnostic
+                                .path
+                                .strip_prefix(&scratch.0)
+                                .expect("within scratch")
+                                .to_path_buf(),
+                            diagnostic.severity,
+                            diagnostic.detail.class,
+                        ));
+                    }
+                    ControlFlow::Continue(())
+                },
+            );
+        printed
+    };
+    let check = |hole: Severity, class: Class| {
+        vec![
+            (PathBuf::from("fixture/hole.gandr"), hole, class),
+            (
+                PathBuf::from("fixture/pending/lowered.gandr"),
+                Severity::Ledger,
+                Class::Ledger,
+            ),
+            (
+                PathBuf::from("fixture/unproduced.gandr"),
+                Severity::Error,
+                Class::Unsettled(Unsettlement::Unproduced),
+            ),
+            (
+                PathBuf::from("strict/whole.gandr"),
+                Severity::Error,
+                Class::Refusal(FailureClass::MalformedSource),
+            ),
+        ]
+    };
+    assert_eq!(
+        printed(Verb::Check(Goals::Gated)),
+        check(Severity::Error, Class::Unsettled(Unsettlement::Obligations))
+    );
+    assert_eq!(
+        printed(Verb::Check(Goals::Reported)),
+        check(Severity::Goal, Class::Goal)
+    );
+    assert_eq!(printed(Verb::Test), vec![
+        (
+            PathBuf::from("fixture/hole.gandr"),
+            Severity::Error,
+            Class::Unsettled(Unsettlement::Obligations)
+        ),
+        (
+            PathBuf::from("fixture/pending/lowered.gandr"),
+            Severity::Ledger,
+            Class::Ledger
+        ),
+        (
+            PathBuf::from("fixture/pending/whole.gandr"),
+            Severity::Ledger,
+            Class::Ledger
+        ),
+        (
+            PathBuf::from("fixture/settled.gandr"),
+            Severity::Ledger,
+            Class::Ledger
+        ),
+        (
+            PathBuf::from("fixture/unproduced.gandr"),
+            Severity::Error,
+            Class::Unsettled(Unsettlement::Unproduced)
+        ),
+        (
+            PathBuf::from("strict/whole.gandr"),
+            Severity::Error,
+            Class::Refusal(FailureClass::MalformedSource)
+        ),
+    ]);
+}
+
+#[test]
+fn a_declaration_naming_a_refused_one_is_a_note()
+{
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-declaration-naming-a-refused-one-is-a-note.gandr"
+    ));
+    let printed = printed(
+        Path::new("cascade.gandr"),
+        SourceRoot::Strict,
+        text,
+        Verb::Check(Goals::Gated),
+    );
+    let called = nth(text, SourceText::from("a ()"))[0];
+    let call = ByteSpan::new(
+        called.start(),
+        ByteOffset::from(usize::from(called.start()) + 1),
+    )
+    .expect("ordered");
+    assert_eq!(
+        printed
+            .iter()
+            .map(|diagnostic| (diagnostic.severity, diagnostic.span))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                Severity::Error,
+                Maybe::Present(nth(text, SourceText::from("^"))[0])
+            ),
+            (Severity::Note, Maybe::Present(call)),
+        ],
+        "the refused declaration is the one error; the one calling it is a note at the \
+             call, and the one calling a declaration that checks prints nothing"
+    );
+    let Maybe::Present(ref note) = printed[1].note
+    else {
+        panic!("the note closes with what leaves it unsettled");
+    };
+    assert_eq!(
+        note, "`b` is expected to check, and the refusal of `a` leaves it unsettled",
+        "a declaration expected to check owing nothing is told what leaves it unsettled"
+    );
+    let owing = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-declaration-naming-a-refused-one-is-a-note-owing.gandr"
+    ));
+    let owing_printed = self::printed(
+        Path::new("owing.gandr"),
+        SourceRoot::Fixture,
+        owing,
+        Verb::Check(Goals::Gated),
+    );
+    let notes: Vec<_> = owing_printed
+        .iter()
+        .filter(|diagnostic| diagnostic.severity == Severity::Note)
+        .map(|diagnostic| diagnostic.note.clone())
+        .collect();
+    assert_eq!(
+        notes,
+        [Maybe::Present(String::from(
+            "`b` is expected to check owing 1 obligations, and this refusal leaves it \
+                 unsettled; surviving obligations: 0 undeclared, 1 unproduced; it rests on `a`, \
+                 which is refused"
+        ))],
+        "a declaration expected to owe is told its own expectation, then what it rests on"
+    );
+}
+
+/// #2339: a signature whose definition is written with its keyword misspelt
+/// owes its body because the lowering refused that form; it is a note saying
+/// so, and the first error is the misspelt keyword's.
+#[test]
+fn a_signature_whose_definition_is_refused_is_a_note_2339()
+{
+    let text = SourceText::from(include_str!(
+        "diagnostics/unformatted/a-signature-whose-definition-is-refused-is-a-note-2339.gandr"
+    ));
+    let printed = printed(
+        Path::new("unread.gandr"),
+        SourceRoot::Strict,
+        text,
+        Verb::Check(Goals::Gated),
+    );
+    let Some(signature) = printed
+        .iter()
+        .find(|diagnostic| diagnostic.severity == Severity::Note)
+    else {
+        panic!("the signature is a note: {printed:?}");
+    };
+    assert_eq!(
+        signature.note,
+        Maybe::Present(String::from(
+            "`pair` states checks owing 0 and produced checks owing 1: a form of `pair` the \
+             lowering refused leaves it so"
+        )),
+        "the note names what the signature owes and the refused form of its name"
+    );
+    assert_eq!(
+        printed
+            .iter()
+            .find(|diagnostic| diagnostic.severity == Severity::Error)
+            .map(|diagnostic| diagnostic.span),
+        Some(Maybe::Present(nth(text, SourceText::from("de"))[1])),
+        "the first error is the misspelt keyword's"
+    );
+}
+
+#[test]
+fn an_unimplemented_refusal_names_its_tracking_issue_in_every_face()
+{
+    let url = "https://github.com/gandr-lang/gandr/issues/2563";
+    let wide = only(
+        Path::new("half.gandr"),
+        SourceText::from("def half = 0.5f32 ;\n"),
+    );
+    assert_eq!(
+        wide.detail.class,
+        Class::Refusal(FailureClass::Unimplemented(TrackingIssue::TYPED_NUMBER))
+    );
+    assert_eq!(
+        wide.tracked(),
+        Maybe::Present(format!("tracked by #2563 <{url}>")),
+        "the terminal and the editor close with the issue and its address"
+    );
+    let image: serde_json::Value =
+        serde_json::from_str(&wide.json()).expect("the JSON image parses");
+    assert_eq!(
+        image["tracking"],
+        serde_json::json!({"issue": "#2563", "url": url})
+    );
+    let malformed = only(Path::new("force.gandr"), SourceText::from(FORCE));
+    assert_eq!(
+        malformed.tracked(),
+        Maybe::Absent(tracking::Absent::Untracked),
+        "a refusal of what the author wrote names no issue"
+    );
+    let image: serde_json::Value =
+        serde_json::from_str(&malformed.json()).expect("the JSON image parses");
+    assert_eq!(image["tracking"], serde_json::Value::Null);
+}
+
+/// The malformed-form sweep: each pathological fixture cut short at every
+/// word of its own text (an importer's, not its closure's), each cut's
+/// malformed form reporting its parse error alone.
+mod sweeps
+{
+    use gandr_workflow_sweep::Nights;
+    use gandr_workflow_sweep::Portion;
+    use gandr_workflow_sweep::Sample;
+    use gandr_workflow_sweep::SampleName;
+    use gandr_workflow_sweep::SampleSize;
+    use gandr_workflow_sweep::Sweep;
+
+    use super::*;
+
+    /// The sample: two sources under `fixture/pathological`, ranked by their
+    /// BLAKE3 digest under this name, and, in the companion, every one the
+    /// change adds or modifies beside them (`gandr-workflow-sweep`). Two hold
+    /// the sweep within the suite's bound of a second a test. The `sweeps`
+    /// profile cuts every pathological source, and the nightly profile the
+    /// night's slice of [`NIGHTS`].
+    const SAMPLE: Sample = Sample {
+        name: SampleName("a_malformed_form_reports_its_parse_error_alone"),
+        size: SampleSize(2),
+    };
+
+    /// The nights the nightly profile takes to cut every pathological
+    /// source: a seventh a night, the count the nightly's sweeps share
+    /// (#3013). Half of them cut for 99 s on the nightly runner (run
+    /// 40602657172).
+    const NIGHTS: Nights = Nights(7);
+
+    #[test]
+    fn a_malformed_form_reports_its_parse_error_alone()
+    {
+        reports_alone(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn a_malformed_form_reports_its_parse_error_alone_changed()
+    {
+        reports_alone(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every cut of every pathological source `sweep` visits reports a
+    /// malformed form's parse error alone.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reports_alone(sweep: &Sweep)
+    {
+        let grammar = built_in().expect("the built-in grammar builds");
+        let candidates: Vec<_> = gandr_workflow_sweep::corpus::sources()
+            .expect("the corpus reads")
+            .into_iter()
+            .filter(|source| source.name.as_ref().starts_with("fixture/pathological/"))
+            .collect();
+        eprintln!("{}", sweep.rotation());
+        let visited = sweep.visit_rotating(SAMPLE, NIGHTS, &candidates);
+        assert!(
+            visited.len() >= sweep.drawn(SAMPLE).0,
+            "the sample is drawn: {}",
+            visited.len()
+        );
+        let mut repaired = 0_usize;
+        let mut severities = Vec::new();
+        // The walk composes the visited sources alone, each with its import
+        // closure, so the sweep's cost is linear in its sample (#5217).
+        let walk = Walk::new(visited.into_iter().map(|source| source.path).collect());
+        let ControlFlow::Continue(_report) = walk.visit::<Evaluator, _, _>(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                let Step::Source {
+                    path, text, base, ..
+                } = step
+                else {
+                    return ControlFlow::Continue(());
+                };
+                let whole = <&str>::from(text)
+                    .get(usize::from(base) ..)
+                    .expect("an importer's own text starts at its base");
+                let cuts = whole
+                    .match_indices([' ', '\n'])
+                    .map(|(at, _)| at.saturating_add(1_usize))
+                    .chain([whole.len()]);
+                for cut in cuts {
+                    let typed =
+                        SourceText::from(whole.get(.. cut).expect("a cut at an ASCII byte"));
+                    let Ok(composed) = compose::<Evaluator>(
+                        &grammar,
+                        SourceRoot::Fixture.corpus_root(),
+                        typed,
+                        &mut LoweringCount::default(),
+                    )
+                    else {
+                        continue;
+                    };
+                    let step = Step::Source {
+                        path,
+                        root: SourceRoot::Fixture,
+                        text: typed,
+                        base: gandr_surface_syntax::ByteOffset::from(0_usize),
+                        composed,
+                        standing: Standing::Unsettled,
+                    };
+                    let Step::Source {
+                        composed: Composed::Settled { ref report, .. },
+                        ..
+                    } = step
+                    else {
+                        continue;
+                    };
+                    let unsettled = || {
+                        report
+                            .declarations()
+                            .iter()
+                            .filter(|declaration| declaration.settlement() == Settlement::Unsettled)
+                    };
+                    severities.clear();
+                    severities.extend(
+                        entries::<Evaluator>(&step, Verb::Check(Goals::Gated))
+                            .map(|diagnostic| diagnostic.severity)
+                            .filter(|&severity| {
+                                matches!(severity, Severity::Error | Severity::Note)
+                            }),
+                    );
+                    assert_eq!(
+                        severities.len(),
+                        unsettled().count(),
+                        "one entry per unsettled declaration"
+                    );
+                    for malformed in unsettled() {
+                        if !matches!(
+                            malformed.produced().refusal(),
+                            Maybe::Present(Refusal::Lowering(LoweringRefusal::MalformedForm {
+                                fault: FormFault::Repaired(_),
+                                ..
+                            }))
+                        ) {
+                            continue;
+                        }
+                        repaired = repaired.saturating_add(1_usize);
+                        let mut errors = 0_usize;
+                        let mut unsupported = false;
+                        for (declaration, &severity) in unsettled()
+                            .zip(&severities)
+                            .filter(|&(declaration, _)| declaration.span() == malformed.span())
+                        {
+                            if severity == Severity::Error {
+                                errors = errors.saturating_add(1_usize);
+                            }
+                            unsupported |= matches!(
+                                declaration.produced().refusal(),
+                                Maybe::Present(Refusal::Lowering(
+                                    LoweringRefusal::OutOfFragment { .. }
+                                ))
+                            );
+                        }
+                        assert_eq!(
+                            errors,
+                            1_usize,
+                            "{} cut at {cut}: `{}` reports its parse error alone",
+                            path.display(),
+                            malformed.name()
+                        );
+                        assert!(
+                            !unsupported,
+                            "{} cut at {cut}: `{}` is malformed, never unsupported",
+                            path.display(),
+                            malformed.name()
+                        );
+                    }
+                }
+                ControlFlow::Continue(())
+            },
+        );
+        assert!(
+            sweep.portion() == Portion::Changed || repaired > 0_usize,
+            "typing the corpus meets malformed forms"
+        );
+    }
+}
+
+/// The words of a family's loops are named by the point they are at, each
+/// constructor applied to its arguments: one argument in parentheses, two
+/// separated by a comma.
+#[test]
+fn a_words_point_spells_its_constructors_arguments()
+{
+    use gandr_surface_lowering::Role;
+
+    let grammar = built_in().expect("the grammar builds");
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-words-point-spells-its-constructors-arguments.gandr"
+    ));
+    let Lowered::Module { module, .. } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is one module");
+    };
+    let names = constant_names(&module, module.unit().last());
+    let points: Vec<_> = module
+        .declarations()
+        .iter()
+        .filter(|declaration| declaration.role() == Role::Words)
+        .map(|declaration| {
+            names
+                .get(usize::from(declaration.constant()))
+                .cloned()
+                .unwrap_or_default()
+        })
+        .collect();
+    assert_eq!(
+        points,
+        [
+            "Path[.A = Nat] Succ(Zero) Succ(Zero)",
+            "Path[.A = Nat] Pair(Zero, Zero) Pair(Zero, Zero)",
+        ],
+        "a point spells each constructor's arguments, comma-separated"
+    );
+}
+
+/// The words of a higher cell are spelled as the path type at the point wrapped
+/// in its reflexivity once for each wrapping, so they read back to their
+/// certificate (#6446).
+#[test]
+fn a_higher_cell_s_words_spell_at_the_wrapped_point_6446()
+{
+    use gandr_surface_lowering::Role;
+
+    let grammar = built_in().expect("the grammar builds");
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-higher-cell-s-words-spell-at-the-wrapped-point-6446.gandr"
+    ));
+    let Lowered::Module { module, .. } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is one module");
+    };
+    let names = constant_names(&module, module.unit().last());
+    let points: Vec<_> = module
+        .declarations()
+        .iter()
+        .filter(|declaration| declaration.role() == Role::Words)
+        .map(|declaration| {
+            names
+                .get(usize::from(declaration.constant()))
+                .cloned()
+                .unwrap_or_default()
+        })
+        .collect();
+    assert_eq!(
+        points,
+        [
+            "Path[.A = Path[.A = S2] Base2 Base2] (Path.here Base2) (Path.here Base2)",
+            "Path[.A = Path[.A = Path[.A = S3] Base3 Base3] (Path.here Base3) (Path.here \
+             Base3)] (Path.here (Path.here Base3)) (Path.here (Path.here Base3))",
+        ],
+        "the words of a cell wrapped once and twice spell the path type at the wrapped point"
+    );
+}
+
+/// A declaration that a source reads through an alias is spelled after the
+/// alias for that source, and by its own name for the source that declares
+/// it (#3498).
+#[test]
+fn a_declaration_read_through_an_import_is_spelled_as_its_reader_writes_it_3498()
+{
+    use gandr_surface_dispatcher::lower_parsed_unit;
+    use gandr_surface_lowering::ImportTarget;
+    use gandr_surface_lowering::SourceIndex;
+    use gandr_surface_lowering::Unit;
+    use gandr_surface_lowering::UnitSource;
+
+    let pbg = built_in().expect("the built-in grammar builds");
+    let exported = "pub def reply : Integer = 42 ;\n";
+    let text = format!(
+        include_str!(
+            "diagnostics/unformatted/a-declaration-read-through-an-import-is-spelled-as-its-reader-writes-it-3498.gandr"
+        ),
+        exported = exported
+    );
+    let unit = Unit::new(vec![
+        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+        UnitSource::new(ByteOffset::from(exported.len()), vec![
+            ImportTarget::Source(SourceIndex::from(0_usize)),
+        ]),
+    ])
+    .expect("two sources make a unit");
+    let parsed = gandr_surface_parser::parse(&pbg, SourceText::from(text.as_str()))
+        .expect("the unit parses");
+    let Lowered::Module { module, .. } = lower_parsed_unit(
+        &pbg,
+        parsed,
+        &unit,
+        &mut LoweringCount::default(),
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
+    )
+    .expect("the unit lowers")
+    .into_lowered()
+    else {
+        panic!("the unit is one module");
+    };
+    let reply = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name().as_ref() == "reply")
+        .expect("`reply` is declared")
+        .constant();
+    let spelled = |reader: usize| {
+        constant_names(&module, SourceIndex::from(reader))
+            .get(usize::from(reply))
+            .cloned()
+    };
+    assert_eq!(
+        (spelled(0), spelled(1)),
+        (
+            Some(String::from("reply")),
+            Some(String::from("base.reply"))
+        ),
+        "the declaring source spells `reply` bare, and the importer after its alias"
+    );
+}
+
+/// The list type spells bare for a source that lists `List`, after the
+/// alias for one that imports `std.list` under one, and after `std.list`,
+/// unimported, for one that imports nothing of it (#4835).
+#[test]
+fn a_list_type_is_spelled_as_its_reader_reads_it_4835()
+{
+    use gandr_surface_diagnostics::HomedName;
+    use gandr_surface_diagnostics::homed_names;
+    use gandr_surface_dispatcher::lower_parsed_unit;
+    use gandr_surface_lowering::ImportTarget;
+    use gandr_surface_lowering::SourceIndex;
+    use gandr_surface_lowering::SurfaceName;
+    use gandr_surface_lowering::Unit;
+    use gandr_surface_lowering::UnitSource;
+
+    let pbg = built_in().expect("the built-in grammar builds");
+    let listed = "import std.list (List) ;\n";
+    let aliased = "import std.list as l ;\n";
+    let neither = "def n : Integer = 1 ;\n";
+    // The stand-in for `std.list`, which declares nothing, then the readers.
+    let text = format!(
+        include_str!(
+            "diagnostics/unformatted/a-list-type-is-spelled-as-its-reader-reads-it-4835.gandr"
+        ),
+        aliased = aliased,
+        listed = listed,
+        neither = neither
+    );
+    let at = |offset: usize| ByteOffset::from(offset);
+    let stand_in = ImportTarget::Source(SourceIndex::from(0_usize));
+    let unit = Unit::new(vec![
+        UnitSource::new(at(0_usize), Vec::new()).homed(SurfaceName::from("std.list")),
+        UnitSource::new(at(1_usize), vec![stand_in]),
+        UnitSource::new(at(1_usize + listed.len()), vec![stand_in]),
+        UnitSource::new(at(1_usize + listed.len() + aliased.len()), Vec::new()),
+    ])
+    .expect("four sources make a unit");
+    let parsed = gandr_surface_parser::parse(&pbg, SourceText::from(text.as_str()))
+        .expect("the unit parses");
+    let Lowered::Module { module, .. } = lower_parsed_unit(
+        &pbg,
+        parsed,
+        &unit,
+        &mut LoweringCount::default(),
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
+    )
+    .expect("the unit lowers")
+    .into_lowered()
+    else {
+        panic!("the unit is one module");
+    };
+    let list = |reader: usize| {
+        homed_names(&module, SourceIndex::from(reader))
+            .into_iter()
+            .find(|homed| homed.head == "List")
+    };
+    let homed = |written: &str, imported: bool| HomedName {
+        head: String::from("List"),
+        written: String::from(written),
+        home: String::from("std.list"),
+        imported,
+    };
+    assert_eq!(
+        (list(1), list(2), list(3)),
+        (
+            None,
+            Some(homed("l.List", true)),
+            Some(homed("std.list.List", false))
+        ),
+        "a listing writes `List` bare, an alias qualifies it, and no import names its home"
+    );
+}
+
+/// A refusal spells each type as the source holding the refused declaration
+/// reads it, whatever source the unit lays last: an importer refused at a
+/// declaration it reads through an alias spells it after the alias, beside a
+/// later source that opens the same module (#4813).
+#[test]
+fn a_refusal_is_spelled_as_its_own_source_reads_it_4813()
+{
+    use gandr_core_checker::HostGrant;
+    use gandr_surface_corpus::CorpusRoot;
+    use gandr_surface_dispatcher::judge_member;
+    use gandr_surface_dispatcher::lower_parsed_unit;
+    use gandr_surface_lowering::ImportTarget;
+    use gandr_surface_lowering::SourceIndex;
+    use gandr_surface_lowering::Unit;
+    use gandr_surface_lowering::UnitSource;
+
+    let pbg = built_in().expect("the built-in grammar builds");
+    let exported = include_str!(
+        "diagnostics/fixtures/a-refusal-is-spelled-as-its-own-source-reads-it-4813-exported.gandr"
+    );
+    let aliased = include_str!(
+        "diagnostics/fixtures/a-refusal-is-spelled-as-its-own-source-reads-it-4813-aliased.gandr"
+    );
+    let opened = include_str!(
+        "diagnostics/fixtures/a-refusal-is-spelled-as-its-own-source-reads-it-4813-opened.gandr"
+    );
+    let text = format!("{exported}{aliased}{opened}");
+    let imports = || vec![ImportTarget::Source(SourceIndex::from(0_usize))];
+    let unit = Unit::new(vec![
+        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+        UnitSource::new(ByteOffset::from(exported.len()), imports()),
+        UnitSource::new(ByteOffset::from(exported.len() + aliased.len()), imports()),
+    ])
+    .expect("three sources make a unit");
+    let parsed = gandr_surface_parser::parse(&pbg, SourceText::from(text.as_str()))
+        .expect("the unit parses");
+    let Lowered::Module { module, arena } = lower_parsed_unit(
+        &pbg,
+        parsed,
+        &unit,
+        &mut LoweringCount::default(),
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
+    )
+    .expect("the unit lowers")
+    .into_lowered()
+    else {
+        panic!("the unit is one module");
+    };
+    let (settled, _admission) = judge_member::<Evaluator>(
+        CorpusRoot::Strict,
+        (module, SourceText::from(text.as_str())),
+        arena,
+        &HostGrant::UNBOUNDED,
+        ByteOffset::from(0_usize),
+    )
+    .into_parts();
+    let Ok(Composed::Settled {
+        report, spellings, ..
+    }) = settled
+    else {
+        panic!("the unit settles");
+    };
+    let spelled: Vec<[Option<String>; 2]> = report
+        .declarations()
+        .iter()
+        .filter_map(|declaration| match declaration.produced().refusal() {
+            Maybe::Present(Refusal::Checking(refusal)) => Some((
+                refusal.compared(),
+                spellings
+                    .spelled(Spelling::Unicode)
+                    .place_of(declaration.constant()),
+            )),
+            Maybe::Present(Refusal::Lowering(_) | Refusal::Corpus(_)) | Maybe::Absent(_) => None,
+        })
+        .map(|(compared, place)| {
+            [compared.expected, compared.found].map(|side| match side {
+                Maybe::Present(node) => match spellings
+                    .spelled(Spelling::Unicode)
+                    .get(SpelledNode { node, place })
+                {
+                    Maybe::Present(presentation) => Some(presentation.to_string()),
+                    Maybe::Absent(_) => None,
+                },
+                Maybe::Absent(_) => None,
+            })
+        })
+        .collect();
+    assert_eq!(
+        spelled,
+        [[
+            Some(String::from("base.Box")),
+            Some(String::from("Integer"))
+        ]],
+        "the importer's refusal spells `Box` after its alias, not as the last source reads it"
+    );
+}
+
+/// A split that opens two binders at once, the second's type naming the
+/// first, names them as the pattern writes them and spells the second under
+/// the first: never under the binder before the split, which its type does
+/// not name. The mismatch's found type, the hypotheses and the split's binding
+/// note spell it alike, and the record type keeps the labels it was written
+/// with (#1613).
+#[test]
+fn a_later_binder_of_one_split_spells_under_the_earlier()
+{
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-later-binder-of-one-split-spells-under-the-earlier.gandr"
+    ));
+    let diagnostic = only(Path::new("packed.gandr"), text);
+    assert_eq!(
+        diagnostic.detail.compared.found,
+        Maybe::Present(String::from("counted_at(s)")),
+        "the returned binder's type names the split's first binder as written"
+    );
+    let hypotheses: Vec<String> = diagnostic
+        .hypotheses
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(
+        hypotheses,
+        [
+            "p : *{s : Theory, n : counted_at(s)}",
+            "other : Theory",
+            "s : Theory",
+            "n : counted_at(s)",
+        ],
+        "each binder is named as written, and the record type keeps its labels"
+    );
+    let split = contexts(text, &diagnostic)
+        .into_iter()
+        .find(|&(ref at, _)| at.starts_with("match p"))
+        .map(|(_, note)| note)
+        .expect("the split is a context");
+    assert!(
+        split.ends_with("binds s : Theory, n : counted_at(s)"),
+        "the split's binding note names its binders as the pattern writes them: {split}"
+    );
+}
+
+/// Two hypotheses of one content under two contexts spell each under the
+/// names of its own context. `v : Pred (Succ n)` and `w : Pred (Succ m)` take
+/// one content key, because a de Bruijn index hides the name it reads. A
+/// spelling is keyed by the node and its place, so `w` names `m` and never
+/// `n` (#7403).
+#[test]
+fn one_content_under_two_contexts_spells_each_context_s_name_7403()
+{
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/one-content-under-two-contexts-spells-each-context-s-name-7403.gandr"
+    ));
+    let diagnostic = only(Path::new("injective.gandr"), text);
+    let hypotheses: Vec<String> = diagnostic
+        .hypotheses
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(
+        hypotheses.get(1 ..= 1),
+        Some([String::from("v : Pred (Succ n)")].as_slice()),
+        "the outer hypothesis reads the outer binder: {hypotheses:?}"
+    );
+    let split = contexts(text, &diagnostic)
+        .into_iter()
+        .find(|&(ref at, _)| at.starts_with("match h"))
+        .map(|(_, note)| note)
+        .expect("the split is a context");
+    assert!(
+        split.contains("w : Pred (Succ m)"),
+        "the arm's binder reads the arm's own binder: {split}"
+    );
+}
+
+/// Two codata types that one mismatch compares spell apart (#7403). A codata
+/// application has no content form, so its key is the key of its sort alone.
+/// The two sides stand at one place, and each keeps its own name.
+#[test]
+fn two_codata_types_of_one_mismatch_spell_apart_7403()
+{
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/two-codata-types-spell-apart-7403.gandr"
+    ));
+    let diagnostic = only(Path::new("codata.gandr"), text);
+    assert_eq!(
+        (
+            diagnostic.detail.compared.expected,
+            diagnostic.detail.compared.found
+        ),
+        (
+            Maybe::Present(String::from("Spot")),
+            Maybe::Present(String::from("Stream"))
+        ),
+        "each side names its own codata type"
+    );
+}
+
+/// A declaration whose keyword is misspelt strays from the root, and the type
+/// it would have declared goes unresolved where it is used: the stray, written
+/// first, is reported first, and an applied former left without its argument
+/// marks the application, where the argument was left out (#2048, #2049).
+#[test]
+fn a_mistake_is_reported_before_what_it_causes_2048()
+{
+    profiled();
+    let text = include_str!(
+        "diagnostics/unformatted/a-mistake-is-reported-before-what-it-causes-2048.gandr"
+    );
+    // The source lists `List` from `std.list`, so it is walked from a file,
+    // which lays it after the module it imports (#4520).
+    let scratch = Scratch::new(Path::new("strayed"));
+    scratch.file(Path::new("strict/strayed.gandr"), SourceText::from(text));
+    let mut printed = Vec::new();
+    let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()])
+        .visit::<Evaluator, _, _>(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                printed.extend(entries::<Evaluator>(&step, Verb::Check(Goals::Gated)));
+                ControlFlow::Continue(())
+            },
+        );
+    let first = printed.first().expect("the stray is reported");
+    assert_eq!(
+        first.span,
+        Maybe::Present(nth(SourceText::from(text), SourceText::from("dat"))[0]),
+        "the misspelt keyword is the first error, ahead of the use it leaves unresolved: \
+         {printed:?}"
+    );
+    let empty = printed.iter().find(|diagnostic| {
+        diagnostic.detail.class == Class::Refusal(FailureClass::MalformedSource)
+            && diagnostic.span
+                == Maybe::Present(nth(SourceText::from(text), SourceText::from("List()"))[0])
+    });
+    assert!(
+        empty.is_some(),
+        "a former applied to nothing marks its whole application: {printed:?}"
+    );
+}

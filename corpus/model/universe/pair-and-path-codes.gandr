@@ -1,0 +1,79 @@
+//! This fixture defines a Tarski universe.
+//!
+//! Martin-Löf closes his universe under dependent functions, dependent pairs
+//! and identity types. This universe contains pair, dependent-pair, and path
+//! codes.
+//!
+//! Each decoder returns the type named by its code. A decode stands in place as
+//! a call. The call is the type that it returns.
+//!
+//! - cites: [MartinLof-1984-intuitionistic_type_theory]
+//!
+//! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
+
+// The naturals.
+import "../data/data-base.gandr";
+
+// The dependent pairs.
+import "ir-codes.gandr";
+
+// The pairs of two types.
+import "fresh-lists.gandr";
+
+/// The codes: the naturals and the pairs of two coded types.
+@[checks, form(explicit)]
+data UProd : Type where
+  /// The naturals.
+  | NatX : UProd
+  /// The pairs of two coded types.
+  | ProdX : (a : UProd, b : UProd) --> UProd
+
+/// The decoder, with a pair code's two decodes as calls.
+@[checks]
+def rec elProd(u : UProd) -> -F Type =
+  match u where
+    | NatX => return Nat
+    | ProdX(a, b) => return (Both (elProd[<] a) (elProd[<] b))
+
+/// The dependent pair code and its decoder, in one block.
+rec {
+  /// The codes: the naturals, and the dependent pairs over a coded type.
+  @[checks]
+  data USig : Type where {
+    /// The naturals.
+    | NatS : USig
+    /// The dependent pairs from a coded type to a family of codes over its
+    /// decode.
+    | SigS : (a : USig, b : +U (elSig(a) -> -F USig)) --> USig
+  }
+
+  /// The decoder: a pair code decodes to the pairs over its first decode.
+  /// The quoted first decode converts with the decode the second field's
+  /// binder takes.
+  @[checks]
+  def rec elSig(u : USig) -> -F Type =
+    match u where
+      | NatS => return Nat
+      | SigS(a, b) => return (Sig (elSig[<] a) (thunk { fun (x) { elSig[<] (b x) } }))
+}
+
+/// The path code and its decoder, in one block.
+rec {
+  /// The codes: the naturals, and the paths between two values of a coded
+  /// type.
+  @[checks]
+  data UPath : Type where {
+    /// The naturals.
+    | NatP : UPath
+    /// The paths between two values of a coded type's decode.
+    | PathP : (a : UPath, x : elPath(a), y : elPath(a)) --> UPath
+  }
+
+  /// The decoder: a path code decodes to the path type over its carrier.
+  /// The carrier is the decoder's own marked call, read as a type.
+  @[checks]
+  def rec elPath(u : UPath) -> -F Type =
+    match u where
+      | NatP => return Nat
+      | PathP(a, x, y) => return (type(Path[.A = elPath[<](a)] x y))
+}

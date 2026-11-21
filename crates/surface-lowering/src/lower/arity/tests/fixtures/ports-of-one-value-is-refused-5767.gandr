@@ -1,0 +1,2 @@
+def one(m : Integer) -> Integer = m;
+def lone(a : Integer) -> Integer = { let r = ~ports (one a); 0 };
