@@ -1,0 +1,2 @@
+module M where { @[builtin("u8")] type T : Type; }
+def after = 1;
