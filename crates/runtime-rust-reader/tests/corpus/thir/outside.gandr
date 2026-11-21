@@ -1,0 +1,50 @@
+//! The twin of `example.gandr`: each `thir` mark whose function stages no
+//! expression of its type is refused by name.
+
+// `Item`, whose item mark names `identity` and `example`.
+import "../../../../../corpus/model/interop/thir/example.gandr";
+
+// The expressions.
+import std.thir (Expr);
+
+/// `outside` adds one, and an operator is outside the fragment.
+@[refuses("StagedBody.Outside")]
+@[thir(("outside.rs", "outside"))]
+def outsideBody : Expr Item;
+
+/// `escapes` calls a function that the request does not hold.
+@[refuses("StagedBody.Outside")]
+@[thir(("outside.rs", "escapes"))]
+def escapesBody : Expr Item;
+
+/// `helper` stages, so the request holds it.
+@[thir(("outside.rs", "helper"))]
+def helperBody : Expr Item;
+
+/// `calls` calls `helper`, and the item mark of `Item` states no constructor
+/// for it.
+@[refuses("StagedBody.Unmapped")]
+@[thir(("outside.rs", "calls"))]
+def callsBody : Expr Item;
+
+/// An item type whose item mark names a constructor that it does not
+/// declare.
+@[item("helper Missing")]
+data Broken : Type where
+  /// The one item.
+  | Helper : Broken
+
+/// `calls` calls `helper`, and the item mark of `Broken` is ill-formed.
+@[refuses("StagedBody.ItemMark")]
+@[thir(("outside.rs", "calls"))]
+def brokenBody : Expr Broken;
+
+/// A staged signature at a type that is no `Expr`.
+@[refuses("StagedBody.NotExpr")]
+@[thir(("outside.rs", "helper"))]
+def notExpr : Integer;
+
+/// A crate that does not exist, so the reader reads no body.
+@[refuses("StagedBody.Unread")]
+@[thir(("missing.rs", "absent"))]
+def absentBody : Expr Item;
