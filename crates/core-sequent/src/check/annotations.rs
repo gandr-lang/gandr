@@ -21,6 +21,13 @@
 //! - **A shared node counts once for each parent.** A parent reads the demands
 //!   of a shared child again, so the counts of fields follow the paths, and the
 //!   work stays one visit of each node.
+//!
+//! # References
+//!
+//! - `vault:01a1ead7-6581-7f22-9479-5b0b363e80d3` — newest: the IL states the
+//!   type of each binder `μ̃x` and of each field of a constructor. The checker's
+//!   report gives the type, and this check verifies it where the IL gives it
+//!   directly.
 
 use alloc::collections::BTreeMap;
 

@@ -658,6 +658,7 @@ impl TableContent
     ///
     /// # Specification
     /// - requires: `sites` is the item's walk in `arena`, and `body` holds the
+    ///   places of the judged body's table when the entry keeps the body.
     /// - ensures: [`tabled::Absent::Unread`] for a judgement that logged no
     ///   entries; [`tabled::Absent::Unkept`] when it added an entry to another
     ///   table; [`tabled::Absent::Untabled`] when it added none and gave no
