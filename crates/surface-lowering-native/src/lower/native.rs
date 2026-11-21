@@ -2958,6 +2958,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// - hypothesis: L3 — a call's stream observed by label, by position and in
     ///   an operand.
     /// - witness: `gandr-surface-lowering::lower::arity::tests::an_observation_off_a_call_projects_the_run_result_1106`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the declaration form, read into the
+    ///   lowerer's scratch store, growth within the source's forms
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |result| result.is_none_or(|result| result.node != call.node)))]
     #[inline]
     pub fn called_result(

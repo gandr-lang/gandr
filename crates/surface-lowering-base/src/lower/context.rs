@@ -432,10 +432,6 @@ pub struct Context<'run, 'source>
     /// [`Insertion::Bound`](crate::origin::Insertion::Bound), the run the `let`
     /// writes.
     pub let_bound: BTreeSet<NodeIndex>,
-    /// The bare names of the definitions of no input, each the run of its
-    /// definition. At an application's head, the run stands nested under a
-    /// force, as a call's does.
-    pub invoked: BTreeSet<NodeIndex>,
     /// The computation positions a path through a handled subject passes: a
     /// `return` there leaves its body past every handler frame around it, and
     /// a `become` there is refused.
@@ -789,6 +785,10 @@ pub struct Context<'run, 'source>
     /// Each role that a `builtin` mark binds, with the slot of its first
     /// holder.
     pub roles: BTreeMap<gandr_kernel_term::Builtin, SlotIndex>,
+    /// The bare names of the definitions of no input, each the run of its
+    /// definition. At an application's head, the run stands nested under a
+    /// force, as a call's does.
+    pub invoked: BTreeSet<NodeIndex>,
 }
 
 impl<'run, 'source> Context<'run, 'source>

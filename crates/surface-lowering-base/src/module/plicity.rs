@@ -1417,11 +1417,15 @@ pub(super) fn empty_list(header: &Cursor<'_>) -> Maybe<ByteSpan, inputs::Absent>
     else {
         return Maybe::Absent(inputs::Absent::Unwritten);
     };
-    match cursor.tile(TileName::PAREN_CLOSE) {
-        Maybe::Present(close) => ByteSpan::new(open.span.start(), close.span.end())
-            .map_or(Maybe::Absent(inputs::Absent::Written), Maybe::Present),
-        Maybe::Absent(_) => Maybe::Absent(inputs::Absent::Written),
-    }
+    let Maybe::Present(close) = cursor.tile(TileName::PAREN_CLOSE)
+    else {
+        return Maybe::Absent(inputs::Absent::Written);
+    };
+    let Ok(span) = ByteSpan::new(open.span.start(), close.span.end())
+    else {
+        return Maybe::Absent(inputs::Absent::Written);
+    };
+    Maybe::Present(span)
 }
 
 /// What a telescope entry `a : T` binds.

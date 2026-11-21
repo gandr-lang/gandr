@@ -1679,10 +1679,6 @@ pub struct Collected<'source>
     /// type names no entry of the implicit telescope: what each argument of a
     /// call naming the function checks against.
     pub parameters: BTreeMap<SlotIndex, Vec<plicity::ExplicitParameter>>,
-    /// The slots of the definitions written with an empty parameter list,
-    /// `def now() -> T`: each is a computation of no input, so its bare name
-    /// runs it.
-    pub no_input: BTreeSet<SlotIndex>,
     /// The stage binders of each function quantified over stages, by its
     /// slot: each binder's name in written order, its position the ordinal of
     /// the stage the checker mints for it.
@@ -1717,6 +1713,10 @@ pub struct Collected<'source>
     /// kept apart from the descriptions that a layer can share.
     pub port_sorts:
         BTreeMap<NodeIndex, Vec<(gandr_theory_levitation::Name, TypeComponent<'source>)>>,
+    /// The slots of the definitions written with an empty parameter list,
+    /// `def now() -> T`: each is a computation of no input, so its bare name
+    /// runs it.
+    pub no_input: BTreeSet<SlotIndex>,
 }
 
 quenchant_shape::reason_enum! {
@@ -3798,6 +3798,10 @@ pub fn collect<'source>(
 ///   [`collect_source`] reaches it.
 /// - witness: `module::tests::a_signature_pairs_with_its_definition`
 /// - witness: `gandr-surface-lowering::tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+///
+/// # Cost
+/// - allocation: the descriptions, the owner table of each node and the empty
+///   tables of the collection, setup
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |collected| {
     collected.slots.is_empty()
         && collected.structures.is_empty()
@@ -6333,6 +6337,10 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `module::tests::a_second_definition_is_refused`
     /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
     /// - witness: `module::tests::a_module_member_reads_the_blocks_inside_its_form`
+    ///
+    /// # Cost
+    /// - allocation: the attributes of the declaration and its slot, growth
+    ///   within the source's declarations
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.structures.len()),
         ensures: |ret| {
@@ -12116,15 +12124,15 @@ pub struct LoweredModule<'source>
     /// The prelude's declarations that a comparison calls, each with the
     /// infix operator that calls it, ascending by the constant.
     operators: Vec<(ConstantIndex, gandr_core_term::primitive::Operator)>,
-    /// The definitions of no input, which a bare name runs, ascending by the
-    /// constant.
-    invoked: Vec<ConstantIndex>,
     /// Each forgetting map the module mints as a source writes it, ascending
     /// by the map's position.
     forgettings: Vec<Forgetting>,
     /// The faces each record type member of the module's source names, in
     /// written order.
     record_faces: Vec<RecordFaces<'source>>,
+    /// The definitions of no input, which a bare name runs, ascending by the
+    /// constant.
+    invoked: Vec<ConstantIndex>,
 }
 
 impl<'source> LoweredModule<'source>

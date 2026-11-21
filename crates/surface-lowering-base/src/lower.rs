@@ -1471,11 +1471,6 @@ pub enum Plan
     /// grammar's `f()` where a type reads a value, which a value position
     /// nests (#6787), and the bare name of a definition of no input.
     Forced(Code),
-    /// The run of the definition of no input at this admission position,
-    /// applied to the implicits and instances in the lowerer's operand store,
-    /// left to right: its bare name, whose supply a call writes no argument
-    /// for.
-    Invoked(ConstantIndex, FormStretch),
     /// A static application of the head to the arguments in the lowerer's
     /// operand store, left to right.
     StaticApplication(Code, FormStretch),
@@ -1812,6 +1807,11 @@ pub enum Plan
     /// A value type kept in a region: the type and the region, a capability
     /// scope's or a hold's by its depth, or the definition's region binder.
     Kept(NodeIndex, gandr_core_term::effect::capability::Region),
+    /// The run of the definition of no input at this admission position,
+    /// applied to the implicits and instances in the lowerer's operand store,
+    /// left to right: its bare name, whose supply a call writes no argument
+    /// for.
+    Invoked(ConstantIndex, FormStretch),
 }
 
 /// A node's lowered core node, at the sort its own form produced.

@@ -5717,6 +5717,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 | _ => !self.cx().invoked.contains(&site.at.node),
             },
     )]
+    #[inline]
     pub fn named_term(
         &mut self,
         site: Site,
@@ -12814,6 +12815,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::tests::a_lambda_in_a_type_valued_call_reads_outer_variables_at_their_indices_3616`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_transport_moves_through_a_family_a_parameter_names_3786`
     /// - witness: `gandr-surface-lowering::lower::tests::a_nullary_call_at_a_family_s_argument_is_its_head_s_force_6787`
+    ///
+    /// # Cost
+    /// - allocation: the operands of the lists and the plan of the call, growth
+    ///   within the source's nodes
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -17475,6 +17480,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - witness: `gandr-surface-lowering::lower::tests::a_static_lambda_binds_its_name_over_a_quoted_body`
     /// - witness: `gandr-surface-lowering::lower::tests::force_and_application_lower_over_their_children`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_path_type_and_reflexivity_lower_to_their_formers`
+    ///
+    /// # Cost
+    /// - allocation: the nodes the plan mints into the arena and their records,
+    ///   growth within the source's nodes
     #[spec(
         ensures: |ret| match ret {
             | Maybe::Absent(_) => true,
@@ -18641,6 +18650,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_standing_supply_opens_a_lambda_per_explicit_before_it_1498`
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_instance_is_the_one_handled_in_scope_2271`
+    ///
+    /// # Cost
+    /// - allocation: the head, the force and each application the call mints
+    ///   into the arena, with their records, growth within the source's nodes
     #[spec(
         captures: (written, opened, supplied) = {
             let positions = self.spread(arguments);
