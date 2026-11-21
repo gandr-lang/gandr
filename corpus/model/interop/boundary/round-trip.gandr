@@ -1,0 +1,80 @@
+// Definitions a Rust caller runs on its own values, and a Rust function they
+// call, admitted against its row.
+//
+// The first direction: Rust holds the composed program and calls a definition
+// by name. The second: the `extern` block declares the Rust caller's `add` as
+// an operation of the interface `Boundary`, and `quadrupled` performs it.
+// Outside a handler the run offers it to the Rust caller's host, which calls
+// its own `add`. The block names `add`'s row, and its check admits the
+// declared types against the row under Rust's default layout. A `u32` crosses
+// as itself, and `by-layout.gandr` reads values by their layouts.
+//
+// The Rust test composes this source, names each definition and calls it on
+// values it builds, then reads the answer back. Each `runs` item below makes
+// the same call from gandr, so both sides state one answer. `quadrupled` has
+// none, since only the Rust caller answers `Boundary` there. `mocked` handles
+// `Boundary` in gandr, so its clause answers each `add`, and the run needs no
+// host.
+//
+// - see: `model/interop/boundary/by-layout.gandr` — values crossing by their
+//   layouts
+// - see: `crates/surface-dispatcher/tests/boundary.rs` — the Rust caller
+// - see: `library/std/src/boundary.gandr` — `admitBlock`, which the block's
+//   check runs
+// - see: `model/interop/boundary/function-row.gandr` — the function row an
+//   `extern` is admitted against
+
+// The boundary check reads `admitBlock` here, whatever the listing names.
+import std.boundary (Arg, NoCode, Plain, Row);
+
+// `U32`, the scalar a `u32` is coded as.
+import std.layout (U32);
+
+/// `add`'s row: two `u32` to a `u32`.
+pub def addRow : Row = Row (Arg (Plain U32) (Arg (Plain U32) NoCode)) (Plain U32);
+
+/// The Rust caller's adder, `add(x: u32, n: u32) -> u32`. Its check admits it
+/// against `addRow`.
+@[boundary(addRow)]
+extern "rust" from "boundary" as Boundary {
+  def add(x : u32, n : u32) -> u32;
+}
+
+/// Four times its argument: Rust adds it to itself, then the sum to itself.
+pub def quadrupled(x : u32) -> [Boundary] u32 =
+  let y = Boundary.add x x
+  Boundary.add y y
+
+/// Twice its argument.
+pub def double(x : Integer) -> Integer = x + x;
+
+/// The first less the second: the arguments' order decides the answer.
+pub def less(x : Integer, y : Integer) -> Integer = x - y;
+
+/// The function that adds `n`: a call answers it as a value, unapplied.
+def adder(n : Integer) -> Integer -> Integer =
+  fun (x) { x + n }
+
+/// `double` at 21, as the Rust test calls it.
+@[runs("42")]
+def doubled() -> Integer = double 21;
+
+/// `less` at 19 and 7, as the Rust test calls it.
+@[runs("12")]
+def lessened() -> Integer = less 19 7;
+
+/// `adder` at 5, applied to 7.
+@[runs("12")]
+def added() -> Integer =
+  let add = adder 5
+  add 7
+
+/// `quadrupled` at 21, with `add` answered in gandr: inside the scope the
+/// clause shadows the Rust caller's host. The clause receives both arguments
+/// as one pair of `u32`.
+@[runs("84u32")]
+def mocked() -> u32 =
+  handle b : Boundary { quadrupled 21u32 } with {
+    | pure(r) => r
+    | oper add(p, k) => k (u32.wrapping_add p.0 p.1)
+  }

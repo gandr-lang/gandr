@@ -1,0 +1,3 @@
+type Config = *{host : String, port : Integer, tls : Bool} where
+  face secure = { port, tls };
+  face addr = { host, port };

@@ -1,0 +1,5 @@
+import "./base.gandr";
+/// The answer.
+pub def answer = base;
+/// Plain.
+def plain = 2;
