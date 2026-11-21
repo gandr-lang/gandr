@@ -115,6 +115,10 @@ pub fn base() -> ByteOffset
 ///   laid after the prelude, keeps each source's text at its new start and its
 ///   import's target.
 /// - witness: `unit::tests::a_preluded_unit_lays_the_prelude_first`
+///
+/// # Cost
+/// - allocation: the laid text and the sources with their imports, durable by
+///   the returned unit
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(ref laid, ref preluded)| laid.len() == usize::from(base()).saturating_add(text.as_ref().len()) && preluded.sources().len() == unit.sources().len().saturating_add(1_usize)))]
 #[inline]
 pub fn lay(
