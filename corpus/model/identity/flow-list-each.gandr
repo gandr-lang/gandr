@@ -1,0 +1,44 @@
+/// This source states a list flow whose translator visits each cell.
+///
+/// The translator swaps one record and rides the record flow through a list.
+/// Each list cell uses the translated head and translated tail.
+///
+/// The list flow uses that recursive translator.
+/// The checker rides source lists through the result.
+/// At each cell, the image binds the translator's image of the rigid tail, and
+/// it is natural. So the translator is natural at every list.
+///
+/// - cites: [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]
+///
+/// [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: https://arxiv.org/abs/2407.09146 "Gratzer, Weinberger and Buchholtz, Directed univalence in simplicial homotopy type theory"
+
+// The native finite lists.
+import std.list (List);
+
+/// The `Cells` module migrates each record in a list.
+module Cells where {
+  type Old = String * Integer;
+  type New = Integer * String;
+  /// The translator swaps record fields.
+  @[checks]
+  def swap(old : Old) -> New =
+    match old where
+      | *{name, age} => *{age, name}
+  /// The translator defines the record flow.
+  @[checks]
+  def renamed : Flow[.A = Type](Old, New) = Flow.into swap;
+  /// The `each` function rides a list through the record flow.
+  @[checks]
+  def each(olds : List Old) -> List New =
+    Flow.ride (fun (X) { List X }) renamed olds
+  /// Each list cell uses a swapped head and the translated tail.
+  @[checks]
+  def everyone : Flow[.A = Type](List Old, List New) = Flow.into each;
+  /// The `moved` function rides a list through the list flow.
+  @[checks]
+  def moved(olds : List Old) -> List New =
+    Flow.ride (fun (X) { X }) everyone olds
+  /// The run migrates two records.
+  @[runs("cons *{36, \"ada\"} (cons *{41, \"alan\"} nil)")]
+  def two : () -> List New = moved (cons (*{"ada", 36}) (cons (*{"alan", 41}) nil));
+}

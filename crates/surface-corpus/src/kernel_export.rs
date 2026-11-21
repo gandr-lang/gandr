@@ -1,0 +1,4425 @@
+//! The kernel export over the whole corpus: every source of both roots
+//! exported, committed as artifact records and read back through the kernel's
+//! decoder, and every declaration classified by what became of it at the
+//! kernel boundary.
+//!
+//! The sweep lists `strict/` and `corpus/` itself — `.gandr` files, links not
+//! followed, as the dispatcher's walk lists them — and runs the composition a
+//! driver runs: parse, lower, check, readmit, export. Nothing here pins a
+//! count: each root is asserted to export a declaration, so a source added to
+//! either moves a count and reddens nothing.
+//!
+//! # The kernel export suite
+//!
+//! `kernel_export` takes each readable source through parse, lower, check,
+//! readmission and export. Each sweep visits a sample of the corpus on a pull
+//! request, and the nightly visits every source over eight nights.
+//! `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+//! checks repeat-sweep byte and identity determinism, decoder/re-encoder
+//! agreement, record-plane readback and admission from each root.
+//! `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
+//! checks that withheld dependencies do not cross. It also checks that the
+//! manifest holds one record for each crossed declaration beside its header,
+//! and that the decoded declarations are the admitted names in order. These
+//! are L3 witnesses over the current corpus. A repeat of the same pipeline is
+//! not an independent semantic oracle.
+//! - see: #7809
+//!
+//! `kernel_export::kernel_generative_distinctness::the_generative_distinctness_golden`
+//! pins what generativity leaves in an artifact: the classic functor pair
+//! (`corpus/model/modules/functor-pair.gandr`) exports the argument's atom
+//! and one atom per application, the header's minted-atom table names the
+//! three apart, and each application's members are typed at its own atom by a
+//! node the other's do not share.
+//! `kernel_export::kernel_generative_distinctness::an_artifact_whose_applications_share_an_atom_is_refused`
+//! rewrites that table so the second application claims the first's atom, and
+//! the kernel's decoder refuses it at the table by name: two instances sharing
+//! an atom is a refusal at admission, not a convention of the producer.
+//!
+//! `kernel_export::kernel_ride_readmission::a_ride_dialogue_reading_the_wrong_unfolding_is_refused_by_name`
+//! readmits `corpus/model/higher-cells/ua-by-hand.gandr`, whose `rides`
+//! relates a ride along the named flow `opposite_dir_by_hand` to its image by
+//! the dialogue the checker recorded, then tampers that dialogue so it reads
+//! the flow's unfolding on the wrong side: the kernel refuses `rides` at that
+//! decision, naming the endpoint and the replay refusal, rather than finding
+//! the unfolding itself.
+//!
+//! `kernel_export::kernel_transport_readmission::a_returned_endpoint_read_as_fibre_evidence_is_refused_by_name`
+//! readmits `corpus/model/identity/transport-path.gandr`, whose `moved_end`
+//! stands a reflexive transport at a path-type motive as an endpoint of a
+//! path between paths, then forges a twin relating a transported unit to
+//! itself at that path type: the kernel reads the returned endpoint by the
+//! type it returns, as the checker does when it refuses `unit_end`, and
+//! refuses the twin as a value-type mismatch naming the path type and the
+//! unit.
+//!
+//! `kernel_export::kernel_here_congruence_readmission::reflexivities_related_through_the_wrong_side_are_refused_by_name`
+//! readmits `corpus/model/identity/here-congruence.gandr`, whose
+//! `here_two_up` relates `Path.here(two)` to `Path.here(Path.here(2))` by the
+//! dialogue that decomposes the two reflexivities to their points and unfolds
+//! `two`, then tampers that dialogue so it reads the unfolding on the other
+//! point: the kernel refuses `here_two_up` at that decision, naming the
+//! endpoint and the replay refusal.
+//!
+//! `kernel_export::kernel_discard_readmission::an_unread_call_readmits_and_a_discard_on_the_other_side_is_refused_by_name`
+//! readmits `corpus/model/control/divergence.gandr`, whose `unreadApplied`
+//! relates a function that calls `g` and never reads the result to `f` by the
+//! dialogue that drops the call, then tampers that dialogue so the drop names
+//! the other side: the kernel refuses `unreadApplied` at that decision, naming
+//! the endpoint and the replay refusal.
+//!
+//! `kernel_export::kernel_presented_readmission::a_circle_read_without_or_against_its_rules_is_refused_by_name`
+//! readmits `corpus/model/identity/loop-words.gandr`, whose `cancelled_word`
+//! relates `Loop(Unloop(Loop(Nil)))` to `Loop(Nil)` by reflexivity alone: the
+//! kernel reads both endpoints by their normal forms under the words' rules. A
+//! twin whose `Words` carries no rules is refused at `cancelled_word`, naming
+//! the endpoint the point does not reach; a twin whose `Words` carries a rule
+//! that grows its word is refused at `Words`, naming the rule and its fault.
+//!
+//! `kernel_export::kernel_presented_readmission::a_section_at_a_variable_readmits_and_a_tampered_twin_is_refused_by_name`
+//! readmits the round trips at a variable at both strata:
+//! `corpus/model/identity/loop-space.gandr`'s `sectWords`, a fold into
+//! `Path[.A = Words](spinWords(windWords(c)), c)`, and the identity base's
+//! `sect`, which `corpus/model/identity/circle.gandr` imports, a fold over the
+//! words into `Path[.A = Path[.A = Circle](Base, Base)](spin(wind(p)), p)`,
+//! each with respect obligations that are cong chains the kernel reads as their
+//! paths, then the retraction and the equivalence that holds them (`retrWords`
+//! and `wordsWinding`; `retr` and `winding`). A twin whose section carries the
+//! loop's path along the inverse is refused at the section, naming the
+//! computation type its loop arm does not answer.
+//!
+//! `kernel_export::kernel_open_fold_readmission::a_step_case_read_through_a_swapped_fold_is_refused_by_name`
+//! readmits `corpus/model/identity/open-fold.gandr`, whose `wind_unfolded`
+//! relates `windWords(Loop(x))` to `S(windWords(x))` at a variable: the kernel
+//! reads the `Loop` arm's bind over the stuck `windWords(x)` itself. A twin
+//! whose fold swaps its two loop arms still respects the words' rules and
+//! readmits, and, replayed up to the fold and then the step case alone, is
+//! refused at `wind_unfolded`, naming the endpoint the point no longer
+//! reaches.
+//!
+//! `kernel_export::kernel_presented_readmission::a_loop_readmits_as_its_words_and_dropped_cancellations_are_refused_by_name`
+//! readmits `corpus/model/identity/circle.gandr`, whose `loop : Base <-> Base`
+//! crosses as one type of words over the circle's point and whose `cancelled`
+//! relates `Path.step(loop, Path.back(loop))` to `Path.here(Base)` by
+//! reflexivity alone: the kernel re-mints the words from their cell and reads
+//! the path type at the point as them. A twin whose words keep their cell but
+//! drop the cancellations is refused at the words, naming the fault.
+//!
+//! `kernel_export::kernel_presented_readmission::an_absurd_case_readmits_by_apartness_and_forged_twins_are_refused_by_name`
+//! readmits `corpus/model/data/empty.gandr`, whose `not_zero` eliminates a
+//! path between `S(Z)` and `Z` by a case of no branch: the kernel decides the
+//! endpoints apart itself, from the integers' rules. It readmits
+//! `corpus/model/identity/circle-apart.gandr` the same way, the loop apart
+//! from the empty word at the circle's words. A twin stating the path between
+//! `S(P(Z))` and `Z` is refused at `not_zero`, the endpoints named as
+//! agreeing; a twin presenting the integers by two rules that rewrite one
+//! redex apart is refused there too, naming the critical pair that does not
+//! join.
+//!
+//! `kernel_export::kernel_effect_tree_readmission::a_program_over_its_row_readmits_and_one_performing_outside_it_is_refused_by_name`
+//! readmits `corpus/model/effects/tree-rows.gandr`, where effects are data:
+//! a program is a tree over its row, a sum of operation types, and each
+//! handler a fold. A twin whose `quiet`, a program over state alone,
+//! performs `failing`'s `Raise(4)` is refused at `quiet` as a value-type
+//! mismatch: the kernel re-derives the row a program claims.
+//!
+//! The suite derives its expectations from admission and storage semantics
+//! rather than checked-in sizes, identities, class thresholds or corpus
+//! cardinalities. Exact kernel format goldens belong to `gandr-kernel-term`;
+//! this crate checks their composition with real surface sources. The
+//! alternative is a generated snapshot for each source, which would also freeze
+//! incidental counts. A snapshot becomes appropriate when it can detect a
+//! required invariant that admission, roundtrip and repeat-sweep checks cannot
+//! distinguish.
+
+use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+use std::fs;
+use std::path::Path;
+use std::path::PathBuf;
+
+use anodized::spec;
+use gandr_core_checker::CheckBudget;
+use gandr_core_checker::CheckingContext;
+use gandr_core_checker::ModuleReport;
+use gandr_core_checker::UnadmittedFormer;
+use gandr_core_checker::Unretired;
+use gandr_core_checker::Verdict;
+use gandr_core_checker::bridge;
+use gandr_core_checker::check_module;
+use gandr_core_term::CoreArena;
+use gandr_core_term::FailureClass;
+use gandr_kernel_core::fork::SharedFork;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DecodeError;
+use gandr_kernel_term::EncodedArtifact;
+use gandr_kernel_term::MalformedSite;
+use gandr_kernel_term::NameSegment;
+use gandr_kernel_term::StructuredName;
+use gandr_storage_artifact::ArtifactManifest;
+use gandr_storage_artifact::ArtifactRecordSet;
+use gandr_storage_artifact::build;
+use gandr_storage_records::InMemoryBlockStore;
+use gandr_storage_records::TreeParams;
+use gandr_surface_dispatcher::Pool;
+use gandr_surface_dispatcher::classify;
+use gandr_surface_dispatcher::lay_out;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::built_in;
+use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::LoweringBudget;
+use gandr_surface_lowering::Unit;
+use gandr_surface_lowering::lower_unit;
+use gandr_surface_lowering::namespace::Recognition;
+use gandr_surface_parser::parse;
+use gandr_surface_syntax::SourceText;
+use gandr_workflow_sweep::Class as SourceClass;
+use gandr_workflow_sweep::CorpusName;
+use gandr_workflow_sweep::Nights;
+use gandr_workflow_sweep::Sample;
+use gandr_workflow_sweep::Source;
+use gandr_workflow_sweep::Sweep;
+use quenchant_shape::shape::Maybe;
+
+use crate::fixture::declarations;
+use crate::refusal::Refusal;
+use crate::refusal::RefusalName;
+use crate::refusal::RefusalOf;
+
+/// The corpus root a source was listed under.
+///
+/// # Specification
+/// - requires: the fixture producer preserves the source and boundary
+///   correspondence represented.
+/// - ensures: Identifies the strict or fixture tree from which the sweep
+///   obtained a source.
+/// - panics: none.
+/// - executable: none — The enum has no path or filesystem observation;
+///   `visited` and `corpus` supply those relationships.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the current strict and fixture sources are observed
+///   through boundary classification and record-backed artifact reconstruction.
+///   Exact admitted names and withheld dependencies distinguish changed
+///   inclusion and lost provenance; repeated exports show determinism rather
+///   than an independent oracle.
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Root
+{
+    /// `strict/`.
+    Strict,
+    /// `corpus/`, the pending set among it.
+    Fixture,
+}
+
+/// What became of one declaration at the kernel boundary.
+///
+/// # Specification
+/// - requires: the fixture producer preserves the source and boundary
+///   correspondence represented.
+/// - ensures: Distinguishes definitions and assumptions that enter the artifact
+///   from marked, withheld, static, unfinished, session, located, world,
+///   unrepresentable and never-offered declarations.
+/// - panics: none.
+/// - executable: none — The enum holds no checker/readmission pair or artifact;
+///   `class_of`, `export` and the partition witness establish its
+///   interpretation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the current strict and fixture sources are observed
+///   through boundary classification and record-backed artifact reconstruction.
+///   Exact admitted names and withheld dependencies distinguish changed
+///   inclusion and lost provenance; repeated exports show determinism rather
+///   than an independent oracle.
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Class
+{
+    /// The checker accepted it whole and the kernel admitted it as a
+    /// definition.
+    Defined,
+    /// The checker owed its body and the kernel admitted its signature as an
+    /// axiom.
+    Assumed,
+    /// The checker formed its native signature and the kernel admitted it as
+    /// a nominal declaration.
+    Data,
+    /// The checker refused it, under this name, and it crossed as its mark
+    /// alone.
+    Marked(RefusalName),
+    /// The checker accepted it, and it names a declaration that did not cross.
+    Withheld,
+    /// The checker accepted it as a type operator, which stays on the
+    /// checker's side for the instances that name it.
+    Static,
+    /// The checker accepted it with a hole or the unknown type, which the
+    /// kernel has no image of: an unfinished program crosses nothing.
+    Unfinished,
+    /// The checker suspended it on a hole its module owes, which nothing
+    /// crosses for until a fill resumes it.
+    Suspended,
+    /// The checker accepted it holding a session, which the kernel has no
+    /// former for: it stays on the checker's side.
+    Session,
+    /// The checker accepted it, and it holds this former, which the pure
+    /// kernel has no rule for: an effectful declaration — a capability, its
+    /// exercise, its scope — stays on the checker's side.
+    Unrepresentable(UnadmittedFormer),
+    /// The checker accepted it at a world, holding a handle or a migration,
+    /// which the kernel has no former for: it stays on the checker's side.
+    Located,
+    /// A world declaration, which names a place and lowers to no term: it
+    /// stays on the checker's side for the declarations that name it.
+    World,
+    /// The lowering refused it, under this name, and nothing was offered.
+    NeverOffered(RefusalName),
+}
+
+/// One source the lowering read, exported.
+///
+/// # Specification
+/// - requires: the fixture producer preserves the source and boundary
+///   correspondence represented.
+/// - ensures: Associates a source path and root with declaration classes,
+///   withheld dependencies, admitted names and their canonical artifact.
+/// - panics: none.
+/// - executable: none — The record has no original source, module or judgement
+///   sequence; `export` establishes its structural invariants and the partition
+///   witness compares its admitted names to the artifact.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the current strict and fixture sources are observed
+///   through boundary classification and record-backed artifact reconstruction.
+///   Exact admitted names and withheld dependencies distinguish changed
+///   inclusion and lost provenance; repeated exports show determinism rather
+///   than an independent oracle.
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
+struct Exported
+{
+    /// Where the source sits.
+    path: PathBuf,
+    /// The root it was listed under.
+    root: Root,
+    /// Each declaration's position and class, in admission order.
+    classes: Vec<(ConstantIndex, Class)>,
+    /// Each withheld declaration's position beside the position it names.
+    withheld: Vec<(ConstantIndex, ConstantIndex)>,
+    /// The structured name of each native operation the source uses; each one
+    /// a crossing declaration reads crosses as an audited assumption just
+    /// before the first such declaration.
+    natives: BTreeSet<StructuredName>,
+    /// The structured name of each declaration that crossed, in admission
+    /// order.
+    crossed_names: Vec<StructuredName>,
+    /// The kernel artifact of what crossed.
+    artifact: EncodedArtifact,
+    /// The names the artifact writes its references by.
+    keys: gandr_kernel_term::Names,
+}
+
+impl Exported
+{
+    /// The artifact, decoded under the names it writes its references by.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The decoder's refusal of the artifact.
+    fn decoded(&self) -> Result<gandr_kernel_term::DecodedArtifact, DecodeError>
+    {
+        gandr_kernel_term::decode_named(self.artifact.as_image(), &self.keys)
+    }
+}
+
+/// What one listed source came to.
+///
+/// # Specification
+/// - requires: the fixture producer preserves the source and boundary
+///   correspondence represented.
+/// - ensures: Distinguishes a source exported after lowering from a source
+///   refused as a whole before any declaration was offered, and from a source
+///   whose artifact the decoder refuses past its cap on expanded work.
+/// - panics: none.
+/// - executable: none — The enum carries no original lowering result; `export`
+///   selects the case while the corpus consumers validate successful exports.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the current strict and fixture sources are observed
+///   through boundary classification and record-backed artifact reconstruction.
+///   Exact admitted names and withheld dependencies distinguish changed
+///   inclusion and lost provenance; repeated exports show determinism rather
+///   than an independent oracle.
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
+enum Swept
+{
+    /// The lowering read it, and it was exported.
+    Exported(Exported),
+    /// The lowering refused it as a whole, so it offered nothing.
+    RefusedWhole,
+    /// The decoder refuses its artifact past the cap on expanded work, so no
+    /// record holds it.
+    PastTheWorkCap,
+}
+
+/// The sources whose artifact passes the decoder's cap on expanded work. The
+/// checkers admit each one in work linear in its distinct nodes.
+///
+/// - see: #5797 — the decoder refuses such an artifact as malformed.
+const PAST_THE_WORK_CAP: [&str; 1] = ["model/records/iterated-pair.gandr"];
+
+/// The nights the nightly profile takes to visit every source in each sweep
+/// of this suite. Each night visits about an eighth of the corpus, the share
+/// of one of the eight shards that this suite ran as on every pull request
+/// before its sample.
+/// - see: #2547, #7809
+const NIGHTS: Nights = Nights(8);
+
+/// Every `.gandr` file under the strict and fixture roots, each named and
+/// classed as the sampler names and classes its own. The export reads the
+/// fixture root's ledgers and sketch set too, which the sampler holds out.
+///
+/// # Specification
+/// - requires: the committed corpus remains readable during the sweep.
+/// - ensures: one source per `.gandr` file under the two roots, reached without
+///   following a symbolic link, each path canonical and sorted by name.
+/// - panics: when a root, one of its directories or one of their entries cannot
+///   be read.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sample is stratified by class, so it holds a ledger
+///   source and a sketch source beside each family.
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+#[spec(ensures: |ret| ret.is_sorted_by(|left, right| left.name < right.name))]
+fn candidates() -> Vec<Source>
+{
+    let mut found = Vec::new();
+    for (prefix, directory) in [
+        ("strict", concat!(env!("CARGO_MANIFEST_DIR"), "/strict")),
+        (
+            "fixture",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus"),
+        ),
+    ] {
+        let base = Path::new(directory)
+            .canonicalize()
+            .unwrap_or_else(|error| panic!("{directory}: the corpus root resolves: {error}"));
+        let mut pending = alloc::vec![base.clone()];
+        while let Some(at) = pending.pop() {
+            let entries = fs::read_dir(&at).unwrap_or_else(|error| {
+                panic!("{}: the corpus directory lists: {error}", at.display())
+            });
+            for entry in entries {
+                let entry = entry.expect("a corpus entry reads");
+                let kind = entry.file_type().expect("a corpus entry has a type");
+                let path = entry.path();
+                if kind.is_dir() {
+                    pending.push(path);
+                }
+                else if !kind.is_symlink()
+                    && path
+                        .extension()
+                        .is_some_and(|extension| extension == "gandr")
+                {
+                    let mut name = alloc::string::String::from(prefix);
+                    for part in path
+                        .strip_prefix(&base)
+                        .expect("under its root")
+                        .components()
+                    {
+                        name.push('/');
+                        name.push_str(&part.as_os_str().to_string_lossy());
+                    }
+                    let name = CorpusName::from(name.as_str());
+                    let class = SourceClass::of(&name);
+                    found.push(Source { path, name, class });
+                }
+            }
+        }
+    }
+    found.sort_by(|left, right| left.name.cmp(&right.name));
+    found
+}
+
+/// The sources a sweep of this suite visits, each beside the root it sits
+/// under, in root and then path order. On a pull request, a sweep visits its
+/// sample's fixed set, or the change's sources beside that set. In the
+/// nightly, it visits the night's slice of every source, and the nights
+/// cover the corpus whole.
+///
+/// # Specification
+/// - requires: the committed corpus remains readable during the sweep.
+/// - ensures: each path is a source of [`candidates`] that the sweep visits,
+///   under the root its name names, in root and then path order without a
+///   duplicate.
+/// - panics: when the corpus cannot be listed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sample is stratified, so it holds a source of the
+///   strict root and of each fixture family.
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
+#[spec(ensures: |ret| ret.iter().zip(ret.iter().skip(1_usize)).all(|(first, second)| first < second))]
+fn visited(
+    sweep: &Sweep,
+    sample: Sample,
+) -> Vec<(Root, PathBuf)>
+{
+    let candidates = candidates();
+    std::eprintln!("{}", sweep.rotation());
+    let mut visited: Vec<(Root, PathBuf)> = sweep
+        .visit_rotating(sample, NIGHTS, &candidates)
+        .into_iter()
+        .map(|source| {
+            let root = if source.name.as_ref().starts_with("strict/") {
+                Root::Strict
+            }
+            else {
+                Root::Fixture
+            };
+            (root, source.path)
+        })
+        .collect();
+    visited.sort();
+    visited
+}
+
+/// What became of the declaration whose verdict is `verdict` and whose
+/// readmission is `outcome`, which must agree.
+///
+/// # Specification
+/// - requires: the checker verdict and kernel readmission agree: accepted
+///   definitions or static operators, owed assumptions, matching refusal marks,
+///   suspended declarations crossing as nothing, accepted/owed declarations
+///   withheld by a dependency, accepted/owed declarations holding a hole or the
+///   unknown type, accepted declarations holding a session, or accepted/owed
+///   declarations holding a former the pure kernel has no rule for.
+/// - ensures: returns exactly the corresponding boundary class, retaining the
+///   checker refusal’s canonical name for a mark.
+/// - panics: when the fixture’s verdict and readmission disagree.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the current corpus supplies readmitted definitions,
+///   assumptions, refusal marks, static declarations, withheld dependencies,
+///   holed declarations and suspended ones. Exact partition-to-artifact
+///   membership distinguishes admitting excluded declarations or losing
+///   admitted names; the predicate additionally states pair compatibility and
+///   exact class selection.
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
+#[spec(
+    requires: match (verdict, outcome) {
+    (
+        Verdict::Checked { .. } | Verdict::Synthesised { .. },
+        &(bridge::Outcome::Defined { .. }
+        | bridge::Outcome::Static
+        | bridge::Outcome::Refused(
+            bridge::Refusal::Withheld { .. }
+            | bridge::Refusal::Hole { .. }
+            | bridge::Refusal::Unknown { .. }
+            | bridge::Refusal::Session { .. }
+            | bridge::Refusal::Located { .. }
+            | bridge::Refusal::OutOfFragment { .. }
+        )),
+    )
+    | (
+        Verdict::Owed(_),
+        &(bridge::Outcome::Assumed { .. }
+        | bridge::Outcome::Refused(
+            bridge::Refusal::Withheld { .. }
+            | bridge::Refusal::Hole { .. }
+            | bridge::Refusal::Unknown { .. }
+            | bridge::Refusal::Located { .. }
+            | bridge::Refusal::OutOfFragment { .. }
+        )),
+    )
+    | (Verdict::Data, &(bridge::Outcome::Data { .. } | bridge::Outcome::Static))
+    | (Verdict::Suspended(_), &bridge::Outcome::Suspended) => true,
+    (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark)) => refusal == mark,
+    _ => false,
+},
+    ensures: |ret| match (verdict, outcome, ret) {
+    (_, &bridge::Outcome::Defined { .. }, Class::Defined)
+    | (Verdict::Checked { .. } | Verdict::Synthesised { .. }, &bridge::Outcome::Static, Class::Static)
+    | (_, &bridge::Outcome::Assumed { .. }, Class::Assumed)
+    | (_, &bridge::Outcome::Data { .. }, Class::Data)
+    | (
+        _,
+        &bridge::Outcome::Refused(bridge::Refusal::Withheld { .. }),
+        Class::Withheld,
+    )
+    | (
+        _,
+        &bridge::Outcome::Refused(bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. }),
+        Class::Unfinished,
+    )
+    | (_, &bridge::Outcome::Refused(bridge::Refusal::Session { .. }), Class::Session)
+    | (_, &bridge::Outcome::Refused(bridge::Refusal::Located { .. }), Class::Located)
+    | (Verdict::Data, &bridge::Outcome::Static, Class::World)
+    | (Verdict::Suspended(_), &bridge::Outcome::Suspended, Class::Suspended) => true,
+    (
+        _,
+        &bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { former, .. }),
+        Class::Unrepresentable(found),
+    ) => former == found,
+    (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark), Class::Marked(name)) => {
+        refusal == mark && name == RefusalOf::Checking(refusal).name()
+    }
+    _ => false,
+},
+)]
+fn class_of(
+    path: &Path,
+    verdict: Verdict,
+    outcome: &bridge::Outcome,
+) -> Class
+{
+    match (verdict, outcome) {
+        (
+            Verdict::Checked { .. } | Verdict::Synthesised { .. },
+            &bridge::Outcome::Defined { .. },
+        ) => Class::Defined,
+        (Verdict::Checked { .. } | Verdict::Synthesised { .. }, &bridge::Outcome::Static) => {
+            Class::Static
+        },
+        (Verdict::Owed(_), &bridge::Outcome::Assumed { .. }) => Class::Assumed,
+        (Verdict::Data, &bridge::Outcome::Data { .. }) => Class::Data,
+        (Verdict::Data, &bridge::Outcome::Static) => Class::World,
+        (Verdict::Suspended(_), &bridge::Outcome::Suspended) => Class::Suspended,
+        (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark)) if refusal == mark => {
+            Class::Marked(RefusalOf::Checking(refusal).name())
+        },
+        (
+            Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_),
+            &bridge::Outcome::Refused(bridge::Refusal::Withheld { .. }),
+        ) => Class::Withheld,
+        (
+            Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_),
+            &bridge::Outcome::Refused(
+                bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. },
+            ),
+        ) => Class::Unfinished,
+        (
+            Verdict::Checked { .. } | Verdict::Synthesised { .. },
+            &bridge::Outcome::Refused(bridge::Refusal::Session { .. }),
+        ) => Class::Session,
+        (
+            Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_),
+            &bridge::Outcome::Refused(bridge::Refusal::Located { .. }),
+        ) => Class::Located,
+        (
+            Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_),
+            &bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { former, .. }),
+        ) => Class::Unrepresentable(former),
+        (verdict, outcome) => panic!(
+            "{}: the verdict {verdict:?} and the kernel's outcome {outcome:?} disagree",
+            path.display()
+        ),
+    }
+}
+
+/// The source at `path` under `root`, parsed, lowered, checked, readmitted and
+/// exported — over the siblings it imports, laid out by the dispatcher's
+/// `lay_out`, when it imports any. The readmission runs its checks on `pool`
+/// and drains the obligations of each one on `pool` too, or runs serially
+/// when `pool` is none.
+///
+/// # Specification
+/// - requires: `path` is a readable UTF-8 corpus source and `pbg` is its
+///   grammar; the caller supplies the root it was listed under.
+/// - ensures: a whole-source lowering refusal offers nothing. Otherwise
+///   preserves the root, declaration admission order — an importer's siblings
+///   first — boundary classes, withheld dependencies and exactly the names
+///   admitted as definitions or assumptions alongside their artifact.
+/// - panics: on unreadable source, parser failure, an engine fault, or
+///   inconsistent checker/readmission positions.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every current corpus source that lowers is checked
+///   against its decoded and record-backed artifact. Exact names, admission
+///   order, record cardinality and withheld targets distinguish
+///   inclusion/exclusion mistakes and lost dependencies. Repeat sweeps
+///   establish determinism, not an independent semantic oracle; the predicate
+///   does not reread source files.
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
+#[spec(
+    ensures: |ret| match ret {
+    Swept::RefusedWhole | Swept::PastTheWorkCap => true,
+    Swept::Exported(ref exported) => {
+        exported.root == root
+            && exported
+                .classes
+                .iter()
+                .zip(exported.classes.iter().skip(1_usize))
+                .all(|(first, second)| first.0 < second.0)
+            && exported.crossed_names.len()
+                == exported
+                    .classes
+                    .iter()
+                    .filter(|&&(_, class)| {
+                        matches!(class, Class::Defined | Class::Assumed | Class::Data)
+                    })
+                    .count()
+            && exported
+                .withheld
+                .iter()
+                .all(|&(declaration, named)| {
+                    exported
+                        .classes
+                        .iter()
+                        .any(|&(constant, class)| {
+                            constant == declaration && class == Class::Withheld
+                        })
+                        && !exported
+                            .classes
+                            .iter()
+                            .any(|&(constant, class)| {
+                                constant == named
+                                    && matches!(class, Class::Defined | Class::Assumed | Class::Data)
+                            })
+                })
+            && exported
+                .classes
+                .iter()
+                .filter(|&&(_, class)| class == Class::Withheld)
+                .count() == exported.withheld.len()
+    }
+},
+)]
+fn export_through(
+    pbg: &Pbg,
+    path: PathBuf,
+    root: Root,
+    pool: Option<&Arc<Pool>>,
+) -> Swept
+{
+    let read = fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{}: the source reads: {error}", path.display()));
+    // A source is exported over the prelude and the siblings it imports, laid
+    // out as the walk lays it out, so its artifact holds theirs first.
+    let laid = lay_out(pbg, &path, classify(&path), SourceText::from(read.as_str()));
+    let Some(Checked {
+        mut arena,
+        module,
+        verdicts,
+    }) = check(
+        pbg,
+        &path,
+        (SourceText::from(laid.text.as_str()), &laid.unit),
+    )
+    else {
+        return Swept::RefusedWhole;
+    };
+    let natives: BTreeSet<StructuredName> = arena
+        .native_primitives()
+        .map(|primitive| {
+            StructuredName::from(
+                primitive
+                    .name()
+                    .as_ref()
+                    .split('.')
+                    .filter_map(|segment| NameSegment::from_text(segment.into()))
+                    .collect::<gandr_kernel_data::SmallVec<_, 0, alloc::alloc::Global>>(),
+            )
+        })
+        .collect();
+    let readmission = match pool {
+        None => bridge::readmit(&mut arena, &verdicts),
+        Some(pool) => {
+            bridge::readmit_retiring(
+                &mut arena,
+                &verdicts,
+                (
+                    bridge::LeadingCount::NONE,
+                    Maybe::Absent(bridge::crossed::Absent::Unasked),
+                ),
+                &bridge::Recall::recheck().forking(SharedFork::through(Arc::<Pool>::clone(pool))),
+                &Unretired,
+                &mut bridge::Untimed,
+                &**pool,
+            )
+            .whole()
+            .0
+        },
+    };
+    let names = module.structured_names();
+    let mut judged = verdicts.judged().iter().zip(readmission.readmitted());
+    let mut classes = Vec::new();
+    let mut withheld = Vec::new();
+    let mut crossed_names = Vec::new();
+    for lowered in module.declarations() {
+        let constant = lowered.constant();
+        let class = if let DeclarationOutcome::Refused(refusal) = lowered.outcome() {
+            Class::NeverOffered(Refusal::Lowering(refusal).name())
+        }
+        else {
+            let Some((judgement, crossing)) = judged.next()
+            else {
+                panic!(
+                    "{}: the declaration at {} was offered and has no verdict",
+                    path.display(),
+                    usize::from(constant)
+                );
+            };
+            assert_eq!(
+                (judgement.constant(), crossing.constant()),
+                (constant, constant),
+                "{}: the verdicts and the readmission keep admission order",
+                path.display()
+            );
+            if let bridge::Outcome::Refused(bridge::Refusal::Withheld {
+                constant: named, ..
+            }) = *crossing.outcome()
+            {
+                withheld.push((constant, named));
+            }
+            class_of(&path, judgement.verdict(), crossing.outcome())
+        };
+        if matches!(class, Class::Defined | Class::Assumed | Class::Data) {
+            crossed_names.push(names.get(&constant).cloned().unwrap_or_default());
+        }
+        classes.push((constant, class));
+    }
+    assert!(
+        judged.next().is_none(),
+        "{}: every verdict belongs to a declaration the lowering read",
+        path.display()
+    );
+    let artifact = readmission.export(names);
+    let keys = readmission.export_names();
+    if PAST_THE_WORK_CAP.iter().any(|held| path.ends_with(held)) {
+        assert_eq!(
+            gandr_kernel_term::decode_named(artifact.as_image(), &keys).err(),
+            Some(DecodeError::Malformed {
+                site: MalformedSite::ExpandedWork,
+            }),
+            "{}: the decoder refuses the export past its work cap until #5797",
+            path.display()
+        );
+        return Swept::PastTheWorkCap;
+    }
+    Swept::Exported(Exported {
+        path,
+        root,
+        classes,
+        withheld,
+        natives,
+        crossed_names,
+        artifact,
+        keys,
+    })
+}
+
+/// The source at `path` under `root`, exported as [`export_through`] exports
+/// it with each kernel check's obligations drained serially.
+///
+/// # Specification
+/// trivial.
+fn export(
+    pbg: &Pbg,
+    path: PathBuf,
+    root: Root,
+) -> Swept
+{
+    export_through(pbg, path, root, None)
+}
+
+/// A laid-out source, lowered and checked.
+///
+/// # Specification
+/// trivial.
+struct Checked<'source>
+{
+    /// The arena the source is lowered into.
+    arena: CoreArena,
+    /// The lowered module.
+    module: LoweredModule<'source>,
+    /// The checker's verdicts on it.
+    verdicts: ModuleReport,
+}
+
+/// `text`, laid out as `unit`, parsed, lowered and checked as a driver runs
+/// them; none when the lowering refuses it whole.
+///
+/// # Specification
+/// - requires: `text` is the laid-out text of the source at `path`, and `unit`
+///   is its layout or the layout of a text that `text` cuts short in the
+///   importer.
+/// - ensures: the module and its verdicts over one arena; none when the
+///   lowering refuses the source whole for a reason other than an engine fault.
+/// - panics: when the parser commits no tree, or when the lowering faults.
+/// - executable: none — the result is the pipeline's own, and a predicate would
+///   run the pipeline again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`export`].
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_kept_export::sweeps::a_source_whose_last_form_retires_exports_its_cut_text`
+fn check<'source>(
+    pbg: &Pbg,
+    path: &Path,
+    (text, unit): (SourceText<'source>, &Unit),
+) -> Option<Checked<'source>>
+{
+    let tree = parse(pbg, text)
+        .unwrap_or_else(|fault| panic!("{}: the parser commits a tree: {fault}", path.display()))
+        .into_tree();
+    let mut arena = CoreArena::new();
+    let module = match lower_unit(
+        pbg,
+        &tree,
+        unit,
+        &mut arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
+    ) {
+        Ok(module) => module,
+        Err(refusal) => {
+            assert_ne!(
+                refusal.classify(),
+                FailureClass::EngineFault,
+                "{}: the lowering faulted: {refusal}",
+                path.display()
+            );
+            return None;
+        },
+    };
+    let adapted = declarations(&module, &arena);
+    let verdicts = check_module(
+        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+        &adapted,
+    );
+    Some(Checked {
+        arena,
+        module,
+        verdicts,
+    })
+}
+
+/// The sources of `visited` that the lowering reads, exported, in root and
+/// then path order. Each readmission runs its checks and their obligations on
+/// `pool`, or serially when `pool` is none.
+///
+/// # Specification
+/// - requires: `visited` is in root and then path order without a duplicate;
+///   both committed corpus trees remain readable and unchanged during the
+///   sweep.
+/// - ensures: exports every source of `visited` that lowers, omitting
+///   whole-source refusals, in root and then path order without duplicate
+///   paths.
+/// - panics: on an invalid fixture or failed export precondition.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sampled sources are swept twice and each resulting
+///   artifact is decoded and read through its records. Root/path order and
+///   unique membership are executable invariants; byte identity across sweeps
+///   is determinism evidence, while the partition witness compares admitted
+///   names to the reconstructed artifact. The nightly's nights together take
+///   every source of each root.
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
+#[spec(
+    ensures: |ret| {
+    ret
+        .iter()
+        .zip(ret.iter().skip(1_usize))
+        .all(|(first, second)| {
+            (first.root, &first.path) < (second.root, &second.path)
+        })
+},
+)]
+fn corpus(
+    visited: &[(Root, PathBuf)],
+    pool: Option<&Arc<Pool>>,
+) -> Vec<Exported>
+{
+    let pbg = built_in().expect("the built-in grammar builds");
+    let mut exported = Vec::new();
+    for &(root, ref path) in visited {
+        if let Swept::Exported(source) = export_through(&pbg, path.clone(), root, pool) {
+            exported.push(source);
+        }
+    }
+    exported
+}
+
+/// `artifact` committed as records into a fresh block store, beside the
+/// manifest naming them.
+///
+/// # Specification
+/// - requires: `artifact` is a valid canonical kernel export whose record tree
+///   fits the current profile.
+/// - ensures: returns a fresh store containing the artifact’s record tree and
+///   the manifest naming its root. Reading the manifest under the current
+///   profile reconstructs the same artifact.
+/// - panics: if the export cannot be segmented or the records cannot be
+///   committed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every current corpus export is committed, read through
+///   the manifest and compared with the kernel-decoded artifact; its places
+///   also match the independently observed admitted declarations. The predicate
+///   verifies the returned manifest/store root association without another
+///   whole-artifact reconstruction.
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
+#[spec(
+    ensures: |ret| {
+    gandr_storage_records::BlockStore::load(&ret.1, ret.0.root_node())
+        .is_ok_and(|node| node.identity() == ret.0.root_node())
+},
+)]
+fn commit(exported: &Exported) -> (ArtifactManifest, InMemoryBlockStore)
+{
+    let records = ArtifactRecordSet::from_artifact(exported.artifact.as_image(), &exported.keys)
+        .and_then(|records| records.named_by(&exported.keys))
+        .expect("an export cuts at its own segments under its names");
+    let mut store = InMemoryBlockStore::default();
+    let manifest = build(&records, TreeParams::current(), &mut store).expect("the records commit");
+    (manifest, store)
+}
+
+/// The export gate: every source's artifact is a function of its text, and
+/// reads back through the record plane and the decoder as itself.
+mod kernel_export_gate
+{
+    use alloc::collections::BTreeSet;
+    use alloc::sync::Arc;
+    use core::num::NonZeroUsize;
+
+    use gandr_storage_records::TreeParams;
+    use gandr_surface_dispatcher::Pool;
+    use gandr_surface_dispatcher::Threads;
+    use gandr_surface_dispatcher::Width;
+    use gandr_workflow_sweep::Portion;
+    use gandr_workflow_sweep::Sample;
+    use gandr_workflow_sweep::Sweep;
+
+    use super::Class;
+    use super::Root;
+    use super::commit;
+    use super::corpus;
+    use super::visited;
+
+    /// The export gate's sweeps: the sample's fixed set, and the change's
+    /// sources beside it.
+    mod sweeps
+    {
+        use gandr_workflow_sweep::Sample;
+        use gandr_workflow_sweep::SampleName;
+        use gandr_workflow_sweep::SampleSize;
+        use gandr_workflow_sweep::Sweep;
+
+        use super::gate;
+
+        /// The sample: eight sources, ranked by their BLAKE3 digest under
+        /// this name, at least one of each corpus class. Eight hold the sweep
+        /// within the suite's bound of a second a test.
+        const SAMPLE: Sample = Sample {
+            name: SampleName("the_kernel_export_exit_gate_holds"),
+            size: SampleSize(8),
+        };
+
+        #[test]
+        fn the_kernel_export_exit_gate_holds()
+        {
+            gate(&Sweep::asked().expect("the run's sweep resolves"), SAMPLE);
+        }
+
+        /// The change's sources beside the fixed set.
+        /// - see: #4654
+        #[test]
+        fn the_kernel_export_exit_gate_holds_changed()
+        {
+            gate(
+                &Sweep::asked().expect("the run's sweep resolves").changed(),
+                SAMPLE,
+            );
+        }
+    }
+
+    /// The sources that `sweep` visits under `sample`, exported twice, the
+    /// second time with the checks of each readmission and the obligations of
+    /// each check run on four threads: each artifact is a function of its text
+    /// and not of the pool, and reads back through the record plane and the
+    /// decoder as itself.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: both exports of the visited sources give the same sources the
+    ///   same bytes, identities and classes; each artifact decodes, re-encodes
+    ///   byte for byte and reads back through its records; and the fixed set
+    ///   exports a definition or an assumption from each root it holds a source
+    ///   of.
+    /// - panics: when any of those fails.
+    /// - executable: none — the assertions of the sweep are the check.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the stratified sample holds a source of each root,
+    ///   and the nightly's nights together take every source of each root.
+    /// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+    /// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds_changed`
+    fn gate(
+        sweep: &Sweep,
+        sample: Sample,
+    )
+    {
+        let visited = visited(sweep, sample);
+        if visited.is_empty() {
+            return;
+        }
+        let pool = Arc::new(Pool::new(Width::Threads(Threads::from(
+            NonZeroUsize::new(4_usize).expect("four threads"),
+        ))));
+        let first = corpus(&visited, None);
+        let second = corpus(&visited, Some(&pool));
+        assert_eq!(
+            first.len(),
+            second.len(),
+            "two sweeps read the same sources"
+        );
+        let mut exporting = BTreeSet::new();
+        for (one, two) in first.iter().zip(&second) {
+            let path = one.path.display();
+            assert_eq!(
+                one.artifact, two.artifact,
+                "{path}: the export is a function of the source"
+            );
+            assert_eq!(
+                one.classes, two.classes,
+                "{path}: a scheduled readmission gives each declaration the serial class"
+            );
+            let (manifest, store) = commit(one);
+            let (again, _again_store) = commit(two);
+            assert_eq!(
+                manifest.identity(),
+                again.identity(),
+                "{path}: the identity is a function of the source"
+            );
+            let decoded = one
+                .decoded()
+                .unwrap_or_else(|refusal| panic!("{path}: the export decodes: {refusal}"));
+            assert_eq!(
+                one.artifact,
+                gandr_kernel_term::encode_named(
+                    decoded.arena(),
+                    decoded.declarations(),
+                    None,
+                    &one.keys
+                ),
+                "{path}: the decoding re-encodes byte for byte"
+            );
+            assert_eq!(
+                Ok(decoded),
+                manifest.read_under(&store, TreeParams::current()),
+                "{path}: the records read back through the decoder as the export"
+            );
+            if one
+                .classes
+                .iter()
+                .any(|&(_, class)| matches!(class, Class::Defined | Class::Assumed))
+            {
+                exporting.insert(one.root);
+            }
+        }
+        // A change can touch only sources that export nothing, as the
+        // pending set, so only the fixed set holds each root to an export.
+        if sweep.portion() == Portion::Fixed {
+            let held: BTreeSet<Root> = visited.iter().map(|&(root, _)| root).collect();
+            assert_eq!(
+                held, exporting,
+                "the visited sources export a declaration from each root they hold a source of"
+            );
+        }
+    }
+}
+
+/// The kept export: a source whose last form retires exports the bytes of a
+/// fresh check of its text without that form.
+mod kernel_kept_export
+{
+    use alloc::vec::Vec;
+    use std::fs;
+    use std::path::Path;
+
+    use gandr_core_checker::bridge;
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_term::AdmissionMark;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::EncodedArtifact;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_surface_dispatcher::classify;
+    use gandr_surface_dispatcher::lay_out;
+    use gandr_surface_grammar::Pbg;
+    use gandr_surface_grammar::built_in;
+    use gandr_surface_parser::parse;
+    use gandr_surface_syntax::SourceText;
+    use gandr_workflow_sweep::Portion;
+    use gandr_workflow_sweep::Sample;
+    use gandr_workflow_sweep::Sweep;
+    use quenchant_shape::shape::Maybe;
+
+    use super::Checked;
+    use super::check;
+    use super::visited;
+
+    /// The kept export's sweeps: the sample's fixed set, and the change's
+    /// sources beside it.
+    mod sweeps
+    {
+        use gandr_workflow_sweep::Sample;
+        use gandr_workflow_sweep::SampleName;
+        use gandr_workflow_sweep::SampleSize;
+        use gandr_workflow_sweep::Sweep;
+
+        use super::sweep;
+
+        /// The sample: twelve sources, ranked by their BLAKE3 digest under
+        /// this name, at least one of each corpus class. Twelve hold the sweep
+        /// within the suite's bound of a second a test.
+        const SAMPLE: Sample = Sample {
+            name: SampleName("a_source_whose_last_form_retires_exports_its_cut_text"),
+            size: SampleSize(12),
+        };
+
+        #[test]
+        fn a_source_whose_last_form_retires_exports_its_cut_text()
+        {
+            sweep(&Sweep::asked().expect("the run's sweep resolves"), SAMPLE);
+        }
+
+        /// The change's sources beside the fixed set.
+        /// - see: #4654
+        #[test]
+        fn a_source_whose_last_form_retires_exports_its_cut_text_changed()
+        {
+            sweep(
+                &Sweep::asked().expect("the run's sweep resolves").changed(),
+                SAMPLE,
+            );
+        }
+    }
+
+    /// What cutting a source's last form did to its kernel entries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Cut
+    {
+        /// The last form's entries retired, and the kept export is the export
+        /// of the cut text.
+        Retired,
+        /// The cut changes the readmission of an earlier declaration, as when
+        /// the last form is the definition of a signature that an earlier
+        /// form writes. The cut deletes no whole declaration.
+        Completing,
+        /// The last form left no entry to retire, or the source does not
+        /// lower whole.
+        Unretired,
+    }
+
+    /// The sources that `sweep` visits under `sample`, each with its last form
+    /// retired: each kept export is the export of the text without that form.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each visited source whose last form crosses into the kernel,
+    ///   kept with the entries of that form retired, exports the bytes that a
+    ///   fresh check of its text without the form exports.
+    /// - panics: when an export differs, or when no source of the fixed set
+    ///   retires an entry.
+    /// - executable: none — the assertions of the sweep are the check.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the stratified sample holds sources of each class,
+    ///   and the nightly's nights together take every source of each root.
+    /// - witness: `kernel_export::kernel_kept_export::sweeps::a_source_whose_last_form_retires_exports_its_cut_text`
+    /// - witness: `kernel_export::kernel_kept_export::sweeps::a_source_whose_last_form_retires_exports_its_cut_text_changed`
+    fn sweep(
+        sweep: &Sweep,
+        sample: Sample,
+    )
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let mut retired = Vec::new();
+        let mut completing = Vec::new();
+        for (_root, path) in visited(sweep, sample) {
+            match cut(&pbg, &path) {
+                Cut::Retired => retired.push(path),
+                Cut::Completing => completing.push(path),
+                Cut::Unretired => {},
+            }
+        }
+        std::eprintln!(
+            "{} sources export their cut text with the last form retired; the cut of {} changes an earlier declaration",
+            retired.len(),
+            completing.len()
+        );
+        // A change can touch only sources whose last form crosses nothing,
+        // so only the fixed set holds the sweep to a source whose last form
+        // retires.
+        if sweep.portion() == Portion::Fixed {
+            assert!(
+                !retired.is_empty(),
+                "a visited source retires its last form"
+            );
+        }
+    }
+
+    /// The source at `path`, checked whole and without its last form. The
+    /// whole readmission's environment retires each entry past the entries
+    /// of the cut one, and its export must equal the cut one's.
+    ///
+    /// # Specification
+    /// - requires: `path` names a corpus source.
+    /// - ensures: [`Cut::Retired`] when an entry retires, after the kept and
+    ///   the cut exports agree byte for byte; [`Cut::Completing`] when the cut
+    ///   readmission is not the whole one's leading entries; [`Cut::Unretired`]
+    ///   otherwise.
+    /// - panics: when the exports differ, or when a retire is refused.
+    /// - executable: none — the outcome is the comparison's panic or a variant
+    ///   no predicate reads apart.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`sweep`].
+    /// - witness: `kernel_export::kernel_kept_export::sweeps::a_source_whose_last_form_retires_exports_its_cut_text`
+    fn cut(
+        pbg: &Pbg,
+        path: &Path,
+    ) -> Cut
+    {
+        let read = fs::read_to_string(path)
+            .unwrap_or_else(|error| panic!("{}: the source reads: {error}", path.display()));
+        let laid = lay_out(pbg, path, classify(path), SourceText::from(read.as_str()));
+        let tree = parse(pbg, SourceText::from(laid.text.as_str()))
+            .unwrap_or_else(|fault| {
+                panic!("{}: the parser commits a tree: {fault}", path.display())
+            })
+            .into_tree();
+        // The root's children hold the trivia between the forms too, and a
+        // form is a child that has children.
+        let Some(last) = tree
+            .top_level()
+            .iter()
+            .rev()
+            .find(|node| usize::from(node.child_count()) > 0)
+        else {
+            return Cut::Unretired;
+        };
+        let start = last.span().start();
+        let Some(without) = laid.text.get(.. usize::from(start))
+        else {
+            return Cut::Unretired;
+        };
+        if start < laid.base {
+            return Cut::Unretired;
+        }
+        let (
+            Some(Checked {
+                arena: mut whole_arena,
+                verdicts: whole,
+                ..
+            }),
+            Some(Checked {
+                arena: mut cut_arena,
+                verdicts: cut,
+                ..
+            }),
+        ) = (
+            check(
+                pbg,
+                path,
+                (SourceText::from(laid.text.as_str()), &laid.unit),
+            ),
+            check(pbg, path, (SourceText::from(without), &laid.unit)),
+        )
+        else {
+            return Cut::Unretired;
+        };
+        let whole = bridge::readmit(&mut whole_arena, &whole);
+        let fresh = bridge::readmit(&mut cut_arena, &cut);
+        // The cut deletes whole declarations only when its readmission is
+        // the whole one's leading entries.
+        if whole.readmitted().get(.. fresh.readmitted().len()) != Some(fresh.readmitted()) {
+            return Cut::Completing;
+        }
+        let mut kept = whole.environment().clone();
+        let retired: Vec<ConstantIndex> = (usize::from(fresh.environment().entries().len())
+            .. usize::from(kept.entries().len()))
+            .map(ConstantIndex::from)
+            .collect();
+        if retired.is_empty() {
+            return Cut::Unretired;
+        }
+        assert_eq!(
+            kept.retire(&retired),
+            Ok(()),
+            "{}: the last form's entries retire",
+            path.display()
+        );
+        assert_eq!(
+            exported(&kept),
+            exported(fresh.environment()),
+            "{}: the kept environment exports the cut text's bytes",
+            path.display()
+        );
+        Cut::Retired
+    }
+
+    /// The bytes that the export of `environment` writes: its live entries
+    /// in rank order, each marked checked, each position written as its
+    /// place.
+    ///
+    /// # Specification
+    /// trivial.
+    fn exported(environment: &Environment) -> EncodedArtifact
+    {
+        let entries = environment.entries();
+        let marked: Vec<MarkedDeclaration> = environment
+            .in_rank_order()
+            .filter_map(|position| entries.get(usize::from(position)))
+            .map(|entry| {
+                MarkedDeclaration::new(AdmissionMark::Checked, entry.declaration().clone())
+            })
+            .collect();
+        match environment.places() {
+            Maybe::Present(places) => {
+                gandr_kernel_term::encode_placed(environment.arena(), &marked, &places)
+            },
+            Maybe::Absent(_) => gandr_kernel_term::encode(environment.arena(), &marked),
+        }
+    }
+}
+
+/// The partition: every declaration of the corpus classified once by what
+/// became of it at the kernel boundary, against the artifact that holds what
+/// crossed.
+mod kernel_corpus_partition
+{
+    use alloc::collections::BTreeMap;
+    use alloc::collections::BTreeSet;
+    use alloc::vec::Vec;
+
+    use gandr_kernel_term::StructuredName;
+    use gandr_storage_records::RecordCount;
+    use gandr_storage_records::TreeParams;
+    use gandr_workflow_sweep::Sample;
+    use gandr_workflow_sweep::Sweep;
+
+    use super::Class;
+    use super::commit;
+    use super::corpus;
+    use super::visited;
+
+    /// The partition's sweeps: the sample's fixed set, and the change's
+    /// sources beside it.
+    mod sweeps
+    {
+        use gandr_workflow_sweep::Sample;
+        use gandr_workflow_sweep::SampleName;
+        use gandr_workflow_sweep::SampleSize;
+        use gandr_workflow_sweep::Sweep;
+
+        use super::partition;
+
+        /// The sample: thirty-two sources, ranked by their BLAKE3 digest
+        /// under this name, at least one of each corpus class.
+        const SAMPLE: Sample = Sample {
+            name: SampleName("corpus_partition_matches_the_manifest"),
+            size: SampleSize(32),
+        };
+
+        #[test]
+        fn corpus_partition_matches_the_manifest()
+        {
+            partition(&Sweep::asked().expect("the run's sweep resolves"), SAMPLE);
+        }
+
+        /// The change's sources beside the fixed set.
+        /// - see: #4654
+        #[test]
+        fn corpus_partition_matches_the_manifest_changed()
+        {
+            partition(
+                &Sweep::asked().expect("the run's sweep resolves").changed(),
+                SAMPLE,
+            );
+        }
+    }
+
+    /// The sources that `sweep` visits under `sample`, exported once, each
+    /// declaration classified by what became of it at the kernel boundary and
+    /// held against the artifact that holds what crossed.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: no withheld declaration names one that crossed; each order
+    ///   holds one place for every native signature, session assumption, free
+    ///   model and declaration that crossed, and each manifest counts no more
+    ///   records than those, the header and the order; each session assumption
+    ///   and each free model is numbered in admission order; and besides them
+    ///   each artifact holds the declarations that crossed, in admission order,
+    ///   under their names, and between them only distinct natives the source
+    ///   uses.
+    /// - panics: when any of those fails.
+    /// - executable: none — the assertions of the sweep are the check.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the stratified sample holds sources of each class,
+    ///   and the nightly's nights together take every source of each root.
+    /// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
+    /// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest_changed`
+    fn partition(
+        sweep: &Sweep,
+        sample: Sample,
+    )
+    {
+        let mut classes = BTreeMap::new();
+        let mut seeded: BTreeSet<StructuredName> = BTreeSet::new();
+        let mut keys: BTreeSet<alloc::string::String> = BTreeSet::new();
+        for exported in corpus(&visited(sweep, sample), None) {
+            let path = exported.path.display();
+            classes.clear();
+            seeded.clear();
+            keys.clear();
+            classes.extend(exported.classes.iter().copied());
+            for &(declaration, named) in &exported.withheld {
+                assert!(
+                    !matches!(
+                        classes.get(&named),
+                        Some(&(Class::Defined | Class::Assumed | Class::Data))
+                    ),
+                    "{path}: the declaration at {} is withheld for naming {}, which crossed",
+                    usize::from(declaration),
+                    usize::from(named)
+                );
+            }
+            let (manifest, store) = commit(&exported);
+            let read = manifest
+                .read_under(&store, TreeParams::current())
+                .unwrap_or_else(|refusal| panic!("{path}: the records read back: {refusal}"));
+            // A received value or an offered choice crosses under an
+            // assumption the readmission admits ahead of the first declaration
+            // that reads it, named `session.receive.<n>` or `session.offer.<n>`
+            // with `n` its admission ordinal; every other record is a native
+            // or a declaration.
+            let session_assumption = |name: &StructuredName| match *name.segments() {
+                [ref session, ref action, ref ordinal]
+                    if session.as_ref() == "session"
+                        && matches!(action.as_ref(), "receive" | "offer") =>
+                {
+                    ordinal.as_ref().parse::<usize>().ok()
+                },
+                _ => None,
+            };
+            // A handled effect, or a row of operations a declaration stands
+            // at, crosses through its free model, a data declaration the
+            // readmission admits ahead of the first declaration that reads
+            // it, named `effect.free.<ℓ>.<row>` after its level and the
+            // interfaces of its row.
+            let free_model = |name: &StructuredName| {
+                matches!(
+                    *name.segments(),
+                    [ref effect, ref free, ref level, _, ..]
+                        if effect.as_ref() == "effect"
+                            && free.as_ref() == "free"
+                            && level.as_ref().parse::<u64>().is_ok()
+                )
+            };
+            // A patched type's formation crosses as witness definitions the
+            // readmission admits ahead of the first declaration whose type
+            // holds it, named `formation.<key>.record.<k>` and
+            // `formation.<key>.meets.<k>`, with `key` the 64 lowercase
+            // hexadecimal digits of the digest of its content and `k` the
+            // round of its meets.
+            let formation = |name: &StructuredName| {
+                matches!(
+                    *name.segments(),
+                    [ref formation, ref key, ref part, ref round]
+                        if formation.as_ref() == "formation"
+                            && matches!(part.as_ref(), "record" | "meets")
+                            && round.as_ref().parse::<usize>().is_ok()
+                            && key.as_ref().len() == 64
+                            && key
+                                .as_ref()
+                                .bytes()
+                                .all(|digit| matches!(digit, b'0' ..= b'9' | b'a' ..= b'f'))
+                )
+            };
+            let (assumed, held): (Vec<&StructuredName>, Vec<&StructuredName>) = read
+                .declarations()
+                .iter()
+                .map(|marked| marked.declaration().name())
+                .partition(|&name| session_assumption(name).is_some());
+            let (models, held): (Vec<&StructuredName>, Vec<&StructuredName>) =
+                held.into_iter().partition(|&name| free_model(name));
+            let (formations, held): (Vec<&StructuredName>, Vec<&StructuredName>) =
+                held.into_iter().partition(|&name| formation(name));
+            for (ordinal, &name) in assumed.iter().enumerate() {
+                assert_eq!(
+                    session_assumption(name),
+                    Some(ordinal),
+                    "{path}: the session assumptions are numbered in admission order: {assumed:?}"
+                );
+            }
+            assert!(
+                models
+                    .iter()
+                    .enumerate()
+                    .all(|(place, name)| models.iter().take(place).all(|before| before != name)),
+                "{path}: each free model is admitted once: {models:?}"
+            );
+            // Each formation crosses once, its witnesses together.
+            let mut last = None;
+            for &name in &formations {
+                let key = name.segments().get(1).map(AsRef::<str>::as_ref);
+                if key != last {
+                    assert!(
+                        key.is_some_and(|key| keys.insert(alloc::string::String::from(key))),
+                        "{path}: each formation crosses once, its witnesses together: {formations:?}"
+                    );
+                    last = key;
+                }
+            }
+            // Every other record is a declaration that crossed, in admission
+            // order, or the signature of a native the source uses, seeded
+            // just before the first declaration that reads it.
+            let mut crossed_names = exported.crossed_names.iter().peekable();
+            for &name in &held {
+                if crossed_names.next_if(|&crossed| crossed == name).is_some() {
+                    continue;
+                }
+                assert!(
+                    exported.natives.contains(name) && seeded.insert(name.clone()),
+                    "{path}: besides the session assumptions, the free models and the \
+                     declarations that crossed, in admission order under their names, the \
+                     artifact holds only distinct natives the source uses: {name:?} in {held:?} \
+                     against {:?}",
+                    exported.crossed_names,
+                );
+            }
+            assert!(
+                crossed_names.next().is_none(),
+                "{path}: the artifact holds every declaration that crossed, in admission order: \
+                 {:?} against {held:?}",
+                exported.crossed_names,
+            );
+            let crossed = exported
+                .classes
+                .iter()
+                .filter(|&&(_, class)| {
+                    matches!(class, Class::Defined | Class::Assumed | Class::Data)
+                })
+                .count()
+                .saturating_add(seeded.len())
+                .saturating_add(assumed.len())
+                .saturating_add(models.len())
+                .saturating_add(formations.len());
+            assert_eq!(
+                crossed,
+                read.declarations().len(),
+                "{path}: the order holds one place for every native signature, every session \
+                 assumption, every free model, every formation witness and every declaration \
+                 that crossed"
+            );
+            assert!(
+                manifest.record_count()
+                    <= RecordCount(
+                        u64::try_from(crossed.saturating_add(2))
+                            .expect("a count fits sixty-four bits")
+                    ),
+                "{path}: the manifest counts the header, the order and one record for each \
+                 distinct segment, so no more records than places and two"
+            );
+        }
+    }
+}
+
+/// Generativity at the kernel boundary: the classic functor pair's two
+/// applications export an atom each, the header's minted-atom table names both
+/// beside the argument's, and an artifact whose table has the two applications
+/// share one atom is refused by the decoder.
+mod kernel_generative_distinctness
+{
+    use alloc::format;
+    use alloc::vec::Vec;
+    use std::path::PathBuf;
+
+    use gandr_kernel_term::ArtifactImage;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::DecodeError;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::ReservedSlot;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::ValueType;
+    use gandr_surface_grammar::built_in;
+
+    use super::Exported;
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    /// The offset of the header's minted-atom count: past the four-byte magic,
+    /// the two-byte version and the one-byte key width.
+    const MINTED_ATOM_TABLE_COUNT_OFFSET: usize = 7;
+    /// The width of each key in the functor pair's tables: one word, since its
+    /// keys stay apart in their first word.
+    const KEY_WIDTH: usize = 8;
+    /// The offset of the atom table's entry for the argument's atom, past the
+    /// count, the count of the table's keys and the three keys.
+    const SEED_ENTRY_OFFSET: usize = 33;
+    /// The offset of the atom table's entry for the first application's atom.
+    const FIRST_APPLICATION_ENTRY_OFFSET: usize = 34;
+    /// The offset of the atom table's entry for the second application's atom.
+    const SECOND_APPLICATION_ENTRY_OFFSET: usize = 35;
+
+    /// The classic functor pair exported: `Seed` sealed, then `MkCounter`
+    /// applied to it twice, as `A` and as `B`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn functor_pair() -> Exported
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/modules/functor-pair.gandr"
+        ));
+        match export(&pbg, path, Root::Fixture) {
+            Swept::Exported(exported) => exported,
+            Swept::RefusedWhole | Swept::PastTheWorkCap => panic!("the functor pair lowers"),
+        }
+    }
+
+    #[test]
+    fn the_generative_distinctness_golden()
+    {
+        let named = |dotted: &str| {
+            StructuredName::from(
+                dotted
+                    .split('.')
+                    .filter_map(|segment| NameSegment::from_text(segment.into()))
+                    .collect::<gandr_kernel_data::SmallVec<_, 0, alloc::alloc::Global>>(),
+            )
+        };
+        let exported = functor_pair();
+        let decoded = exported
+            .decoded()
+            .expect("the functor pair's export decodes");
+        let atoms: Vec<(usize, &StructuredName)> = decoded
+            .declarations()
+            .iter()
+            .enumerate()
+            .filter(|&(_, marked)| {
+                matches!(
+                    *marked.declaration().content(),
+                    DeclarationContent::AbstractType { .. }
+                )
+            })
+            .map(|(position, marked)| (position, marked.declaration().name()))
+            .collect();
+        assert_eq!(
+            atoms
+                .iter()
+                .map(|&(_, name)| name.clone())
+                .collect::<Vec<_>>(),
+            ["Seed.T", "A.T", "B.T"].map(named),
+            "the argument's atom, then one atom per application, in admission order"
+        );
+        let &[(seed, _), (first, _), (second, _)] = atoms.as_slice()
+        else {
+            panic!("three atoms");
+        };
+        // The table names each atom by its key, one word wide, and each atom's
+        // position is twice its entry in that table.
+        let mut table = alloc::vec![3_u8, 3];
+        for position in [seed, first, second] {
+            let key = exported
+                .keys
+                .key(ConstantIndex::from(position))
+                .expect("each atom of the pair has a key");
+            table.extend_from_slice(key.as_ref().get(.. KEY_WIDTH).expect("a word of the key"));
+        }
+        table.extend_from_slice(&[0, 2, 4]);
+        let image =
+            gandr_kernel_data::SmallVec::<u8, 0, alloc::alloc::Global>::from(exported.artifact);
+        assert_eq!(
+            image
+                .get(MINTED_ATOM_TABLE_COUNT_OFFSET.saturating_sub(1))
+                .copied(),
+            u8::try_from(KEY_WIDTH).ok(),
+            "the functor pair's keys stay apart in one word"
+        );
+        assert_eq!(
+            image.get(MINTED_ATOM_TABLE_COUNT_OFFSET ..= SECOND_APPLICATION_ENTRY_OFFSET),
+            Some(table.as_slice()),
+            "the header's table names each atom once, by its own key"
+        );
+        assert_eq!(
+            image.get(SEED_ENTRY_OFFSET).copied(),
+            Some(0),
+            "the argument's atom is the table's first entry"
+        );
+        let mut seeds = Vec::new();
+        for (instance, own, other) in [("A", first, second), ("B", second, first)] {
+            let member = named(&format!("{instance}.seed"));
+            let typed: Vec<_> = decoded
+                .declarations()
+                .iter()
+                .filter(|marked| *marked.declaration().name() == member)
+                .map(|marked| marked.declaration().declared_id())
+                .collect();
+            let at = |atom: usize| {
+                typed.iter().copied().find(|&id| {
+                    decoded.arena().value_type(id)
+                        == Some(&ValueType::Abstract(ConstantIndex::from(atom)))
+                })
+            };
+            let Some(own) = at(own)
+            else {
+                panic!("{instance}.seed is typed at its own application's atom");
+            };
+            assert_eq!(at(other), None, "and never at the other application's");
+            seeds.push(own);
+        }
+        assert!(
+            matches!(seeds.as_slice(), [first, second] if first != second),
+            "no shared subterm merges the two instances' types: {seeds:?}"
+        );
+    }
+
+    #[test]
+    fn an_artifact_whose_applications_share_an_atom_is_refused()
+    {
+        let pair = functor_pair();
+        let mut image =
+            gandr_kernel_data::SmallVec::<u8, 0, alloc::alloc::Global>::from(pair.artifact);
+        let first = *image
+            .get(FIRST_APPLICATION_ENTRY_OFFSET)
+            .expect("the first application's entry");
+        *image
+            .get_mut(SECOND_APPLICATION_ENTRY_OFFSET)
+            .expect("the second application's entry") = first;
+        assert_eq!(
+            gandr_kernel_term::decode_named(ArtifactImage::from(image.as_slice()), &pair.keys)
+                .map(|_decoded| ()),
+            Err(DecodeError::ReservedSlotOccupied {
+                slot: ReservedSlot::MintedAtomTable,
+            }),
+            "a table on which the second application claims the first's atom is refused by name"
+        );
+    }
+}
+
+/// The ride-in-a-type statement readmits by its recorded dialogue alone: a
+/// twin whose dialogue reads the wrong unfolding is refused by name.
+mod kernel_ride_readmission
+{
+    use std::path::PathBuf;
+
+    use gandr_kernel_conversion_trace::ConversionDecision;
+    use gandr_kernel_core::EndpointSide;
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::IdentityError;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_core::KernelVerdict;
+    use gandr_kernel_core::ReplayDecline;
+    use gandr_kernel_core::ReplayRefusal;
+    use gandr_kernel_core::TracePosition;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::Value;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn a_ride_dialogue_reading_the_wrong_unfolding_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/higher-cells/ua-by-hand.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("ua-by-hand lowers");
+        };
+        let decoded = exported.decoded().expect("ua-by-hand's export decodes");
+        let mut declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("ua-by-hand readmits, `rides` by the dialogue the checker recorded");
+
+        let rides = StructuredName::from(
+            ["ByHand", "rides"]
+                .into_iter()
+                .filter_map(|segment| NameSegment::from_text(segment.into()))
+                .collect::<gandr_kernel_data::SmallVec<_, 0, alloc::alloc::Global>>(),
+        );
+        let Some(position) = declarations
+            .iter()
+            .position(|marked| *marked.declaration().name() == rides)
+        else {
+            panic!("`rides` crossed");
+        };
+        let Some(statement) = declarations.get_mut(position)
+        else {
+            panic!("`rides` is a declaration");
+        };
+        let DeclarationContent::Def { declared, body } = *statement.declaration().content()
+        else {
+            panic!("`rides` is a definition");
+        };
+        let Some(Value::Here { point, dialogues }) = arena.value(body).cloned()
+        else {
+            panic!("`rides` crosses as the kernel's reflexivity");
+        };
+        // The ride stands on the left endpoint; the first reduction its
+        // dialogue names is the named flow's unfolding.
+        let mut tampered = (*dialogues).clone();
+        let Some(misread) = tampered.left.iter().position(|decision| {
+            matches!(
+                decision,
+                ConversionDecision::ReduceLeft { .. } | ConversionDecision::ReduceRight { .. }
+            )
+        })
+        else {
+            panic!("the dialogue unfolds `opposite_dir_by_hand`: {dialogues:?}");
+        };
+        if let Some(reduction) = tampered.left.get_mut(misread) {
+            *reduction = match *reduction {
+                ConversionDecision::ReduceLeft { .. } => {
+                    ConversionDecision::ReduceRight { redex: () }
+                },
+                ConversionDecision::ReduceRight { .. }
+                | ConversionDecision::ConstShortcut { .. }
+                | ConversionDecision::Unfold { .. }
+                | ConversionDecision::Postpone { .. }
+                | ConversionDecision::Freeze { .. }
+                | ConversionDecision::EtaExpand { .. }
+                | ConversionDecision::ReturnEta { .. }
+                | ConversionDecision::Reassociate { .. }
+                | ConversionDecision::Discard { .. }
+                | ConversionDecision::Hold { .. }
+                | ConversionDecision::Force { .. }
+                | ConversionDecision::ComparedShared { .. }
+                | ConversionDecision::Decompose
+                | ConversionDecision::NegativeSubgoal { .. }
+                | ConversionDecision::Evaluate
+                | ConversionDecision::Admitted => ConversionDecision::ReduceLeft { redex: () },
+            };
+        }
+        let forged = arena.value_here_relating(point, gandr_kernel_data::Shared::new(tampered));
+        let content = DeclarationBuilder::new(&mut arena).def(
+            statement.declaration().levels().clone(),
+            declared,
+            forged,
+        );
+        *statement = MarkedDeclaration::new(
+            statement.mark(),
+            content.named(statement.declaration().name().clone()),
+        );
+
+        let refusal = Environment::replay(arena, &declarations)
+            .expect_err("the unfolding read on the wrong side is refused");
+        assert_eq!(usize::from(refusal.position()), position);
+        assert!(
+            matches!(
+                *refusal.error(),
+                KernelError::Identity(IdentityError::EndpointsDiffer {
+                    side: EndpointSide::Left,
+                    verdict: KernelVerdict::Declined(ReplayDecline::Refused(
+                        ReplayRefusal::Inapplicable { at }
+                    )),
+                    ..
+                }) if at == TracePosition::from(misread)
+            ),
+            "the kernel names the endpoint and the misread decision: {:?}",
+            refusal.error()
+        );
+    }
+}
+
+/// The reflexive transport at a path-type motive readmits; a twin relating a
+/// transported unit, the evidence of the fibre of its path type, to itself
+/// at that path type is refused by name at the endpoint's type.
+mod kernel_transport_readmission
+{
+    use std::path::PathBuf;
+
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_core::ValueTypeHead;
+    use gandr_kernel_term::Computation;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::Value;
+    use gandr_kernel_term::ValueType;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn a_returned_endpoint_read_as_fibre_evidence_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/identity/transport-path.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("transport-path lowers");
+        };
+        let decoded = exported.decoded().expect("transport-path's export decodes");
+        let mut declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("transport-path readmits, `moved_end` at the path type its transport returns");
+
+        let segment =
+            NameSegment::from_text("moved_end".into()).expect("`moved_end` is a name segment");
+        let moved_end = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
+        let Some(position) = declarations
+            .iter()
+            .position(|marked| *marked.declaration().name() == moved_end)
+        else {
+            panic!("`moved_end` crossed");
+        };
+        let Some(statement) = declarations.get_mut(position)
+        else {
+            panic!("`moved_end` is a declaration");
+        };
+        let DeclarationContent::Def { declared, .. } = *statement.declaration().content()
+        else {
+            panic!("`moved_end` is a definition");
+        };
+        let Some(&ValueType::Path { domain, left, .. }) = arena.value_type(declared)
+        else {
+            panic!("`moved_end` is declared at a path type");
+        };
+        let Some(&Value::Returned(moved)) = arena.value(left)
+        else {
+            panic!("its left endpoint crosses as a returned endpoint");
+        };
+        let Some(&Computation::PathTransport { path, .. }) = arena.computation(moved)
+        else {
+            panic!("over the transport it erases");
+        };
+        // The same path carries the unit at the constant unit motive, and the
+        // twin relates that returned unit to itself at the path type: the
+        // endpoint returns the fibre's evidence, not a path, which the checker
+        // refuses as `unit_end` and a kernel reading it as fibre evidence
+        // admitted.
+        let unit_type = arena.value_type_unit();
+        let unit = arena.value_unit();
+        let carried = arena.computation_path_transport(unit_type, path, unit);
+        let carried = arena.value_returned(carried);
+        let forged = arena.value_type_path(domain, carried, carried);
+        let reflexive = arena.value_here(carried);
+        let content = DeclarationBuilder::new(&mut arena).def(
+            statement.declaration().levels().clone(),
+            forged,
+            reflexive,
+        );
+        *statement = MarkedDeclaration::new(
+            statement.mark(),
+            content.named(statement.declaration().name().clone()),
+        );
+
+        let refusal = Environment::replay(arena, &declarations)
+            .expect_err("a returned unit does not stand at a path type");
+        assert_eq!(usize::from(refusal.position()), position);
+        assert!(
+            matches!(
+                *refusal.error(),
+                KernelError::ValueTypeMismatch(mismatch)
+                    if mismatch.expected().head() == ValueTypeHead::Path
+                        && mismatch.actual().head() == ValueTypeHead::Product
+            ),
+            "the kernel names the path type expected and the unit found: {:?}",
+            refusal.error()
+        );
+    }
+}
+
+/// Two reflexivities whose points differ by a definition's unfolding readmit
+/// by the dialogue that decomposes them to their points; a twin whose
+/// dialogue reads the unfolding on the wrong side is refused by name.
+mod kernel_here_congruence_readmission
+{
+    use std::path::PathBuf;
+
+    use gandr_kernel_conversion_trace::ConversionDecision;
+    use gandr_kernel_core::EndpointSide;
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::IdentityError;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_core::KernelVerdict;
+    use gandr_kernel_core::ReplayDecline;
+    use gandr_kernel_core::ReplayRefusal;
+    use gandr_kernel_core::TracePosition;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::Value;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn reflexivities_related_through_the_wrong_side_are_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/identity/here-congruence.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("here-congruence lowers");
+        };
+        let decoded = exported
+            .decoded()
+            .expect("here-congruence's export decodes");
+        let mut declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations).expect(
+            "here-congruence readmits, `here_two_up` by the points its dialogue decomposes to",
+        );
+
+        let segment =
+            NameSegment::from_text("here_two_up".into()).expect("`here_two_up` is a name segment");
+        let here_two_up = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
+        let Some(position) = declarations
+            .iter()
+            .position(|marked| *marked.declaration().name() == here_two_up)
+        else {
+            panic!("`here_two_up` crossed");
+        };
+        let Some(statement) = declarations.get_mut(position)
+        else {
+            panic!("`here_two_up` is a declaration");
+        };
+        let DeclarationContent::Def { declared, body } = *statement.declaration().content()
+        else {
+            panic!("`here_two_up` is a definition");
+        };
+        let Some(Value::Here { point, dialogues }) = arena.value(body).cloned()
+        else {
+            panic!("`here_two_up` crosses as the kernel's reflexivity");
+        };
+        // The right endpoint `Path.here(Path.here(2))` meets the point
+        // `Path.here(two)`: the dialogue decomposes the two reflexivities and
+        // unfolds `two` on the left, which the twin reads on the right instead.
+        let mut tampered = (*dialogues).clone();
+        let Some(misread) = tampered
+            .right
+            .iter()
+            .position(|decision| matches!(decision, ConversionDecision::ReduceLeft { .. }))
+        else {
+            panic!("the dialogue unfolds `two` on the left: {dialogues:?}");
+        };
+        if let Some(reduction) = tampered.right.get_mut(misread) {
+            *reduction = ConversionDecision::ReduceRight { redex: () };
+        }
+        let forged = arena.value_here_relating(point, gandr_kernel_data::Shared::new(tampered));
+        let content = DeclarationBuilder::new(&mut arena).def(
+            statement.declaration().levels().clone(),
+            declared,
+            forged,
+        );
+        *statement = MarkedDeclaration::new(
+            statement.mark(),
+            content.named(statement.declaration().name().clone()),
+        );
+
+        let refusal = Environment::replay(arena, &declarations)
+            .expect_err("the unfolding read on the wrong side is refused");
+        assert_eq!(usize::from(refusal.position()), position);
+        assert!(
+            matches!(
+                *refusal.error(),
+                KernelError::Identity(IdentityError::EndpointsDiffer {
+                    side: EndpointSide::Right,
+                    verdict: KernelVerdict::Declined(ReplayDecline::Refused(
+                        ReplayRefusal::Inapplicable { at }
+                    )),
+                    ..
+                }) if at == TracePosition::from(misread)
+            ),
+            "the kernel names the endpoint and the misread decision: {:?}",
+            refusal.error()
+        );
+    }
+}
+
+/// The audit of a definition that calls `std.string`'s `concat` names the
+/// native row that `std.string` declares: the row crosses as an assumption.
+mod kernel_native_audit
+{
+    use std::path::PathBuf;
+
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    /// #7961: `named` calls `concat`, whose body calls the declaration of
+    /// `string.append`. The artifact holds the row as an assumption under its
+    /// own name.
+    #[test]
+    fn a_call_of_concat_audits_the_native_row_7961()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/ledger/features/std-string.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("std-string lowers");
+        };
+        let decoded = exported.decoded().expect("std-string's export decodes");
+        let row = StructuredName::from(
+            ["string", "append"]
+                .into_iter()
+                .filter_map(|segment| NameSegment::from_text(segment.into()))
+                .collect::<gandr_kernel_data::SmallVec<_, 0, alloc::alloc::Global>>(),
+        );
+        let assumed: alloc::vec::Vec<&StructuredName> = decoded
+            .declarations()
+            .iter()
+            .map(gandr_kernel_term::MarkedDeclaration::declaration)
+            .filter(|declaration| matches!(declaration.content(), DeclarationContent::Axiom { .. }))
+            .map(gandr_kernel_term::Declaration::name)
+            .collect();
+        assert!(
+            assumed.contains(&&row),
+            "the audit names the row `string.append`: {assumed:?}"
+        );
+    }
+}
+
+/// An unread call readmits by the dialogue that discards it and then unfolds
+/// a definition, which the kernel's own reading does not do under a binder; a
+/// twin whose dialogue discards on the side that holds no call is refused by
+/// name.
+mod kernel_discard_readmission
+{
+    use std::path::PathBuf;
+
+    use gandr_kernel_conversion_trace::ConversionDecision;
+    use gandr_kernel_conversion_trace::ConversionSide;
+    use gandr_kernel_core::EndpointSide;
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::IdentityError;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_core::KernelVerdict;
+    use gandr_kernel_core::ReplayDecline;
+    use gandr_kernel_core::ReplayRefusal;
+    use gandr_kernel_core::TracePosition;
+    use gandr_kernel_term::Computation;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::Value;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn an_unread_call_readmits_and_a_discard_on_the_other_side_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/control/divergence.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("divergence lowers");
+        };
+        let decoded = exported.decoded().expect("divergence's export decodes");
+        let mut declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("divergence readmits, `unreadApplied` by the discard its dialogue names");
+
+        let segment = NameSegment::from_text("unreadApplied".into())
+            .expect("`unreadApplied` is a name segment");
+        let unread_applied =
+            StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
+        let Some(position) = declarations
+            .iter()
+            .position(|marked| *marked.declaration().name() == unread_applied)
+        else {
+            panic!("`unreadApplied` crossed");
+        };
+        let Some(statement) = declarations.get_mut(position)
+        else {
+            panic!("`unreadApplied` is a declaration");
+        };
+        let DeclarationContent::Def { declared, body } = *statement.declaration().content()
+        else {
+            panic!("`unreadApplied` is a definition");
+        };
+        // `unreadApplied` is a function of four parameters returning the
+        // reflexivity: its body thunks four lambdas over a `return`.
+        let Some(&Value::Thunk(mut focus)) = arena.value(body)
+        else {
+            panic!("`unreadApplied` crosses as a thunk");
+        };
+        let mut binders = 0_usize;
+        while let Some(&Computation::Lambda(inner)) = arena.computation(focus) {
+            focus = inner;
+            binders = binders.saturating_add(1);
+        }
+        let Some(&Computation::Return(returned)) = arena.computation(focus)
+        else {
+            panic!("`unreadApplied` returns under its parameters");
+        };
+        let Some(Value::Here { point, dialogues }) = arena.value(returned).cloned()
+        else {
+            panic!("`unreadApplied` returns the kernel's reflexivity");
+        };
+        // The left endpoint calls `g` and drops its value before it calls
+        // `apply`: the dialogue relating the point `f` to it discards that
+        // call on the endpoint's side, which the twin names on the point's.
+        let mut tampered = (*dialogues).clone();
+        let Some(misread) = tampered.left.iter().position(|decision| {
+            *decision
+                == ConversionDecision::Discard {
+                    side: ConversionSide::Right,
+                }
+        })
+        else {
+            panic!("the dialogue discards the call on the endpoint's side: {dialogues:?}");
+        };
+        if let Some(discard) = tampered.left.get_mut(misread) {
+            *discard = ConversionDecision::Discard {
+                side: ConversionSide::Left,
+            };
+        }
+        let forged = arena.value_here_relating(point, gandr_kernel_data::Shared::new(tampered));
+        let mut rebuilt = arena.computation_return(forged);
+        for _ in 0 .. binders {
+            rebuilt = arena.computation_lambda(rebuilt);
+        }
+        let forged = arena.value_thunk(rebuilt);
+        let content = DeclarationBuilder::new(&mut arena).def(
+            statement.declaration().levels().clone(),
+            declared,
+            forged,
+        );
+        *statement = MarkedDeclaration::new(
+            statement.mark(),
+            content.named(statement.declaration().name().clone()),
+        );
+
+        let refusal = Environment::replay(arena, &declarations)
+            .expect_err("a discard on the side that holds no call is refused");
+        assert_eq!(usize::from(refusal.position()), position);
+        assert!(
+            matches!(
+                *refusal.error(),
+                KernelError::Identity(IdentityError::EndpointsDiffer {
+                    side: EndpointSide::Left,
+                    verdict: KernelVerdict::Declined(ReplayDecline::Refused(
+                        ReplayRefusal::Inapplicable { at }
+                    )),
+                    ..
+                }) if at == TracePosition::from(misread)
+            ),
+            "the kernel names the endpoint and the misread decision: {:?}",
+            refusal.error()
+        );
+    }
+}
+
+/// A presented type's cancellation readmits by its normal forms; a circle
+/// without its rules, or with a rule that does not present it, is refused by
+/// name; a fold over the circle readmits when it respects the rules, and a
+/// twin whose arm breaks one is refused by name; a fold that rests on laws
+/// readmits on them, and a twin whose laws are forged — each stating the
+/// other rule's path — is refused by the first rule; a section at a variable,
+/// over the circle's terms or over its words, readmits by its cong chains,
+/// and a twin carrying the wrong loop is refused by name; a loop's words
+/// readmit as their cell mints them, and a twin without the cancellations is
+/// refused by name; a case of no branch over a path readmits when its
+/// endpoints are apart, and twins whose endpoints agree or whose rules
+/// diverge are refused by name.
+mod kernel_presented_readmission
+{
+    use alloc::string::String;
+    use alloc::string::ToString as _;
+    use alloc::vec::Vec;
+    use std::path::Path;
+    use std::path::PathBuf;
+
+    use gandr_kernel_core::EndpointSide;
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::IdentityError;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_term::Apartness;
+    use gandr_kernel_term::CellFault;
+    use gandr_kernel_term::CompType;
+    use gandr_kernel_term::Computation;
+    use gandr_kernel_term::ConstructorTag;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::Presentation;
+    use gandr_kernel_term::PresentedRule;
+    use gandr_kernel_term::RuleFault;
+    use gandr_kernel_term::RuleIndex;
+    use gandr_kernel_term::RuleNode;
+    use gandr_kernel_term::RuleRefusal;
+    use gandr_kernel_term::RuleVariable;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::Value;
+    use gandr_kernel_term::ValueType;
+    use gandr_surface_grammar::built_in;
+
+    use super::Class;
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn a_circle_read_without_or_against_its_rules_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/identity/loop-words.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the circle lowers");
+        };
+        let decoded = exported.decoded().expect("the circle's export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("the circle readmits, `cancelled_word` by its endpoints' normal forms");
+        let position = |name: &str| {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
+            declarations
+                .iter()
+                .position(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"))
+        };
+        let circle = position("Words");
+        let cancelled = position("cancelled_word");
+        // The declarations with the circle presented by `presentation`.
+        let presenting = |presentation: Presentation| {
+            let mut twin = declarations.clone();
+            let Some(marked) = twin.get_mut(circle)
+            else {
+                panic!("the circle is a declaration");
+            };
+            *marked = MarkedDeclaration::new(
+                marked.mark(),
+                marked.declaration().clone().presented(presentation),
+            );
+            twin
+        };
+
+        let free = presenting(Presentation::default());
+        let refusal = Environment::replay(arena.clone(), &free)
+            .expect_err("over a free circle the two words are two terms");
+        assert_eq!(usize::from(refusal.position()), cancelled);
+        assert!(
+            matches!(
+                *refusal.error(),
+                KernelError::Identity(IdentityError::EndpointsDiffer {
+                    side: EndpointSide::Left,
+                    ..
+                })
+            ),
+            "the kernel names the endpoint the point does not reach: {:?}",
+            refusal.error()
+        );
+
+        let x = RuleNode::Variable(RuleVariable::from(0_u32));
+        let loop_ = RuleNode::Constructor(ConstructorTag::from(1_usize));
+        let growing = Presentation::new(gandr_kernel_data::SmallVec::from_iter([
+            PresentedRule::new([loop_, x].into(), [loop_, loop_, x].into()),
+        ]));
+        let grown = presenting(growing);
+        let refusal = Environment::replay(arena, &grown)
+            .expect_err("a rule that grows its word does not present the circle");
+        assert_eq!(usize::from(refusal.position()), circle);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::RuleNotPresentable(RuleRefusal {
+                rule: RuleIndex::from(0_usize),
+                fault: RuleFault::NotDecreasing,
+            }),
+            "the kernel names the rule and its fault"
+        );
+    }
+
+    #[test]
+    fn a_loop_readmits_as_its_words_and_dropped_cancellations_are_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/identity/circle.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the circle with a loop lowers");
+        };
+        let decoded = exported.decoded().expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations).expect(
+            "the words readmit as their loop mints them, and `cancelled` by the cancellation",
+        );
+        let worded: Vec<usize> = declarations
+            .iter()
+            .enumerate()
+            .filter(|&(_, marked)| marked.declaration().presentation().cells().is_some())
+            .map(|(position, _)| position)
+            .collect();
+        let [words] = *worded
+        else {
+            panic!("one type of words crosses, the loops at the circle's point: {worded:?}");
+        };
+        let mut dropped = declarations;
+        let Some(marked) = dropped.get_mut(words)
+        else {
+            panic!("the words are a declaration");
+        };
+        let Some(cells) = marked.declaration().presentation().cells().cloned()
+        else {
+            panic!("the words carry their cells");
+        };
+        *marked = MarkedDeclaration::new(
+            marked.mark(),
+            marked
+                .declaration()
+                .clone()
+                .presented(Presentation::default().carrying(cells)),
+        );
+        let refusal = Environment::replay(arena, &dropped)
+            .expect_err("words without their cancellations are not the words the loop mints");
+        assert_eq!(usize::from(refusal.position()), words);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::WordsRefused(CellFault::NotMinted),
+            "the kernel names the words and their fault"
+        );
+    }
+
+    #[test]
+    fn an_absurd_case_readmits_by_apartness_and_forged_twins_are_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/data/empty.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the empty type lowers");
+        };
+        let decoded = exported.decoded().expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("every absurd case readmits: its endpoints are apart");
+        let circle = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/identity/circle-apart.gandr"
+        ));
+        let Swept::Exported(circle) = export(&pbg, circle, Root::Fixture)
+        else {
+            panic!("the circle lowers");
+        };
+        let circle = circle.decoded().expect("the export decodes");
+        Environment::replay(circle.arena().clone(), circle.declarations())
+            .expect("the loop is apart from the empty word, its square and its inverse");
+        let position = |name: &str| {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
+            declarations
+                .iter()
+                .position(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"))
+        };
+        let integers = position("Int");
+        let not_zero = position("not_zero");
+
+        // The twin states `not_zero` at `Path[.A = Int](S(P(Z)), Z)`: the same
+        // case of no branch, its endpoints forged to agree.
+        let marked = &declarations[not_zero];
+        let DeclarationContent::Def { declared, body } = *marked.declaration().content()
+        else {
+            panic!("`not_zero` is a definition");
+        };
+        let Some(&ValueType::Thunk(arrow)) = arena.value_type(declared)
+        else {
+            panic!("`not_zero` is a thunk");
+        };
+        let Some(&(CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain })) =
+            arena.comp_type(arrow)
+        else {
+            panic!("`not_zero` takes the path");
+        };
+        let dependent = matches!(arena.comp_type(arrow), Some(CompType::Pi { .. }));
+        let Some(&ValueType::Path {
+            domain: carrier,
+            left,
+            right,
+        }) = arena.value_type(domain)
+        else {
+            panic!("`not_zero` takes a path");
+        };
+        let Some(Value::Constructor {
+            family,
+            datatype,
+            tag,
+            fields,
+        }) = arena.value(left).cloned()
+        else {
+            panic!("`S(Z)` is a constructor");
+        };
+        let predecessor =
+            arena.value_constructor(family, datatype, ConstructorTag::from(2_usize), fields);
+        let cancelled = arena.value_constructor(
+            family,
+            datatype,
+            tag,
+            gandr_kernel_data::SmallVec::from_iter([predecessor]),
+        );
+        let forged = arena.value_type_path(carrier, cancelled, right);
+        let forged = if dependent {
+            arena.comp_type_pi(forged, codomain)
+        }
+        else {
+            arena.comp_type_arrow(forged, codomain)
+        };
+        let forged = arena.value_type_thunk(forged);
+        let twin_declaration = DeclarationBuilder::new(&mut arena)
+            .def(marked.declaration().levels().clone(), forged, body)
+            .named(marked.declaration().name().clone());
+        let mut twin = declarations.clone();
+        twin[not_zero] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        let refusal = Environment::replay(arena.clone(), &twin)
+            .expect_err("`S(P(Z))` is `Z`: no apartness separates them");
+        assert_eq!(usize::from(refusal.position()), not_zero);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::NotApart(Apartness::Agree),
+            "the kernel names the forged endpoints' reason"
+        );
+
+        // The twin presents the integers by two rules rewriting one redex
+        // apart: admission takes them, each linear and decreasing, and the
+        // apartness rule refuses to read their normal forms as elements.
+        let x = RuleNode::Variable(RuleVariable::from(0_u32));
+        let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+        let divergent = Presentation::new(gandr_kernel_data::SmallVec::from_iter([
+            PresentedRule::new([c(1), c(2), x].into(), [x].into()),
+            PresentedRule::new([c(1), c(2), x].into(), [c(0)].into()),
+        ]));
+        let mut twin = declarations.clone();
+        let Some(marked) = twin.get_mut(integers)
+        else {
+            panic!("the integers are a declaration");
+        };
+        *marked = MarkedDeclaration::new(
+            marked.mark(),
+            marked.declaration().clone().presented(divergent),
+        );
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("divergent rules give no normal form to compare");
+        assert_eq!(usize::from(refusal.position()), not_zero);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::NotApart(Apartness::Diverges {
+                outer: RuleIndex::from(0_usize),
+                inner: RuleIndex::from(1_usize),
+            }),
+            "the kernel joins the critical pairs itself and names the pair that does not join"
+        );
+    }
+
+    #[test]
+    fn a_fold_whose_arm_breaks_a_rule_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/identity/loop-words.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the circle lowers");
+        };
+        let decoded = exported.decoded().expect("the circle's export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("`mirror` readmits: it respects both cancellations");
+        let segment = NameSegment::from_text("mirror".into()).expect("a name segment");
+        let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
+        let mirror = declarations
+            .iter()
+            .position(|marked| *marked.declaration().name() == named)
+            .expect("`mirror` crossed");
+        let marked = &declarations[mirror];
+        let DeclarationContent::Def { declared, body } = *marked.declaration().content()
+        else {
+            panic!("`mirror` is a definition");
+        };
+        let Some(&Value::Thunk(fixpoint)) = arena.value(body)
+        else {
+            panic!("`mirror` is a thunk");
+        };
+        let Some(&Computation::Fixpoint {
+            body: lambda,
+            evidence,
+        }) = arena.computation(fixpoint)
+        else {
+            panic!("`mirror` is a fixpoint");
+        };
+        let Some(&Computation::Lambda(case)) = arena.computation(lambda)
+        else {
+            panic!("`mirror` opens with a lambda");
+        };
+        let Some(Computation::DataCase {
+            scrutinee,
+            motive,
+            branches,
+            ..
+        }) = arena.computation(case).cloned()
+        else {
+            panic!("`mirror` cases on its argument");
+        };
+        // The twin reads `Unloop(x)` with the `Loop(x)` arm: both letters
+        // become `Unloop`, so `Loop(Unloop(x))` is sent two letters from `x`.
+        let &[base_arm, loop_arm, _] = &*branches
+        else {
+            panic!("`mirror` has an arm for each of the three letters");
+        };
+        let broken = gandr_kernel_data::SmallVec::from_iter([base_arm, loop_arm, loop_arm]);
+        let case = arena.computation_data_case(scrutinee, motive, broken);
+        let lambda = arena.computation_lambda(case);
+        let fixpoint = arena.computation_fixpoint(lambda, evidence);
+        let body = arena.value_thunk(fixpoint);
+        let twin_declaration = DeclarationBuilder::new(&mut arena)
+            .def(marked.declaration().levels().clone(), declared, body)
+            .named(named);
+        let mut twin = declarations.clone();
+        twin[mirror] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("the broken arm does not respect the circle's rules");
+        assert_eq!(usize::from(refusal.position()), mirror);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::RuleNotRespected(RuleIndex::from(0_usize)),
+            "the kernel names the rule the twin breaks"
+        );
+    }
+
+    #[test]
+    fn a_fold_resting_on_a_forged_law_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/identity/loop-winding.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the circle lowers");
+        };
+        let decoded = exported.decoded().expect("the circle's export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("`native_wind` readmits on the native model's two laws");
+        let segment = NameSegment::from_text("native_wind".into()).expect("a name segment");
+        let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
+        let wind = declarations
+            .iter()
+            .position(|marked| *marked.declaration().name() == named)
+            .expect("`native_wind` crossed");
+        let marked = &declarations[wind];
+        let &[first, second] = marked.declaration().laws()
+        else {
+            panic!(
+                "`native_wind` rests on one law per rule: {:?}",
+                marked.declaration().laws()
+            );
+        };
+        // The twin cites each law for the other's rule: `unturn(turn(n)) = n`
+        // where `Loop(Unloop(x))` computes `turn(unturn(f(x)))`.
+        let forged = marked
+            .declaration()
+            .clone()
+            .lawful(gandr_kernel_data::SmallVec::from_iter([second, first]));
+        let mut twin = declarations.clone();
+        twin[wind] = MarkedDeclaration::new(marked.mark(), forged);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("a law stating another rule's path does not relate this one's sides");
+        assert_eq!(usize::from(refusal.position()), wind);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::RuleNotRespected(RuleIndex::from(0_usize)),
+            "the kernel names the rule the forged law fails"
+        );
+    }
+
+    #[test]
+    fn forged_operation_rules_are_refused_by_the_kernel_322()
+    {
+        use gandr_kernel_term::OperationNode;
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/desc/rules-overlap-joinable.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the overlapping naturals lower");
+        };
+        let decoded = exported.decoded().expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("`add` readmits: the kernel joins both of its critical pairs");
+        let add = declarations
+            .iter()
+            .position(|marked| marked.declaration().operation_rules().rules().len() == 3)
+            .expect("`add` crosses carrying its three rules");
+        let marked = &declarations[add];
+        let rules = marked.declaration().operation_rules().rules();
+        let Some(&OperationNode::Constructor { family, .. }) =
+            rules.first().and_then(|zero| zero.left().get(1))
+        else {
+            panic!("`add(Zero, n)` reads `Zero` first: {rules:?}");
+        };
+        // The twin rewrites `add(m, Zero)` to `Succ(m)`, as the pathological
+        // `rules-diverge` source writes it: at `add(Zero, Zero)` the first rule
+        // gives `Zero` and the second `Succ(Zero)`.
+        let mut forged = rules.iter().cloned().collect::<gandr_kernel_data::SmallVec<
+            _,
+            0,
+            alloc::alloc::Global,
+        >>();
+        forged[1] = gandr_kernel_term::OperationRule::new(
+            rules[1].left().into(),
+            [
+                OperationNode::Constructor {
+                    family,
+                    tag: gandr_kernel_term::ConstructorTag::from(1_usize),
+                },
+                OperationNode::Variable(gandr_kernel_term::RuleVariable::from(0_u32)),
+            ]
+            .into(),
+        );
+        let twin_declaration = marked
+            .declaration()
+            .clone()
+            .ruled(gandr_kernel_term::OperationRules::new(forged));
+        let mut twin = declarations.clone();
+        twin[add] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("the forged rules rewrite `add(Zero, Zero)` two ways");
+        assert_eq!(usize::from(refusal.position()), add);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::OperationRulesRefused(gandr_kernel_term::OperationRuleRefusal {
+                rule: RuleIndex::from(1_usize),
+                fault: gandr_kernel_term::OperationRuleFault::Diverges(
+                    gandr_kernel_term::Overlapped::Operation(RuleIndex::from(0_usize))
+                ),
+            }),
+            "the kernel names the forged rule and the rule it parts from"
+        );
+    }
+
+    #[test]
+    fn the_holders_of_std_ir_cross_with_their_roles_and_a_forged_one_is_refused_5304()
+    {
+        use gandr_kernel_term::Builtin;
+        use quenchant_shape::shape::Maybe;
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../library/std/src/ir.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("`std.ir` lowers");
+        };
+        let decoded = exported.decoded().expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("the four holders readmit: the kernel admits each in its canonical form");
+        let held = |role: Builtin| {
+            declarations
+                .iter()
+                .position(|marked| marked.declaration().role() == Maybe::Present(role))
+                .unwrap_or_else(|| panic!("a holder of {role:?} crossed with its role"))
+        };
+        let (pair, signature) = (held(Builtin::IrPair), held(Builtin::IrSignature));
+        let (_args, decode) = (held(Builtin::IrArgs), held(Builtin::IrDecode));
+        // The signature type forged to hold the pair role meets the pair's
+        // holder before it.
+        let mut twin = declarations.clone();
+        twin[signature] = MarkedDeclaration::new(
+            declarations[signature].mark(),
+            declarations[signature]
+                .declaration()
+                .clone()
+                .held(Builtin::IrPair),
+        );
+        let refusal = Environment::replay(arena.clone(), &twin)
+            .expect_err("a second holder of the pair role is refused");
+        assert_eq!(usize::from(refusal.position()), signature);
+        assert_eq!(*refusal.error(), KernelError::BuiltinRepeated {
+            role: Builtin::IrPair,
+            holder: gandr_kernel_term::ConstantIndex::from(pair),
+        });
+        // The decoder forged to hold the signature role is a definition, and
+        // the signature role marks a datatype.
+        let mut twin = declarations.clone();
+        twin[decode] = MarkedDeclaration::new(
+            declarations[decode].mark(),
+            declarations[decode]
+                .declaration()
+                .clone()
+                .held(Builtin::IrSignature),
+        );
+        let refusal = Environment::replay(arena.clone(), &twin)
+            .expect_err("the signature role on a definition is refused");
+        assert_eq!(usize::from(refusal.position()), decode);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::BuiltinMisplaced(Builtin::IrSignature)
+        );
+        // The pair type forged to hold the signature role departs at its
+        // parameters.
+        let mut twin = declarations.clone();
+        twin[pair] = MarkedDeclaration::new(
+            declarations[pair].mark(),
+            declarations[pair]
+                .declaration()
+                .clone()
+                .held(Builtin::IrSignature),
+        );
+        let refusal =
+            Environment::replay(arena, &twin).expect_err("the pair type is no signature type");
+        assert_eq!(usize::from(refusal.position()), pair);
+        assert_eq!(*refusal.error(), KernelError::BuiltinNotCanonical {
+            role: Builtin::IrSignature,
+            departure: gandr_kernel_term::Departure::Parameters,
+        });
+    }
+
+    /// Which text of the holders of `fixtures/ir-holders.gandr` a test lays.
+    ///
+    /// # Specification
+    /// trivial.
+    #[derive(Clone, Copy)]
+    enum Holders
+    {
+        /// The text as it stands, with the mark of `fields`.
+        Marked,
+        /// The text with the mark of `fields` taken off.
+        Unmarked,
+    }
+
+    /// A package named `std` in a fresh directory, whose module
+    /// `std.holders` is the text `holders` names: the path of that module.
+    /// Only a package of the toolchain holds a role, so a holder is laid there.
+    ///
+    /// # Specification
+    /// trivial.
+    fn laid_in_std(holders: Holders) -> PathBuf
+    {
+        let marked = include_str!("kernel_export/fixtures/ir-holders.gandr");
+        let (label, text) = match holders {
+            Holders::Marked => ("ir-holders-8071", String::from(marked)),
+            Holders::Unmarked => (
+                "ir-fields-5304",
+                marked.replace("@[builtin(\"irArgs\")]\n", ""),
+            ),
+        };
+        let library = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../library/std"));
+        let root =
+            std::env::temp_dir().join(alloc::format!("gandr-{label}-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("src")).expect("the package's sources are made");
+        for model in ["package.gandr", "package.gandr.toml"] {
+            let _bytes = std::fs::copy(library.join(model), root.join(model))
+                .expect("the model of `std` is copied");
+        }
+        let path = root.join("src/holders.gandr");
+        std::fs::write(&path, text).expect("the holders write");
+        path
+    }
+
+    /// #8071: the holder of `E` whose `δ` case asks for a function from the
+    /// family is refused by the checker as `BuiltinMark.NotCanonical`, laid as
+    /// a module of `std`.
+    #[test]
+    fn a_holder_of_e_whose_delta_case_asks_from_the_family_is_refused_by_the_checker_8071()
+    {
+        let path = laid_in_std(Holders::Marked);
+        let pbg = built_in().expect("the built-in grammar builds");
+        let swept = export(&pbg, path.clone(), Root::Fixture);
+        std::fs::remove_dir_all(
+            path.parent()
+                .and_then(Path::parent)
+                .expect("a package root"),
+        )
+        .expect("the package is removed");
+        let Swept::Exported(exported) = swept
+        else {
+            panic!("the holders lower");
+        };
+        let refused: Vec<String> = exported
+            .classes
+            .iter()
+            .filter_map(|&(_, class)| match class {
+                Class::Marked(name) | Class::NeverOffered(name) => Some(name.to_string()),
+                Class::Defined
+                | Class::Assumed
+                | Class::Data
+                | Class::Withheld
+                | Class::Static
+                | Class::Unfinished
+                | Class::Suspended
+                | Class::Session
+                | Class::Unrepresentable(_)
+                | Class::Located
+                | Class::World => None,
+            })
+            .collect();
+        assert_eq!(
+            refused,
+            ["BuiltinMark.NotCanonical"],
+            "only `fields` is refused, by the checker, at its role"
+        );
+    }
+
+    #[test]
+    fn a_holder_of_e_whose_delta_case_asks_from_the_family_is_refused_by_the_kernel_5304()
+    {
+        use gandr_kernel_term::Builtin;
+        // The holder of `E` with its mark taken off: the checker admits it as
+        // a plain definition, so it crosses, and the kernel meets its body
+        // once the role is forged back on.
+        let path = laid_in_std(Holders::Unmarked);
+        let pbg = built_in().expect("the built-in grammar builds");
+        let swept = export(&pbg, path.clone(), Root::Fixture);
+        std::fs::remove_dir_all(
+            path.parent()
+                .and_then(Path::parent)
+                .expect("a package root"),
+        )
+        .expect("the package is removed");
+        let Swept::Exported(exported) = swept
+        else {
+            panic!("the unmarked holder lowers");
+        };
+        let decoded = exported.decoded().expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("the unmarked definition readmits beside the canonical holders");
+        let fields = declarations
+            .iter()
+            .rposition(|marked| {
+                matches!(
+                    *marked.declaration().content(),
+                    gandr_kernel_term::DeclarationContent::Def { .. }
+                )
+            })
+            .expect("`fields` crosses as a definition");
+        let mut twin = declarations.clone();
+        twin[fields] = MarkedDeclaration::new(
+            declarations[fields].mark(),
+            declarations[fields]
+                .declaration()
+                .clone()
+                .held(Builtin::IrArgs),
+        );
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("a `δ` case that asks for `h : X -> A` is no canonical `E`");
+        assert_eq!(usize::from(refusal.position()), fields);
+        assert_eq!(*refusal.error(), KernelError::BuiltinNotCanonical {
+            role: Builtin::IrArgs,
+            departure: gandr_kernel_term::Departure::Answer(
+                gandr_kernel_term::ConstructorTag::from(2_usize)
+            ),
+        });
+    }
+
+    #[test]
+    fn rules_the_body_does_not_compute_are_refused_by_the_kernel_322()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/desc/rules-overlap-joinable.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the overlapping naturals lower");
+        };
+        let decoded = exported.decoded().expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let arena = decoded.arena().clone();
+        let add = declarations
+            .iter()
+            .position(|marked| marked.declaration().operation_rules().rules().len() == 3)
+            .expect("`add` crosses carrying its three rules");
+        let marked = &declarations[add];
+        let &[ref zero, _, ref recursion] = marked.declaration().operation_rules().rules()
+        else {
+            panic!("`add` carries its three rules");
+        };
+        // Without `add(m, Zero) ==> m` the other two rules still converge, but
+        // the body's leaf at `add(Succ(m), Zero)` returns its first input,
+        // which the recursion `add(Succ(m), n) ==> Succ(add(m, n))`
+        // does not.
+        let twin_declaration =
+            marked
+                .declaration()
+                .clone()
+                .ruled(gandr_kernel_term::OperationRules::new(
+                    gandr_kernel_data::SmallVec::from_iter([zero.clone(), recursion.clone()]),
+                ));
+        let mut twin = declarations.clone();
+        twin[add] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("the body computes a rule the twin dropped");
+        assert_eq!(usize::from(refusal.position()), add);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::OperationBodyUnlinked(gandr_kernel_core::OperationBodyFault::Apart(
+                RuleIndex::from(1_usize)
+            )),
+            "the kernel names the rule the leaf is not"
+        );
+    }
+
+    #[test]
+    fn a_path_through_a_recursive_operation_readmits_by_its_rules_4291()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/data/ruled-operation-path.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the paths through `add` lower");
+        };
+        let decoded = exported.decoded().expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        assert!(
+            declarations
+                .iter()
+                .any(|marked| marked.declaration().operation_rules().rules().len() == 2),
+            "`add` crosses carrying its two rules"
+        );
+        // Each path reads a call of `add` at an endpoint. `onePlusOne` takes
+        // the recursive rule once and then the rule at `Zero`.
+        Environment::replay(decoded.arena().clone(), &declarations)
+            .expect("each path readmits: the kernel unfolds `add` by its rules");
+    }
+
+    #[test]
+    fn a_section_at_a_variable_readmits_and_a_tampered_twin_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        // The loop space on terms, and the book's circle, whose `sect` (written
+        // in the identity base it imports) is the same fold one stratum up,
+        // over the words. Each names its section, retraction and winding.
+        for (path, [sect, retr, winding]) in [
+            (
+                concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../corpus/model/identity/loop-space.gandr"
+                ),
+                ["sectWords", "retrWords", "wordsWinding"],
+            ),
+            (
+                concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../corpus/model/identity/circle.gandr"
+                ),
+                ["sect", "retr", "winding"],
+            ),
+        ] {
+            let Swept::Exported(exported) = export(&pbg, PathBuf::from(path), Root::Fixture)
+            else {
+                panic!("{path} lowers");
+            };
+            let decoded = exported.decoded().expect("the export decodes");
+            let declarations = decoded.declarations().to_vec();
+            let mut arena = decoded.arena().clone();
+            let position = |name: &str| {
+                let segment = NameSegment::from_text(name.into()).expect("a name segment");
+                let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
+                declarations
+                    .iter()
+                    .position(|marked| *marked.declaration().name() == named)
+                    .unwrap_or_else(|| panic!("`{name}` crossed from {path}"))
+            };
+            let (sect, _retr, _winding) = (position(sect), position(retr), position(winding));
+            Environment::replay(arena.clone(), &declarations).unwrap_or_else(|refusal| {
+                panic!(
+                    "the round trips at a variable readmit from {path}, each respect \
+                     obligation fusing its cong chain: {refusal:?}"
+                )
+            });
+            let marked = &declarations[sect];
+            let DeclarationContent::Def { declared, body } = *marked.declaration().content()
+            else {
+                panic!("`sect` is a definition");
+            };
+            let Some(&Value::Thunk(fixpoint)) = arena.value(body)
+            else {
+                panic!("`sect` is a thunk");
+            };
+            let Some(&Computation::Fixpoint {
+                body: lambda,
+                evidence,
+            }) = arena.computation(fixpoint)
+            else {
+                panic!("`sect` is a fixpoint");
+            };
+            let Some(&Computation::Lambda(case)) = arena.computation(lambda)
+            else {
+                panic!("`sect` opens with a lambda");
+            };
+            let Some(Computation::DataCase {
+                scrutinee,
+                motive,
+                branches,
+                ..
+            }) = arena.computation(case).cloned()
+            else {
+                panic!("`sect` cases on its argument");
+            };
+            // The twin carries the loop's path along the inverse: the loop
+            // arm then relates `Unloop(spinWords(windWords(x)))` to
+            // `Unloop(x)`, or `back(loop) ∷ spin(wind(q))` to `back(loop) ∷ q`,
+            // not the motive at the loop.
+            let &[base_arm, _, unloop_arm] = &*branches
+            else {
+                panic!("`sect` has an arm for each of the three letters");
+            };
+            let tampered =
+                gandr_kernel_data::SmallVec::from_iter([base_arm, unloop_arm, unloop_arm]);
+            let case = arena.computation_data_case(scrutinee, motive, tampered);
+            let lambda = arena.computation_lambda(case);
+            let fixpoint = arena.computation_fixpoint(lambda, evidence);
+            let body = arena.value_thunk(fixpoint);
+            let named = marked.declaration().name().clone();
+            let twin_declaration = DeclarationBuilder::new(&mut arena)
+                .def(marked.declaration().levels().clone(), declared, body)
+                .named(named);
+            let mut twin = declarations.clone();
+            twin[sect] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+            let refusal = Environment::replay(arena, &twin)
+                .expect_err("the tampered arm does not answer the motive at the loop");
+            assert_eq!(usize::from(refusal.position()), sect, "{path}");
+            assert!(
+                matches!(*refusal.error(), KernelError::ComputationTypeMismatch(_)),
+                "the kernel refuses the arm at the motive it does not answer in {path}: {:?}",
+                refusal.error()
+            );
+        }
+    }
+
+    /// #5359: a walk along the path a field holds, its type the decode of
+    /// the family's answer, checks in the checker, and the kernel readmits it
+    /// at the path type the family returns.
+    #[test]
+    fn a_walk_along_a_path_a_field_holds_readmits_5359()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/identity/walk-field.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the walks lower");
+        };
+        let decoded = exported.decoded().expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        for name in ["walkSecond", "walkWritten"] {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
+            let marked = declarations
+                .iter()
+                .find(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"));
+            assert_eq!(
+                marked.mark(),
+                gandr_kernel_term::AdmissionMark::Checked,
+                "the checker checks `{name}`"
+            );
+        }
+        Environment::replay(decoded.arena().clone(), &declarations)
+            .expect("the kernel readmits the walk along the field's path");
+    }
+
+    /// #5290: a split by position of a pair whose type a call computes binds
+    /// the second component at the first, in the checker and in the kernel,
+    /// which reads the split as the dependent split at the type it has.
+    #[test]
+    fn a_split_by_position_of_a_computed_pair_reads_its_fibre_in_both_checkers_5290()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/data/computed-pair-split.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the splits lower");
+        };
+        let decoded = exported.decoded().expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let segment = NameSegment::from_text("splitPair".into()).expect("a name segment");
+        let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
+        let marked = declarations
+            .iter()
+            .find(|marked| *marked.declaration().name() == named)
+            .expect("`splitPair` crossed");
+        assert_eq!(
+            marked.mark(),
+            gandr_kernel_term::AdmissionMark::Checked,
+            "the checker checks `splitPair`"
+        );
+        Environment::replay(decoded.arena().clone(), &declarations)
+            .expect("the kernel readmits the split of the pair at its fibre");
+    }
+
+    /// #5272: a parameter whose path type omits its carrier, read again as the
+    /// first path of a composite in the body, reads the carrier the signature
+    /// solves; the checker checks each declaration, and the kernel readmits
+    /// them.
+    #[test]
+    fn a_body_reads_the_carrier_its_signature_solves_5272()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/identity/omitted-carrier-in-body.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the composites lower");
+        };
+        let decoded = exported.decoded().expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        for name in [
+            "stepOmittedAtHere",
+            "stepOmittedFirst",
+            "stepOmittedThrough",
+        ] {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
+            let marked = declarations
+                .iter()
+                .find(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"));
+            assert_eq!(
+                marked.mark(),
+                gandr_kernel_term::AdmissionMark::Checked,
+                "the checker checks `{name}`"
+            );
+        }
+        Environment::replay(decoded.arena().clone(), &declarations)
+            .expect("the kernel readmits the composites over the solved carrier");
+    }
+
+    /// #5521: a reflexivity whose endpoints call a definition that omits its
+    /// implicits checks in the checker, and the kernel readmits it.
+    #[test]
+    fn a_reflexivity_through_a_call_omitting_its_implicits_readmits_5521()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/identity/reflexivity-through-implicit-call.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the reflexivity lowers");
+        };
+        let decoded = exported.decoded().expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let segment = NameSegment::from_text("twoLevels".into()).expect("a name segment");
+        let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
+        let marked = declarations
+            .iter()
+            .find(|marked| *marked.declaration().name() == named)
+            .expect("`twoLevels` crossed");
+        assert_eq!(
+            marked.mark(),
+            gandr_kernel_term::AdmissionMark::Checked,
+            "the checker checks `twoLevels`"
+        );
+        Environment::replay(decoded.arena().clone(), &declarations)
+            .expect("the kernel readmits the reflexivity through the call");
+    }
+
+    /// #5324: a case on `c` whose goal reads a later binder `v`, the type of
+    /// `v` reading `c`, checks at the motive generalised over `v`, and the
+    /// kernel readmits it.
+    #[test]
+    fn a_goal_that_reads_a_later_binder_generalises_it_in_both_checkers_5324()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/data/motive-later-binder.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the case lowers");
+        };
+        let decoded = exported.decoded().expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let segment = NameSegment::from_text("go".into()).expect("a name segment");
+        let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
+        let go = declarations
+            .iter()
+            .find(|marked| *marked.declaration().name() == named)
+            .expect("`go` crossed");
+        assert_eq!(
+            go.mark(),
+            gandr_kernel_term::AdmissionMark::Checked,
+            "the checker checks `go` at its generalised motive"
+        );
+        Environment::replay(decoded.arena().clone(), &declarations)
+            .expect("the kernel readmits `go` at its generalised motive");
+    }
+
+    /// #5337: a case on a value of a family with a parameter, whose goal
+    /// keeps the value, meets the goal at each arm's constructor; the
+    /// checker checks each such definition, and the kernel readmits them.
+    #[test]
+    fn a_goal_that_keeps_a_parameterised_scrutinee_reads_it_at_each_arm_5337()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/data/motive-parameterised.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the cases lower");
+        };
+        let decoded = exported.decoded().expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        for name in ["unitAt", "keepAt", "trek", "walkOf"] {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
+            let marked = declarations
+                .iter()
+                .find(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"));
+            assert_eq!(
+                marked.mark(),
+                gandr_kernel_term::AdmissionMark::Checked,
+                "the checker checks `{name}` at each arm's constructor"
+            );
+        }
+        Environment::replay(decoded.arena().clone(), &declarations)
+            .expect("the kernel readmits each case at its refined motive");
+    }
+}
+
+/// A step case at a variable readmits by the kernel's own reading of the bind
+/// over the stuck call; a twin whose fold swaps its loop arms is refused by
+/// name at the step case it no longer meets.
+mod kernel_open_fold_readmission
+{
+    use std::path::PathBuf;
+
+    use gandr_kernel_core::EndpointSide;
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::IdentityError;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_term::Computation;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::Value;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn a_step_case_read_through_a_swapped_fold_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/identity/open-fold.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("open-fold lowers");
+        };
+        let decoded = exported.decoded().expect("open-fold's export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("open-fold readmits, `wind_unfolded` by the bind its endpoint reads through");
+        let position = |name: &str| {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
+            declarations
+                .iter()
+                .position(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"))
+        };
+        let wind = position("windWords");
+        let unfolded = position("wind_unfolded");
+        let marked = &declarations[wind];
+        let DeclarationContent::Def { declared, body } = *marked.declaration().content()
+        else {
+            panic!("`wind` is a definition");
+        };
+        let Some(&Value::Thunk(fixpoint)) = arena.value(body)
+        else {
+            panic!("`wind` is a thunk");
+        };
+        let Some(&Computation::Fixpoint {
+            body: lambda,
+            evidence,
+        }) = arena.computation(fixpoint)
+        else {
+            panic!("`wind` is a fixpoint");
+        };
+        let Some(&Computation::Lambda(case)) = arena.computation(lambda)
+        else {
+            panic!("`wind` opens with a lambda");
+        };
+        let Some(Computation::DataCase {
+            scrutinee,
+            motive,
+            branches,
+            ..
+        }) = arena.computation(case).cloned()
+        else {
+            panic!("`wind` cases on its argument");
+        };
+        // The twin's `Loop` arm returns `P(n)` and its `Unloop` arm `S(n)`: it
+        // still respects both cancellations, but `windWords(Loop(x))` now
+        // reads as `P(windWords(x))`, which `wind_unfolded` does not meet.
+        let &[base_arm, loop_arm, unloop_arm] = &*branches
+        else {
+            panic!("`wind` has an arm for each of the three letters");
+        };
+        let swapped = gandr_kernel_data::SmallVec::from_iter([base_arm, unloop_arm, loop_arm]);
+        let case = arena.computation_data_case(scrutinee, motive, swapped);
+        let lambda = arena.computation_lambda(case);
+        let fixpoint = arena.computation_fixpoint(lambda, evidence);
+        let body = arena.value_thunk(fixpoint);
+        let twin_declaration = DeclarationBuilder::new(&mut arena)
+            .def(marked.declaration().levels().clone(), declared, body)
+            .named(marked.declaration().name().clone());
+        // The twin replays the declarations up to the fold, then the step case
+        // alone: the loop space's closed runs of the fold that stand between
+        // them (`wound_twice` first) would refuse the swap at a closed word,
+        // before the reading at a variable is reached.
+        let mut twin = declarations[..= wind].to_vec();
+        twin[wind] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        twin.push(declarations[unfolded].clone());
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("the swapped fold reads `windWords(Loop(x))` as a predecessor");
+        assert_eq!(
+            usize::from(refusal.position()),
+            wind + 1,
+            "the step case refuses"
+        );
+        assert!(
+            matches!(
+                refusal.error(),
+                KernelError::Identity(IdentityError::EndpointsDiffer {
+                    side: EndpointSide::Left,
+                    ..
+                })
+            ),
+            "the kernel names the endpoint the swapped fold no longer reaches: {refusal:?}"
+        );
+    }
+}
+
+/// A case over the circle readmits by the kernel's own reading of its loop
+/// obligation; a twin whose flip drops its loop arm leaves `involutive`
+/// owing a loop it no longer respects, and is refused by name there.
+mod kernel_loop_elimination_readmission
+{
+    use std::path::PathBuf;
+
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_term::CellIndex;
+    use gandr_kernel_term::Computation;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::Value;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn a_loop_elimination_readmits_and_its_tampered_twin_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/identity/circle-elim.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("circle-elim lowers");
+        };
+        let decoded = exported.decoded().expect("circle-elim's export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations).unwrap_or_else(|refusal| {
+            panic!(
+                "circle-elim readmits, each case's loop owed by conversion or by its \
+                 loop arm: {refusal:?}"
+            )
+        });
+        let position = |name: &str| {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
+            declarations
+                .iter()
+                .position(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"))
+        };
+        let flip = position("invLooper");
+        let involutive = position("involutive");
+        let marked = &declarations[flip];
+        let DeclarationContent::Def { declared, body } = *marked.declaration().content()
+        else {
+            panic!("`invLooper` is a definition");
+        };
+        let Some(&Value::Thunk(lambda)) = arena.value(body)
+        else {
+            panic!("`invLooper` is a thunk");
+        };
+        let Some(&Computation::Lambda(case)) = arena.computation(lambda)
+        else {
+            panic!("`invLooper` opens with a lambda");
+        };
+        let Some(Computation::DataCase {
+            scrutinee,
+            motive,
+            branches,
+            ..
+        }) = arena.computation(case).cloned()
+        else {
+            panic!("`invLooper` cases on its argument");
+        };
+        assert_eq!(branches.len(), 2, "the point's branch, then the loop arm");
+        // The twin keeps the point's branch and drops the loop arm: it still
+        // checks, a non-dependent case owing nothing, but now sends the loop to
+        // reflexivity, so `invLooper(invLooper(x))` no longer follows `x`
+        // round the loop and `involutive`'s answer at `Base` is not carried
+        // to itself.
+        let collapsed = gandr_kernel_data::SmallVec::from_iter([branches[0]]);
+        let case = arena.computation_data_case(scrutinee, motive, collapsed);
+        let lambda = arena.computation_lambda(case);
+        let body = arena.value_thunk(lambda);
+        let twin_declaration = DeclarationBuilder::new(&mut arena)
+            .def(marked.declaration().levels().clone(), declared, body)
+            .named(marked.declaration().name().clone());
+        let mut twin = declarations.clone();
+        twin[flip] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("the collapsed flip leaves `involutive` short of its loop");
+        assert_eq!(usize::from(refusal.position()), involutive);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::LoopNotRespected(CellIndex::from(0_usize)),
+            "the kernel names the loop `involutive` no longer respects"
+        );
+    }
+
+    /// #5489: the image of the loop under a map whose loop arm is the named
+    /// loop checks in the checker, and the kernel readmits it, from the point
+    /// and from a call that returns the point.
+    #[test]
+    fn a_map_whose_loop_arm_is_the_named_loop_readmits_5489()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/identity/map-named-loop-arm.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("map-named-loop-arm lowers");
+        };
+        let decoded = exported.decoded().expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        Environment::replay(decoded.arena().clone(), &declarations).unwrap_or_else(|refusal| {
+            let name = declarations
+                .get(usize::from(refusal.position()))
+                .map(|marked| marked.declaration().name().clone());
+            panic!(
+                "the kernel readmits each image of the loop: {name:?} is refused: \
+                 {refusal:?}"
+            )
+        });
+    }
+}
+
+/// A presentation's rules are decided at readmission as its value states them:
+/// `Unital` readmits, and a twin carrying a second law that rewrites the
+/// unit's call apart is refused naming the pair; `Group` readmits from the
+/// derived rules and peaks its value carries.
+mod kernel_presentation_readmission
+{
+    use std::path::Path;
+    use std::path::PathBuf;
+
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::Literal;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::RuleIndex;
+    use gandr_kernel_term::StringLiteral;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::TheoryRuleFault;
+    use gandr_kernel_term::TheoryRuleRefusal;
+    use gandr_kernel_term::TheoryRules;
+    use gandr_kernel_term::Value;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    /// The declarations `fixture` exports, and the position of the one named
+    /// `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn exported(
+        fixture: &Path,
+        name: &StructuredName,
+    ) -> (
+        gandr_kernel_term::TermArena,
+        alloc::vec::Vec<MarkedDeclaration>,
+        ConstantIndex,
+    )
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus")
+            .join(fixture);
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("{} lowers", fixture.display());
+        };
+        let decoded = exported.decoded().expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let position = declarations
+            .iter()
+            .position(|marked| marked.declaration().name() == name)
+            .unwrap_or_else(|| panic!("`{name:?}` crossed"));
+        (
+            decoded.arena().clone(),
+            declarations,
+            ConstantIndex::from(position),
+        )
+    }
+
+    /// The one-segment name `text`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn named<T>(text: T) -> StructuredName
+    where
+        T: AsRef<str>,
+    {
+        let segment = NameSegment::from_text(text.as_ref().into()).expect("a name segment");
+        StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]))
+    }
+
+    #[test]
+    fn a_presentations_rules_are_decided_at_readmission_1059()
+    {
+        let (mut arena, declarations, unital) = exported(
+            Path::new("model/desc/sealed-lawful-model.gandr"),
+            &named("Unital"),
+        );
+        Environment::replay(arena.clone(), &declarations)
+            .unwrap_or_else(|refusal| panic!("`Unital` readmits: {refusal:?}"));
+        let marked = &declarations[usize::from(unital)];
+        let DeclarationContent::Def { declared, body } = *marked.declaration().content()
+        else {
+            panic!("`Unital` is a definition");
+        };
+        let Some(Value::Constructor {
+            family,
+            datatype,
+            tag,
+            fields,
+        }) = arena.value(body).cloned()
+        else {
+            panic!("`Unital` is a presentation");
+        };
+        let &[sorts, operations, unit_law] = fields.as_slice()
+        else {
+            panic!("a presentation holds three chains");
+        };
+        let Some(Value::Constructor {
+            tag: rule,
+            fields: law,
+            ..
+        }) = arena.value(unit_law).cloned()
+        else {
+            panic!("the rule chain opens with `unitL`");
+        };
+        let &[name, left, right, rest] = law.as_slice()
+        else {
+            panic!("a rule holds its name, its sides and the rest");
+        };
+        let Some(Value::Constructor { fields: call, .. }) = arena.value(left).cloned()
+        else {
+            panic!("`unitL`'s left side is a call");
+        };
+        let Some(Value::Constructor {
+            fields: arguments, ..
+        }) = arena.value(call[1]).cloned()
+        else {
+            panic!("the call's arguments");
+        };
+        // The twin's second law rewrites `unitL`'s own call, `mul(e(), x)`, to
+        // its first argument, `e()`, where `unitL` gives `x`.
+        let unit = arguments[0];
+        let twin_name = arena.value_literal(Literal::Text(StringLiteral::new("twin".into())));
+        let parting = arena.value_constructor(
+            family,
+            datatype,
+            rule,
+            gandr_kernel_data::SmallVec::from_iter([twin_name, left, unit, rest]),
+        );
+        let unit_law = arena.value_constructor(
+            family,
+            datatype,
+            rule,
+            gandr_kernel_data::SmallVec::from_iter([name, left, right, parting]),
+        );
+        let forged = arena.value_constructor(
+            family,
+            datatype,
+            tag,
+            gandr_kernel_data::SmallVec::from_iter([sorts, operations, unit_law]),
+        );
+        let twin_declaration = DeclarationBuilder::new(&mut arena)
+            .def(marked.declaration().levels().clone(), declared, forged)
+            .named(marked.declaration().name().clone());
+        let mut twin = declarations.clone();
+        twin[usize::from(unital)] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("the twin's laws rewrite `mul(e(), x)` two ways");
+        assert_eq!(refusal.position(), unital);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::PresentationRulesRefused(TheoryRuleRefusal {
+                rule: RuleIndex::from(0_usize),
+                fault: TheoryRuleFault::Diverges(RuleIndex::from(1_usize)),
+            }),
+            "the kernel names the pair that parts"
+        );
+    }
+
+    #[test]
+    fn a_completed_group_readmits_from_the_peaks_its_value_names_1059()
+    {
+        let (arena, declarations, group) = exported(
+            Path::new("model/identity/group-laws.gandr"),
+            &named("Group"),
+        );
+        let DeclarationContent::Def { body, .. } =
+            *declarations[usize::from(group)].declaration().content()
+        else {
+            panic!("`Group` is a definition");
+        };
+        let rules = TheoryRules::read(&arena, body).expect("`Group`'s rule chain reads");
+        assert!(
+            !rules.peaks().is_empty(),
+            "`Group` crosses with the rules its completion derived"
+        );
+        Environment::replay(arena, &declarations)
+            .unwrap_or_else(|refusal| panic!("`Group` readmits: {refusal:?}"));
+    }
+
+    /// #1510: a completion over an indexed sort states its derived rule
+    /// without the indices and names the peak among the rules read with
+    /// them, which is where the kernel replays it.
+    #[test]
+    fn an_indexed_completion_readmits_from_the_peaks_its_value_names_1510()
+    {
+        let (arena, declarations, views) = exported(
+            Path::new("ledger/features/nested-operation-laws.gandr"),
+            &named("EditedViews"),
+        );
+        let DeclarationContent::Def { body, .. } =
+            *declarations[usize::from(views)].declaration().content()
+        else {
+            panic!("`EditedViews` is a definition");
+        };
+        let rules = TheoryRules::read(&arena, body).expect("`EditedViews`'s rule chain reads");
+        assert!(
+            !rules.peaks().is_empty() && rules.decided() != rules.rules(),
+            "`EditedViews` crosses with a derived rule, and the kernel reads its rules indexed"
+        );
+        Environment::replay(arena, &declarations)
+            .unwrap_or_else(|refusal| panic!("`EditedViews` readmits: {refusal:?}"));
+    }
+}
+
+/// The filler generator's square and `assoc_nat` agree at every `fa` by a
+/// path, and the kernel replays that path: `natassocAgrees` crosses and
+/// readmits with the exemplar it stands in.
+mod kernel_naturality_readmission
+{
+    use std::path::PathBuf;
+
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn the_fill_and_assoc_nat_agree_by_a_path_at_every_fa_4120()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/ledger/features/naturality.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("naturality lowers");
+        };
+        let decoded = exported.decoded().expect("naturality's export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let segment = NameSegment::from_text("natassocAgrees".into()).expect("a name segment");
+        let agrees = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
+        assert!(
+            declarations
+                .iter()
+                .any(|marked| *marked.declaration().name() == agrees),
+            "`natassocAgrees` crosses"
+        );
+        Environment::replay(decoded.arena().clone(), &declarations)
+            .unwrap_or_else(|refusal| panic!("naturality readmits: {refusal:?}"));
+    }
+}
+
+/// Effects as data readmit whole, and a program's row is a claim the kernel
+/// re-derives: a twin performing an operation outside its row is refused by
+/// name.
+mod kernel_effect_tree_readmission
+{
+    use std::path::PathBuf;
+
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::Value;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn a_program_over_its_row_readmits_and_one_performing_outside_it_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/effects/tree-rows.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("tree-rows lowers");
+        };
+        let decoded = exported.decoded().expect("tree-rows' export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations).unwrap_or_else(|refusal| {
+            panic!("tree-rows readmits, its programs and handlers pure: {refusal:?}")
+        });
+        let definition = |name: &str| {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
+            let position = declarations
+                .iter()
+                .position(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"));
+            let DeclarationContent::Def { declared, body } =
+                *declarations[position].declaration().content()
+            else {
+                panic!("`{name}` is a definition");
+            };
+            (position, declared, body)
+        };
+        let (_, _, failing) = definition("failing");
+        let (quiet, declared, body) = definition("quiet");
+        let Some(&Value::Constructor {
+            fields: ref raised, ..
+        }) = arena.value(failing)
+        else {
+            panic!("`failing` is `Op(Left(Raise(4)), k)`");
+        };
+        let raise = raised[0];
+        let Some(Value::Constructor {
+            family,
+            datatype,
+            tag,
+            fields,
+        }) = arena.value(body).cloned()
+        else {
+            panic!("`quiet` is `Op(Left(Get), k)`");
+        };
+        // The twin keeps `quiet`'s type, `Prog(Either(StateOp, Void),
+        // Integer)`, and its continuation, and performs `Left(Raise(4))`:
+        // the front of its row is `StateOp`, and `Raise(4)` is an `ExnOp`.
+        let forged = arena.value_constructor(
+            family,
+            datatype,
+            tag,
+            gandr_kernel_data::SmallVec::from_iter([raise, fields[1]]),
+        );
+        let marked = &declarations[quiet];
+        let twin_declaration = DeclarationBuilder::new(&mut arena)
+            .def(marked.declaration().levels().clone(), declared, forged)
+            .named(marked.declaration().name().clone());
+        let mut twin = declarations.clone();
+        twin[quiet] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("an operation outside the row has no injection into it");
+        assert_eq!(usize::from(refusal.position()), quiet);
+        assert!(
+            matches!(*refusal.error(), KernelError::ValueTypeMismatch(_)),
+            "the kernel names the operation's type against the row's: {:?}",
+            refusal.error()
+        );
+    }
+}
+
+/// A deep handler readmits as the fold of its effect's free model, a data
+/// declaration the kernel admits ahead of the first handler of the effect,
+/// one constructor per operation, at the level of the universe the handled
+/// subject's result inhabits; the kernel types the fold, so a twin whose
+/// model replies another type than the clauses resume with is refused by
+/// name.
+mod kernel_effect_handler_readmission
+{
+    use alloc::vec::Vec;
+    use std::path::PathBuf;
+
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::CompType;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::ValueType;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn a_handler_crosses_as_the_fold_of_its_free_model_1624()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/effects/exit.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("exit lowers");
+        };
+        let decoded = exported.decoded().expect("exit's export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .unwrap_or_else(|refusal| panic!("exit readmits, each handler a fold: {refusal:?}"));
+        let position = |segments: &[&str]| {
+            let named = StructuredName::from(
+                segments
+                    .iter()
+                    .map(|&segment| NameSegment::from_text(segment.into()).expect("a name segment"))
+                    .collect::<gandr_kernel_data::SmallVec<_, 0, alloc::alloc::Global>>(),
+            );
+            declarations
+                .iter()
+                .position(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{}` crossed", segments.join(".")))
+        };
+        for handler in ["resumed", "answered", "coded", "summed", "printed"] {
+            assert!(
+                matches!(
+                    *declarations[position(&[handler])].declaration().content(),
+                    DeclarationContent::Def { .. }
+                ),
+                "`{handler}` crosses as a definition"
+            );
+        }
+        // `Proc`'s model crosses ahead of its first handler, `Console`'s
+        // ahead of its own, each named by its level and its interface.
+        let model = position(&["effect", "free", "0", "std", "process", "Exit", "Eff"]);
+        let console = position(&["effect", "free", "0", "std", "io", "Console", "Eff"]);
+        assert!(model < position(&["resumed"]));
+        assert!(position(&["summed"]) < console);
+        assert!(console < position(&["printed"]));
+        let marked = &declarations[model];
+        let DeclarationContent::Data {
+            ref parameters,
+            ref constructors,
+            kind,
+            ..
+        } = *marked.declaration().content()
+        else {
+            panic!("`Proc`'s free model is a data declaration");
+        };
+        let (parameters, mut constructors) = (parameters.clone(), constructors.clone());
+        // The twin's `exit` continues from an integer, where `Proc` replies
+        // the unit every clause resumes with.
+        let Some(&ValueType::Thunk(continuation)) = arena.value_type(constructors[1][1])
+        else {
+            panic!("`exit`'s continuation is a thunk");
+        };
+        let Some(&CompType::Arrow { codomain, .. }) = arena.comp_type(continuation)
+        else {
+            panic!("`exit`'s continuation is a function of the reply");
+        };
+        let integer = arena.value_type_base(BaseType::Integer);
+        let forged = arena.comp_type_arrow(integer, codomain);
+        constructors[1][1] = arena.value_type_thunk(forged);
+        let twin_model = DeclarationBuilder::new(&mut arena)
+            .data(
+                marked.declaration().levels().clone(),
+                parameters,
+                constructors,
+                kind,
+            )
+            .named(marked.declaration().name().clone());
+        let mut twin = declarations.clone();
+        twin[model] = MarkedDeclaration::new(marked.mark(), twin_model);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("a clause resuming with the unit has no integer to give");
+        assert_eq!(usize::from(refusal.position()), position(&["resumed"]));
+        assert!(
+            matches!(*refusal.error(), KernelError::ValueTypeMismatch(_)),
+            "the kernel names the reply's type against the resumption's: {:?}",
+            refusal.error()
+        );
+    }
+
+    #[test]
+    fn a_handler_of_several_operations_crosses_as_one_fold_2750()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/effects/state-handler.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("state-handler lowers");
+        };
+        let decoded = exported.decoded().expect("state-handler's export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations).unwrap_or_else(|refusal| {
+            panic!("state-handler readmits, each handler a fold: {refusal:?}")
+        });
+        let named = |segments: &[&str]| {
+            let named = StructuredName::from(
+                segments
+                    .iter()
+                    .map(|&segment| NameSegment::from_text(segment.into()).expect("a name segment"))
+                    .collect::<gandr_kernel_data::SmallVec<_, 0, alloc::alloc::Global>>(),
+            );
+            declarations
+                .iter()
+                .position(|marked| *marked.declaration().name() == named)
+        };
+        let position = |segments: &[&str]| {
+            named(segments).unwrap_or_else(|| panic!("`{}` crossed", segments.join(".")))
+        };
+        // `constant` writes its clauses, and `answeredByPassing` hands each
+        // operation to `Passing`'s; both fold `State`'s one model.
+        for handler in ["constant", "answeredByPassing", "answeredFromZero"] {
+            assert!(
+                matches!(
+                    *declarations[position(&[handler])].declaration().content(),
+                    DeclarationContent::Def { .. }
+                ),
+                "`{handler}` crosses as a definition"
+            );
+        }
+        let models = declarations
+            .iter()
+            .enumerate()
+            .filter(|&(_, marked)| {
+                matches!(
+                    *marked.declaration().name().segments(),
+                    [ref effect, ref free, ..] if effect.as_ref() == "effect" && free.as_ref() == "free"
+                )
+            })
+            .map(|(at, _)| at)
+            .collect::<Vec<_>>();
+        let [model] = models[..]
+        else {
+            panic!("the second handler of `State` folds the first's model: {models:?}");
+        };
+        assert!(model < position(&["constant"]));
+        let marked = &declarations[model];
+        let DeclarationContent::Data {
+            ref parameters,
+            ref constructors,
+            kind,
+            ..
+        } = *marked.declaration().content()
+        else {
+            panic!("`State`'s free model is a data declaration");
+        };
+        assert_eq!(
+            constructors
+                .iter()
+                .map(|fields| fields.len())
+                .collect::<Vec<_>>(),
+            [1, 2, 2],
+            "`Return(x)`, then `get(p, k)` and `put(p, k)`"
+        );
+        let (parameters, mut constructors) = (parameters.clone(), constructors.clone());
+        // The twin's `get` continues from the unit, where `State` replies the
+        // integer state `constant`'s clause resumes with.
+        let Some(&ValueType::Thunk(continuation)) = arena.value_type(constructors[1][1])
+        else {
+            panic!("`get`'s continuation is a thunk");
+        };
+        let Some(&CompType::Arrow { codomain, .. }) = arena.comp_type(continuation)
+        else {
+            panic!("`get`'s continuation is a function of the reply");
+        };
+        let unit = arena.value_type_unit();
+        let forged = arena.comp_type_arrow(unit, codomain);
+        constructors[1][1] = arena.value_type_thunk(forged);
+        let twin_model = DeclarationBuilder::new(&mut arena)
+            .data(
+                marked.declaration().levels().clone(),
+                parameters,
+                constructors,
+                kind,
+            )
+            .named(marked.declaration().name().clone());
+        let mut twin = declarations.clone();
+        twin[model] = MarkedDeclaration::new(marked.mark(), twin_model);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("a clause resuming with an integer has no unit to give");
+        assert_eq!(usize::from(refusal.position()), position(&["constant"]));
+        assert!(
+            matches!(*refusal.error(), KernelError::ValueTypeMismatch(_)),
+            "the kernel names the reply's type against the resumption's: {:?}",
+            refusal.error()
+        );
+    }
+
+    #[test]
+    fn a_handler_into_predicate_transformers_crosses_through_a_larger_model_2750()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/specification/state-wp.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("state-wp lowers");
+        };
+        let decoded = exported.decoded().expect("state-wp's export decodes");
+        let declarations = decoded.declarations().to_vec();
+        Environment::replay(decoded.arena().clone(), &declarations).unwrap_or_else(|refusal| {
+            panic!("state-wp readmits, its observation a fold: {refusal:?}")
+        });
+        let position = |segments: &[&str]| {
+            let named = StructuredName::from(
+                segments
+                    .iter()
+                    .map(|&segment| NameSegment::from_text(segment.into()).expect("a name segment"))
+                    .collect::<gandr_kernel_data::SmallVec<_, 0, alloc::alloc::Global>>(),
+            );
+            declarations
+                .iter()
+                .position(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{}` crossed", segments.join(".")))
+        };
+        assert!(
+            matches!(
+                *declarations[position(&["incrObserved"])]
+                    .declaration()
+                    .content(),
+                DeclarationContent::Def { .. }
+            ),
+            "`incrObserved` crosses as a definition"
+        );
+        // Its subject returns a predicate transformer, a type of types, so
+        // the model it folds stands above the smallest universe.
+        let model = declarations
+            .iter()
+            .position(|marked| {
+                matches!(
+                    *marked.declaration().name().segments(),
+                    [ref effect, ref free, ref level, ..]
+                        if effect.as_ref() == "effect" && free.as_ref() == "free" && level.as_ref() == "1"
+                )
+            })
+            .expect("`StateLaws`'s free model crosses, named at level one");
+        assert!(model < position(&["incrObserved"]));
+        let DeclarationContent::Data { kind, .. } = *declarations[model].declaration().content()
+        else {
+            panic!("`StateLaws`'s free model is a data declaration");
+        };
+        assert!(
+            matches!(
+                decoded.arena().value_type(kind),
+                Some(ValueType::Universe { level, .. }) if !bool::from(level.is_zero())
+            ),
+            "the model stands above level zero: {:?}",
+            decoded.arena().value_type(kind)
+        );
+    }
+
+    /// A scope that names no model is answered by the one model of its
+    /// theory in scope, its carrier among the components the checker fills:
+    /// the scope crosses as the one naming that model does, and the program
+    /// calling it crosses after it.
+    #[test]
+    fn a_scope_answered_by_the_model_in_scope_crosses_as_naming_it_2755()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/effects/state-handler.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("state-handler lowers");
+        };
+        let decoded = exported.decoded().expect("state-handler's export decodes");
+        let declarations = decoded.declarations();
+        Environment::replay(decoded.arena().clone(), declarations).unwrap_or_else(|refusal| {
+            panic!("state-handler readmits, the scope in scope a fold: {refusal:?}")
+        });
+        let content = |name: &str| {
+            let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([
+                NameSegment::from_text(name.into()).expect("a name segment"),
+            ]));
+            let marked = declarations
+                .iter()
+                .find(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"));
+            marked.declaration().content().clone()
+        };
+        assert!(
+            matches!(content("inScopeFromZero"), DeclarationContent::Def { .. }),
+            "`inScopeFromZero` crosses as a definition"
+        );
+        // The decoder shares every repeated subterm, so two definitions whose
+        // types and bodies are one term name the same roots.
+        assert_eq!(
+            content("answeredInScope"),
+            content("answeredByPassing"),
+            "the model in scope answers the scope as naming it does"
+        );
+    }
+}

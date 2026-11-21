@@ -1,0 +1,121 @@
+# The codemod of the region's adoption (`.config/mise/codemod-region.bash`):
+# a wave runs it over its crates, the ids of an arena take the region's brand
+# with each holder, impl and function, and the compiler's errors that stay
+# are the wave's second phase. The rules live in `.config/ast-grep/region`.
+# A dry run works in a clone of the paths and leaves the tree as it is.
+["codemod:region"]
+description = "Give the ids of an arena the region's brand, with each holder, impl and function"
+tools."github:ast-grep/ast-grep" = "0.51.1"
+tools.jq = "1.8.1"
+usage = '''
+flag "--dry-run" help="run in a clone of the paths in a scratch directory, print the rounds and the counts, and leave the tree as it is"
+flag "--path <path>" help="a directory or a file that the codemod rewrites; crates when none is named" var=#true
+flag "--arena <name>" help="the arena whose rollbacks in the one-exit shape take a fork of one child"
+arg "<crate>" help="the library name of the crate that defines the arena's ids"
+arg "<name>..." help="the names of the arena's ids" var=#true
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+read -ra names <<< "$usage_name"
+read -ra named_paths <<< "${usage_path:-}"
+flags=()
+if [[ ${usage_dry_run:-false} == true ]]; then flags+=(--dry-run); fi
+for path in "${named_paths[@]}"; do flags+=(--path "$path"); done
+if [[ -n ${usage_arena:-} ]]; then flags+=(--arena "$usage_arena"); fi
+exec .config/mise/codemod-region.bash "${flags[@]}" "$usage_crate" "${names[@]}"
+'''
+
+# The codemod of the errors' wave (`.config/mise/codemod-errors.bash`,
+# #7385): each boxed `dyn Error` of a test takes the test's own `Failure`,
+# and the compiler's errors that stay are the wave's second phase. The rules
+# live in `.config/ast-grep/errors`.
+["codemod:errors"]
+description = "Give each boxed dyn Error of a test the test's own Failure"
+tools."github:ast-grep/ast-grep" = "0.51.1"
+run = ".config/mise/codemod-errors.bash"
+
+# The codemod of the callbacks' wave (`.config/mise/codemod-callbacks.bash`,
+# #7386): each `dyn Fn` and `dyn FnMut` behind a reference in a function's
+# parameter takes `impl`, and the sites that stay are the wave's second
+# phase. The rule lives in `.config/ast-grep/callbacks`.
+["codemod:callbacks"]
+description = "Give each borrowed dyn Fn and dyn FnMut of a function's parameter a generic"
+tools."github:ast-grep/ast-grep" = "0.51.1"
+run = ".config/mise/codemod-callbacks.bash"
+
+# The codemod of the writers' and consoles' wave. Each `dyn io::Write` and
+# `dyn fmt::Display` behind a reference in a function's parameter takes
+# `impl`. Each `dyn Console` there takes `Streams<'_>`. The sites that stay
+# are the wave's second phase.
+# - see: #7387, `.config/mise/codemod-writers.bash`, `.config/ast-grep/writers`
+["codemod:writers"]
+description = "Give each borrowed dyn io::Write and dyn fmt::Display of a function's parameter a generic, and each dyn Console the closed set"
+tools."github:ast-grep/ast-grep" = "0.51.1"
+run = ".config/mise/codemod-writers.bash"
+
+# The codemod's dry run as a report (#7390). The wave of #7390 runs the
+# codemod over the holders of the term arena's ids. Until the wave lands, the
+# dry run holds the rules current: a holder that a landing adds and that the
+# rules cannot settle shows on the day it lands. The run seeds the four ids of
+# `gandr_kernel_term` and its arena over `crates`, and its last line counts the
+# rollbacks that take a fork and the ones left for the hand (#7558). A run
+# that settles prints its last line and writes nothing. A run that does not
+# settle in its 32 rounds, or that `ast-grep` refuses, files one issue of the
+# title below, or rewrites it and reopens it (`.config/issues/keep.bash`).
+# Without REPORT_FILE set it prints the observation and writes nothing.
+# `gate:all` on main's tree runs it with REPORT_FILE set, and a report that
+# fails never fails the gate. The wave's landing takes the report out of the
+# tree.
+["report:codemod-region"]
+description = "The region codemod's dry run over crates, filed on one issue when it does not settle"
+tools."github:ast-grep/ast-grep" = "0.51.1"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+source "$root/.config/issues/keep.bash"
+title="the region codemod does not settle"
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+if "$root/.config/mise/codemod-region.bash" --dry-run --arena TermArena gandr_kernel_term ValueId ComputationId ValueTypeId CompTypeId > "$scratch/run.log" 2>&1; then
+  tail -n 1 "$scratch/run.log"
+  exit 0
+fi
+{
+  printf 'The dry run of `codemod:region` over `crates` does not settle, or `ast-grep` refuses a rule. The run seeds the four ids of `gandr_kernel_term`, as the wave of #7390 does. The last lines of its output follow, with the scratch directory taken out of each path.\n\n```text\n'
+  tail -n 40 "$scratch/run.log" | sed -E 's#/[^ ]*/tree/##g'
+  printf '```\n'
+} > "$scratch/observation.md"
+if [[ -z ${REPORT_FILE:-} ]]; then
+  cat "$scratch/observation.md"
+  echo "report:codemod-region: the dry run does not settle; REPORT_FILE unset, nothing written" >&2
+  exit 0
+fi
+mise run --quiet body:check --title "$title" "$scratch/observation.md" >&2
+issue_keep "$title" "$(issue_found "$title")" 1 "$scratch/observation.md" \
+  mise run --quiet issue:file "$title" "$scratch/observation.md" kind:defect area:workflow status:unsectioned
+'''
+
+# The codemod of the containers. One run takes the names of crates and moves
+# each site the rules cover. A second run changes no file. The task prints
+# each site that stays, with its file and its line.
+# - see: #8182, .config/mise/codemod-containers.bash, .config/ast-grep/containers
+["codemod:containers"]
+description = "Move a crate from the containers of alloc to the containers of gandr-kernel-data"
+tools."github:ast-grep/ast-grep" = "0.51.1"
+usage = '''
+flag "--census" help="print a text count of the forms the rules read, and change no file"
+flag "--dry-run" help="print the matches and change no file"
+arg "<crate>..." help="the package name or the directory name of each crate" var=#true
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+flags=()
+if [[ ${usage_census:-false} == true ]]; then flags+=(--census); fi
+if [[ ${usage_dry_run:-false} == true ]]; then flags+=(--dry-run); fi
+read -ra names <<< "${usage_crate:-}"
+exec .config/mise/codemod-containers.bash "${flags[@]}" "${names[@]}"
+'''
