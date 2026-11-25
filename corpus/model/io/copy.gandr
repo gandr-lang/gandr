@@ -1,0 +1,81 @@
+//! `copy` moves its input to its output over `Io.Eff`, and names no model.
+//!
+//! A pass reads the file 0 into the buffer, then writes the bytes of the read
+//! from the buffer to the file 1. Each pass reads into the same buffer that
+//! the program holds, and the buffer that comes back with a completion is the
+//! bytes of that pass alone. A read of no byte is the end of the input, and
+//! the copy ends there. The scope that handles `Io.Eff` chooses the model.
+//!
+//! The copy recurses on a bound of passes, and it ends at the end of the input
+//! or of the bound. A loop that runs until the input ends has `Partial` in
+//! its row, and a model whose operation binds a value cannot handle such a
+//! subject: its continuation is a function with no `Partial`.
+//!
+//! Under `Scripted`, the input is a tape in the source. Each run gives the
+//! tape after it: no input left, and the output equal to the input.
+//!
+//! - see: #7844 — the first program, and the mode as a parameter of the
+//!   program
+//! - see: `../../../library/std/src/io.gandr` — `Io.Eff` and `Scripted`
+
+// The bytes of a buffer and of a tape.
+import std.list (List);
+// The IO of a program, its model with no kernel, and the receive of a
+// completion.
+import std.io (Io, Returned, Shut, Tape, Scripted, returned);
+
+/// A bound of passes.
+data Passes : Type where
+  /// No pass is left.
+  | Spent : Passes
+  /// One pass, then the rest.
+  | Pass : (rest : Passes) --> Passes
+
+/// The input of the file 0 written to the file 1, one buffer at a time,
+/// until a read gives no byte or no pass is left.
+def rec copy(buffer : List u8, passes : Passes) -> [
+  io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut
+] Unit =
+  match passes where
+    | Spent => pure *{}
+    | Pass(rest) => {
+      let read = returned (io.read 0 buffer)
+      if read.0 <= 0 {
+        pure *{}
+      } else {
+        let wrote = returned (io.write 1 read.1 read.0)
+        copy[<] buffer rest
+      }
+    }
+
+/// The run of `copy` under `Scripted`, from a tape whose input is `input`:
+/// the tape after it.
+def copied(input : List u8, buffer : List u8, passes : Passes) -> Tape =
+  let program : Tape -> Tape = handle io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut {
+    copy buffer passes
+    pure fun (tape) { pure tape }
+  } with Scripted
+  program (Tape input #[])
+
+/// Five passes.
+def five : Passes = Pass (Pass (Pass (Pass (Pass Spent))));
+
+/// Five bytes through a buffer of two: three passes write two, two and one
+/// byte, and the fourth read ends the copy.
+@[runs("Tape nil (cons 1u8 (cons 2u8 (cons 3u8 (cons 4u8 (cons 5u8 nil)))))")]
+def through_a_small_buffer() -> Tape = copied #[1u8, 2u8, 3u8, 4u8, 5u8] #[0u8, 0u8] five;
+
+/// Three bytes through a buffer of eight: one pass writes them all.
+@[runs("Tape nil (cons 7u8 (cons 8u8 (cons 9u8 nil)))")]
+def through_a_large_buffer() -> Tape =
+  copied #[7u8, 8u8, 9u8] #[0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8] five
+
+/// An empty input: the first read ends the copy, and the output is empty.
+@[runs("Tape nil nil")]
+def from_no_input() -> Tape = copied #[] #[0u8, 0u8] five;
+
+/// A bound of two passes over five bytes through a buffer of two: the copy
+/// ends after four bytes, and the fifth stays in the input.
+@[runs("Tape (cons 5u8 nil) (cons 1u8 (cons 2u8 (cons 3u8 (cons 4u8 nil))))")]
+def past_the_bound() -> Tape =
+  copied #[1u8, 2u8, 3u8, 4u8, 5u8] #[0u8, 0u8] (Pass (Pass Spent))
