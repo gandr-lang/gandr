@@ -47,6 +47,7 @@ use crate::desc::SortDesc;
 use crate::desc::TheoryDesc;
 use crate::first_order::TranslationError;
 use crate::tree::ArgumentCount;
+use crate::tree::Children;
 use crate::tree::Head;
 use crate::tree::Tree;
 use crate::tree::TreeRef;
@@ -115,6 +116,92 @@ impl BindingTerm
         let count = ArgumentCount::from(arguments.len());
         Self(Tree::node(BindingHead::Operation(name, count), arguments))
     }
+
+    /// The term's head and arguments.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn view(&self) -> BindingView<'_>
+    {
+        BindingNode(self.0.to_ref()).view()
+    }
+}
+
+/// A borrowed node of a [`BindingTerm`].
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BindingNode<'term>(TreeRef<'term, BindingHead>);
+
+impl<'term> BindingNode<'term>
+{
+    /// The node's head and arguments.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn view(self) -> BindingView<'term>
+    {
+        match *self.0.head() {
+            BindingHead::Variable(index) => BindingView::Variable(index),
+            BindingHead::Operation(ref name, _) => BindingView::Operation {
+                name,
+                args: BindingArgs(self.0.children()),
+            },
+        }
+    }
+}
+
+/// The head and arguments of one node of a binding term.
+#[derive(Clone, Debug)]
+pub enum BindingView<'term>
+{
+    /// A de Bruijn variable, counting from the newest context entry.
+    Variable(VariableIndex),
+    /// An operation of the signature.
+    Operation
+    {
+        /// The operation's name.
+        name: &'term Name,
+        /// The arguments, in declaration order.
+        args: BindingArgs<'term>,
+    },
+}
+
+/// The arguments of an operation node, in declaration order.
+#[repr(transparent)]
+#[derive(Clone, Debug)]
+pub struct BindingArgs<'term>(Children<'term, BindingHead>);
+
+impl<'term> Iterator for BindingArgs<'term>
+{
+    type Item = BindingNode<'term>;
+
+    /// The next argument.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item>
+    {
+        self.0.next().map(BindingNode)
+    }
+
+    /// The exact number of remaining arguments.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>)
+    {
+        self.0.size_hint()
+    }
+}
+
+impl ExactSizeIterator for BindingArgs<'_>
+{
 }
 
 /// A typed observation of binding syntax, including its ambient context.
